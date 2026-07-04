@@ -320,3 +320,49 @@ CREATE TABLE t_mat_ttl_expr_with_column_ttl
     ENGINE = MergeTree() ORDER BY a TTL c + INTERVAL 1 DAY DELETE WHERE c > toDateTime(1500000000);
 ALTER TABLE t_mat_ttl_expr_with_column_ttl MATERIALIZE COLUMN c;
 DROP TABLE t_mat_ttl_expr_with_column_ttl;
+
+-- Case 29: A skip index that reads a TTL-target column inside a *computed expression* together with a
+-- sibling column (`INDEX idx (a + y)`) while a column TTL resets `y`. Materializing `c` drives the
+-- column TTL `y TTL c + ...`, which resets `y`; the generic derived-object scan marks the index for
+-- rebuild, but the mutation recomputes the index expression from a block where `y` still holds its
+-- pre-reset value (it is read as an unchanged column from the source part rather than the recalculated
+-- one), leaving the index stale — a query forced through it for `a + y = 5` would be pruned. Unlike a
+-- plain-column index over the same target (Case 26), this shape cannot be rebuilt correctly by the
+-- shared mutation machinery (UPDATE of `c` leaves it equally stale), so it is refused.
+DROP TABLE IF EXISTS t_mat_ttl_index_expr;
+CREATE TABLE t_mat_ttl_index_expr
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     INDEX idx_ay (a + y) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+ALTER TABLE t_mat_ttl_index_expr MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_index_expr;
+
+-- Case 30: Same limitation with a single-column computed expression (`INDEX idx (y + 1)`, no sibling) —
+-- confirming the refusal is about the computed expression over the reset target, not a missing sibling
+-- column. Also refused.
+DROP TABLE IF EXISTS t_mat_ttl_index_expr_single;
+CREATE TABLE t_mat_ttl_index_expr_single
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     INDEX idx_ye (y + 1) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+ALTER TABLE t_mat_ttl_index_expr_single MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_index_expr_single;
+
+-- Case 31: The Case 29/30 refusals must NOT over-reject a *plain-column* skip index that reads the
+-- TTL-target column together with a sibling column as separate top-level index expressions
+-- (`INDEX idx (a, y)`, a per-column minmax). Each element is a bare column, so it is rebuilt correctly
+-- (the target `y` is recalculated and its plain minmax derived from it): after the TTL resets `y` to 0
+-- the row still has `y = 0`, and a query forced through the index finds it (a stale index would prune it).
+DROP TABLE IF EXISTS t_mat_ttl_index_plain_multi;
+CREATE TABLE t_mat_ttl_index_plain_multi
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     INDEX idx_a_y (a, y) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_mat_ttl_index_plain_multi (a, y) VALUES (5, 100);
+ALTER TABLE t_mat_ttl_index_plain_multi MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
+ALTER TABLE t_mat_ttl_index_plain_multi MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT count() FROM t_mat_ttl_index_plain_multi WHERE y = 0 SETTINGS force_data_skipping_indices = 'idx_a_y';
+DROP TABLE t_mat_ttl_index_plain_multi;

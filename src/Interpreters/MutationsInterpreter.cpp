@@ -1324,17 +1324,21 @@ void MutationsInterpreter::prepare(bool dry_run)
             }
 
             /// A TTL-target column rewritten as above lands in `changed_columns`, so the generic
-            /// derived-object scan near the end of `prepare` correctly rebuilds a skip index that
-            /// reads the *whole* target column. A skip index that reads only a *subcolumn* of the
-            /// target (`INDEX idx x.k` while a TTL resets the parent `x`) cannot be rebuilt correctly,
-            /// however: the mutation reads the subcolumn `x.k` as an unchanged column straight from
-            /// the source part instead of deriving it from the reset parent, so the rebuilt index
-            /// would keep stale values (queries forced through it could then be pruned with stale
-            /// bounds). This is a limitation of the shared mutation machinery — UPDATE of such a
-            /// TTL-expression column leaves the same subcolumn-over-target index stale — so, following
-            /// the same fail-close approach used for subcolumn TTL bounds above, refuse the command
-            /// rather than silently producing a stale index. (Projections cannot reference individual
-            /// subcolumns, and statistics are always whole-column, so only skip indices are affected.)
+            /// derived-object scan near the end of `prepare` rebuilds a skip index that reads it.
+            /// That rebuild is only correct when the index reads the target as a *plain column*: its
+            /// recalculated value is written and the plain minmax / set / bloom-filter is derived from
+            /// it (verified for those types). It is NOT correct when the index reads the target through
+            /// a *computed expression* (`INDEX idx (y + 1)` or `INDEX idx (a + y)`) or through a
+            /// *subcolumn* (`INDEX idx x.k`): the mutation recomputes the index from a block in which the
+            /// target still holds its pre-reset value (it is read as an unchanged column from the source
+            /// part rather than the recalculated one), so the rebuilt index keeps stale values and a
+            /// query forced through it can be pruned incorrectly. This is a pre-existing limitation of the
+            /// shared mutation machinery — `ALTER TABLE ... UPDATE` of the same TTL-expression column
+            /// leaves such an index equally stale — so, following the fail-close approach used above for
+            /// subcolumn TTL bounds and the TTL WHERE condition, refuse the command rather than silently
+            /// producing a stale index. (A plain-column index over the same target is still allowed and
+            /// rebuilt; `MATERIALIZE INDEX` / `OPTIMIZE FINAL` rebuild the stale shapes correctly
+            /// afterwards, as they run over the already-reset part.)
             if (!ttl_target_columns.empty())
             {
                 /// Refuse based on the table metadata (not a specific part's materialized indices),
@@ -1353,6 +1357,34 @@ void MutationsInterpreter::prepare(bool dry_run)
                                 "the index from the subcolumn, which is not supported for subcolumn dependencies",
                                 backQuote(command.column_name), backQuote(resolved->getNameInStorage()),
                                 backQuote(required_column), backQuote(index.name));
+                    }
+
+                    /// A skip index reads the target through a computed expression when at least one of
+                    /// its top-level expressions is not a bare column identifier (aliases were already
+                    /// expanded when the index was parsed). A plain-column index — including a
+                    /// multi-column one like `(a, y)`, whose elements are all bare identifiers — is
+                    /// rebuilt correctly and must not be refused.
+                    bool index_has_computed_expression = false;
+                    if (index.expression_list_ast)
+                        for (const auto & element : index.expression_list_ast->children)
+                            if (!element->as<ASTIdentifier>())
+                            {
+                                index_has_computed_expression = true;
+                                break;
+                            }
+
+                    if (index_has_computed_expression)
+                    {
+                        for (const auto & required_column : index.expression->getRequiredColumns())
+                        {
+                            if (std::ranges::find(ttl_target_columns, required_column) != ttl_target_columns.end())
+                                throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                    "Refused to materialize column {} because it drives a TTL that resets column {}, "
+                                    "which is read by skip index {} inside a computed expression. Recomputing the column "
+                                    "would leave the index stale, because the index expression is rebuilt from the "
+                                    "column's pre-reset value (the same limitation applies to UPDATE)",
+                                    backQuote(command.column_name), backQuote(required_column), backQuote(index.name));
+                        }
                     }
                 }
             }
