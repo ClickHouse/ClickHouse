@@ -383,7 +383,7 @@ void bloomFilterIndexValidator(const IndexDescription & index, bool attach, cons
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index, const MergeTreeSettings & settings);
+MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void spannIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
 

@@ -806,14 +806,17 @@ MergeTreeIndexSubstreams MergeTreeIndexVectorSpann::getSubstreams() const
     };
 }
 
-MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx"))
+    if (indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
         return {1, getSubstreams()};
     return {0, {}};
 }
 
-MergeTreeIndexPtr spannIndexCreator(const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr /*metadata_snapshot*/, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     SpannParams spann_params;
