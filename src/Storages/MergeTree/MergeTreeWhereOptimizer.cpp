@@ -111,11 +111,11 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
 
 void MergeTreeWhereOptimizer::optimize(SelectQueryInfo & select_query_info, const ContextPtr & context) const
 {
-    auto & select = select_query_info.query->as<ASTSelectQuery &>();
+    auto & select = select_query_info.getQuery()->as<ASTSelectQuery &>();
     if (!select.where() || select.prewhere())
         return;
 
-    auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.query->clone(),
+    auto block_with_constants = KeyCondition::getBlockWithConstants(select_query_info.getQuery()->clone(),
         select_query_info.syntax_analyzer_result,
         context);
 

@@ -231,7 +231,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
         auto storage_limits = std::make_shared<StorageLimitsList>();
         storage_limits->emplace_back(buildStorageLimits(*context, options));
         select_query_info.storage_limits = std::move(storage_limits);
-        select_query_info.query = std::move(query);
+        select_query_info.setQuery(std::move(query));
 
         bool use_parallel_replicas = false;
         if (reading_from_table)

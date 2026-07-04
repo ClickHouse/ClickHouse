@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/StreamLocalLimits.h>
 
+#include <functional>
 #include <memory>
 
 namespace DB
@@ -124,7 +125,11 @@ struct SelectQueryInfo
 {
     SelectQueryInfo();
 
-    ASTPtr query;
+    const ASTPtr & getQuery() const;
+    ASTPtr & getQuery();
+    void setQuery(ASTPtr query_);
+    void setLazyQuery(std::function<ASTPtr()> build_query_ast);
+
     ASTPtr view_query; /// Optimized VIEW query
 
     /// Query tree
@@ -223,5 +228,9 @@ struct SelectQueryInfo
     /// This function generates a map that maps the unique names to table column names,
     /// for the current table (`table_expression`).
     std::unordered_map<std::string, ColumnWithTypeAndName> buildNodeNameToInputNodeColumn() const;
+
+private:
+    mutable ASTPtr query_ast;
+    std::function<ASTPtr()> query_ast_builder;
 };
 }

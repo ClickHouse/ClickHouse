@@ -106,23 +106,23 @@ void IStorageCluster::read(
     /// Calculate the header. This is significant, because some columns could be thrown away in some cases like query with count(*)
 
     SharedHeader sample_block;
-    ASTPtr query_to_send = query_info.query;
+    ASTPtr query_to_send = query_info.getQuery();
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.getQuery(), context, SelectQueryOptions(processed_stage));
     }
     else
     {
-        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        auto interpreter = InterpreterSelectQuery(query_info.getQuery(), context, SelectQueryOptions(processed_stage).analyze());
         sample_block = interpreter.getSampleBlock();
-        query_to_send = interpreter.getQueryInfo().query->clone();
+        query_to_send = interpreter.getQueryInfo().getQuery()->clone();
     }
 
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
     RestoreQualifiedNamesVisitor::Data data;
-    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.query->as<ASTSelectQuery &>(), 0));
+    data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query_info.getQuery()->as<ASTSelectQuery &>(), 0));
     data.remote_table.database = context->getCurrentDatabase();
     data.remote_table.table = getName();
     RestoreQualifiedNamesVisitor(data).visit(query_to_send);

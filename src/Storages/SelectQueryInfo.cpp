@@ -10,12 +10,42 @@ SelectQueryInfo::SelectQueryInfo()
     : prepared_sets(std::make_shared<PreparedSets>())
 {}
 
+const ASTPtr & SelectQueryInfo::getQuery() const
+{
+    if (!query_ast && query_ast_builder)
+        query_ast = query_ast_builder();
+    return query_ast;
+}
+
+ASTPtr & SelectQueryInfo::getQuery()
+{
+    if (!query_ast && query_ast_builder)
+        query_ast = query_ast_builder();
+    return query_ast;
+}
+
+void SelectQueryInfo::setQuery(ASTPtr query_)
+{
+    query_ast = std::move(query_);
+    query_ast_builder = nullptr;
+}
+
+void SelectQueryInfo::setLazyQuery(std::function<ASTPtr()> build_query_ast)
+{
+    query_ast = nullptr;
+    query_ast_builder = std::move(build_query_ast);
+}
+
 bool SelectQueryInfo::isFinal() const
 {
     if (table_expression_modifiers)
         return table_expression_modifiers->hasFinal();
 
-    const auto & select = query->as<ASTSelectQuery &>();
+    /// Analyzer path carries FINAL in `table_expression_modifiers`. Only the legacy path (no `query_tree`) needs the AST.
+    if (query_tree)
+        return false;
+
+    const auto & select = getQuery()->as<ASTSelectQuery &>();
     return select.final();
 }
 

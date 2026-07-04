@@ -484,7 +484,7 @@ String transformQueryForExternalDatabase(
             limit);
     }
 
-    auto clone_query = query_info.query->clone();
+    auto clone_query = query_info.getQuery()->clone();
     return transformQueryForExternalDatabaseImpl(
         clone_query,
         query_info.syntax_analyzer_result->requiredSourceColumns(),

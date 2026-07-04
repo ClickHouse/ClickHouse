@@ -123,8 +123,8 @@ SharedHeader getHeaderForProcessingStage(
         case QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit:
         case QueryProcessingStage::MAX:
         {
-            ASTPtr query = query_info.query;
-            if (const auto * select = query_info.query->as<ASTSelectQuery>(); select && hasJoin(*select))
+            ASTPtr query = query_info.getQuery();
+            if (const auto * select = query_info.getQuery()->as<ASTSelectQuery>(); select && hasJoin(*select))
             {
                 if (!query_info.syntax_analyzer_result)
                 {
@@ -148,7 +148,7 @@ SharedHeader getHeaderForProcessingStage(
                 }
                 else
                 {
-                    query = query_info.query->clone();
+                    query = query_info.getQuery()->clone();
                     TreeRewriterResult new_rewriter_result = *query_info.syntax_analyzer_result;
                     removeJoin(*query->as<ASTSelectQuery>(), new_rewriter_result, context);
                 }
