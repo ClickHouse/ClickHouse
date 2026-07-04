@@ -1,0 +1,453 @@
+---
+description: 'AI 関数のドキュメント'
+sidebarTitle: 'AI'
+slug: /sql-reference/functions/ai-functions
+title: 'AI 関数'
+doc_type: 'reference'
+---
+
+AI 関数は ClickHouse の組み込み関数で、AI の呼び出しや埋め込みの生成に使用でき、データの処理、情報の抽出、データの分類などを行えます。
+
+<Note>
+  AI 関数は Experimental です。有効にするには [`allow_experimental_ai_functions`](/ja/reference/settings/session-settings#allow_experimental_ai_functions) を設定してください。
+</Note>
+
+<Note>
+  AI 関数は予測不能な出力を返す場合があります。結果は、プロンプトの品質と使用するモデルに大きく依存します。
+</Note>
+
+すべての関数は、以下を提供する共通のインフラストラクチャを利用しています。
+
+* **クォータの適用**: トークン ([`ai_function_max_input_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_input_tokens_per_query), [`ai_function_max_output_tokens_per_query`](/ja/reference/settings/session-settings#ai_function_max_output_tokens_per_query)) および API 呼び出し ([`ai_function_max_api_calls_per_query`](/ja/reference/settings/session-settings#ai_function_max_api_calls_per_query)) に対するクエリ単位の上限。
+* **バックオフ付き再試行**: 一時的な障害は、指数バックオフ ([`ai_function_retry_initial_delay_ms`](/ja/reference/settings/session-settings#ai_function_retry_initial_delay_ms)) を使用して再試行 ([`ai_function_max_retries`](/ja/reference/settings/session-settings#ai_function_max_retries)) されます。
+
+<div id="configuration">
+  ## 設定
+</div>
+
+AI 関数は、[**名前付きコレクション**](/ja/concepts/features/configuration/server-config/named-collections) からプロバイダー認証情報と設定を取得します。認証情報に使用する名前付きコレクションを指定するには、[`ai_function_credentials`](/ja/reference/settings/session-settings#ai_function_credentials) 設定を使用します。
+
+プロバイダー認証情報を含む名前付きコレクションを作成するステートメントの例:
+
+```sql
+CREATE NAMED COLLECTION my_ai_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/chat/completions',
+    model = 'gpt-4o-mini',
+    api_key = 'sk-...';
+```
+
+`ai_function_credentials` 設定で、セッション単位または単一のクエリに対してコレクションを選択します。
+
+```sql
+-- For the session:
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
+
+-- Or for a single query:
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
+SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
+```
+
+`ai_function_credentials` が空の場合 (デフォルト値) 、例外がスローされます。
+
+<div id="named-collection-parameters">
+  ### 名前付きコレクションのパラメータ
+</div>
+
+| パラメータ         | 型      | デフォルト  | 説明                                                                         |
+| ------------- | ------ | ------ | -------------------------------------------------------------------------- |
+| `provider`    | String | —      | モデルプロバイダー。サポート対象: `'openai'`, `'anthropic'`。以下の注記を参照してください。                |
+| `endpoint`    | String | —      | API エンドポイント URL。                                                           |
+| `model`       | String | —      | モデル名 (例: `'gpt-4o-mini'`, `'text-embedding-3-small'`) 。                    |
+| `api_key`     | String | —      | プロバイダーの認証用キー。省略可能: 省略した場合、認証ヘッダーは送信されないため、認証を必要としない OpenAI 互換サーバーを対象にできます。 |
+| `max_tokens`  | UInt64 | `1024` | API 呼び出しごとの出力トークン数の上限。                                                     |
+| `api_version` | String | —      | API バージョン文字列。Anthropic で使用されます (`'2023-06-01'`) 。                          |
+
+<Note>
+  `provider = 'openai'` を設定し、`endpoint` を利用するサービスに向けることで、任意の OpenAI 互換 API (例: vLLM、Ollama、LiteLLM) を使用できます。
+</Note>
+
+<div id="query-level-settings">
+  ### クエリレベルの設定
+</div>
+
+使用する named collection は、[`ai_function_credentials`](/ja/reference/settings/session-settings#ai_function_credentials) 設定で制御されます。その他の AI 関連の設定は、`ai_function_` プレフィックスで [Settings](/ja/reference/settings/session-settings) に一覧表示されています。
+
+<div id="default-and-materialized-columns">
+  ### `DEFAULT` および `MATERIALIZED` カラムでの使用
+</div>
+
+`ai_function_credentials` 設定が読み取られるのは、カラムの定義時ではなく、デフォルト式の評価時です。コレクション名はカラム定義には保存されません。
+
+```sql
+CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
+-- The stored default is `aiEmbed(doc)`; no collection is captured.
+```
+
+この式を評価するには、3 つの条件が必要です。`allow_experimental_ai_functions` と `ai_function_credentials` が設定されていることに加え、評価を行うユーザーがそのコレクションに対する `GRANT NAMED COLLECTION` を持っている必要があります (認証情報の解決時には `NAMED COLLECTION` へのアクセスチェックが実行されます) 。これらのいずれかが欠けていると、例外 (`SUPPORT_IS_DISABLED`、認証情報が空であることを示すエラー、または `ACCESS_DENIED`) が発生します。
+
+`DEFAULT` カラムは `INSERT` 時に評価されるため、挿入を行うセッションまたはクエリで両方の設定を有効にしておく必要があります。
+
+```sql
+GRANT NAMED COLLECTION ON my_ai_credentials TO user;
+SET allow_experimental_ai_functions = 1;
+SET ai_function_credentials = 'my_ai_credentials';
+INSERT INTO t (id, doc) VALUES (1, 'hello');
+```
+
+セッションごとにこれらを設定しなくてもそのようなテーブルに挿入できるようにするには、[設定プロファイル](/ja/concepts/features/configuration/settings/settings-profiles)で両方を設定してください:
+
+```xml
+<profiles>
+    <default>
+        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
+        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
+    </default>
+</profiles>
+```
+
+`MATERIALIZED` カラムは、`DEFAULT` カラムと同様に `INSERT` 時に計算され、`ALTER TABLE ... MATERIALIZE COLUMN` のようなミューテーションによっても再計算されます。ミューテーションはユーザーセッションの外で実行されるため、クエリの `SETTINGS` 句は継承しませんが、設定プロファイルの設定は継承します。ミューテーションによる再計算を正常に行うには、両方の設定を設定プロファイルに含めたうえで、テーブル所有者に `NAMED COLLECTION` を付与してください。
+
+<div id="restricting-endpoint-hosts">
+  ### エンドポイントホストの制限
+</div>
+
+AI named collection の `endpoint` URL は、サーバーが自身の identity で接続する送信先であり、リクエストヘッダーに named collection の `api_key` を (指定されている場合に) 含めて送信する可能性があります。デフォルトでは、ClickHouse はすべてのホストへの接続を許可します。関数を特定の provider 群のみに制限するには、サーバー設定で [`remote_url_allow_hosts`](/ja/reference/settings/server-settings/settings#remote_url_allow_hosts) を設定します。例:
+
+```xml
+<remote_url_allow_hosts>
+    <host>api.openai.com</host>
+    <host>api.anthropic.com</host>
+</remote_url_allow_hosts>
+```
+
+この設定はサーバー全体に適用され、HTTP を使用するすべての機能に適用されることに注意してください。
+
+<div id="supported-providers">
+  ## サポートされているプロバイダー
+</div>
+
+| プロバイダー    | `provider` の値 | チャット関数 | 注記                              |
+| --------- | ------------- | ------ | ------------------------------- |
+| OpenAI    | `'openai'`    | はい     | デフォルトのプロバイダーです。                 |
+| Anthropic | `'anthropic'` | はい     | `/v1/messages` endpoint を使用します。 |
+
+<div id="observability">
+  ## オブザーバビリティ
+</div>
+
+AI 関数のアクティビティは、ClickHouse の [ProfileEvents](/ja/reference/system-tables/query_log) で追跡できます。
+
+| ProfileEvent      | Description                                                       |
+| ----------------- | ----------------------------------------------------------------- |
+| `AIAPICalls`      | AI provider に送信された HTTP リクエスト数。                                   |
+| `AIInputTokens`   | 消費された入力トークンの合計数。                                                  |
+| `AIOutputTokens`  | 消費された出力トークンの合計数。                                                  |
+| `AIRowsProcessed` | 結果が返された行数。                                                        |
+| `AIRowsSkipped`   | スキップされた行数 (クォータ超過、または `ai_function_throw_on_error = 0` の場合のエラー) 。 |
+
+これらのイベントをクエリします。
+
+```sql
+SELECT
+    ProfileEvents['AIAPICalls'] AS api_calls,
+    ProfileEvents['AIInputTokens'] AS input_tokens,
+    ProfileEvents['AIOutputTokens'] AS output_tokens
+FROM system.query_log
+WHERE query_id = 'query_id'
+AND type = 'QueryFinish'
+ORDER BY event_time DESC;
+```
+
+{/*
+  以下のタグ内の内容は、ドキュメントフレームワークのビルド時に
+  system.functions から生成されたドキュメントに差し替えられます。タグは変更したり削除したりしないでください。
+  参照: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+<div id="aiClassify">
+  ## aiClassify
+</div>
+
+導入バージョン: v26.4.0
+
+指定されたテキストを、LLMプロバイダーを使用して、与えられたカテゴリのいずれか 1 つに分類します。
+
+この関数は、固定の分類プロンプトと、モデルが指定されたラベルのうちちょうど 1 つだけを返すよう制約する JSON スキーマのレスポンスフォーマットとともに、テキストを送信します。レスポンスが `{"category": "..."}` 形式の JSON オブジェクトとして返された場合は、ラベルが取り出され、その文字列が返されます。
+
+provider credentials と設定は、`ai_function_credentials` 設定で指定された named collection から取得されます。
+
+**構文**
+
+```sql
+aiClassify(text, categories[, temperature])
+```
+
+**別名**: `AIClassify`
+
+**引数**
+
+* `text` — 分類するテキスト。[`String`](/ja/reference/data-types/string)
+* `categories` — 候補となるカテゴリラベルの定数リスト。[`Array(String)`](/ja/reference/data-types/array)
+* `temperature` — ランダム性を制御するサンプリング温度。デフォルト: `0.0`。[`Float64`](/ja/reference/data-types/float)
+
+**戻り値**
+
+指定されたカテゴリラベルのいずれか、またはリクエストが失敗し、`ai_function_throw_on_error` が無効になっている場合はカラム型のデフォルト値 (空文字列) 。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**感情を分類**
+
+```sql title=Query
+SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+positive
+```
+
+**カラムを分類する**
+
+```sql title=Query
+SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiEmbed">
+  ## aiEmbed
+</div>
+
+導入バージョン: v26.6.0
+
+設定されたAIプロバイダーを使用して、指定されたテキストの埋め込みベクトルを生成します。
+
+この関数は、テキストを設定済みの埋め込みエンドポイントに送信し、結果のベクトルを `Array(Float32)` として返します。
+1つの行ブロック内では、呼び出しごとのオーバーヘッドを減らすため、入力は1回のHTTPリクエストあたり最大
+[`ai_function_embedding_max_batch_size`](/ja/reference/settings/session-settings#ai_function_embedding_max_batch_size)
+エントリのバッチにまとめられます。
+
+プロバイダーの認証情報と設定は、`ai_function_credentials` 設定で指定された named collection から取得されます。
+任意の `dimensions` 引数は、モデルが対応している場合 (例: OpenAI&#39;s `text-embedding-3-*`) 、
+指定したサイズのベクトルを要求します。対応していない場合は、モデル本来のサイズが返されます。
+
+**構文**
+
+```sql
+aiEmbed(text[, dimensions])
+```
+
+**引数**
+
+* `text` — 埋め込み対象のテキスト。[`String`](/ja/reference/data-types/string)
+* `dimensions` — 出力ベクトルの目標次元数 (省略可) 。`0` または省略した場合は、モデルのネイティブなサイズになります。[`UInt64`](/ja/reference/data-types/int-uint)
+
+**戻り値**
+
+埋め込みベクトル。入力が NULL または空の場合、リクエストが失敗して `ai_function_throw_on_error` が無効になっている場合、またはクォータを超過して `ai_function_throw_on_quota_exceeded` が無効になっている場合は、空の配列を返します。[`Array(Float32)`](/ja/reference/data-types/array)
+
+**例**
+
+**単一の文字列を埋め込む**
+
+```sql title=Query
+SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**明示的な次元を使用する**
+
+```sql title=Query
+SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**テキストカラムを埋め込む**
+
+```sql title=Query
+SELECT aiEmbed(title, 256) FROM articles LIMIT 10
+```
+
+```response title=Response
+```
+
+<div id="aiExtract">
+  ## aiExtract
+</div>
+
+導入バージョン: v26.4.0
+
+LLMプロバイダーを使用して、非構造化テキストから構造化情報を抽出します。
+
+2 番目の引数には、自由形式の自然言語による指示 (例: `'主な訴え'`) または
+`'{"field_a": "field a の説明", "field_b": "field b の説明"}'` の形式の JSON エンコードされたスキーマを指定できます。
+
+指示モードでは、この関数は抽出した値をプレーンな文字列として返し、何も見つからなかった場合は空文字列を返します。
+スキーマモードでは、この関数は要求されたスキーマに対応するキーを持つ JSON オブジェクト文字列を返します。存在しないフィールドは `null` になります。
+
+provider credentials と設定は、`ai_function_credentials` 設定で指定された named collection から取得されます。
+
+**構文**
+
+```sql
+aiExtract(text, instruction_or_schema[, temperature])
+```
+
+**別名**: `AIExtract`
+
+**引数**
+
+* `text` — 情報を抽出するテキスト。[`String`](/ja/reference/data-types/string)
+* `instruction_or_schema` — 自由形式の抽出指示、または抽出するフィールドを記述した定数の JSONオブジェクト。[`const String`](/ja/reference/data-types/string)
+* `temperature` — ランダム性を制御するサンプリング温度。デフォルト: `0.0`。[`const Float64`](/ja/reference/data-types/float)
+
+**戻り値**
+
+単一の抽出結果 (指示モード) または JSONオブジェクト文字列 (スキーマモード) 。リクエストが失敗し、`ai_function_throw_on_error` が無効になっている場合は、カラム型のデフォルト値 (空文字列) を返します。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**自由形式の指示**
+
+```sql title=Query
+SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+late and damaged package
+```
+
+**スキーマ抽出**
+
+```sql title=Query
+SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiGenerate">
+  ## aiGenerate
+</div>
+
+導入バージョン: v26.4.0
+
+LLMプロバイダーを使用して、プロンプトから自由形式のテキストコンテンツを生成します。
+
+この関数は、設定されたAIプロバイダーにプロンプトを送信し、生成されたテキストを返します。
+任意のシステムプロンプトを指定して、モデルの挙動 (例: トーン、フォーマット、ロール) を制御できます。
+システムプロンプトが指定されていない場合、デフォルトのシステムプロンプトは次のとおりです: `You are a helpful assistant. Provide a clear and concise response.`
+
+provider credentials と configuration は、`ai_function_credentials` setting で指定された named collection から取得されます。
+
+**構文**
+
+```sql
+aiGenerate(prompt[, system_prompt[, temperature]])
+```
+
+**別名**: `AIGenerate`
+
+**引数**
+
+* `prompt` — モデルに送信するユーザーのプロンプトまたは質問。[`String`](/ja/reference/data-types/string)
+* `system_prompt` — モデルの動作を導く任意の固定のシステムレベル命令 (例: ペルソナ、出力フォーマット) 。各プロンプトとともに送信されます。[`String`](/ja/reference/data-types/string)
+* `temperature` — ランダム性を制御するサンプリング温度。デフォルト: `0.7`。[`Float64`](/ja/reference/data-types/float)
+
+**戻り値**
+
+生成されたテキスト応答。リクエストが失敗し、`ai_function_throw_on_error` が無効な場合は、カラム型のデフォルト値 (空文字列) が返されます。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**簡単な質問**
+
+```sql title=Query
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+4
+```
+
+**システムプロンプトあり**
+
+```sql title=Query
+SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+```
+
+**カラム値を要約**
+
+```sql title=Query
+SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+<div id="aiTranslate">
+  ## aiTranslate
+</div>
+
+導入バージョン: v26.4.0
+
+指定したテキストを、LLMプロバイダーを使用して指定した対象言語に翻訳します。
+
+文体や方言に関する追加の指示は、第3引数として渡せます (例: `'keep technical terms untranslated'`) 。
+
+provider credentials と configuration は、`ai_function_credentials` setting で指定された named collection から取得されます。
+
+**構文**
+
+```sql
+aiTranslate(text, target_language[, instructions[, temperature]])
+```
+
+**別名**: `AITranslate`
+
+**引数**
+
+* `text` — 翻訳するテキスト。[`String`](/ja/reference/data-types/string)
+* `target_language` — 翻訳先言語の名前または BCP-47 コード (例: `'French'`、`'es-MX'`) 。[`String`](/ja/reference/data-types/string)
+* `instructions` — 翻訳者への追加指示 (任意の定数) 。[`String`](/ja/reference/data-types/string)
+* `temperature` — ランダム性を制御するサンプリング温度。デフォルト: `0.3`。[`Float64`](/ja/reference/data-types/float)
+
+**戻り値**
+
+翻訳されたテキスト、またはリクエストが失敗し、`ai_function_throw_on_error` が無効な場合はカラム型のデフォルト値 (空文字列) 。[`String`](/ja/reference/data-types/string)
+
+**例**
+
+**フランス語に翻訳**
+
+```sql title=Query
+SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+```
+
+```response title=Response
+Bonjour le monde!
+```
+
+**スタイル指示に従って日本語に翻訳してください**
+
+```sql title=Query
+SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
+```
+
+```response title=Response
+```
+
+{/*AUTOGENERATED_END*/}

@@ -1,0 +1,289 @@
+---
+sidebarTitle: 'Constructor de consultas'
+slug: /integrations/grafana/query-builder
+description: 'Uso del Constructor de consultas en el plugin de ClickHouse para Grafana'
+title: 'Constructor de consultas'
+doc_type: 'guide'
+keywords: ['grafana', 'constructor de consultas', 'visualización', 'dashboards', 'plugin']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Cualquier consulta puede ejecutarse con el plugin de ClickHouse.
+El constructor de consultas es una opción práctica para las consultas más simples, pero para las más complejas tendrás que usar el [SQL Editor](#sql-editor).
+
+Todas las consultas del constructor de consultas tienen un [tipo de consulta](#query-types) y requieren seleccionar al menos una columna.
+
+Los tipos de consulta disponibles son:
+
+* [Tabla](#table): el tipo de consulta más sencillo para mostrar datos en formato de tabla. Funciona bien como opción general tanto para consultas simples como para consultas complejas que incluyen funciones de agregación.
+* [Logs](#logs): optimizado para crear consultas de logs. Funciona mejor en la vista Explore con los [valores predeterminados configurados](/es/integrations/connectors/data-visualization/grafana/config#logs).
+* [Series temporales](#time-series): ideal para crear consultas de series temporales. Permite seleccionar una columna de tiempo específica y añadir funciones de agregación.
+* [Trazas](#traces): optimizado para buscar y visualizar trazas. Funciona mejor en la vista Explore con los [valores predeterminados configurados](/es/integrations/connectors/data-visualization/grafana/config#traces).
+* [SQL Editor](#sql-editor): el SQL Editor puede usarse cuando necesitas un control total sobre la consulta. En este modo, se puede ejecutar cualquier consulta SQL.
+
+<div id="query-types">
+  ## Tipos de consulta
+</div>
+
+La configuración *Tipo de consulta* cambiará el diseño del constructor de consultas para ajustarlo al tipo de consulta que se esté creando.
+El tipo de consulta también determina qué panel se utiliza al visualizar los datos.
+
+<div id="table">
+  ### Tabla
+</div>
+
+El tipo de consulta más flexible es la consulta de tabla. Sirve como opción general para los demás constructores de consultas, diseñados para manejar consultas simples y de agregación.
+
+| Field        | Description                                                                                                                                                                                                                 |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas de agregación incluyen estas opciones.                                                                                                     |
+| Columna      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columnas.                                                                                                            |
+| Aggregates   | Una lista de [funciones de agregación](/es/reference/functions/aggregate-functions/index). Permite definir valores personalizados para la función y la columna. Solo es visible en el modo Aggregate.                          |
+| Group By     | Una lista de expresiones [GROUP BY](/es/reference/statements/select/group-by). Solo es visible en el modo Aggregate.                                                                                                           |
+| Order By     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                 |
+| Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá. Algunas visualizaciones pueden requerir que se establezca en `0` para mostrar todos los datos. |
+| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                               |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Ejemplo de consulta de tabla con agregación" border />
+
+Este tipo de consulta mostrará los datos en forma de tabla.
+
+<div id="logs">
+  ### Logs
+</div>
+
+El tipo de consulta de logs ofrece un constructor de consultas centrado en consultar datos de logs.
+Los valores predeterminados pueden configurarse en la [configuración de logs](/es/integrations/connectors/data-visualization/grafana/config#logs) de la fuente de datos para que el constructor de consultas se cargue previamente con una base de datos/tabla y columnas predeterminadas.
+OpenTelemetry también puede habilitarse para seleccionar automáticamente las columnas según una versión del esquema.
+
+Los filtros de **Tiempo** y **Nivel** se agregan de forma predeterminada, junto con un ORDER BY para la columna Tiempo.
+Estos filtros están vinculados a sus respectivos campos y se actualizarán a medida que cambien las columnas.
+El filtro de **Nivel** se excluye del SQL de forma predeterminada; al cambiarlo desde la opción `IS ANYTHING`, se habilitará.
+
+El tipo de consulta de logs admite [enlaces de datos](#data-links).
+
+| Campo             | Descripción                                                                                                                                                                                               |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Usar OTel         | Habilita las columnas de OpenTelemetry. Sobrescribirá las columnas seleccionadas para usar las columnas definidas por la versión del esquema de OTel seleccionada (deshabilita la selección de columnas). |
+| Columnas          | Columnas adicionales que se añadirán a las filas de log. En este campo se puede escribir SQL directamente para permitir funciones y alias de columnas.                                                    |
+| Tiempo            | La columna principal de marca de tiempo del log. Mostrará tipos de datos similares a tiempo, pero permite valores/funciones personalizados.                                                               |
+| Nivel de log      | Opcional. El *nivel* o la *severidad* del log. Los valores suelen ser `INFO`, `error`, `Debug`, etc.                                                                                                      |
+| Mensaje           | El contenido del mensaje del log.                                                                                                                                                                         |
+| ORDER BY          | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                               |
+| Límite            | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se excluirá, pero esto no se recomienda para conjuntos de datos de logs grandes.         |
+| Filtros           | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                             |
+| Filtro de mensaje | Un campo de texto para filtrar logs cómodamente mediante `LIKE %value%`. Se excluye cuando el campo está vacío.                                                                                           |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Ejemplo de consulta de logs de OTel" border />
+
+<br />
+
+Este tipo de consulta mostrará los datos en el panel de logs, junto con un panel de histograma de logs en la parte superior.
+
+Las columnas adicionales seleccionadas en la consulta pueden verse en la fila de log expandida:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Ejemplo de campos adicionales en la consulta de logs" border />
+
+<div id="time-series">
+  ### Series temporales
+</div>
+
+El tipo de consulta de series temporales es similar a [tabla](#table), pero se centra en datos de series temporales.
+
+Ambas vistas son prácticamente iguales, con estas diferencias principales:
+
+* Un campo *tiempo* específico.
+* En Aggregate mode, se aplica automáticamente una macro de intervalo de tiempo junto con un Group By para el campo tiempo.
+* En Aggregate mode, el campo &quot;columna&quot; se oculta.
+* Se añaden automáticamente un filtro de rango temporal y Order By para el campo **tiempo**.
+
+<Warning>
+  **¿Faltan datos en tu visualización?**
+
+  En algunos casos, el panel de series temporales puede parecer recortado porque el límite predeterminado es `1000`.
+
+  Prueba a eliminar la cláusula `LIMIT` estableciéndola en `0` (si tu conjunto de datos lo permite).
+</Warning>
+
+| Campo        | Descripción                                                                                                                                                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Builder Mode | Las consultas simples excluyen Aggregates y Group By, mientras que las consultas agregadas incluyen estas opciones.                                                                                                                              |
+| Tiempo       | La columna de tiempo principal de la consulta. Mostrará tipos de datos temporales, pero también permite valores y funciones personalizados.                                                                                                      |
+| Columna      | Las columnas seleccionadas. En este campo se puede escribir Raw SQL para permitir funciones y alias de columna. Solo es visible en Simple mode.                                                                                                  |
+| Aggregates   | Una lista de [funciones de agregación](/es/reference/functions/aggregate-functions/index). Permite valores personalizados para la función y la columna. Solo es visible en Aggregate mode.                                                          |
+| Group By     | Una lista de expresiones [GROUP BY](/es/reference/statements/select/group-by). Solo es visible en Aggregate mode.                                                                                                                                   |
+| Order By     | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                                                                      |
+| Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá; esto se recomienda para algunos conjuntos de datos de series temporales a fin de mostrar la visualización completa. |
+| Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                                    |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Consulta de series temporales de ejemplo" border />
+
+Este tipo de consulta mostrará los datos en el panel de series temporales.
+
+<div id="traces">
+  ### Trazas
+</div>
+
+El tipo de consulta de trazas ofrece un constructor de consultas para buscar y ver trazas fácilmente.
+Está diseñado para datos de OpenTelemetry, pero se pueden seleccionar columnas para mostrar trazas a partir de un esquema distinto.
+Los valores predeterminados se pueden configurar en la [configuración de trazas](/es/integrations/connectors/data-visualization/grafana/config#traces) de la fuente de datos para permitir que el constructor de consultas se precargue con una base de datos/tabla y columnas predeterminadas. Si se configuran valores predeterminados, la selección de columnas aparecerá contraída de forma predeterminada.
+OpenTelemetry también se puede habilitar para seleccionar automáticamente las columnas según una versión del esquema.
+
+Se agregan filtros predeterminados con el objetivo de mostrar solo spans de nivel superior.
+También se incluye un ORDER BY para las columnas Time y Duration Time.
+Estos filtros están vinculados a sus respectivos campos y se actualizarán a medida que cambien las columnas.
+El filtro **Service Name** está excluido del SQL de forma predeterminada; si se cambia la opción `IS ANYTHING`, se habilitará.
+
+El tipo de consulta de trazas admite [enlaces de datos](#data-links).
+
+| Campo                     | Descripción                                                                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modo de traza             | Cambia la consulta de Búsqueda de trazas a búsqueda por Trace ID.                                                                                                                                        |
+| Usar OTel                 | Habilita las columnas de OpenTelemetry. Sobrescribirá las columnas seleccionadas para usar las columnas definidas por la versión del esquema OTel seleccionada (deshabilita la selección de columnas).   |
+| Columna de Trace ID       | El ID de la traza.                                                                                                                                                                                       |
+| Columna de Span ID        | ID del span.                                                                                                                                                                                             |
+| Columna de Parent Span ID | ID del span padre. Normalmente está vacío para las trazas de nivel superior.                                                                                                                             |
+| Columna de Service Name   | Nombre del servicio.                                                                                                                                                                                     |
+| Columna de Operation Name | Nombre de la operación.                                                                                                                                                                                  |
+| Columna de Start Time     | La columna de tiempo principal para el trace span. El momento en que comenzó el span.                                                                                                                    |
+| Columna de Duration Time  | La duración del span. De forma predeterminada, Grafana espera que sea un valor de coma flotante en milisegundos. Se aplica automáticamente una conversión mediante la lista desplegable `Duration Unit`. |
+| Duration Unit             | La unidad de tiempo utilizada para la duración. Nanosegundos de forma predeterminada. La unidad seleccionada se convertirá a un valor de coma flotante en milisegundos, tal como requiere Grafana.       |
+| Columna de Tags           | Tags del span. Exclúyela si no usas un esquema basado en OTel, ya que espera un tipo de columna Map específico.                                                                                          |
+| Columna de Service Tags   | Tags del servicio. Exclúyela si no usas un esquema basado en OTel, ya que espera un tipo de columna Map específico.                                                                                      |
+| Order By                  | Una lista de expresiones [ORDER BY](/es/reference/statements/select/order-by).                                                                                                                              |
+| Limit                     | Agrega una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se excluirá, pero esto no se recomienda para conjuntos de datos de trazas grandes.     |
+| Filtros                   | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                            |
+| Trace ID                  | El Trace ID por el que filtrar. Solo se usa en el modo Trace ID y al abrir un [enlace de datos](#data-links) de Trace ID.                                                                                |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Consulta de trazas OTel de ejemplo" border />
+
+Este tipo de consulta mostrará los datos con la vista de tabla para el modo Búsqueda de trazas y con el panel de trazas para el modo Trace ID.
+
+<div id="sql-editor">
+  ## SQL Editor
+</div>
+
+Para las consultas que sean demasiado complejas para el constructor de consultas, puede usar el SQL Editor.
+Esto le da control total sobre la consulta, ya que le permite escribir y ejecutar ClickHouse SQL directamente.
+
+El SQL Editor se puede abrir seleccionando &quot;SQL Editor&quot; en la parte superior del editor de consultas.
+
+Las [funciones macro](#macros) también se pueden usar en este modo.
+
+Puede cambiar entre tipos de consulta para obtener la visualización que mejor se adapte a su consulta.
+Este cambio también surte efecto en la vista de dashboard, especialmente con datos de series temporales.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Ejemplo de consulta SQL sin formato" border />
+
+<div id="data-links">
+  ## Enlaces de datos
+</div>
+
+Los [enlaces de datos](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
+de Grafana pueden usarse para enlazar con nuevas consultas.
+Esta función se ha habilitado en el plugin de ClickHouse para enlazar una traza con los logs y viceversa. Funciona mejor con OpenTelemetry configurado tanto para logs como para trazas en la [configuración de la fuente de datos](/es/integrations/connectors/data-visualization/grafana/config#opentelemetry)
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+  Ejemplo de enlaces de trazas en una tabla
+
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Enlaces de trazas en una tabla" border />
+</div>
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Ejemplo de enlaces de trazas en logs
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Enlaces de trazas en logs" border />
+</div>
+
+<div id="how-to-make-a-data-link">
+  ### Cómo crear un enlace de datos
+</div>
+
+Puedes crear un enlace de datos seleccionando una columna llamada `traceID` en tu consulta. Este nombre no distingue entre mayúsculas y minúsculas y admite añadir un guion bajo antes de &quot;ID&quot;. Por ejemplo, `traceId`, `TraceId`, `TRACE_ID` y `tracE_iD` serían válidos.
+
+Si OpenTelemetry está habilitado en una consulta de [logs](#logs) o [traza](#traces), se incluirá automáticamente una columna de ID de traza.
+
+Al incluir una columna de ID de traza, los enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; se añadirán a los datos.
+
+<div id="linking-abilities">
+  ### Funciones de enlace
+</div>
+
+Con los enlaces de datos disponibles, puedes abrir trazas y logs con el ID de traza proporcionado.
+
+&quot;**View Trace**&quot; abrirá un panel dividido con la traza, y &quot;**View Logs**&quot; abrirá una consulta de logs filtrada por el ID de traza.
+Si se hace clic en el enlace desde un dashboard en lugar de la vista Explore, el enlace se abrirá en una pestaña nueva de la vista Explore.
+
+Es necesario tener valores predeterminados configurados tanto para [logs](/es/integrations/connectors/data-visualization/grafana/config#logs) como para [traces](/es/integrations/connectors/data-visualization/grafana/config#traces) al cambiar entre tipos de consulta (de logs a trazas y de trazas a logs). Los valores predeterminados no son necesarios al abrir un enlace del mismo tipo de consulta, ya que basta con copiar la consulta.
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Ejemplo de visualización de una traza (panel derecho) desde una consulta de logs (panel izquierdo)
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Ejemplo de enlaces de datos" border />
+</div>
+
+<div id="macros">
+  ## Macros
+</div>
+
+Las macros son una forma sencilla de añadir SQL dinámico a la consulta.
+Antes de que una consulta se envíe al servidor de ClickHouse, el plugin expandirá la macro y la sustituirá por la expresión completa.
+
+Las consultas tanto del SQL Editor como del constructor de consultas pueden usar macros.
+
+<div id="using-macros">
+  ### Uso de macros
+</div>
+
+Las macros pueden incluirse en cualquier parte de la consulta, varias veces si es necesario.
+
+A continuación se muestra un ejemplo de uso de la macro `$__timeFilter`:
+
+Entrada:
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE $__timeFilter(log_time)
+```
+
+Resultado final de la consulta:
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
+```
+
+En este ejemplo, el intervalo de tiempo del dashboard de Grafana se aplica a la columna `log_time`.
+
+El plugin también admite la notación con llaves `{}`. Use esta notación cuando se necesiten consultas dentro de los [parámetros](/es/reference/syntax#defining-and-using-query-parameters).
+
+<div id="list-of-macros">
+  ### Lista de macros
+</div>
+
+Esta es una lista de todas las macros disponibles en el plugin:
+
+| Macro                                        | Descripción                                                                                                                                                                                                    | Ejemplo de salida                                                                                                 |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `$__dateFilter(columnName)`                  | Se reemplaza por un filtro de rango de tiempo en la columna proporcionada, usando el intervalo de tiempo del panel de Grafana como [Date](/es/reference/data-types/date).                                         | `columnName >= toDate('2022-10-21') AND columnName <= toDate('2022-10-23')`                                       |
+| `$__timeFilter(columnName)`                  | Se reemplaza por un filtro de rango de tiempo en la columna proporcionada, usando el intervalo de tiempo del panel de Grafana como [DateTime](/es/reference/data-types/datetime).                                 | `columnName >= toDateTime(1415792726) AND time <= toDateTime(1447328726)`                                         |
+| `$__timeFilter_ms(columnName)`               | Se reemplaza por un filtro de rango de tiempo en la columna proporcionada, usando el intervalo de tiempo del panel de Grafana como [DateTime64](/es/reference/data-types/datetime64).                             | `columnName >= fromUnixTimestamp64Milli(1415792726123) AND columnName <= fromUnixTimestamp64Milli(1447328726456)` |
+| `$__dateTimeFilter(dateColumn, timeColumn)`  | Abreviatura que combina `$__dateFilter()` y `$__timeFilter()` usando columnas Date y DateTime independientes. Alias: `$__dt()`                                                                                 | `$__dateFilter(dateColumn) AND $__timeFilter(timeColumn)`                                                         |
+| `$__fromTime`                                | Se reemplaza por la hora de inicio del intervalo del panel de Grafana convertida a [DateTime](/es/reference/data-types/datetime).                                                                                 | `toDateTime(1415792726)`                                                                                          |
+| `$__fromTime_ms`                             | Se reemplaza por la hora de inicio del intervalo del panel convertida a [DateTime64](/es/reference/data-types/datetime64).                                                                                        | `fromUnixTimestamp64Milli(1415792726123)`                                                                         |
+| `$__toTime`                                  | Se reemplaza por la hora de finalización del intervalo del panel de Grafana convertida a [DateTime](/es/reference/data-types/datetime).                                                                           | `toDateTime(1447328726)`                                                                                          |
+| `$__toTime_ms`                               | Se reemplaza por la hora de finalización del intervalo del panel convertida a [DateTime64](/es/reference/data-types/datetime64).                                                                                  | `fromUnixTimestamp64Milli(1447328726456)`                                                                         |
+| `$__timeInterval(columnName)`                | Se reemplaza por una función que calcula el intervalo en función del tamaño de la ventana en segundos.                                                                                                         | `toStartOfInterval(toDateTime(columnName), INTERVAL 20 second)`                                                   |
+| `$__timeInterval_ms(columnName)`             | Se reemplaza por una función que calcula el intervalo en función del tamaño de la ventana en milisegundos.                                                                                                     | `toStartOfInterval(toDateTime64(columnName, 3), INTERVAL 20 millisecond)`                                         |
+| `$__interval_s`                              | Se reemplaza por el intervalo del dashboard en segundos.                                                                                                                                                       | `20`                                                                                                              |
+| `$__conditionalAll(condition, $templateVar)` | Se reemplaza por el primer parámetro cuando la variable de plantilla del segundo parámetro no selecciona todos los valores. Se reemplaza por 1=1 cuando la variable de plantilla selecciona todos los valores. | `condition` o `1=1`                                                                                               |

@@ -1,0 +1,216 @@
+---
+slug: /cloud/data-sources/secure-s3
+sidebarTitle: 'الوصول الآمن إلى بيانات S3'
+title: 'الوصول الآمن إلى بيانات S3'
+description: 'توضح هذه المقالة كيف يمكن لعملاء ClickHouse Cloud الاستفادة من التحكم بالوصول المستند إلى الأدوار للمصادقة عند الاتصال بـ Amazon Simple Storage Service(S3) والوصول إلى بياناتهم بأمان.'
+keywords: ['RBAC', 'Amazon S3', 'المصادقة']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوضح هذا الدليل كيف يمكن لعملاء ClickHouse Cloud الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة مع Amazon Simple Storage Service ‏(S3) والوصول إلى بياناتهم بأمان.
+قبل التعمق في إعداد الوصول الآمن إلى S3، من المهم فهم آلية عمل ذلك. في ما يلي نظرة عامة على كيفية تمكّن خدمات ClickHouse من الوصول إلى حاويات S3 الخاصة من خلال افتراض دور داخل حساب AWS الخاص بالعملاء.
+
+<Image img="/images/cloud/security/secures3.webp" size="lg" alt="نظرة عامة على الوصول الآمن إلى S3 باستخدام ClickHouse" />
+
+<br />
+
+يتيح هذا النهج للعملاء إدارة جميع عمليات الوصول إلى حاويات S3 الخاصة بهم من مكان واحد (سياسة IAM للدور الذي تم افتراضه) من دون الحاجة إلى مراجعة جميع سياسات الحاويات لإضافة أذونات الوصول أو إزالتها.
+في القسم أدناه، ستتعلّم كيفية إعداد ذلك.
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## احصل على ARN لدور IAM الخاص بخدمة ClickHouse
+</div>
+
+1. سجّل الدخول إلى حسابك في ClickHouse Cloud.
+
+2. حدّد خدمة ClickHouse التي تريد إنشاء التكامل معها
+
+3. حدّد علامة التبويب **الإعدادات**
+
+4. مرّر إلى أسفل الصفحة حتى تصل إلى قسم **معلومات أمان الشبكة**
+
+5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
+
+<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM الخاص بخدمة ClickHouse" border />
+
+<div id="setting-up-iam-assume-role">
+  ## إعداد IAM Assume Role
+</div>
+
+يمكن إعداد IAM Assume Role بإحدى الطريقتين التاليتين:
+
+* [باستخدام CloudFormation stack](#option-1-deploying-with-cloudformation-stack)
+* [إنشاء دور IAM يدويًا](#option-2-manually-create-iam-role)
+
+<div id="option-1-deploying-with-cloudformation-stack">
+  ### النشر باستخدام CloudFormation stack
+</div>
+
+1. سجّل الدخول إلى AWS account الخاص بك من خلال متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
+
+2. انتقل إلى [CloudFormation URL](https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stacks/quickcreate?templateURL=https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/secure-s3.yaml\&stackName=ClickHouseSecureS3) التالي لملء CloudFormation stack.
+
+3. أدخِل (أو الصق) **معرّف دور الخدمة (IAM)** الخاص بخدمتك، والذي حصلت عليه سابقًا، في حقل الإدخال بعنوان &quot;ClickHouse Instance Roles&quot;
+   ويمكنك لصق معرّف دور الخدمة تمامًا كما يظهر في Cloud Console.
+
+4. أدخِل اسم حاوية S3 الخاصة بك في حقل الإدخال بعنوان &quot;Bucket Names&quot;. إذا كان Bucket URL الخاص بك هو `https://ch-docs-s3-bucket.s3.eu-central-1.amazonaws.com/clickhouseS3/`، فسيكون اسم الـ حاوية هو `ch-docs-s3-bucket`.
+
+<Note>
+  لا تُدخل ARN الكامل للـ حاوية، بل اسم الـ حاوية فقط.
+</Note>
+
+5. اضبط CloudFormation stack. في ما يلي معلومات إضافية عن هذه Parameters.
+
+| Parameter                 |     Default Value    | Description                                                                                                                                  |
+| :------------------------ | :------------------: | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| RoleName                  | ClickHouseAccess-001 | اسم الدور الجديد الذي سيستخدمه ClickHouse Cloud للوصول إلى حاوية S3 الخاصة بك.                                                               |
+| Role Session Name         |           *          | يمكن استخدام Role Session Name باعتباره secret مشتركًا لتوفير حماية إضافية للـ حاوية الخاصة بك.                                              |
+| ClickHouse Instance Roles |                      | قائمة مفصولة بفواصل بأدوار دور IAM الخاصة بخدمة ClickHouse التي يمكنها استخدام تكامل S3 الآمن هذا.                                          |
+| Bucket Access             |         Read         | يحدد مستوى الوصول إلى الـ حاويات المُدخلة.                                                                                                  |
+| Bucket Names              |                      | قائمة مفصولة بفواصل بأسماء الـ حاويات التي سيكون لهذا الدور حق الوصول إليها. **ملاحظة:** استخدم اسم الـ حاوية، وليس ARN الكامل للـ حاوية. |
+
+6. حدّد مربع الاختيار **I acknowledge that AWS CloudFormation might create IAM resources with custom names.**
+
+7. انقر زر **Create stack** في أسفل اليمين
+
+8. تأكد من اكتمال CloudFormation stack بدون error.
+
+9. حدّد الـ Stack الذي أُنشئ حديثًا، ثم حدّد علامة التبويب **Outputs** في CloudFormation stack
+
+10. انسخ قيمة **RoleArn** لهذا integration، فهي ما تحتاجه للوصول إلى حاوية S3 الخاصة بك.
+
+<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="مخرجات CloudFormation stack التي تعرض IAM Role ARN" border />
+
+<div id="option-2-manually-create-iam-role">
+  ### أنشئ دور IAM يدويًا
+</div>
+
+1. سجّل الدخول إلى حساب AWS الخاص بك عبر متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
+
+2. انتقل إلى IAM Service Console
+
+3. أنشئ دور IAM جديدًا باستخدام سياسة IAM وسياسة الثقة التاليتين. استبدل `{ClickHouse_IAM_ARN}` بـ IAM Role Arn الخاص بـ ClickHouse instance لديك.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "{ClickHouse_IAM_ARN}"
+            },
+            "Action": "sts:AssumeRole"
+        }
+    ]
+}
+```
+
+**سياسة IAM**
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "s3:GetBucketLocation",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}"
+            ],
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "s3:Get*",
+                "s3:List*"
+            ],
+            "Resource": [
+                "arn:aws:s3:::{BUCKET_NAME}/*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+```
+
+4. انسخ **IAM Role Arn** الجديد بعد إنشائه، فهو ما ستحتاج إليه للوصول إلى حاوية S3 الخاصة بك.
+
+<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
+  ## الوصول إلى حاوية S3 الخاصة بك باستخدام الدور ClickHouseAccess
+</div>
+
+يتيح لك ClickHouse Cloud تحديد `extra_credentials` كجزء من دالة الجدول S3.
+فيما يلي مثال على كيفية تشغيل استعلام باستخدام الدور الذي أُنشئ حديثًا والمنسوخ أعلاه.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'))
+```
+
+فيما يلي مثال على استعلام يستخدم `role_session_name` كسرّ مشترك للاستعلام عن البيانات من حاوية.
+إذا لم تكن قيمة `role_session_name` صحيحة، فستفشل هذه العملية.
+
+```sql
+DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
+```
+
+<Note>
+  نوصي بأن تكون خدمة S3 المصدر لديك في المنطقة نفسها التي توجد فيها ClickHouse Cloud Service، لتقليل تكاليف نقل البيانات.
+  لمزيد من المعلومات، راجع [تسعير S3](https://aws.amazon.com/s3/pricing/)
+</Note>
+
+<div id="advanced-action-control">
+  ## التحكم المتقدم في الإجراءات
+</div>
+
+لتحقيق تحكم أكثر صرامة في الوصول، يمكن تقييد سياسة الـ حاوية بحيث لا تقبل إلا الطلبات الصادرة من VPC endpoints الخاصة بـ ClickHouse Cloud باستخدام [`aws:SourceVpce` condition](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). للحصول على VPC endpoints الخاصة بمنطقة ClickHouse Cloud لديك، افتح الطرفية وشغّل:
+
+```bash
+# Replace <your-region> with your ClickHouse Cloud region
+curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+```
+
+بعد ذلك، أضِف قاعدة رفض إلى سياسة IAM باستخدام نقاط النهاية التي تم إرجاعها:
+
+```json
+{
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "VisualEditor0",
+                "Effect": "Allow",
+                "Action": [
+                    "s3:List*",
+                    "s3:Get*"
+                ],
+                "Resource": [
+                    "arn:aws:s3:::{BUCKET_NAME}",
+                    "arn:aws:s3:::{BUCKET_NAME}/*"
+                ]
+            },
+            {
+                "Sid": "VisualEditor3",
+                "Effect": "Deny",
+                "Action": [
+                    "s3:GetObject"
+                ],
+                "Resource": "*",
+                "Condition": {
+                    "StringNotEquals": {
+                        "aws:SourceVpce": [
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}",
+                            "{ClickHouse VPC ID from your S3 region}"
+                        ]
+                    }
+                }
+            }
+        ]
+}
+```
+
+لمزيد من التفاصيل حول كيفية الوصول إلى نقاط النهاية لخدمات ClickHouse Cloud، راجع [عناوين IP لـ Cloud](/ar/products/cloud/guides/data-sources/cloud-endpoints-api).

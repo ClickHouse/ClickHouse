@@ -382,6 +382,7 @@ protected:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
+    UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
     struct InsertionTableInfo
     {
         StorageID table = StorageID::createEmpty();
@@ -1364,6 +1365,11 @@ public:
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
     QueryStatusPtr getProcessListElementSafe() const;
+
+    /// Hash of the normalized query text. Set once before execution; used to account resources of
+    /// `NORMALIZED_QUERY_HASH` quotas (e.g. on the insert path, where the hash is not otherwise available).
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_);
+    UInt64 getNormalizedQueryHash() const;
 
     /// List all queries.
     ProcessList & getProcessList();

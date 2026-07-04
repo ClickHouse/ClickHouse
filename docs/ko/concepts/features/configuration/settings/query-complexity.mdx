@@ -1,0 +1,128 @@
+---
+description: '쿼리 복잡도를 제한하는 설정입니다.'
+sidebarTitle: '쿼리 복잡도 제한'
+slug: /operations/settings/query-complexity
+title: '쿼리 복잡도 제한'
+doc_type: '참고'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+[설정](/ko/concepts/features/configuration/settings/overview)에서는 ClickHouse가
+쿼리 복잡도에 제한을 설정할 수 있는 기능을 제공합니다. 이를 통해 잠재적으로
+리소스를 많이 소모하는 쿼리로부터 보호할 수 있으며, 특히 사용자 인터페이스를 사용할 때
+더 안전하고 예측 가능한 실행을 보장합니다.
+
+거의 모든 제한은 `SELECT` 쿼리에만 적용되며, 분산
+쿼리 처리에서는 제한이 각 서버에 개별적으로 적용됩니다.
+
+ClickHouse는 일반적으로 각 행마다 제한을 확인하지 않고, 데이터 파트가
+완전히 처리된 후에만 제한을 확인합니다. 따라서 파트가 처리되는 동안
+제한이 위반되는 상황이 발생할 수 있습니다.
+
+<div id="overflow_mode_setting">
+  ## `overflow_mode` 설정
+</div>
+
+대부분의 제한에는 `overflow_mode` 설정도 있으며, 이 설정은 한도를 초과했을 때
+어떻게 동작할지를 정의합니다. 값으로는 다음 두 가지 중 하나를 사용할 수 있습니다:
+
+* `throw`: 예외를 발생시킵니다(기본값).
+* `break`: 쿼리 실행을 중지하고 부분 결과를 반환합니다. 이는
+  소스 데이터가 소진된 것처럼 처리합니다.
+
+<div id="group_by_overflow_mode_settings">
+  ## `group_by_overflow_mode` 설정
+</div>
+
+`group_by_overflow_mode` 설정에는
+`any` 값도 있습니다:
+
+* `any` : 집합에 이미 들어간 키에 대해서는 집계를 계속하지만,
+  집합에 새 키는 추가하지 않습니다.
+
+<div id="relevant-settings">
+  ## 설정 목록
+</div>
+
+다음 설정은 쿼리 복잡도 제한을 적용할 때 사용됩니다.
+
+<Note>
+  &quot;어떤 항목의 최대값&quot;에 대한 제한은 `0`으로 설정할 수 있으며,
+  이는 &quot;제한 없음&quot;을 의미합니다.
+</Note>
+
+| 설정                                                                                                                            | 간단한 설명                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| [`max_memory_usage`](/ko/reference/settings/session-settings#max_memory_usage)                                                   | 단일 서버에서 쿼리를 실행할 때 사용할 수 있는 RAM의 최대량입니다.                                                                |
+| [`max_memory_usage_for_user`](/ko/reference/settings/session-settings#max_memory_usage_for_user)                                 | 단일 서버에서 사용자의 쿼리를 실행할 때 사용할 수 있는 RAM의 최대량입니다.                                                           |
+| [`max_rows_to_read`](/ko/reference/settings/session-settings#max_rows_to_read)                                                   | 쿼리를 실행할 때 테이블에서 읽을 수 있는 행 수의 최댓값입니다.                                                                   |
+| [`max_bytes_to_read`](/ko/reference/settings/session-settings#max_bytes_to_read)                                                 | 쿼리를 실행할 때 테이블에서 읽을 수 있는 바이트 수(압축되지 않은 데이터 기준)의 최댓값입니다.                                                 |
+| [`read_overflow_mode_leaf`](/ko/reference/settings/session-settings#read_overflow_mode_leaf)                                     | 읽은 데이터 양이 리프 제한 중 하나를 초과할 때 어떻게 처리할지 설정합니다.                                                            |
+| [`max_rows_to_read_leaf`](/ko/reference/settings/session-settings#max_rows_to_read_leaf)                                         | 분산 쿼리를 실행할 때 리프 노드의 로컬 테이블에서 읽을 수 있는 행 수의 최댓값입니다.                                                      |
+| [`max_bytes_to_read_leaf`](/ko/reference/settings/session-settings#max_bytes_to_read_leaf)                                       | 분산 쿼리를 실행할 때 리프 노드의 로컬 테이블에서 읽을 수 있는 바이트 수(압축되지 않은 데이터 기준)의 최댓값입니다.                                    |
+| [`read_overflow_mode_leaf`](/ko/reference/settings/session-settings#read_overflow_mode_leaf)                                     | 읽은 데이터 양이 리프 제한 중 하나를 초과할 때 어떻게 처리할지 설정합니다.                                                            |
+| [`max_rows_to_group_by`](/ko/reference/settings/session-settings#max_rows_to_group_by)                                           | 집계 결과로 생성되는 고유 키 수의 최댓값입니다.                                                                            |
+| [`group_by_overflow_mode`](/ko/reference/settings/session-settings#group_by_overflow_mode)                                       | 집계를 위한 고유 키 수가 제한을 초과할 때 어떻게 처리할지 설정합니다.                                                               |
+| [`max_bytes_before_external_group_by`](/ko/reference/settings/session-settings#max_bytes_before_external_group_by)               | 외부 메모리에서 `GROUP BY` 절을 실행할지 여부를 설정합니다.                                                                 |
+| [`max_bytes_ratio_before_external_group_by`](/ko/reference/settings/session-settings#max_bytes_ratio_before_external_group_by)   | `GROUP BY`에 사용할 수 있는 가용 메모리 비율입니다. 이 값에 도달하면 집계에 외부 메모리를 사용합니다.                                        |
+| [`max_bytes_before_external_sort`](/ko/reference/settings/session-settings#max_bytes_before_external_sort)                       | 외부 메모리에서 `ORDER BY` 절을 실행할지 여부를 설정합니다.                                                                 |
+| [`max_bytes_ratio_before_external_sort`](/ko/reference/settings/session-settings#max_bytes_ratio_before_external_sort)           | `ORDER BY`에 사용할 수 있는 가용 메모리 비율입니다. 이 값에 도달하면 외부 정렬을 사용합니다.                                             |
+| [`max_rows_to_sort`](/ko/reference/settings/session-settings#max_rows_to_sort)                                                   | 정렬 전에 허용되는 행 수의 최댓값입니다. 정렬 시 메모리 사용량을 제한할 수 있습니다.                                                      |
+| [`max_bytes_to_sort`](/ko/reference/settings/session-settings#max_rows_to_sort)                                                  | 정렬 전에 허용되는 바이트 수의 최댓값입니다.                                                                              |
+| [`sort_overflow_mode`](/ko/reference/settings/session-settings#sort_overflow_mode)                                               | 정렬 전에 수신한 행 수가 제한 중 하나를 초과할 경우 어떻게 처리할지 설정합니다.                                                         |
+| [`max_result_rows`](/ko/reference/settings/session-settings#max_result_rows)                                                     | 결과의 행 수를 제한합니다.                                                                                        |
+| [`max_result_bytes`](/ko/reference/settings/session-settings#max_result_bytes)                                                   | 결과 크기를 바이트 단위(압축되지 않은 기준)로 제한합니다.                                                                      |
+| [`result_overflow_mode`](/ko/reference/settings/session-settings#result_overflow_mode)                                           | 결과 크기가 제한 중 하나를 초과할 경우 어떻게 처리할지 설정합니다.                                                                 |
+| [`max_execution_time`](/ko/reference/settings/session-settings#max_execution_time)                                               | 쿼리의 최대 실행 시간(초)입니다.                                                                                    |
+| [`timeout_overflow_mode`](/ko/reference/settings/session-settings#timeout_overflow_mode)                                         | 쿼리 실행 시간이 `max_execution_time`을 초과하거나 예상 실행 시간이 `max_estimated_execution_time`을 초과할 경우 어떻게 처리할지 설정합니다. |
+| [`max_execution_time_leaf`](/ko/reference/settings/session-settings#max_execution_time_leaf)                                     | 의미상 `max_execution_time`과 유사하지만 분산 또는 원격 쿼리의 리프 노드에만 적용됩니다.                                            |
+| [`timeout_overflow_mode_leaf`](/ko/reference/settings/session-settings#timeout_overflow_mode_leaf)                               | 리프 노드에서 쿼리 실행 시간이 `max_execution_time_leaf`를 초과할 때 어떻게 처리할지 설정합니다.                                     |
+| [`min_execution_speed`](/ko/reference/settings/session-settings#min_execution_speed)                                             | 초당 행 수 기준의 최소 실행 속도입니다.                                                                                |
+| [`min_execution_speed_bytes`](/ko/reference/settings/session-settings#min_execution_speed_bytes)                                 | 초당 실행 바이트 수의 최솟값입니다.                                                                                   |
+| [`max_execution_speed`](/ko/reference/settings/session-settings#max_execution_speed)                                             | 초당 실행 행 수의 최댓값입니다.                                                                                     |
+| [`max_execution_speed_bytes`](/ko/reference/settings/session-settings#max_execution_speed_bytes)                                 | 초당 실행 바이트 수의 최댓값입니다.                                                                                   |
+| [`timeout_before_checking_execution_speed`](/ko/reference/settings/session-settings#timeout_before_checking_execution_speed)     | 지정한 시간(초)이 지난 후 실행 속도가 너무 느리지 않은지(`min_execution_speed` 이상인지) 확인합니다.                                   |
+| [`max_estimated_execution_time`](/ko/reference/settings/session-settings#max_estimated_execution_time)                           | 쿼리의 최대 예상 실행 시간(초)입니다.                                                                                 |
+| [`max_columns_to_read`](/ko/reference/settings/session-settings#max_columns_to_read)                                             | 단일 쿼리에서 테이블에서 읽을 수 있는 최대 컬럼 수입니다.                                                                      |
+| [`max_temporary_columns`](/ko/reference/settings/session-settings#max_temporary_columns)                                         | 상수 컬럼을 포함해, 쿼리 실행 시 동시에 RAM에 유지해야 하는 임시 컬럼의 최대 개수입니다.                                                  |
+| [`max_temporary_non_const_columns`](/ko/reference/settings/session-settings#max_temporary_non_const_columns)                     | 쿼리 실행 시 동시에 RAM에 유지해야 하는 임시 컬럼의 최대 개수이며, 상수 컬럼은 제외합니다.                                                 |
+| [`max_subquery_depth`](/ko/reference/settings/session-settings#max_subquery_depth)                                               | 쿼리에 지정된 개수를 초과하는 중첩 서브쿼리가 있을 때의 동작을 설정합니다.                                                             |
+| [`max_ast_depth`](/ko/reference/settings/session-settings#max_ast_depth)                                                         | 쿼리 구문 트리의 최대 중첩 깊이입니다.                                                                                 |
+| [`max_ast_elements`](/ko/reference/settings/session-settings#max_ast_elements)                                                   | 쿼리 구문 트리의 최대 요소 수입니다.                                                                                  |
+| [`max_rows_in_set`](/ko/reference/settings/session-settings#max_rows_in_set)                                                     | 서브쿼리에서 생성된 IN 절의 데이터 집합에 허용되는 최대 행 수입니다.                                                               |
+| [`max_bytes_in_set`](/ko/reference/settings/session-settings#max_bytes_in_set)                                                   | 서브쿼리에서 생성된 IN 절의 집합이 사용하는 최대 바이트 수(비압축 데이터 기준)입니다.                                                     |
+| [`set_overflow_mode`](/ko/reference/settings/session-settings#max_bytes_in_set)                                                  | 데이터 양이 제한값 중 하나를 초과할 때의 동작을 설정합니다.                                                                     |
+| [`max_rows_in_distinct`](/ko/reference/settings/session-settings#max_rows_in_distinct)                                           | DISTINCT 사용 시 서로 다른 행의 최대 개수입니다.                                                                       |
+| [`max_bytes_in_distinct`](/ko/reference/settings/session-settings#max_bytes_in_distinct)                                         | DISTINCT 사용 시 해시 테이블이 사용하는 메모리 내 상태의 최대 바이트 수(비압축 바이트 기준)입니다.                                          |
+| [`distinct_overflow_mode`](/ko/reference/settings/session-settings#distinct_overflow_mode)                                       | 데이터 양이 제한값 중 하나를 초과할 때의 동작을 설정합니다.                                                                     |
+| [`max_rows_to_transfer`](/ko/reference/settings/session-settings#max_rows_to_transfer)                                           | GLOBAL IN/JOIN 절이 실행될 때 원격 서버로 전달하거나 임시 테이블에 저장할 수 있는 최대 크기(행 수 기준)입니다.                                |
+| [`max_bytes_to_transfer`](/ko/reference/settings/session-settings#max_bytes_to_transfer)                                         | GLOBAL IN/JOIN 절이 실행될 때 원격 서버로 전달하거나 임시 테이블에 저장할 수 있는 최대 바이트 수(비압축 데이터 기준)입니다.                         |
+| [`transfer_overflow_mode`](/ko/reference/settings/session-settings#transfer_overflow_mode)                                       | 데이터 양이 제한값 중 하나를 초과할 때의 동작을 설정합니다.                                                                     |
+| [`max_rows_in_join`](/ko/reference/settings/session-settings#max_rows_in_join)                                                   | 테이블 JOIN 시 사용되는 해시 테이블의 최대 행 수를 제한합니다.                                                                 |
+| [`max_bytes_in_join`](/ko/reference/settings/session-settings#max_bytes_in_join)                                                 | 테이블 JOIN 시 사용되는 해시 테이블의 최대 크기(바이트 수 기준)입니다.                                                            |
+| [`join_overflow_mode`](/ko/reference/settings/session-settings#join_overflow_mode)                                               | 아래 JOIN 제한 중 하나에 도달했을 때 ClickHouse가 수행할 동작을 정의합니다.                                                     |
+| [`max_partitions_per_insert_block`](/ko/reference/settings/session-settings#max_partitions_per_insert_block)                     | 단일 삽입 블록의 최대 파티션 수를 제한하며, 블록에 파티션이 너무 많이 포함되면 예외가 발생합니다.                                               |
+| [`throw_on_max_partitions_per_insert_block`](/ko/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | `max_partitions_per_insert_block`에 도달했을 때의 동작을 제어할 수 있습니다.                                             |
+| [`max_temporary_data_on_disk_size_for_user`](/ko/reference/settings/session-settings#throw_on_max_partitions_per_insert_block)   | 동시에 실행 중인 해당 사용자의 모든 쿼리에서 디스크의 임시 파일이 사용할 수 있는 최대 데이터 양(바이트 기준)입니다.                                    |
+| [`max_temporary_data_on_disk_size_for_query`](/ko/reference/settings/session-settings#max_temporary_data_on_disk_size_for_query) | 동시에 실행 중인 모든 쿼리에서 디스크의 임시 파일이 사용할 수 있는 최대 데이터 양(바이트 기준)입니다.                                            |
+| [`max_sessions_for_user`](/ko/reference/settings/session-settings#max_sessions_for_user)                                         | 인증된 사용자당 ClickHouse 서버의 최대 동시 세션 수입니다.                                                                 |
+| [`max_partitions_to_read`](/ko/reference/settings/session-settings#max_partitions_to_read)                                       | 단일 쿼리에서 읽을 수 있는 최대 파티션 수를 제한합니다.                                                                       |
+
+<div id="obsolete-settings">
+  ## 더 이상 사용되지 않는 설정
+</div>
+
+<Note>
+  다음 설정은 더 이상 사용되지 않습니다.
+</Note>
+
+<div id="max-pipeline-depth">
+  ### max_pipeline_depth
+</div>
+
+최대 파이프라인 깊이입니다. 각
+데이터 블록이 쿼리 처리 중 거치는 변환 횟수에 해당합니다. 단일
+서버의 한도 내에서 계산됩니다. 파이프라인 깊이가 이 값을 초과하면 예외가 발생합니다.

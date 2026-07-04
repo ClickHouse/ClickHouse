@@ -1,0 +1,28 @@
+---
+date: 2024-04-22
+title: 如何在 Linux 上编译 LLVM 和 clang
+description: 在 Linux 上编译 LLVM 和 clang 的命令。
+tags: ['社区', '工具和实用程序']
+keywords: [contributing, llvm, clang]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="build-llvm-and-clang-on-linux">
+  ## 在 Linux 上构建 LLVM 和 Clang
+</div>
+
+要构建 ClickHouse 并参与贡献代码，必须使用 [LLVM](https://llvm.org/) 和 [Clang](https://clang.llvm.org/)。
+
+以下是在 Linux 上构建最新版本 LLVM 和 Clang 的命令：
+
+```bash
+git clone git@github.com:llvm/llvm-project.git
+mkdir llvm-build
+cd llvm-build
+cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm
+time ninja
+sudo ninja install
+```

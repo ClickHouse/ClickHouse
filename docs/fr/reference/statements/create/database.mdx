@@ -1,0 +1,101 @@
+---
+description: 'Documentation pour CREATE DATABASE'
+sidebarTitle: 'DATABASE'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+Crée une nouvelle base de données.
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## Clauses
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+Si la base de données `db_name` existe déjà, ClickHouse ne crée pas de nouvelle base de données et :
+
+* ne lève pas d&#39;exception si la clause est spécifiée ;
+* lève une exception si la clause n&#39;est pas spécifiée.
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ClickHouse crée la base de données `db_name` sur tous les serveurs du cluster spécifié. Pour plus de détails, consultez l’article [Distributed DDL](/fr/reference/statements/distributed-ddl).
+
+<div id="engine">
+  ### ENGINE
+</div>
+
+Par défaut, ClickHouse utilise son propre [moteur de base de données Atomic](/fr/reference/engines/database-engines/atomic). Il existe également les moteurs [MySQL](/fr/reference/engines/database-engines/mysql), [PostgresSQL](/fr/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/fr/reference/engines/database-engines/materialized-postgresql), [Replicated](/fr/reference/engines/database-engines/replicated) et [SQLite](/fr/reference/engines/database-engines/sqlite).
+
+<div id="comment">
+  ### COMMENT
+</div>
+
+Vous pouvez ajouter un commentaire à la base de données au moment de sa création.
+
+Les commentaires sont pris en charge par tous les moteurs de base de données.
+
+**Syntaxe**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**Exemple**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### PARAMÈTRES
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+Lorsqu’il est activé, les tables ne sont pas entièrement chargées au démarrage de la base de données. À la place, un proxy léger est créé pour chaque table, et le véritable moteur de table est matérialisé lors du premier accès. Cela réduit le temps de démarrage et l’utilisation de la mémoire pour les bases de données comportant de nombreuses tables, dont seul un sous-ensemble fait l’objet de requêtes actives.
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+S’applique aux moteurs de base de données qui stockent les métadonnées des tables sur disque (par ex. `Atomic`, `Ordinary`). Les vues, les vues matérialisées, les dictionnaires et les tables reposant sur des fonctions de table sont toujours chargés immédiatement, quel que soit ce paramètre.
+
+**Quand l’utiliser :** Ce paramètre est utile pour les bases de données comportant un grand nombre de tables (des centaines ou des milliers), dont seul un sous-ensemble est réellement interrogé. Il réduit le temps de démarrage du serveur et l’utilisation de la mémoire en reportant la création des objets de moteur de table, l’inspection des data parts et l’initialisation des threads d’arrière-plan jusqu’au premier accès.
+
+**Impact sur `system.tables` :**
+
+* Avant le premier accès à une table, `system.tables` affiche son moteur comme `TableProxy`. Après ce premier accès, il affiche le nom réel du moteur (par ex. `MergeTree`).
+* Les colonnes comme `total_rows` et `total_bytes` renvoient `NULL` pour les tables non chargées, car le stockage réel n’a pas encore été créé.
+
+**Interaction avec les opérations DDL :**
+
+* `SELECT`, `INSERT`, `ALTER`, `DROP` déclenchent de manière transparente le chargement du moteur de table réel lors de la première utilisation.
+* `RENAME TABLE` fonctionne sans déclencher de chargement.
+* Une fois une table chargée, elle le reste pendant toute la durée de vie du processus serveur.
+
+**Limites :**
+
+* Les outils de supervision qui s’appuient sur les métadonnées de `system.tables` (par ex. `total_rows`, `engine`) peuvent afficher des informations incomplètes pour les tables non chargées.
+* La première requête sur une table non chargée entraîne un coût de chargement ponctuel (analyse de l’instruction `CREATE TABLE` stockée et initialisation du moteur).
+
+Valeur par défaut : `0` (désactivé).
