@@ -726,7 +726,27 @@ endif()
 # collide with the runtime's own definition at link time. References inside
 # musl are renamed too, so libc-internal calls bypass the interceptors - the
 # same binding behaviour as dynamic musl, where libc-internal calls are
-# non-interposable. The linked libc is switched to the renamed archive in
+# non-interposable.
+#
+# That "libc-internal calls bypass interceptors" behaviour is wrong for the
+# plain allocation primitives (malloc/calloc/realloc/free and friends):
+# unlike a purely-internal helper (e.g. printf calling strlen), the pointer
+# they return escapes to the application - getline/getdelim allocate their
+# buffer via musl's own internal realloc() call and hand it to the caller,
+# who then frees it through the ordinary, interposed free(). Renaming these
+# two references independently isn't possible (objcopy --redefine-syms
+# renames every occurrence of a symbol name across the whole archive,
+# definitions and call sites alike, with no way to rename musl's own
+# malloc.c but leave getdelim.c's call to realloc alone), so instead these
+# names are excluded from renaming entirely: TSan's runtime already strongly
+# defines the bare names and never calls REAL() for any of them (it manages
+# its own memory via direct mmap, not musl's allocator), so leaving musl's
+# copies unrenamed means their defining objects are simply never extracted
+# from the archive (nothing needs them - TSan's own definition already
+# satisfies the bare name), while every musl-internal call site - getdelim,
+# strdup, asprintf, realpath, or anything else - keeps resolving to the same
+# interposed allocator the application will later call to free() the result.
+# The linked libc is switched to the renamed archive in
 # cmake/linux/default_libs.cmake (MUSL_LIBC_TARGET).
 if (USE_MUSL AND _interceptor_runtime)
     set(_musl_renames "${CMAKE_CURRENT_BINARY_DIR}/musl_interceptor_renames.txt")
@@ -744,7 +764,7 @@ if (USE_MUSL AND _interceptor_runtime)
             $nm --defined-only $<TARGET_FILE:${_interceptor_runtime}> | awk '$2 == \"T\" {print $3}' > strong_defs.txt;\
             cat real_refs.txt strong_defs.txt | sort -u > intercepted.txt;\
             $nm --defined-only $<TARGET_FILE:musl> | awk '{print $NF}' | sort -u > musl_defined.txt;\
-            comm -12 intercepted.txt musl_defined.txt > names.txt;\
+            comm -12 intercepted.txt musl_defined.txt | grep -vx -E 'malloc|calloc|realloc|reallocarray|free|posix_memalign|aligned_alloc|valloc|pvalloc|memalign' > names.txt;\
             sed -e 's/.*/& __real_&/' names.txt > ${_musl_renames};\
             { echo '.section .rodata.musl_real_refs,\"a\"'; sed -e 's/.*/.quad __real_&/' names.txt; } > musl_real_refs.s;\
             ${CMAKE_C_COMPILER} --target=${CMAKE_C_COMPILER_TARGET} -c musl_real_refs.s -o ${_musl_real_refs}"
