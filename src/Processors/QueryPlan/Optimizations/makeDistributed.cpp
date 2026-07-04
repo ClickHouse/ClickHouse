@@ -180,25 +180,13 @@ void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nod
     local_settings.make_distributed_plan = false;
     local_settings.keep_logical_steps = false;
 
-    struct Frame
-    {
-        QueryPlan::Node * node;
-        size_t next_child = 0;
-    };
-    std::vector<Frame> stack;
-    stack.push_back({.node = &root});
-    while (!stack.empty())
-    {
-        auto & frame = stack.back();
-        if (frame.next_child < frame.node->children.size())
+    Stack stack;
+    traverseQueryPlan(stack, root,
+        [](auto &) {},
+        [&](auto & frame_node)
         {
-            stack.push_back({.node = frame.node->children[frame.next_child]});
-            ++frame.next_child;
-            continue;
-        }
-        convertLogicalJoinToPhysical(*frame.node, nodes, local_settings);
-        stack.pop_back();
-    }
+            convertLogicalJoinToPhysical(frame_node, nodes, local_settings);
+        });
 }
 
 /// Throws if the Cascades optimizer cannot distribute this step correctly.
