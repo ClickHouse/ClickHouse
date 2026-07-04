@@ -4364,6 +4364,15 @@ password_elem.addEventListener('input', resetCredentialsStatus);
 user_elem.addEventListener('change', checkCredentials);
 password_elem.addEventListener('change', checkCredentials);
 
+/// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
+/// previous URL must not paint the fields. `checkURL` is registered on `url` `input` earlier and
+/// runs first: it re-checks the credentials once its ping to the new URL succeeds. Here we
+/// additionally invalidate the stale check and clear the old indication, so that — if that ping
+/// fails, and no replacement check ever runs — the fields stay neutral instead of keeping the
+/// previous server's colour. (Registered after `check_credentials_request_num` is declared, so the
+/// initial synchronous `checkURL()` call above never reaches this before the counter exists.)
+url_elem.addEventListener('input', resetCredentialsStatus);
+
 
 function queryToColor(str) {
     let hash = 2166136261;
