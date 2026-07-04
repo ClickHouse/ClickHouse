@@ -446,6 +446,9 @@ bool tryEstimateEmpirical(
             pipeline.setProcessListElement(context->getProcessListElement());
             pipeline.setProgressCallback(context->getProgressCallback());
             pipeline.setQuota(context->getQuota());
+            /// Carry the query hash so the empirical scan's `read_rows`/`read_bytes` are accounted to the
+            /// query's own bucket under a `KEYED BY normalized_query_hash` quota, not the shared hash-0 one.
+            pipeline.setNormalizedQueryHash(context->getNormalizedQueryHash());
             PullingPipelineExecutor executor(pipeline);
 
             auto aggregator = index_helper->createIndexAggregator();

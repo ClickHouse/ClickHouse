@@ -1,20 +1,27 @@
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <base/scope_guard.h>
 #include <Columns/ColumnConst.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseReplicated.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/getCustomKeyFilterForParallelReplicas.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 #include <Parsers/ASTInsertQuery.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
@@ -77,6 +84,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsMilliseconds queue_max_wait_ms;
     extern const SettingsBool skip_unavailable_shards;
+    extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsOverflowMode timeout_overflow_mode_leaf;
     extern const SettingsBool use_hedged_requests;
@@ -90,6 +98,7 @@ namespace Setting
 namespace DistributedSetting
 {
     extern const DistributedSettingsBool skip_unavailable_shards;
+    extern const DistributedSettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
 }
 
 namespace ErrorCodes
@@ -99,6 +108,23 @@ namespace ErrorCodes
     extern const int UNEXPECTED_CLUSTER;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int NOT_IMPLEMENTED;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_force_local_replica_inactive[];
+    extern const char parallel_replicas_insert_select_drop_active_replica[];
+}
+
+namespace
+{
+    /// `isSuitableForInsertSelectWithParallelReplicas` builds a throwaway parallel-replicas plan just to detect
+    /// whether the SELECT reads with parallel replicas. That probe runs the same connection-pool preparation as
+    /// the real coordinator-building pass, so without this guard it would consume the `ONCE` test failpoint
+    /// `parallel_replicas_insert_select_drop_active_replica` before the executed coordinator is built, and the
+    /// regression test would no longer exercise the reuse path it is meant to guard. Suppress the test failpoint
+    /// while the discarded probe plan is built (the probe and the real build run on the same thread in sequence).
+    thread_local bool in_insert_select_suitability_probe = false;
 }
 
 namespace ClusterProxy
@@ -184,6 +210,12 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     {
         new_settings[Setting::skip_unavailable_shards] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards].value;
         new_settings[Setting::skip_unavailable_shards].changed = true;
+    }
+
+    if (!settings[Setting::skip_unavailable_shards_mode].changed && distributed_settings)
+    {
+        new_settings[Setting::skip_unavailable_shards_mode] = (*distributed_settings)[DistributedSetting::skip_unavailable_shards_mode].value;
+        new_settings[Setting::skip_unavailable_shards_mode].changed = true;
     }
 
     if (settings[Setting::offset])
@@ -606,32 +638,169 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
     return {new_cluster, shard_num};
 }
 
+/// Returns per-replica liveness for the parallel replicas cluster, aligned with the cluster's replica order
+/// (the same `is_active` signal that is reported in `system.clusters`). Returns an empty vector when the
+/// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
+static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
+{
+    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+
+    ReplicasInfo replicas_info;
+#if CLICKHOUSE_CLOUD
+    /// The shared catalog cluster is exposed in `system.clusters` both under its plain name and under the
+    /// `all_groups.` prefix, and both report the same `is_active` data - accept either spelling here.
+    if (SharedDatabaseCatalog::initialized())
+    {
+        const String & catalog_cluster_name = SharedDatabaseCatalog::instance().getClusterName();
+        if (cluster_name == catalog_cluster_name
+            || cluster_name == SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + catalog_cluster_name)
+            replicas_info = SharedDatabaseCatalog::instance().getClusterWithReplicasInfo(cluster_name).second;
+    }
+#endif
+    if (replicas_info.replicas.empty())
+    {
+        /// A `Replicated` database is exposed in `system.clusters` both as `<db>` and as `all_groups.<db>`;
+        /// the latter resolves to the same database after stripping the prefix (see `tryGetReplicatedDatabaseCluster`).
+        /// Strip it here too, otherwise an `all_groups.<db>` cluster gets no liveness data and we fall back to
+        /// counting inactive replicas again.
+        String database_name = cluster_name;
+        bool all_groups = false;
+        static constexpr std::string_view all_groups_prefix = DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX;
+        if (database_name.starts_with(all_groups_prefix))
+        {
+            database_name = database_name.substr(all_groups_prefix.size());
+            all_groups = true;
+        }
+
+        if (auto database = DatabaseCatalog::instance().tryGetDatabase(database_name))
+            if (const auto * replicated = typeid_cast<const DatabaseReplicated *>(database.get()))
+            {
+                /// `cluster_for_parallel_replicas` is resolved by `Context::getCluster`, which prefers a
+                /// configured or discovered cluster over a `Replicated` database of the same name. When such a
+                /// cluster shadows the database, the resolved `cluster` is not the database's own cluster: its
+                /// replica names do not match the database's ZooKeeper nodes, so `tryGetReplicasInfo` would
+                /// report every replica inactive and the coordinator would collapse onto the local replica.
+                /// Only trust the database liveness when the resolved cluster really is this database's own
+                /// cluster (`system.clusters` likewise reports such configured clusters with unknown `is_active`).
+                const ClusterPtr database_cluster = all_groups ? replicated->tryGetAllGroupsCluster() : replicated->tryGetCluster();
+                if (database_cluster == cluster)
+                    replicas_info = replicated->tryGetReplicasInfo(cluster);
+            }
+    }
+
+    std::vector<bool> is_active;
+    is_active.reserve(replicas_info.replicas.size());
+    for (const auto & replica : replicas_info.replicas)
+        is_active.push_back(replica.is_active);
+    return is_active;
+}
+
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
 {
     const auto & settings = context->getSettingsRef();
 
     const auto & shard = cluster->getShardsInfo().at(0);
+
+    /// Exclude replicas that are known to be inactive (e.g. stale registrations left over after autoscaling).
+    /// The reading coordinator distributes mark segments by hashing over the number of replicas, so counting
+    /// replicas that never participate leaves "phantom" segments that only the source replica picks up, which
+    /// produces a severe work-distribution skew. See `is_active` in `system.clusters`.
+    std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
+    if (!is_active.empty() && is_active.size() != shard.getAllNodeCount())
+        is_active.clear(); /// Liveness does not match the cluster definition; fall back to using all replicas.
+
+    if (!is_active.empty())
+    {
+        /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
+        const auto & addresses = cluster->getShardsAddresses().at(0);
+        std::optional<size_t> local_replica_index;
+        for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
+        {
+            const auto & address = addresses[i];
+            const bool is_local_replica = std::any_of(
+                shard.local_addresses.begin(),
+                shard.local_addresses.end(),
+                [&](const Cluster::Address & local_addr)
+                { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
+            if (is_local_replica)
+            {
+                local_replica_index = i;
+                break;
+            }
+        }
+
+        /// Test-only: simulate a transient window where the initiator's own `active` znode is momentarily
+        /// missing, so liveness reports the local replica as inactive. The forcing below must still keep it;
+        /// otherwise the local replica is filtered out and `findLocalReplicaIndexAndUpdatePools` throws
+        /// INCONSISTENT_CLUSTER_DEFINITION, turning a query that used to run into an error.
+        fiu_do_on(FailPoints::parallel_replicas_force_local_replica_inactive,
+        {
+            if (local_replica_index)
+                is_active[*local_replica_index] = false;
+        });
+
+        /// The local replica is the initiator - it is running this query, so it is online by definition even
+        /// if its `active` znode is transiently missing. Force it active so liveness never filters it out.
+        if (local_replica_index)
+            is_active[*local_replica_index] = true;
+
+        /// Test-only: simulate liveness drifting between the two passes of an INSERT SELECT - drop one active
+        /// non-local replica from this (first) snapshot so the coordinator is sized smaller than the cluster's
+        /// current active set. The remote-pool pass must reuse this snapshot's pools; if it recomputed liveness
+        /// instead, it would see the dropped replica active again and assign it a replica number that is out of
+        /// range for the already-sized coordinator. ONCE, so only the first (coordinator-building) call is hit.
+        /// Skip the discarded suitability-probe plan (see `in_insert_select_suitability_probe`), otherwise it
+        /// would consume the ONCE failpoint before the executed coordinator is built.
+        if (!in_insert_select_suitability_probe)
+        {
+            fiu_do_on(FailPoints::parallel_replicas_insert_select_drop_active_replica,
+            {
+                for (size_t i = 0; i < is_active.size(); ++i)
+                {
+                    if (is_active[i] && (!local_replica_index || i != *local_replica_index))
+                    {
+                        is_active[i] = false;
+                        break;
+                    }
+                }
+            });
+        }
+    }
+
+    size_t available_replicas = shard.getAllNodeCount();
+    if (!is_active.empty())
+    {
+        available_replicas = std::count(is_active.begin(), is_active.end(), true);
+        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
+        /// ignore it rather than ending up with an empty replica set.
+        if (available_replicas == 0)
+        {
+            is_active.clear();
+            available_replicas = shard.getAllNodeCount();
+        }
+    }
+
     size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
-    if (max_replicas_to_use > shard.getAllNodeCount())
+    if (max_replicas_to_use > available_replicas)
     {
         LOG_TRACE(
             logger,
             "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
             "Will use the latter number to execute the query.",
             settings[Setting::max_parallel_replicas].value,
-            shard.getAllNodeCount());
-        max_replicas_to_use = shard.getAllNodeCount();
+            available_replicas);
+        max_replicas_to_use = available_replicas;
     }
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
-    if (max_replicas_to_use < shard.getAllNodeCount())
+    if (max_replicas_to_use < available_replicas)
     {
         // will be shuffled according to `load_balancing` setting
         shuffled_pool = shard.pool->getShuffledPools(settings);
     }
     else
     {
-        /// If all replicas in cluster are used for query execution,
+        /// If all (active) replicas in cluster are used for query execution,
         /// try to preserve replicas order as in cluster definition.
         /// It's important for data locality during query execution
         /// independently of the query initiator
@@ -642,7 +811,12 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     std::vector<ConnectionPoolPtr> pools_to_use;
     pools_to_use.reserve(shuffled_pool.size());
     for (auto & pool : shuffled_pool)
+    {
+        /// Skip inactive replicas so they do not occupy a slot in the reading coordinator.
+        if (!is_active.empty() && !is_active[pool.index])
+            continue;
         pools_to_use.emplace_back(std::move(pool.pool));
+    }
 
     return {pools_to_use, max_replicas_to_use};
 }
@@ -1012,6 +1186,12 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 {
     auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
 
+    /// This plan is built only to detect whether the SELECT reads with parallel replicas; it is discarded
+    /// afterwards. Mark the building so the test failpoint that simulates inter-pass liveness drift is not
+    /// consumed here but on the real coordinator-building pass (see `in_insert_select_suitability_probe`).
+    in_insert_select_suitability_probe = true;
+    SCOPE_EXIT({ in_insert_select_suitability_probe = false; });
+
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
@@ -1058,8 +1238,9 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
 }
 
 /// find and remove ReadFromParallelRemoteReplicasStep in query plan,
-/// also returns parallel replicas coordinator stored in ReadFromParallelRemoteReplicasStep
-ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query_plan)
+/// also returns the parallel replicas coordinator, connection pools and local replica index
+/// stored in ReadFromParallelRemoteReplicasStep, so the remote-pool pass can reuse them.
+LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
 {
     struct Frame
     {
@@ -1087,8 +1268,15 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
                 {
                     if ((*it)->step.get() == step)
                     {
+                        /// Capture the coordinator together with the exact connection pools and local replica
+                        /// numbering it was built with, before the step (and its pools) are destroyed.
+                        LocalPlanParallelReplicasInfo info{
+                            .coordinator = read_from_remote->getCoordinator(),
+                            .connection_pools = read_from_remote->getPools(),
+                            .local_replica_index = read_from_remote->getExcludePoolIndex(),
+                        };
                         children.erase(it);
-                        return read_from_remote->getCoordinator();
+                        return info;
                     }
                 }
             }
@@ -1106,14 +1294,16 @@ ParallelReplicasReadingCoordinatorPtr dropReadFromRemoteInPlan(QueryPlan & query
         stack.pop_back();
     }
 
-    return nullptr;
+    return {};
 }
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
     std::optional<QueryPipeline> local_pipeline,
-    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator)
+    std::optional<ParallelReplicasReadingCoordinatorPtr> coordinator,
+    std::vector<ConnectionPoolPtr> reused_connection_pools,
+    std::optional<size_t> reused_local_replica_index)
 {
     auto logger = getLogger("executeInsertSelectWithParallelReplicas");
     LOG_DEBUG(logger, "Executing query with parallel replicas: {}", query_ast.formatForLogging());
@@ -1122,33 +1312,40 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
-    auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+
+    std::vector<ConnectionPoolPtr> connection_pools;
+    size_t max_replicas_to_use = 0;
     std::optional<size_t> local_replica_index;
 
     if (coordinator)
     {
         chassert(local_pipeline);
 
-        local_replica_index = findLocalReplicaIndexAndUpdatePools(connection_pools, max_replicas_to_use, cluster);
+        /// While building the local pipeline:
+        /// - the coordinator was created, sized for the active replicas of an earlier liveness snapshot;
+        /// - the coordinator got the announcement from the local replica and assigned it a replica number;
+        ///   (since the coordinator got the first announcement from the local replica, its snapshot is used
+        ///    for query execution).
+        /// Reuse the exact connection pools and replica numbering captured then, instead of recomputing the
+        /// active replica set here. A second liveness read could observe a different set (a registered replica
+        /// becoming active, or an active one becoming inactive in between): a larger set would assign a replica
+        /// number that is out of range for the already-sized coordinator, and a smaller one would silently drop
+        /// a replica without marking it unavailable on the coordinator - both desynchronize the coordinator.
+        connection_pools = std::move(reused_connection_pools);
+        local_replica_index = reused_local_replica_index;
+        max_replicas_to_use = connection_pools.size();
+
         chassert(local_replica_index.has_value());
-
-        /// while building local pipeline
-        /// - the coordinator is created
-        /// - the coordinator got announcement from local replica and replica number is assigned to it
-        /// (since the coordinator got first announcement from local replica, - its snapshot will be used for query execution)
-        /// so, here, we need to reuse already assigned number to local replica
-        auto snapshot_replica_num = (*coordinator)->getSnapshotReplicaNum();
-        chassert(snapshot_replica_num.has_value());
-
-        if (local_replica_index.value() != snapshot_replica_num.value())
-        {
-            std::swap(connection_pools[local_replica_index.value()], connection_pools[snapshot_replica_num.value()]);
-            local_replica_index = snapshot_replica_num;
-        }
+        chassert(max_replicas_to_use == (*coordinator)->getReplicasCount());
+        chassert(local_replica_index == (*coordinator)->getSnapshotReplicaNum());
 
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index.value());
     }
-    connection_pools.resize(max_replicas_to_use);
+    else
+    {
+        std::tie(connection_pools, max_replicas_to_use) = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
+        connection_pools.resize(max_replicas_to_use);
+    }
 
     String formatted_query;
     {
