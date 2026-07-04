@@ -61,3 +61,17 @@
 1900-01-01
 1970-01-01 00:00:00
 -999:59:59
+-- throw: out-of-range numeric VALUES expression must raise
+-- saturate: out-of-range numeric VALUES expression must clamp to the boundary
+-3599999
+3599999
+0
+4294967295
+-- ignore: out-of-range numeric VALUES expression must clamp too, not store the raw value
+-3599999
+3599999
+0
+4294967295
+-- in-range numeric VALUES expression is unchanged in all modes
+-3600
+3600

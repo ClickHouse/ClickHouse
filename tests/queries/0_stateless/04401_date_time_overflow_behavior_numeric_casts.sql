@@ -133,3 +133,43 @@ SELECT CAST(nan::Float64, 'Date');
 SELECT CAST(nan::Float64, 'Date32');
 SELECT CAST(nan::Float64, 'DateTime');
 SELECT CAST(nan::Float64, 'Time');
+
+-- INSERT ... VALUES with a numeric expression is coerced through convertFieldToType, which
+-- previously stored the raw out-of-range value regardless of the setting. It now applies the
+-- same rule as toTime / toDateTime / CAST. (Plain integer literals in VALUES go through the
+-- text serializer instead, which is a separate pre-existing path shared by all input formats.)
+DROP TABLE IF EXISTS t_vals_time;
+DROP TABLE IF EXISTS t_vals_datetime;
+
+SELECT '-- throw: out-of-range numeric VALUES expression must raise';
+SET date_time_overflow_behavior = 'throw';
+CREATE TABLE t_vals_time (x Time) ENGINE = Memory;
+CREATE TABLE t_vals_datetime (x DateTime) ENGINE = Memory;
+INSERT INTO t_vals_time VALUES (9999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_time VALUES (-9999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_datetime VALUES (99999999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_datetime VALUES (-1 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+
+SELECT '-- saturate: out-of-range numeric VALUES expression must clamp to the boundary';
+SET date_time_overflow_behavior = 'saturate';
+INSERT INTO t_vals_time VALUES (9999999 + 0), (-9999999 + 0);
+INSERT INTO t_vals_datetime VALUES (99999999999 + 0), (-1 + 0);
+SELECT toInt32(x) FROM t_vals_time ORDER BY x;
+SELECT toInt64(x) FROM t_vals_datetime ORDER BY x;
+
+SELECT '-- ignore: out-of-range numeric VALUES expression must clamp too, not store the raw value';
+TRUNCATE TABLE t_vals_time;
+TRUNCATE TABLE t_vals_datetime;
+SET date_time_overflow_behavior = 'ignore';
+INSERT INTO t_vals_time VALUES (9999999 + 0), (-9999999 + 0);
+INSERT INTO t_vals_datetime VALUES (99999999999 + 0), (-1 + 0);
+SELECT toInt32(x) FROM t_vals_time ORDER BY x;
+SELECT toInt64(x) FROM t_vals_datetime ORDER BY x;
+
+SELECT '-- in-range numeric VALUES expression is unchanged in all modes';
+TRUNCATE TABLE t_vals_time;
+INSERT INTO t_vals_time VALUES (3600 + 0), (-3600 + 0);
+SELECT toInt32(x) FROM t_vals_time ORDER BY x;
+
+DROP TABLE t_vals_time;
+DROP TABLE t_vals_datetime;

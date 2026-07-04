@@ -41,6 +41,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
     extern const int DECIMAL_OVERFLOW;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 
@@ -196,6 +197,43 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
+/// Bounds of the numeric domain for a Field being coerced into a Time or DateTime column
+/// (mirrors MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP in Functions/DateTimeTransforms.h).
+constexpr Int64 MAX_TIME_TIMESTAMP_FIELD = 3599999;      /// 999:59:59
+constexpr Int64 MAX_DATETIME_TIMESTAMP_FIELD = 0xFFFFFFFF;
+
+/// Coerce a numeric Field into the seconds domain of a Time or DateTime column, honouring
+/// date_time_overflow_behavior. Numeric casts (toTime / toDateTime / CAST) already respect the
+/// setting in FunctionsConversion.h; the VALUES/INSERT path reaches this function instead, so it
+/// must apply the same rule rather than storing the raw out-of-range value. In `throw` mode an
+/// out-of-range value raises; otherwise it is clamped to [min_bound, max_bound], keeping
+/// `saturate` and `ignore` consistent with the cast path. The clamped value is returned as a
+/// UInt64 Field when non-negative and an Int64 Field otherwise, matching the two representations
+/// the Time / DateTime branches already accept for in-range values.
+Field coerceNumericFieldToDateTimeOrTime(
+    const Field & src, Int64 min_bound, Int64 max_bound,
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
+{
+    /// Time and DateTime literals arrive as UInt64 (non-negative) or Int64 (possibly negative).
+    const bool over_max = src.getType() == Field::Types::Int64
+        ? accurate::greaterOp(src.safeGet<Int64>(), max_bound)
+        : accurate::greaterOp(src.safeGet<UInt64>(), max_bound);
+    const bool under_min = src.getType() == Field::Types::Int64
+        && accurate::lessOp(src.safeGet<Int64>(), min_bound);
+
+    if (!over_max && !under_min)
+        return src;
+
+    if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
+            "Value {} is out of bounds of type {}", applyVisitor(FieldVisitorToString(), src), type_name);
+
+    /// Saturate / ignore: clamp into the representable range.
+    const Int64 clamped = over_max ? max_bound : min_bound;
+    if (clamped < 0)
+        return Field(clamped);
+    return Field(static_cast<UInt64>(clamped));
+}
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
 {
@@ -354,16 +392,20 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return convertNumericType<UInt16>(src, type);
         }
 
-        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDateTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// We don't need any conversion UInt64 is under type of DateTime and Time
-            return src;
+            /// DateTime is UInt32 seconds since the epoch. Respect date_time_overflow_behavior so the
+            /// VALUES/INSERT path matches numeric CAST/toDateTime instead of storing a wrapped value.
+            return coerceNumericFieldToDateTimeOrTime(
+                src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime");
         }
 
-        if (which_type.isTime() && src.getType() == Field::Types::Int64)
+        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
         {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// Time is Int32 seconds-of-day in [-999:59:59, 999:59:59]. Respect date_time_overflow_behavior
+            /// so the VALUES/INSERT path matches numeric CAST/toTime instead of storing the raw value.
+            return coerceNumericFieldToDateTimeOrTime(
+                src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time");
         }
 
         if (which_type.isDate32() && src.getType() == Field::Types::Int64)
