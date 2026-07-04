@@ -542,12 +542,12 @@ constexpr bool functionForcesTheReturnType()
 }
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class ExecutableFunctionJSON final : public IExecutableFunction
+class ExecutableFunctionJSON final : public IExecutableFunction, private WithContext
 {
 
 public:
     explicit ExecutableFunctionJSON(const NullPresence & null_presence_, bool allow_simdjson_, const DataTypePtr & json_return_type_, const FormatSettings & format_settings_, ContextPtr context_)
-        : null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_), format_settings(format_settings_), context(context_)
+        : WithContext(context_), null_presence(null_presence_), allow_simdjson(allow_simdjson_), json_return_type(json_return_type_), format_settings(format_settings_)
     {
         /// Don't escape forward slashes during converting JSON elements to raw string.
         format_settings.json.escape_forward_slashes = false;
@@ -612,13 +612,13 @@ private:
     {
 #if USE_SIMDJSON
         if (allow_simdjson)
-            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, context);
+            return FunctionJSONHelpers::Executor<Name, Impl, SimdJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, getContext());
 #endif
 
 #if USE_RAPIDJSON
-        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, context);
+        return FunctionJSONHelpers::Executor<Name, Impl, RapidJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, getContext());
 #else
-        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, context);
+        return FunctionJSONHelpers::Executor<Name, Impl, DummyJSONParser, case_insensitive>::run(arguments, result_type, input_rows_count, format_settings, getContext());
 #endif
     }
 
@@ -626,12 +626,11 @@ private:
     bool allow_simdjson;
     DataTypePtr json_return_type;
     FormatSettings format_settings;
-    ContextPtr context;
 };
 
 
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class FunctionBaseFunctionJSON final : public IFunctionBase
+class FunctionBaseFunctionJSON final : public IFunctionBase, private WithContext
 {
 public:
     explicit FunctionBaseFunctionJSON(
@@ -642,13 +641,13 @@ public:
         DataTypePtr json_return_type_,
         const FormatSettings & format_settings_,
         ContextPtr context_)
-        : null_presence(null_presence_)
+        : WithContext(context_)
+        , null_presence(null_presence_)
         , allow_simdjson(allow_simdjson_)
         , argument_types(std::move(argument_types_))
         , return_type(std::move(return_type_))
         , json_return_type(std::move(json_return_type_))
         , format_settings(format_settings_)
-        , context(context_)
     {
     }
 
@@ -668,7 +667,7 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionJSON<Name, Impl, case_insensitive>>(null_presence, allow_simdjson, json_return_type, format_settings, context);
+        return std::make_unique<ExecutableFunctionJSON<Name, Impl, case_insensitive>>(null_presence, allow_simdjson, json_return_type, format_settings, getContext());
     }
 
 private:
@@ -678,13 +677,12 @@ private:
     DataTypePtr return_type;
     DataTypePtr json_return_type;
     FormatSettings format_settings;
-    ContextPtr context;
 };
 
 /// We use IFunctionOverloadResolver instead of IFunction to handle non-default NULL processing.
 /// Both NULL and JSON NULL should generate NULL value. If any argument is NULL, return NULL.
 template <typename Name, template<typename> typename Impl, bool case_insensitive = false>
-class JSONOverloadResolver final : public IFunctionOverloadResolver
+class JSONOverloadResolver final : public IFunctionOverloadResolver, private WithContext
 {
 public:
     static constexpr auto name = Name::name;
@@ -697,7 +695,7 @@ public:
     }
 
     explicit JSONOverloadResolver(ContextPtr context_)
-        : context(context_)
+        : WithContext(context_)
         , allow_simdjson(context_->getSettingsRef()[Setting::allow_simdjson])
         , format_settings(getFormatSettings(context_))
     {}
@@ -733,11 +731,10 @@ public:
         for (const auto & argument : arguments)
             argument_types.emplace_back(argument.type);
         return std::make_unique<FunctionBaseFunctionJSON<Name, Impl, case_insensitive>>(
-            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, context);
+            null_presence, allow_simdjson, argument_types, return_type, json_return_type, format_settings, getContext());
     }
 
 private:
-    ContextPtr context;
     const bool allow_simdjson;
     FormatSettings format_settings;
 };
