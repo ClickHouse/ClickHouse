@@ -1409,12 +1409,10 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
         insert_ast->select = std::move(select_ast);
 
-        /// The same for settings placed on the INSERT itself ('INSERT INTO ... SETTINGS ... SELECT ...').
-        if (insert_ast->settings_ast)
-        {
-            std::erase(insert_ast->children, insert_ast->settings_ast);
-            insert_ast->settings_ast.reset();
-        }
+        /// The same for settings placed on the INSERT itself ('INSERT INTO ... SETTINGS ... SELECT ...'). Only the
+        /// member is cleared (as with 'select' reassigned just above): 'ASTInsertQuery::formatImpl' emits the
+        /// SETTINGS from the member, not by iterating children.
+        insert_ast->settings_ast.reset();
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(
