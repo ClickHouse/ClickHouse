@@ -3,6 +3,9 @@
 -- the same join: only then is an unqualified reference ambiguous with no way to qualify it. When there
 -- is no such collision the missing alias is harmless and the query is allowed.
 
+-- This relaxation lives in the new analyzer only; the old analyzer keeps the strict behavior.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS item;
 DROP TABLE IF EXISTS sales;
 DROP TABLE IF EXISTS with_number;
