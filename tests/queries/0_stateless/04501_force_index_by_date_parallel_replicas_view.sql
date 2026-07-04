@@ -8,7 +8,8 @@
 -- primary-key predicate, so the guards threw incorrectly. The fix enables parallel_replicas_filter_pushdown
 -- automatically when either guard is set, so the predicate is pushed through the view boundary into the
 -- reading step: a covered predicate passes with parallel replicas still enabled, and a genuinely unused
--- index still throws (the negative cases below).
+-- index still throws (the negative cases below). The serialize_query_plan = 1 cases cover the follower path,
+-- where the pushed filter reaches the follower only through the shipped AST.
 
 DROP TABLE IF EXISTS t_force_index_pr;
 DROP VIEW IF EXISTS v_force_index_pr;
@@ -69,6 +70,18 @@ SELECT count() FROM v_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
 SETTINGS enable_parallel_replicas = 0, force_index_by_date = 1, force_primary_key = 1;
 
+-- Same view read with serialize_query_plan = 1 (the "distributed plan" mode). Here the follower runs a
+-- query plan serialized before the pushed-down filter is added, so the filter reached the follower only
+-- through the AST and the guard threw on the follower. The fix ships the AST for this case, so the
+-- follower sees the predicate and the covered key passes.
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS serialize_query_plan = 1, force_index_by_date = 1, force_primary_key = 1;
+
+SELECT count() FROM vv_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS serialize_query_plan = 1, force_index_by_date = 1, force_primary_key = 1;
+
 -- Negative: the contract must still hold. A query through the view whose predicate does not use the
 -- primary key must still throw under parallel replicas (the guard is enforced at the reading step, not
 -- silently turned into a no-op).
@@ -85,6 +98,11 @@ SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM vv_force_index_pr
 WHERE value = 1
 SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
+
+-- Negative: contract holds with serialize_query_plan = 1 as well.
+SELECT count() FROM v_force_index_pr
+WHERE value = 1
+SETTINGS serialize_query_plan = 1, force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
 DROP VIEW va_force_index_pr;
 DROP VIEW vv_force_index_pr;

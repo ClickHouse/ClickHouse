@@ -61,6 +61,7 @@ extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
 extern const SettingsBool parallel_replicas_filter_pushdown;
+extern const SettingsBool serialize_query_plan;
 extern const SettingsBool force_index_by_date;
 extern const SettingsBool force_primary_key;
 extern const SettingsString cluster_for_parallel_replicas;
@@ -167,9 +168,19 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
     /// for a genuinely unused key), and parallel replicas stays enabled. Enable it automatically for this case
     /// unless the user set it explicitly. See issue #108266.
     if (result_context->canUseParallelReplicasOnInitiator()
-        && (result_context->getSettingsRef()[Setting::force_index_by_date] || result_context->getSettingsRef()[Setting::force_primary_key])
-        && !result_context->getSettingsRef().isChanged("parallel_replicas_filter_pushdown"))
-        result_context->setSetting("parallel_replicas_filter_pushdown", true);
+        && (result_context->getSettingsRef()[Setting::force_index_by_date] || result_context->getSettingsRef()[Setting::force_primary_key]))
+    {
+        if (!result_context->getSettingsRef().isChanged("parallel_replicas_filter_pushdown"))
+            result_context->setSetting("parallel_replicas_filter_pushdown", true);
+
+        /// The pushed filter reaches a follower only through the shipped query AST. With serialize_query_plan
+        /// the follower runs a query plan that was serialized before the filter is pushed, so the pushed filter
+        /// is lost there and the guard still throws on the follower. Ship the AST so the filter arrives. This is
+        /// a transport choice (serialize_query_plan is off by default) so we override it even when it was set,
+        /// but only while the pushdown is active, i.e. only when a guard is set and parallel replicas is used.
+        if (result_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+            result_context->setSetting("serialize_query_plan", false);
+    }
 
     return result_context;
 }
