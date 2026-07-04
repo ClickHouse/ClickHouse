@@ -5,6 +5,8 @@
 //   bytes_equal_col(a String, b String) -> UInt8 — 1 if byte-equal, 0 otherwise
 //   add_offset_col(s String, n UInt64) -> UInt64 — sum bytes + n (tests const column)
 //   bytes_reverse_col(s String) -> Nullable(String) — reverses bytes of each string
+//   const_answer_col(s String) -> UInt64 — always 42, returned as a COL_IS_CONST output
+//     column regardless of num_rows (tests that the host accepts a const result column)
 
 #include <stdint.h>
 #include <stddef.h>
@@ -286,6 +288,31 @@ Buffer * bytes_reverse_col(Buffer * ptr, uint32_t num_rows) {
     od.data_size = wire_pos;
     memcpy(p + HEADER_BYTES, &od, DESC_BYTES);
     out->size = data_base + (uint32_t)wire_pos;
+
+    return out;
+}
+
+// const_answer(s String) -> UInt64
+// Always returns 42, encoded as a single-row COL_IS_CONST output column
+// regardless of num_rows. Tests that the host accepts a legitimately const
+// result column instead of rejecting it via a structural mismatch.
+__attribute__((export_name("const_answer_col")))
+Buffer * const_answer_col(Buffer * ptr, uint32_t num_rows) {
+    (void)ptr;
+    Buffer * out = alloc_fixed_out(num_rows, COL_FIXED64 | COL_IS_CONST, 8u);
+    if (!out) return NULL;
+
+    // Patch data_size/total size down to a single row: alloc_fixed_out sized
+    // the buffer and descriptor for num_rows elements, but a const column only
+    // stores 1 row of actual data.
+    ColDesc d;
+    memcpy(&d, out->data + HEADER_BYTES, DESC_BYTES);
+    d.data_size = 8u;
+    memcpy(out->data + HEADER_BYTES, &d, DESC_BYTES);
+
+    uint64_t answer = 42u;
+    memcpy(out->data + HEADER_BYTES + DESC_BYTES, &answer, 8u);
+    out->size = HEADER_BYTES + DESC_BYTES + 8u;
 
     return out;
 }
