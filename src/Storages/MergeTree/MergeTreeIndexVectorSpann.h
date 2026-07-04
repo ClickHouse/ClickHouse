@@ -142,7 +142,7 @@ private:
 class MergeTreeIndexVectorSpann final : public IMergeTreeIndex
 {
 public:
-    MergeTreeIndexVectorSpann(const IndexDescription & index_, SpannParams params_);
+    MergeTreeIndexVectorSpann(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, SpannParams params_);
     ~MergeTreeIndexVectorSpann() override = default;
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;

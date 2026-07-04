@@ -771,8 +771,8 @@ NearestNeighbours MergeTreeIndexConditionVectorSpann::calculateApproximateNeares
     return result;
 }
 
-MergeTreeIndexVectorSpann::MergeTreeIndexVectorSpann(const IndexDescription & index_, SpannParams params_)
-    : IMergeTreeIndex(index_)
+MergeTreeIndexVectorSpann::MergeTreeIndexVectorSpann(StorageMetadataPtr metadata_snapshot_, const IndexDescription & index_, SpannParams params_)
+    : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
     , params(std::move(params_))
 {
 }
@@ -816,7 +816,7 @@ MergeTreeIndexFormat MergeTreeIndexVectorSpann::getDeserializedFormat(
     return {0, {}};
 }
 
-MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr /*metadata_snapshot*/, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
+MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     FieldVector args = getFieldsFromIndexArgumentsAST(index.arguments);
     SpannParams spann_params;
@@ -837,7 +837,7 @@ MergeTreeIndexPtr spannIndexCreator(StorageMetadataPtr /*metadata_snapshot*/, co
         spann_params.centroid_ratio = static_cast<float>(args[6].safeGet<Float64>());
     }
 
-    return std::make_shared<MergeTreeIndexVectorSpann>(index, std::move(spann_params));
+    return std::make_shared<MergeTreeIndexVectorSpann>(std::move(metadata_snapshot), index, std::move(spann_params));
 }
 
 void spannIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
