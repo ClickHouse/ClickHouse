@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings
+# Tags: no-random-merge-tree-settings, no-parallel-replicas
+# no-parallel-replicas - because explain produced different plan
 # add_minmax_index_for_numeric_columns=0: Changes the plan
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 for i in $(seq 0 1)
 do
     # Force using skip indexes in planning to proper test with EXPLAIN indexes = 1.

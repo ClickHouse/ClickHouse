@@ -10,7 +10,7 @@ Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Keys:
           x
         Condition: (x in [1, 1])
@@ -25,12 +25,12 @@ Expression ((Project names + Projection))
       Ranges: 1
 -- With partition pruning disabled: both MinMax and Partition should show always true
 EXPLAIN indexes = 1 SELECT * FROM t WHERE x = 1
-SETTINGS use_partition_pruning = 0;
+SETTINGS use_partition_pruning = 0, use_skip_indexes = 0;
 Expression ((Project names + Projection))
   Filter ((WHERE + Change column names to column identifiers))
     ReadFromMergeTree (default.t)
     Indexes:
-      Partition Min-Max
+      Min-Max
         Condition: true
         Parts: 3/3
         Granules: 3/3

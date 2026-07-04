@@ -20,6 +20,7 @@ public:
 
     bool isRemote() const override { return getNested()->isRemote(); }
     bool isView() const override { return getNested()->isView(); }
+    bool supportsTruncate() const override { return getNested()->supportsTruncate(); }
     bool supportsSampling() const override { return getNested()->supportsSampling(); }
     bool supportsFinal() const override { return getNested()->supportsFinal(); }
     bool supportsPrewhere() const override { return getNested()->supportsPrewhere(); }
@@ -105,7 +106,8 @@ public:
     void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override
     {
         getNested()->alter(params, context, alter_lock_holder);
-        IStorage::setInMemoryMetadata(*getNested()->getInMemoryMetadataPtr(context, true));
+        auto nested_metadata = getNested()->getInMemoryMetadataPtr(context, true);
+        IStorage::setInMemoryMetadata(*nested_metadata);
     }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override

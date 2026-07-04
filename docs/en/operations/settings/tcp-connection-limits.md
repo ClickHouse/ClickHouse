@@ -6,8 +6,6 @@ title: 'TCP connection limits'
 doc_type: 'reference'
 ---
 
-# TCP connection limits
-
 ## Overview {#overview}
 
 You may have a ClickHouse TCP connection (i.e., one through the [command-line client](https://clickhouse.com/docs/interfaces/client))

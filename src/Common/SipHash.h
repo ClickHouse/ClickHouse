@@ -131,7 +131,9 @@ public:
 
         cnt += end - data;
 
-        while (data + 8 <= end)
+        /// Use pointer subtraction, not `data + 8 <= end`: forming `data + 8` when fewer than
+        /// 8 bytes remain points past `end`, which is undefined behavior ([expr.add]/4).
+        while (end - data >= 8)
         {
             current_word = unalignedLoadLittleEndian<UInt64>(data);
 
@@ -214,7 +216,7 @@ public:
 
 inline std::array<char, 16> getSipHash128AsArray(SipHash & sip_hash)
 {
-    std::array<char, 16> arr;
+    std::array<char, 16> arr{};
     *reinterpret_cast<UInt128*>(arr.data()) = sip_hash.get128();
     return arr;
 }

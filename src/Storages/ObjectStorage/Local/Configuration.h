@@ -75,9 +75,14 @@ public:
     String getDataSourceDescription() const override { return ""; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
 
-    ObjectStoragePtr createObjectStorage(ContextPtr, bool readonly, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
+    ObjectStoragePtr createObjectStorage(ContextPtr, bool /* is_readonly */, CredentialsConfigurationCallback /*refresh_credentials_callback*/) override
     {
-        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, "/", readonly));
+        /// `is_readonly` is set to true by the table-engine layer on ATTACH (server restart, DETACH/ATTACH)
+        /// to suppress side effects in `createObjectStorage`, like creating a container on remote object storage.
+        /// For the local filesystem there is no such initialization side effect to suppress, and
+        /// propagating the flag would permanently disable all subsequent writes via `throwIfReadonly`.
+        /// S3 and HDFS configurations also ignore this parameter for the same reason.
+        return std::make_shared<LocalObjectStorage>(LocalObjectStorageSettings(disk_name, "/", /* read_only */ false));
     }
 
     void addStructureAndFormatToArgsIfNeeded(ASTs &, const String &, const String &, ContextPtr, bool) override { }

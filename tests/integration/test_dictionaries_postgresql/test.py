@@ -2,15 +2,11 @@ import logging
 import time
 import socket
 from contextlib import contextmanager
-from multiprocessing.dummy import Pool
 
-import psycopg2
 import pytest
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
-from helpers.network import PartitionManager
 from helpers.postgres_utility import get_postgres_conn
 from helpers.port_forward import PortForward
 
@@ -271,6 +267,71 @@ def test_postgres_dictionaries_custom_query_partial_load_complex_key(started_clu
 
     cursor.execute("DROP TABLE test_table_2;")
     cursor.execute("DROP TABLE test_table_1;")
+
+
+def test_postgres_dict_complex_key_with_single_quote(started_cluster):
+    """Regression test: string keys containing single quotes must not cause SQL injection.
+
+    ExternalQueryBuilder previously used backslash escaping (\\') which PostgreSQL
+    (standard_conforming_strings=on by default since 9.1) treats as a literal backslash,
+    breaking out of the string literal and allowing injection.
+    The fix switches to SQL-standard quote doubling ('').
+    """
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "CREATE TABLE IF NOT EXISTS test_single_quote (key Text PRIMARY KEY, value Text);"
+    )
+    cursor.execute("INSERT INTO test_single_quote VALUES ('it''s a key', 'found it');")
+    cursor.execute(
+        "INSERT INTO test_single_quote VALUES ('normal', 'normal value');"
+    )
+
+    query = node1.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_single_quote
+    (
+        key String,
+        value String DEFAULT ''
+    )
+    PRIMARY KEY key
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(PostgreSQL(
+        DB 'postgres_database'
+        HOST '{started_cluster.postgres_ip}'
+        PORT {started_cluster.postgres_port}
+        USER 'postgres'
+        PASSWORD '{pg_pass}'
+        TABLE 'test_single_quote'))
+    """
+    )
+
+    # Key containing a single quote: must return the correct value, not an error.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('it''s a key'))"
+    )
+    assert result == "found it\n", f"Unexpected result: {result!r}"
+
+    # Key without a quote: must still work after the escaping change.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('normal'))"
+    )
+    assert result == "normal value\n", f"Unexpected result: {result!r}"
+
+    # Missing key must return the default, not raise an exception.
+    result = query(
+        "SELECT dictGet('test_dict_single_quote', 'value', tuple('no such key'))"
+    )
+    assert result == "\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_single_quote;")
+    cursor.execute("DROP TABLE test_single_quote;")
 
 
 def test_invalidate_query(started_cluster):
@@ -608,7 +669,7 @@ def test_background_dictionary_reconnect(started_cluster):
 
     postgres_conn.cursor().execute("DROP TABLE IF EXISTS dict")
     postgres_conn.cursor().execute(
-        f"""
+        """
     CREATE TABLE dict (
     id integer NOT NULL, value text NOT NULL, PRIMARY KEY (id))
     """
@@ -667,7 +728,7 @@ def test_background_dictionary_reconnect(started_cluster):
         for _ in range(5):
             try:
                 result = query("SELECT value FROM dict WHERE id = 1")
-            except Exception as e:
+            except Exception:
                 pass
 
         time.sleep(5)

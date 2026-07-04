@@ -255,11 +255,11 @@ void LazyMaterializingRows::filterRangesAndFillRows(const PaddedPODArray<UInt64>
 
 void LazyMaterializingTransform::prepareMainChunk()
 {
-    UInt64 squash_ms;
-    UInt64 sort_ms;
-    UInt64 permute_ms;
-    UInt64 prepare_offsets_ms;
-    UInt64 filter_intervals_ms;
+    UInt64 squash_ms = 0;
+    UInt64 sort_ms = 0;
+    UInt64 permute_ms = 0;
+    UInt64 prepare_offsets_ms = 0;
+    UInt64 filter_intervals_ms = 0;
 
     Stopwatch main_chunk_watch;
 
@@ -355,9 +355,9 @@ void LazyMaterializingTransform::prepareMainChunk()
 
 void LazyMaterializingTransform::prepareLazyChunk()
 {
-    UInt64 squash_ms;
+    UInt64 squash_ms = 0;
     UInt64 reverse_permutation_ms = 0;
-    UInt64 permute_ms;
+    UInt64 permute_ms = 0;
 
     Stopwatch total_watch;
 
