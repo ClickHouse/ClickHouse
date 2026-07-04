@@ -273,7 +273,7 @@ static void incrementAllocationWithoutCheck(Int64 size)
     }
 }
 
-AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability)
+AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker, double _sample_probability, bool * memory_limit_exceeded)
 {
     if (size < 0)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Negative size ({}) is passed to MemoryTracker. It is a bug.", size);
@@ -302,7 +302,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
         if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         {
             MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+            return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, memory_limit_exceeded);
         }
 
         return AllocationTrace(_sample_probability);
@@ -353,6 +353,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
             ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
             if (level == VariableContext::Global)
                 ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
+
+            if (memory_limit_exceeded)
+            {
+                *memory_limit_exceeded = true;
+                return AllocationTrace(0);
+            }
+
             const auto * description = description_ptr.load(std::memory_order_relaxed);
             throw DB::Exception(
                 DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -456,6 +463,13 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
                 ProfileEvents::increment(ProfileEvents::QueryMemoryLimitExceeded);
                 if (level == VariableContext::Global)
                     ProfileEvents::increment(ProfileEvents::GlobalMemoryLimitExceeded);
+
+                if (memory_limit_exceeded)
+                {
+                    *memory_limit_exceeded = true;
+                    return AllocationTrace(0);
+                }
+
                 const auto * description = description_ptr.load(std::memory_order_relaxed);
                 throw DB::Exception(
                     DB::ErrorCodes::MEMORY_LIMIT_EXCEEDED,
@@ -524,7 +538,7 @@ AllocationTrace MemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, 
     if (auto * loaded_next = parent.load(std::memory_order_relaxed))
     {
         MemoryTracker * tracker = level == VariableContext::Process ? this : query_tracker;
-        return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability);
+        return loaded_next->allocImpl(size, enforce_memory_limit, tracker, _sample_probability, memory_limit_exceeded);
     }
 
     return AllocationTrace(_sample_probability);

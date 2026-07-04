@@ -136,14 +136,16 @@ inline ALWAYS_INLINE size_t trackMemory(std::size_t size, AllocationTrace & trac
     return actual_size;
 }
 
-/// We cannot throw from C API
+/// We cannot throw from C API, so exceeding the memory limit is reported
+/// through `memory_limit_exceeded` (with the tracked amount reverted) and the
+/// caller must fail the allocation instead of overcommitting.
 template <std::same_as<std::align_val_t>... TAlign>
 requires DB::OptionalArgument<TAlign...>
-inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, TAlign... align)
+inline ALWAYS_INLINE size_t trackMemoryFromC(std::size_t size, AllocationTrace & trace, bool & memory_limit_exceeded, TAlign... align)
 {
     [[maybe_unused]] MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
     std::size_t actual_size = getActualAllocationSize(size, align...);
-    trace = CurrentMemoryTracker::allocNoThrow(actual_size);
+    trace = CurrentMemoryTracker::allocFromC(actual_size, memory_limit_exceeded);
     return actual_size;
 }
 

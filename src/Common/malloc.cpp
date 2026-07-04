@@ -30,7 +30,13 @@ extern "C"
 void * malloc(size_t size)
 {
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace);
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded);
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     void * ptr = je_malloc(size);
     if (unlikely(!ptr))
     {
@@ -59,7 +65,13 @@ void * calloc(size_t nmemb, size_t size)
     }
 
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(real_size, trace);
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(real_size, trace, memory_limit_exceeded);
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     void * ptr = je_calloc(nmemb, size);
     if (unlikely(!ptr))
     {
@@ -77,7 +89,13 @@ void * realloc(void * ptr, size_t size)
         old_actual_size = je_sallocx(ptr, 0);
 
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace);
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded);
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     void * res = je_realloc(ptr, size);
     if (unlikely(!res))
     {
@@ -106,7 +124,10 @@ int posix_memalign(void ** memptr, size_t alignment, size_t size)
     if (alignment < sizeof(void *) || (alignment & (alignment - 1)) != 0)
         return EINVAL;
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded, static_cast<std::align_val_t>(alignment));
+    if (unlikely(memory_limit_exceeded))
+        return ENOMEM;
     int res = je_posix_memalign(memptr, alignment, size);
     if (unlikely(res != 0))
     {
@@ -125,7 +146,13 @@ void * aligned_alloc(size_t alignment, size_t size)
         return nullptr;
     }
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(alignment));
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded, static_cast<std::align_val_t>(alignment));
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     void * res = je_aligned_alloc(alignment, size);
     if (unlikely(!res))
     {
@@ -142,7 +169,13 @@ void * valloc(size_t size)
     void * res = nullptr;
     size_t page_size = getPageSize();
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(page_size));
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded, static_cast<std::align_val_t>(page_size));
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     int err = je_posix_memalign(&res, page_size, size);
     if (unlikely(err != 0))
     {
@@ -171,7 +204,13 @@ void * memalign(size_t alignment, size_t size)
     /// posix_memalign requires alignment >= sizeof(void*); widen valid small powers of two.
     size_t effective_alignment = alignment < sizeof(void *) ? sizeof(void *) : alignment;
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(size, trace, static_cast<std::align_val_t>(effective_alignment));
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(size, trace, memory_limit_exceeded, static_cast<std::align_val_t>(effective_alignment));
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     int err = je_posix_memalign(&res, effective_alignment, size);
     if (unlikely(err != 0))
     {
@@ -196,7 +235,13 @@ void * pvalloc(size_t size)
     }
     rounded_size = rounded_size / page_size * page_size;
     AllocationTrace trace;
-    size_t actual_size = Memory::trackMemoryFromC(rounded_size, trace, static_cast<std::align_val_t>(page_size));
+    bool memory_limit_exceeded = false;
+    size_t actual_size = Memory::trackMemoryFromC(rounded_size, trace, memory_limit_exceeded, static_cast<std::align_val_t>(page_size));
+    if (unlikely(memory_limit_exceeded))
+    {
+        errno = ENOMEM;
+        return nullptr;
+    }
     int err = je_posix_memalign(&res, page_size, rounded_size);
     if (unlikely(err != 0))
     {

@@ -48,7 +48,7 @@ MemoryTracker * getMemoryTracker()
 
 using DB::current_thread;
 
-AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit)
+AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_limit, bool * memory_limit_exceeded)
 {
 #ifdef MEMORY_TRACKER_DEBUG_CHECKS
     if (unlikely(memory_tracker_always_throw_logical_error_on_allocation))
@@ -63,7 +63,7 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
         if (!current_thread)
         {
             /// total_memory_tracker only, ignore untracked_memory
-            return memory_tracker->allocImpl(size, enforce_memory_limit);
+            return memory_tracker->allocImpl(size, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ -1.0, memory_limit_exceeded);
         }
 
         /// Make sure we do memory tracker calls with the correct level in MemoryTrackerBlockerInThread.
@@ -95,9 +95,19 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
             {
                 /// We cannot return the AllocationTrace from here, since its sample_probability was calculated on the (batched) flushed size, which may not match the original allocation size.
                 if (current_untracked_memory > 0)
-                    std::ignore = memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0);
+                {
+                    std::ignore = memory_tracker->allocImpl(current_untracked_memory, enforce_memory_limit, /*query_tracker=*/ nullptr, /*_sample_probability=*/ 0.0, memory_limit_exceeded);
+                    if (memory_limit_exceeded && *memory_limit_exceeded)
+                    {
+                        current_thread->untracked_memory += previous_untracked_memory;
+                        DB::per_cpu_memory.rollback(current_thread->per_cpu_untracked_memory, previous_per_cpu);
+                        return AllocationTrace(0);
+                    }
+                }
                 else
+                {
                     std::ignore = memory_tracker->free(-current_untracked_memory, /*_sample_probability=*/ 0.0);
+                }
             }
             catch (...)
             {
@@ -127,6 +137,12 @@ AllocationTrace CurrentMemoryTracker::alloc(Int64 size)
 AllocationTrace CurrentMemoryTracker::allocNoThrow(Int64 size)
 {
     return allocImpl(size, /*enforce_memory_limit=*/ false);
+}
+
+AllocationTrace CurrentMemoryTracker::allocFromC(Int64 size, bool & memory_limit_exceeded)
+{
+    memory_limit_exceeded = false;
+    return allocImpl(size, /*enforce_memory_limit=*/ true, &memory_limit_exceeded);
 }
 
 AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)

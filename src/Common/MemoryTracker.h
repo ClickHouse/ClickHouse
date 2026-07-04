@@ -142,8 +142,13 @@ private:
     int64_t last_corrected_amount = 0;
 
     /// allocImpl(...) and free(...) should not be used directly
+    ///
+    /// If `memory_limit_exceeded` is not nullptr, exceeding the memory limit
+    /// (or an injected fault) is reported through it (with the accounting
+    /// reverted) instead of throwing MEMORY_LIMIT_EXCEEDED — for callers that
+    /// cannot handle exceptions (C API).
     friend struct CurrentMemoryTracker;
-    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0);
+    [[nodiscard]] AllocationTrace allocImpl(Int64 size, bool enforce_memory_limit, MemoryTracker * query_tracker = nullptr, double _sample_probability = -1.0, bool * memory_limit_exceeded = nullptr);
     [[nodiscard]] AllocationTrace free(Int64 size, double _sample_probability = -1.0);
 public:
 
