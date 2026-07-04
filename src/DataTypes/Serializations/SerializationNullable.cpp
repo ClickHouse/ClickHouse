@@ -895,10 +895,6 @@ bool SerializationNullable::tryDeserializeNullJSON(DB::ReadBuffer & istr)
 template<typename ReturnType>
 ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const FormatSettings & settings, const SerializationPtr & nested, bool & is_null)
 {
-    auto check_for_null = [](ReadBuffer & buf)
-    {
-        return peekString("null", buf); /// null or new ISODate
-    };
     auto deserialize_nested = [&nested, &settings](IColumn & nested_column, ReadBuffer & buf)
     {
         if constexpr (std::is_same_v<ReturnType, bool>)
@@ -906,7 +902,42 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
         nested->deserializeTextJSON(nested_column, buf, settings);
     };
 
-    return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+    if (istr.eof() || *istr.position() != 'n')
+    {
+        /// This is not null, surely.
+        return deserializeImpl<ReturnType>(column, istr, [](ReadBuffer &){ return false; }, deserialize_nested, is_null);
+    }
+
+    /// Check if we have enough data in the current buffer chunk to check for "null".
+    if (istr.available() >= 4)
+    {
+        const auto check_for_null = [](ReadBuffer & buf)
+        {
+            auto * pos = buf.position();
+            if (checkString("null", buf)) /// null or new ISODate
+                return true;
+            buf.position() = pos;
+            return false;
+        };
+        return deserializeImpl<ReturnType>(column, istr, check_for_null, deserialize_nested, is_null);
+    }
+
+    /// We don't have enough data in the buffer to check if it's "null" (it may be split across
+    /// a buffer boundary, e.g. "nu" | "ll"). Use PeekableReadBuffer to make a checkpoint before
+    /// checking and roll back to it if the check failed, without consuming any bytes on mismatch.
+    PeekableReadBuffer peekable_buf(istr, true);
+    const auto check_for_null = [](ReadBuffer & buf_)
+    {
+        auto & buf = assert_cast<PeekableReadBuffer &>(buf_);
+        buf.setCheckpoint();
+        SCOPE_EXIT(buf.dropCheckpoint());
+        if (checkString("null", buf)) /// null or new ISODate
+            return true;
+        buf.rollbackToCheckpoint();
+        return false;
+    };
+
+    return deserializeImpl<ReturnType>(column, peekable_buf, check_for_null, deserialize_nested, is_null);
 }
 
 void SerializationNullable::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
