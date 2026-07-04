@@ -147,6 +147,8 @@ public:
     {
         if (n & 0x0F)
             return memcmpSmallAllowOverflow15(a, b, n);
+        else if (n == 16)
+            return memcmp16(a, b);
         else
             return memcmpSmallMultipleOf16(a, b, n);
     }

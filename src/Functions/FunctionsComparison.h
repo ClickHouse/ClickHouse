@@ -347,8 +347,16 @@ struct StringComparisonImpl
         else if (a_n == b_n)
         {
             size_t size = a_data.size();
-            for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, b_data.data() + i, a_n), 0);
+            if (a_n & 0x0F)
+            {
+                for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+                    c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, b_data.data() + i, a_n), 0);
+            }
+            else
+            {
+                for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+                    c[j] = Op::apply(memcmpSmallMultipleOf16(a_data.data() + i, b_data.data() + i, a_n), 0);
+            }
         }
         else
         {
@@ -371,8 +379,16 @@ struct StringComparisonImpl
         else if (a_n == b_size)
         {
             size_t size = a_data.size();
-            for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, b_data.data(), a_n), 0);
+            if (a_n & 0x0F)
+            {
+                for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+                    c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, b_data.data(), a_n), 0);
+            }
+            else
+            {
+                for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
+                    c[j] = Op::apply(memcmpSmallMultipleOf16(a_data.data() + i, b_data.data(), a_n), 0);
+            }
         }
         else
         {
