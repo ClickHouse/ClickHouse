@@ -418,7 +418,7 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             /// loading produces: this keeps OPTIMIZE ... PARTITION from raising a LOGICAL_ERROR in
             /// getPartitionIDFromQuery (STID 3993-36c1) and rejects values outside the Int32 storage
             /// range with ARGUMENT_OUT_OF_BOUND instead of silently truncating them.
-            const Field time_field = convertNumericType<Int32>(src, type);
+            Field time_field = convertNumericType<Int32>(src, type);
             if (time_field.isNull())
                 return time_field;
             /// Then apply date_time_overflow_behavior against the visible Time range so the

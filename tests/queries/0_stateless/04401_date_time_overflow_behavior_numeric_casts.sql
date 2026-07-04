@@ -142,13 +142,15 @@ DROP TABLE IF EXISTS t_vals_time;
 DROP TABLE IF EXISTS t_vals_datetime;
 
 SELECT '-- throw: out-of-range numeric VALUES expression must raise';
+-- The overflow of a VALUES expression may surface as a client or a server error depending
+-- on async_insert (the client parses VALUES data), so the error hint below accepts either.
 SET date_time_overflow_behavior = 'throw';
 CREATE TABLE t_vals_time (x Time) ENGINE = Memory;
 CREATE TABLE t_vals_datetime (x DateTime) ENGINE = Memory;
-INSERT INTO t_vals_time VALUES (9999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-INSERT INTO t_vals_time VALUES (-9999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-INSERT INTO t_vals_datetime VALUES (99999999999 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
-INSERT INTO t_vals_datetime VALUES (-1 + 0); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_time VALUES (9999999 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_time VALUES (-9999999 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_datetime VALUES (99999999999 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+INSERT INTO t_vals_datetime VALUES (-1 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 
 SELECT '-- saturate: out-of-range numeric VALUES expression must clamp to the boundary';
 SET date_time_overflow_behavior = 'saturate';
