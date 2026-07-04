@@ -12,7 +12,8 @@
         fill query and the measured queries are dominated by the comparison itself.
 
         Two comparison surfaces changed by this PR are exercised:
-          - `<` / `>` go through `StringComparisonImpl`;
+          - `<` / `>` go through `StringComparisonImpl`, both its column-vs-column and its
+            column-vs-constant (`WHERE a < '...'`) branches, which this PR changes independently;
           - `ORDER BY` goes through `ColumnFixedString::compareAt` and its sort comparator.
         `=` / `!=` are intentionally not benchmarked: they use `memequalSmallAllowOverflow15`, which
         this PR does not touch.
@@ -37,6 +38,18 @@
     <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &gt; b)</query>
     <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; b)</query>
     <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &gt; b)</query>
+
+    <!-- `<` / `>` against a FixedString constant : StringComparisonImpl vector_constant branch
+         (`WHERE a < '...'`). The constant shares the same `_` prefix, so the compare scans every
+         16-byte block before the difference in the last one, just like the column-vs-column case. -->
+    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(toUInt64(5000000))), 16))</query>
+    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(toUInt64(5000000))), 16))</query>
+    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(toUInt64(5000000))), 32))</query>
+    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(toUInt64(5000000))), 32))</query>
+    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(toUInt64(5000000))), 64))</query>
+    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(toUInt64(5000000))), 64))</query>
+    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(toUInt64(5000000))), 128))</query>
+    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(toUInt64(5000000))), 128))</query>
 
     <!-- Equal strings: the compare scans every 16-byte block before returning 0. -->
     <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; a)</query>
