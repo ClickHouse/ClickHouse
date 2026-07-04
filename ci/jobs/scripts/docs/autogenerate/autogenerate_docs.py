@@ -30,6 +30,9 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import navigation  # noqa: E402
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SQL_DIR = os.path.join(SCRIPT_DIR, "sql")
 
@@ -323,6 +326,13 @@ def main(argv=None):
             print(f"wrote: {rel}")
         else:
             print(f"[dry-run] would update: {rel}")
+
+    # Recompile the navigation fragments into docs.json after page generation,
+    # so pages added by generators (and hand-added fragment entries) reach the
+    # served manifest. Runs under the same --only filter as a generator named
+    # "navigation".
+    if not args.only or args.only in "navigation":
+        drift += navigation.run(docs_dir, write=args.write, check=args.check)
     return 1 if drift else 0
 
 
