@@ -1,17 +1,17 @@
 <test>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) < toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) > toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) &lt; toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) &gt; toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 16) = toFixedString(reinterpretAsFixedString(number + 1), 16))</query>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) < toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) > toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) &lt; toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) &gt; toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 32) = toFixedString(reinterpretAsFixedString(number + 1), 32))</query>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) < toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) > toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) &lt; toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) &gt; toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 64) = toFixedString(reinterpretAsFixedString(number + 1), 64))</query>
 
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) < toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
-    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) > toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) &lt; toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
+    <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) &gt; toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
     <query>SELECT count() FROM numbers(100000000) WHERE NOT ignore(toFixedString( reinterpretAsFixedString(number), 128) = toFixedString(reinterpretAsFixedString(number + 1), 128))</query>
 </test>
