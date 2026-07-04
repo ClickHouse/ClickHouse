@@ -60,6 +60,7 @@ count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race WH
 if [ "$count" != "6" ]; then
     echo "FAIL (String DEFAULT ''): expected 6 non-empty rows, got $count"
     ${CLICKHOUSE_CLIENT} --query="SELECT id, d1 FROM t_rename_merge_race ORDER BY id"
+    exit 1
 fi
 
 # Phase 2: a Dynamic column with NO default (the residual facet this fix closes). The merge sees the
@@ -92,6 +93,7 @@ count=$(${CLICKHOUSE_CLIENT} --query="SELECT count() FROM t_rename_merge_race_dy
 if [ "$count" != "8" ]; then
     echo "FAIL (Dynamic no-default): expected 8 non-null rows, got $count"
     ${CLICKHOUSE_CLIENT} --query="SELECT x, d1 FROM t_rename_merge_race_dynamic ORDER BY x SETTINGS allow_experimental_dynamic_type = 1"
+    exit 1
 fi
 
 ${CLICKHOUSE_CLIENT} --query="DROP TABLE IF EXISTS t_rename_merge_race"
