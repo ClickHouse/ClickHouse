@@ -20,6 +20,7 @@ public:
 
 private:
     SharedHeader header_;
+    FormatSettings format_settings_;
     bool eof_ = false;
 };
 
