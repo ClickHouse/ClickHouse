@@ -371,24 +371,16 @@ private:
         size_t drainTail(size_t max_tail, size_t block_bytes);
     };
 
-    /// Per-retrieve runtime status for the schedule-driven interpreter: the ENTIRE
-    /// exec-time mutable surface the loop will branch on - no residency state, no
-    /// per-window geometry. `NotLaunched` -> `InFlight` (machine scheduled or a sync
-    /// read entered) -> `Ready` (bytes fetched, serve may proceed) -> `Done` (also
-    /// written into every `into[]` cell, write handles released). Serve gates on
-    /// `Ready`, never `Done`, so a slow cache write never stalls the user.
-    enum class RetrievePhase
-    {
-        NotLaunched,
-        InFlight,
-        Ready,
-        Done,
-    };
-
-    /// 1:1 with `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
+    /// Per-retrieve runtime status for the schedule-driven interpreter: only what CANNOT be
+    /// derived from the display or the machine slot ("is a machine in flight for ri" =
+    /// `machineFor(ri)`; the serve gates on display coverage, never on a phase). 1:1 with
+    /// `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
     struct RetrieveStatus
     {
-        RetrievePhase phase = RetrievePhase::NotLaunched;
+        /// The job's put has committed its LAST window into every `into[]` cell.
+        /// `depsSatisfied` gates an offset-later same-cell write's launch on this (append-only
+        /// ordering across split jobs); nothing else reads it.
+        bool done = false;
         /// The launch HIGH-WATER (job-relative): bytes attempted end to end - launched over, or
         /// served inline past the cursor - whether they committed, were refused by the cache,
         /// or belong to a sibling's download. LAUNCH POLICY only (`launchProgress`); a
@@ -793,7 +785,7 @@ private:
     /// the cache is the buffer, so no in-memory bank is held. Drives the in-flight worker
     /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
     /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
-    ChainedBuffers serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
+    ChainedBuffers serveRetrievePopulatable(size_t ri, ByteRange window);
     // ─── The display: the one state surface where execution results appear ─────────
     // The committed cell bytes (plus, until it is virtualized, the bypass bank). The serve
     // looks at the display and either takes ready bytes or advances a job; a job's progress
@@ -842,7 +834,7 @@ private:
     /// bypass gap (pure source fetch, banked) or a populatable gap whose cursor segment a sibling
     /// executor leads (wait the sibling's disk cell to dedup, source-fetch any remainder). Banks the
     /// window in `ready_bytes` and serves it from there.
-    ChainedBuffers serveWindowInline(size_t ri, size_t position_phys);
+    ChainedBuffers serveWindowInline(size_t ri, ByteRange window);
     void collectInFlightInto(size_t ri);
     void maybeLaunchAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the

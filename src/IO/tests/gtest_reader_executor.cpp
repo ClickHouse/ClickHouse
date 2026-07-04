@@ -4690,7 +4690,7 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
     ReaderExecutor executor(src, objects, {cache}, opts);
 
     size_t windows = 0;
-    [[maybe_unused]] bool saw_ready = false;
+    [[maybe_unused]] bool saw_progress = false;
     while (true)
     {
         auto chain = executor.readNextWindow();
@@ -4706,13 +4706,13 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
             << "cursor step [" << step.offset << "," << step.offset + step.size
             << ") must contain position " << pos;
         for (size_t i = 0; i < inspect(executor).retrieveStatusSize(); ++i)
-            if (inspect(executor).retrievePhase(i) >= 2 /*Ready*/)
-                saw_ready = true;
+            if (inspect(executor).retrieveDone(i) || inspect(executor).retrieveLaunchProgress(i) > 0)
+                saw_progress = true;
 #endif
     }
     EXPECT_GT(windows, 4u) << "the file must take several windows so the cursor walks";
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-    EXPECT_TRUE(saw_ready) << "a prefetched gap must reach the Ready phase";
+    EXPECT_TRUE(saw_progress) << "a prefetched gap must show launch progress / completion";
 #endif
 }
 

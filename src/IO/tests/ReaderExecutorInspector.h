@@ -39,12 +39,16 @@ public:
     }
     size_t retrieveStatusSize() const { return ex.read_plan.retrieve_status.size(); }
 
-    /// Assert-spine shadow state (cursor / steps / per-job phase). The cursor and
-    /// phases are only maintained under `DEBUG_OR_SANITIZER_BUILD`.
+    /// Assert-spine shadow state (cursor / steps / per-job progress).
     size_t cursor() const { return ex.read_plan.cursor; }
     size_t stepCount() const { return ex.read_plan.schedule.steps.size(); }
     ByteRange stepOutput(size_t i) const { return ex.read_plan.schedule.steps[i].output; }
-    int retrievePhase(size_t i) const { return static_cast<int>(ex.read_plan.retrieve_status[i].phase); }
+    bool retrieveDone(size_t i) const { return ex.read_plan.retrieve_status[i].done; }
+    /// Job-RELATIVE launch progress (bytes from the job's range start).
+    size_t retrieveLaunchProgress(size_t i) const
+    {
+        return ex.launchProgress(i) - ex.read_plan.schedule.retrieves[i].range.offset;
+    }
 
     /// The continuity estimator's predicted reach after the last plan feed.
     size_t predictedReach() const { return ex.continuity_tracker.predictedReach(); }

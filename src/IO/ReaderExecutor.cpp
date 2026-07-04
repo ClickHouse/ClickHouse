@@ -1941,7 +1941,7 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
     if (m.retrieve_index < read_plan.retrieve_status.size()
         && m.retrieve_index < read_plan.schedule.retrieves.size()
         && launchProgress(m.retrieve_index) >= read_plan.schedule.retrieves[m.retrieve_index].range.end())
-        read_plan.retrieve_status[m.retrieve_index].phase = RetrievePhase::Done;
+        read_plan.retrieve_status[m.retrieve_index].done = true;
 }
 
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
@@ -2027,9 +2027,9 @@ void ReaderExecutor::advanceCursor()
 bool ReaderExecutor::depsSatisfied(size_t ri) const
 {
     /// An offset-earlier write into a shared append-only cell must be committed
-    /// (its put reaped, phase Done) before this job's bytes land in the same cell.
+    /// (its put reaped, `done`) before this job's bytes land in the same cell.
     for (size_t dep : read_plan.schedule.retrieves[ri].deps)
-        if (read_plan.retrieve_status[dep].phase != RetrievePhase::Done)
+        if (!read_plan.retrieve_status[dep].done)
             return false;
     return true;
 }
@@ -2095,7 +2095,6 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
 void ReaderExecutor::launchRetrieve(size_t ri)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
-    auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
 
     /// Fetch the fill-ahead LEAD within the job range at its launch frontier - never `r.range`
@@ -2113,8 +2112,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
         return;
 
     /// Read-ahead runs on the pool (async); the serve cursor reads its committed cells live.
-    if (launchMachineForWindow(ri, ByteRange{base, chunk}, *runner))
-        st.phase = RetrievePhase::InFlight;
+    launchMachineForWindow(ri, ByteRange{base, chunk}, *runner);
 }
 
 void ReaderExecutor::maybeLaunchAhead()
@@ -2196,13 +2194,8 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// sizes would drift).
         if (attempted_end > r.range.offset)
             st.fetched = std::max(st.fetched, attempted_end - r.range.offset);
-        st.phase = RetrievePhase::Ready;
     }
-    else
-    {
-        /// Revoked while still queued: the foreground reads this window instead.
-        st.phase = RetrievePhase::NotLaunched;
-    }
+    /// Revoked while still queued: nothing to record - the foreground reads this window instead.
 }
 
 ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const
@@ -2219,27 +2212,29 @@ ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & st
     return out;
 }
 
-ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, size_t position_phys)
+ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, ByteRange window)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
-    /// Serve one window of THIS STEP only - never past the cursor step's end. A bridged
-    /// retrieve can span several steps (an embedded faster-tier hit splits a gap into
-    /// gap / hit / gap); reading to `r.range.end()` would bank past the hit and serve the
-    /// hit + the next gap as one window, so the serve would no longer map 1:1 to the
-    /// schedule. The long connection still coalesces ACROSS steps: it persists in
-    /// `long_conn`, so the next gap step's source read continues it.
-    const size_t step_end = read_plan.schedule.steps[read_plan.cursor].output.end();
-    const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
-    if (want == 0)
-        return {};
-    const ByteRange window{position_phys, want};
+    const size_t position_phys = window.offset;
 
-    /// Fill the whole CELL (segment-aligned) so the cursor's later windows in the cell are served
-    /// from it and an eviction sweep cannot drop it mid-scan; a bypass gap has no cell, so
-    /// `fetchWindowAt` leaves the window unchanged and only the requested bytes are read.
-    const ByteRange fetch_window = read_plan.geometry()->fetchWindowAt(window);
+    /// Fill the whole CELL so the cursor's later windows in the cell are served from it and an
+    /// eviction sweep cannot drop it mid-scan: extend the window out to the job's fetch grids,
+    /// clamped into its range - schedule data, no geometry query on the serve path. The grids
+    /// come from the plan's POPULATING tiers only, so a bypass job (an all-bypass plan) has
+    /// grids of 1 and reads exactly the requested bytes - there is no cell to hold more. (The
+    /// min/max guards keep the extension a superset of the window even for a degenerate
+    /// schedule. Known bounded divergence from the old per-tier-clamped geometry query: the
+    /// head can reach across a same-tier resident run the per-tier clamp stopped at - at most
+    /// one grid cell, served from cache when resident, once per plan.)
+    const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
+    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
+    const size_t fetch_lo
+        = std::min(window.offset, std::max(r.range.offset, window.offset / head_grid * head_grid));
+    const size_t fetch_hi = std::max(window.end(),
+        std::min(r.range.end(), (window.end() + tail_grid - 1) / tail_grid * tail_grid));
+    const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
     ChainedBuffers result;
     IntervalSet covered;
@@ -2292,22 +2287,32 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, size_t position_phys
     /// bytes could not enter this executor's own committed set (a refused write, a sibling-owned
     /// segment). A high-water mark, NOT an accumulator: an inline serve at the cursor can land
     /// BELOW the frontier (the cursor trails an ahead launch), so `+= want` would over-count.
-    st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
-    st.phase = RetrievePhase::Ready;
+    st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + window.size);
     return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
 }
 
 ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
 {
+    /// ONE window of THIS step, computed once for every serve path below: never past the step's
+    /// end (a bridged retrieve spans several steps - an embedded faster-tier hit splits a gap
+    /// into gap / hit / gap - and reading past the hit would break the 1:1 serve-to-schedule
+    /// mapping; the long connection still coalesces ACROSS steps via `long_conn`).
+    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
+    const size_t want
+        = std::min({readCeiling(), step.output.end() - position_phys, boundedReadSize(effectiveWindowSize(level))});
+    if (want == 0)
+        return {};
+    const ByteRange window{position_phys, want};
+
     /// A populatable retrieve (it fills a cache cell) serves from the committed cell - the
     /// cache is the buffer. Only a bypass gap (no fillable tier, empty `into`) keeps the bank.
     if (!read_plan.schedule.retrieves[ri].into.empty())
-        return serveRetrievePopulatable(step, ri, position_phys);
+        return serveRetrievePopulatable(ri, window);
 
     auto & st = read_plan.retrieve_status[ri];
     const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
-    /// Coverage-driven: a job can be partially banked AND still have a window in flight,
-    /// so branch on "does `ready_bytes` cover the cursor?" rather than the phase alone.
+    /// Coverage-driven: a job can be partially banked AND still have a window in flight, so
+    /// branch on "does `ready_bytes` cover the cursor?".
     while (st.ready_bytes.empty()
         || pos < st.ready_bytes.range().offset
         || pos >= st.ready_bytes.range().end())
@@ -2315,7 +2320,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         if (machineFor(ri))
             collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
         else
-            return serveWindowInline(ri, position_phys);  /// not prefetched: read it now
+            return serveWindowInline(ri, window);  /// not prefetched: read it now
     }
     ChainedBuffers out = serveStepFromBanked(step, st, position_phys);
     /// Run any scheduled handed fill overlapping the served range: the schedule CAN emit a
@@ -2404,17 +2409,12 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
     return std::max(jobFrontier(ri), r.range.offset + read_plan.retrieve_status[ri].fetched);
 }
 
-ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
+ChainedBuffers ReaderExecutor::serveRetrievePopulatable(size_t ri, ByteRange window)
 {
-    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
-    /// One window of THIS step only (the bank path's bound): a bridged retrieve can span
-    /// several steps, and reading past an embedded faster-tier hit would break the 1:1
-    /// serve-to-schedule mapping.
-    const size_t step_end = step.output.end();
-    const size_t want = std::min({readCeiling(), step_end - position_phys, boundedReadSize(effectiveWindowSize(level))});
-    if (want == 0)
-        return {};
-    ByteRange window_phys{position_phys, want};
+    /// `window` is the step-bounded serve window (`serveRetrieveStep` computes it once for all
+    /// serve paths). `window_phys` narrows to the servable committed prefix below; keep the
+    /// original for the fallback.
+    ByteRange window_phys = window;
 
     /// Run the fill INLINE on the serve thread (the same `FetchMachine` flow as the background,
     /// driven by a local runner) until the cells cover the cursor window, then serve from the
@@ -2543,9 +2543,10 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
     /// a segment a sibling executor leads, or the cache refused the write): drain any in-flight
     /// machine for THIS retrieve (finalize + free the slot), then serve inline - `serveWindowInline`
     /// waits on the sibling-led cell (dedup) and source-fetches any remainder, banking one window.
+    /// The ORIGINAL window, not the narrowed one: the raced/short path re-serves it whole.
     if (machineFor(ri))
         collectInFlightInto(ri);
-    return serveWindowInline(ri, position_phys);
+    return serveWindowInline(ri, window);
 }
 
 void ReaderExecutor::waitOnDisplay(

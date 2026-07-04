@@ -74,8 +74,9 @@ struct PlanSchedule
         VectorWithMemoryTracking<ByteRange> fetch_runs;
         /// The fetch alignment grids (`Remote` only): a piece of a run is fetched with its head
         /// floored and its tail ceiled to these grids (clamped into the run), so a touched cache
-        /// cell is filled whole. The coarsest grid across the plan's tiers (every Remote byte is
-        /// a miss on every tier, so the coarsest extension applies).
+        /// cell is filled whole. The coarsest grid across the plan's POPULATING tiers (the ones
+        /// that scheduled fill cells) - a bypass-mode tier schedules no cells and must not shape
+        /// the fetch, so an `into`-empty job has grids of 1 and reads only the requested bytes.
         size_t fetch_head_grid = 1;
         size_t fetch_tail_grid = 1;
     };

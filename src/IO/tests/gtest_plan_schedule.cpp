@@ -290,6 +290,25 @@ TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
     EXPECT_FALSE(intoHas(promote, 0, {0, 1})) << "the slack cell is not a promote target";
 }
 
+/// A tier that schedules NO fill cells (a bypass-mode cache: it can hold resident bytes but
+/// `aligned_miss` stays empty) must not shape the fetch grids - nothing could hold the grid
+/// extension, so the serve would fetch-and-discard it every window. Only POPULATING tiers'
+/// alignments count.
+TEST(PlanScheduleRetrieves, BypassTierDoesNotShapeFetchGrids)
+{
+    auto g = geometry(0, 8, {
+        tierEntry(CacheTier::PageCache, {}, {{4, 4}}, /*head*/2, /*tail*/2),          // populating, fine grid
+        tierEntry(CacheTier::FilesystemCache, {{0, 4}}, {}, /*head*/8, /*tail*/8),    // bypass-mode: resident, NO cells
+    });
+    auto s = describe(g, {0, 8});
+
+    ASSERT_FALSE(s.retrieves.empty());
+    const auto & r = s.retrieves[0];
+    ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
+    EXPECT_EQ(r.fetch_head_grid, 2u) << "only the populating tier's alignment shapes the fetch";
+    EXPECT_EQ(r.fetch_tail_grid, 2u) << "the bypass tier's coarse alignment must not";
+}
+
 /// `[CF-promote]` as schedule data: promotion never crosses into a same-tier layer.
 /// A user gap promotes only into the tiers the fetch skipped (pc); the same-tier fs
 /// layers are FETCH targets. A slow-fs resident hit promotes into pc but never into

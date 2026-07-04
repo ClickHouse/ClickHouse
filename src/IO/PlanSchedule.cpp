@@ -247,12 +247,18 @@ PlanSchedule buildSchedule(
     /// its own job. The runtime decides how many source connections span them (a held connection
     /// bridges a small cached hole or reopens at a wide one - see ReaderExecutor's
     /// `scheduleLookaheadReach` / `canContinue`); the schedule only says WHAT to read.
-    /// The coarsest fetch grids across the plan's tiers: every Remote byte is a miss on every
-    /// tier, so the coarsest head/tail extension applies to any fetch piece.
+    /// The coarsest fetch grids across the plan's POPULATING tiers - the ones that scheduled
+    /// fill cells (`aligned_miss` non-empty). A bypass-mode tier reports its alignment but
+    /// schedules no cells, so it must not shape the fetch: nothing could hold the extension,
+    /// and the serve would fetch-and-discard it every window. An `into`-empty (bypass) job can
+    /// only exist in an all-bypass plan - any populating tier missing a gap gives it a cell -
+    /// so such a job gets grids of 1 and reads exactly the requested bytes.
     size_t fetch_head_grid = 1;
     size_t fetch_tail_grid = 1;
     for (const auto & e : geometry.entries)
     {
+        if (e.aligned_miss.empty())
+            continue;
         fetch_head_grid = std::max(fetch_head_grid, e.head_align);
         fetch_tail_grid = std::max(fetch_tail_grid, e.tail_align);
     }
