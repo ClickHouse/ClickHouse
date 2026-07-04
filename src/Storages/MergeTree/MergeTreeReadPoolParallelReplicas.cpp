@@ -142,6 +142,11 @@ MergeTreeReadPoolParallelReplicas::MergeTreeReadPoolParallelReplicas(
     const size_t min_marks_per_task = getMinMarksPerTask(pool_settings.min_marks_for_concurrent_read, per_part_infos);
     min_marks_per_request = min_marks_per_task * pool_settings.threads;
 
+    /// `total_query_nodes` sizes `calculateMinMarksPerTask` on remote-disk reads, which feeds `min_marks_per_task`
+    /// above and thus one half of `chooseSegmentSize`. It must be the same active-and-capped replica count the
+    /// coordinator uses (see `getActiveReplicasCountForParallelReplicas`), matching `number_of_replicas` below.
+    LOG_TRACE(log, "total_query_nodes={}", pool_settings.total_query_nodes);
+
     mark_segment_size = chooseSegmentSize(
         log,
         context_->getSettingsRef()[Setting::parallel_replicas_mark_segment_size],

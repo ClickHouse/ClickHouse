@@ -695,20 +695,78 @@ static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr &
     return is_active;
 }
 
+/// Find the local (initiator) replica's index in the cluster's replica order, matched by host name + port the
+/// same way `findLocalReplicaIndexAndUpdatePools` does. `count` bounds the search to the liveness vector size.
+static std::optional<size_t> findLocalReplicaIndexForLiveness(const ClusterPtr & cluster, size_t count)
+{
+    const auto & shard = cluster->getShardsInfo().at(0);
+    const auto & addresses = cluster->getShardsAddresses().at(0);
+    for (size_t i = 0; i < count && i < addresses.size(); ++i)
+    {
+        const auto & address = addresses[i];
+        const bool is_local_replica = std::any_of(
+            shard.local_addresses.begin(),
+            shard.local_addresses.end(),
+            [&](const Cluster::Address & local_addr)
+            { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
+        if (is_local_replica)
+            return i;
+    }
+    return {};
+}
+
+/// Turn a replica liveness vector into (available replica count, count capped by `max_parallel_replicas`): the
+/// coordinator sizing. `is_active` is cleared when liveness reports zero active replicas so callers stop
+/// filtering pools by it. Shared by the coordinator (`prepareConnectionPoolsForParallelReplicas`) and the
+/// mark-segment-size heuristic (`getActiveReplicasCountForParallelReplicas`) so both size by the same count.
+static std::pair<size_t, size_t> countAndCapReplicas(
+    std::vector<bool> & is_active, size_t all_nodes_count, const Settings & settings, const LoggerPtr & logger)
+{
+    size_t available_replicas = all_nodes_count;
+    if (!is_active.empty())
+    {
+        available_replicas = std::count(is_active.begin(), is_active.end(), true);
+        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
+        /// ignore it rather than ending up with an empty replica set / dividing by zero downstream.
+        if (available_replicas == 0)
+        {
+            is_active.clear();
+            available_replicas = all_nodes_count;
+        }
+    }
+
+    size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
+    if (max_replicas_to_use > available_replicas)
+    {
+        if (logger)
+            LOG_TRACE(
+                logger,
+                "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
+                "Will use the latter number to execute the query.",
+                settings[Setting::max_parallel_replicas].value,
+                available_replicas);
+        max_replicas_to_use = available_replicas;
+    }
+
+    return {available_replicas, max_replicas_to_use};
+}
+
 size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
 {
     const size_t all_nodes_count = cluster->getShardsInfo().at(0).getAllNodeCount();
 
+    /// Mirror `prepareConnectionPoolsForParallelReplicas` so the mark-segment-size heuristic sizes by the same
+    /// replica count the reading coordinator does: validate liveness against the cluster definition, force the
+    /// local (initiator) replica active, then cap by `max_parallel_replicas`. The two test-only failpoints
+    /// there perturb liveness to exercise the coordinator and are intentionally not applied here.
     std::vector<bool> is_active = getActiveReplicasForParallelReplicas(context, cluster);
-    /// Liveness unknown, or it does not line up with the cluster definition: fall back to the registered count,
-    /// exactly as `prepareConnectionPoolsForParallelReplicas` does when sizing the coordinator.
-    if (is_active.empty() || is_active.size() != all_nodes_count)
-        return all_nodes_count;
+    if (!is_active.empty() && is_active.size() != all_nodes_count)
+        is_active.clear();
+    if (!is_active.empty())
+        if (auto local_replica_index = findLocalReplicaIndexForLiveness(cluster, is_active.size()))
+            is_active[*local_replica_index] = true;
 
-    const size_t active_count = std::count(is_active.begin(), is_active.end(), true);
-    /// The local replica is the initiator, so at least one replica is always active. If liveness disagrees,
-    /// ignore it rather than sizing the segment heuristic by zero (which would divide by zero downstream).
-    return active_count == 0 ? all_nodes_count : active_count;
+    return countAndCapReplicas(is_active, all_nodes_count, context->getSettingsRef(), /*logger=*/ nullptr).second;
 }
 
 static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsForParallelReplicas(const LoggerPtr & logger, const ContextPtr & context, const ClusterPtr & cluster)
@@ -728,22 +786,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
     if (!is_active.empty())
     {
         /// Identify the local replica the same way `findLocalReplicaIndexAndUpdatePools` does (host name + port).
-        const auto & addresses = cluster->getShardsAddresses().at(0);
-        std::optional<size_t> local_replica_index;
-        for (size_t i = 0; i < is_active.size() && i < addresses.size(); ++i)
-        {
-            const auto & address = addresses[i];
-            const bool is_local_replica = std::any_of(
-                shard.local_addresses.begin(),
-                shard.local_addresses.end(),
-                [&](const Cluster::Address & local_addr)
-                { return local_addr.host_name == address.host_name && local_addr.port == address.port; });
-            if (is_local_replica)
-            {
-                local_replica_index = i;
-                break;
-            }
-        }
+        std::optional<size_t> local_replica_index = findLocalReplicaIndexForLiveness(cluster, is_active.size());
 
         /// Test-only: simulate a transient window where the initiator's own `active` znode is momentarily
         /// missing, so liveness reports the local replica as inactive. The forcing below must still keep it;
@@ -783,30 +826,7 @@ static std::pair<std::vector<ConnectionPoolPtr>, size_t> prepareConnectionPoolsF
         }
     }
 
-    size_t available_replicas = shard.getAllNodeCount();
-    if (!is_active.empty())
-    {
-        available_replicas = std::count(is_active.begin(), is_active.end(), true);
-        /// Safety net: if liveness reports no active replicas (it should not, since this query is running),
-        /// ignore it rather than ending up with an empty replica set.
-        if (available_replicas == 0)
-        {
-            is_active.clear();
-            available_replicas = shard.getAllNodeCount();
-        }
-    }
-
-    size_t max_replicas_to_use = settings[Setting::max_parallel_replicas];
-    if (max_replicas_to_use > available_replicas)
-    {
-        LOG_TRACE(
-            logger,
-            "The number of replicas requested ({}) is bigger than the real number available in the cluster ({}). "
-            "Will use the latter number to execute the query.",
-            settings[Setting::max_parallel_replicas].value,
-            available_replicas);
-        max_replicas_to_use = available_replicas;
-    }
+    auto [available_replicas, max_replicas_to_use] = countAndCapReplicas(is_active, shard.getAllNodeCount(), settings, logger);
 
     std::vector<ConnectionPoolWithFailover::Base::ShuffledPool> shuffled_pool;
     if (max_replicas_to_use < available_replicas)

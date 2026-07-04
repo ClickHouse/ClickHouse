@@ -961,10 +961,12 @@ Pipe ReadFromMergeTree::read(
     const auto & settings = context->getSettingsRef();
     size_t sum_marks = parts_with_range.getMarksCountAllParts();
 
+    /// Match the reading coordinator's replica count (active-and-capped, see `getActiveReplicasCountForParallelReplicas`).
+    /// On remote-disk reads this feeds `calculateMinMarksPerTask` (sum_marks / (threads * total_query_nodes) / 2),
+    /// the other half of `chooseSegmentSize`, so a registered-but-inactive replica would otherwise size the segment
+    /// heuristic differently from the coordinator.
     const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
+        ? ClusterProxy::getActiveReplicasCountForParallelReplicas(context, context->getClusterForParallelReplicas())
         : 1;
 
     PoolSettings pool_settings{
@@ -1436,10 +1438,9 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
 
     const auto read_type = input_order_info->direction == 1 ? ReadType::InOrder : ReadType::InReverseOrder;
 
+    /// Active-and-capped replica count, matching the reading coordinator (see the `read` overload above).
     const size_t total_query_nodes = is_parallel_reading_from_replicas
-        ? std::min<size_t>(
-              context->getClusterForParallelReplicas()->getShardsInfo().at(0).getAllNodeCount(),
-              context->getSettingsRef()[Setting::max_parallel_replicas])
+        ? ClusterProxy::getActiveReplicasCountForParallelReplicas(context, context->getClusterForParallelReplicas())
         : 1;
 
     PoolSettings pool_settings{
