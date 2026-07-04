@@ -3904,6 +3904,46 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return true;
         }
     }
+
+    /// A bare numeric key column used directly as a boolean condition, for example `WHERE id` or
+    /// `WHERE flag`. We only reach this point for a non-function, non-constant node (functions and
+    /// constants are handled above), so this matches exactly the boolean-predicate positions that
+    /// `RPNBuilder::traverseTree` descends to through `and` / `or` / `not` / `indexHint`. Treat the
+    /// column as `key != 0`, so that primary-key and skip-index analysis can prune on it. The negated
+    /// form `WHERE NOT key` is covered for free: the surrounding `not` inverts this atom into
+    /// `key == 0`. `LowCardinality` is handled through the nested type. See #89222.
+    {
+        size_t key_column_num = size_t(-1);
+        std::optional<size_t> argument_num_of_space_filling_curve;
+        DataTypePtr key_column_type;
+        MonotonicFunctionsChain chain;
+
+        if (isKeyPossiblyWrappedByMonotonicFunctions(
+                node, info, key_column_num, argument_num_of_space_filling_curve, key_column_type, chain))
+        {
+            auto key_type_not_low_cardinality = removeLowCardinality(key_column_type);
+
+            /// Skip a `Nullable` (or `LowCardinality(Nullable)`) key. Primary-key analysis maps a NULL
+            /// key value to `+Inf` (for `NULLS LAST` ordering), so a granule that holds only NULL looks
+            /// definitely outside `[0, 0]` and the `key != 0` atom would report it as an exact, definite
+            /// match. But `WHERE nullable_key` is NULL for those rows and filters them out. Ordinary
+            /// pruning only ever over-reads, so it stays correct, but the exact-count / implicit-projection
+            /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
+            /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
+            /// reverts to reading and filtering those rows, which is correct.
+            if (!key_type_not_low_cardinality->isNullable()
+                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
+                out.range = Range(Field(UInt64(0)));
+                out.key_columns.push_back(key_column_num);
+                out.monotonic_functions_chain = std::move(chain);
+                out.argument_num_of_space_filling_curve = argument_num_of_space_filling_curve;
+                return true;
+            }
+        }
+    }
+
     return false;
 }
 
@@ -4300,8 +4340,14 @@ static BoolMask forAnyHyperrectangle(
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
+    const Hyperrectangle * key_bounds,
     F && callback)
 {
+    auto universe = [&](size_t i) -> Range
+    {
+        return key_bounds ? (*key_bounds)[i] : Range::createWholeUniverseTypeAware(data_types[i]);
+    };
+
     if (!left_bounded && !right_bounded)
         return callback(hyperrectangle);
 
@@ -4329,11 +4375,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
         else if (right_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
 
         return callback(hyperrectangle);
     }
@@ -4343,19 +4387,12 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
     else if (right_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            hyperrectangle[i] = Range::createWholeUniverse();
-        else
-            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
-    }
+        hyperrectangle[i] = universe(i);
 
     auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
@@ -4372,7 +4409,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
 
         if (result.isComplete())
             return result;
@@ -4386,7 +4423,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
     }
 
     return result;
@@ -4400,7 +4437,8 @@ static BoolMask forAnyHyperrectangle(
   * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
   * and doing operations with `Range` object is very slow.
   * That's why we use sparse representation of hyperrectangle by only storing and processing
-  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory).
+  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory,
+  * or that are constant coordinates whose range is known from `key_bounds`, e.g. from the part's partition minmax).
   *
   * It is important to note that even if we only have sparse representation of hyperrectangle, we actually enumerate
   * over all possible hyperrectangles by iterating using `prefix_size`. `prefix_size` goes from 0 till `equal_boundaries_mask.size() - 1`.
@@ -4427,22 +4465,33 @@ static BoolMask forAnySparseHyperrectangle(
     const DataTypes & sparse_data_types,
     size_t prefix_size,
     BoolMask initial_mask,
+    const Hyperrectangle * key_bounds,
     F && callback)
 {
-    const size_t key_size = equal_boundaries_mask.size();
+    /// The enumeration walks only the leading key columns that have per-range boundary values (the prefix
+    /// covered by `equal_boundaries_mask`). Sparse columns beyond it are constant coordinates: their range
+    /// is fixed for the whole call and never touched here.
+    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
+
+    /// Returns the bound that a used key column (full position `key_index`, sparse position `sparse_pos`)
+    /// is known to lie within. The whole universe when unbounded.
+    auto universe = [&](size_t sparse_pos, size_t key_index) -> Range
+    {
+        return key_bounds ? (*key_bounds)[key_index] : Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+    };
 
 #ifndef NDEBUG
     const size_t sparse_keys_size = sparse_key_indices.size();
 
-    chassert(key_size == key_col_to_sparse_pos.size());
-    chassert(full_key_size >= key_size);
+    chassert(enumerated_key_prefix_size <= key_col_to_sparse_pos.size());
+    chassert(full_key_size >= enumerated_key_prefix_size);
     chassert(sparse_key_indices.size() <= sparse_data_types.size());
-    chassert(prefix_size <= key_size);
+    chassert(prefix_size <= enumerated_key_prefix_size);
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
     for (size_t i = 0; i < sparse_keys_size; ++i)
-        chassert(sparse_key_indices[i] < key_size);
+        chassert(sparse_key_indices[i] < key_col_to_sparse_pos.size());
 
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
         chassert(key_col_to_sparse_pos[sparse_key_indices[sparse_pos]] == static_cast<int>(sparse_pos));
@@ -4454,7 +4503,7 @@ static BoolMask forAnySparseHyperrectangle(
     /// Extend common prefix in full key space (not sparse)
     if (left_bounded && right_bounded)
     {
-        while (prefix_size < key_size && equal_boundaries_mask[prefix_size])
+        while (prefix_size < enumerated_key_prefix_size && equal_boundaries_mask[prefix_size])
         {
             bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
             size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
@@ -4465,7 +4514,7 @@ static BoolMask forAnySparseHyperrectangle(
         }
     }
 
-    if (prefix_size == key_size)
+    if (prefix_size == enumerated_key_prefix_size)
         return callback(sparse_hyperrectangle);
 
     const bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
@@ -4483,12 +4532,12 @@ static BoolMask forAnySparseHyperrectangle(
             else if (left_bounded)
             {
                 sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                    sparse_left_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                    sparse_left_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
             }
             else if (right_bounded)
             {
                 sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                    sparse_right_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                    sparse_right_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
             }
         }
 
@@ -4507,24 +4556,26 @@ static BoolMask forAnySparseHyperrectangle(
         else if (left_bounded)
         {
             sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                sparse_left_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                sparse_left_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
         }
         else if (right_bounded)
         {
             sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                sparse_right_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                sparse_right_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
         }
     }
 
-    /// Tail coordinates > prefix_size for sparse columns become whole universe
+    /// Tail coordinates in (prefix_size, enumerated_key_prefix_size) for sparse columns become their known bound (whole universe
+    /// by default). Sparse coordinates >= enumerated_key_prefix_size are constant: they are set once at initialization and are
+    /// never touched by the enumeration.
     auto it = std::upper_bound(sparse_key_indices.begin(), sparse_key_indices.end(), prefix_size);
-    for (; it != sparse_key_indices.end(); ++it)
+    for (; it != sparse_key_indices.end() && *it < enumerated_key_prefix_size; ++it)
     {
         size_t key_index = *it;
         chassert(key_col_to_sparse_pos[key_index] >= 0);
         size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_index]);
 
-        sparse_hyperrectangle[sparse_pos] = Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+        sparse_hyperrectangle[sparse_pos] = universe(sparse_pos, key_index);
     }
 
     auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
@@ -4558,6 +4609,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
+                key_bounds,
                 callback));
 
         if (result.isComplete())
@@ -4588,6 +4640,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
+                key_bounds,
                 callback));
     }
 
@@ -4599,20 +4652,15 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * left_keys,
     const FieldRef * right_keys,
     const DataTypes & data_types,
-    BoolMask initial_mask) const
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
 {
     Hyperrectangle key_ranges;
-
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            key_ranges.push_back(Range::createWholeUniverse());
-        else
-            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
-    }
+        key_ranges.push_back(Range::createWholeUniverseTypeAware(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -4626,36 +4674,45 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
     const std::vector<UInt8> & equal_boundaries_mask,
-    BoolMask initial_mask) const
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
 
-    if (sparse_keys_size > 0)
-        chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
-
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
 #endif
+
+    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
+
+    /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates: they take their range from `key_bounds`
+    /// here, once per call, and do not participate in the hyperrectangle enumeration. The enumerated columns
+    /// are overwritten by `forAnySparseHyperrectangle` before every callback.
+    const size_t mapping_size = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
+    chassert(!key_bounds || key_bounds->size() >= mapping_size);
+    chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
 
     Hyperrectangle sparse_key_ranges;
     sparse_key_ranges.reserve(sparse_keys_size);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         chassert(sparse_pos < sparse_data_types.size());
-        sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
+        size_t key_index = sparse_key_indices[sparse_pos];
+        if (key_index >= enumerated_key_prefix_size)
+            sparse_key_ranges.emplace_back((*key_bounds)[key_index]);
+        else
+            sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
     }
 
-    const size_t key_size = equal_boundaries_mask.size();
-
     /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
-    std::vector<int> key_col_to_sparse_pos(key_size, -1);
+    std::vector<int> key_col_to_sparse_pos(mapping_size, -1);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         size_t key_index = sparse_key_indices[sparse_pos];
-        chassert(key_index < key_size);
+        chassert(key_index < mapping_size);
         chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
 
         key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
@@ -4674,6 +4731,7 @@ BoolMask KeyCondition::checkInRange(
         sparse_data_types,
         /*prefix_size*/ 0,
         initial_mask,
+        key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
             return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);

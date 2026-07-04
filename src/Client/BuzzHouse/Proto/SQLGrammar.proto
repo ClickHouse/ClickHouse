@@ -1541,6 +1541,7 @@ message Dynamic {
 message QBit {
     required FloatingPoints subtype = 1;
     required uint32 dimension = 2;
+    optional uint32 stride = 3;
 }
 
 message AggregateParam {

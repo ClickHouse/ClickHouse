@@ -109,6 +109,13 @@ public:
     UInt64 connection_client_version_minor = 0;
     UInt64 connection_client_version_patch = 0;
     UInt32 connection_tcp_protocol_version = 0;
+    /// Parallel-replicas protocol version negotiated with the immediate upstream connection on
+    /// hello. Populated locally by `TCPHandler` from its own `client_parallel_replicas_protocol_version`
+    /// member — NOT serialized to the wire. A follower uses this to recognise whether its
+    /// initiator can speak features bumped in newer parallel-replicas protocol versions
+    /// (e.g. announcement-response in `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE`)
+    /// and degrade gracefully when it can't. 0 means "unknown / pre-versioning".
+    UInt32 connection_parallel_replicas_protocol_version = 0;
 
     /// For http
     HTTPMethod http_method = HTTPMethod::UNKNOWN;

@@ -1071,6 +1071,7 @@ Possible values:
 )", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_min_allocation_size, 0, R"(Collect random allocations of size greater or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
     DECLARE(UInt64, total_memory_profiler_sample_max_allocation_size, 0, R"(Collect random allocations of size less or equal than specified value with probability equal to `total_memory_profiler_sample_probability`. 0 means disabled. You may want to set 'max_untracked_memory' to 0 to make this threshold to work as expected.)", 0) \
+    DECLARE(Bool, user_profile_events_per_cpu, true, R"(Shard per-user `ProfileEvents` counters per CPU to avoid cross-CPU cache-line contention under high thread counts. Each user pays `getNumCPUs() * num_events * sizeof(atomic)` of memory (hundreds of KiB on machines with many cores). Disable to fall back to a single shared atomic per event per user, trading throughput for memory.)", 0) \
     DECLARE(Bool, validate_tcp_client_information, false, R"(Determines whether validation of client information is enabled when a query packet is received.
 
 By default, it is `false`:
@@ -1938,6 +1939,12 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"max_part_num_to_warn", {std::to_string(context->getMaxPartNumToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_to_warn", {std::to_string(context->getMaxPendingMutationsToWarn()), ChangeableWithoutRestart::Yes}},
             {"max_pending_mutations_execution_time_to_warn", {std::to_string(context->getMaxPendingMutationsExecutionTimeToWarn()), ChangeableWithoutRestart::Yes}},
+            {"max_named_collection_num_to_throw", {std::to_string(context->getMaxNamedCollectionNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_table_num_to_throw", {std::to_string(context->getMaxTableNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_replicated_table_num_to_throw", {std::to_string(context->getMaxReplicatedTableNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_view_num_to_throw", {std::to_string(context->getMaxViewNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_dictionary_num_to_throw", {std::to_string(context->getMaxDictionaryNumToThrow()), ChangeableWithoutRestart::Yes}},
+            {"max_database_num_to_throw", {std::to_string(context->getMaxDatabaseNumToThrow()), ChangeableWithoutRestart::Yes}},
             {"max_partition_size_to_drop", {std::to_string(context->getMaxPartitionSizeToDrop()), ChangeableWithoutRestart::Yes}},
 
             {"min_os_cpu_wait_time_ratio_to_drop_connection", {std::to_string(context->getMinOSCPUWaitTimeRatioToDropConnection()), ChangeableWithoutRestart::Yes}},

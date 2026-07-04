@@ -101,6 +101,15 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// Back up / restore the data of the underlying nested ReplacingMergeTree table.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    /// `backupData` delegates to the nested ReplacingMergeTree, which supports per-partition backups, so mirror
+    /// its capability here. Otherwise `BackupEntriesCollector` would reject `BACKUP TABLE ... PARTITIONS` before
+    /// the delegation can run, because `IStorage::supportsBackupPartition` defaults to `false`.
+    bool supportsBackupPartition() const override;
+
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
     /// only once - when nested table is successfully created and is never changed afterwards.
