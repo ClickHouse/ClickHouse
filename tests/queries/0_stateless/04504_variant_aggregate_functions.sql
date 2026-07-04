@@ -56,6 +56,13 @@ SELECT sum(v) FROM t_variant_native; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT avg(v) FROM t_variant_native; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_variant_native;
 
+-- A top-level Variant whose common supertype is a container type (Array/Tuple/Map) is out of scope: the adapter
+-- casts to Nullable(supertype) to carry the Variant's implicit NULLs, and such types cannot be wrapped in Nullable.
+-- The supertype Array(UInt16) is orderable, so min/max over it are legal, but the Variant is still rejected with
+-- the original error (supporting it would require tracking the Variant NULLs separately -- a natural follow-up).
+SELECT min(CAST([1] AS Variant(Array(UInt8), Array(UInt16)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT max(CAST([1] AS Variant(Array(UInt8), Array(UInt16)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- The -Merge combinator over an AggregateFunction(f, Variant(...)) state type. Such a state type is constructible
 -- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
 -- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would

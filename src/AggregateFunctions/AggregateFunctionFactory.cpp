@@ -217,8 +217,13 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
             /// the variants are numeric.
             if (!supertype && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); }))
                 supertype = std::make_shared<DataTypeFloat64>();
-            /// No common supertype, or it is itself a composite type (e.g. Variant) that cannot be put inside
-            /// Nullable: such a Variant cannot be aggregated this way.
+            /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit
+            /// NULLs of the Variant (which the aggregation then skips). This is not possible when there is no common
+            /// supertype, when it is itself a composite type (e.g. Variant), or when it is a container type such as
+            /// Array/Tuple/Map. So a top-level Variant whose supertype is a container is out of scope even for an
+            /// orderable aggregate such as min/max over Variant(Array(...), Array(...)): the original error is
+            /// reported. Supporting it would require tracking the Variant NULLs separately from the value column
+            /// (a natural follow-up).
             if (!supertype || !supertype->canBeInsideNullable())
                 return nullptr;
             nested_argument_types.push_back(makeNullable(supertype));
