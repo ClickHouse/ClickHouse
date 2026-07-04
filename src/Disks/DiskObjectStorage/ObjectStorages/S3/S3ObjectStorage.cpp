@@ -264,7 +264,8 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         /// otherwise `ReadBufferFromS3` treats it as a real size and issues ranged reads forever.
         (object.bytes_size && object.bytes_size != StoredObject::UnknownSize) ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
-        std::move(blob_storage_log));
+        std::move(blob_storage_log),
+        object.etag);
 }
 
 SmallObjectDataWithMetadata S3ObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT

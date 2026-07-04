@@ -455,6 +455,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
             continue;
 
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot be recomputed. Skip them so the merge does not try to aggregate them and wedge.
+        if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+            continue;
+
         auto index_columns = index.expression->getRequiredColumns();
 
         /// Calculate indexes that depend only on one column on vertical
@@ -901,6 +906,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 if (!exclude_index_names.contains(index.name))
                 {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold no
+                    /// data and cannot be recomputed. Skip them so the merge does not wedge trying to
+                    /// aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
                     if (index.type == "text")
                         global_ctx->text_indexes_to_merge.push_back(index);
                     else
