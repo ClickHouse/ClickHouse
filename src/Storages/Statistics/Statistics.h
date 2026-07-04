@@ -163,6 +163,15 @@ public:
     void buildIfExists(const Block & block);
     void merge(const ColumnsStatistics & other);
     Estimates getEstimates() const;
+
+    /// Replace any collector whose type disagrees with the current column type in `columns`
+    /// with a fresh empty collector for the current type. Statistics loaded from a source part
+    /// (`IMergeTreeDataPart::loadStatistics`) are keyed on the type stored at write time; a
+    /// MODIFY COLUMN that changed the type but did not schedule a recalculation for that column
+    /// would otherwise feed the stale-typed collector a new-type block during the mutation rebuild
+    /// (`build`/`buildIfExists`) and trip the type-mismatch guard. Rebuilding from the new type is
+    /// correct: the mutation writes a fresh part, so the collector is filled from scratch anyway.
+    void reconcileWithColumns(const ColumnsDescription & columns);
 };
 
 struct ColumnDescription;

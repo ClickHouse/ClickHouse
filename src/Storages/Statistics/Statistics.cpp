@@ -629,6 +629,33 @@ void ColumnsStatistics::merge(const ColumnsStatistics & other)
     }
 }
 
+void ColumnsStatistics::reconcileWithColumns(const ColumnsDescription & columns)
+{
+    const auto & factory = MergeTreeStatisticsFactory::instance();
+
+    for (auto & [column_name, stat] : *this)
+    {
+        const auto * column_desc = columns.tryGet(column_name);
+        if (!column_desc)
+            continue;
+
+        const auto & current_type = column_desc->type;
+        const auto & stat_type = stat->getDataType();
+        if (stat_type && current_type->equals(*stat_type))
+            continue;
+
+        /// Type changed since the loaded statistic was written. Drop the stale-typed collector
+        /// and build a fresh empty one for the current type when the column still declares
+        /// statistics; otherwise remove it entirely.
+        if (column_desc->statistics.empty())
+            stat = nullptr;
+        else
+            stat = factory.get(*column_desc);
+    }
+
+    std::erase_if(*this, [](const auto & pair) { return pair.second == nullptr; });
+}
+
 Estimates ColumnsStatistics::getEstimates() const
 {
     Estimates estimates;

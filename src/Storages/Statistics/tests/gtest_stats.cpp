@@ -593,3 +593,103 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
 }
 
+/// The `build`/`buildIfExists` guard above surfaces the mismatch as a diagnostic LOGICAL_ERROR, but in
+/// debug/sanitizer/stress builds that still aborts. The upstream root cause is that
+/// `MutateSomePartColumnsTask` loads statistics from the source part (keyed on the pre-change type) and
+/// feeds them a post-change block during the rebuild when the mutation did not schedule a recalculation
+/// for that column (e.g. STID 0250-4148: `uniq` declared Int64, block Int128, column 'mtrl'). Before the
+/// rebuild, `processStatisticsChanges` now calls `ColumnsStatistics::reconcileWithColumns(current
+/// columns)`: any collector whose type disagrees with the current metadata is replaced by a fresh
+/// new-type collector (matching what `MutateAllPartColumnsTask` builds from `ColumnsStatistics(columns)`),
+/// or dropped if the column no longer declares statistics. After reconciliation the rebuild feeds a
+/// matching-type collector, so no mismatch reaches the guard.
+TEST(Statistics, ReconcileWithColumnsRebuildsTypeChangedCollectors)
+{
+    tryRegisterAggregateFunctions();
+
+    /// A loaded statistic keyed on `stored_type`, as returned by `IMergeTreeDataPart::loadStatistics`.
+    auto make_loaded = [](const String & column_name, const DataTypePtr & stored_type)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = stored_type;
+        desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+        ColumnsStatistics result;
+        result.emplace(column_name, MergeTreeStatisticsFactory::instance().get(desc));
+        return result;
+    };
+
+    /// The current metadata for one column: its (possibly new) type plus its declared statistics.
+    auto make_columns = [](const String & column_name, const DataTypePtr & current_type, bool with_uniq)
+    {
+        ColumnDescription column(column_name, current_type);
+        if (with_uniq)
+        {
+            ColumnStatisticsDescription stats_desc;
+            stats_desc.data_type = current_type;
+            stats_desc.types_to_desc.emplace(StatisticsType::Uniq, SingleStatisticsDescription(StatisticsType::Uniq, nullptr, false));
+            column.statistics = stats_desc;
+        }
+        ColumnsDescription columns;
+        columns.add(std::move(column));
+        return columns;
+    };
+
+    auto block_of = [](const String & column_name, const DataTypePtr & type)
+    {
+        MutableColumnPtr col = type->createColumn();
+        for (Int64 i = 0; i < 100; ++i)
+            /// Coerce the integer value to the column's type (Int128, Decimal256, UInt8, Float64, Nullable)
+            /// so the column accepts it regardless of its concrete Field representation.
+            col->insert(convertFieldToType(Field(i), *type));
+        return Block{ColumnWithTypeAndName(std::move(col), type, column_name)};
+    };
+
+    /// The exact type-change matrix from the failure family: Int64 -> {Int128, Decimal256, UInt8, Float64}
+    /// and the nullability dimension. After reconciliation the rebuild must succeed and count 100 uniques.
+    auto int64_type = std::make_shared<DataTypeInt64>();
+    std::vector<DataTypePtr> new_types = {
+        std::make_shared<DataTypeInt128>(),
+        std::make_shared<DataTypeDecimal256>(20, 0),
+        std::make_shared<DataTypeUInt8>(),
+        std::make_shared<DataTypeFloat64>(),
+        std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
+    };
+
+    for (const auto & new_type : new_types)
+    {
+        auto stats = make_loaded("mtrl", int64_type);
+        stats.reconcileWithColumns(make_columns("mtrl", new_type, /*with_uniq=*/ true));
+
+        ASSERT_TRUE(stats.contains("mtrl")) << "collector dropped for type " << new_type->getName();
+        EXPECT_TRUE(stats.at("mtrl")->getDataType()->equals(*new_type))
+            << "collector not rebuilt to " << new_type->getName();
+
+        /// The reconciled collector matches the new block type, so the mutation rebuild no longer aborts.
+        EXPECT_NO_THROW(stats.buildIfExists(block_of("mtrl", new_type))) << "rebuild threw for type " << new_type->getName();
+        EXPECT_EQ(stats.at("mtrl")->estimateCardinality(), 100u) << "wrong cardinality for " << new_type->getName();
+    }
+
+    /// A column that dropped its statistics across the type change: the stale collector is removed entirely.
+    {
+        auto stats = make_loaded("mtrl", int64_type);
+        stats.reconcileWithColumns(make_columns("mtrl", std::make_shared<DataTypeInt128>(), /*with_uniq=*/ false));
+        EXPECT_FALSE(stats.contains("mtrl")) << "stale collector for a de-statisticized column was not dropped";
+    }
+
+    /// Matching type is a no-op: the existing collector is preserved (not needlessly rebuilt).
+    {
+        auto stats = make_loaded("mtrl", int64_type);
+        auto * before = stats.at("mtrl").get();
+        stats.reconcileWithColumns(make_columns("mtrl", std::make_shared<DataTypeInt64>(), /*with_uniq=*/ true));
+        ASSERT_TRUE(stats.contains("mtrl"));
+        EXPECT_EQ(stats.at("mtrl").get(), before) << "matching-type collector should be left untouched";
+    }
+
+    /// A column absent from the current metadata is left untouched (renames/drops are handled elsewhere).
+    {
+        auto stats = make_loaded("gone", int64_type);
+        stats.reconcileWithColumns(make_columns("other", std::make_shared<DataTypeInt128>(), /*with_uniq=*/ true));
+        EXPECT_TRUE(stats.contains("gone")) << "unrelated loaded collector should be preserved";
+    }
+}
+
