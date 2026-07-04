@@ -34,6 +34,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import async_metrics  # noqa: E402
 import catalog  # noqa: E402
 import catalog_domains  # noqa: E402
+import coverage  # noqa: E402
+import generated_groups  # noqa: E402
 import navigation  # noqa: E402
 import system_tables_pages  # noqa: E402
 
@@ -334,8 +336,8 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
             fm = FRONTMATTER_RE.match(f.read())
         body = FRONTMATTER_RE.sub("", content, count=1).lstrip("\n")
         new = (fm.group(0).rstrip("\n") + "\n\n" + body) if fm else body
-    else:  # overwrite
-        new = content
+    else:  # overwrite (fully generated pages; a missing file is a creation)
+        return dest, content, "update" if os.path.isfile(dest) else "create"
     return dest, new, "update"
 
 
@@ -384,6 +386,8 @@ def main(argv=None):
     if any(family_selected(f) for f in
            ("table-engines", "database-engines", "data-types", "formats")):
         all_generators += catalog_domains.build_generators(binary, docs_dir, migrate)
+    if any(family_selected(f) for f in ("skipping-indexes", "disk-types")):
+        all_generators += generated_groups.build_generators(binary, docs_dir)
     if family_selected("listing"):
         # Last: listing tables render from the navigation fragment and the
         # pages' frontmatter, after any page creation and nav insertion.
@@ -393,12 +397,13 @@ def main(argv=None):
     drift = 0
     content_drift = 0
     nav_inserts = []  # (group_path, page_id) for pages created by --write
+    nav_groups = []  # generator-owned groups (fully generated domains)
 
     def flush_nav_inserts():
         # Newly created pages are added to the navigation fragment; docs.json
         # includes the fragment via $ref, so no further compilation is needed.
         # Runs before the listing generators so their tables see the new pages.
-        if not nav_inserts:
+        if not nav_inserts and not nav_groups:
             return
         frag_path = os.path.join(docs_dir, "reference", "navigation.json")
         fragment = navigation.load_json(frag_path)
@@ -407,11 +412,20 @@ def main(argv=None):
             for group_path, page_id in nav_inserts
             if navigation.insert_page(fragment, group_path, page_id)
         ]
+        changed += [
+            spec["group"]
+            for spec in nav_groups
+            if navigation.ensure_group(
+                fragment, spec["parent_path"], spec["group"], spec["pages"],
+                root=spec.get("root"), after_group=spec.get("after_group"),
+            )
+        ]
         if changed:
             with open(frag_path, "w", encoding="utf-8") as f:
                 f.write(navigation.dump_fragment(fragment))
-            print(f"wrote: reference/navigation.json (+{len(changed)} pages)")
+            print(f"wrote: reference/navigation.json ({', '.join(changed)})")
         nav_inserts.clear()
+        nav_groups.clear()
 
     for gen in generators:
         if gen.get("no_transform"):
@@ -450,11 +464,21 @@ def main(argv=None):
             print(f"{'created' if kind == 'create' else 'wrote'}: {rel}")
             if kind == "create" and gen.get("nav"):
                 nav_inserts.append(gen["nav"])
+            if gen.get("nav_group"):
+                nav_groups.append(gen["nav_group"])
         else:
             verb = "create" if kind == "create" else "update"
             print(f"[dry-run] would {verb}: {rel}")
 
     flush_nav_inserts()
+
+    # Domains whose hand-written pages are richer than the embedded summaries
+    # are checked for coverage instead of generated (see coverage.py).
+    if family_selected("coverage"):
+        for problem in coverage.run_checks(binary, docs_dir):
+            print(f"COVERAGE: {problem}")
+            drift += 1
+
     if content_drift:
         print(f"{content_drift} page(s) with CONTENT-DRIFT (not failing"
               f" pre-cutover; reconcile docs and source, see --content-drift)")

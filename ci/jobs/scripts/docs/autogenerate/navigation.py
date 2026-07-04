@@ -45,6 +45,37 @@ def _group_pages(node, group_path):
     return node["pages"]
 
 
+def ensure_group(fragment, parent_path, group, pages, root=None, after_group=None):
+    """Create or update a fully-generated navigation group: the group's
+    `pages` are owned by a generator and set to exactly `pages`. A new group
+    is placed after the sibling group named `after_group` (or appended).
+    Returns True if the fragment changed."""
+    parent_pages = _group_pages(fragment, parent_path)
+    node = next(
+        (c for c in parent_pages
+         if isinstance(c, dict) and c.get("group") == group),
+        None,
+    )
+    changed = False
+    if node is None:
+        node = {"group": group, "expandable": True, "expanded": False}
+        at = len(parent_pages)
+        if after_group:
+            for i, entry in enumerate(parent_pages):
+                if isinstance(entry, dict) and entry.get("group") == after_group:
+                    at = i + 1
+                    break
+        parent_pages.insert(at, node)
+        changed = True
+    if root and node.get("root") != root:
+        node["root"] = root
+        changed = True
+    if node.get("pages") != pages:
+        node["pages"] = list(pages)
+        changed = True
+    return changed
+
+
 def insert_page(fragment, group_path, page_id):
     """Insert `page_id` into the group at `group_path`, before the first string
     sibling that sorts after it (case-insensitive, by path basename). Group

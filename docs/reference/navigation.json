@@ -369,7 +369,25 @@
                 "reference/engines/table-engines/mergetree-family/replication",
                 "reference/engines/table-engines/mergetree-family/summingmergetree",
                 "reference/engines/table-engines/mergetree-family/textindexes",
-                "reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree"
+                "reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree",
+                {
+                  "group": "Data Skipping Indexes",
+                  "expandable": true,
+                  "expanded": false,
+                  "root": "reference/engines/table-engines/mergetree-family/skipping-indexes/index",
+                  "pages": [
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/index",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/bloom_filter",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/hypothesis",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/minmax",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/ngrambf_v1",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/set",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/sparse_grams",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/text",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/tokenbf_v1",
+                    "reference/engines/table-engines/mergetree-family/skipping-indexes/vector_similarity"
+                  ]
+                }
               ]
             },
             {
@@ -931,6 +949,27 @@
         "reference/settings/merge-tree-settings",
         "reference/settings/formats",
         "reference/settings/beta-and-experimental-features"
+      ]
+    },
+    {
+      "group": "Disk Types",
+      "expandable": true,
+      "expanded": false,
+      "root": "reference/disks/index",
+      "pages": [
+        "reference/disks/index",
+        "reference/disks/azure_blob_storage",
+        "reference/disks/cache",
+        "reference/disks/encrypted",
+        "reference/disks/hdfs",
+        "reference/disks/local",
+        "reference/disks/local_blob_storage",
+        "reference/disks/object_storage",
+        "reference/disks/s3",
+        "reference/disks/s3_plain",
+        "reference/disks/s3_plain_rewritable",
+        "reference/disks/s3_with_keeper",
+        "reference/disks/web"
       ]
     },
     {
