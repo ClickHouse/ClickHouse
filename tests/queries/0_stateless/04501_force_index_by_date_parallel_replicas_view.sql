@@ -27,9 +27,13 @@ CREATE VIEW va_force_index_pr AS SELECT timestamp AS ts, value AS val FROM t_for
 INSERT INTO t_force_index_pr
 SELECT toDateTime('2026-06-01 00:00:00') + number, number FROM numbers(1000000);
 
+-- parallel_replicas_allow_view_over_mergetree = 0 pins the view-inner-query execution mode this PR fixes.
+-- If that beta setting's default ever flips to 1, the view would be planned via the outer-view path and the
+-- positive cases would pass without exercising the auto-enable logic, so lock it explicitly.
 SET enable_analyzer = 1, enable_parallel_replicas = 1, automatic_parallel_replicas_mode = 0,
     max_parallel_replicas = 3, cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_localhost',
-    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0;
+    parallel_replicas_for_non_replicated_merge_tree = 1, parallel_replicas_min_number_of_rows_per_replica = 0,
+    parallel_replicas_allow_view_over_mergetree = 0;
 
 -- Base table with parallel replicas and a key predicate: the predicate folds into the reading step, so
 -- this always worked. Kept as a control.
