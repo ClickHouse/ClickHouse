@@ -85,7 +85,7 @@ bool tryExtractConstGeoBbox(
     return true;
 }
 
-} // namespace
+}
 
 
 // ─── Granule ─────────────────────────────────────────────────────────────────
@@ -269,9 +269,10 @@ MergeTreeIndexConditionPtr MergeTreeIndexSpatialBbox::createIndexCondition(
 
 MergeTreeIndexFormat MergeTreeIndexSpatialBbox::getDeserializedFormat(
     const MergeTreeDataPartChecksums & checksums,
-    const std::string & relative_path_prefix) const
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
     return {0 /* unknown */, {}};
 }
