@@ -366,3 +366,57 @@ ALTER TABLE t_mat_ttl_index_plain_multi MODIFY COLUMN c DateTime MATERIALIZED to
 ALTER TABLE t_mat_ttl_index_plain_multi MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
 SELECT count() FROM t_mat_ttl_index_plain_multi WHERE y = 0 SETTINGS force_data_skipping_indices = 'idx_a_y';
 DROP TABLE t_mat_ttl_index_plain_multi;
+
+-- Case 32: A projection that reads a TTL-target column together with a *sibling* column
+-- (`PROJECTION p (SELECT a, y ORDER BY a)`) while a column TTL resets `y`. Materializing `c` drives
+-- the column TTL `y TTL c + ...` (so `y` lands in the mutation's changed columns and the projection is
+-- marked for rebuild), but the sibling `a` is neither the materialized column nor a TTL dependency, so
+-- it must be fed into the mutation stream too. On a *wide* part the rebuild otherwise fails with
+-- `NOT_FOUND_COLUMN_IN_BLOCK` for `a`. After the fix the command succeeds and the projection is rebuilt
+-- from the reset values: the forced projection returns the reset `y = 0` (not the stale 100), and `a` is
+-- preserved. Forces a wide part so the sibling actually has to be fed (a compact part carries all
+-- columns anyway).
+DROP TABLE IF EXISTS t_mat_ttl_proj_sibling;
+CREATE TABLE t_mat_ttl_proj_sibling
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     PROJECTION p (SELECT a, y ORDER BY a))
+    ENGINE = MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_ttl_proj_sibling (a, y) VALUES (5, 100);
+ALTER TABLE t_mat_ttl_proj_sibling MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
+ALTER TABLE t_mat_ttl_proj_sibling MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT a, y FROM t_mat_ttl_proj_sibling ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_mat_ttl_proj_sibling;
+
+-- Case 33: The same sibling-feeding is required for a plain-column skip index over a TTL-target column
+-- on a wide part (`INDEX idx (a, y)` while a column TTL resets `y`). This is the wide-part counterpart of
+-- Case 31 (which uses a compact part and so never exercises the missing sibling): without feeding `a`
+-- the rebuild fails with `UNKNOWN_IDENTIFIER` for `a`. After the fix the command succeeds and the index
+-- is rebuilt from the reset value, so a query forced through it for `y = 0` still finds the row.
+DROP TABLE IF EXISTS t_mat_ttl_index_plain_multi_wide;
+CREATE TABLE t_mat_ttl_index_plain_multi_wide
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     INDEX idx_a_y (a, y) TYPE minmax GRANULARITY 1)
+    ENGINE = MergeTree() ORDER BY a SETTINGS index_granularity = 1, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_ttl_index_plain_multi_wide (a, y) VALUES (5, 100);
+ALTER TABLE t_mat_ttl_index_plain_multi_wide MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
+ALTER TABLE t_mat_ttl_index_plain_multi_wide MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT count() FROM t_mat_ttl_index_plain_multi_wide WHERE y = 0 SETTINGS force_data_skipping_indices = 'idx_a_y';
+DROP TABLE t_mat_ttl_index_plain_multi_wide;
+
+-- Case 34: The sibling-feeding must also produce a *correct* aggregate projection over a wide part, not
+-- merely avoid the exception. `PROJECTION p (SELECT a, sum(y) GROUP BY a)` reads the TTL-target `y` and
+-- the sibling `a`; after the reset the forced projection returns `sum(y) = 0` per group (a stale
+-- projection would report the pre-reset 300), confirming the projection is rebuilt from the reset block.
+DROP TABLE IF EXISTS t_mat_ttl_proj_agg_sibling;
+CREATE TABLE t_mat_ttl_proj_agg_sibling
+    (a UInt64, c DateTime MATERIALIZED toDateTime(2000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     PROJECTION p (SELECT a, sum(y) GROUP BY a))
+    ENGINE = MergeTree() ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_mat_ttl_proj_agg_sibling (a, y) VALUES (1, 100) (1, 200) (2, 300);
+ALTER TABLE t_mat_ttl_proj_agg_sibling MODIFY COLUMN c DateTime MATERIALIZED toDateTime(1000000000);
+ALTER TABLE t_mat_ttl_proj_agg_sibling MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
+SELECT a, sum(y) FROM t_mat_ttl_proj_agg_sibling GROUP BY a ORDER BY a SETTINGS optimize_use_projections = 1, force_optimize_projection = 1;
+DROP TABLE t_mat_ttl_proj_agg_sibling;

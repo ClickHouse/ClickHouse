@@ -1387,6 +1387,52 @@ void MutationsInterpreter::prepare(bool dry_run)
                         }
                     }
                 }
+
+                /// A projection or a plain-column skip index that reads a TTL-reset target column is
+                /// marked for rebuild by the generic derived-object scan near the end of `prepare` (the
+                /// target lands in `changed_columns`). The rebuild reads the object's inputs from the
+                /// mutation output block, so every *other* input column — a sibling that is neither the
+                /// materialized column nor a TTL dependency — must be fed into the stream as an unchanged
+                /// column; otherwise, on a wide part, the rebuild fails with `NOT_FOUND_COLUMN_IN_BLOCK`
+                /// (projection) or `UNKNOWN_IDENTIFIER` (index). For example, `MATERIALIZE COLUMN c` with
+                /// `y ... TTL c + INTERVAL ...` and `PROJECTION p (SELECT a, y ORDER BY a)` or
+                /// `INDEX idx (a, y)` must feed the sibling `a`. The recursive `getAllColumnDependencies`
+                /// above already discovers these `PROJECTION` / `SKIP_INDEX` inputs through the
+                /// `TTL_TARGET` column, but they are filtered out just above, so register them here.
+                /// Only the *non-target* inputs need feeding — the target column itself is already
+                /// streamed via its `TTL_TARGET` dependency (verified: a plain single-column index over
+                /// the target rebuilds correctly with no sibling). This mirrors the direct-dependency
+                /// handling above that feeds an object's inputs when it reads the rewritten column
+                /// itself. Skip indices that read the target through a computed expression or a subcolumn
+                /// are refused just above and never reach the rebuild, so no sibling is fed for them.
+                auto feed_non_target_inputs = [&](const Names & required_columns, ColumnDependency::Kind kind)
+                {
+                    for (const auto & required_column : required_columns)
+                        if (std::ranges::find(ttl_target_columns, required_column) == ttl_target_columns.end())
+                            dependencies.emplace(required_column, kind);
+                };
+
+                auto reads_ttl_target = [&](const Names & required_columns)
+                {
+                    return std::ranges::any_of(required_columns, [&](const auto & required_column)
+                        { return std::ranges::find(ttl_target_columns, required_column) != ttl_target_columns.end(); });
+                };
+
+                for (const auto & index : indices_desc)
+                {
+                    if (!source.hasSecondaryIndex(index.name, metadata_snapshot))
+                        continue;
+                    if (reads_ttl_target(index.expression->getRequiredColumns()))
+                        feed_non_target_inputs(index.expression->getRequiredColumns(), ColumnDependency::SKIP_INDEX);
+                }
+
+                for (const auto & projection : projections_desc)
+                {
+                    if (!source.hasProjection(projection.name))
+                        continue;
+                    if (reads_ttl_target(projection.required_columns))
+                        feed_non_target_inputs(projection.required_columns, ColumnDependency::PROJECTION);
+                }
             }
 
             /// `TTL <expr> DELETE WHERE <cond>` (a rows-where TTL) and `TTL <expr> GROUP BY ... [WHERE
