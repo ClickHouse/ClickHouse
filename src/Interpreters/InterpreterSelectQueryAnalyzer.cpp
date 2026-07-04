@@ -60,6 +60,9 @@ extern const SettingsUInt64 automatic_parallel_replicas_mode;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
+extern const SettingsBool parallel_replicas_filter_pushdown;
+extern const SettingsBool force_index_by_date;
+extern const SettingsBool force_primary_key;
 extern const SettingsString cluster_for_parallel_replicas;
 }
 
@@ -154,6 +157,20 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
         }
     }
+
+    /// force_index_by_date / force_primary_key are enforced on the MergeTree reading step, which must see the
+    /// query's filter. When a table is read through a view (or subquery) under parallel replicas, the view is
+    /// planned as its own inner query and the outer WHERE predicate stays above the view boundary, so it never
+    /// reaches the inner reading step: the key looks unused there even for a query that does use it, giving a
+    /// false-positive INDEX_NOT_USED. parallel_replicas_filter_pushdown pushes the filter through the boundary
+    /// into the reading step, so the index is genuinely used, the guards are enforced correctly (still throwing
+    /// for a genuinely unused key), and parallel replicas stays enabled. Enable it automatically for this case
+    /// unless the user set it explicitly. See issue #108266.
+    if (result_context->canUseParallelReplicasOnInitiator()
+        && (result_context->getSettingsRef()[Setting::force_index_by_date] || result_context->getSettingsRef()[Setting::force_primary_key])
+        && !result_context->getSettingsRef().isChanged("parallel_replicas_filter_pushdown"))
+        result_context->setSetting("parallel_replicas_filter_pushdown", true);
+
     return result_context;
 }
 
