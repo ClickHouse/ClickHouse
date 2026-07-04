@@ -36,6 +36,12 @@ export MALLOC_CONF="abort_conf:true,abort:true,narenas:$(nproc --all)"
 # Must match CHServer.JEMALLOC_PROFILER_SAMPLING_RATE in performance_tests.py.
 JEMALLOC_PROFILER_SAMPLING_RATE=16
 
+# Disable cgroup memory correction for report-building clickhouse-local so each
+# process is tracked against its own RSS, not the shared job cgroup (avoids Code 241).
+# Passed after `--` so it word-splits into server settings. Keep in sync with
+# REPORT_LOCAL_SERVER_SETTINGS in performance_tests.py.
+CHPC_REPORT_LOCAL_SERVER_SETTINGS="--memory_worker_use_cgroup=0"
+
 function wait_for_server # port, pid
 {
     for _ in {1..60}
@@ -600,7 +606,7 @@ create table query_run_metrics_for_stats engine File(
 create table query_run_metric_names engine File(TSV, 'analyze/query-run-metric-names.tsv')
     as select metric_names from query_run_metric_arrays limit 1
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
 
 # This is a lateral join in bash... please forgive me.
 # We don't have arrayPermute(), so I have to make random permutations with
@@ -619,6 +625,7 @@ do
             --file \"$file\" \
             --structure 'test text, query text, run int, version UInt8, metrics Array(float)' \
             --query \"$(cat "$script_dir/eqmed.sql")\" \
+            -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS \
             >> \"analyze/query-metric-stats.tsv\"" \
             2>> analyze/errors.log \
         >> analyze/commands.txt
@@ -672,7 +679,7 @@ create table query_metric_stats_denorm engine File(TSVWithNamesAndTypes,
     left array join metric_name, left, right, diff, stat_threshold
     order by test, query_index, metric_name
     ;
-" 2> >(tee -a analyze/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a analyze/errors.log 1>&2)
 }
 
 # Analyze results
@@ -1002,7 +1009,7 @@ create table all_query_metrics_tsv engine File(TSV, 'report/all-query-metrics.ts
             and query_display_names.query_index = report_thresholds.query_index
             and query_display_names.query_display_name = report_thresholds.query_display_name
     order by test, query_index;
-" 2> >(tee -a report/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2)
 
 # Prepare source data for metrics and flamegraphs for queries that were profiled
 # by perf.py.
@@ -1126,7 +1133,7 @@ create table stacks engine File(TSV, 'report/stacks.$version.tsv') as
     group by test, query_index, trace_type, trace
     order by test, query_index, trace_type, trace
     ;
-" 2> >(tee -a report/errors.log 1>&2) &
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a report/errors.log 1>&2) &
 done
 wait
 
@@ -1259,7 +1266,7 @@ create table changes engine File(TSV, 'metrics/changes.tsv')
     )
     order by diff desc
     ;
-" 2> >(tee -a metrics/errors.log 1>&2)
+" -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS 2> >(tee -a metrics/errors.log 1>&2)
 
 IFS=$'\n'
 for prefix in $(cut -f1 "metrics/metrics.tsv" | sort | uniq)
@@ -1339,7 +1346,7 @@ create table ci_checks engine File(TSVWithNamesAndTypes, 'ci-checks.tsv')
             array join map('old', left, 'new', right) as test_desc_
     )
 ;
-    "
+    " -- $CHPC_REPORT_LOCAL_SERVER_SETTINGS
 
     # Upload some run attributes. I use this weird form because it is the same
     # form that can be used for historical data when you only have compare.log.
