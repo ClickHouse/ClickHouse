@@ -63,6 +63,14 @@ DROP TABLE t_variant_native;
 SELECT min(CAST([1] AS Variant(Array(UInt8), Array(UInt16)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT max(CAST([1] AS Variant(Array(UInt8), Array(UInt16)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- Only top-level Variant arguments are adapted. A combinator that merely exposes a nested Variant from ordinary
+-- user data does not get the adapter, so a nested Variant argument stays out of scope: e.g. -Array turns
+-- sumArray(Array(Variant(...))) into a nested sum(Variant(...)), which is still rejected with the original error.
+-- (The adapter is only reintroduced for a Variant that comes from a stored aggregate-function state type, as -Merge
+-- does below.)
+SELECT sumArray([CAST(1 AS Variant(UInt8, UInt64)), CAST(2 AS Variant(UInt8, UInt64))]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT minArray([CAST(1 AS Variant(UInt8, UInt64)), CAST(2 AS Variant(UInt8, UInt64))]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- The -Merge combinator over an AggregateFunction(f, Variant(...)) state type. Such a state type is constructible
 -- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
 -- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionVariantAdapter.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
@@ -462,13 +463,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         /// If(Adapter(Null(sum)))). The argument types here are already recursively free of LowCardinality (stripped
         /// by the top-level get()).
         ///
-        /// The exception is a combinator that reintroduces a Variant argument that was absent from the top-level call
-        /// -- most importantly -Merge, whose nested argument types come from a stored AggregateFunction(f, Variant(...))
-        /// state type. There the nested function itself must go through the adapter, so that the merge side reconstructs
-        /// the same Adapter(f) state layout the state was produced with (otherwise resolving f over the Variant throws).
+        /// The exception is a combinator that reintroduces a Variant argument from a stored aggregate-function state
+        /// type -- most importantly -Merge, whose nested argument types come from an AggregateFunction(f, Variant(...))
+        /// state (produced earlier by this same Variant adapter). There the nested function itself must go through the
+        /// adapter, so that the merge side reconstructs the same Adapter(f) state layout the state was produced with
+        /// (otherwise resolving f over the Variant throws). We recognize this narrowly by the combinator consuming an
+        /// AggregateFunction state type (as -Merge/-MergeState do). Combinators that merely expose a nested Variant
+        /// from ordinary user data (e.g. -Array turning Array(Variant(...)) into a nested Variant argument) are NOT
+        /// adapted: nested Variant arguments stay out of scope -- only top-level Variant arguments are handled, which
+        /// keeps the documented "top-level Variant only; nested Array/Tuple Variant still rejected" contract.
+        bool consumes_aggregate_state = std::any_of(
+            argument_types.begin(), argument_types.end(),
+            [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
         bool nested_has_variant = std::any_of(
             nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
-        AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant)
+        AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
             ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant)
             : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
