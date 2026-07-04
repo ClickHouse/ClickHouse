@@ -120,8 +120,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
-    extern const SettingsUInt64 limit;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble limit;
+    extern const SettingsDouble offset;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -1121,7 +1121,7 @@ void pushOrderByIntoView(
         /// the alias-vs-source-column ambiguity that the outer-context guard already excludes.
         /// Check the effective context here and skip the pushdown when any of these is set.
         const auto & view_settings = view_context->getSettingsRef();
-        if (view_settings[Setting::limit] || view_settings[Setting::offset] || view_settings[Setting::prefer_column_name_to_alias])
+        if (view_settings[Setting::limit] != 0 || view_settings[Setting::offset] != 0 || view_settings[Setting::prefer_column_name_to_alias])
             return;
 
         inner_header = InterpreterSelectQueryAnalyzer::getSampleBlock(inner, view_context, SelectQueryOptions().analyze());
