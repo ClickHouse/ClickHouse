@@ -77,6 +77,7 @@ namespace Setting
 {
     extern const SettingsBool join_use_nulls;
     extern const SettingsBool allow_general_join_planning;
+    extern const SettingsUInt64 max_expanded_join_conditions;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsJoinAlgorithm join_algorithm;
 }
@@ -339,25 +340,23 @@ static bool hasEquiConditions(const JoinCondition & condition)
     return false;
 }
 
-static constexpr size_t MAX_EXPANDED_JOIN_CONDITIONS = 1024;
-
-static void checkExpandedJoinConditionsLimit(size_t size, const IQueryTreeNode & node)
+static void checkExpandedJoinConditionsLimit(size_t size, size_t max_expanded, const IQueryTreeNode & node)
 {
-    if (size > MAX_EXPANDED_JOIN_CONDITIONS)
+    if (size > max_expanded)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
             "JOIN ON expression {} expands to {} join conditions, maximum: {}",
             node.formatASTForErrorMessage(),
             size,
-            MAX_EXPANDED_JOIN_CONDITIONS);
+            max_expanded);
 }
 
-static void checkExpandedJoinConditionsProductLimit(size_t lhs_size, size_t rhs_size, const IQueryTreeNode & node)
+static void checkExpandedJoinConditionsProductLimit(size_t lhs_size, size_t rhs_size, size_t max_expanded, const IQueryTreeNode & node)
 {
-    if (lhs_size != 0 && rhs_size > MAX_EXPANDED_JOIN_CONDITIONS / lhs_size)
+    if (lhs_size != 0 && rhs_size > max_expanded / lhs_size)
         throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION,
             "JOIN ON expression {} expands to more than {} join conditions",
             node.formatASTForErrorMessage(),
-            MAX_EXPANDED_JOIN_CONDITIONS);
+            max_expanded);
 }
 
 
@@ -371,9 +370,10 @@ static JoinCondition concatConditions(const JoinCondition & lhs, const JoinCondi
 static std::vector<JoinCondition> makeCrossProduct(
     const std::vector<JoinCondition> & lhs,
     const std::vector<JoinCondition> & rhs,
+    size_t max_expanded,
     const IQueryTreeNode & node)
 {
-    checkExpandedJoinConditionsProductLimit(lhs.size(), rhs.size(), node);
+    checkExpandedJoinConditionsProductLimit(lhs.size(), rhs.size(), max_expanded, node);
 
     std::vector<JoinCondition> result;
     result.reserve(lhs.size() * rhs.size());
@@ -398,6 +398,9 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
         addConditionsToJoinOperator(builder_context, std::move(join_conditions));
         return;
     }
+
+    const auto & query_settings = builder_context.planner_context->getQueryContext()->getSettingsRef();
+    const size_t max_expanded = query_settings[Setting::max_expanded_join_conditions];
 
     std::unordered_map<const IQueryTreeNode *, JoinConditions> built_clauses;
     std::stack<QueryTreeNodePtr> nodes_to_process;
@@ -444,7 +447,7 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 {
                     auto & child_res = get_and_check_built_clause(argument.get());
                     result.insert(result.end(), std::make_move_iterator(child_res.begin()), std::make_move_iterator(child_res.end()));
-                    checkExpandedJoinConditionsLimit(result.size(), *node);
+                    checkExpandedJoinConditionsLimit(result.size(), max_expanded, *node);
                     child_res.clear();
                 }
 
@@ -471,7 +474,7 @@ static void buildDisjunctiveJoinConditionsGeneral(const QueryTreeNodePtr & join_
                 for (; it != arguments.end(); it++)
                 {
                     auto & child_res = get_and_check_built_clause(it->get());
-                    result = makeCrossProduct(result, child_res, *node);
+                    result = makeCrossProduct(result, child_res, max_expanded, *node);
                     child_res.clear();
                 }
             }
