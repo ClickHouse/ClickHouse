@@ -220,7 +220,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
-                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_release);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
@@ -328,9 +328,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
-                /// Update the snapshot of total rows and bytes for the current join instance
-                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
-                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                /// Update the snapshot of total rows and bytes for the current join instance.
+                /// Use release ordering so that another thread summing these snapshots in
+                /// getTotalRowCount/getTotalByteCount (with acquire) observes the inserted rows.
+                /// Without this, the lock-free global JOIN limit check can read stale-low totals
+                /// on weak memory models (ARM) and skip the SET_SIZE_LIMIT_EXCEEDED throw.
+                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_release);
+                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_release);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -466,7 +470,7 @@ size_t ConcurrentHashJoin::getTotalRowCount() const
 {
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
-        res += hash_join->total_rows.load(std::memory_order_relaxed);
+        res += hash_join->total_rows.load(std::memory_order_acquire);
     return res;
 }
 
@@ -474,7 +478,7 @@ size_t ConcurrentHashJoin::getTotalByteCount() const
 {
     size_t res = 0;
     for (const auto & hash_join : hash_joins)
-        res += hash_join->total_bytes.load(std::memory_order_relaxed);
+        res += hash_join->total_bytes.load(std::memory_order_acquire);
     return res;
 }
 
@@ -741,8 +745,8 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
     std::lock_guard lock(hash_join->mutex);
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
-    hash_join->total_rows.store(0, std::memory_order_relaxed);
-    hash_join->total_bytes.store(0, std::memory_order_relaxed);
+    hash_join->total_rows.store(0, std::memory_order_release);
+    hash_join->total_bytes.store(0, std::memory_order_release);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
