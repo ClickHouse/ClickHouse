@@ -802,7 +802,12 @@ ReadWriteBufferFromHTTP::HTTPFileInfo ReadWriteBufferFromHTTP::parseFileInfo(con
     {
         String date_str = response.get("Last-Modified");
         struct tm info{};
-        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S %Z", &info);
+        /// RFC 7231 IMF-fixdate; the zone is always the literal "GMT". Matching it
+        /// with %Z instead is not portable: musl's %Z only knows the names of the
+        /// currently configured local zone (and crashes on tzname[0] == NULL if the
+        /// zone database has not been initialized yet), so "GMT" is left unconsumed
+        /// and the full-consumption check below fails.
+        char * end = strptime(date_str.data(), "%a, %d %b %Y %H:%M:%S GMT", &info);
         if (end == date_str.data() + date_str.size())
             res.last_modified = timegm(&info);
     }
