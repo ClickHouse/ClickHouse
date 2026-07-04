@@ -1544,7 +1544,7 @@ Possible values:
 Prefer more precise (but slower) float parsing algorithm
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
+Defines the behavior when a [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md), [Time](../../sql-reference/data-types/time.md), [Time64](../../sql-reference/data-types/time64.md), integer or floating-point value is converted into `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` or `Time64` but the value cannot be represented in the result type.
 
 Possible values:
 
