@@ -80,3 +80,22 @@ DROP TABLE t_variant_state_uint;
 
 -- A state type over a Variant without a common numeric supertype is still rejected with the original error.
 CREATE TABLE t_variant_state_bad (s AggregateFunction(sum, Variant(Int64, String))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- The adapter is state-transparent: it shares the nested function's state bytes, so (like the -If and -Array
+-- combinators) an AggregateFunction(f, Variant(...)) state normalizes to the same state as the byte-compatible
+-- AggregateFunction(f, Nullable(supertype)) it delegates to. Such states can therefore be cast to one another and
+-- unified -- the state-representation property tested for -If/-Array by 02366_normalize_aggregate_function_types_and_states.
+DROP TABLE IF EXISTS t_variant_norm;
+CREATE TABLE t_variant_norm (v Variant(Int64, Float64)) ENGINE = Memory;
+INSERT INTO t_variant_norm VALUES (1), (2.5), (3), (NULL);
+-- A Nullable(supertype)-form state casts to the Variant-form state type, and back.
+SELECT 'cast to variant', sumMerge(CAST(s, 'AggregateFunction(sum, Variant(Int64, Float64))')) FROM (SELECT sumState(v) AS s FROM t_variant_norm);
+SELECT 'cast from variant', sumMerge(CAST(s, 'AggregateFunction(sum, Nullable(Float64))')) FROM (SELECT CAST(sumState(v), 'AggregateFunction(sum, Variant(Int64, Float64))') AS s FROM t_variant_norm);
+-- The two forms unify under UNION ALL and merge together.
+SELECT 'unify', sumMerge(s) FROM
+(
+    SELECT CAST(sumState(v), 'AggregateFunction(sum, Variant(Int64, Float64))') AS s FROM t_variant_norm
+    UNION ALL
+    SELECT sumState(v) AS s FROM t_variant_norm
+);
+DROP TABLE t_variant_norm;

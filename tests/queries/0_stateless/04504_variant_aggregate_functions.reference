@@ -14,3 +14,6 @@ native	4	Variant(String, UInt64)	4
 merge empty	\N	\N	\N	\N
 merge types	Nullable(Float64)	Nullable(Float64)	Nullable(Float64)
 merge uint	Nullable(UInt64)
+cast to variant	6.5
+cast from variant	6.5
+unify	13

@@ -104,6 +104,22 @@ public:
     size_t getVersionFromRevision(size_t revision) const override { return nested_function->getVersionFromRevision(revision); }
     size_t getDefaultVersion() const override { return nested_function->getDefaultVersion(); }
 
+    /// The adapter shares the nested function's state bytes as-is, so it is state-transparent exactly like the
+    /// -If and -Array combinators. Forward the state-representation helpers to the nested function so that states
+    /// produced through the adapter stay interchangeable with the same underlying state produced without it: for
+    /// example, AggregateFunction(sum, Variant(...)) normalizes to the same state as AggregateFunction(sum, Nullable(supertype)),
+    /// so sumState/sumIfState of a Variant still unify (as in 02366_normalize_aggregate_function_types_and_states)
+    /// and CAST(... AS AggregateFunction(...)) between the byte-compatible forms keeps working.
+    const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
+    {
+        return nested_function->getBaseAggregateFunctionWithSameStateRepresentation();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return nested_function->getNormalizedStateType();
+    }
+
     /// The state layout is exactly the nested function's state, so all state operations are forwarded directly.
     void create(AggregateDataPtr __restrict place) const override { nested_function->create(place); }
     void destroy(AggregateDataPtr __restrict place) const noexcept override { nested_function->destroy(place); }
