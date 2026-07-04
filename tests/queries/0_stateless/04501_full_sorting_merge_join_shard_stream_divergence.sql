@@ -28,6 +28,17 @@ SELECT count() FROM t04501 AS a ALL INNER JOIN t04501 AS b ON b.c0 = a.c0 PREWHE
 -- Must not abort the server.
 SELECT count() FROM t04501 AS a ALL INNER JOIN t04501 AS b ON b.c0 = a.c0 ALL INNER JOIN t04501 AS c ON b.c1 = c.c1 PREWHERE a.c0 > 1000 WHERE b.c0 != c.c0;
 
+-- Non-empty divergent case: exercise the fallback's row semantics, not only that it stopped throwing.
+-- A RIGHT join with `PREWHERE a.c0 > 1000` prunes the left (`a`) side to a single empty stream while the
+-- sharded right (`b`) side keeps several non-empty per-shard streams (8 vs 1). The stream counts diverge, so
+-- the YShaped fallback runs and merges `b`'s several sorted streams back into one before the merge join.
+-- Because it is a RIGHT join, every `b` row reaches the output, so a duplicate, drop or mis-order bug in that
+-- merge would change the result. Compare the row count and a row-order-independent checksum of the joined
+-- columns against the hash join, which does not use this pipeline. Must be 1.
+SELECT
+    (SELECT (count(), sum(cityHash64(a.c0, a.c1, b.c0, b.c1))) FROM t04501 AS a ALL RIGHT JOIN t04501 AS b ON b.c0 = a.c0 PREWHERE a.c0 > 1000)
+  = (SELECT (count(), sum(cityHash64(a.c0, a.c1, b.c0, b.c1))) FROM t04501 AS a ALL RIGHT JOIN t04501 AS b ON b.c0 = a.c0 PREWHERE a.c0 > 1000 SETTINGS join_algorithm = 'hash');
+
 -- Correctness: a sharded three-way self join with a non-empty result must produce the same count as the hash join.
 SELECT
     (SELECT count() FROM t04501 AS a ALL INNER JOIN t04501 AS b ON b.c0 = a.c0 ALL INNER JOIN t04501 AS c ON b.c1 = c.c1 WHERE b.c0 != c.c0)
