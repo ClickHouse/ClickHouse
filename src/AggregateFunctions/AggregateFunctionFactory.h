@@ -107,17 +107,25 @@ private:
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
         bool has_null_arguments,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool apply_variant_adapter_to_nested) const;
 
     /// Resolve the function applying only the LowCardinality/Nullable/combinator handling, without the
     /// Variant fallback. `types_without_low_cardinality` must already have LowCardinality removed.
+    ///
+    /// `apply_variant_adapter_to_nested` controls what happens when a combinator reintroduces a Variant
+    /// argument in its nested types (most importantly `-Merge`, whose nested argument types come from a stored
+    /// `AggregateFunction(f, Variant(...))` state type): if set, the nested function is resolved through the
+    /// Variant adapter so such states round-trip; if not, the Variant is passed to the nested function as-is
+    /// (which keeps the adapter as the outermost wrapper on the forward path, where it is applied by `get`).
     AggregateFunctionPtr getWithoutVariantAdapter(
         const String & name,
         NullsAction action,
         const DataTypes & types_without_low_cardinality,
         const Array & parameters,
         AggregateFunctionProperties & out_properties,
-        AggregateFunctionStateVariant state_variant) const;
+        AggregateFunctionStateVariant state_variant,
+        bool apply_variant_adapter_to_nested) const;
 
     /// Try to wrap the function in AggregateFunctionVariantAdapter so it can be applied to Variant arguments by
     /// aggregating over the least common supertype of the variants. Returns nullptr if that is not possible.

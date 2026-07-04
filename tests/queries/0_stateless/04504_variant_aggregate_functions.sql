@@ -55,3 +55,28 @@ SELECT 'native', count(v), toTypeName(any(v)), uniqExact(v) FROM t_variant_nativ
 SELECT sum(v) FROM t_variant_native; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT avg(v) FROM t_variant_native; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_variant_native;
+
+-- The -Merge combinator over an AggregateFunction(f, Variant(...)) state type. Such a state type is constructible
+-- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
+-- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would
+-- throw ILLEGAL_TYPE_OF_ARGUMENT when reconstructing the state.
+DROP TABLE IF EXISTS t_variant_state;
+CREATE TABLE t_variant_state
+(
+    s AggregateFunction(sum, Variant(Int64, Float64)),
+    mn AggregateFunction(min, Variant(Int64, Float64)),
+    mx AggregateFunction(max, Variant(Int64, Float64)),
+    a AggregateFunction(avg, Variant(Int64, Float64))
+) ENGINE = Memory;
+SELECT 'merge empty', sumMerge(s), minMerge(mn), maxMerge(mx), avgMerge(a) FROM t_variant_state;
+SELECT 'merge types', toTypeName(sumMerge(s)), toTypeName(minMerge(mn)), toTypeName(avgMerge(a)) FROM t_variant_state;
+DROP TABLE t_variant_state;
+
+-- A clean common supertype is preserved for the state type too: Variant(UInt8, UInt32) -> UInt32 -> sum -> UInt64.
+DROP TABLE IF EXISTS t_variant_state_uint;
+CREATE TABLE t_variant_state_uint (s AggregateFunction(sum, Variant(UInt8, UInt32))) ENGINE = Memory;
+SELECT 'merge uint', toTypeName(sumMerge(s)) FROM t_variant_state_uint;
+DROP TABLE t_variant_state_uint;
+
+-- A state type over a Variant without a common numeric supertype is still rejected with the original error.
+CREATE TABLE t_variant_state_bad (s AggregateFunction(sum, Variant(Int64, String))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }

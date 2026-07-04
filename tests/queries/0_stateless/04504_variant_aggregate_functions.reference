@@ -11,3 +11,6 @@ uint	3006	Nullable(UInt64)
 all null	\N	\N	\N
 empty	\N	\N
 native	4	Variant(String, UInt64)	4
+merge empty	\N	\N	\N	\N
+merge types	Nullable(Float64)	Nullable(Float64)	Nullable(Float64)
+merge uint	Nullable(UInt64)

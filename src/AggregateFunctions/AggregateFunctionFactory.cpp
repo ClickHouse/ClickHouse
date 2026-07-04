@@ -117,7 +117,11 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             std::exception_ptr native_error;
             try
             {
-                return getWithoutVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant);
+                /// The Variant is present in the top-level arguments, so the adapter (if needed) is applied here as
+                /// the outermost wrapper via tryGetVariantAdapter below; do not let combinators apply it again inside.
+                return getWithoutVariantAdapter(
+                    name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+                    /*apply_variant_adapter_to_nested=*/ false);
             }
             catch (const Exception & e)
             {
@@ -134,7 +138,12 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
         }
     }
 
-    return getWithoutVariantAdapter(name, action, types_without_low_cardinality, parameters, out_properties, state_variant);
+    /// No Variant in the top-level arguments. A combinator may still reintroduce one from a stored aggregate state
+    /// type (e.g. sumMerge over AggregateFunction(sum, Variant(...))), in which case the nested function needs the
+    /// adapter to reconstruct the matching state layout, so allow it.
+    return getWithoutVariantAdapter(
+        name, action, types_without_low_cardinality, parameters, out_properties, state_variant,
+        /*apply_variant_adapter_to_nested=*/ true);
 }
 
 AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
@@ -143,7 +152,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
     const DataTypes & types_without_low_cardinality,
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool apply_variant_adapter_to_nested) const
 {
     /// If one of the types is Nullable, we apply aggregate function combinator "Null" if it's not window function.
     /// Window functions are not real aggregate functions. Applying combinators doesn't make sense for them,
@@ -165,7 +175,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
         bool has_null_arguments = std::any_of(types_without_low_cardinality.begin(), types_without_low_cardinality.end(),
             [](const auto & type) { return type->onlyNull(); });
 
-        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant);
+        AggregateFunctionPtr nested_function = getImpl(name, action, nested_types, nested_parameters, out_properties, has_null_arguments, state_variant, apply_variant_adapter_to_nested);
 
         // Pure window functions are not real aggregate functions. Applying
         // combinators doesn't make sense for them, they must handle the
@@ -176,7 +186,7 @@ AggregateFunctionPtr AggregateFunctionFactory::getWithoutVariantAdapter(
             return combinator->transformAggregateFunction(nested_function, out_properties, types_without_low_cardinality, parameters);
     }
 
-    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant);
+    auto with_original_arguments = getImpl(name, action, types_without_low_cardinality, parameters, out_properties, false, state_variant, apply_variant_adapter_to_nested);
 
     if (!with_original_arguments)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "AggregateFunctionFactory returned nullptr");
@@ -218,10 +228,13 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     }
 
     /// Resolve the function over the supertypes. If it does not support them either, there is nothing we can do.
+    /// The supertype arguments contain no Variant, so combinators need not (and must not) apply the adapter again.
     AggregateFunctionPtr nested_function;
     try
     {
-        nested_function = getWithoutVariantAdapter(name, action, nested_argument_types, parameters, out_properties, state_variant);
+        nested_function = getWithoutVariantAdapter(
+            name, action, nested_argument_types, parameters, out_properties, state_variant,
+            /*apply_variant_adapter_to_nested=*/ false);
     }
     catch (const Exception & e)
     {
@@ -269,7 +282,8 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
     const Array & parameters,
     AggregateFunctionProperties & out_properties,
     bool has_null_arguments,
-    AggregateFunctionStateVariant state_variant) const
+    AggregateFunctionStateVariant state_variant,
+    bool apply_variant_adapter_to_nested) const
 {
     String name = getAliasToOrName(name_param);
     String case_insensitive_name;
@@ -371,11 +385,21 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        /// Resolve the combinator's nested function without the Variant fallback adapter: this keeps the adapter
-        /// (when needed for a Variant argument) as the outermost wrapper, so combinators like -If/-Array are applied
-        /// inside it in the usual order (e.g. Adapter(Null(If(sum))) rather than If(Adapter(Null(sum)))).
-        /// The argument types here are already recursively free of LowCardinality (stripped by the top-level get()).
-        AggregateFunctionPtr nested_function = getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant);
+        /// Resolve the combinator's nested function. Normally without the Variant fallback adapter: this keeps the
+        /// adapter (when needed for a Variant argument in the top-level call) as the outermost wrapper, so combinators
+        /// like -If/-Array are applied inside it in the usual order (e.g. Adapter(Null(If(sum))) rather than
+        /// If(Adapter(Null(sum)))). The argument types here are already recursively free of LowCardinality (stripped
+        /// by the top-level get()).
+        ///
+        /// The exception is a combinator that reintroduces a Variant argument that was absent from the top-level call
+        /// -- most importantly -Merge, whose nested argument types come from a stored AggregateFunction(f, Variant(...))
+        /// state type. There the nested function itself must go through the adapter, so that the merge side reconstructs
+        /// the same Adapter(f) state layout the state was produced with (otherwise resolving f over the Variant throws).
+        bool nested_has_variant = std::any_of(
+            nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
+        AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant)
+            ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant)
+            : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
         auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
         /// Same invariant as above.
         chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
