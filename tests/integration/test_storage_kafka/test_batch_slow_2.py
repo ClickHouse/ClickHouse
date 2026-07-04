@@ -89,7 +89,11 @@ def test_row_based_formats(kafka_cluster, create_query_generator):
                 topic_list=topic_name,
                 consumer_group=topic_name,
                 format=format_name,
-                settings={"kafka_max_rows_per_message": max_rows_per_message},
+                settings={
+                    "kafka_max_rows_per_message": max_rows_per_message,
+                    "kafka_flush_interval_ms": 500,
+                    "kafka_poll_timeout_ms": 200,
+                },
             )
 
             instance.query(

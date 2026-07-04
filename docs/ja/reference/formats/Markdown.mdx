@@ -1,0 +1,46 @@
+---
+alias: ['MD']
+description: 'Markdownフォーマットのドキュメント'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✗  | ✔  | `MD`  |
+
+<div id="description">
+  ## 説明
+</div>
+
+`.md` ファイルにそのまま貼り付けられる出力を生成するために、結果を [Markdown](https://en.wikipedia.org/wiki/Markdown) フォーマットでエクスポートできます。
+
+Markdown のテーブルは自動的に生成され、GitHub のような Markdown 対応プラットフォームで利用できます。このフォーマットは出力専用です。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

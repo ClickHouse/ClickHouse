@@ -72,6 +72,7 @@ def test_kafka_consumer_failover(kafka_cluster, create_query_generator):
                     settings={
                         "kafka_max_block_size": 1,
                         "kafka_poll_timeout_ms": 200,
+                        "kafka_flush_interval_ms": 500,
                     },
                 )
             )

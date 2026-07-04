@@ -55,6 +55,29 @@ SELECT * FROM test_table;
 
 Patterns in `{ }` are used to generate a set of shards or to specify failover addresses. Supported pattern types and examples see in the description of the [remote](remote.md#globs-in-addresses) function.
 Character `|` inside patterns is used to specify failover addresses. They are iterated in the same order as listed in the pattern. The number of generated addresses is limited by [glob_expansion_max_elements](../../operations/settings/settings.md#glob_expansion_max_elements) setting.
+For path glob syntax in the URL path (such as `*`, `{a,b}`, `{N..M}`, and `**`), see [Globs in path](file.md#globs-in-path). Note that `?` starts the query string in a URL and cannot be used as a wildcard in the path component.
+
+## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
+
+For `url` and the `URL` table engine, ClickHouse can expand wildcards by fetching HTTP index pages (HTML or plaintext) and extracting URLs from the response body. This enables patterns like `/**/` when the server exposes directory listings.
+
+Notes:
+- Relative URLs are resolved against the index page URL.
+- `URL` templates are expanded before fetching index pages, including comma and numeric range shard expansion and `|` failover options outside the path component.
+- `|` failover patterns inside the path component are not supported for HTTP index-page expansion.
+- Wildcard matching is applied to the URL path component.
+- If a listed URL already contains a query string or fragment, it takes precedence over the ones from the source URL. Otherwise, the query string and fragment from the source URL are used.
+- An empty listing is allowed; HTTP errors (e.g. 404) for index pages raise exceptions.
+- The maximum index page size is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size).
+- The maximum number of directories read during recursive expansion is limited by [url_wildcard_max_directories_to_read](/operations/settings/settings.md#url_wildcard_max_directories_to_read).
+
+Example:
+
+```sql
+SELECT count()
+FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+```
 
 ## Virtual Columns {#virtual-columns}
 

@@ -1,0 +1,102 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-22
+title: 'Demo days - 2026-05-22'
+sidebarTitle: '2026-05-22'
+description: 'ClickStack Demo days بتاريخ 2026-05-22'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="clickcannon-data-generation-update">
+  ## تحديث توليد البيانات في ClickCannon
+</div>
+
+*عرض توضيحي من [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Zljd07_4uF4" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+[ClickCannon](https://github.com/clickhouse/clickcannon) هي الأداة التي نستخدمها داخليًا في مهام تقدير السعة: لتوليد كميات كبيرة من بيانات OpenTelemetry مع تشغيل استعلامات متزامنة لتقدير الموارد التي يحتاجها العملاء لعبء عمل معيّن من إدخال البيانات والاستعلامات. وقد أعلنا عنها للجمهور في OpenHouse، واستعرض Spencer أحدث نسخة منها.
+
+وبدلًا من إعداد البيانات مسبقًا على القرص، يمكنك الآن ضبط المولّد بشكل مضمن. ما عليك سوى تفعيله وتحديد عدد الخيوط، وعدد الصفوف لكل كتلة، وإجمالي عدد الصفوف في الثانية، وبعض قيود الذاكرة. ولم تعد هناك حاجة إلى تجهيز تيرابايتين من بيانات الاختبار على القرص مسبقًا، وهو ما كان يصعّب مشاركة الأداة سابقًا.
+
+سنوجّه مزيدًا من المستخدمين إلى ClickCannon لاستخدامه في جهودهم الخاصة لتقدير السعة. المستودع موجود على [https://github.com/clickhouse/clickcannon](https://github.com/clickhouse/clickcannon).
+
+<div id="date-input-for-full-screen-tiles-and-source-scoped-filters">
+  ## إدخال التاريخ للبطاقات بملء الشاشة ومرشحات محددة النطاق حسب المصدر
+</div>
+
+*عرض توضيحي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Mop1EYtGwKc" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+أُضيف تحسينان مترابطان إلى لوحة المعلومات معًا. عند عرض بطاقة واحدة بملء الشاشة، تحصل الآن على منتقي وقت مخصص ومحدد لدرجة الدقة مستقلين عن النطاق الزمني الخاص بلوحة المعلومات نفسها. وهذا يعني أنه يمكنك تكبير العرض ضمن سجل زمني طويل لمقياس محدد بعينه (مثلًا، مخطط واحد في لوحة معلومات ClickHouse cluster) من دون أن يؤدي ذلك إلى تحديث كل بطاقة أخرى في لوحة المعلومات. كما يظهر الآن اسم لوحة المعلومات أيضًا في عنوان علامة تبويب المتصفح.
+
+أما التحسين الثاني فهو تحديد نطاق مرشحات لوحة المعلومات حسب المصدر. يمكن تقييد المرشحات بحيث لا تُمرَّر إلا إلى البطاقات المرتبطة بمصادر محددة، بدلًا من تطبيقها على جميع البطاقات. في لوحة معلومات متعددة المصادر تجمع، على سبيل المثال، بين السجلات والتتبعات، يمكنك منع تسرّب مرشح إلى بطاقة لا ينتمي إليها.
+
+**طلبات السحب ذات الصلة:** [#2302](https://github.com/hyperdxio/hyperdx/pull/2302) feat: تحسينات طفيفة على لوحة المعلومات، [#2331](https://github.com/hyperdxio/hyperdx/pull/2331) feat: إضافة تحديد النطاق حسب المصدر إلى مرشحات لوحة المعلومات
+
+<div id="text-index-recognised-on-lower-body">
+  ## التعرّف على الفهرس النصي على lower(Body)
+</div>
+
+*عرض توضيحي بواسطة [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/l0GpNBP859o" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+إصلاح صغير لكنه مهم لصحة البحث غير الحساس لحالة الأحرف. إذا كان المصدر لديك يحتوي على فهرس نصي معرّف على `lower(Body)` من دون وسيطة `preprocessor`، كان مخطِّط الاستعلام يُنشئ سابقًا شرط `hasAllTokens(Body, ...)`. وبما أن هذا التعبير لم يكن يطابق تعبير الفهرس، لم يكن الفهرس النصي يُستخدَم وكان الاستعلام يعود إلى المسح.
+
+يُنشأ الاستعلام الآن على شكل `hasAllTokens(lower(Body), ...)`، وهو ما يطابق تعبير الفهرس. وبذلك أصبح البحث غير الحساس لحالة الأحرف على المصادر المُهيأة بهذه الطريقة يستفيد بشكل صحيح من الفهرس النصي لتسريع التنفيذ.
+
+**طلبات السحب ذات الصلة:** [#2326](https://github.com/hyperdxio/hyperdx/pull/2326) feat: دعم الفهرس النصي على lower(Body) من دون preprocessor
+
+<div id="simpler-event-deltas-experience">
+  ## تجربة أبسط لـ Event Deltas
+</div>
+
+*عرض توضيحي بواسطة [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/BrIHHFz_Aw8" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+كان Event Deltas يتطلب سابقًا خطوة إضافية. إذ كان عليك النقر على زر للدخول إلى وضع المقارنة قبل سحب تحديد على الخريطة الحرارية. وقد أُلغيت هذه الخطوة الآن: تظهر أشرطة التوزيع فور التحميل، وما إن تسحب منطقة على الخريطة الحرارية حتى تتحول الأشرطة إلى وضع المقارنة بين التحديد والخلفية. انقر خارج التحديد ليعود العرض إلى جميع spans.
+
+أُدخل هذا التغيير إلى OSS قبل عدة أسابيع، لكن جزءًا منه كان مفقودًا في Managed ClickStack. والآن أُغلقت هذه الفجوة، بحيث أصبح هذا التدفق الأبسط متماثلًا في كلا الإصدارين.
+
+**طلبات السحب ذات الصلة:** [#1899](https://github.com/hyperdxio/hyperdx/pull/1899) ميزة: وضع توزيع السمات الدائم التشغيل
+
+<div id="dashboard-table-of-contents-and-bulk-collapse">
+  ## جدول محتويات لوحة المعلومات والطيّ الجماعي
+</div>
+
+*عرض توضيحي بواسطة [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Pojo5zf_hrE" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ما إن تتجاوز لوحات المعلومات عددًا قليلًا من الأقسام (وهذا ما نريده، لأن الأقسام هي الطريقة التي تنظَّم بها لوحة معلومات كبيرة) حتى يصبح التنقل بينها مرهقًا. أضاف Tom جدول محتويات في الشريط الجانبي الأيمن يسرد جميع الأقسام ويتيح لك الانتقال بينها مباشرةً. وهناك أيضًا عنصر تحكم للطيّ والتوسيع الجماعي يُخفي محتوى كل قسم دفعةً واحدة، بحيث يمكنك استعراض بنية لوحة معلومات طويلة من دون الحاجة إلى التمرير عبرها بالكامل.
+
+لا يزال هذا في مرحلة المسودة، لكنه مفيد بالفعل في لوحات المعلومات متعددة الأقسام التي نوفرها لعرضَي ClickHouse cluster وKubernetes.
+
+**طلبات السحب ذات الصلة:** [#2350](https://github.com/hyperdxio/hyperdx/pull/2350) feat(dashboard): add Table of Contents right rail with bulk collapse/expand
+
+<div id="column-resize-persisted-across-sessions">
+  ## حفظ تغيير حجم الأعمدة عبر الجلسات
+</div>
+
+*عرض توضيحي من [@teeohhem](https://github.com/teeohhem)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7l-Rz1tFlq8" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+تقرير من أحد العملاء بالأمس: عندما تغيّر حجم عمود في جدول النتائج، يجب أن يبقى هذا التغيير محفوظًا. وهذا ما يحدث الآن. تُخزَّن عروض الأعمدة في التخزين المحلي، مع ربطها بمعرّف كل جدول، بحيث تحتفظ الجداول المختلفة بتخطيطات أعمدة مستقلة. أغلق المتصفح ثم عُد لاحقًا، وستظل الأعمدة كما تركتها. كما أن إضافة عمود إلى الجدول أو إزالته لا تعيد ضبط عروض الأعمدة الأخرى.
+
+**طلبات السحب ذات الصلة:** [#2327](https://github.com/hyperdxio/hyperdx/pull/2327) إصلاح: حفظ عروض الأعمدة في جدول نتائج البحث

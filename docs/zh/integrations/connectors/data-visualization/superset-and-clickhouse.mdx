@@ -1,0 +1,148 @@
+---
+sidebarTitle: 'Superset'
+slug: /integrations/superset
+keywords: ['superset']
+description: 'Apache Superset 是一个开源的数据探索和可视化平台。'
+title: '将 Superset 连接到 ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<a href="https://superset.apache.org/" target="_blank">Apache Superset</a> 是一个使用 Python 编写的开源数据探索与可视化平台。Superset 通过 ClickHouse 提供的 Python 驱动 连接到 ClickHouse。下面来看看它是如何工作的……
+
+<div id="goal">
+  ## 目标
+</div>
+
+在本指南中，您将使用 ClickHouse 数据库中的数据在 Superset 中构建一个仪表盘。该仪表盘将如下所示：
+
+<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="显示英国房价的 Superset 仪表盘，包含多个可视化图表，包括饼图和表格" border />
+
+<br />
+
+<Tip>
+  **添加一些数据**
+
+  如果您还没有可用的数据集，可以添加一个示例。本指南使用的是 [UK Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 数据集，您也可以选择它。同一文档分类下还有其他几个示例可供参考。
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 获取连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2-install-the-driver">
+  ## 2. 安装驱动
+</div>
+
+1. Superset 使用 `clickhouse-connect` 驱动连接到 ClickHouse。有关 `clickhouse-connect` 的详细信息，请参见 <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a>，可使用以下命令安装：
+
+   ```console
+   pip install clickhouse-connect
+   ```
+
+<Info>
+  **Docker Compose 设置**
+
+  对于基于 Docker 的安装，请参阅 [Superset database configuration guide](https://superset.apache.org/docs/configuration/databases/#clickhouse)，了解如何将 `clickhouse-connect` 添加到容器中。
+</Info>
+
+2. 启动 (或重启) Superset。
+
+<div id="3-connect-superset-to-clickhouse">
+  ## 3. 将 Superset 连接到 ClickHouse
+</div>
+
+1. 在 Superset 中，从顶部菜单选择 **Data**，然后从下拉菜单中选择 **Databases**。点击 **+ Database** 按钮添加新数据库：
+
+<Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="Superset 界面，显示 Database 菜单并高亮 + Database 按钮" border />
+
+<br />
+
+2. 在第一步中，选择 **ClickHouse Connect** 作为数据库类型：
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="Superset 数据库连接向导，已选择 ClickHouse Connect 选项" border />
+
+<br />
+
+3. 在第二步中：
+
+* 将 SSL 设置为开启或关闭。
+* 输入你之前收集的连接信息。
+* 指定 **DISPLAY NAME**：可以使用你喜欢的任意名称。如果你将连接到多个 ClickHouse 数据库，请使用更具描述性的名称。
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="显示 ClickHouse 连接参数的 Superset 连接配置表单" border />
+
+<br />
+
+4. 点击 **CONNECT**，然后点击 **FINISH** 按钮完成设置向导。完成后，你应该会在数据库列表中看到你的数据库。
+
+<div id="4-add-a-dataset">
+  ## 4. 添加数据集
+</div>
+
+1. 要在 Superset 中操作 ClickHouse 数据，您需要先定义一&#x4E2A;***数据集***。在 Superset 顶部菜单中，选择 **Data**，然后在下拉菜单中选择 **Datasets**。
+
+2. 点击添加数据集按钮。选择新建的数据库作为数据源，然后您应该能看到该数据库中定义的表：
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="显示 ClickHouse 数据库中可用表的 Superset 数据集创建对话框" border />
+
+<br />
+
+3. 点击对话框底部的 **ADD** 按钮后，您的表就会出现在数据集列表中。现在，您可以开始构建仪表板并分析 ClickHouse 数据了！
+
+<div id="5--creating-charts-and-a-dashboard-in-superset">
+  ## 5. 在 Superset 中创建图表和仪表盘
+</div>
+
+如果你熟悉 Superset，那么接下来这一部分会让你觉得很顺手。如果你是第一次接触 Superset，嗯……它和市面上许多优秀的可视化工具类似——上手很快，但其中的细节和门道需要在使用过程中慢慢积累。
+
+1. 先从仪表盘开始。在 Superset 顶部菜单中，选择 **Dashboards**。点击右上角的按钮，新建一个仪表盘。下面这个仪表盘名为 **UK property prices**：
+
+<Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="名为 UK property prices 的空白 Superset 仪表盘，等待添加图表" border />
+
+<br />
+
+2. 要创建新图表，请在顶部菜单中选择 **Charts**，然后点击按钮新建图表。你会看到很多选项。下面的示例展示了一个 **Pie Chart** 图表，它使用 **CHOOSE A DATASET** 下拉菜单中的 **uk&#95;price&#95;paid** 数据集：
+
+<Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Superset 图表创建界面，已选择 Pie Chart 可视化类型" border />
+
+<br />
+
+3. Superset 的饼图需要一个 **Dimension** 和一个 **Metric**，其余设置都是可选的。你可以自行选择用作维度和指标的字段；本示例使用 ClickHouse 字段 `district` 作为维度，使用 `AVG(price)` 作为指标。
+
+<Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="维度配置，显示为饼图选择了 district 字段" border />
+
+<Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="指标配置，显示为饼图选择了 AVG(price) 聚合函数" border />
+
+<br />
+
+5. 如果你更喜欢环形图而不是饼图，也可以在 **CUSTOMIZE** 下设置该选项以及其他选项：
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="自定义面板，显示环形图选项和其他饼图配置设置" border />
+
+<br />
+
+6. 点击 **SAVE** 按钮保存图表，然后在 **ADD TO DASHBOARD** 下拉菜单中选择 **UK property prices**，再点击 **SAVE &amp; GO TO DASHBOARD**，即可保存图表并将其添加到仪表盘：
+
+<Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="保存图表对话框，包含仪表盘选择下拉菜单和 Save & Go to Dashboard 按钮" border />
+
+<br />
+
+7. 就这些了。基于 ClickHouse 中的数据在 Superset 中构建仪表盘，将为你打开一个高速数据分析的新世界！
+
+<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="已完成的 Superset 仪表盘，包含多个基于 ClickHouse 中英国房产价格数据的可视化图表" border />
+
+<br />

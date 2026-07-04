@@ -123,7 +123,10 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator):
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
-                settings={"kafka_max_block_size": 1000},
+                settings={
+                    "kafka_max_block_size": 1000,
+                    "kafka_flush_interval_ms": 1000,
+                },
             )
             instance.query(create_query)
 
@@ -145,8 +148,9 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator):
             """)
             instance.query(f"SELECT count() FROM test.{kafka_table}_destination")
 
-            # enough to trigger issue
-            time.sleep(30)
+            # enough to trigger issue: several failed poll cycles while the
+            # broker is paused (poll/session timeouts are well under this)
+            time.sleep(15)
 
         result = instance.query_with_retry(
             f"SELECT count() FROM test.{kafka_table}_destination",

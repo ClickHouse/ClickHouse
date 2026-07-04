@@ -1,0 +1,312 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-additional-manifests
+title: 'Helm 追加マニフェスト'
+description: 'additionalManifests を使用して、ClickStack Helm チャートとあわせてカスタム Kubernetes オブジェクトをデプロイする'
+doc_type: 'guide'
+keywords: ['ClickStack 追加マニフェスト', 'Helm カスタムリソース', 'NetworkPolicy', 'HPA', 'ALB イングレス', 'Kubernetes']
+---
+
+<Info>
+  **Chart バージョン 2.x のみ**
+
+  `additionalManifests` 機能は、サブチャートベースの **v2.x** Helm チャートでのみ利用できます。
+</Info>
+
+`additionalManifests` を使うと、ClickStack チャートとあわせて任意の Kubernetes オブジェクトをデプロイできます。これは、チャートが標準ではテンプレート化していないリソース (`NetworkPolicy`、`HorizontalPodAutoscaler`、`ServiceAccount`、`PodMonitor`、カスタム `Ingress` オブジェクトなど) や、その他の Kubernetes API オブジェクトをデプロイする場合に利用します。
+
+<div id="how-it-works">
+  ## 仕組み
+</div>
+
+`additionalManifests` の各エントリは、完全な Kubernetes リソース定義です。このチャートでは、次の処理が行われます。
+
+1. リスト内の各エントリを順番に処理する
+2. エントリを YAML に変換する (`toYaml`)
+3. Helm の `tpl` を使って、その YAML 内のテンプレート式を評価する
+
+テンプレート式では、次を参照できます。
+
+* `.Release.Name`, `.Release.Namespace`
+* `include "clickstack.fullname" .` とそのほかのチャートヘルパー
+* `.Values.*`
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-custom'
+    data:
+      release: '{{ .Release.Name }}'
+```
+
+<div id="values-file-constraints">
+  ## 値ファイルの制約
+</div>
+
+`additionalManifests` は values ファイルで設定され、values ファイルは `tpl` が実行される前に YAML として解析されます。
+
+* values ファイル内の `{{ ... }}` は、必ず引用符で囲まれた文字列内に記述する必要があります
+* 構造的なテンプレートブロックは、有効な values ファイルの YAML ではありません (たとえば、`{{- include ... | nindent ... }}` のみを記述した場合)
+* 文字列以外のフィールド (たとえば数値のポート) には、リテラル値または名前付きポートを使用してください
+* 構造的なテンプレートが必要な場合は、生の values ファイルではなく、ラッパーチャートのテンプレートを使用してください
+
+```yaml
+# values.yaml で有効
+name: '{{ include "clickstack.fullname" . }}-app'
+
+# values.yaml で無効（クォートなしのテンプレート式）
+name: {{ include "clickstack.fullname" . }}-app
+
+# values.yaml で無効（構造的なテンプレートブロック）
+labels:
+  {{- include "clickstack.labels" . | nindent 2 }}
+```
+
+<div id="available-chart-helpers">
+  ## 利用可能なチャートヘルパー
+</div>
+
+これらのヘルパーは `templates/_helpers.tpl` で定義されています。
+
+| Helper                           | 説明                   | Values ファイルでの使用      |
+| -------------------------------- | -------------------- | -------------------- |
+| `clickstack.name`                | チャート名 (63 文字に切り詰め)   | クォート付きスカラー内で安全       |
+| `clickstack.fullname`            | リリース修飾名              | クォート付きスカラー内で安全       |
+| `clickstack.chart`               | チャート名 + バージョン        | クォート付きスカラー内で安全       |
+| `clickstack.selectorLabels`      | selector labels ブロック | ラッパーチャートのテンプレートでのみ使用 |
+| `clickstack.labels`              | 標準ラベルブロック            | ラッパーチャートのテンプレートでのみ使用 |
+| `clickstack.mongodb.fullname`    | MongoDB CR 名         | クォート付きスカラー内で安全       |
+| `clickstack.clickhouse.fullname` | ClickHouse CR 名      | クォート付きスカラー内で安全       |
+| `clickstack.otel.fullname`       | OTel collector 名     | クォート付きスカラー内で安全       |
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="serviceaccount">
+  ### ServiceAccount
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      namespace: '{{ .Release.Namespace }}'
+      labels:
+        app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+        app.kubernetes.io/instance: '{{ .Release.Name }}'
+      annotations:
+        eks.amazonaws.com/role-arn: "arn:aws:iam::123456789:role/my-role"
+```
+
+<div id="networkpolicy">
+  ### NetworkPolicy
+</div>
+
+HyperDXポッドへの受信トラフィックを制限します:
+
+```yaml
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-allow-ingress'
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      policyTypes:
+        - Ingress
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: ingress-nginx
+          ports:
+            - protocol: TCP
+              port: 3000
+            - protocol: TCP
+              port: 8000
+```
+
+<div id="horizontalpodautoscaler">
+  ### HorizontalPodAutoscaler
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-hpa'
+    spec:
+      scaleTargetRef:
+        apiVersion: apps/v1
+        kind: Deployment
+        name: '{{ include "clickstack.fullname" . }}-app'
+      minReplicas: 2
+      maxReplicas: 10
+      metrics:
+        - type: Resource
+          resource:
+            name: cpu
+            target:
+              type: Utilization
+              averageUtilization: 75
+```
+
+<div id="podmonitor">
+  ### PodMonitor (Prometheus Operator)
+</div>
+
+```yaml
+additionalManifests:
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PodMonitor
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}'
+      labels:
+        release: prometheus
+    spec:
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: '{{ include "clickstack.name" . }}'
+          app.kubernetes.io/instance: '{{ .Release.Name }}'
+      podMetricsEndpoints:
+        - port: app
+          interval: 30s
+```
+
+<div id="aws-alb-ingress">
+  ### AWS ALB イングレス
+</div>
+
+[AWS Load Balancer Controller](https://kubernetes-sigs.github.io/aws-load-balancer-controller/) を使用する場合は、チャートに組み込まれている nginx イングレスを無効にし、カスタムの ALB イングレスを定義します。
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: false
+
+additionalManifests:
+  - apiVersion: networking.k8s.io/v1
+    kind: Ingress
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-alb'
+      annotations:
+        alb.ingress.kubernetes.io/scheme: internet-facing
+        alb.ingress.kubernetes.io/target-type: ip
+        alb.ingress.kubernetes.io/certificate-arn: "arn:aws:acm:us-east-1:123456789:certificate/abc-123"
+        alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+        alb.ingress.kubernetes.io/ssl-redirect: "443"
+        alb.ingress.kubernetes.io/group.name: clickstack
+        alb.ingress.kubernetes.io/healthcheck-path: /api/health
+    spec:
+      ingressClassName: alb
+      rules:
+        - host: clickstack.example.com
+          http:
+            paths:
+              - path: /
+                pathType: Prefix
+                backend:
+                  service:
+                    name: '{{ include "clickstack.fullname" . }}-app'
+                    port:
+                      name: app
+```
+
+内部OTel collector用イングレスとHPAを含むALBの完全な設定例については、[ALB の values 設定例](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress)を参照してください。
+
+<div id="targetgroupbinding">
+  ### TargetGroupBinding
+</div>
+
+明示的な `TargetGroupBinding` リソースが必要な ALB の構成では、
+
+```yaml
+additionalManifests:
+  - apiVersion: elbv2.k8s.aws/v1beta1
+    kind: TargetGroupBinding
+    metadata:
+      name: '{{ include "clickstack.fullname" . }}-tgb'
+    spec:
+      serviceRef:
+        name: '{{ include "clickstack.fullname" . }}-app'
+        port: app
+      targetGroupARN: "arn:aws:elasticloadbalancing:us-east-1:123456789:targetgroup/my-tg/abc123"
+      targetType: ip
+```
+
+<div id="advanced-wrapper-chart-templates">
+  ## 高度な使い方: ラッパーチャートテンプレート
+</div>
+
+`include "clickstack.labels" . | nindent 4` のような構造用ヘルパーが必要な場合は、それらのブロックを values ファイルに直接記述するのではなく、ラッパーチャートテンプレート (`templates/*.yaml`) からレンダリングしてください。
+
+ラッパーチャートテンプレートのスニペット例:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clickstack.fullname" . }}-extra
+  labels:
+    {{- include "clickstack.labels" . | nindent 4 }}
+data:
+  appPort: "{{ .Values.hyperdx.ports.app }}"
+```
+
+<div id="tips">
+  ## ヒント
+</div>
+
+<div id="helm-hooks">
+  ### Helm フック
+</div>
+
+各 `additionalManifests` エントリは、個別の YAML ドキュメントとしてレンダリングされます。インストール時やアップグレード時の順序を制御するために、Helm フックのアノテーションを追加できます。
+
+```yaml
+additionalManifests:
+  - apiVersion: batch/v1
+    kind: Job
+    metadata:
+      name: post-install-job
+      annotations:
+        helm.sh/hook: post-install
+        helm.sh/hook-delete-policy: hook-succeeded
+    spec:
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: migrate
+              image: my-migration-image:latest
+              command: ["./migrate.sh"]
+```
+
+<div id="crd-ordering">
+  ### CRD の順序
+</div>
+
+追加マニフェストに Custom resources (たとえば `PodMonitor`) が含まれる場合は、インストールまたはアップグレードの前に、その CRD があらかじめクラスター内に存在している必要があります。
+
+<div id="combining-multiple-resources">
+  ### 複数のリソースを組み合わせる
+</div>
+
+`additionalManifests` はリストです。各エントリはリストの順にレンダリングされ、それぞれが独立した YAML ドキュメントになります。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [メインの Helm ガイド](/ja/clickstack/deployment/helm) - 基本インストール
+* [設定ガイド](/ja/clickstack/deployment/helm-configuration) - API キー、シークレット、イングレス
+* [Cloud デプロイ](/ja/clickstack/deployment/helm-cloud) - GKE、EKS、AKS の設定
+* [ClickStack Helm チャートのリポジトリ](https://github.com/ClickHouse/ClickStack-helm-charts) - チャートのソースコードと values のリファレンス
