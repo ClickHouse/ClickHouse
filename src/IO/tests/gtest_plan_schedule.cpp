@@ -184,9 +184,10 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     // NOT filled down - one Remote retrieve covers the whole fetch.
     auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
 
-    ASSERT_EQ(s.retrieves.size(), 1u);  // no promote ([4,5) is fastest-tier resident)
+    ASSERT_EQ(s.retrieves.size(), 2u);  // the Remote fetch + the serve-front promote of the user gap
     const auto & r = s.retrieves[0];
     EXPECT_EQ(r.source, PlanSchedule::Source::Remote);
+    EXPECT_TRUE(r.ahead_eligible) << "a source fill may run ahead of the serve";
     EXPECT_EQ(r.range.offset, 0u);
     EXPECT_EQ(r.range.size, 8u);
     EXPECT_TRUE(intoHas(r, 1, {0, 6})) << "fs segment [0,6)";
@@ -194,8 +195,16 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     /// The fetch fills ONLY the bottom (fs) tier; the page block [5,8) for the user
     /// tail is filled by a promote on the serve front, not routed into this retrieve.
     EXPECT_FALSE(intoHas(r, 0, {5, 3})) << "page block [5,8) is promoted at serve, not fetched";
+    /// ...and that promote is an explicit job: a `HandedChain` fill of the page block
+    /// from the served bytes, serve-front only.
+    const auto & promote = s.retrieves[1];
+    EXPECT_EQ(promote.source, PlanSchedule::Source::HandedChain);
+    EXPECT_FALSE(promote.ahead_eligible) << "handed fills take the serve's output as input";
+    EXPECT_EQ(promote.range.offset, 5u);
+    EXPECT_EQ(promote.range.size, 3u);
+    EXPECT_TRUE(intoHas(promote, 0, {5, 3})) << "the user gap promotes into the page block";
 
-    /// The gap step [5,8) waits on this retrieve; the hit step does not.
+    /// The gap step [5,8) waits on the Remote retrieve; the hit step does not.
     ASSERT_EQ(s.steps.size(), 2u);
     EXPECT_FALSE(s.steps[0].require_retrieve.has_value());  // [4,5) page hit
     ASSERT_TRUE(s.steps[1].require_retrieve.has_value());   // [5,8) gap
@@ -265,13 +274,61 @@ TEST(PlanScheduleRetrieves, SlackNotPromotedToFasterTier)
     // min_bytes_for_seek=4 so the 2-wide page hit [3,5) is bridged (over-read), one Remote retrieve.
     auto s = describeSeek(g, {4, 4}, /*min_bytes_for_seek=*/4);  // request [4,8)
 
-    ASSERT_EQ(s.retrieves.size(), 1u);
+    ASSERT_EQ(s.retrieves.size(), 2u);  // the Remote fetch + the user-tail promote
     const auto & r = s.retrieves[0];
+    ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
     EXPECT_FALSE(intoHas(r, 0, {0, 1})) << "page slack cell must NOT be filled (not promoted)";
     EXPECT_TRUE(intoHas(r, 1, {0, 6})) << "fs owns the slack";
     /// The fetch fills only the bottom (fs) tier; the page user tail is promoted on
     /// the serve front, so it is NOT a fetch target either.
     EXPECT_FALSE(intoHas(r, 0, {5, 3})) << "page user tail is promoted at serve, not fetched";
+    /// The promote job covers ONLY the user tail's page block - never the slack cell
+    /// (slack overlaps no User range, so no handed job ever fills it).
+    const auto & promote = s.retrieves[1];
+    ASSERT_EQ(promote.source, PlanSchedule::Source::HandedChain);
+    EXPECT_TRUE(intoHas(promote, 0, {5, 3})) << "the user tail promotes into the page block";
+    EXPECT_FALSE(intoHas(promote, 0, {0, 1})) << "the slack cell is not a promote target";
+}
+
+/// `[CF-promote]` as schedule data: promotion never crosses into a same-tier layer.
+/// A user gap promotes only into the tiers the fetch skipped (pc); the same-tier fs
+/// layers are FETCH targets. A slow-fs resident hit promotes into pc but never into
+/// the faster fs layer - the schedule twin of `SlowFsHitIsNotPromotedToFastFs`.
+TEST(PlanScheduleRetrieves, PromoteNeverCrossesSameTier)
+{
+    /// Gap: everything misses [0,8); the fetch fills BOTH fs layers, the promote fills pc.
+    {
+        auto g = geometry(0, 8, {
+            tierEntry(CacheTier::PageCache, {}, {{0, 8}}),
+            tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // fast fs layer, cold
+            tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // slow fs layer, cold
+        });
+        auto s = describe(g, {0, 8});
+        ASSERT_EQ(s.retrieves.size(), 2u);
+        const auto & r = s.retrieves[0];
+        ASSERT_EQ(r.source, PlanSchedule::Source::Remote);
+        EXPECT_TRUE(intoHas(r, 1, {0, 8})) << "fast fs layer is a fetch target";
+        EXPECT_TRUE(intoHas(r, 2, {0, 8})) << "slow fs layer is a fetch target (same tier, never promoted into)";
+        EXPECT_FALSE(intoHas(r, 0, {0, 8})) << "pc fills by promotion, not by the fetch";
+        const auto & promote = s.retrieves[1];
+        ASSERT_EQ(promote.source, PlanSchedule::Source::HandedChain);
+        EXPECT_TRUE(intoHas(promote, 0, {0, 8})) << "the promote fills pc";
+        EXPECT_FALSE(intoHas(promote, 1, {0, 8})) << "a same-tier layer is never a promote target";
+    }
+    /// Resident: the SLOW fs layer holds [0,8); the promote fills pc only.
+    {
+        auto g = geometry(0, 8, {
+            tierEntry(CacheTier::PageCache, {}, {{0, 8}}),
+            tierEntry(CacheTier::FilesystemCache, {}, {{0, 8}}),   // fast fs layer, cold
+            tierEntry(CacheTier::FilesystemCache, {{0, 8}}, {}),   // slow fs layer, resident
+        });
+        auto s = describe(g, {0, 8});
+        ASSERT_EQ(s.retrieves.size(), 1u);   // no gap, no Remote - just the promote
+        const auto & promote = s.retrieves[0];
+        ASSERT_EQ(promote.source, PlanSchedule::Source::HandedChain);
+        EXPECT_TRUE(intoHas(promote, 0, {0, 8})) << "the resident hit promotes into pc";
+        EXPECT_FALSE(intoHas(promote, 1, {0, 8})) << "never into the same-tier faster layer ([CF-promote])";
+    }
 }
 
 /// A small resident hole between two gaps is bridged into one connection; a

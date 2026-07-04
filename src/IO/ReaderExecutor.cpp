@@ -760,12 +760,10 @@ ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, siz
         stats.add(Stats::CacheGetRequests);
         const bool is_page = run.tier == CacheTier::PageCache;
         stats.add(is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache, got);
-        /// Promote this run up into any faster tier that misses it (no-op when served from
-        /// the fastest tier or nothing faster populates), inline on the serve thread.
-        maybePromote(run.tier, ByteRange{pos, got}, chunk, stats);
-        /// ...and down-fill it into any lower cell the schedule marked for cross-cache fill, so an
-        /// embedded upper-tier hit completes the lower segment without a remote over-read.
-        downFillScheduledLower(ByteRange{pos, got}, chunk, stats);
+        /// Run the scheduled handed fills from the just-served bytes: promote the hit UP into
+        /// the faster cells that miss it (`HandedChain`) and complete a lower cell across it
+        /// DOWN (`UpperCacheRead`) - one schedule-driven executor for both directions.
+        runHandedFills(ByteRange{pos, got}, chunk, stats);
         chain.append(std::move(chunk));
         pos += got;
         if (pos < serve_end)
@@ -1319,8 +1317,14 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
 
 bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const
 {
+    /// A MACHINE fill target: only the `Remote` jobs' cells - the handed kinds
+    /// (`UpperCacheRead`/`HandedChain`) fill their cells from served bytes on the serve front
+    /// (`runHandedFills`), never from a fetch (the pc fill trails the serve cursor, it does not
+    /// ride the fetch lead).
     for (const auto & r : read_plan.schedule.retrieves)
     {
+        if (r.source != PlanSchedule::Source::Remote)
+            continue;
         if (!(r.range.offset < window.end() && window.offset < r.range.end()))
             continue;  /// retrieve does not cover this window
         for (const auto & t : r.into)
@@ -1843,11 +1847,10 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::opti
 void ReaderExecutor::collectFillTargets(FetchMachine & m)
 {
     /// Record NON-OWNING views of the window's fill-target writers in the shared
-    /// `read_plan.bufs`: the cells the plan SCHEDULE designates as fill targets for a retrieve
-    /// overlapping this window (`buildSchedule`'s `into`). A cell holding the request is a
-    /// target in every missing tier (promotion); a slack-only cell is a target ONLY in its
-    /// owning lower tier - so a faster tier never receives un-requested slack bytes. Done at
-    /// launch so the worker can write the led segments inline during its fetch; the writers
+    /// `read_plan.bufs`: the cells the plan SCHEDULE designates as REMOTE fill targets for a
+    /// retrieve overlapping this window (`buildSchedule`'s `into` - the bottom tier and
+    /// same-tier slower layers; the faster tiers fill by handed jobs on the serve front). Done
+    /// at launch so the worker can write the led segments inline during its fetch; the writers
     /// stay in `read_plan.bufs` (the plan is stable while a machine is in flight).
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
     {
@@ -1941,57 +1944,11 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
         read_plan.retrieve_status[m.retrieve_index].phase = RetrievePhase::Done;
 }
 
-void ReaderExecutor::maybePromote(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats)
+void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
 {
-    /// Promote `bytes` up into the faster tiers that missed `range`, inline on the serve
-    /// thread.
-    /// Walk the plan's held write buffers in chain order (provider-grouped fastest-first).
-    /// Everything before `from_tier` is faster and missed `range` (else it would have
-    /// served it), so write `bytes` up into each such tier's held write buffers. BREAK at
-    /// the first `BufEntry` whose `provider->tier() == from_tier` - the tier-equality stop
-    /// keeps the "first FilesystemCache buffer ends promotion" rule two fs layers rely on
-    /// (`[CF-promote]`), and stops anything slower. `bytes`/`range` are file-level
-    /// (physical) coordinates (pre-decryption shift), the space `write` expects. The
-    /// write buffer's committed-set makes out-of-order/sub-block promote slices idempotent
-    /// (no `status()` re-query), and a bypass tier has no write buffers (so it is skipped
-    /// for free).
-    for (auto & buf : read_plan.bufs)
-    {
-        if (!buf.provider)
-            continue;
-        if (buf.provider->tier() == from_tier)
-            break;
-
-        for (auto & w : buf.writers)
-        {
-            chassert(w.writer);
-            const size_t lo = std::max({w.writer->range().offset, range.offset});
-            const size_t hi = std::min({w.writer->range().end(), range.end()});
-            if (lo >= hi)
-                continue;
-            const ByteRange sub{lo, hi - lo};
-            auto slice = bytes.slice(sub);
-            if (slice.empty())
-                continue;
-            out_stats.add(Stats::CachePopulateRequests);
-            StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-            out_stats.add(Stats::BytesPromoted, w.writer->write(std::move(slice)));
-            HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
-                static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
-        }
-    }
-}
-
-void ReaderExecutor::downFillScheduledLower(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
-{
-    /// Down-promote a served upper-tier hit into the lower cells the schedule marked for cross-cache
-    /// fill (`UpperCacheRead` retrieves overlapping `served_range`). The serve already read these
-    /// bytes from the faster tier, so the lower segment completes across the embedded hit with NO
-    /// remote over-read. Only `UpperCacheRead` targets are touched (a bridged hole - no such
-    /// retrieve - stays a remote over-read). The writer's committed set makes the write idempotent.
     for (const auto & r : read_plan.schedule.retrieves)
     {
-        if (r.source != PlanSchedule::Source::UpperCacheRead)
+        if (r.source == PlanSchedule::Source::Remote)
             continue;
         if (!(r.range.offset < served_range.end() && served_range.offset < r.range.end()))
             continue;
@@ -2012,48 +1969,15 @@ void ReaderExecutor::downFillScheduledLower(ByteRange served_range, const Chaine
                     continue;
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                w.writer->write(std::move(slice));
+                const size_t written = w.writer->write(std::move(slice));
+                if (r.source == PlanSchedule::Source::HandedChain)
+                {
+                    out_stats.add(Stats::BytesPromoted, written);
+                    HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
+                        static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
+                }
             }
         }
-    }
-}
-
-void ReaderExecutor::promoteFetchedToUpper(ByteRange window, Stats & out_stats)
-{
-    /// The fetch fills only the bottom populatable tier; push its committed bytes UP into the
-    /// faster tiers on the serve front. Walk the held writers SLOWEST-first and act on the
-    /// first (bottom) tier holding committed bytes over `window`: read them and `maybePromote`
-    /// (which walks the faster tiers and stops at this one). `maybePromote` is idempotent via
-    /// the faster tiers' committed sets, so re-calling per served window is safe.
-    for (auto it = read_plan.bufs.rbegin(); it != read_plan.bufs.rend(); ++it)
-    {
-        if (!it->provider)
-            continue;
-        bool promoted_any = false;
-        for (auto & w : it->writers)
-        {
-            if (!w.writer)
-                continue;
-            const size_t lo = std::max(w.writer->range().offset, window.offset);
-            const size_t hi = std::min(w.writer->range().end(), window.end());
-            if (lo >= hi)
-                continue;
-            const ByteRange sub{lo, hi - lo};
-            /// Committed sub-ranges of `sub` = `sub` minus the uncommitted gaps.
-            IntervalSet uncommitted;
-            for (const auto & gap : w.writer->committed().subtract(sub))
-                uncommitted.add(gap);
-            for (const auto & part : uncommitted.subtract(sub))
-            {
-                ChainedBuffers chunk = w.writer->read(part);
-                if (!chunk.covers(part))
-                    continue;  /// raced shrink/detach
-                maybePromote(it->provider->tier(), part, chunk, out_stats);
-                promoted_any = true;
-            }
-        }
-        if (promoted_any)
-            return;  /// only the bottom tier that holds `window`
     }
 }
 
@@ -2236,9 +2160,10 @@ void ReaderExecutor::maybeLaunchAhead()
     for (size_t ri = read_plan.launch_frontier; ri < retrieves.size(); ++ri)
     {
         const auto & r = retrieves[ri];
-        /// Non-Remote jobs (fill/promote) are served from the cache side; a job whose launch
+        /// The schedule says which jobs may run ahead (`ahead_eligible`: the handed kinds take
+        /// the serve's output as input, so they are serve-front only); a job whose launch
         /// frontier reached its end is done. Advance the scan past them so it never rescans.
-        if (r.source != PlanSchedule::Source::Remote || launchProgress(ri) >= r.range.end())
+        if (!r.ahead_eligible || launchProgress(ri) >= r.range.end())
         {
             if (ri == read_plan.launch_frontier)
                 ++read_plan.launch_frontier;
@@ -2349,6 +2274,11 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, size_t position_phys
     if (!src.empty())
         assembleAndWriteBack(fetch_window, window, src, result, covered, /*push_to_writers=*/true, stats);
 
+    /// Run the scheduled handed fills from the assembled bytes (still physical): promote the
+    /// window up into the faster cells the fetch skipped. A bypass gap schedules no handed job
+    /// over its range, so this is a no-op there.
+    runHandedFills(window, result, stats);
+
     /// Slice to the requested window and pin the filled segment at the fetched frontier (cleared at
     /// EOF / for a transient), so an eviction sweep does not drop it before the next window - as the
     /// legacy synchronous assembler did. Bank the window (logical) and serve it from the bank.
@@ -2364,12 +2294,7 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, size_t position_phys
     /// BELOW the frontier (the cursor trails an ahead launch), so `+= want` would over-count.
     st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + want);
     st.phase = RetrievePhase::Ready;
-    ChainedBuffers out = serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
-    /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
-    /// tiers on the serve front.
-    if (!out.empty())
-        promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
-    return out;
+    return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
 }
 
 ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
@@ -2393,11 +2318,19 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
             return serveWindowInline(ri, position_phys);  /// not prefetched: read it now
     }
     ChainedBuffers out = serveStepFromBanked(step, st, position_phys);
-    /// The fetch filled only the bottom tier; push just the SERVED window up into the faster
-    /// tiers here, so the pc fill trails the serve cursor (its own budget) rather than riding
-    /// the fetch front's lead. `out` is logical; shift to physical for the cache coordinates.
+    /// Run any scheduled handed fill overlapping the served range: the schedule CAN emit a
+    /// promote over an `into`-empty gap (a whole-cell run the fetch parts do not fully span is
+    /// not a FETCH target, yet the served bytes may complete its blocks), and a planned job runs
+    /// regardless of whether the bytes came from the bank or an inline fetch. The bank is
+    /// logical; the fills expect physical - shift there and back (the shift mutates only this
+    /// slice's descriptors, the remaining bank is untouched). Usually a no-op: a true bypass
+    /// range has no cells at all, so no handed job overlaps it.
     if (!out.empty())
-        promoteFetchedToUpper(ByteRange{out.range().offset + data_start_offset, out.range().size}, stats);
+    {
+        out.shift(static_cast<ssize_t>(data_start_offset));
+        runHandedFills(out.range(), out, stats);
+        out.shift(-static_cast<ssize_t>(data_start_offset));
+    }
     return out;
 }
 
@@ -2596,10 +2529,12 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(const PlanSchedule::Step
         if (covered.subtract(window_phys).empty())   /// fully served from the cells
         {
             stats += cell_stats;
+            /// Run the scheduled handed fills from the served bytes (still physical): promote
+            /// the window up into the faster cells the fetch skipped, so the pc fill trails the
+            /// serve cursor (its own budget) instead of riding the fetch lead.
+            runHandedFills(window_phys, out, stats);
             if (data_start_offset)
                 out.shift(-static_cast<ssize_t>(data_start_offset));
-            if (!out.empty())
-                promoteFetchedToUpper(window_phys, stats);
             return out;
         }
     }

@@ -739,30 +739,18 @@ private:
     /// error).
     void reapPutMachine(FetchMachine & m);
 
-    /// Promote a range just served from `from_tier` up into every populatable
-    /// faster cache (they all miss it, since `from_tier` was the fastest
-    /// hit). Walks `read_plan.bufs` in chain order, breaking at the first
-    /// entry with `provider->tier() == from_tier` (tier-equality, so a slower
-    /// fs hit is never promoted to a faster fs). The committed-set makes
-    /// out-of-order promote slices idempotent. `bytes`/`range` are physical,
-    /// pre-decryption.
-    void maybePromote(CacheTier from_tier, ByteRange range, const ChainedBuffers & bytes, Stats & out_stats);
-
-    /// Down-promote: a served upper-tier hit that the schedule marked for cross-cache fill (an
-    /// `UpperCacheRead` retrieve) is written DOWN into its lower cell using the bytes just served -
-    /// the cache-as-buffer mirror of `maybePromote`'s up-promote. The bytes are in hand (no re-read
-    /// from a faster tier), so the lower segment completes ACROSS an embedded hit without a remote
-    /// over-read of bytes a faster tier already holds. Only scheduled `UpperCacheRead` targets are
-    /// filled - a bridged hole stays a remote over-read. `served_range`/`bytes` are physical.
-    void downFillScheduledLower(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats);
-
-    /// Serve-front promote of a FETCHED range: the `Remote` fetch now fills only the bottom
-    /// populatable tier (`writeTargetsFor`), so push its committed bytes UP into the faster
-    /// tiers here, as the serve passes over `window` (physical). Reads the bottom tier's
-    /// committed bytes and `maybePromote`s them; idempotent via the faster tiers' committed
-    /// sets, so re-calling per served window is safe. The pc fill thus trails the serve
-    /// cursor (its own budget) instead of riding the fetch front's lead.
-    void promoteFetchedToUpper(ByteRange window, Stats & out_stats);
+    /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
+    /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
+    /// inherently serve-front jobs; the background never runs them ahead - `ahead_eligible`):
+    ///   `UpperCacheRead` - write a served faster-tier hit DOWN into the lower cell it
+    ///                      completes (so an embedded hit costs no remote over-read);
+    ///   `HandedChain`    - write served bytes UP into the faster cells the fetch deliberately
+    ///                      skipped (`writeTargetsFor` fills only the bottom tier; the pc fill
+    ///                      thus trails the serve cursor instead of riding the fetch lead).
+    /// The one schedule-driven executor for both directions; the jobs' `into` cells carry the
+    /// `[CF-promote]` no-same-tier rule as data. The writers' committed sets make every write
+    /// idempotent. `served_range`/`bytes` are physical, pre-decryption.
+    void runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats);
 
     // ─── Plan build ──────────────────────────────────────────────────────
 

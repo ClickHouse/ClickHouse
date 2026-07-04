@@ -266,23 +266,57 @@ PlanSchedule buildSchedule(
         r.fetch_runs = fetchRunsFor(geometry, f);
         r.fetch_head_grid = fetch_head_grid;
         r.fetch_tail_grid = fetch_tail_grid;
+        r.ahead_eligible = true;   /// a source fill depends on nothing but the source
         sched.retrieves.push_back(std::move(r));
     }
 
-    /// A User range served from a slower resident tier is promoted UP into the
-    /// faster tiers that miss it (HandedChain: the foreground hands the served
-    /// chain, no re-read, no remote).
+    /// Whether some Remote retrieve already fills the (entry, cell) target - then the serve
+    /// does not promote into it (the fetch owns it: the bottom tier and same-tier slower
+    /// layers, `writeTargetsFor`).
+    const auto remote_fills = [&](size_t entry, ByteRange cell)
+    {
+        for (const auto & r : sched.retrieves)
+        {
+            if (r.source != PlanSchedule::Source::Remote)
+                continue;
+            for (const auto & wt : r.into)
+                if (wt.entry == entry && wt.cell.offset == cell.offset && wt.cell.size == cell.size)
+                    return true;
+        }
+        return false;
+    };
+
+    /// Every User range is PROMOTED up at the serve (HandedChain: the foreground hands the
+    /// served chain - no re-read, no remote). A RESIDENT range fills the faster tiers that
+    /// miss it, never a same-tier faster LAYER (`[CF-promote]`). A GAP range fills every
+    /// user-overlapping miss cell the Remote fetch deliberately left out (`writeTargetsFor`
+    /// routes only the bottom tier and same-tier slower layers to the fetch; the faster cells
+    /// fill from the served bytes). NOT ahead-eligible: the served bytes are the input.
     for (const auto & tr : sched.ranges)
     {
-        if (tr.purpose != PlanSchedule::Purpose::User || !tr.resident)
+        if (tr.purpose != PlanSchedule::Purpose::User)
             continue;
         PlanSchedule::Retrieve promote;
         promote.range = tr.range;
         promote.source = PlanSchedule::Source::HandedChain;
-        for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)  /// faster tiers only
-            for (const auto & m : geometry.entries[ei].aligned_miss)
-                if (overlaps(m, tr.range))
-                    promote.into.push_back({ei, m});
+        if (tr.resident)
+        {
+            for (size_t ei = 0; ei < tr.tier_entry && ei < geometry.entries.size(); ++ei)
+            {
+                if (geometry.entries[ei].tier == geometry.entries[tr.tier_entry].tier)
+                    continue;   /// same-tier faster layer: never promoted into (`[CF-promote]`)
+                for (const auto & m : geometry.entries[ei].aligned_miss)
+                    if (overlaps(m, tr.range))
+                        promote.into.push_back({ei, m});
+            }
+        }
+        else
+        {
+            for (size_t ei = 0; ei < geometry.entries.size(); ++ei)
+                for (const auto & m : geometry.entries[ei].aligned_miss)
+                    if (overlaps(m, tr.range) && !remote_fills(ei, m))
+                        promote.into.push_back({ei, m});
+        }
         if (!promote.into.empty())
             sched.retrieves.push_back(std::move(promote));
     }
