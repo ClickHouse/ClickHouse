@@ -804,7 +804,13 @@ public:
                 auto stop_token = interrupt_source.get_token();
                 auto result = cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
                 auto expected_col = user_defined_function->getResultType()->createColumn();
-                if (!result->structureEquals(*expected_col))
+                // A guest that set COL_IS_CONST legitimately returns a ColumnConst; structureEquals
+                // only holds between two ColumnConst instances, so compare the unwrapped nested
+                // column against expected_col instead of rejecting every valid const result.
+                const IColumn * result_for_check = result.get();
+                if (const auto * result_const = typeid_cast<const ColumnConst *>(result_for_check))
+                    result_for_check = &result_const->getDataColumn();
+                if (!result_for_check->structureEquals(*expected_col))
                     throw Exception(ErrorCodes::WASM_ERROR,
                         "COLUMNAR_V1: returned column structure {} does not match declared type {}",
                         result->dumpStructure(),
@@ -843,19 +849,31 @@ public:
 private:
     /// Estimate total serialized byte size of argument columns for an entire block.
     /// Used for dynamic block splitting when webassembly_udf_max_input_block_size = 0.
-    /// ColumnConst columns are excluded: they are serialized once per batch (COL_IS_CONST),
-    /// so they contribute a fixed overhead regardless of batch size and must not drive splits.
+    /// preserve_const must match the same decision getArgumentsBlock/flush_batch will use:
+    /// only skip a ColumnConst's contribution when it actually stays const on the wire
+    /// (COL_IS_CONST / the Buffers format); for formats that materialize const columns
+    /// (MsgPack, RowBinary, CSV, ...) a large constant broadcast batch_size times must
+    /// count towards the estimate, or the splitter can miss a needed split.
     /// Runs in O(1) — reads column metadata, no per-row scanning.
-    size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count) const
+    size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count, bool preserve_const) const
     {
         size_t total = 0;
         for (const auto & arg : arguments)
         {
             const IColumn * col = arg.column.get();
-            if (typeid_cast<const ColumnConst *>(col))
-                continue; // fixed per-batch cost, not per-row
+            bool materialized_const = false;
+            if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
+            {
+                if (preserve_const)
+                    continue; // fixed per-batch cost, not per-row
+                col = &const_col->getDataColumn();
+                materialized_const = true;
+            }
             if (const auto * s = typeid_cast<const ColumnString *>(col))
-                total += s->getChars().size(); // raw bytes including null terminators
+            {
+                size_t bytes = s->getChars().size(); // raw bytes including null terminators
+                total += materialized_const ? bytes * row_count : bytes;
+            }
             else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += arg.type->getSizeOfValueInMemory() * row_count;
             else
@@ -881,9 +899,10 @@ private:
 
         size_t batch_start = 0;
 
-        // Buffers format handles const columns natively; RowBinary/MsgPack need them materialized.
-        const bool buffers_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>() == "Buffers";
-        const bool preserve_const = buffers_format;
+        // Buffers and ColumnBinary carry a native COL_IS_CONST marker and handle const columns
+        // without materializing them; RowBinary/MsgPack/CSV/etc. need them materialized.
+        const String serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
+        const bool preserve_const = serialization_format == "Buffers" || serialization_format == "ColumnBinary";
 
         auto flush_batch = [&](size_t end_idx)
         {
@@ -914,7 +933,7 @@ private:
             // O(1) block-level check: only scan per-row when splits are actually needed.
             // The common case (block fits in budget) pays zero per-row overhead.
             // When splits are required, use a fixed stride derived from the average row size.
-            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count);
+            size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, preserve_const);
             if (total_bytes > input_budget)
             {
                 size_t avg_row_bytes = std::max(size_t(1), total_bytes / input_rows_count);
@@ -1175,7 +1194,7 @@ struct WebAssemblyFunctionSettingsConstraits : public IHints<>
 
     const UnorderedMapWithMemoryTracking<String, SettingDefinition> settings_def = {
         /// Serialization format for input/output data for ABI what uses serialization
-        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers"}}.withDefault("MsgPack")},
+        {"serialization_format", SettingStringFromSet{{"MsgPack", "JSONEachRow", "CSV", "TSV", "TSVRaw", "RowBinary", "Buffers", "ColumnBinary"}}.withDefault("MsgPack")},
         {"webassembly_udf_enable_fuel", SettingBool{}.withDefault(true)},
     };
 
