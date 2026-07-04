@@ -53,6 +53,17 @@ if (ENABLE_XRAY)
         "${COMPILER_RT_DIR}/libclang_rt_xray.a"
     )
 endif()
+if (WITH_COVERAGE)
+    # -fprofile-instr-generate on the link line makes clang inject the profile
+    # runtime from its resource directory; that archive is built against the
+    # host glibc (references the _FORTIFY_SOURCE __*_chk functions) and cannot
+    # link into a musl binary. -noprofilelib suppresses the injection; our own
+    # musl-built archive from contrib/compiler-rt-cmake replaces it.
+    list (APPEND SANITIZER_RUNTIMES
+        "-noprofilelib"
+        "${COMPILER_RT_DIR}/libclang_rt_profile.a"
+    )
+endif()
 string (REPLACE ";" " " SANITIZER_RUNTIMES "${SANITIZER_RUNTIMES}")
 
 message(STATUS "Builtins library: ${BUILTINS_LIBRARY}")
