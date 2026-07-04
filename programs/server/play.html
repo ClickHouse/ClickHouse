@@ -4354,15 +4354,33 @@ function resetCredentialsStatus() {
 /// in-flight check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
 /// `getServerStatus` puts the credentials into the request, so probing incomplete input would emit
 /// login attempts with partial — and, for the password, secret — values (`?password=s`,
-/// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits. Instead the
-/// check runs once on `change`, i.e. when the field is committed (typically on blur), so a correct
-/// value is confirmed with green and a wrong one with red without any explicit action, using only
-/// the final, complete value. This subsumes the old paste handlers: a pasted value is committed by
-/// the following blur just like typed input.
-user_elem.addEventListener('input', resetCredentialsStatus);
-password_elem.addEventListener('input', resetCredentialsStatus);
-user_elem.addEventListener('change', checkCredentials);
-password_elem.addEventListener('change', checkCredentials);
+/// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
+///
+/// Instead the check runs once editing is finished, so a correct value is confirmed with green and a
+/// wrong one with red without any explicit action, using only the final, complete pair. "Finished"
+/// means focus has left the credential pair as a whole: probing on a per-field `change` (blur) would
+/// fire while focus is merely travelling from `user` to `password`, sending a mismatched pair (the
+/// new user against the old password, or vice versa) as an unintended login attempt before the pair
+/// is complete. `focusout` bubbles and carries `relatedTarget` (the element gaining focus), so a move
+/// to the sibling credential field is distinguishable from leaving the pair, and is skipped. The
+/// `credentials_edited` guard means merely tabbing through the fields, without changing anything,
+/// emits no login attempt. This subsumes the old paste handlers: a pasted value is committed by the
+/// following focus change just like typed input.
+let credentials_edited = false;
+function onCredentialInput() {
+    credentials_edited = true;
+    resetCredentialsStatus();
+}
+function onCredentialFocusOut(event) {
+    if (event.relatedTarget === user_elem || event.relatedTarget === password_elem) { return; }
+    if (!credentials_edited) { return; }
+    credentials_edited = false;
+    checkCredentials();
+}
+user_elem.addEventListener('input', onCredentialInput);
+password_elem.addEventListener('input', onCredentialInput);
+user_elem.addEventListener('focusout', onCredentialFocusOut);
+password_elem.addEventListener('focusout', onCredentialFocusOut);
 
 /// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
 /// previous URL must not paint the fields. `checkURL` is registered on `url` `input` earlier and
