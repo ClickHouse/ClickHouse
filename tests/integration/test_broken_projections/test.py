@@ -741,12 +741,12 @@ def test_mutation_with_broken_projection(cluster):
         "all_3_3_0_5",
     ] == parts
 
-    # Still broken because it was hardlinked.
-    broken = get_broken_projections_info(node, table_name)
-    if broken:  # can be not broken because of a merge.
-        assert get_broken_projections_info(node, table_name, part="all_2_2_0_5")
+    # Still broken because the projection files were hardlinked from the
+    # previous part. Background merges are disabled here, so nothing can
+    # repair the projection and the broken state must persist deterministically.
+    assert get_broken_projections_info(node, table_name, part="all_2_2_0_5")
 
-    check(node, table_name, not broken)
+    check(node, table_name, 0)
 
     node.query(
         f"ALTER TABLE {table_name} DELETE WHERE c == 13 SETTINGS mutations_sync = 1"
