@@ -798,12 +798,22 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
     //    a synchronous insert, so identical blocks on different branches collide.
     // Keep such strict inserts single-stream (as before), so the numbering stays global.
     //
+    // This only matters when the destination sink actually deduplicates: the colliding id is consulted
+    // only by a MergeTree-family table with its deduplication window enabled, and only when deduplication
+    // is not disabled by `deduplicate_insert` / `insert_deduplicate`. For a table that never deduplicates
+    // (e.g. a `MergeTree` with `non_replicated_deduplication_window = 0`, a `Memory`/`Null` table, or a
+    // session with deduplication disabled) the collision is harmless, so the fan-out stays safe and
+    // `max_insert_threads` keeps applying.
+    //
     // The analogous VIEW-level collision for dependent materialized views (a per-branch view block
     // number under the legacy deduplication hash modes) is handled inside `InsertDependenciesBuilder`,
     // which keeps its sink stream size at 1 in that case regardless of the value passed here.
     const auto dedup_version = context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    const bool source_deduplicates = InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(table)
+        && isDeduplicationEnabledForInsert(async_insert, settings);
     const bool strict_dedup_single_stream = !async_insert
         && settings[Setting::use_strict_insert_block_limits]
+        && source_deduplicates
         && (!settings[Setting::insert_deduplication_token].value.empty()
             || dedup_version != InsertDeduplicationVersions::OLD_SEPARATE_HASHES);
     const size_t insert_threads = (async_insert || strict_dedup_single_stream) ? 1 : max_insert_threads;
