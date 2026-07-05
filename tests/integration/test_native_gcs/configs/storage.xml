@@ -1,0 +1,24 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <gcs_disk>
+                <type>object_storage</type>
+                <object_storage_type>gcs</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <!-- Full endpoint (bucket root) is injected by helpers/cluster.py setup_gcs_cmd. -->
+                <endpoint from_env="GCS_DISK_ENDPOINT"></endpoint>
+                <!-- fake-gcs-server has no authentication: use anonymous access. -->
+                <no_sign_request>true</no_sign_request>
+            </gcs_disk>
+        </disks>
+        <policies>
+            <gcs_policy>
+                <volumes>
+                    <main>
+                        <disk>gcs_disk</disk>
+                    </main>
+                </volumes>
+            </gcs_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>

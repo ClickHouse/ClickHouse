@@ -557,6 +557,7 @@ class ClickHouseCluster:
         enable_thread_fuzzer=False,
         thread_fuzzer_settings={},
         azurite_default_port=0,
+        gcs_default_port=0,
         server_binaries=[],
         with_dolor=False,
     ):
@@ -660,6 +661,7 @@ class ClickHouseCluster:
         self.base_mongo_cmd = []
         self.base_redis_cmd = []
         self.base_azurite_cmd = []
+        self.base_gcs_cmd = []
         self.base_nginx_cmd = []
         self.base_prometheus_cmd = []
         self.pre_zookeeper_commands = []
@@ -740,6 +742,13 @@ class ClickHouseCluster:
         self.azurite_account = "devstoreaccount1"
         self.azurite_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
         self.azure_container_name = "cont"
+
+        # available when with_gcs == True (native GCS via fake-gcs-server)
+        self.with_gcs = False
+        self.gcs_host = "fake-gcs1"
+        self.gcs_ip = None
+        self._gcs_port = gcs_default_port
+        self.gcs_bucket = "test-bucket"
 
         # available when with_kafka == True
         self.kafka_host = "kafka1"
@@ -1015,6 +1024,13 @@ class ClickHouseCluster:
             return self._azurite_port
         self._azurite_port = self.port_pool.get_port()
         return self._azurite_port
+
+    @property
+    def gcs_port(self):
+        if self._gcs_port:
+            return self._gcs_port
+        self._gcs_port = self.port_pool.get_port()
+        return self._gcs_port
 
     @property
     def mongo_port(self):
@@ -1912,6 +1928,28 @@ class ClickHouseCluster:
         )
         return self.base_azurite_cmd
 
+    def setup_gcs_cmd(self, instance, env_variables, docker_compose_yml_dir):
+        self.with_gcs = True
+        env_variables["GCS_PORT"] = str(self.gcs_port)
+        # Endpoint the ClickHouse container uses to reach fake-gcs-server (the docker-network host).
+        env_variables["GCS_ENDPOINT"] = f"http://{self.gcs_host}:{env_variables['GCS_PORT']}"
+        # Ready-to-use endpoint (bucket root) for a native GCS storage disk; referenced from configs
+        # via <endpoint from_env="GCS_DISK_ENDPOINT"/>.
+        env_variables["GCS_DISK_ENDPOINT"] = (
+            f"{env_variables['GCS_ENDPOINT']}/{self.gcs_bucket}/"
+        )
+
+        self.base_cmd.extend(
+            ["--file", p.join(docker_compose_yml_dir, "docker_compose_gcs.yml")]
+        )
+        self.base_gcs_cmd = self.compose_cmd(
+            "--env-file",
+            instance.env_file,
+            "--file",
+            p.join(docker_compose_yml_dir, "docker_compose_gcs.yml"),
+        )
+        return self.base_gcs_cmd
+
     def setup_cassandra_cmd(self, instance, env_variables, docker_compose_yml_dir):
         self.with_cassandra = True
         env_variables["CASSANDRA_PORT"] = str(self.cassandra_port)
@@ -2090,6 +2128,7 @@ class ClickHouseCluster:
         # So, we set the default value of with_remote_database_disk to None and try to enable it if possible in ASAN build (i.e. if not explicitly set to false)
         with_remote_database_disk=None,
         with_azurite=False,
+        with_gcs=False,
         with_cassandra=False,
         with_ldap=False,
         with_jdbc_bridge=False,
@@ -2229,6 +2268,7 @@ class ClickHouseCluster:
             with_minio=with_minio,
             with_remote_database_disk=with_remote_database_disk,
             with_azurite=with_azurite,
+            with_gcs=with_gcs,
             with_jdbc_bridge=with_jdbc_bridge,
             with_hive=with_hive,
             with_coredns=with_coredns,
@@ -2479,6 +2519,11 @@ class ClickHouseCluster:
         if with_azurite and not self.with_azurite:
             cmds.append(
                 self.setup_azurite_cmd(instance, env_variables, docker_compose_yml_dir)
+            )
+
+        if with_gcs and not self.with_gcs:
+            cmds.append(
+                self.setup_gcs_cmd(instance, env_variables, docker_compose_yml_dir)
             )
 
         if minio_certs_dir is not None:
@@ -3439,6 +3484,33 @@ class ClickHouseCluster:
 
         raise Exception("Can't wait Azurite to start")
 
+    def wait_gcs_to_start(self, timeout=180):
+        import requests
+
+        self.gcs_ip = self.get_instance_ip(self.gcs_host)
+        # The pytest host reaches the emulator via the published port on localhost.
+        base_url = f"http://127.0.0.1:{self.env_variables['GCS_PORT']}/storage/v1/b"
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                resp = requests.get(f"{base_url}?project=test-project", timeout=5)
+                if resp.status_code == 200:
+                    # (Re)create the test bucket. A 409 means it already exists, which is fine.
+                    requests.post(
+                        f"{base_url}?project=test-project",
+                        json={"name": self.gcs_bucket},
+                        timeout=5,
+                    )
+                    logging.debug(
+                        "fake-gcs-server is up; ensured bucket '%s'", self.gcs_bucket
+                    )
+                    return
+            except Exception as ex:
+                logging.debug("Can't connect to fake-gcs-server: %s", str(ex))
+            time.sleep(1)
+
+        raise Exception("Can't wait fake-gcs-server to start")
+
     def wait_schema_registry_to_start(self, timeout=180):
         for port in self.schema_registry_port, self.schema_registry_auth_port:
             reg_url = "http://localhost:{}".format(port)
@@ -4074,6 +4146,25 @@ class ClickHouseCluster:
                 self.up_called = True
                 logging.info("Trying to connect to Azurite")
                 self.wait_azurite_to_start()
+
+            if self.with_gcs and self.base_gcs_cmd:
+                gcs_start_cmd = self.base_gcs_cmd + common_opts
+                logging.info(
+                    "Trying to create fake-gcs-server instance by command %s",
+                    " ".join(map(str, gcs_start_cmd)),
+                )
+
+                def logging_gcs_initialization(exception, retry_number, sleep_time):
+                    logging.info(
+                        f"fake-gcs-server initialization failed with error: {exception}"
+                    )
+
+                retry(
+                    log_function=logging_gcs_initialization,
+                )(run_and_check, gcs_start_cmd)
+                self.up_called = True
+                logging.info("Trying to connect to fake-gcs-server")
+                self.wait_gcs_to_start()
 
             if self.with_cassandra and self.base_cassandra_cmd:
                 subprocess_check_call(self.base_cassandra_cmd + ["up", "-d"])
@@ -4780,6 +4871,7 @@ class ClickHouseInstance:
         with_minio,
         with_remote_database_disk,
         with_azurite,
+        with_gcs,
         with_jdbc_bridge,
         with_hive,
         with_coredns,
@@ -4908,6 +5000,7 @@ class ClickHouseInstance:
         self.with_minio = with_minio
         self.with_remote_database_disk = with_remote_database_disk
         self.with_azurite = with_azurite
+        self.with_gcs = with_gcs
         self.with_cassandra = with_cassandra
         self.with_ldap = with_ldap
         self.with_jdbc_bridge = with_jdbc_bridge
@@ -6337,6 +6430,9 @@ class ClickHouseInstance:
 
         if self.with_azurite:
             depends_on.append("azurite1")
+
+        if self.with_gcs:
+            depends_on.append("fake-gcs1")
 
         if self.with_arrowflight:
             depends_on.append("arrowflight1")
