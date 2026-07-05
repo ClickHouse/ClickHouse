@@ -179,11 +179,18 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         /// is lost there and the guard still throws on the follower. Ship the AST so the filter arrives. This is
         /// a transport choice (serialize_query_plan is off by default) so we override it even when it was set,
         /// but only while the pushdown is active, i.e. only when a guard is set and parallel replicas is used.
-        /// Do not override it when additional_table_filters is set: that combination is only supported with
-        /// serialize_query_plan = 1 (Planner.cpp throws SUPPORT_IS_DISABLED / disables parallel replicas
-        /// otherwise), and it does not need the AST-shipped pushdown, so leave serialize_query_plan as is.
+        ///
+        /// buildContext() runs for both the outer query and the view's inner query (getViewContext() marks the
+        /// latter with setIsViewInnerQuery()). The override is needed only for the read that the pushed filter
+        /// has to cross a view boundary to reach, i.e. the view-inner read. For a plain-table read the predicate
+        /// is already at the reading step, and if additional_table_filters is set that combination is only
+        /// supported with serialize_query_plan = 1 (Planner.cpp throws SUPPORT_IS_DISABLED / disables parallel
+        /// replicas otherwise). So skip the override for a plain-table read that has additional_table_filters;
+        /// a view-inner read always ships the AST (its additional_table_filters, if any, are applied above the
+        /// view boundary and do not constrain this inner read).
         if (result_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown]
-            && result_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+            && (result_context->isViewInnerQuery()
+                || result_context->getSettingsRef()[Setting::additional_table_filters].value.empty()))
             result_context->setSetting("serialize_query_plan", false);
     }
 

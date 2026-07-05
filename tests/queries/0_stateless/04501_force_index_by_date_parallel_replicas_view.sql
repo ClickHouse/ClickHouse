@@ -124,6 +124,24 @@ SELECT count() FROM t_force_index_pr
 SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
     serialize_query_plan = 1, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, force_index_by_date = 1;
 
+-- A view read whose additional_table_filters targets the view and that also enables serialize_query_plan = 1.
+-- The additional filter is applied above the view boundary, so the outer key predicate still has to cross the
+-- boundary via the pushdown, which reaches the follower only through the shipped AST. The plain-table override
+-- guard above (skip when additional_table_filters is non-empty) must NOT suppress the AST shipping here, or the
+-- follower serializes its plan before the pushed filter is added and throws a false INDEX_NOT_USED. So the
+-- override still fires for a view-inner read regardless of additional_table_filters. See issue #108266.
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS additional_table_filters = {'v_force_index_pr': '1'}, serialize_query_plan = 1, force_primary_key = 1;
+
+SELECT count() FROM v_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS additional_table_filters = {'v_force_index_pr': '1'}, serialize_query_plan = 1, force_index_by_date = 1;
+
+SELECT count() FROM vv_force_index_pr
+WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
+SETTINGS additional_table_filters = {'vv_force_index_pr': '1'}, serialize_query_plan = 1, force_primary_key = 1;
+
 DROP VIEW va_force_index_pr;
 DROP VIEW vv_force_index_pr;
 DROP VIEW v_force_index_pr;
