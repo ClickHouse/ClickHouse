@@ -202,6 +202,41 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
     AggregateFunctionProperties & out_properties,
     AggregateFunctionStateVariant state_variant) const
 {
+    /// Whether an aggregate function's result is a floating-point value computed by arithmetic over its input (the
+    /// sum/avg/variance/... families). Only for these is the Float64 fallback below safe: a numeric mix with no
+    /// lossless common supertype is naturally computed in Float64, exactly as arithmetic does. Exact/order-based
+    /// aggregates (min/max/argMin/argMax/any/quantileExact/...) are not float-promoting -- a lossy Float64 cast
+    /// would silently return wrong results for them (two distinct integers above 2^53 collapse to the same Float64)
+    /// -- so they keep reporting the original error. This is an allowlist (fail-closed): an unknown function is
+    /// treated as not float-promoting. Combinator suffixes are stripped and aliases resolved to classify the base
+    /// function (sumIf / sumArray / sumMerge / ... -> sum), mirroring tryGetProperties. Names are compared
+    /// case-insensitively (lowercased).
+    auto is_float_promoting = [this](String fn_name) -> bool
+    {
+        static const NameSet float_promoting_aggregate_functions
+        {
+            "sum", "sumkahan", "avg", "avgweighted",
+            "varsamp", "varpop", "stddevsamp", "stddevpop",
+            "covarsamp", "covarpop", "corr",
+            "skewsamp", "skewpop", "kurtsamp", "kurtpop",
+        };
+
+        while (true)
+        {
+            fn_name = getAliasToOrName(fn_name);
+            String fn_name_lowercase = Poco::toLower(fn_name);
+            if (float_promoting_aggregate_functions.contains(fn_name_lowercase))
+                return true;
+            /// A registered base aggregate function that is not in the allowlist is not float-promoting.
+            if (aggregate_functions.contains(fn_name) || case_insensitive_aggregate_functions.contains(fn_name_lowercase))
+                return false;
+            AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(fn_name);
+            if (!combinator || combinator->getName().size() >= fn_name.size())
+                return false;
+            fn_name = fn_name.substr(0, fn_name.size() - combinator->getName().size());
+        }
+    };
+
     /// The type each Variant argument would be adapted to: Nullable(least common supertype of its nested types).
     /// Nullable is used so that the implicit NULLs of the Variant become ordinary NULLs which the aggregation skips.
     /// A non-Variant argument keeps its type; a Variant with no Nullable-wrappable supertype has no adapted type
@@ -220,10 +255,16 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         const auto & variants = assert_cast<const DataTypeVariant &>(*argument_types[i]).getVariants();
         auto supertype = tryGetLeastSupertype(variants);
         /// getLeastSupertype is strict and reports no common type for e.g. Decimal + Float64 or Int64 + Float64
-        /// (there is no lossless conversion). For aggregation, a mix of numeric types is naturally computed in
-        /// Float64 (exactly as arithmetic does: Decimal + Float64 -> Float64), so fall back to Float64 when all
-        /// the variants are numeric.
-        if (!supertype && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); }))
+        /// (there is no lossless conversion). For an aggregate whose result is a floating-point value computed by
+        /// arithmetic over its input (sum/avg/...), a mix of numeric types is naturally computed in Float64
+        /// (exactly as arithmetic does: Int64 + Float64 -> Float64), so fall back to Float64 when all the variants
+        /// are numeric. This fallback is deliberately NOT applied to exact/order-based aggregates (min/max/argMin/
+        /// argMax/...): a lossy Float64 cast would silently return wrong results for them (two distinct integers
+        /// above 2^53 collapse to the same Float64), so they keep reporting the original error when there is no
+        /// lossless common supertype. See the is_float_promoting lambda above.
+        if (!supertype
+            && std::all_of(variants.begin(), variants.end(), [](const auto & v) { return isNumber(v); })
+            && is_float_promoting(name))
             supertype = std::make_shared<DataTypeFloat64>();
         /// The supertype must be wrappable in Nullable: the adapter relies on Nullable to carry the implicit NULLs
         /// of the Variant (which the aggregation then skips). This is not possible when there is no common supertype,

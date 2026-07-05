@@ -1,6 +1,9 @@
 -- Aggregate functions that do not support the Variant type natively (sum, avg, min, max, ...) can now be applied
 -- to Variant arguments: they aggregate over the least common supertype of the variants, wrapped in Nullable.
--- A mix of numeric types (e.g. Decimal + Float64) is aggregated in Float64, exactly as arithmetic does.
+-- A numeric mix with no lossless common supertype (e.g. Decimal + Float64, Int64 + Float64) is aggregated in
+-- Float64 -- but only for the arithmetic functions whose result is a floating-point value (sum, avg, ...), exactly
+-- as arithmetic does. Exact/order-based functions (min, max, argMin, argMax, ...) keep the original error in that
+-- case, because a lossy Float64 cast would silently return wrong results (distinct integers above 2^53 collapse).
 
 SET allow_experimental_variant_type = 1;
 SET allow_suspicious_variant_types = 1;
@@ -16,9 +19,13 @@ INSERT INTO t_variant_agg VALUES (100, NULL);
 -- The motivating example: sum over Variant(Decimal(7, 2), Float64) is aggregated over the supertype Float64.
 SELECT 'sum', sum(v), toTypeName(sum(v)) FROM t_variant_agg;
 SELECT 'avg', avg(v), toTypeName(avg(v)) FROM t_variant_agg;
-SELECT 'min/max', min(v), max(v) FROM t_variant_agg;
-SELECT 'sumWithOverflow', sumWithOverflow(v) FROM t_variant_agg;
 SELECT 'sumKahan', sumKahan(v) FROM t_variant_agg;
+
+-- Exact/order-based functions have no lossless common supertype here (Decimal + Float64), so the Float64 fallback
+-- is not applied to them and the original error is reported (sumWithOverflow is exact-integer, not float-promoting).
+SELECT min(v) FROM t_variant_agg; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT max(v) FROM t_variant_agg; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT sumWithOverflow(v) FROM t_variant_agg; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- Combinators are applied around the adapter (the adapter is the outermost wrapper).
 SELECT 'sumIf', sumIf(v, id < 10) FROM t_variant_agg;
@@ -29,20 +36,34 @@ SELECT 'groupBy', id < 10 AS g, sum(v) FROM t_variant_agg GROUP BY g ORDER BY g;
 
 DROP TABLE t_variant_agg;
 
--- A clean common supertype is preserved (no Float64 fallback): Variant(UInt8, UInt32) -> UInt32 -> sum -> UInt64.
+-- A clean common supertype is preserved (no Float64 fallback): Variant(UInt8, UInt32) -> UInt32 -> sum -> UInt64,
+-- and min/max over such a Variant work through the adapter (the supertype is lossless, so values are exact).
 DROP TABLE IF EXISTS t_variant_uint;
 CREATE TABLE t_variant_uint (v Variant(UInt8, UInt32)) ENGINE = Memory;
 INSERT INTO t_variant_uint SELECT number::UInt8 FROM numbers(3);
 INSERT INTO t_variant_uint SELECT (number + 1000)::UInt32 FROM numbers(3);
 SELECT 'uint', sum(v), toTypeName(sum(v)) FROM t_variant_uint;
+SELECT 'uint min/max', min(v), max(v), toTypeName(min(v)) FROM t_variant_uint;
 DROP TABLE t_variant_uint;
 
--- All-NULL and empty aggregation.
+-- min/max also work when the lossless common supertype is a floating-point type: Variant(Int32, Float64) -> Float64
+-- (Int32 is exactly representable in Float64), so, unlike the Int64 + Float64 case below, the values are preserved.
+DROP TABLE IF EXISTS t_variant_i32f64;
+CREATE TABLE t_variant_i32f64 (v Variant(Int32, Float64)) ENGINE = Memory;
+INSERT INTO t_variant_i32f64 VALUES (7), (2.5), (-3), (NULL);
+SELECT 'i32f64 min/max', min(v), max(v), toTypeName(min(v)) FROM t_variant_i32f64;
+DROP TABLE t_variant_i32f64;
+
+-- All-NULL and empty aggregation (arithmetic functions; the numeric mix Int64 + Float64 falls back to Float64).
 DROP TABLE IF EXISTS t_variant_null;
 CREATE TABLE t_variant_null (v Variant(Int64, Float64)) ENGINE = Memory;
 INSERT INTO t_variant_null VALUES (NULL), (NULL);
-SELECT 'all null', sum(v), min(v), avg(v) FROM t_variant_null;
-SELECT 'empty', sum(v), min(v) FROM t_variant_null WHERE 0;
+SELECT 'all null', sum(v), avg(v) FROM t_variant_null;
+SELECT 'empty', sum(v) FROM t_variant_null WHERE 0;
+-- Exact/order-based functions over the same lossy numeric mix (Int64 + Float64) report the original error.
+SELECT min(v) FROM t_variant_null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT max(v) FROM t_variant_null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT argMax(v, v) FROM t_variant_null; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 DROP TABLE t_variant_null;
 
 -- Functions that already support Variant natively are unaffected (no adapter, result type is kept).
@@ -74,18 +95,31 @@ SELECT minArray([CAST(1 AS Variant(UInt8, UInt64)), CAST(2 AS Variant(UInt8, UIn
 -- The -Merge combinator over an AggregateFunction(f, Variant(...)) state type. Such a state type is constructible
 -- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
 -- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would
--- throw ILLEGAL_TYPE_OF_ARGUMENT when reconstructing the state.
+-- throw ILLEGAL_TYPE_OF_ARGUMENT when reconstructing the state. sum/avg over Variant(Int64, Float64) use the
+-- Float64 fallback (they are float-promoting), so such state types can be declared.
 DROP TABLE IF EXISTS t_variant_state;
 CREATE TABLE t_variant_state
 (
     s AggregateFunction(sum, Variant(Int64, Float64)),
-    mn AggregateFunction(min, Variant(Int64, Float64)),
-    mx AggregateFunction(max, Variant(Int64, Float64)),
     a AggregateFunction(avg, Variant(Int64, Float64))
 ) ENGINE = Memory;
-SELECT 'merge empty', sumMerge(s), minMerge(mn), maxMerge(mx), avgMerge(a) FROM t_variant_state;
-SELECT 'merge types', toTypeName(sumMerge(s)), toTypeName(minMerge(mn)), toTypeName(avgMerge(a)) FROM t_variant_state;
+SELECT 'merge empty', sumMerge(s), avgMerge(a) FROM t_variant_state;
+SELECT 'merge types', toTypeName(sumMerge(s)), toTypeName(avgMerge(a)) FROM t_variant_state;
 DROP TABLE t_variant_state;
+
+-- min/max state types over a Variant with a lossless common supertype work through the adapter too.
+DROP TABLE IF EXISTS t_variant_state_minmax;
+CREATE TABLE t_variant_state_minmax
+(
+    mn AggregateFunction(min, Variant(UInt8, UInt32)),
+    mx AggregateFunction(max, Variant(UInt8, UInt32))
+) ENGINE = Memory;
+SELECT 'merge minmax', minMerge(mn), maxMerge(mx), toTypeName(minMerge(mn)) FROM t_variant_state_minmax;
+DROP TABLE t_variant_state_minmax;
+
+-- An exact/order-based state over a Variant with no lossless common supertype cannot be declared: resolving min
+-- over Variant(Int64, Float64) reports the original error (only float-promoting functions use the Float64 fallback).
+CREATE TABLE t_variant_state_minbad (mn AggregateFunction(min, Variant(Int64, Float64))) ENGINE = Memory; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 -- A clean common supertype is preserved for the state type too: Variant(UInt8, UInt32) -> UInt32 -> sum -> UInt64.
 DROP TABLE IF EXISTS t_variant_state_uint;
@@ -119,7 +153,7 @@ DROP TABLE t_variant_norm;
 -- reject it only in the comparable "key" position. When both are Variant, the adapter converts only the key: the arg
 -- is kept as-is, so the result type stays the original Variant instead of collapsing to Nullable(supertype). Note the
 -- arg here -- Variant(String, UInt64) -- has no common supertype and could not be adapted at all, yet the call still
--- resolves because only the key needs adapting.
+-- resolves because only the key needs adapting (the key Variant(UInt8, UInt64) has the lossless supertype UInt64).
 DROP TABLE IF EXISTS t_variant_argminmax;
 CREATE TABLE t_variant_argminmax (arg Variant(String, UInt64), key Variant(UInt8, UInt64)) ENGINE = Memory;
 INSERT INTO t_variant_argminmax VALUES ('a', 1), ('b', 3), ('c', 2);

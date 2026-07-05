@@ -1,18 +1,19 @@
 sum	7.5	Nullable(Float64)
 avg	1.25	Nullable(Float64)
-min/max	0	2.5
-sumWithOverflow	7.5
 sumKahan	7.5
 sumIf	3
 sumState/Merge	7.5
 groupBy	0	4.5
 groupBy	1	3
 uint	3006	Nullable(UInt64)
-all null	\N	\N	\N
-empty	\N	\N
+uint min/max	0	1002	Nullable(UInt32)
+i32f64 min/max	-3	7	Nullable(Float64)
+all null	\N	\N
+empty	\N
 native	4	Variant(String, UInt64)	4
-merge empty	\N	\N	\N	\N
-merge types	Nullable(Float64)	Nullable(Float64)	Nullable(Float64)
+merge empty	\N	\N
+merge types	Nullable(Float64)	Nullable(Float64)
+merge minmax	\N	\N	Nullable(UInt32)
 merge uint	Nullable(UInt64)
 cast to variant	6.5
 cast from variant	6.5
