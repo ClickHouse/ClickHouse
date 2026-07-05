@@ -41,7 +41,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     const WriteSettings & write_settings_,
     WrittenOffsetSubstreams * written_offset_substreams)
     : IMergedBlockOutputStream(
-          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, columns_list_, reset_columns_)
+          std::move(data_settings), data_part->getDataPartStoragePtr(), metadata_snapshot_, reset_columns_)
     , columns_list(columns_list_)
     , default_codec(default_codec_)
 {
@@ -233,7 +233,6 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
         auto part_columns = total_columns_list ? *total_columns_list : columns_list;
         auto serialization_infos = new_part->getSerializationInfos();
 
-        serialization_infos.replaceData(new_serialization_infos);
         files_to_remove_after_sync
             = removeEmptyColumnsFromPart(new_part, part_columns, new_part->expired_columns, serialization_infos, checksums);
 
@@ -365,16 +364,32 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & serialization_infos = new_part->getSerializationInfos();
+    const auto & statistics = gathered_data.statistics;
+    auto statistics_estimates = statistics.getEstimates();
+
+    /// All columns of the part were sampled into the shared builder — by this stream and, in a
+    /// vertical merge, by the column-only streams of the gathered columns. The exact default counts
+    /// from the explicit statistics take precedence over the sampled ones. Persist the result inline
+    /// (num_rows/num_defaults per column and subcolumn).
+    auto serialization_counts = gathered_data.estimates_builder.getEstimates(statistics_estimates);
+
+    /// Columns removed from the part after being written (e.g. fully expired by a TTL, removed by
+    /// `removeEmptyColumnsFromPart`) must not keep estimates: the next merge would count their rows
+    /// again as all-default for the missing column, and the in-memory part would diverge from a
+    /// reloaded one.
+    EstimatesBuilder::filterEstimates(serialization_counts, serialization_infos);
+
     if (serialization_infos.needsPersistence())
     {
         write_hashed_file(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, [&](auto & buffer)
         {
-            serialization_infos.writeJSON(buffer);
+            serialization_infos.writeJSON(buffer, serialization_counts);
         });
     }
 
-    const auto & statistics = gathered_data.statistics;
-    new_part->setEstimates(statistics.getEstimates());
+    /// Set the estimates on the in-memory part, so it exposes them via `getEstimates` (e.g. as a
+    /// source part of a later merge) without being reloaded from disk.
+    new_part->setEstimates(std::move(serialization_counts), statistics_estimates);
 
     if (!statistics.empty())
     {
@@ -453,9 +468,6 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     writer->write(block, permutation, permuted_columns_cache);
-    if (reset_columns)
-        new_serialization_infos.add(block);
-
     rows_count += rows;
 }
 

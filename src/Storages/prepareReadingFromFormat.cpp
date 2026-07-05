@@ -1,4 +1,5 @@
 #include <Storages/prepareReadingFromFormat.h>
+#include <Storages/Statistics/Statistics.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Core/Settings.h>
@@ -351,7 +352,9 @@ void ReadFromFormatInfo::serialize(IQueryPlanStep::Serialization & ctx) const
     writeStringBinary(columns_description.toString(false), ctx.out);
     requested_columns.writeTextWithNamesInStorage(ctx.out);
     requested_virtual_columns.writeTextWithNamesInStorage(ctx.out);
-    serialization_hints.writeJSON(ctx.out);
+    /// The serialization hints only convey the chosen kinds to the reading side; the counts are not
+    /// used there, so they are written as zero (an empty set of estimates).
+    serialization_hints.writeJSON(ctx.out, {});
 
     ctx.out << "\n";
 
@@ -390,7 +393,8 @@ ReadFromFormatInfo ReadFromFormatInfo::deserialize(IQueryPlanStep::Deserializati
     result.requested_virtual_columns.readTextWithNamesInStorage(ctx.in);
     std::string json;
     readString(json, ctx.in);
-    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json);
+    Estimates serialization_estimates;
+    result.serialization_hints = SerializationInfoByName::readJSONFromString(result.columns_description.getAll(), json, serialization_estimates);
 
     ctx.in >> "\n";
 

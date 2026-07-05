@@ -1,11 +1,11 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
-#include <Columns/ColumnSparse.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Block.h>
+#include <Storages/Statistics/Statistics.h>
 #include <base/EnumReflection.h>
 
 #include <Poco/JSON/JSON.h>
@@ -63,83 +63,15 @@ void writeJSONKeyValue(std::string_view key, bool value, WriteBuffer & out)
 
 }
 
-void SerializationInfo::Data::add(const IColumn & column)
-{
-    size_t rows = column.size();
-    double ratio = column.getRatioOfDefaultRows(ColumnSparse::DEFAULT_ROWS_SEARCH_SAMPLE_RATIO);
-
-    num_rows += rows;
-    num_defaults += static_cast<size_t>(ratio * static_cast<double>(rows));
-}
-
-void SerializationInfo::Data::add(const Data & other)
-{
-    num_rows += other.num_rows;
-    num_defaults += other.num_defaults;
-}
-
-void SerializationInfo::Data::remove(const Data & other)
-{
-    num_rows -= other.num_rows;
-    num_defaults -= other.num_defaults;
-}
-
-void SerializationInfo::Data::addDefaults(size_t length)
-{
-    num_rows += length;
-    num_defaults += length;
-}
-
 SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_)
     : settings(settings_)
     , kind_stack(kind_stack_)
 {
 }
 
-SerializationInfo::SerializationInfo(ISerialization::KindStack kind_stack_, const Settings & settings_, const Data & data_)
-    : settings(settings_)
-    , kind_stack(kind_stack_)
-    , data(data_)
-{
-}
-
-void SerializationInfo::add(const IColumn & column)
-{
-    data.add(column);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
-}
-
-void SerializationInfo::add(const SerializationInfo & other)
-{
-    data.add(other.data);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
-}
-
-void SerializationInfo::remove(const SerializationInfo & other)
-{
-    data.remove(other.data);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
-}
-
-
-void SerializationInfo::addDefaults(size_t length)
-{
-    data.addDefaults(length);
-    if (settings.choose_kind)
-        kind_stack = chooseKindStack(data, settings);
-}
-
-void SerializationInfo::replaceData(const SerializationInfo & other)
-{
-    data = other.data;
-}
-
 MutableSerializationInfoPtr SerializationInfo::clone() const
 {
-    return std::make_shared<SerializationInfo>(kind_stack, settings, data);
+    return std::make_shared<SerializationInfo>(kind_stack, settings);
 }
 
 /// Returns true if all rows with default values of type 'lhs'
@@ -272,7 +204,7 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
     }
 }
 
-void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
+void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const
 {
     writeJSONKeyValue(KEY_KIND, ISerialization::kindStackToString(kind_stack), out);
 
@@ -282,46 +214,45 @@ void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) 
         writeJSONKeyValue(KEY_NAME, *name, out);
     }
 
-    writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_DEFAULTS, data.num_defaults, out);
+    /// The counts are supplied externally (from `EstimatesBuilder`); a (sub)column with no estimate is
+    /// written with zero counts.
+    size_t num_rows = 0;
+    size_t num_defaults = 0;
+    if (auto it = estimates.find(key); it != estimates.end())
+    {
+        num_rows = it->second.rows_count;
+        num_defaults = it->second.num_defaults.value_or(0);
+    }
 
     writeChar(',', out);
-    writeJSONKeyValue(KEY_NUM_ROWS, data.num_rows, out);
+    writeJSONKeyValue(KEY_NUM_DEFAULTS, num_defaults, out);
+
+    writeChar(',', out);
+    writeJSONKeyValue(KEY_NUM_ROWS, num_rows, out);
 }
 
-void SerializationInfo::writeJSON(WriteBuffer & out, const String * name) const
+void SerializationInfo::writeJSON(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const
 {
     writeChar('{', out);
-    writeJSONFields(out, name);
+    writeJSONFields(out, name, key, estimates);
     writeChar('}', out);
 }
 
-void SerializationInfo::toJSON(Poco::JSON::Object & object) const
+void SerializationInfo::fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates)
 {
-    object.set(KEY_KIND, ISerialization::kindStackToString(kind_stack));
-    object.set(KEY_NUM_DEFAULTS, data.num_defaults);
-    object.set(KEY_NUM_ROWS, data.num_rows);
-}
+    if (!object.has(KEY_KIND))
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Missed field '{}' in SerializationInfo of columns", KEY_KIND);
 
-void SerializationInfo::fromJSON(const Poco::JSON::Object & object)
-{
-    if (!object.has(KEY_KIND) || !object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Missed field '{}' or '{}' or '{}' in SerializationInfo of columns",
-            KEY_KIND, KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
-
-    data.num_rows = object.getValue<size_t>(KEY_NUM_ROWS);
-    data.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
     kind_stack = ISerialization::stringToKindStack(object.getValue<String>(KEY_KIND));
-}
 
-ISerialization::KindStack SerializationInfo::chooseKindStack(const Data & data, const Settings & settings)
-{
-    ISerialization::KindStack kind_stack = {ISerialization::Kind::DEFAULT};
-    double ratio = data.num_rows ? std::min(static_cast<double>(data.num_defaults) / static_cast<double>(data.num_rows), 1.0) : 0.0;
-    if (ratio > settings.ratio_of_defaults_for_sparse)
-        kind_stack.push_back(ISerialization::Kind::SPARSE);
-    return kind_stack;
+    if (!object.has(KEY_NUM_DEFAULTS) || !object.has(KEY_NUM_ROWS))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Missed field '{}' or '{}' in SerializationInfo of columns",
+            KEY_NUM_DEFAULTS, KEY_NUM_ROWS);
+
+    Estimate & estimate = estimates[key];
+    estimate.rows_count = object.getValue<size_t>(KEY_NUM_ROWS);
+    estimate.num_defaults = object.getValue<size_t>(KEY_NUM_DEFAULTS);
 }
 
 SerializationInfoByName::SerializationInfoByName(const SerializationInfo::Settings & settings_)
@@ -345,42 +276,6 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
     }
 }
 
-void SerializationInfoByName::add(const Block & block)
-{
-    for (const auto & column : block)
-    {
-        auto it = find(column.name);
-        if (it == end())
-            continue;
-
-        it->second->add(*column.column);
-    }
-}
-
-void SerializationInfoByName::add(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        add(name, *info);
-}
-
-void SerializationInfoByName::add(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->add(info);
-}
-
-void SerializationInfoByName::remove(const SerializationInfoByName & other)
-{
-    for (const auto & [name, info] : other)
-        remove(name, *info);
-}
-
-void SerializationInfoByName::remove(const String & name, const SerializationInfo & info)
-{
-    if (auto it = find(name); it != end())
-        it->second->remove(info);
-}
-
 SerializationInfoPtr SerializationInfoByName::tryGet(const String & name) const
 {
     auto it = find(name);
@@ -391,19 +286,6 @@ MutableSerializationInfoPtr SerializationInfoByName::tryGet(const String & name)
 {
     auto it = find(name);
     return it == end() ? nullptr : it->second;
-}
-
-void SerializationInfoByName::replaceData(const SerializationInfoByName & other)
-{
-    for (const auto & [name, new_info] : other)
-    {
-        auto & old_info = (*this)[name];
-
-        if (old_info)
-            old_info->replaceData(*new_info);
-        else
-            old_info = new_info->clone();
-    }
 }
 
 ISerialization::KindStack SerializationInfoByName::getKindStack(const String & column_name) const
@@ -422,7 +304,7 @@ bool SerializationInfoByName::needsPersistence() const
     return !empty() || getVersion() > MergeTreeSerializationInfoVersion::BASIC;
 }
 
-void SerializationInfoByName::writeJSON(WriteBuffer & out) const
+void SerializationInfoByName::writeJSON(WriteBuffer & out, const Estimates & estimates) const
 {
     auto version = getVersion();
 
@@ -437,7 +319,7 @@ void SerializationInfoByName::writeJSON(WriteBuffer & out) const
             writeChar(',', out);
         first = false;
 
-        info->writeJSON(out, &name);
+        info->writeJSON(out, &name, name, estimates);
     }
     writeChar(']', out);
 
@@ -485,7 +367,7 @@ SerializationInfoByName SerializationInfoByName::clone() const
     return res;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str)
+SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesAndTypesList & columns, const std::string & json_str, Estimates & estimates)
 {
     Poco::JSON::Parser parser;
     auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
@@ -605,7 +487,7 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
                     "Found unexpected column '{}' in serialization infos", name);
 
             auto info = it->second->createSerializationInfo(infos.settings);
-            info->fromJSON(*elem_object);
+            info->fromJSON(*elem_object, name, estimates);
             infos.emplace(name, std::move(info));
         }
     }
@@ -613,11 +495,11 @@ SerializationInfoByName SerializationInfoByName::readJSONFromString(const NamesA
     return infos;
 }
 
-SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesList & columns, ReadBuffer & in)
+SerializationInfoByName SerializationInfoByName::readJSON(const NamesAndTypesList & columns, ReadBuffer & in, Estimates & estimates)
 {
     String json_str;
     readString(json_str, in);
-    return readJSONFromString(columns, json_str);
+    return readJSONFromString(columns, json_str, estimates);
 }
 
 }

@@ -13,12 +13,6 @@ public:
     bool hasCustomSerialization() const override;
     bool structureEquals(const SerializationInfo & rhs) const override;
 
-    void add(const IColumn & column) override;
-    void add(const SerializationInfo & other) override;
-    void remove(const SerializationInfo & other) override;
-    void addDefaults(size_t length) override;
-    void replaceData(const SerializationInfo & other) override;
-
     MutableSerializationInfoPtr clone() const override;
 
     MutableSerializationInfoPtr createWithType(
@@ -29,14 +23,14 @@ public:
     void serialializeKindStackBinary(WriteBuffer & out) const override;
     void deserializeFromKindsBinary(ReadBuffer & in) override;
 
-    void toJSON(Poco::JSON::Object & object) const override;
-    void fromJSON(const Poco::JSON::Object & object) override;
+    void fromJSON(const Poco::JSON::Object & object, const String & key, Estimates & estimates) override;
 
     const MutableSerializationInfoPtr & getElementInfo(size_t i) const { return elems[i]; }
     ISerialization::KindStack getElementKindStack(size_t i) const { return elems[i]->getKindStack(); }
+    const Names & getElementNames() const { return names; }
 
 protected:
-    void writeJSONFields(WriteBuffer & out, const String * name) const override;
+    void writeJSONFields(WriteBuffer & out, const String * name, const String & key, const Estimates & estimates) const override;
 
 private:
     MutableSerializationInfos elems;

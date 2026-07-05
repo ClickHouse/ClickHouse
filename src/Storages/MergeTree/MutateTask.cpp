@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationInfoTuple.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -624,8 +625,43 @@ static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet 
     return false;
 }
 
+/// Copy the counts of a column (and, for tuples, of its subcolumns) from the source part's
+/// estimates into the estimates of the new part, following the rename of the column. Only the counts
+/// are copied — they are all `serialization.json` carries — not the min/max/cardinality that the
+/// source estimates may have merged in from the explicit statistics.
+static void copyColumnEstimate(
+    const String & old_key,
+    const String & new_key,
+    const SerializationInfo & info,
+    const Estimates & source_estimates,
+    Estimates & new_estimates)
+{
+    if (auto it = source_estimates.find(old_key); it != source_estimates.end())
+    {
+        auto & new_estimate = new_estimates[new_key];
+        new_estimate.rows_count = it->second.rows_count;
+        new_estimate.num_defaults = it->second.num_defaults;
+    }
+
+    if (const auto * info_tuple = typeid_cast<const SerializationInfoTuple *>(&info))
+    {
+        const auto & names = info_tuple->getElementNames();
+        for (size_t i = 0; i < names.size(); ++i)
+        {
+            copyColumnEstimate(
+                subcolumnEstimateKey(old_key, names[i]),
+                subcolumnEstimateKey(new_key, names[i]),
+                *info_tuple->getElementInfo(i),
+                source_estimates,
+                new_estimates);
+        }
+    }
+}
+
 /// Get the columns list of the resulting part in the same order as storage_columns.
-static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
+/// The returned estimates are the counts carried over from the source part for the columns whose data
+/// files a column-only mutation hardlinks instead of rewriting (see `MutateSomePartColumnsTask`).
+static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams, Estimates>
 getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
@@ -742,6 +778,10 @@ getColumnsForNewDataPart(
         settings = storage_serialization_settings;
 
     SerializationInfoByName new_serialization_infos(settings);
+    Estimates new_serialization_estimates;
+    /// Fetched lazily: only wide parts with columns untouched by the mutation need it.
+    std::optional<Estimates> source_estimates;
+
     for (const auto & [name, old_info] : serialization_infos)
     {
         auto it = renamed_columns_from_to.find(name);
@@ -756,7 +796,15 @@ getColumnsForNewDataPart(
         if (!updated_header.has(new_name))
         {
             if (isWidePart(source_part))
+            {
                 new_serialization_infos.emplace(new_name, old_info);
+
+                /// The column's data files are hardlinked from the source part, so the counts written
+                /// to `serialization.json` must be carried over from the source part as well.
+                if (!source_estimates)
+                    source_estimates = source_part->getEstimates();
+                copyColumnEstimate(name, new_name, *old_info, *source_estimates, new_serialization_estimates);
+            }
             continue;
         }
 
@@ -783,20 +831,24 @@ getColumnsForNewDataPart(
     bool materialize_updated_column_serialization_infos = !affects_all_columns
         && source_part_serialization_settings != storage_serialization_settings;
 
-    if (materialize_updated_column_serialization_infos)
+    for (const auto & column : updated_header.getNamesAndTypesList())
     {
-        for (const auto & column : updated_header.getNamesAndTypesList())
-        {
-            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
-                continue;
+        if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+            continue;
 
+        /// Also create infos for rewritten columns that the loop above missed because the source infos
+        /// have no entry for them: a mutation may change the type from one that cannot use sparse
+        /// serialization to one that can (e.g. `Nullable(String)` back to `String`), and without an info
+        /// the column's counts would not be persisted, so a later merge could never choose sparse.
+        bool changed_to_sparse_capable = !settings.isAlwaysDefault() && settings.canUseSparseSerialization(*column.type);
+
+        if (materialize_updated_column_serialization_infos || changed_to_sparse_capable)
             new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
-        }
     }
 
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
-        return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
+        return {updated_header.getNamesAndTypesList(), new_serialization_infos, ColumnsSubstreams{}, std::move(new_serialization_estimates)};
 
     const auto & source_columns = source_part->getColumns();
     std::unordered_map<String, DataTypePtr> source_columns_name_to_type;
@@ -921,7 +973,7 @@ getColumnsForNewDataPart(
         }
     }
 
-    return {storage_columns, new_serialization_infos, new_columns_substreams};
+    return {storage_columns, new_serialization_infos, new_columns_substreams, std::move(new_serialization_estimates)};
 }
 
 
@@ -1352,19 +1404,26 @@ static void finalizeMutatedPart(
     }
 
     const auto & serialization_infos = new_data_part->getSerializationInfos();
+    const auto & statistics = all_gathered_data.statistics;
+    auto statistics_estimates = statistics.getEstimates();
+
+    /// The counts sampled by the output stream and carried over from the source part, with the exact
+    /// default counts from the explicit statistics taking precedence over the sampled ones (see
+    /// `MergedBlockOutputStream::finalizePartOnDisk` for the analogous path of inserts and merges).
+    auto serialization_counts = all_gathered_data.estimates_builder.getEstimates(statistics_estimates);
+
     if (serialization_infos.needsPersistence())
     {
         auto out_serialization = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, 4096, context->getWriteSettings());
         HashingWriteBuffer out_hashing(*out_serialization);
-        serialization_infos.writeJSON(out_hashing);
+        serialization_infos.writeJSON(out_hashing, serialization_counts);
         out_hashing.finalize();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_size = out_hashing.count();
         new_data_part->checksums.files[IMergeTreeDataPart::SERIALIZATION_FILE_NAME].file_hash = out_hashing.getHash();
         written_files.push_back(std::move(out_serialization));
     }
 
-    const auto & statistics = all_gathered_data.statistics;
-    new_data_part->setEstimates(statistics.getEstimates());
+    new_data_part->setEstimates(std::move(serialization_counts), statistics_estimates);
 
     if (!statistics.empty())
     {
@@ -1503,6 +1562,10 @@ struct MutationContext
     NameSet indices_to_drop_names;
 
     IMergedBlockOutputStream::GatheredData all_gathered_data;
+    /// The counts (per column and subcolumn) carried over from the source part for the columns whose
+    /// data files a column-only mutation hardlinks; the rewritten columns' counts are sampled by the
+    /// output stream into the disjoint keys of the same builder (see `MutateSomePartColumnsTask::finalize`).
+    Estimates new_serialization_estimates;
     MergeTreeData::MutableDataPartPtr new_data_part;
     IMergedBlockOutputStreamPtr out;
 
@@ -1747,6 +1810,7 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
             return false;
         }
 
+        ctx->all_gathered_data.estimates_builder.add(cur_block);
         ctx->out->write(cur_block);
 
         if (ctx->minmax_idx)
@@ -2321,6 +2385,13 @@ private:
             *ctx->source_part,
             ctx->metadata_snapshot);
 
+        /// The stream samples the estimates of all written columns into the shared builder, which is
+        /// consumed by `finalizePart` when writing `serialization.json`.
+        ctx->all_gathered_data.estimates_builder = EstimatesBuilder(
+            ctx->new_data_part->getColumns(),
+            ctx->new_data_part->getSerializationInfos().getSettings(),
+            {});
+
         ctx->out = std::make_shared<MergedBlockOutputStream>(
             ctx->new_data_part,
             ctx->data->getSettings(),
@@ -2668,6 +2739,15 @@ private:
                         columns_for_writer.push_back(col);
             }
 
+            /// The stream samples the estimates of the rewritten columns into the shared builder.
+            /// The builder must span only the columns actually written: the pipeline blocks may also
+            /// carry hardlinked columns (read for projection/index recalculation), whose counts are
+            /// carried over from the source part instead (see `finalize`).
+            ctx->all_gathered_data.estimates_builder = EstimatesBuilder(
+                columns_for_writer,
+                ctx->new_data_part->getSerializationInfos().getSettings(),
+                {});
+
             ctx->out = std::make_shared<MergedColumnOnlyOutputStream>(
                 ctx->new_data_part,
                 ctx->data->getSettings(),
@@ -2707,6 +2787,12 @@ private:
 
     void finalize()
     {
+        /// Add the counts carried over from the source part for the hardlinked columns, so
+        /// `serialization.json` (written by `finalizeMutatedPart`) keeps them across the mutation.
+        /// Their keys are disjoint from the rewritten columns', which the output stream sampled:
+        /// a column is either hardlinked or rewritten, never both.
+        ctx->all_gathered_data.estimates_builder.addEstimates(ctx->new_serialization_estimates);
+
         if (ctx->mutating_executor)
         {
             ctx->mutating_executor.reset();
@@ -3476,11 +3562,12 @@ bool MutateTask::prepare()
     /// It shouldn't be changed by mutation.
     ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
-    auto [new_columns, new_infos, new_columns_substreams] = MutationHelpers::getColumnsForNewDataPart(
+    auto [new_columns, new_infos, new_columns_substreams, new_serialization_estimates] = MutationHelpers::getColumnsForNewDataPart(
         ctx->source_part, ctx->updated_header, ctx->storage_columns, ctx->metadata_snapshot->virtuals.getSampleBlock(VirtualsKind::Persistent, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
         ctx->source_part->getSerializationInfos(), ctx->for_interpreter, ctx->for_file_renames);
 
     ctx->new_data_part->setColumns(new_columns, new_infos, ctx->metadata_snapshot->getMetadataVersion());
+    ctx->new_serialization_estimates = std::move(new_serialization_estimates);
     if (!new_columns_substreams.empty())
         ctx->new_data_part->setColumnsSubstreams(new_columns_substreams);
     ctx->new_data_part->partition.assign(ctx->source_part->partition);

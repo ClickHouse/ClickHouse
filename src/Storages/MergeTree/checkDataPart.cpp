@@ -1,5 +1,6 @@
 #include <Poco/Logger.h>
 #include <optional>
+#include <Storages/Statistics/Statistics.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -204,7 +205,8 @@ static IMergeTreeDataPart::Checksums checkDataPart(
         try
         {
             auto serialization_file = data_part_storage.readFile(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, read_settings, std::nullopt);
-            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file);
+            Estimates serialization_estimates;
+            serialization_infos = SerializationInfoByName::readJSON(columns_txt, *serialization_file, serialization_estimates);
         }
         catch (...)
         {

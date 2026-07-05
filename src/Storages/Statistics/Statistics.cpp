@@ -190,9 +190,29 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneEmpty() const
     return MergeTreeStatisticsFactory::instance().get(stats_desc);
 }
 
+std::shared_ptr<ColumnStatistics> ColumnStatistics::cloneWithTypes(const std::set<StatisticsType> & types) const
+{
+    auto res_desc = stats_desc;
+    std::erase_if(res_desc.types_to_desc, [&](const auto & entry) { return !types.contains(entry.first); });
+
+    auto res = std::make_shared<ColumnStatistics>(res_desc);
+    res->rows = rows;
+
+    for (const auto & [type, stat] : stats)
+        if (types.contains(type))
+            res->stats.emplace(type, stat);
+
+    return res;
+}
+
 UInt64 IStatistics::estimateCardinality() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cardinality estimation is not implemented for this type of statistics");
+}
+
+UInt64 IStatistics::estimateDefaults() const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Default-count estimation is not implemented for this type of statistics");
 }
 
 Float64 IStatistics::estimateEqual(const Field & /*val*/) const
@@ -318,10 +338,24 @@ UInt64 ColumnStatistics::estimateCardinality() const
     return UInt64(static_cast<Float64>(rows) * ConditionSelectivityEstimator::default_cardinality_ratio);
 }
 
+UInt64 ColumnStatistics::estimateDefaults() const
+{
+    if (stats.contains(StatisticsType::Basic))
+        return stats.at(StatisticsType::Basic)->estimateDefaults();
+    return 0;
+}
+
 bool ColumnStatistics::hasNullCount() const
 {
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
         return assert_cast<const StatisticsBasic &>(*it->second).hasNullCount();
+    return false;
+}
+
+bool ColumnStatistics::hasDefaultsCount() const
+{
+    if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
+        return assert_cast<const StatisticsBasic &>(*it->second).hasDefaultsCount();
     return false;
 }
 
@@ -374,6 +408,11 @@ Estimate ColumnStatistics::getEstimate() const
 
     if (stats.contains(StatisticsType::Uniq))
         info.estimated_cardinality = stats.at(StatisticsType::Uniq)->estimateCardinality();
+
+    /// The exact number of default values (from `Basic` on a sparse-capable column). Used, together
+    /// with the sampled counts, to choose sparse serialization when writing `serialization.json`.
+    if (hasDefaultsCount())
+        info.num_defaults = estimateDefaults();
 
     if (auto it = stats.find(StatisticsType::Basic); it != stats.end())
     {

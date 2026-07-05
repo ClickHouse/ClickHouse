@@ -36,7 +36,9 @@ SerializationInfoSettings::SerializationInfoSettings(
 
 void SerializationInfoSettings::tryDowngradeToBasic()
 {
-    if (version == MergeTreeSerializationInfoVersion::BASIC)
+    /// Only `WITH_TYPES` may be downgraded: it differs from `BASIC` solely by the type-level
+    /// serialization versions, so when those are all at their defaults the two are equivalent.
+    if (version != MergeTreeSerializationInfoVersion::WITH_TYPES)
         return;
 
     bool no_specialization = string_serialization_version == MergeTreeStringSerializationVersion::SINGLE_STREAM

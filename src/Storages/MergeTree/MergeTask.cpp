@@ -14,6 +14,7 @@
 #include <Core/ServerSettings.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/EstimatesBuilder.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -315,30 +316,51 @@ private:
     size_t final_size = 0;
 };
 
-static void addMissedColumnsToSerializationInfos(
-    size_t num_rows_in_parts,
-    const Names & part_columns,
-    const ColumnsDescription & storage_columns,
-    const SerializationInfo::Settings & info_settings,
-    SerializationInfoByName & new_infos)
+static SerializationInfoByName chooseSerializationInfosForMerge(
+    const MergeTreeData::DataPartsVector & parts,
+    const NamesAndTypesList & result_columns,
+    const ColumnsDescription & metadata_columns,
+    const SerializationInfo::Settings & info_settings)
 {
-    NameSet part_columns_set(part_columns.begin(), part_columns.end());
+    SerializationInfoByName infos(result_columns, info_settings);
 
-    for (const auto & column : storage_columns)
+    if (info_settings.isAlwaysDefault())
+        return infos;
+
+    EstimatesBuilder estimates_builder(result_columns, info_settings, {});
+
+    for (const auto & part : parts)
     {
-        if (part_columns_set.contains(column.name))
-            continue;
+        auto part_estimates = part->getEstimates();
+        const auto & part_columns = part->getColumns();
 
-        if (column.default_desc.kind != ColumnDefaultKind::Default)
-            continue;
+        for (const auto & column : part_columns)
+        {
+            estimates_builder.addNumRows(column.name, column.type, part->rows_count);
+            const auto result_column = result_columns.tryGetByName(column.name);
 
-        if (column.default_desc.expression)
-            continue;
+            if (!result_column || !result_column->type->equals(*column.type))
+                continue;
 
-        auto new_info = column.type->createSerializationInfo(info_settings);
-        new_info->addDefaults(num_rows_in_parts);
-        new_infos.emplace(column.name, std::move(new_info));
+            estimates_builder.addNumDefaults(column.name, column.type, part_estimates);
+        }
+
+        for (const auto & column : metadata_columns)
+        {
+            if (part_columns.contains(column.name))
+                continue;
+
+            if (column.default_desc.kind != ColumnDefaultKind::Default || column.default_desc.expression)
+                continue;
+
+            /// A column physically absent from the part is implicitly all-default in it.
+            estimates_builder.addNumRows(column.name, column.type, part->rows_count);
+            estimates_builder.addNumDefaults(column.name, column.type, part->rows_count);
+        }
     }
+
+    estimates_builder.chooseKinds(infos);
+    return infos;
 }
 
 bool MergeTask::GlobalRuntimeContext::isCancelled() const
@@ -839,27 +861,15 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
 
-    SerializationInfoByName infos(global_ctx->storage_columns, info_settings);
+    auto infos = chooseSerializationInfosForMerge(
+        global_ctx->future_part->parts,
+        global_ctx->storage_columns,
+        global_ctx->metadata_snapshot->getColumns(),
+        info_settings);
+
     global_ctx->alter_conversions.reserve(global_ctx->future_part->parts.size());
-
     for (const auto & part : global_ctx->future_part->parts)
-    {
-        if (!info_settings.isAlwaysDefault())
-        {
-            auto part_infos = part->getSerializationInfos();
-
-            addMissedColumnsToSerializationInfos(
-                part->rows_count,
-                part->getColumns().getNames(),
-                global_ctx->metadata_snapshot->getColumns(),
-                info_settings,
-                part_infos);
-
-            infos.add(part_infos);
-        }
-
         global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
-    }
 
     if (global_ctx->new_data_part->info.isPatch())
     {
@@ -868,6 +878,26 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     }
 
     global_ctx->new_data_part->setColumns(global_ctx->storage_columns, infos, global_ctx->metadata_snapshot->getMetadataVersion());
+
+    /// The columns whose explicit statistics were merged from the source parts above already have
+    /// exact counts: the builder takes them as-is and does not sample these columns. This requires
+    /// the source data to be written unchanged (`!merge_may_reduce_rows`) and the whole statistic to
+    /// be merged at this point — a statistic that is (even partially) rebuilt by the merge pipeline
+    /// does not have final counts here, so its column is sampled as usual.
+    Estimates statistics_estimates;
+    if (!global_ctx->merge_may_reduce_rows)
+    {
+        statistics_estimates = global_ctx->gathered_data.statistics.getEstimates();
+
+        for (const auto & [part_name, part_statistics] : global_ctx->statistics_to_build_by_part)
+            for (const auto & [column_name, column_statistics] : part_statistics)
+                statistics_estimates.erase(column_name);
+    }
+
+    /// All data written for the merged part (the merging columns in the horizontal stage and, in a
+    /// vertical merge, each gathered column) is sampled into this shared builder at the write call
+    /// sites; the accumulated counts are persisted in `serialization.json` when the part is finalized.
+    global_ctx->gathered_data.estimates_builder = EstimatesBuilder(global_ctx->storage_columns, info_settings, statistics_estimates);
 
     ctx->sum_input_rows_upper_bound = global_ctx->merge_list_element_ptr->total_rows_count;
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
@@ -1558,6 +1588,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         size_t starting_offset = global_ctx->rows_written;
         global_ctx->rows_written += block.rows();
         ProfileEvents::increment(ProfileEvents::MergeWrittenRows, block.rows());
+
+        global_ctx->gathered_data.estimates_builder.add(block);
         const_cast<MergedBlockOutputStream &>(*global_ctx->to).write(block);
 
         if (global_ctx->merge_may_reduce_rows)
@@ -1914,6 +1946,8 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         }
 
         ctx->column_elems_written += block.rows();
+
+        global_ctx->gathered_data.estimates_builder.add(block);
         ctx->column_to->write(block);
     } while (watch.elapsedMilliseconds() < step_time_ms);
 
