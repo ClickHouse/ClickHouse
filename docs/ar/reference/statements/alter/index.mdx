@@ -1,0 +1,85 @@
+---
+description: 'توثيق ALTER'
+sidebarTitle: 'ALTER'
+slug: /sql-reference/statements/alter/
+title: 'ALTER'
+doc_type: 'reference'
+---
+
+تُعدِّل معظم استعلامات `ALTER TABLE` إعدادات الجدول أو بياناته:
+
+| Modifier                                                             |
+| -------------------------------------------------------------------- |
+| [COLUMN](/ar/reference/statements/alter/column)                         |
+| [PARTITION](/ar/reference/statements/alter/partition)                   |
+| [DELETE](/ar/reference/statements/alter/delete)                         |
+| [UPDATE](/ar/reference/statements/alter/update)                         |
+| [ORDER BY](/ar/reference/statements/alter/order-by)                     |
+| [INDEX](/ar/reference/statements/alter/skipping-index)                  |
+| [CONSTRAINT](/ar/reference/statements/alter/constraint)                 |
+| [TTL](/ar/reference/statements/alter/ttl)                               |
+| [STATISTICS](/ar/reference/statements/alter/statistics)                 |
+| [APPLY DELETED MASK](/ar/reference/statements/alter/apply-deleted-mask) |
+| [APPLY PATCHES](/ar/reference/statements/alter/apply-patches)           |
+
+<Note>
+  لا تُدعَم معظم استعلامات `ALTER TABLE` إلا في جداول [*MergeTree](/ar/reference/engines/table-engines/mergetree-family/index) و[Merge](/ar/reference/engines/table-engines/special/merge) و[Distributed](/ar/reference/engines/table-engines/special/distributed).
+</Note>
+
+تتعامل عبارات `ALTER` التالية مع طرق العرض:
+
+| Statement                                                        | Description                                                     |
+| ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY QUERY](/ar/reference/statements/alter/view) | تُعدِّل بنية [العرض المادي](/ar/reference/statements/create/view). |
+
+تُعدِّل عبارات `ALTER` التالية الكيانات المرتبطة بالتحكم بالوصول المستند إلى الأدوار:
+
+| Statement                                                        |
+| ---------------------------------------------------------------- |
+| [USER](/ar/reference/statements/alter/user)                         |
+| [ROLE](/ar/reference/statements/alter/role)                         |
+| [QUOTA](/ar/reference/statements/alter/quota)                       |
+| [ROW POLICY](/ar/reference/statements/alter/row-policy)             |
+| [SETTINGS PROFILE](/ar/reference/statements/alter/settings-profile) |
+
+| Statement                                                              | Description                                                                                    |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [ALTER TABLE ... MODIFY COMMENT](/ar/reference/statements/alter/comment)  | يضيف تعليقات إلى الجدول أو يعدّلها أو يزيلها، سواء كانت مُعيَّنة مسبقًا أم لا.                 |
+| [ALTER NAMED COLLECTION](/ar/reference/statements/alter/named-collection) | يُعدِّل [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). |
+
+<div id="mutations">
+  ## عمليات التعديل
+</div>
+
+تُنفَّذ استعلامات `ALTER` التي تهدف إلى تعديل بيانات الجدول بآلية تُسمى &quot;عمليات التعديل&quot;، وأبرزها [ALTER TABLE ... DELETE](/ar/reference/statements/alter/delete) و[ALTER TABLE ... UPDATE](/ar/reference/statements/alter/update). وهي عمليات غير متزامنة تُنفَّذ في الخلفية، وتشبه عمليات الدمج في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/index)، إذ تُنتج إصدارات جديدة &quot;معدَّلة&quot; من الأجزاء.
+
+بالنسبة إلى جداول `*MergeTree`، تُنفَّذ عمليات التعديل عبر **إعادة كتابة أجزاء البيانات بالكامل**.
+ولا توجد خاصية atomicity — إذ تُستبدل الأجزاء بأجزاء معدَّلة فور جهوزيتها، وسيعرض استعلام `SELECT` الذي يبدأ تنفيذه أثناء عملية التعديل بيانات من أجزاء عُدِّلت بالفعل إلى جانب بيانات من أجزاء لم تُعدَّل بعد.
+
+تُرتَّب عمليات التعديل ترتيبًا كليًا بحسب ترتيب إنشائها، وتُطبَّق على كل جزء وفق هذا الترتيب. كما توجد علاقة ترتيب جزئي بينها وبين استعلامات `INSERT INTO`: فالبيانات التي أُدرجت في الجدول قبل إرسال عملية التعديل ستُعدَّل، أما البيانات التي أُدرجت بعد ذلك فلن تُعدَّل. لاحظ أن عمليات التعديل لا تحظر عمليات الإدراج بأي شكل.
+
+يعيد استعلام التعديل النتيجة فور إضافة إدخال عملية التعديل (في حالة الجداول المُكرَّرة إلى ZooKeeper، وفي حالة الجداول غير المُكرَّرة إلى نظام الملفات). وتُنفَّذ عملية التعديل نفسها بشكل غير متزامن باستخدام إعدادات profile الخاصة بالنظام. ولمتابعة تقدّم عمليات التعديل، يمكنك استخدام جدول [`system.mutations`](/ar/reference/system-tables/mutations). وستستمر عملية التعديل التي أُرسلت بنجاح في التنفيذ حتى لو أُعيد تشغيل خوادم ClickHouse. ولا توجد طريقة للتراجع عن عملية التعديل بعد إرسالها، ولكن إذا توقفت لسبب ما، فيمكن إلغاؤها باستخدام استعلام [`KILL MUTATION`](/ar/reference/statements/kill#kill-mutation).
+
+لا تُحذف إدخالات عمليات التعديل المكتملة فورًا (ويُحدَّد عدد الإدخالات المحفوظة بواسطة المَعلمة `finished_mutations_to_keep` الخاصة بمحرك التخزين). وتُحذف إدخالات عمليات التعديل الأقدم.
+
+<div id="synchronicity-of-alter-queries">
+  ## تزامن استعلامات `ALTER`
+</div>
+
+بالنسبة إلى الجداول غير المكررة، تُنفَّذ جميع استعلامات `ALTER` بشكل متزامن. أما بالنسبة إلى الجداول المكررة، فلا يضيف الاستعلام سوى تعليمات بالإجراءات المناسبة إلى `ZooKeeper`، بينما تُنفَّذ هذه الإجراءات نفسها في أقرب وقت ممكن. ومع ذلك، يمكن أن ينتظر الاستعلام حتى تكتمل هذه الإجراءات على جميع النسخ المتماثلة.
+
+بالنسبة إلى استعلامات `ALTER` التي تُنشئ عمليات التعديل (مثل `UPDATE` و`DELETE` و`MATERIALIZE INDEX` و`MATERIALIZE PROJECTION` و`MATERIALIZE COLUMN` و`APPLY DELETED MASK` و`APPLY PATCHES` و`CLEAR STATISTIC` و`MATERIALIZE STATISTIC`، على سبيل المثال لا الحصر)، فإن التزامن يحدده الإعداد [mutations&#95;sync](/ar/reference/settings/session-settings#mutations_sync).
+
+أما استعلامات `ALTER` الأخرى التي لا تعدّل سوى البيانات الوصفية، فيمكنك استخدام الإعداد [alter&#95;sync](/ar/reference/settings/session-settings#alter_sync) لضبط الانتظار.
+
+يمكنك تحديد مدة الانتظار (بالثواني) حتى تنفّذ النسخ المتماثلة غير النشطة جميع استعلامات `ALTER` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout).
+
+<Note>
+  بالنسبة إلى جميع استعلامات `ALTER`، إذا كانت قيمة `alter_sync = 2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
+</Note>
+
+<div id="related-content">
+  ## محتوى ذي صلة
+</div>
+
+* مدونة: [التعامل مع التحديثات وعمليات الحذف في ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

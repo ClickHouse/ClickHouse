@@ -1,0 +1,73 @@
+---
+description: 'サブクエリをテーブルとして扱えるようにします。この関数はビューを実現します。'
+sidebarTitle: 'view'
+slug: /sql-reference/table-functions/view
+title: 'view'
+doc_type: 'reference'
+---
+
+サブクエリをテーブルとして扱えるようにします。この関数はビューを実現します ([CREATE VIEW](/ja/reference/statements/create/view) を参照) 。生成されるテーブルにはデータは保存されず、指定した `SELECT` クエリだけが保存されます。テーブルを読み取るとき、ClickHouse はそのクエリを実行し、結果から不要なカラムをすべて取り除きます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+view(subquery)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `subquery` — `SELECT` クエリ。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+* テーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+入力テーブル：
+
+```text
+┌─id─┬─name─────┬─days─┐
+│  1 │ January  │   31 │
+│  2 │ February │   29 │
+│  3 │ March    │   31 │
+│  4 │ April    │   30 │
+└────┴──────────┴──────┘
+```
+
+```sql title="Query"
+SELECT * FROM view(SELECT name FROM months);
+```
+
+```text title="Response"
+┌─name─────┐
+│ January  │
+│ February │
+│ March    │
+│ April    │
+└──────────┘
+```
+
+`view` 関数は、[remote](/ja/reference/functions/table-functions/remote) および [cluster](/ja/reference/functions/table-functions/cluster) のテーブル関数のパラメーターとして使用できます。
+
+```sql title="Query"
+SELECT * FROM remote(`127.0.0.1`, view(SELECT a, b, c FROM table_name));
+```
+
+```sql title="Query"
+SELECT * FROM cluster(`cluster_name`, view(SELECT a, b, c FROM table_name));
+```
+
+<div id="related">
+  ## 関連
+</div>
+
+* [View テーブルエンジン](/ja/reference/engines/table-engines/special/view)

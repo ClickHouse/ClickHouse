@@ -1,0 +1,248 @@
+---
+description: 'Documentación del motor de tabla MySQL'
+sidebarTitle: 'MySQL'
+slug: /engines/table-engines/integrations/mysql
+title: 'Motor de tabla MySQL'
+doc_type: 'reference'
+---
+
+El motor MySQL le permite realizar consultas `SELECT` e `INSERT` en datos almacenados en un servidor MySQL remoto.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+SETTINGS
+    [ connection_pool_size=16, ]
+    [ connection_max_tries=3, ]
+    [ connection_wait_timeout=5, ]
+    [ connection_auto_close=true, ]
+    [ connect_timeout=10, ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
+;
+```
+
+Consulta una descripción detallada de la sentencia [CREATE TABLE](/es/reference/statements/create/table).
+
+La estructura de la tabla puede diferir de la estructura de la tabla MySQL original:
+
+* Los nombres de las columnas deben ser los mismos que en la tabla MySQL original, pero puedes usar solo algunas de ellas y en cualquier orden.
+* Los tipos de las columnas pueden diferir de los de la tabla MySQL original. ClickHouse intenta [convertir](/es/reference/engines/database-engines/mysql#data_types-support) los valores a los tipos de datos de ClickHouse.
+* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores NULL. Esto también se aplica a los valores NULL dentro de arrays.
+
+**Parámetros del motor**
+
+* `host:port` — Dirección del servidor MySQL.
+* `database` — Nombre de la base de datos remota.
+* `table` — Nombre de la tabla remota.
+* `user` — usuario MySQL.
+* `password` — Contraseña del usuario.
+* `replace_query` — Indicador que convierte las consultas `INSERT INTO` en `REPLACE INTO`. Si `replace_query=1`, la consulta se sustituye.
+* `on_duplicate_clause` — La expresión `ON DUPLICATE KEY on_duplicate_clause` que se añade a la consulta `INSERT`.
+  Ejemplo: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, donde `on_duplicate_clause` es `UPDATE c2 = c2 + 1`. Consulta la [documentación de MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) para ver qué `on_duplicate_clause` puedes usar con la cláusula `ON DUPLICATE KEY`.
+  Para especificar `on_duplicate_clause`, debes pasar `0` al parámetro `replace_query`. Si pasas simultáneamente `replace_query = 1` y `on_duplicate_clause`, ClickHouse genera una excepción.
+
+Los argumentos también se pueden pasar mediante [colección nombrada](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
+
+Las cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, se ejecutan en el servidor MySQL.
+
+El resto de las condiciones y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a MySQL.
+
+Admite múltiples réplicas, que deben enumerarse mediante `|`. Por ejemplo:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+Crear una tabla en MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Cree una tabla en ClickHouse con argumentos simples:
+
+```sql
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
+```
+
+O bien, usando [colecciones nombradas](/es/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL(creds, table='test')
+```
+
+Obtención de datos de la tabla de MySQL:
+
+```sql
+SELECT * FROM mysql_table
+```
+
+```text
+┌─float_nullable─┬─int_id─┐
+│           ᴺᵁᴸᴸ │      1 │
+└────────────────┴────────┘
+```
+
+<div id="mysql-settings">
+  ## Configuración
+</div>
+
+La configuración predeterminada no es muy eficiente, ya que ni siquiera reutiliza las conexiones. Estos ajustes permiten aumentar el número de consultas que el servidor ejecuta por segundo.
+
+<div id="connection-auto-close">
+  ### `connection_auto_close`
+</div>
+
+Permite cerrar automáticamente la conexión después de ejecutar la consulta; es decir, desactiva la reutilización de la conexión.
+
+Valores posibles:
+
+* 1 — Se permite el cierre automático de la conexión, por lo que la reutilización de la conexión está desactivada
+* 0 — No se permite el cierre automático de la conexión, por lo que la reutilización de la conexión está activada
+
+Valor predeterminado: `1`.
+
+<div id="connection-max-tries">
+  ### `connection_max_tries`
+</div>
+
+Establece el número de reintentos del pool con failover.
+
+Valores posibles:
+
+* Entero positivo.
+* 0 — No hay reintentos para el pool con failover.
+
+Valor predeterminado: `3`.
+
+<div id="connection-pool-size">
+  ### `connection_pool_size`
+</div>
+
+Tamaño del pool de conexiones (si todas las conexiones están en uso, la consulta esperará hasta que se libere alguna).
+
+Valores posibles:
+
+* Entero positivo.
+
+Valor predeterminado: `16`.
+
+<div id="connection-wait-timeout">
+  ### `connection_wait_timeout`
+</div>
+
+Tiempo de espera (en segundos) para esperar a que haya una conexión libre (en caso de que ya haya `connection_pool_size` conexiones activas); 0: no esperar.
+
+Valores posibles:
+
+* Entero positivo.
+
+Valor predeterminado: `5`.
+
+<div id="connect-timeout">
+  ### `connect_timeout`
+</div>
+
+Tiempo de espera de conexión (en segundos).
+
+Valores posibles:
+
+* Entero positivo.
+
+Valor predeterminado: `10`.
+
+<div id="read-write-timeout">
+  ### `read_write_timeout`
+</div>
+
+Tiempo de espera de lectura y escritura (en segundos).
+
+Posibles valores:
+
+* Entero positivo.
+
+Valor predeterminado: `300`.
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+Habilita la compresión para la conexión mediante el protocolo MySQL.
+
+Valor predeterminado: `false`.
+
+Esta configuración se aplica a:
+
+* el motor de tabla `MySQL`;
+* el motor de base de datos `MySQL`;
+* la función de tabla `mysql`;
+* las colecciones nombradas utilizadas por las integraciones de MySQL.
+
+Cuando está habilitada, ClickHouse solicita compresión para la conexión.
+
+Ejemplo:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [La table function mysql](/es/reference/functions/table-functions/mysql)
+* [Uso de MySQL como fuente de diccionario](/es/reference/statements/create/dictionary/sources/mysql)

@@ -1,0 +1,248 @@
+---
+description: 'توثيق محرك الجدول MySQL'
+sidebarTitle: 'MySQL'
+slug: /engines/table-engines/integrations/mysql
+title: 'محرك الجدول MySQL'
+doc_type: 'مرجع'
+---
+
+يتيح لك محرك MySQL تنفيذ استعلامات `SELECT` و`INSERT` على البيانات المخزّنة على خادم MySQL بعيد.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = MySQL({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+SETTINGS
+    [ connection_pool_size=16, ]
+    [ connection_max_tries=3, ]
+    [ connection_wait_timeout=5, ]
+    [ connection_auto_close=true, ]
+    [ connect_timeout=10, ]
+    [ read_write_timeout=300, ]
+    [ enable_compression=false ]
+;
+```
+
+اطّلع على وصف مفصل لاستعلام [CREATE TABLE](/ar/reference/statements/create/table).
+
+يمكن أن يختلف هيكل الجدول عن هيكل جدول MySQL الأصلي:
+
+* يجب أن تكون أسماء الأعمدة مطابقةً لما هي عليه في جدول MySQL الأصلي، لكن يمكنك استخدام بعض هذه الأعمدة فقط وبأي ترتيب.
+* قد تختلف أنواع الأعمدة عن تلك الموجودة في جدول MySQL الأصلي. ويحاول ClickHouse [cast](/ar/reference/engines/database-engines/mysql#data_types-support) القيم إلى أنواع بيانات ClickHouse.
+* يحدّد الإعداد [external&#95;table&#95;functions&#95;use&#95;nulls](/ar/reference/settings/session-settings#external_table_functions_use_nulls) كيفية التعامل مع الأعمدة Nullable. القيمة الافتراضية: 1. إذا كانت القيمة 0، فلن تُنشئ دالة الجدول أعمدة Nullable، وستُدرج القيم الافتراضية بدلًا من nulls. وينطبق ذلك أيضًا على قيم NULL داخل المصفوفات.
+
+**معلمات المحرك**
+
+* `host:port` — عنوان خادم MySQL.
+* `database` — اسم قاعدة البيانات البعيدة.
+* `table` — اسم الجدول البعيد.
+* `user` — مستخدم MySQL.
+* `password` — كلمة مرور المستخدم.
+* `replace_query` — علامة تُحوّل استعلامات `INSERT INTO` إلى `REPLACE INTO`. إذا كانت `replace_query=1`، فسيُستبدل الاستعلام.
+* `on_duplicate_clause` — التعبير `ON DUPLICATE KEY on_duplicate_clause` الذي يُضاف إلى استعلام `INSERT`.
+  مثال: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`، حيث تكون `on_duplicate_clause` هي `UPDATE c2 = c2 + 1`. راجع [وثائق MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) لمعرفة أي `on_duplicate_clause` يمكنك استخدامه مع العبارة `ON DUPLICATE KEY`.
+  لتحديد `on_duplicate_clause`، يجب تمرير `0` إلى المعلمة `replace_query`. وإذا مرّرت `replace_query = 1` و`on_duplicate_clause` في الوقت نفسه، فسينشئ ClickHouse استثناءً.
+
+يمكن أيضًا تمرير الوسيطات باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections). في هذه الحالة، يجب تحديد `host` و`port` كلٌّ على حدة. ويُنصح بهذا النهج في بيئة الإنتاج.
+
+تُنفَّذ عبارات `WHERE` البسيطة، مثل `=, !=, >, >=, <, <=`، على خادم MySQL.
+
+أما بقية الشروط وقيد المعاينة `LIMIT`، فلا تُنفَّذ إلا في ClickHouse بعد اكتمال الاستعلام إلى MySQL.
+
+يدعم عدة replicas يجب إدراجها باستخدام `|`. على سبيل المثال:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
+```
+
+<div id="usage-example">
+  ## مثال للاستخدام
+</div>
+
+أنشئ جدولًا في MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+أنشئ جدولًا في ClickHouse باستخدام وسيطات بسيطة:
+
+```sql
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
+```
+
+أو باستخدام [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+CREATE TABLE mysql_table
+(
+    `float_nullable` Nullable(Float32),
+    `int_id` Int32
+)
+ENGINE = MySQL(creds, table='test')
+```
+
+استرداد البيانات من جدول MySQL:
+
+```sql
+SELECT * FROM mysql_table
+```
+
+```text
+┌─float_nullable─┬─int_id─┐
+│           ᴺᵁᴸᴸ │      1 │
+└────────────────┴────────┘
+```
+
+<div id="mysql-settings">
+  ## الإعدادات
+</div>
+
+الإعدادات الافتراضية ليست فعّالة جدًا، إذ إنها لا تعيد استخدام الاتصالات حتى. تتيح لك هذه الإعدادات زيادة عدد الاستعلامات التي ينفّذها الخادوم في الثانية.
+
+<div id="connection-auto-close">
+  ### `connection_auto_close`
+</div>
+
+يسمح بإغلاق الاتصال تلقائيًا بعد تنفيذ الاستعلام، أي بتعطيل إعادة استخدام الاتصال.
+
+القيم الممكنة:
+
+* 1 — يُسمح بالإغلاق التلقائي للاتصال، وبالتالي يتم تعطيل إعادة استخدام الاتصال
+* 0 — لا يُسمح بالإغلاق التلقائي للاتصال، وبالتالي يكون إعادة استخدام الاتصال مفعّلًا
+
+القيمة الافتراضية: `1`.
+
+<div id="connection-max-tries">
+  ### `connection_max_tries`
+</div>
+
+يحدد عدد مرات إعادة المحاولة لمجمع الاتصالات مع التبديل التلقائي عند التعطل.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* 0 — لا توجد أي محاولات إعادة لمجمع الاتصالات مع التبديل التلقائي عند التعطل.
+
+القيمة الافتراضية: `3`.
+
+<div id="connection-pool-size">
+  ### `connection_pool_size`
+</div>
+
+حجم مجمع الاتصالات (إذا كانت جميع الاتصالات قيد الاستخدام، فسوف ينتظر الاستعلام حتى يتحرر أحد الاتصالات).
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+القيمة الافتراضية: `16`.
+
+<div id="connection-wait-timeout">
+  ### `connection_wait_timeout`
+</div>
+
+مهلة الانتظار (بالثواني) حتى يتوفر اتصال متاح (إذا كان هناك بالفعل `connection_pool_size` من الاتصالات النشطة)، 0 - لا تنتظر.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+القيمة الافتراضية: `5`.
+
+<div id="connect-timeout">
+  ### `connect_timeout`
+</div>
+
+مهلة الاتصال (بالثواني).
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+القيمة الافتراضية: `10`.
+
+<div id="read-write-timeout">
+  ### `read_write_timeout`
+</div>
+
+مهلة القراءة/الكتابة (بالثواني).
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+القيمة الافتراضية: `300`.
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+يُمكّن الضغط لاتصال بروتوكول MySQL.
+
+القيمة الافتراضية: `false`.
+
+ينطبق هذا الإعداد على:
+
+* محرك الجدول `MySQL`؛
+* محرك قاعدة البيانات `MySQL`؛
+* دالة الجدول `mysql`؛
+* المجموعات المسماة المستخدمة في تكاملات MySQL.
+
+عند تمكينه، يطلب ClickHouse استخدام الضغط لهذا الاتصال.
+
+مثال:
+
+```sql
+CREATE TABLE mysql_engine_compression
+(
+    id UInt32,
+    name String,
+    age UInt32,
+    money UInt32
+)
+ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [دالة الجدول MySQL](/ar/reference/functions/table-functions/mysql)
+* [استخدام MySQL كمصدر للقاموس](/ar/reference/statements/create/dictionary/sources/mysql)

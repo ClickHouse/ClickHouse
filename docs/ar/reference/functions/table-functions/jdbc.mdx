@@ -1,0 +1,56 @@
+---
+description: 'يعيد جدولًا متصلًا عبر برنامج تشغيل JDBC.'
+sidebarTitle: 'jdbc'
+slug: /sql-reference/table-functions/jdbc
+title: 'jdbc'
+doc_type: 'reference'
+---
+
+<Note>
+  يحتوي clickhouse-jdbc-bridge على تعليمات برمجية تجريبية ولم يعد مدعومًا. وقد يتضمن مشكلات في الاعتمادية وثغرات أمنية. استخدمه على مسؤوليتك الخاصة.
+  توصي ClickHouse باستخدام دوال الجداول المضمّنة في ClickHouse، إذ توفّر بديلًا أفضل لسيناريوهات الاستعلامات المخصّصة عند الحاجة (Postgres وMySQL وMongoDB وغيرها).
+</Note>
+
+تعيد دالة الجدول JDBC جدولًا متصلًا عبر برنامج تشغيل JDBC.
+
+تتطلب دالة الجدول هذه تشغيل برنامج [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) بشكل منفصل.
+وهي تدعم الأنواع Nullable (استنادًا إلى DDL الخاص بالجدول البعيد الذي يُجرى الاستعلام عنه).
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+jdbc(datasource, external_database, external_table)
+jdbc(datasource, external_table)
+jdbc(named_collection)
+```
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+بدلاً من اسم قاعدة البيانات الخارجية، يمكن تحديد مخطط:
+
+```sql
+SELECT * FROM jdbc('jdbc:mysql://localhost:3306/?user=root&password=root', 'schema', 'table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql://localhost:3306/?user=root&password=root', 'select * from schema.table')
+```
+
+```sql
+SELECT * FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT *
+FROM jdbc('mysql-dev?p1=233', 'num Int32', 'select toInt32OrZero(''{{p1}}'') as num')
+```
+
+```sql
+SELECT a.datasource AS server1, b.datasource AS server2, b.name AS db
+FROM jdbc('mysql-dev?datasource_column', 'show databases') a
+INNER JOIN jdbc('self?datasource_column', 'show databases') b ON a.Database = b.name
+```

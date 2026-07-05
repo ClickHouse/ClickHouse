@@ -1,0 +1,130 @@
+---
+slug: /cloud/data-sources/secure-azure
+sidebarTitle: 'Безопасный доступ к данным в Azure'
+title: 'Подключение ClickHouse Cloud к Azure Blob Storage'
+description: 'В этой статье показано, как клиенты ClickHouse Cloud могут безопасно получать доступ к своим данным в Azure'
+keywords: ['ABS', 'azure blob storage']
+doc_type: 'guide'
+---
+
+В этом руководстве рассказывается, как безопасно подключить ClickHouse Cloud к Azure Blob Storage для приёма данных, внешних таблиц и других сценариев интеграции.
+
+<div id="overview">
+  ## Обзор
+</div>
+
+ClickHouse Cloud может подключаться к Azure Blob Storage с помощью нескольких методов аутентификации.
+Это руководство поможет вам выбрать подходящий вариант и безопасно настроить подключение.
+
+Поддерживаемые сценарии:
+
+* Чтение данных из Azure Blob Storage с помощью [табличной функции azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)
+* Создание внешних таблиц с помощью [движка таблицы AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)
+* Ингестия данных через ClickPipes
+* [Хранение резервных копий в Azure Blob Storage](/ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui#azure)
+
+<Warning>
+  **Важное ограничение сети**
+
+  Если ваш сервис ClickHouse Cloud и контейнер Azure Blob Storage развернуты в одном регионе Azure, белый список IP-адресов не работает.
+
+  Это связано с тем, что Azure направляет трафик внутри одного региона через свою внутреннюю сеть (VNet + Service Endpoints), в обход публичного интернета и NAT-шлюзов.
+  В результате правила брандмауэра Azure Storage Account, основанные на публичных IP-адресах, применяться не будут.
+
+  Белый список IP-адресов работает, если:
+
+  * ваш сервис ClickHouse Cloud находится в другом регионе Azure, чем storage account
+  * ваш сервис ClickHouse Cloud работает в AWS/GCP и подключается к хранилищу Azure
+
+  Белый список IP-адресов не работает, если:
+
+  * ваш сервис ClickHouse Cloud и хранилище находятся в одном регионе Azure. Используйте [Shared Access Signatures (SAS)](/ru/integrations/clickpipes/object-storage/azure-blob-storage/overview#authentication) через connection string вместо белого списка IP-адресов или разверните ABS и ClickHouse в разных регионах.
+</Warning>
+
+<div id="network-config">
+  ## Сетевая конфигурация (только для кросс-региональных сценариев)
+</div>
+
+<Warning>
+  **Только для разных регионов**
+
+  Этот раздел применим только в том случае, если ваш сервис ClickHouse Cloud и Container Azure Blob Storage находятся в разных регионах Azure, либо если ClickHouse Cloud работает в AWS/GCP.
+  Для развертываний в одном регионе используйте токены SAS.
+</Warning>
+
+<Steps>
+  <Step>
+    ### Найдите исходящие IP-адреса ClickHouse Cloud
+
+    Чтобы настроить правила firewall на основе IP-адресов, нужно добавить в список разрешенных исходящие IP-адреса для вашего региона ClickHouse Cloud.
+
+    Выполните следующую команду, чтобы получить список исходящих и входящих IP-адресов по регионам.
+    Замените `eastus` ниже на ваш регион, чтобы отфильтровать остальные регионы:
+
+    ```bash
+    # Для регионов Azure
+    curl https://api.clickhouse.cloud/static-ips.json | jq '.azure[] | select(.region == "westus")'
+    ```
+
+    Вы увидите примерно следующее:
+
+    ```response
+    {
+      "egress_ips": [
+        "20.14.94.21",
+        "20.150.217.205",
+        "20.38.32.164"
+      ],
+      "ingress_ips": [
+        "4.227.34.126"
+      ],
+      "region": "westus3"
+    }
+    ```
+
+    <Tip>
+      См. [регионы Azure](/ru/products/cloud/reference/supported-regions#azure-regions) со списком поддерживаемых регионов Cloud,
+      а также столбец &quot;Programmatic name&quot; в [списке регионов Azure](https://learn.microsoft.com/en-us/azure/reliability/regions-list#azure-regions-list-1),
+      чтобы определить, какое имя использовать.
+    </Tip>
+
+    Подробнее см. в разделе [&quot;Cloud IP addresses&quot;](/ru/products/cloud/guides/data-sources/cloud-endpoints-api).
+  </Step>
+
+  <Step>
+    ### Настройте firewall хранилища Azure
+
+    Перейдите к своему storage account в Azure Portal
+
+    1. Откройте **Networking** → **Firewalls and virtual networks**
+    2. Выберите **Enabled from selected virtual networks and IP addresses**
+    3. Добавьте каждый исходящий IP-адрес ClickHouse Cloud, полученный на предыдущем шаге, в поле Address range
+
+    <Warning>
+      Не добавляйте частные IP-адреса ClickHouse Cloud (адреса 10.x.x.x)
+    </Warning>
+
+    4. Нажмите Save
+
+    Подробнее см. в [документации по настройке firewall Azure Storage](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security?tabs=azure-portal).
+  </Step>
+</Steps>
+
+<div id="clickpipes-config">
+  ## Конфигурация ClickPipes
+</div>
+
+При использовании [ClickPipes](/ru/integrations/clickpipes/home) с Azure Blob Storage необходимо настроить аутентификацию в интерфейсе ClickPipes.
+Подробнее см. в разделе [&quot;Создание первого Azure ClickPipe&quot;](/ru/integrations/clickpipes/object-storage/azure-blob-storage/get-started).
+
+<Note>
+  ClickPipes использует отдельные статические IP-адреса для исходящих соединений.
+  Если вы используете правила брандмауэра на основе IP, эти адреса необходимо добавить в список разрешённых.
+
+  См. [&quot;Список статических IP-адресов&quot;](/ru/integrations/clickpipes/home#list-of-static-ips)
+</Note>
+
+<Tip>
+  Упомянутое в начале этого документа ограничение на внесение IP-адресов в белый список в пределах одного региона также относится к ClickPipes.
+  Если ваш сервис ClickPipes и Azure Blob Storage находятся в одном регионе, используйте аутентификацию по SAS-токену вместо внесения IP-адресов в белый список.
+</Tip>

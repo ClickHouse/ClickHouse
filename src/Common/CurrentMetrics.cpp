@@ -222,6 +222,9 @@
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
+    M(UDFDriverInvokerThreads, "Number of threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsActive, "Number of active threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsScheduled, "Number of queued or active jobs in thread pools servicing pipes of executable UDF driver commands.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \

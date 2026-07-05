@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'Source de dictionnaire YTsaurus'
+sidebarTitle: 'YTsaurus'
+description: 'Configurez YTsaurus comme source de dictionnaire dans ClickHouse.'
+doc_type: 'référence'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  Il s’agit d’une fonctionnalité expérimentale qui pourra évoluer de manière non rétrocompatible dans les futures versions.
+  Activez l’utilisation de la source de dictionnaire YTsaurus
+  à l’aide du paramètre [`allow_experimental_ytsaurus_dictionary_source`](/fr/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Champs des paramètres :
+
+| Paramètre         | Description                          |
+| ----------------- | ------------------------------------ |
+| `http_proxy_urls` | URL du proxy HTTP YTsaurus.          |
+| `cypress_path`    | Chemin Cypress vers la table source. |
+| `oauth_token`     | Jeton OAuth.                         |

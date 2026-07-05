@@ -1,0 +1,202 @@
+---
+sidebarTitle: '백업 검토 및 복원'
+slug: /cloud/manage/backups/overview
+title: '백업 검토 및 복원'
+keywords: ['백업', '클라우드 백업', '복원']
+description: 'ClickHouse Cloud 백업에 대한 개요를 제공합니다'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 가이드에서는 ClickHouse Cloud의 백업 작동 방식, 서비스 백업을 구성할 때 사용할 수 있는 옵션, 그리고 백업에서 복원하는 방법을 설명합니다.
+
+**사전 요구 사항**
+
+* [&quot;ClickHouse Cloud에서 백업이 작동하는 방식&quot;](/ko/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (기능 개요 페이지)을 읽었습니다.
+
+<div id="backup-status-list">
+  ## Backup 상태 목록
+</div>
+
+서비스는 기본 일일 일정이든 사용자가 선택한 [사용자 지정 일정](/ko/products/cloud/guides/backups/configurable-backups)이든, 설정된 일정에 따라 백업됩니다. 사용 가능한 모든 백업은 서비스의 **Backups** 탭에서 확인할 수 있습니다. 여기에서 백업 상태, 소요 시간, 백업 크기를 확인할 수 있습니다. 또한 **Actions** 컬럼에서 특정 백업을 복원할 수 있습니다.
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud의 백업 상태 목록" border />
+
+<div id="understanding-backup-cost">
+  ## 백업 비용 이해하기
+</div>
+
+기본 정책상 ClickHouse Cloud는 매일 백업을 수행하며, 백업 보존 기간은 24시간입니다. 더 많은 데이터를 보존해야 하거나 백업 빈도가 더 높아지는 일정을 선택하면 백업 저장소에 대한 추가 요금이 발생할 수 있습니다.
+
+백업 비용을 파악하려면 사용량 화면에서 서비스별 백업 비용을 확인할 수 있습니다(아래 그림 참조). 사용자 지정 일정으로 며칠 동안 백업을 실행해 보면 비용 수준을 가늠할 수 있으며, 이를 바탕으로 월간 백업 비용을 추정할 수 있습니다.
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud의 백업 사용량 차트" border />
+
+백업의 총비용을 추정하려면 일정을 설정해야 합니다. 일정을 설정하기 전에는 다음 입력값을 제공해 [요금 계산기](https://clickhouse.com/pricing)에서 월별 비용 추정치를 확인할 수 있습니다.
+
+* 전체 백업 및 증분 백업의 크기
+* 원하는 백업 빈도
+* 원하는 백업 보존 기간
+* 클라우드 제공업체 및 리전
+
+<Note>
+  서비스의 데이터 크기는 시간이 지남에 따라 증가하므로 백업 예상 비용도 달라질 수 있다는 점에 유의하십시오.
+</Note>
+
+<div id="restore-a-backup">
+  ## 백업 복원
+</div>
+
+백업은 백업이 생성된 기존 서비스가 아니라 새로운 ClickHouse Cloud 서비스로 복원됩니다.
+
+**Restore** 백업 아이콘을 클릭한 후 생성할 새 서비스의 이름을 지정하고 이 백업을 복원할 수 있습니다:
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="ClickHouse Cloud에서 백업 복원" />
+
+새 서비스는 준비될 때까지 서비스 목록에 `Provisioning` 상태로 표시됩니다:
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="서비스 프로비저닝 진행 중" border />
+
+<div id="working-with-your-restored-service">
+  ## 복원된 서비스 사용하기
+</div>
+
+백업이 복원되면 서로 비슷한 두 개의 서비스가 생깁니다. 하나는 복원이 필요했던 **원본 서비스**이고, 다른 하나는 원본의 백업으로부터 새로 생성된 **복원된 서비스**입니다.
+
+백업 복원이 완료되면 다음 중 하나를 수행하십시오.
+
+* 새로 복원된 서비스를 사용하고 원본 서비스를 제거합니다.
+* 새로 복원된 서비스의 데이터를 원본 서비스로 다시 마이그레이션한 후, 새로 복원된 서비스를 제거합니다.
+
+<div id="use-the-new-restored-service">
+  ### **새로 복원된 서비스** 사용
+</div>
+
+새 서비스를 사용하려면 다음 단계를 수행하십시오.
+
+1. 새 서비스의 IP 액세스 목록에 사용 목적에 필요한 항목이 있는지 확인하십시오.
+2. 새 서비스에 필요한 데이터가 들어 있는지 확인하십시오.
+3. 원본 서비스를 제거하십시오.
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### **새로 복원된 서비스**의 데이터를 **원본 서비스**로 다시 마이그레이션
+</div>
+
+어떤 이유로든 새로 복원된 서비스를 사용할 수 없는 상황을 가정해 보겠습니다. 예를 들어, 기존 서비스에 계속 연결하는 사용자나 애플리케이션이 있을 수 있습니다. 이 경우 새로 복원된 데이터를 원본 서비스로 마이그레이션할 수 있습니다. 마이그레이션은 다음 단계에 따라 수행합니다.
+
+**새로 복원된 서비스에 대한 원격 액세스 허용**
+
+새 서비스는 원본 서비스와 동일한 IP 액세스 목록으로 백업에서 복원되어야 합니다. **Anywhere**에서의 액세스를 허용한 경우가 아니라면 다른 ClickHouse Cloud 서비스로의 연결은 허용되지 않으므로 이 설정이 필요합니다. 허용 목록을 수정해 **Anywhere**에서의 액세스를 일시적으로 허용하십시오. 자세한 내용은 [IP Access List](/ko/products/cloud/guides/security/connectivity/setting-ip-filters) 문서를 참조하십시오.
+
+**새로 복원된 ClickHouse 서비스에서(복원된 데이터를 호스팅하는 시스템)**
+
+<Note>
+  새 서비스에 액세스하려면 비밀번호를 재설정해야 합니다. 서비스 목록의 **설정** 탭에서 재설정할 수 있습니다.
+</Note>
+
+원본 테이블(이 예시에서는 `db.table`)을 읽을 수 있는 읽기 전용 사용자를 추가합니다:
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+테이블 정의를 복사하세요:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**대상 ClickHouse Cloud 시스템(손상된 테이블이 있던 시스템)에서:**
+
+대상 데이터베이스를 생성하세요:
+
+```sql
+  CREATE DATABASE db
+```
+
+소스의 `CREATE TABLE` 구문을 사용하여 대상을 생성합니다:
+
+<Tip>
+  `CREATE` 구문을 실행할 때 `ENGINE`을 매개변수 없이 `ReplicatedMergeTree`로 변경하십시오. ClickHouse Cloud에서는 테이블이 항상 복제되므로 올바른 매개변수가 제공됩니다.
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+새로 복원된 ClickHouse Cloud 서비스의 데이터를 원본 서비스로 가져오려면 `remoteSecure` 함수를 사용하십시오:
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+데이터를 원본 서비스에 성공적으로 삽입한 후에는 원본 서비스의 데이터를 반드시 확인하십시오. 또한 데이터 확인이 끝나면 새  서비스를 삭제해야 합니다.
+
+<div id="undeleting-or-undropping-tables">
+  ## 삭제된 테이블 복구
+</div>
+
+`UNDROP` 명령은 ClickHouse Cloud에서 [Shared Catalog](/ko/products/cloud/features/infrastructure/shared-catalog)를 통해 지원됩니다.
+
+사용자가 실수로 테이블을 삭제하지 않도록, 특정 사용자 또는 역할(Role)에 대해 [`DROP TABLE` 명령](/ko/reference/statements/drop#drop-table) 권한을 회수하는 [`GRANT` SQL 문](/ko/reference/statements/grant)을 사용할 수 있습니다.
+
+<Note>
+  실수로 데이터가 삭제되는 것을 방지하기 위해, 기본적으로 ClickHouse Cloud에서는 크기가 `1TB`를 초과하는 테이블은 삭제할 수 없습니다.
+  이 임계값보다 큰 테이블을 삭제하려면 `max_table_size_to_drop` 설정을 사용할 수 있습니다:
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- 한도를 2TB로 늘립니다
+  ```
+</Note>
+
+<Note>
+  기존 요금제: 기존 요금제를 사용하는 고객의 경우, 24시간 동안 보관되는 기본 일일 백업이 스토리지 비용에 포함됩니다.
+</Note>
+
+<div id="backup-durations">
+  ## 백업 소요 시간
+</div>
+
+백업 및 복원 소요 시간은 데이터베이스 크기, 스키마(schema), 데이터베이스 내 테이블(table) 수 등 여러 요인에 따라 달라집니다.
+증분 백업은 백업되는 데이터 양이 더 적으므로 일반적으로 전체 백업보다 훨씬 빠르게 완료됩니다.
+증분 백업에서 복원할 때는 위에서 설명한 대로 복원 과정에 모든 증분 백업과 체인 내 마지막 전체 백업이 포함되므로, 전체 백업에서 복원할 때보다 약간 더 느립니다.
+
+테스트 결과, 약 1 TB 규모의 비교적 작은 백업도 완료하는 데 10~~15분 또는 그 이상이 걸릴 수 있었습니다.
+20 TB 미만의 백업은 1시간 이내에 완료되어야 하며, 50 TB의 데이터를 백업하는 데는 약 2~~3시간이 걸릴 것으로 예상됩니다.
+백업은 규모가 커질수록 규모의 경제가 작용하며, 일부 내부 서비스에서는 최대 1 PB 규모의 백업이 약 10시간 만에 완료되는 것도 확인했습니다.
+
+<Note>
+  외부 버킷으로 백업하는 경우 ClickHouse 버킷으로 백업하는 것보다 더 느릴 수 있습니다
+</Note>
+
+복원 소요 시간은 백업 소요 시간과 거의 비슷합니다.
+
+실제 소요 시간은 위에서 설명한 여러 요인에 따라 달라지므로, 보다 정확한 추정을 위해 자체 데이터베이스 또는 샘플 데이터로 테스트해 볼 것을 권장합니다.
+
+<div id="configurable-backups">
+  ## 설정 가능한 백업
+</div>
+
+기본 백업 일정과 다른 일정으로 백업을 설정하려면 [설정 가능한 백업](/ko/products/cloud/guides/backups/configurable-backups)을 참조하세요.
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## 사용자의 Cloud 계정으로 백업 내보내기
+</div>
+
+백업을 사용자의 Cloud 계정으로 내보내려면 [여기](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)를 참조하십시오.

@@ -70,29 +70,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -1277,11 +1255,20 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
     k.kafka_produce(kafka_cluster, topic_name, messages)
 
     with k.existing_kafka_topic(k.get_admin_client(kafka_cluster), topic_name):
+        # query_with_retry returns the last (possibly short) snapshot once its retry
+        # budget is spent, so use a larger budget like the single-view test above to
+        # let each view receive all rows before the assertion below.
         result1 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view1", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view1",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
         result2 = instance.query_with_retry(
-            f"SELECT * FROM test.{kafka_table}_view2", check_callback=k.kafka_check_result
+            f"SELECT * FROM test.{kafka_table}_view2",
+            check_callback=k.kafka_check_result,
+            retry_count=40,
+            sleep_time=0.75,
         )
 
         instance.query(f"""
