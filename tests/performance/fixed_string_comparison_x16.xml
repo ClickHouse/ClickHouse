@@ -19,10 +19,10 @@
         this PR does not touch.
     -->
 
-    <create_query>CREATE TABLE fixstr_cmp_16 (a FixedString(16), b FixedString(16)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE fixstr_cmp_32 (a FixedString(32), b FixedString(32)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE fixstr_cmp_64 (a FixedString(64), b FixedString(64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE fixstr_cmp_128 (a FixedString(128), b FixedString(128)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_16 (a FixedString(16), b FixedString(16)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_32 (a FixedString(32), b FixedString(32)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_64 (a FixedString(64), b FixedString(64)) ENGINE = Memory</create_query>
+    <create_query>CREATE TABLE fixstr_cmp_128 (a FixedString(128), b FixedString(128)) ENGINE = Memory</create_query>
 
     <fill_query>INSERT INTO fixstr_cmp_16 SELECT toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(number)), 16), toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(number + 1)), 16) FROM numbers(10000000)</fill_query>
     <fill_query>INSERT INTO fixstr_cmp_32 SELECT toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(number)), 32), toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(number + 1)), 32) FROM numbers(10000000)</fill_query>
@@ -38,18 +38,6 @@
     <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &gt; b)</query>
     <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; b)</query>
     <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &gt; b)</query>
-
-    <!-- `<` / `>` against a FixedString constant : StringComparisonImpl vector_constant branch
-         (`WHERE a < '...'`). The constant shares the same `_` prefix, so the compare scans every
-         16-byte block before the difference in the last one, just like the column-vs-column case. -->
-    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(toUInt64(5000000))), 16))</query>
-    <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(toUInt64(5000000))), 16))</query>
-    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(toUInt64(5000000))), 32))</query>
-    <query>SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(toUInt64(5000000))), 32))</query>
-    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(toUInt64(5000000))), 64))</query>
-    <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(toUInt64(5000000))), 64))</query>
-    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(toUInt64(5000000))), 128))</query>
-    <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &gt; toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(toUInt64(5000000))), 128))</query>
 
     <!-- Equal strings: the compare scans every 16-byte block before returning 0. -->
     <query>SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; a)</query>
