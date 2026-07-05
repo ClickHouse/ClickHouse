@@ -748,16 +748,35 @@ public:
 
             /// When useDefaultImplementationForNulls() returns false (non-nullable return
             /// types such as Array), CH passes Nullable-wrapped argument types.
-            /// Strip Nullable and retry the exact-match check.
-            const DataTypePtr & stripped = removeNullable(arguments[i]);
-            if (stripped->equals(*expected_arguments[i]))
-                continue;
+            /// Strip Nullable and retry the exact-match / coercion checks below — but only
+            /// for COLUMNAR_V1: its executeColumnar derives is_nullable from the actual
+            /// runtime column, so a genuinely-Nullable argument against a non-nullable
+            /// declared parameter still round-trips correctly. BUFFERED_V1's
+            /// getArgumentsBlock instead casts the column down to the declared
+            /// (non-nullable) type before serialization, which would silently drop or fail
+            /// on real NULL values, so that path must not accept this relaxation at all —
+            /// neither for an exact type match nor for a numeric coercion.
+            bool allow_nullable_relaxation
+                = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()) != nullptr;
+            if (allow_nullable_relaxation)
+            {
+                const DataTypePtr & stripped = removeNullable(arguments[i]);
+                if (stripped->equals(*expected_arguments[i]))
+                    continue;
 
-            /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
-            auto actual_kind = wasmKindForDataType(stripped.get());
-            auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
-            if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
-                continue;
+                /// Allow implicit coercions: same kind, i32→i64, any int→any float, f32→f64.
+                auto actual_kind = wasmKindForDataType(stripped.get());
+                auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
+                if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
+                    continue;
+            }
+            else
+            {
+                auto actual_kind = wasmKindForDataType(arguments[i].get());
+                auto expected_kind = wasmKindForDataType(expected_arguments[i].get());
+                if (actual_kind && expected_kind && canCoerce(*actual_kind, *expected_kind))
+                    continue;
+            }
 
             auto get_type_names = std::views::transform([](const auto & arg) { return arg->getName(); });
             throw Exception(
