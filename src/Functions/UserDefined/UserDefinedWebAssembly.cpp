@@ -822,24 +822,89 @@ public:
         auto * compartment_ptr = &(*compartment_entry);
         try
         {
-            // COLUMNAR_V1: bypass RowBinary batching, pass columns directly (ColumnConst stays const).
+            // COLUMNAR_V1: bypass RowBinary batching, pass columns directly (ColumnConst stays
+            // const) — but still apply the same webassembly_udf_max_input_block_size /
+            // guest-memory-budget splitting as the buffered path below, or a single large
+            // batch can still build an oversized guest buffer.
             if (const auto * cv1 = dynamic_cast<const UserDefinedWebAssemblyFunctionColumnarV1 *>(user_defined_function.get()))
             {
                 auto stop_token = interrupt_source.get_token();
-                auto result = cv1->executeColumnar(compartment_ptr, arguments, input_rows_count, context, stop_token);
                 auto expected_col = user_defined_function->getResultType()->createColumn();
-                // A guest that set COL_IS_CONST legitimately returns a ColumnConst; structureEquals
-                // only holds between two ColumnConst instances, so compare the unwrapped nested
-                // column against expected_col instead of rejecting every valid const result.
-                const IColumn * result_for_check = result.get();
-                if (const auto * result_const = typeid_cast<const ColumnConst *>(result_for_check))
-                    result_for_check = &result_const->getDataColumn();
-                if (!result_for_check->structureEquals(*expected_col))
-                    throw Exception(ErrorCodes::WASM_ERROR,
-                        "COLUMNAR_V1: returned column structure {} does not match declared type {}",
-                        result->dumpStructure(),
-                        user_defined_function->getResultType()->getName());
-                return result;
+                MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
+
+                auto flush_columnar_batch = [&](size_t batch_start, size_t end_idx)
+                {
+                    if (end_idx <= batch_start)
+                        return;
+                    size_t batch_size = end_idx - batch_start;
+                    ColumnsWithTypeAndName batch_cols;
+                    batch_cols.reserve(arguments.size());
+                    for (const auto & arg : arguments)
+                        batch_cols.emplace_back(arg.column->cut(batch_start, batch_size), arg.type, arg.name);
+                    auto result = cv1->executeColumnar(compartment_ptr, batch_cols, batch_size, context, stop_token);
+                    // A guest that set COL_IS_CONST legitimately returns a ColumnConst; structureEquals
+                    // only holds between two ColumnConst instances, so compare the unwrapped nested
+                    // column against expected_col instead of rejecting every valid const result.
+                    const IColumn * result_for_check = result.get();
+                    if (const auto * result_const = typeid_cast<const ColumnConst *>(result_for_check))
+                        result_for_check = &result_const->getDataColumn();
+                    if (!result_for_check->structureEquals(*expected_col))
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "COLUMNAR_V1: returned column structure {} does not match declared type {}",
+                            result->dumpStructure(),
+                            user_defined_function->getResultType()->getName());
+                    if (result_column->empty())
+                        result_column = result->assumeMutable();
+                    else
+                        result_column->insertRangeFrom(*result, 0, result->size());
+                };
+
+                const size_t fixed_block_size = context->getSettingsRef()[Setting::webassembly_udf_max_input_block_size];
+                if (fixed_block_size > 0)
+                {
+                    for (size_t start = 0; start < input_rows_count; start += fixed_block_size)
+                        flush_columnar_batch(start, std::min(start + fixed_block_size, input_rows_count));
+                    return result_column;
+                }
+
+                const size_t wasm_linear_memory = compartment_ptr->getLinearMemorySize();
+                const size_t input_budget = wasm_linear_memory > 0 ? wasm_linear_memory / 2 : 0;
+                if (input_budget == 0)
+                {
+                    flush_columnar_batch(0, input_rows_count);
+                    return result_column;
+                }
+
+                // COLUMNAR_V1 always keeps ColumnConst on the wire (never materializes it),
+                // matching the preserve_const=true estimator behavior used for Buffers/ColumnBinary.
+                size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, /* preserve_const */ true);
+                if (total_bytes <= input_budget)
+                {
+                    flush_columnar_batch(0, input_rows_count);
+                    return result_column;
+                }
+
+                size_t batch_start = 0;
+                size_t running_bytes = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t row_bytes = estimateRowSerializedSize(arguments, row, /* preserve_const */ true);
+                    if (row_bytes > input_budget)
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
+                            "{} byte input budget derived from the module's linear memory; it cannot be "
+                            "split into a smaller batch",
+                            row, row_bytes, input_budget);
+                    if (row > batch_start && running_bytes + row_bytes > input_budget)
+                    {
+                        flush_columnar_batch(batch_start, row);
+                        batch_start = row;
+                        running_bytes = 0;
+                    }
+                    running_bytes += row_bytes;
+                }
+                flush_columnar_batch(batch_start, input_rows_count);
+                return result_column;
             }
 
             return execute(compartment_ptr, arguments, input_rows_count);
