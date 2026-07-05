@@ -341,6 +341,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
+    /// Reserve memory for the merge's input/output IO buffers up front (see MergeMemoryReservation).
+    /// This replica is already committed to running this merge locally, so reserve unconditionally;
+    /// the reservation still throttles selection of further merges via canEnqueueBackgroundTask.
+    memory_reservation = MergeMemoryReservation::reserve(static_cast<Int64>(
+        CompactionStatistics::estimateNeededMemoryForMerge(
+            *future_merged_part, metadata_snapshot, *storage_settings_ptr, reserved_space->getDisk()->isRemote())));
+
     /// Account TTL merge
     if (isTTLMergeType(future_merged_part->merge_type))
         storage.getContext()->getMergeList().bookMergeWithTTL();

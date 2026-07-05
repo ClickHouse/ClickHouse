@@ -1664,8 +1664,35 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
 
         try
         {
+            /// Reserve memory for the merge's input/output IO buffers up front, so that scheduling
+            /// many merges at once (for example right after a mutation produces many parts) cannot
+            /// oversubscribe memory once all of them start allocating buffers.
+            const bool output_on_remote_disk = std::any_of(
+                future_part->parts.begin(), future_part->parts.end(),
+                [](const auto & part) { return part->isStoredOnRemoteDisk(); });
+            const UInt64 needed_memory = CompactionStatistics::estimateNeededMemoryForMerge(
+                *future_part, metadata_snapshot, *getSettings(), output_on_remote_disk);
+
+            auto memory_reservation = MergeMemoryReservation::tryReserve(static_cast<Int64>(needed_memory));
+            if (!memory_reservation)
+            {
+                if (isTTLMergeType(future_part->merge_type))
+                    getContext()->getMergeList().cancelMergeWithTTL();
+
+                ProfileEvents::increment(ProfileEvents::MergesRejectedByMemoryLimit);
+                return std::unexpected(SelectMergeFailure{
+                    .reason = SelectMergeFailure::Reason::CANNOT_SELECT,
+                    .explanation = PreformattedMessage::create(
+                        "Not enough memory to reserve for the merge (need {}, already reserved by running merges {}, limit {})",
+                        formatReadableSizeWithBinarySuffix(needed_memory),
+                        formatReadableSizeWithBinarySuffix(getReservedMergeMemory()),
+                        formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit())),
+                });
+            }
+
             uint64_t needed_disk_space = CompactionStatistics::estimateNeededDiskSpace(future_part->parts, true);
             auto tagger = std::make_unique<CurrentlyMergingPartsTagger>(future_part, needed_disk_space, *this, metadata_snapshot, false);
+            tagger->memory_reservation = std::move(*memory_reservation);
 
             return std::make_shared<MergeMutateSelectedEntry>(future_part, std::move(tagger), std::make_shared<MutationCommands>());
         }

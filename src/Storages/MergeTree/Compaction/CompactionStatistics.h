@@ -6,12 +6,28 @@
 namespace DB
 {
 
+struct FutureMergedMutatedPart;
+struct MergeTreeSettings;
+
 namespace CompactionStatistics
 {
 
 /** Estimate approximate amount of disk space needed for merge or mutation. With a surplus.
   */
 UInt64 estimateNeededDiskSpace(const MergeTreeDataPartsVector & source_parts, const bool & account_for_deleted = false);
+
+/** Estimate the amount of memory used by the input and output IO buffers of a merge:
+  *   (number of input column streams over all source parts) * read IO buffer size
+  * + (number of output column streams of the result part)   * write IO buffer size.
+  * Object storage (S3) write buffers are large and double-buffered, so they are accounted separately.
+  * A merge reserves this amount up front (see MergeMemoryReservation) so that many merges starting
+  * at once - for example right after a mutation - do not all grow their buffers and oversubscribe memory.
+  */
+UInt64 estimateNeededMemoryForMerge(
+    const FutureMergedMutatedPart & future_part,
+    const StorageMetadataPtr & metadata_snapshot,
+    const MergeTreeSettings & settings,
+    bool output_on_remote_disk);
 
 /** Estimate approximate amount of disk space needed to be free before schedule such merge.
   */

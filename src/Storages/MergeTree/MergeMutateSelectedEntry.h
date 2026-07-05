@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/MemoryTracker.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MutationCommands.h>
 
@@ -18,6 +19,9 @@ struct CurrentlyMergingPartsTagger
 {
     FutureMergedMutatedPartPtr future_part;
     ReservationSharedPtr reserved_space;
+    /// Memory reserved in advance for the merge's input/output IO buffers. Released when the tagger
+    /// (and thus the whole selected entry) is destroyed, i.e. when the merge finishes.
+    MergeMemoryReservation memory_reservation;
     StorageMergeTree & storage;
     // Optional tagger to maintain volatile parts for the JBOD balancer
     std::optional<CurrentlySubmergingEmergingTagger> tagger;

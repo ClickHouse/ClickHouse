@@ -59,6 +59,7 @@ bool inline memoryTrackerCanThrow(VariableContext level, bool fault_injection)
 namespace CurrentMetrics
 {
     extern const Metric MemoryTrackingUncorrected;
+    extern const Metric MergesMutationsMemoryReservation;
 }
 
 namespace DB
@@ -146,6 +147,9 @@ static std::atomic_bool total_memory_tracker_initialized{false};
 
 MemoryTracker total_memory_tracker(nullptr, VariableContext::Global);
 MemoryTracker background_memory_tracker(&total_memory_tracker, VariableContext::User, false);
+
+/// Memory reserved in advance by background merges for their IO buffers (see MergeMemoryReservation).
+static std::atomic<Int64> background_memory_reserved{0};
 
 bool isTotalMemoryTrackerInitialized()
 {
@@ -808,6 +812,55 @@ void MemoryTracker::setParent(MemoryTracker * elem)
 bool canEnqueueBackgroundTask()
 {
     auto limit = background_memory_tracker.getSoftLimit();
+    if (limit == 0)
+        return true;
+
+    /// Reject new merges/mutations when either the memory already used by background tasks,
+    /// or the memory reserved in advance by running merges, has reached the soft limit.
     auto amount = background_memory_tracker.get();
-    return limit == 0 || amount < limit;
+    auto reserved = background_memory_reserved.load(std::memory_order_relaxed);
+    return amount < limit && reserved < limit;
+}
+
+Int64 getReservedMergeMemory()
+{
+    return background_memory_reserved.load(std::memory_order_relaxed);
+}
+
+void reserveMergeMemory(Int64 bytes)
+{
+    background_memory_reserved.fetch_add(bytes, std::memory_order_relaxed);
+    CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
+}
+
+void releaseMergeMemory(Int64 bytes)
+{
+    background_memory_reserved.fetch_sub(bytes, std::memory_order_relaxed);
+    CurrentMetrics::sub(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
+}
+
+std::optional<MergeMemoryReservation> MergeMemoryReservation::tryReserve(Int64 bytes)
+{
+    const Int64 limit = background_memory_tracker.getSoftLimit();
+    Int64 current = background_memory_reserved.load(std::memory_order_relaxed);
+
+    while (true)
+    {
+        /// Gate only when a limit is set and something is already reserved, so that a single merge
+        /// whose estimate exceeds the whole limit can still make progress (never block forever).
+        if (limit != 0 && current != 0 && current + bytes > limit)
+            return std::nullopt;
+
+        if (background_memory_reserved.compare_exchange_weak(current, current + bytes, std::memory_order_relaxed))
+        {
+            CurrentMetrics::add(CurrentMetrics::MergesMutationsMemoryReservation, bytes);
+            return MergeMemoryReservation(bytes);
+        }
+    }
+}
+
+MergeMemoryReservation MergeMemoryReservation::reserve(Int64 bytes)
+{
+    reserveMergeMemory(bytes);
+    return MergeMemoryReservation(bytes);
 }
