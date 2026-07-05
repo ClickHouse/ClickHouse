@@ -126,6 +126,10 @@ ColumnBinaryOutputFormat::ColumnBinaryOutputFormat(WriteBuffer & out_, SharedHea
     , header_(header)
     , disable_preallocation_(disable_preallocation)
 {
+    // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
+    // types) here so callers find out at format construction, not on the first block.
+    for (const auto & col : header_->getColumnsWithTypeAndName())
+        ColumnarV1::validateColumnarV1SupportedType(col.type);
 }
 
 void registerOutputFormatColumnBinary(FormatFactory & factory)

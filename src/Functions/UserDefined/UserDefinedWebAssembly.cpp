@@ -280,6 +280,12 @@ public:
             input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
         }
         probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(serialization_format, probe_null_wb, input_header);
+        // probe_format's construction above already validates argument types when
+        // serialization_format is ColumnBinary (see ColumnBinaryOutputFormat's
+        // constructor); the result type is only read back lazily on the first call,
+        // so validate it eagerly here too.
+        if (serialization_format == "ColumnBinary")
+            validateColumnarV1SupportedType(result_type);
     }
 
     void checkFunction(const WasmFunctionDeclaration & expected) const
@@ -441,6 +447,11 @@ public:
         // WASM export name matches the registered function name directly
         col_function_name = function_name;
         checkSignature();
+        // Reject unsupported argument/result signatures at CREATE FUNCTION time rather
+        // than on the first call: see validateColumnarV1SupportedType for the exact list.
+        for (const auto & arg : arguments)
+            validateColumnarV1SupportedType(arg);
+        validateColumnarV1SupportedType(result_type);
     }
 
     // Direct columnar execution — bypasses RowBinary batching.

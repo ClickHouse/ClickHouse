@@ -26,6 +26,10 @@ ColumnBinaryInputFormat::ColumnBinaryInputFormat(
     , header_(std::make_shared<const Block>(header))
     , format_settings_(settings)
 {
+    // Reject unsupported signatures (nested Nullable/Variant, Map, >8-byte fixed-width
+    // types) here so callers find out at format construction, not on the first block.
+    for (const auto & col : header_->getColumnsWithTypeAndName())
+        ColumnarV1::validateColumnarV1SupportedType(col.type);
 }
 
 Chunk ColumnBinaryInputFormat::read()

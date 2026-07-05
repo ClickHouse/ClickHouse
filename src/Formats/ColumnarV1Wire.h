@@ -73,6 +73,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -114,6 +115,56 @@ struct ColDescriptor
     uint64_t data_size;
 };
 static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
+
+// Recursively check that `type` can round-trip through the COLUMNAR_V1 wire format,
+// throwing INCORRECT_DATA immediately with the exact reason otherwise. Without this,
+// callers only discover an unsupported signature (nested Nullable/Variant inside
+// Array/Tuple, Map, or a fixed-width type wider than 8 bytes such as UUID/IPv6/
+// Int128/UInt128/Decimal128/256) when the first block is actually serialized.
+// is_nested is false only for the outermost call; Nullable/Variant are only
+// disallowed once already inside an Array/Tuple (COL_COMPLEX), where there is no
+// wire slot for a nested null map or discriminator.
+inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_nested = false)
+{
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+    {
+        if (is_nested)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1/ColumnBinary: nested Nullable inside Array/Tuple is not supported: {}", type->getName());
+        validateColumnarV1SupportedType(nullable_type->getNestedType(), is_nested);
+        return;
+    }
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        if (is_nested)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1/ColumnBinary: nested Variant inside Array/Tuple is not supported: {}", type->getName());
+        for (const auto & alt : variant_type->getVariants())
+            validateColumnarV1SupportedType(alt, is_nested);
+        return;
+    }
+    if (typeid_cast<const DataTypeMap *>(type.get()))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1/ColumnBinary: Map is not supported: {}", type->getName());
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        validateColumnarV1SupportedType(array_type->getNestedType(), /* is_nested */ true);
+        return;
+    }
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+    {
+        for (const auto & elem : tuple_type->getElements())
+            validateColumnarV1SupportedType(elem, /* is_nested */ true);
+        return;
+    }
+    if (typeid_cast<const DataTypeString *>(type.get()))
+        return;
+    if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
+        && type->getSizeOfValueInMemory() > 8)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1/ColumnBinary: fixed-width type wider than 8 bytes is not supported "
+            "(e.g. UUID, IPv6, Int128/UInt128, Decimal128/256): {}", type->getName());
+}
 
 // ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
 //
