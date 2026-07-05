@@ -24,10 +24,8 @@ drafts/
 # declared" on re-injection) and can abort injection of the real scripts.
 _site/styles/
 
-# Legacy Docusaurus content at the docs root. Anchor with a leading slash so
-# these match only the top-level dirs -- an unanchored `changelogs/` also matched
-# `resources/changelogs/` (gitignore any-depth semantics) and hid the real,
-# published changelog pages, which docs.json still references.
+# Ignore legacy folders, and docs
 /_description_templates/
 /changelogs/
 /en/
+/_includes/
