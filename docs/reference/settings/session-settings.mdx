@@ -2239,6 +2239,14 @@ Possible values:
 
 Compile some scalar functions and operators to native code.
 
+## compile_regular_expressions {#compile_regular_expressions} 
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to enable JIT compilation of simple regular expressions in functions like `match` and `extract`."}]}]}/>
+
+Compile simple regular expressions used in functions like `match` and `extract` to native code. Patterns outside the supported subset transparently fall back to the general engine.
+
 ## compile_sort_description {#compile_sort_description} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -5285,11 +5293,11 @@ Headers that are set by the server by default and not overridden by this setting
 
 The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
 
-Neither names or values can contain ASCII control characters.
+Neither names nor values can contain ASCII control characters.
 
 If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
 
-Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
+Example: `SET http_response_headers = $${'Content-Type': 'image/png'}$$`
 
 ## http_retry_initial_backoff_ms {#http_retry_initial_backoff_ms} 
 
@@ -8549,6 +8557,14 @@ Possible values:
 
 Minimum count of executing same expression before it is get compiled.
 
+## min_count_to_compile_regular_expression {#min_count_to_compile_regular_expression} 
+
+<SettingsInfoBlock type="UInt64" default_value="3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "3"},{"label": "New setting controlling how many times a regular expression must be used before it is JIT-compiled."}]}]}/>
+
+Minimum count of executing same regular expression before it is get compiled.
+
 ## min_count_to_compile_sort_description {#min_count_to_compile_sort_description} 
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
@@ -11702,6 +11718,14 @@ Force the s3 endpoint style. Possible values: auto, virtual_hosted, path.
 When set to `true` than for all s3 requests first two attempts are made with low send and receive timeouts.
 When set to `false` than all attempts are made with identical timeouts.
 
+## s3_validate_etag_on_read {#s3_validate_etag_on_read} 
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to detect concurrent in-place overwrites of S3\/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."}]}]}/>
+
+When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
+
 ## s3_validate_request_settings {#s3_validate_request_settings} 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
@@ -12021,7 +12045,7 @@ When the ratio of rows containing NULL values to the total number of rows exceed
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "New setting"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Disable catalogs in system tables by default"}]}]}/>
 
-Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+Enables showing data lake catalogs in system tables.
 
 ## show_processlist_include_internal {#show_processlist_include_internal} 
 
@@ -12035,13 +12059,11 @@ Internal processes include dictionary reloads, refreshable materialized view rel
 
 ## show_remote_databases_in_system_tables {#show_remote_databases_in_system_tables} 
 
-**Aliases**: `show_data_lake_catalogs_in_system_tables`
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."}]}]}/>
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Renamed from `show_data_lake_catalogs_in_system_tables` and broadened to also hide `MySQL` and `PostgreSQL` databases from `system.tables`, `system.columns` and `system.completions` by default, since enumerating their tables requires expensive remote calls. Users who relied on the previous behavior must set this setting to `true`. The old name is kept as an alias."}]}]}/>
-
-Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
+Enables showing `MySQL` and `PostgreSQL` databases in system tables.
 
 ## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil} 
 
@@ -12115,19 +12137,7 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 
 Enables or disables silently skipping of unavailable shards.
 
-Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
-
-- ClickHouse can't connect to replica for any reason.
-
-    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
-
-- Replica can't be resolved through DNS.
-
-    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
-
-    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
-
-    - Configuration error. ClickHouse configuration file contains a wrong hostname.
+The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.
 
 Possible values:
 
@@ -12138,6 +12148,22 @@ Possible values:
 - 0 — skipping disabled.
 
     If a shard is unavailable, ClickHouse throws an exception.
+
+## skip_unavailable_shards_mode {#skip_unavailable_shards_mode} 
+
+<SettingsInfoBlock type="SkipUnavailableShardsMode" default_value="unavailable_or_table_missing" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "unavailable_or_table_missing"},{"label": "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."}]}]}/>
+
+Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled. The setting has no effect when `skip_unavailable_shards = 0`.
+
+Possible values:
+
+- `unavailable` — Only connection-related errors are ignored. A shard is considered unavailable when ClickHouse cannot connect to any of its replicas, or when a replica's hostname cannot be resolved through DNS.
+
+- `unavailable_or_table_missing` — In addition to `unavailable`, errors caused by a missing table or database on the shard are ignored. This is useful while a table is being created or dropped across a cluster. This is the default and matches the historical behavior of `skip_unavailable_shards`, which also treated a shard whose table does not exist as unavailable.
+
+- `unavailable_or_exception_before_processing` — In addition to `unavailable`, any exception received from a shard before it returned any data block to the initiator is ignored. An exception that arrives after the shard already returned some data is always rethrown. Note that "before it returned any data" is checked at the initiator: a shard that performs a blocking computation (for example an aggregation, sort, or `LIMIT BY`) may process rows and fail before emitting any block, in which case its partial work is silently discarded and the query returns a result built from the remaining shards. This is therefore the most permissive mode and should be used with care.
 
 ## sleep_after_receiving_query_ms {#sleep_after_receiving_query_ms} 
 
@@ -12859,6 +12885,21 @@ Possible values:
 
 - 0 - Disabled
 - 1 - Enabled
+
+## use_partition_minmax_for_primary_key_pruning {#use_partition_minmax_for_primary_key_pruning} 
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "New setting to use the part's partition minmax to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key."}]}]}/>
+
+Use partition minmax index bounds to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key.
+
+For example, in a `MergeTree` table with `ORDER BY (id, event_time)` and `PARTITION BY toYYYYMM(event_time)`, ClickHouse will use the partition minmax index on `event_time` during primary key index analysis to make more informed granule-pruning decisions.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
 
 ## use_partition_pruning {#use_partition_pruning} 
 

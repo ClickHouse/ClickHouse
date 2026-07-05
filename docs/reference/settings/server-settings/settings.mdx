@@ -2373,7 +2373,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 
 ## max_database_num_to_throw {#max_database_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />If number of databases is greater than this value, server will throw an exception. 0 means no limitation.
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />If number of databases is greater than this value, server will throw an exception. 0 means no limitation.
 
 ## max_database_num_to_warn {#max_database_num_to_warn} 
 
@@ -2392,7 +2392,7 @@ If the number of attached databases exceeds the specified value, clickhouse serv
 
 ## max_dictionary_num_to_throw {#max_dictionary_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 If the number of dictionaries is greater than this value, the server will throw an exception.
 
 Only counts tables for database engines:
@@ -2517,7 +2517,7 @@ Only directly dependent views are considered here, and the creation of one view 
 
 ## max_named_collection_num_to_throw {#max_named_collection_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 If number of named collections is greater than this value, server will throw an exception.
 
 :::note
@@ -2659,7 +2659,7 @@ A value of `0` (default) means unlimited.
 
 ## max_replicated_table_num_to_throw {#max_replicated_table_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 If the number of replicated tables is greater than this value, the server will throw an exception.
 
 Only counts tables for database engines:
@@ -2729,7 +2729,7 @@ Example:
 
 ## max_table_num_to_throw {#max_table_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 If number of tables is greater than this value, server will throw an exception.
 
 The following tables are not counted:
@@ -2825,7 +2825,7 @@ ClickHouse uses threads from the Global Thread pool to process queries. If there
 
 ## max_view_num_to_throw {#max_view_num_to_throw} 
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 If the number of views is greater than this value, the server will throw an exception.
 
 Only counts tables for database engines:
@@ -4994,6 +4994,10 @@ The directory with user files. Used in the table function [file()](/reference/fu
 ```xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
 ```
+
+## user_profile_events_per_cpu {#user_profile_events_per_cpu} 
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />Shard per-user `ProfileEvents` counters per CPU to avoid cross-CPU cache-line contention under high thread counts. Each user pays `getNumCPUs() * num_events * sizeof(atomic)` of memory (hundreds of KiB on machines with many cores). Disable to fall back to a single shared atomic per event per user, trading throughput for memory.
 
 ## user_scripts_path {#user_scripts_path} 
 
