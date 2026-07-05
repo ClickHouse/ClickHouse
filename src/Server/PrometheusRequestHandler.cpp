@@ -312,6 +312,11 @@ protected:
         return StorageID{full_name};
     }
 
+    bool isTimeSeriesTableNameSetFromRequest() const
+    {
+        return params->has("database") || params->has("table");
+    }
+
     void onException() override
     {
         // So that the next requests on the connection have to always start afresh in case of exceptions.
@@ -348,13 +353,14 @@ public:
         /// Resolve and validate the target table before parsing the request body, so that requests targeting a
         /// missing or non-`TimeSeries` table (or, with dynamic routing, a table that does not opt into it) are
         /// rejected without first decompressing and materializing the whole protobuf payload.
-        const bool is_dynamic_routing = config().enable_table_name_url_routing;
-        auto table_id = is_dynamic_routing
+        const bool is_url_path_dynamic_routing = config().enable_table_name_url_routing;
+        const bool should_check_dynamic_routing_setting = is_url_path_dynamic_routing || isTimeSeriesTableNameSetFromRequest();
+        auto table_id = is_url_path_dynamic_routing
             ? StorageID{resolveTableNameFromRequest(config(), request)}
             : getTimeSeriesTableID();
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto time_series_storage = storagePtrToTimeSeries(table);
-        if (is_dynamic_routing)
+        if (should_check_dynamic_routing_setting)
         {
             const auto & time_series_settings = time_series_storage->getStorageSettings();
             if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])

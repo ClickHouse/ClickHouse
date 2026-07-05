@@ -23,6 +23,12 @@
                     <enable_table_name_url_routing>true</enable_table_name_url_routing>
                 </handler>
             </my_rule_1_dynamic_api_v1>
+            <my_rule_1_dynamic_query_params>
+                <url>/write_query_params</url>
+                <handler>
+                    <type>remote_write</type>
+                </handler>
+            </my_rule_1_dynamic_query_params>
             <my_rule_2>
                 <url>/read</url>
                 <handler>
