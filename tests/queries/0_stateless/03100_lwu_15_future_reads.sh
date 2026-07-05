@@ -26,7 +26,8 @@ $CLICKHOUSE_CLIENT --query "
     ORDER BY id
     SETTINGS
         enable_block_number_column = 1,
-        enable_block_offset_column = 1;
+        enable_block_offset_column = 1,
+        remove_unused_patch_parts = 0;
 
     INSERT INTO t_lwu_future_reads SELECT number, number FROM numbers(1000);
     SYSTEM ENABLE FAILPOINT $failpoint_name;
