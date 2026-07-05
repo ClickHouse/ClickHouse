@@ -12797,6 +12797,16 @@ Possible values:
 - 0 — Disabled. All primary key columns are processed during index analysis.
 - 1 — Enabled.
 
+## use_native_gcs {#use_native_gcs} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Experimental. Use the native Google Cloud Storage client (`google-cloud-cpp`, the GCS JSON API) for the `gcs` table function and the `GCS` table engine, instead of the default S3-compatibility path (the GCS XML API via the AWS SDK).
+
+The native client authenticates with Application Default Credentials, service-account keys, or the `google_adc_*` OAuth refresh-token flow rather than S3 HMAC access-key/secret pairs. Enable it to talk to GCS natively; leave it disabled (the default) to keep the existing S3-compatible behavior, including positional HMAC credentials.
+
 ## use_page_cache_for_disks_without_file_cache {#use_page_cache_for_disks_without_file_cache} 
 
 <SettingsInfoBlock type="Bool" default_value="0" />

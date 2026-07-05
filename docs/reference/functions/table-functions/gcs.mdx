@@ -49,7 +49,7 @@ In native mode credentials are resolved via the Google-native mechanisms rather 
 
 Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
 
-The same setting switches the [`GCS` table engine](/engines/table-engines/integrations/gcs) between the two backends. Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`).
+The same setting switches the `GCS` table engine between the two backends. Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`).
 
 ## Arguments {#arguments}
 
