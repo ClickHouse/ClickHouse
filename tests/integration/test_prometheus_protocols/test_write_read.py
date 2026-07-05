@@ -301,6 +301,37 @@ def test_remote_write_query_parameter_dynamic_routing_checks_table_setting():
     )
 
 
+def test_remote_write_url_path_routing_rejects_query_parameter_target_table():
+    timestamp = time.time()
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "conflicting_dynamic_route_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    )
+
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "default/prometheus_dynamic/write?database=default&table=prometheus",
+        write_request,
+    )
+
+    assert response.status_code == requests.codes.bad_request
+    assert "URL path routing cannot be combined with the 'database' or 'table' query parameters" in response.text
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
+            "WHERE metric_name = 'conflicting_dynamic_route_metric'"
+        ).strip()
+        == "0"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM timeSeriesTags(prometheus) "
+            "WHERE metric_name = 'conflicting_dynamic_route_metric'"
+        ).strip()
+        == "0"
+    )
+
+
 def test_remote_write_dynamic_routing_setting_can_be_altered():
     table_name = "prometheus_dynamic_alter"
     node.query(f"DROP TABLE IF EXISTS {table_name} SYNC")

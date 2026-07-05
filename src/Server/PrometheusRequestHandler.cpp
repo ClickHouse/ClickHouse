@@ -355,6 +355,11 @@ public:
         /// rejected without first decompressing and materializing the whole protobuf payload.
         const bool is_url_path_dynamic_routing = config().enable_table_name_url_routing;
         const bool should_check_dynamic_routing_setting = is_url_path_dynamic_routing || isTimeSeriesTableNameSetFromRequest();
+        if (is_url_path_dynamic_routing && isTimeSeriesTableNameSetFromRequest())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing cannot be combined with the 'database' or 'table' query parameters");
+
         auto table_id = is_url_path_dynamic_routing
             ? StorageID{resolveTableNameFromRequest(config(), request)}
             : getTimeSeriesTableID();
