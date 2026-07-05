@@ -631,7 +631,10 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
-            uint64_t outer_bytes = (n + 1u) * sizeof(uint64_t);
+            // n comes from a guest-controlled row/element count; widen before the +1 or
+            // n == UINT32_MAX wraps the uint32_t addition to 0, making outer_bytes 0 and
+            // trivially passing the bounds check below.
+            uint64_t outer_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint64_t);
             if (p + outer_bytes > data_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
@@ -670,7 +673,8 @@ inline MutableColumnPtr readColumnFromDesc(
         }
         if (typeid_cast<const DataTypeString *>(type.get()))
         {
-            uint64_t off_bytes = (n + 1u) * sizeof(uint64_t);
+            // Same overflow hazard as the Array branch above: widen before the +1.
+            uint64_t off_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint64_t);
             if (p + off_bytes > data_end)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
@@ -853,7 +857,9 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             // WASM→CH sequential layout: outer uint64 offsets[rows+1] at data_offset,
             // followed immediately by nested writeComplexData-format data.
-            const uint64_t outer_offset_bytes = (rows_to_dec + 1u) * sizeof(uint64_t);
+            // rows_to_dec comes from the frame header's num_rows; widen before the +1 or
+            // rows_to_dec == UINT32_MAX wraps to 0, trivially passing the bounds check below.
+            const uint64_t outer_offset_bytes = (static_cast<uint64_t>(rows_to_dec) + 1u) * sizeof(uint64_t);
             if (outer_offset_bytes > desc.data_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX outer offsets exceed data_size: need={}, data_size={}",
