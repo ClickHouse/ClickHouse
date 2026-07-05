@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Catalog-domain generators: table engines, database engines, data types, and
-I/O formats, generated from the system tables that expose the documentation
-embedded in the C++ source (`system.table_engines`, `system.database_engines`,
-`system.data_type_families`, `system.formats`).
+I/O formats, generated from the documentation embedded in the C++ source as
+exposed by `system.documentation` (the unified source for all embedded docs;
+the per-domain tables are queried only for non-documentation metadata such as
+format input/output flags and data-type aliases).
 
 Policy (pre-cutover): existing pages are never overwritten -- differences
 between a page and the embedded documentation are reported as `CONTENT-DRIFT`
@@ -30,8 +31,6 @@ import navigation
 # documented items are whole page bodies); anything shorter is a stub that is
 # not worth a page of its own yet.
 FULL_PAGE_MIN_LEN = 500
-
-COLUMNS = "name, description, syntax, examples, introduced_in, related"
 
 # Known name -> page filename mismatches that the alphanumeric normalization
 # cannot bridge.
@@ -98,7 +97,8 @@ def _description_fm(migrate, description):
 def _item_generators(domain, rows, docs_dir, migrate):
     """Common per-domain flow: match rows to existing pages (content-drift),
     create pages for full-page items without one, count coverage gaps."""
-    index = catalog.scan_pages(docs_dir, domain["dirs"])
+    index = catalog.scan_pages(docs_dir, domain["dirs"],
+                               exclude_dirs=domain.get("exclude_dirs", ()))
     gens = []
     gaps = []
     for row in rows:
@@ -131,7 +131,7 @@ def _item_generators(domain, rows, docs_dir, migrate):
                 "dest": f"docs/{domain['legacy_prefix']}/{os.path.basename(page_rel)[:-len('.mdx')]}.md",
                 "dest_rel": page_rel,
                 "create_frontmatter": fm_text,
-                "badge": catalog.badge(domain["source_table"]),
+                "badge": catalog.badge("system.documentation"),
                 "title": title,
                 "full_transform": True,
                 "nav": (nav_group, page_rel[: -len(".mdx")]),
@@ -145,7 +145,23 @@ def _item_generators(domain, rows, docs_dir, migrate):
     return gens
 
 
-def build_generators(binary, docs_dir, migrate):
+def build_generators(docs_map, binary, docs_dir, migrate):
+    def doc_rows(entity_type):
+        # The documentation body with the machine-assembled tail peeled off;
+        # for full-page items the body IS the page. The catalog domains never
+        # register a separate `examples` field, so an `**Examples**` block is
+        # always author-written body content (peel_examples=False).
+        return [
+            {
+                "name": name,
+                "description": catalog.split_assembled(
+                    row["description"], peel_examples=False
+                )["body"],
+                "source": row["source"],
+            }
+            for name, row in sorted(docs_map.get(entity_type, {}).items())
+        ]
+
     gens = []
 
     # --- Table engines ---
@@ -166,15 +182,15 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "table-engines",
-            "source_table": "system.table_engines",
             "dirs": TABLE_ENGINE_DIRS,
+            # The generated skipping-indexes group lives inside the MergeTree
+            # family directory but belongs to another domain.
+            "exclude_dirs": ("skipping-indexes",),
             "overrides": TABLE_ENGINE_PAGE_OVERRIDES,
             "legacy_prefix": "engines/table-engines",
             "new_item": engine_new_item,
         },
-        introspect.fetch_rows(
-            binary, f"SELECT {COLUMNS} FROM system.table_engines ORDER BY name"
-        ),
+        doc_rows("Table Engine"),
         docs_dir,
         migrate,
     )
@@ -196,19 +212,25 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "database-engines",
-            "source_table": "system.database_engines",
             "dirs": ["reference/engines/database-engines"],
             "legacy_prefix": "engines/database-engines",
             "new_item": db_engine_new_item,
         },
-        introspect.fetch_rows(
-            binary, f"SELECT {COLUMNS} FROM system.database_engines ORDER BY name"
-        ),
+        doc_rows("Database Engine"),
         docs_dir,
         migrate,
     )
 
     # --- Data types ---
+    # Alias-ness is catalog metadata, not documentation; aliases are
+    # documented on their target's page.
+    data_type_aliases = {
+        r["name"]: r["alias_to"]
+        for r in introspect.fetch_rows(
+            binary, "SELECT name, alias_to FROM system.data_type_families"
+        )
+    }
+
     def data_type_new_item(row):
         name = row["name"]
         page_rel = f"reference/data-types/{name.lower()}.mdx"
@@ -227,20 +249,13 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "data-types",
-            "source_table": "system.data_type_families",
             "dirs": ["reference/data-types"],
             "overrides": DATA_TYPE_PAGE_OVERRIDES,
             "legacy_prefix": "sql-reference/data-types",
             "new_item": data_type_new_item,
-            # Aliases are documented on their target's page.
-            "skip": lambda row: row.get("alias_to"),
+            "skip": lambda row: data_type_aliases.get(row["name"]),
         },
-        introspect.fetch_rows(
-            binary,
-            "SELECT name, alias_to, description, syntax, examples,"
-            " introduced_in, related"
-            " FROM system.data_type_families ORDER BY name",
-        ),
+        doc_rows("Data Type"),
         docs_dir,
         migrate,
     )
@@ -250,6 +265,13 @@ def build_generators(binary, docs_dir, migrate):
         d for d in os.listdir(os.path.join(docs_dir, "reference/formats"))
         if os.path.isdir(os.path.join(docs_dir, "reference/formats", d))
     )
+    # Input/output capability is catalog metadata, not documentation.
+    format_flags = {
+        r["name"]: r
+        for r in introspect.fetch_rows(
+            binary, "SELECT name, is_input, is_output FROM system.formats"
+        )
+    }
 
     def format_new_item(row):
         name = row["name"]
@@ -262,12 +284,13 @@ def build_generators(binary, docs_dir, migrate):
         rel_dir = f"reference/formats/{family}" if family else "reference/formats"
         page_rel = f"{rel_dir}/{name}.mdx"
         nav_group = ["Formats", family] if family else ["Formats"]
+        flags = format_flags.get(name, {})
         fm_text = _frontmatter([
             ("alias", "[]"),
             ("description", _description_fm(migrate, row["description"])),
-            ("input_format", "true" if row.get("is_input") else "false"),
+            ("input_format", "true" if flags.get("is_input") else "false"),
             ("keywords", f"['{name}']"),
-            ("output_format", "true" if row.get("is_output") else "false"),
+            ("output_format", "true" if flags.get("is_output") else "false"),
             ("slug", f"/interfaces/formats/{name}"),
             ("title", catalog.yaml_quote(name)),
             ("doc_type", "'reference'"),
@@ -277,17 +300,11 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "formats",
-            "source_table": "system.formats",
             "dirs": ["reference/formats"],
             "legacy_prefix": "interfaces/formats",
             "new_item": format_new_item,
         },
-        introspect.fetch_rows(
-            binary,
-            "SELECT name, is_input, is_output, description, examples,"
-            " introduced_in, related"
-            " FROM system.formats ORDER BY name",
-        ),
+        doc_rows("Format"),
         docs_dir,
         migrate,
     )

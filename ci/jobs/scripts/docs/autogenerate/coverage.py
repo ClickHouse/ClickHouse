@@ -14,8 +14,6 @@ these domains can move to the catalog generators.
 import os
 import re
 
-import introspect
-
 # Dictionary layouts -> pages under statements/create/dictionary/layouts/.
 # The complex_key_* variants and the polygon/hashed refinements are documented
 # on their base layout's page.
@@ -71,10 +69,9 @@ SOURCES_DIR = "reference/statements/create/dictionary/sources"
 COMBINATORS_PAGE = "reference/functions/aggregate-functions/combinators.mdx"
 
 
-def _check_pages(docs_dir, rows, mapping, rel_dir, kind, known_gaps=()):
+def _check_pages(docs_dir, names, mapping, rel_dir, kind, known_gaps=()):
     problems = []
-    for row in rows:
-        name = row["name"]
+    for name in names:
         page = mapping.get(name)
         if page is None:
             if name in known_gaps:
@@ -90,23 +87,21 @@ def _check_pages(docs_dir, rows, mapping, rel_dir, kind, known_gaps=()):
     return problems
 
 
-def run_checks(binary, docs_dir):
-    """Returns a list of problem strings (empty when coverage is complete)."""
+def run_checks(docs_map, docs_dir):
+    """Returns a list of problem strings (empty when coverage is complete).
+    Names come from `system.documentation`, which already excludes
+    internal-only entities."""
     problems = []
 
     problems += _check_pages(
         docs_dir,
-        introspect.fetch_rows(
-            binary, "SELECT name FROM system.dictionary_layouts ORDER BY name"
-        ),
+        sorted(docs_map.get("Dictionary Layout", {})),
         LAYOUT_PAGES, LAYOUTS_DIR, "dictionary layout",
     )
 
     problems += _check_pages(
         docs_dir,
-        introspect.fetch_rows(
-            binary, "SELECT name FROM system.dictionary_sources ORDER BY name"
-        ),
+        sorted(docs_map.get("Dictionary Source", {})),
         SOURCE_PAGES, SOURCES_DIR, "dictionary source",
         known_gaps=KNOWN_UNDOCUMENTED_SOURCES,
     )
@@ -115,14 +110,10 @@ def run_checks(binary, docs_dir):
     combinators_path = os.path.join(docs_dir, COMBINATORS_PAGE)
     with open(combinators_path, encoding="utf-8") as f:
         anchors = set(re.findall(r"\{#([^}]+)\}", f.read()))
-    for row in introspect.fetch_rows(
-        binary,
-        "SELECT name FROM system.aggregate_function_combinators"
-        " WHERE NOT is_internal ORDER BY name",
-    ):
-        if f"-{row['name'].lower()}" not in anchors:
+    for name in sorted(docs_map.get("Aggregate Function Combinator", {})):
+        if f"-{name.lower()}" not in anchors:
             problems.append(
-                f"aggregate function combinator '-{row['name']}' has no"
+                f"aggregate function combinator '-{name}' has no"
                 f" section anchor in {COMBINATORS_PAGE}"
             )
     return problems

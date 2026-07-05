@@ -12,6 +12,22 @@ import subprocess
 import sys
 
 
+def fetch_documentation(binary):
+    """Fetch `system.documentation` -- the unified source of all embedded
+    documentation -- once, keyed by entity type then name. `description` is
+    the assembled Markdown (`catalog.split_assembled` peels the structured
+    tail back off); `source` is the defining C++ file when known."""
+    rows = fetch_rows(
+        binary,
+        "SELECT name, type, description, source"
+        " FROM system.documentation ORDER BY type, name",
+    )
+    docs = {}
+    for row in rows:
+        docs.setdefault(row["type"], {})[row["name"]] = row
+    return docs
+
+
 def fetch_rows(binary, query):
     """Run `query` via `clickhouse local` and return a list of row dicts."""
     cmd = [binary, "local", "--output-format", "JSONEachRow", "--query", query]

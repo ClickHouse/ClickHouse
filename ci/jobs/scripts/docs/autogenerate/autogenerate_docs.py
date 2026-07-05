@@ -36,6 +36,7 @@ import catalog  # noqa: E402
 import catalog_domains  # noqa: E402
 import coverage  # noqa: E402
 import generated_groups  # noqa: E402
+import introspect  # noqa: E402
 import navigation  # noqa: E402
 import system_tables_pages  # noqa: E402
 
@@ -314,9 +315,15 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
         # the source of truth and is never overwritten; report whether it
         # diverged from the embedded documentation.
         with open(dest, encoding="utf-8") as f:
-            fm = FRONTMATTER_RE.match(f.read())
-        body = content.strip("\n")
-        new = (fm.group(0).rstrip("\n") + "\n\n" + body + "\n") if fm else body + "\n"
+            page = f.read()
+        fm = FRONTMATTER_RE.match(page)
+        # Pages this tool created carry the provenance badge; keep it in the
+        # comparison candidate so they don't self-report as drifted.
+        badge = catalog.BADGE_RE.search(page)
+        prefix = (fm.group(0).rstrip("\n") + "\n\n") if fm else ""
+        if badge:
+            prefix += badge.group(0) + "\n\n"
+        new = prefix + content.strip("\n") + "\n"
         return dest, new, "content-drift"
 
     if gen["method"] == "markers":
@@ -379,6 +386,14 @@ def main(argv=None):
         # it when --only can't match them.
         return not args.only or args.only in family or family in args.only
 
+    # `system.documentation` is the unified source for all embedded docs;
+    # fetch it once for every family that consumes it.
+    docs_map = None
+    doc_families = ("table-engines", "database-engines", "data-types",
+                    "formats", "skipping-indexes", "disk-types", "coverage")
+    if any(family_selected(f) for f in doc_families):
+        docs_map = introspect.fetch_documentation(binary)
+
     all_generators = ALL_GENERATORS + aggregate_generators(docs_dir)
     if family_selected("system-tables"):
         all_generators += system_tables_pages.build_generators(binary)
@@ -386,9 +401,11 @@ def main(argv=None):
         all_generators.append(async_metrics.build_generator(repo_root))
     if any(family_selected(f) for f in
            ("table-engines", "database-engines", "data-types", "formats")):
-        all_generators += catalog_domains.build_generators(binary, docs_dir, migrate)
+        all_generators += catalog_domains.build_generators(
+            docs_map, binary, docs_dir, migrate
+        )
     if any(family_selected(f) for f in ("skipping-indexes", "disk-types")):
-        all_generators += generated_groups.build_generators(binary, docs_dir)
+        all_generators += generated_groups.build_generators(docs_map, docs_dir)
     if family_selected("listing"):
         # Last: listing tables render from the navigation fragment and the
         # pages' frontmatter, after any page creation and nav insertion.
@@ -482,7 +499,7 @@ def main(argv=None):
     # Domains whose hand-written pages are richer than the embedded summaries
     # are checked for coverage instead of generated (see coverage.py).
     if family_selected("coverage"):
-        for problem in coverage.run_checks(binary, docs_dir):
+        for problem in coverage.run_checks(docs_map, docs_dir):
             print(f"COVERAGE: {problem}")
             drift += 1
 
