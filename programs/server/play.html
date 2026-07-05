@@ -3577,6 +3577,13 @@ async function ping(url) {
 }
 
 let ping_request_num = 0;
+/// Bumped on every connection edit (url/user/password `input`, see `onCredentialInput` and the `url`
+/// listener below). A `checkURL(true)` ping arms a deferred `checkCredentials` on success, but that
+/// ping is asynchronous: the initial page-load ping (or one from an earlier commit) can resolve after
+/// the user has already resumed typing. Capturing the generation when the ping starts and re-checking
+/// it before probing invalidates such a stale chain, so it never sends the current, still-in-progress
+/// credentials to the server.
+let connection_generation = 0;
 /// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
 /// It is set for the initial load and for the connection-block commit (see `onConnectionFocusOut`),
 /// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
@@ -3585,13 +3592,16 @@ let ping_request_num = 0;
 function checkURL(probe_credentials) {
     ++ping_request_num;
     const current_ping_request_num = ping_request_num;
+    const current_connection_generation = connection_generation;
     let elem = document.getElementById('url_status');
     elem.className = '';
     document.getElementById('server_info').innerText = '';
     ping(url_elem.value).then(status => {
         if (current_ping_request_num == ping_request_num) {
             elem.className = status ? 'ok' : 'fail';
-            if (status && probe_credentials) {
+            /// Only probe if no connection edit happened since this ping was armed — otherwise the
+            /// probe would run against the current, still-in-progress fields (see `connection_generation`).
+            if (status && probe_credentials && current_connection_generation == connection_generation) {
                 checkCredentials();
             }
         }
@@ -4380,6 +4390,7 @@ function resetCredentialsStatus() {
 let connection_edited = false;
 function onCredentialInput() {
     connection_edited = true;
+    ++connection_generation;
     resetCredentialsStatus();
 }
 function onConnectionFocusOut(event) {
@@ -4400,7 +4411,7 @@ document.getElementById('inputs').addEventListener('focusout', onConnectionFocus
 /// re-check the credentials against the new server even when only the `url` changed. (Registered
 /// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
 /// call above never reaches this before the counter exists.)
-url_elem.addEventListener('input', () => { connection_edited = true; resetCredentialsStatus(); });
+url_elem.addEventListener('input', () => { connection_edited = true; ++connection_generation; resetCredentialsStatus(); });
 
 
 function queryToColor(str) {
