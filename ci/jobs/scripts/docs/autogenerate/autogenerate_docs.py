@@ -22,6 +22,8 @@ flag reference pages that are stale relative to the binary).
 """
 
 import argparse
+import difflib
+import json
 import os
 import re
 import shutil
@@ -311,19 +313,22 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
             return dest, new, "create"
 
     if gen["method"] == "content-drift":
-        # Existing page for a source-documented item. Pre-cutover the page is
-        # the source of truth and is never overwritten; report whether it
-        # diverged from the embedded documentation.
+        # Existing page for a source-documented item. The provenance badge
+        # marks ownership: a badged page is generated and the embedded
+        # documentation wins; an unbadged page whose body already equals the
+        # embedded documentation is adopted (gains the badge, nothing else
+        # changes); an unbadged page that diverged is never overwritten and
+        # is reported as CONTENT-DRIFT until docs and source are reconciled.
         with open(dest, encoding="utf-8") as f:
             page = f.read()
         fm = FRONTMATTER_RE.match(page)
-        # Pages this tool created carry the provenance badge; keep it in the
-        # comparison candidate so they don't self-report as drifted.
-        badge = catalog.BADGE_RE.search(page)
         prefix = (fm.group(0).rstrip("\n") + "\n\n") if fm else ""
-        if badge:
-            prefix += badge.group(0) + "\n\n"
-        new = prefix + content.strip("\n") + "\n"
+        body = content.strip("\n") + "\n"
+        # Always render a fresh badge; the badge-date reconciliation keeps
+        # the committed date when the content is otherwise unchanged.
+        new = prefix + catalog.badge("system.documentation") + "\n\n" + body
+        if catalog.BADGE_RE.search(page) or prefix + body == page:
+            return dest, new, "update"
         return dest, new, "content-drift"
 
     if gen["method"] == "markers":
@@ -365,9 +370,14 @@ def main(argv=None):
     p.add_argument("--only", help="only run generators whose name contains this substring")
     p.add_argument("--content-drift", choices=["ignore", "warn", "fail"],
                    default="warn",
-                   help="how to report existing catalog pages whose body"
+                   help="how to report unbadged catalog pages whose body"
                         " differs from the documentation embedded in the"
-                        " source (pages are never overwritten pre-cutover)")
+                        " source (they are never overwritten; badged pages"
+                        " are tool-owned and the source wins)")
+    p.add_argument("--reconcile-report", metavar="PATH",
+                   help="write a JSON report of the CONTENT-DRIFT pages"
+                        " (page, defining C++ source file, docs-vs-source"
+                        " diff) for upstreaming the docs-side deltas")
     args = p.parse_args(argv)
 
     binary = os.path.abspath(args.binary)
@@ -414,6 +424,7 @@ def main(argv=None):
 
     drift = 0
     content_drift = 0
+    reconcile_entries = []  # CONTENT-DRIFT details for --reconcile-report
     nav_inserts = []  # (group_path, page_id) for pages created by --write
     nav_groups = []  # generator-owned groups (fully generated domains)
 
@@ -462,12 +473,23 @@ def main(argv=None):
                 new = catalog.reconcile_badge_date(f.read(), new)
 
         if kind == "content-drift":
-            # Pre-cutover: the page wins; never written, only compared.
+            # Unbadged and diverged: the page wins; never written, only
+            # compared and reported (the reconcile report carries the diff).
             if args.content_drift != "ignore":
-                current = open(dest, encoding="utf-8").read()
-                if current != new:
-                    print(f"CONTENT-DRIFT: {rel} differs from the embedded docs")
-                    content_drift += 1
+                print(f"CONTENT-DRIFT: {rel} differs from the embedded docs")
+                content_drift += 1
+                if args.reconcile_report:
+                    current = open(dest, encoding="utf-8").read()
+                    reconcile_entries.append({
+                        "generator": gen["name"],
+                        "page": rel,
+                        "source": gen.get("source", ""),
+                        "diff": "\n".join(difflib.unified_diff(
+                            current.splitlines(), new.splitlines(),
+                            fromfile=f"docs/{rel}", tofile="embedded documentation",
+                            lineterm="",
+                        )),
+                    })
             continue
 
         if args.check:
@@ -503,6 +525,11 @@ def main(argv=None):
             print(f"COVERAGE: {problem}")
             drift += 1
 
+    if args.reconcile_report:
+        with open(args.reconcile_report, "w", encoding="utf-8") as f:
+            json.dump(reconcile_entries, f, indent=2, ensure_ascii=False)
+        print(f"reconcile report: {args.reconcile_report}"
+              f" ({len(reconcile_entries)} pages)")
     if content_drift:
         print(f"{content_drift} page(s) with CONTENT-DRIFT (not failing"
               f" pre-cutover; reconcile docs and source, see --content-drift)")

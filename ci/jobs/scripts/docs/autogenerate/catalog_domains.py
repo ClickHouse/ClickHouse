@@ -121,6 +121,7 @@ def _item_generators(domain, rows, docs_dir, migrate):
                 "dest_rel": page_rel,
                 "title": fm.get("title"),
                 "full_transform": True,
+                "source": row.get("source", ""),
             })
         elif len(row["description"]) > FULL_PAGE_MIN_LEN:
             page_rel, nav_group, fm_text, title = domain["new_item"](row)
