@@ -1,4 +1,5 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <Columns/ColumnSparse.h>
 
 namespace DB
 {

@@ -7,14 +7,17 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <Core/SortCursor.h>
 #include <Core/SortDescription.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 
@@ -341,4 +344,175 @@ TEST(MergeSorter, TupleReplicatedChildSortKeyDoesNotBadCast)
     /// Two sorted chunks with the SAME tuple key: one dense, one carrying a replicated tuple child.
     EXPECT_NO_THROW(runMergeSorter(
         key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+}
+
+namespace
+{
+
+/// Drive `MergingSortedTransform` (the k-way merge used by `MergingSortedAlgorithm`, the base of the
+/// *SortedAlgorithm family) with two already-sorted single-chunk inputs whose sort key `x` holds the
+/// SAME value, so the merging cursors compare across sources. `first_key`/`second_key` are the `x`
+/// column of each input. Before the fix `IMergingAlgorithm::removeReplicatedFromSortingColumns` only
+/// stripped a top-level `ColumnReplicated` and the following `removeConstAndSparse`'s
+/// `recursiveRemoveSparse` recursed only through `Replicated`/`Tuple`, so a composite key like
+/// `Tuple(Replicated(UInt16))` or `Nullable(Tuple(Sparse(UInt16)))` reached `SortCursorImpl` with one
+/// side dense and the other wrapped, and `compareAt` bad-cast one level deeper.
+void runMergingSorted(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+
+    Block header({
+        ColumnWithTypeAndName(key_type->createColumn(), key_type, "x"),
+        ColumnWithTypeAndName(type_u64->createColumn(), type_u64, "y"),
+    });
+    auto shared_header = std::make_shared<const Block>(header);
+
+    auto make_source = [&](ColumnPtr key)
+    {
+        Columns cols;
+        cols.push_back(std::move(key));
+        cols.push_back(denseUInt64Iota(n));
+        Chunk chunk;
+        chunk.setColumns(std::move(cols), n);
+        Chunks chunks;
+        chunks.emplace_back(std::move(chunk));
+        return std::make_shared<SourceFromChunks>(shared_header, std::move(chunks));
+    };
+
+    auto source_first = make_source(std::move(first_key));
+    auto source_second = make_source(std::move(second_key));
+
+    SortDescription description;
+    description.emplace_back("x");
+    description.emplace_back("y");
+
+    auto merging = std::make_shared<MergingSortedTransform>(
+        shared_header, /*num_inputs=*/2, description, /*max_block_size_rows=*/8192, /*max_block_size_bytes=*/0,
+        /*max_dynamic_subcolumns=*/std::nullopt, SortingQueueStrategy::Default, /*limit=*/0);
+
+    auto inputs_it = merging->getInputs().begin();
+    connect(source_first->getPort(), *inputs_it++);
+    connect(source_second->getPort(), *inputs_it);
+    auto * output_port = &merging->getOutputs().front();
+
+    auto processors = std::make_shared<Processors>();
+    processors->push_back(source_first);
+    processors->push_back(source_second);
+    processors->push_back(merging);
+
+    QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
+        ;
+}
+
+/// Drive `PartialSortingTransform` (the TopK path) with two blocks: the first sets the saved
+/// threshold row, the second is compared against it (`getFilterMask` / `compareWithThreshold`). The
+/// limit is >= `min_limit_for_partial_sort_optimization` so the threshold optimization is active.
+/// Before the fix the saved threshold was normalized with `removeSpecialRepresentations`, which
+/// (like the merge path) recurses only through `Replicated`/`Tuple`, so a composite key like
+/// `Nullable(Tuple(Sparse(UInt16)))` kept a sparse/replicated child in the threshold and the raw
+/// comparison against the dense live keys bad-cast one level deeper.
+void runPartialSorting(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+
+    Block header({
+        ColumnWithTypeAndName(key_type->createColumn(), key_type, "x"),
+        ColumnWithTypeAndName(type_u64->createColumn(), type_u64, "y"),
+    });
+    auto shared_header = std::make_shared<const Block>(header);
+
+    auto make_chunk = [&](ColumnPtr key)
+    {
+        Columns cols;
+        cols.push_back(std::move(key));
+        cols.push_back(denseUInt64Iota(n));
+        Chunk chunk;
+        chunk.setColumns(std::move(cols), n);
+        return chunk;
+    };
+
+    Chunks chunks;
+    chunks.emplace_back(make_chunk(std::move(first_key)));
+    chunks.emplace_back(make_chunk(std::move(second_key)));
+
+    SortDescription description;
+    description.emplace_back("x");
+    description.emplace_back("y");
+
+    auto source = std::make_shared<SourceFromChunks>(shared_header, std::move(chunks));
+    /// limit >= min_limit_for_partial_sort_optimization (1500) so the threshold optimization runs.
+    auto partial_sorting = std::make_shared<PartialSortingTransform>(shared_header, description, /*limit=*/1500);
+
+    connect(source->getPort(), partial_sorting->getInputPort());
+    auto * output_port = &partial_sorting->getOutputPort();
+
+    auto processors = std::make_shared<Processors>();
+    processors->push_back(source);
+    processors->push_back(partial_sorting);
+
+    QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+
+    PullingPipelineExecutor executor(pipeline);
+    Block block;
+    while (executor.pull(block))
+        ;
+}
+
+}
+
+/// CR1: the merge-algorithm path (`MergingSortedAlgorithm` and its `*SortedAlgorithm` siblings),
+/// which strip sort keys via `IMergingAlgorithm::removeReplicatedFromSortingColumns` +
+/// `removeConstAndSparse`. A `Tuple(Replicated(UInt16))` key reached the merging cursors with one
+/// side dense and the other replicated. `ColumnTuple::compareAt` delegated to
+/// `ColumnVector::compareAt(..., ColumnReplicated)` -- the same bad cast one level deeper. The fix
+/// materializes the sort keys recursively there too.
+TEST(MergingSortedAlgorithm, TupleReplicatedChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
+    EXPECT_NO_THROW(runMergingSorted(
+        key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+}
+
+/// The sparse sibling nested under a nullable on the merge path: `Nullable(Tuple(Sparse(UInt16)))`.
+/// `recursiveRemoveSparse` does not recurse through `Nullable`, so before the fix the sparse child
+/// survived `removeConstAndSparse` and reached the cursors. The recursive materializer densifies it.
+TEST(MergingSortedAlgorithm, NullableTupleSparseChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeNullable>(
+        std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    EXPECT_NO_THROW(runMergingSorted(
+        key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(sparseUInt16(0, n), n), n));
+}
+
+/// CR2: the TopK/threshold path (`PartialSortingTransform`). The saved threshold row was normalized
+/// with `removeSpecialRepresentations`, which keeps a sparse/replicated child under
+/// `Nullable`/`Array`/`Map`. On the next block the raw comparison against the dense live keys
+/// (`compareWithThreshold` / `getFilterMask`) bad-cast one level deeper for a
+/// `Nullable(Tuple(Sparse(UInt16)))` threshold. The fix materializes the threshold recursively.
+TEST(PartialSortingTransform, NullableTupleSparseThresholdDoesNotBadCast)
+{
+    /// n must be >= the transform's limit so the first block fills the LIMIT and the threshold is
+    /// actually saved (`limit <= block.rows()` in `transform`); the limit itself must be >=
+    /// `min_limit_for_partial_sort_optimization` (1500) for the optimization to run.
+    constexpr size_t n = 1600;
+    auto key_type = std::make_shared<DataTypeNullable>(
+        std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    /// First block sets the threshold as a sparse-child key; second block (dense) is compared to it.
+    EXPECT_NO_THROW(runPartialSorting(
+        key_type, nullableTupleOf(sparseUInt16(0, n), n), nullableTupleOf(denseUInt16(0, n), n), n));
+}
+
+/// The replicated sibling of the TopK case: a `Tuple(Replicated(UInt16))` threshold.
+TEST(PartialSortingTransform, TupleReplicatedThresholdDoesNotBadCast)
+{
+    constexpr size_t n = 1600;
+    auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
+    EXPECT_NO_THROW(runPartialSorting(
+        key_type, tupleOf(replicatedUInt16(0, n)), tupleOf(denseUInt16(0, n)), n));
 }

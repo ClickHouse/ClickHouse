@@ -170,9 +170,15 @@ void PartialSortingTransform::transform(Chunk & chunk)
             {
                 MutableColumnPtr sort_description_threshold_column_updated = raw_block_columns[i]->cloneEmpty();
                 sort_description_threshold_column_updated->insertFrom(*raw_block_columns[i], min_row_to_compare);
-                /// Without this, `assertTypeEquality` may fail when comparing a ColumnNullable against a ColumnReplicated (received from JOIN).
+                /// The saved threshold is the rhs of the `compareColumn` / `compareAt` calls in
+                /// `getFilterMask` / `compareWithThreshold` on the next block, whose lhs is a dense
+                /// live key. `removeSpecialRepresentations` recurses only through `Replicated`/`Tuple`,
+                /// so a composite key like `Nullable(Tuple(Sparse(...)))` would keep a sparse/replicated
+                /// child and bad-cast one level deeper. Materialize the threshold recursively so the
+                /// raw comparison never meets a sparse/replicated column (also fixes the top-level
+                /// `assertTypeEquality` for a ColumnNullable vs a ColumnReplicated received from JOIN).
                 sort_description_threshold_columns_updated[i]
-                    = removeSpecialRepresentations(sort_description_threshold_column_updated->getPtr());
+                    = materializeSortKeyColumn(sort_description_threshold_column_updated->getPtr());
             }
 
             sort_description_threshold_columns = std::move(sort_description_threshold_columns_updated);
