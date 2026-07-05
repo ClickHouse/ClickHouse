@@ -478,3 +478,105 @@ CREATE TABLE tab
 ENGINE = MergeTree ORDER BY id;   -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '-- Timestamp removal: preprocessor strips ISO timestamp prefix from log lines.';
+
+-- Log lines contain a leading ISO timestamp followed by a space and the log message.
+-- The preprocessor uses replaceRegexpAll to remove the timestamp prefix before tokenization,
+-- so timestamp components are never stored in the index.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val String,
+    INDEX idx(val) TYPE text(
+        tokenizer = 'splitByNonAlpha',
+        preprocessor = replaceRegexpAll(val, '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ', '')
+    )
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES
+    (1, '2024-01-15T10:23:45 ERROR connection failed'),
+    (2, '2024-01-15T10:23:46 INFO server started'),
+    (3, '2024-01-15T10:23:47 ERROR disk full');
+
+-- Searching by message content finds rows; the preprocessor is applied to the needle too,
+-- but 'ERROR', 'connection', etc. are unaffected by the timestamp regex.
+SELECT count() FROM tab WHERE hasToken(val, 'ERROR');        -- 2
+SELECT count() FROM tab WHERE hasToken(val, 'connection');   -- 1
+SELECT count() FROM tab WHERE hasToken(val, 'server');       -- 1
+-- Timestamp components are not indexed; searching for them returns 0.
+SELECT count() FROM tab WHERE hasToken(val, '2024');         -- 0
+SELECT count() FROM tab WHERE hasToken(val, '10');           -- 0
+
+DROP TABLE tab;
+
+SELECT '-- Array tokenizer + preprocessor: has/hasAll/hasAny apply preprocessor on lookup.';
+-- Index build always applies the preprocessor unconditionally. has/hasAll/hasAny must apply
+-- it on the lookup side too so the needle matches the stored (preprocessed) form.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo', 'qux']), (2, ['BAR', 'baz']);
+
+-- Index stores preprocessed values: 'foo'/'qux' for row 1, 'bar'/'baz' for row 2.
+-- Lookup applies preprocessor to needle so 'Foo' -> 'foo', matching the stored form.
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessor aligns needle with index; row-level finds literal 'Foo')
+SELECT count() FROM tab WHERE has(val, 'BAR');         -- 1
+SELECT count() FROM tab WHERE has(val, 'xyz');         -- 0
+-- Wrong capitalization: granule is kept (preprocessed 'foo' matches stored 'foo'), but
+-- row-level has() is a literal comparison so 'foo' does not match the stored element 'Foo'.
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0
+SELECT count() FROM tab WHERE has(val, 'bar');         -- 0
+
+DROP TABLE tab;
+
+SELECT '-- Array tokenizer + preprocessor: has() / hasAll() / hasAny() apply the preprocessor.';
+-- Index build applies the preprocessor unconditionally (stores 'foo', 'bar', 'baz').
+-- has/hasAll/hasAny apply the preprocessor to the needle for the granule lookup, so
+-- 'Foo' -> 'foo' finds the right granule; row-level still does literal comparison.
+
+CREATE TABLE tab
+(
+    id UInt64,
+    val Array(String),
+    INDEX idx(val) TYPE text(tokenizer = 'array', preprocessor = lower(val))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, ['Foo']), (2, ['BAR']), (3, ['baz']);
+
+SELECT count() FROM tab WHERE has(val, 'Foo');         -- 1 (preprocessed needle 'foo' finds granule; literal 'Foo' matches row)
+SELECT count() FROM tab WHERE has(val, 'foo');         -- 0 (granule kept, but literal 'foo' ≠ 'Foo')
+SELECT count() FROM tab WHERE hasAll(val, ['BAR']);    -- 1
+SELECT count() FROM tab WHERE hasAll(val, ['bar']);    -- 0
+SELECT count() FROM tab WHERE hasAny(val, ['baz']);    -- 1
+SELECT count() FROM tab WHERE hasAny(val, ['BAZ']);    -- 0
+
+DROP TABLE tab;
+
+SELECT '-- hasTokenOrNull with a preprocessor: the index must not be used (row-level is not preprocessed).';
+
+CREATE TABLE tab
+(
+    id  UInt64,
+    val String,
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = replaceAll(val, 'the', ''))
+)
+ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tab VALUES (1, 'the quick'), (2, 'foo');
+
+-- The preprocessor strips 'the' from the indexed tokens, but hasTokenOrNull is not rewritten on the
+-- row-scan path, so it still searches the literal token and must find it in row 1 (not pruned to 0).
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'the');   -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'quick'); -- 1
+SELECT count() FROM tab WHERE hasTokenOrNull(val, 'xyz');   -- 0
+
+DROP TABLE tab;

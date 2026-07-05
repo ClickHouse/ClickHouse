@@ -154,11 +154,20 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
 
     /// There is a ExpressionStep before LimitBy. Skip it.
     QueryPlan::Node * expr_node = node.children.front();
-    if (!typeid_cast<ExpressionStep *>(expr_node->step.get()) || expr_node->children.size() != 1)
+    auto * expr_step = typeid_cast<ExpressionStep *>(expr_node->step.get());
+    if (!expr_step || expr_node->children.size() != 1)
         return;
 
     auto * sort = typeid_cast<SortingStep *>(expr_node->children.front()->step.get());
     if (!sort)
+        return;
+
+    /// `arrayJoin` in the expression above sort changes row cardinality after the sort runs.
+    /// A per-stream `LimitByTransform` attached to the sort would truncate input rows BEFORE
+    /// `arrayJoin` expansion, silently dropping rows that should have produced output.
+    /// See issue #82279 for sibling guards in `liftUpFunctions`, `optimizeLazyMaterialization`,
+    /// `optimizeTopK`, and `topKThroughJoin`.
+    if (expr_step->getExpression().hasArrayJoin())
         return;
 
     /// Pushing down `LIMIT BY` adds a parallel pre-cap before the final single-stream

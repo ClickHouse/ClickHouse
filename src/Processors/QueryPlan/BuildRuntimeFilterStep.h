@@ -15,6 +15,7 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
+        String filter_key_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
         UInt64 bloom_filter_hash_functions_,
@@ -48,7 +49,13 @@ private:
 
     String filter_column_name;
     DataTypePtr filter_column_type;
+    /// Stable structural id (`_runtime_filter_<hash>`), shown in EXPLAIN and serialized, so the build
+    /// step and its matching `__applyFilter` carry the same visible id.
     String filter_name;
+    /// Random per-plan-build key the built filter is registered under in the `IRuntimeFilterLookup`;
+    /// the matching `__applyFilter` looks it up by the same key. Kept off the plan (not shown, not
+    /// serialized) so it never enters a plan-step hash. Empty for a deserialized step (then inert).
+    String filter_key;
 
     UInt64 exact_values_limit;
     UInt64 bloom_filter_bytes;

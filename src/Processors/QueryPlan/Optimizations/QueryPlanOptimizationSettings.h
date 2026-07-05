@@ -73,6 +73,8 @@ struct QueryPlanOptimizationSettings
     std::optional<bool> join_swap_table;
     /// Maximum number of tables in query graph to reorder
     UInt64 query_plan_optimize_join_order_limit;
+    /// Maximum number of partial plans to enumerate before falling back to the next algorithm
+    UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
 
@@ -90,6 +92,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;
+    bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
 
@@ -99,7 +102,8 @@ struct QueryPlanOptimizationSettings
     bool query_plan_join_shard_by_pk_ranges;
 
     bool make_distributed_plan = false;
-    bool distributed_plan_singe_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
+    bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
+    bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     UInt64 distributed_plan_default_shuffle_join_bucket_count = 8;
     UInt64 distributed_plan_default_reader_bucket_count = 8; /// Default bucket count for read steps in distributed query plan
     bool distributed_plan_optimize_exchanges = true; /// Removes unnecessary exchanges in distributed query plan
@@ -165,6 +169,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_entries_for_hash_table_stats;
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
+    bool collect_hash_table_stats_during_aggregation;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
@@ -179,6 +184,9 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
+
+    size_t min_columns_for_join_lazy_indexing = 0;
+    size_t max_limit_for_join_lazy_indexing = 0;
 
     /// Please, avoid using this
     ///

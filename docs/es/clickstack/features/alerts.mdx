@@ -1,0 +1,392 @@
+---
+slug: /use-cases/observability/clickstack/alerts
+title: 'Alertas con ClickStack'
+sidebarTitle: 'Alertas'
+description: 'Alertas con ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observabilidad', 'alertas', 'search-alerts', 'notificaciones', 'umbrales', 'slack', 'email', 'pagerduty', 'monitorización-de-errores', 'monitorización-del-rendimiento', 'eventos-de-usuario']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickStack incluye compatibilidad nativa con alertas, lo que permite a los equipos detectar problemas y responder a ellos en tiempo real en logs, métricas y trazas.
+
+Las alertas pueden crearse directamente en la interfaz de HyperDX e integrarse con sistemas de notificación populares como Slack y PagerDuty.
+
+Las alertas funcionan de forma fluida con todos los datos de ClickStack, lo que le ayuda a supervisar el estado del sistema, detectar regresiones de rendimiento y monitorear eventos empresariales clave.
+
+<div id="types-of-alerts">
+  ## Tipos de alertas
+</div>
+
+ClickStack admite dos formas complementarias de crear alertas: **Alertas de búsqueda** y **Alertas de gráficos del dashboard**. Una vez creada, la alerta se asocia a la búsqueda o al gráfico.
+
+<div id="search-alerts">
+  ### 1. Alertas de búsqueda
+</div>
+
+Las alertas de búsqueda le permiten activar notificaciones en función de los resultados de una búsqueda guardada. Le ayudan a detectar cuándo determinados eventos o patrones se producen con más (o menos) frecuencia de la esperada.
+
+Una alerta se activa cuando el número de resultados coincidentes dentro de una ventana de tiempo definida supera o cae por debajo de un umbral especificado.
+
+Para crear una alerta de búsqueda:
+
+Para que se cree una alerta para una búsqueda, esta debe estar guardada. Puede crear la alerta para una búsqueda guardada existente o guardar la búsqueda durante el proceso de creación de la alerta. En el ejemplo siguiente, asumimos que la búsqueda no está guardada.
+
+<Steps>
+  <Step>
+    #### Abrir el cuadro de diálogo de creación de alertas
+
+    Comience introduciendo una [búsqueda](/es/clickstack/features/search) y haciendo clic en el botón `Alerts` en la esquina superior derecha de la página `Search`.
+
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Vista de búsqueda de alertas" size="lg" />
+  </Step>
+
+  <Step>
+    #### Crear la alerta
+
+    Desde el panel de creación de alertas, puede:
+
+    * Asignar un nombre a la búsqueda guardada asociada a la alerta.
+    * Establecer un umbral y especificar cuántas veces debe alcanzarse dentro de un período determinado. Los umbrales también pueden usarse como límites superiores o inferiores. El período también determinará con qué frecuencia se activa la alerta.
+    * Especificar un valor `grouped by`. Esto permite que la búsqueda esté sujeta a una agregación, por ejemplo, `ServiceName`, lo que permite activar varias alertas a partir de la misma búsqueda.
+    * Elegir un destino de webhook para las notificaciones. Puede añadir un nuevo webhook directamente desde esta vista. Consulte [Añadir un webhook](#add-webhook) para obtener más detalles.
+
+    Antes de guardar, ClickStack visualiza la condición del umbral para que pueda confirmar que se comportará como se espera.
+
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="Alertas de búsqueda" size="lg" />
+  </Step>
+</Steps>
+
+Tenga en cuenta que se pueden añadir varias alertas a una búsqueda. Si repite el proceso anterior, verá las alertas actuales como pestañas en la parte superior del cuadro de diálogo de edición de alertas, con cada alerta asignada a un número.
+
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Múltiples alertas" size="md" />
+
+<div id="dashboard-alerts">
+  ### 2. Alertas de gráficos del dashboard
+</div>
+
+Las alertas de dashboard amplían las alertas a los gráficos.
+
+Puedes crear una alerta basada en gráficos directamente desde un dashboard guardado, con el respaldo de agregaciones SQL completas y funciones de ClickHouse para cálculos avanzados.
+
+Cuando una métrica supera un umbral definido, la alerta se activa automáticamente, lo que te permite supervisar KPI, latencias u otras métricas clave a lo largo del tiempo.
+
+<Note>
+  Para poder crear una alerta para una visualización en un dashboard, el dashboard debe estar guardado.
+</Note>
+
+Para añadir una alerta de dashboard:
+
+Las alertas se pueden crear durante el proceso de creación del gráfico, al añadir un gráfico a un dashboard o sobre gráficos existentes. En el ejemplo siguiente, asumimos que el gráfico ya existe en el dashboard.
+
+<Steps>
+  <Step>
+    #### Abre el cuadro de diálogo de edición del gráfico
+
+    Abre el menú de configuración del gráfico y selecciona el botón de alerta. Se abrirá el cuadro de diálogo de edición del gráfico.
+
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Editar alerta del gráfico" size="lg" />
+  </Step>
+
+  <Step>
+    #### Añade la alerta
+
+    Selecciona **Add Alert**.
+
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Añadir alerta al gráfico" size="lg" />
+  </Step>
+
+  <Step>
+    #### Define las condiciones de la alerta
+
+    Define la condición (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), el umbral, la duración y el webhook. La duración también determinará la frecuencia con la que se activa la alerta.
+
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Crear alerta para el gráfico" size="lg" />
+
+    Puedes añadir un webhook nuevo directamente desde esta vista. Consulta [Añadir un webhook](#add-webhook) para obtener más información.
+  </Step>
+</Steps>
+
+<div id="add-webhook">
+  ## Añadir un webhook
+</div>
+
+Durante la creación de una alerta, puede usar un webhook existente o crear uno. Una vez creado, el webhook estará disponible para reutilizarlo en otras alertas.
+
+Se puede crear un webhook para distintos tipos de servicio, incluidos Slack y PagerDuty, así como para destinos genéricos.
+
+Por ejemplo, a continuación se muestra la creación de una alerta para un gráfico. Antes de especificar el webhook, el usuario puede seleccionar `Add New Webhook`.
+
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="Añadir nuevo webhook" size="lg" />
+
+Esto abre el cuadro de diálogo de creación del webhook, donde puede crear un webhook nuevo:
+
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="Creación de webhook" size="md" />
+
+Se requiere un nombre para el webhook, mientras que las descripciones son opcionales. Los demás ajustes que deben completarse dependen del tipo de servicio.
+
+Tenga en cuenta que los tipos de servicio disponibles difieren entre ClickStack Open Source y ClickStack Cloud. Consulte [Integraciones de tipos de servicio](#integrations).
+
+<div id="integrations">
+  ### Integraciones por tipo de servicio
+</div>
+
+Las alertas de ClickStack incluyen integraciones listas para usar con los siguientes tipos de servicio:
+
+* **Slack**: envía notificaciones directamente a un canal mediante un webhook o la API.
+* **PagerDuty**: enruta incidentes a los equipos de guardia mediante la API de PagerDuty.
+* **Webhook**: conecta las alertas a cualquier sistema o flujo de trabajo personalizado mediante un webhook genérico.
+
+<Info>
+  **Integraciones solo para ClickHouse Cloud**
+
+  Las integraciones con la API de Slack y PagerDuty solo son compatibles con ClickHouse Cloud.
+</Info>
+
+Según el tipo de servicio, deberás proporcionar información diferente. En concreto:
+
+**Slack (URL de webhook)**
+
+* URL de webhook. Por ejemplo: `https://hooks.slack.com/services/<unique_path>`. Consulta la [documentación de Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) para obtener más información.
+
+**Slack (API)**
+
+* Token del bot de Slack. Consulta la [documentación de Slack](https://docs.slack.dev/authentication/tokens/#bot/) para obtener más información.
+
+**PagerDuty API**
+
+* Clave de integración de PagerDuty. Consulta la [documentación de PagerDuty](https://support.pagerduty.com/main/docs/api-access-keys) para obtener más información.
+
+**Genérico**
+
+* URL de webhook
+* Encabezados del webhook (opcional)
+* Cuerpo del webhook (opcional). Actualmente, el cuerpo admite las variables de plantilla `{{title}}`, `{{body}}` y `{{link}}`.
+
+<div id="managing-alerts">
+  ## Gestión de alertas
+</div>
+
+Las alertas se pueden gestionar de forma centralizada desde el panel de alertas situado en el lado izquierdo de HyperDX.
+
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="Gestionar alertas" size="lg" />
+
+En esta vista, puedes ver todas las alertas que se han creado y que actualmente están activas en ClickStack.
+
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="Vista de alertas" size="lg" />
+
+Esta vista también muestra el historial de evaluación de las alertas. Las alertas se evalúan a intervalos recurrentes (definidos por el período o la duración establecidos al crear la alerta). En cada evaluación, HyperDX consulta tus datos para comprobar si se cumple la condición de la alerta:
+
+* **Barra roja**: la condición del umbral se cumplió durante esta evaluación y la alerta se activó (se envió una notificación)
+* **Barra verde**: la alerta se evaluó, pero no se cumplió la condición del umbral (no se envió ninguna notificación)
+
+Cada evaluación es independiente: la alerta comprueba los datos de esa ventana de tiempo y solo se activa si la condición se cumple en ese momento.
+
+En el ejemplo anterior, la primera alerta se ha activado en todas las evaluaciones, lo que indica un problema persistente. La segunda alerta muestra un problema resuelto: se activó dos veces al principio (barras rojas) y, en las evaluaciones posteriores, dejó de cumplirse la condición del umbral (barras verdes).
+
+Al hacer clic en una alerta, irás al gráfico o a la búsqueda a la que está asociada.
+
+<div id="deleting-alerts">
+  ### Eliminar una alerta
+</div>
+
+Para eliminar una alerta, abra el cuadro de diálogo de edición de la búsqueda o el gráfico asociados y, a continuación, seleccione **Remove Alert**.
+En el ejemplo siguiente, el botón `Remove Alert` eliminará la alerta del gráfico.
+
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Eliminar alerta del gráfico" size="lg" />
+
+<div id="sql-based-alerts">
+  ## Alertas de gráficos basadas en SQL
+</div>
+
+Las alertas de gráficos basadas en SQL te permiten escribir consultas arbitrarias en ClickHouse SQL para definir las condiciones de alerta. Esto te da control total sobre el filtrado, la agregación y los cálculos: cualquier cosa que puedas expresar en SQL puede convertirse en una alerta.
+
+<div id="supported-chart-types">
+  ### Tipos de gráficos compatibles
+</div>
+
+Las alertas basadas en SQL se admiten en tres tipos de visualización de gráficos:
+
+| Tipo de gráfico   | Comportamiento                                                                                                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Line**         | Alerta de series temporales. La consulta debe producir filas agrupadas en intervalos de tiempo. Cada intervalo se evalúa de forma independiente con respecto al umbral. |
+| **Stacked Bar** | Alerta de series temporales. Tiene el mismo comportamiento que Line.                                                                                                   |
+| **Number**        | Alerta de valor único. La consulta devuelve un único resultado numérico, que se compara con el umbral una vez por evaluación.                                           |
+
+Otros tipos de gráficos basados en SQL (Tabla, Circular, Mapa de calor, etc.) no admiten alertas.
+
+<div id="create-sql-based-alert">
+  ### Crear una alerta SQL
+</div>
+
+Para crear una alerta en un gráfico basado en SQL:
+
+<Steps>
+  <Step>
+    #### Crear o abrir un gráfico basado en SQL en un dashboard
+
+    Desde un dashboard guardado, [cree un gráfico nuevo con el modo de gráfico **SQL**](/es/clickstack/features/dashboards/sql-visualizations) o abra para editar un gráfico basado en SQL existente.
+
+    Elija **Line**, **Stacked Bar** o **Number** como tipo de visualización.
+
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Crear gráfico SQL" size="lg" />
+  </Step>
+
+  <Step>
+    #### Añadir la alerta
+
+    Seleccione **Add Alert** en la sección de alertas del editor de gráficos. Configure lo siguiente:
+
+    * **Tipo de umbral**: `>=` (mayor o igual que), `>` (mayor que), `<=` (menor o igual que), `<` (menor que), `=` (igual a), `!=` (distinto de), `<= x >=` (entre) o `> or <` (fuera de rango)
+    * **Valor del umbral**: el valor numérico con el que se realizará la comparación
+    * **Interval**: la frecuencia con la que se evalúa la alerta (1m, 5m, 15m, 30m, 1h, 6h, 12h o 1d). Esto también define la ventana de tiempo de cada evaluación.
+    * **Webhook**: el canal de notificación que se usará cuando se active la alerta. Consulte [Añadir un webhook](#add-webhook).
+
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Editar alerta del gráfico" size="lg" />
+
+    <Warning>
+      **Rango temporal de la alerta**
+
+      Normalmente, las consultas de alerta se ejecutan una vez por intervalo. Sin embargo, si se omiten uno o varios intervalos debido a errores o a consultas lentas, la siguiente ejecución usará un rango de tiempo que incluya los intervalos omitidos. En este caso, los parámetros de intervalo de la consulta seguirían establecidos según el período configurado de la alerta, pero los parámetros del rango de tiempo reflejarían ese rango de tiempo más largo.
+    </Warning>
+  </Step>
+
+  <Step>
+    #### Guardar el dashboard
+
+    Guarde el dashboard para activar la alerta. La alerta comenzará a evaluarse según el intervalo configurado.
+  </Step>
+</Steps>
+
+<div id="sql-result-interpretation">
+  ### Cómo se interpretan los resultados de la consulta
+</div>
+
+El sistema de alertas inspecciona las columnas que devuelve su consulta SQL para determinar qué debe compararse con el umbral.
+
+* **Columna de valor**: La **última columna numérica** de su cláusula `SELECT` se utiliza como valor de la alerta. Si su consulta devuelve varias columnas numéricas (p. ej., `count, avg_latency, p99_latency`), solo la última (`p99_latency`) se compara con el umbral.
+* **Columna de timestamp**: En los gráficos de series temporales (Line y Stacked Bar), el sistema identifica la columna Date/DateTime de los resultados como el intervalo temporal (es decir, el eje x de un gráfico de series temporales). La columna de valor de cada intervalo temporal se evalúa de forma independiente con respecto al umbral, y si el valor de cualquiera de esos intervalos supera el umbral configurado, la alerta se activará.
+* **Columnas de grupo**: Cualquier columna que no sea numérica ni de timestamp (p. ej., `ServiceName`, `Environment`) se trata como una dimensión de agrupación. Cuando hay grupos, cada combinación única de valores de grupo se rastrea y genera alertas por separado. ClickStack enviará una alerta para cada grupo cuyo valor supere el umbral configurado. Los grupos solo están disponibles para los gráficos de series temporales.
+
+<div id="query-params">
+  ### Parámetros de consulta y macros
+</div>
+
+Las consultas SQL de alertas admiten parámetros de plantilla y macros que se sustituyen automáticamente durante la evaluación. Son los mismos parámetros y macros disponibles al [crear un gráfico basado en SQL](/es/clickstack/features/dashboards/sql-visualizations).
+
+<div id="required-alert-parameters">
+  #### Parámetros obligatorios y recomendados
+</div>
+
+Las consultas que se usan para alertas de gráficos de líneas o de barras apiladas **deben** incluir un parámetro o una macro de intervalo (`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)`, o `$__timeInterval_ms(col)`). Durante la ejecución de la alerta, se reemplazará por el período configurado para la alerta.
+
+Las consultas que se usan para alertas **deberían** incluir un filtro de rango temporal (`{startDateMilliseconds:Int64}` y `{endDateMilliseconds:Int64}`, o `$__timeFilter(col)`, etc.). Independientemente de si la consulta incluye o no un filtro de rango temporal, la consulta de la alerta se ejecutará con el período configurado para la alerta. Si no hay un filtro de rango temporal, la consulta leerá todo el rango temporal disponible en la tabla de origen en cada ejecución.
+
+<Warning>
+  **Rango temporal de la alerta**
+
+  Normalmente, las consultas de alertas se ejecutan una vez por intervalo. Sin embargo, si se omiten uno o más intervalos debido a errores o a consultas lentas, la siguiente ejecución usará un rango temporal que incluirá los intervalos omitidos. En este caso, los parámetros de intervalo de la consulta seguirían establecidos con el período configurado para la alerta, pero los parámetros de rango temporal reflejarían ese rango temporal más amplio.
+</Warning>
+
+<div id="example-queries">
+  ### Consultas de ejemplo para alertas
+</div>
+
+<div id="example-error-rate">
+  #### Tasa de errores por servicio (serie temporal)
+</div>
+
+Genera una alerta cuando algún servicio tenga una tasa de errores superior al 5 %, con al menos 10 solicitudes en el período de alerta para evitar alertas innecesarias en servicios con poco tráfico.
+
+```sql
+WITH error_rates AS (
+  SELECT
+    $__timeInterval(Timestamp) as ts,
+    ServiceName,
+    countIf (SpanKind = 'Server') as request_count,
+    countIf (
+      SpanKind = 'Server'
+      and StatusCode = 'Error'
+    ) as error_count,
+    error_count / request_count * 100 AS error_percent
+  FROM $__sourceTable
+  WHERE $__timeFilter(Timestamp)
+  GROUP BY ts, ServiceName
+)
+SELECT ts, ServiceName, error_percent
+FROM error_rates
+WHERE request_count > 10
+```
+
+**Tipo de visualización**: Line o Stacked Bar
+**Umbral**: `>= 5` (se activa cuando la tasa de errores alcanza el 5 %)
+
+En esta consulta, `ServiceName` es una columna que no es numérica ni de tipo `timestamp`, por lo que cada servicio se supervisa como un grupo de alertas independiente. La alerta se activa de forma independiente para cada servicio.
+
+<div id="example-anomaly-detection">
+  #### Detección de anomalías con media retrasada (series temporales)
+</div>
+
+Crea una alerta cuando el recuento de errores supere una media móvil en más de dos desviaciones estándar. Esto permite detectar picos con respecto al comportamiento de referencia reciente, en lugar de usar un umbral fijo.
+
+```sql
+WITH buckets AS (
+  SELECT
+    $__timeInterval(Timestamp) AS ts,
+    count() AS bucket_count
+  FROM $__sourceTable
+  WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+        - toIntervalSecond($__interval_s * 30) -- Obtener los 30 intervalos anteriores
+    AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+    AND SeverityText = 'error'
+  GROUP BY ts
+  ORDER BY ts
+  WITH FILL
+    FROM toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+    TO toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+    STEP toIntervalSecond($__interval_s)
+),
+
+anomaly_detection AS (
+  SELECT
+    ts,
+    bucket_count,
+    avg(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_avg,
+    stddevPop(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_stddev,
+    greatest(
+      bucket_count - (previous_30_avg + 2 * previous_30_stddev), 0
+    ) AS excess_error_count
+  FROM buckets
+)
+
+SELECT ts, excess_error_count
+FROM anomaly_detection
+WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+```
+
+**Tipo de visualización**: Line
+**Umbral**: `> 0` (se activa cuando se detectan errores por encima de la línea base móvil)
+
+Ten en cuenta que la consulta obtiene 30 intervalos *antes* del inicio del rango de fechas para inicializar los cálculos de la ventana móvil y luego filtra la salida final para mostrar solo la ventana de evaluación.
+
+<div id="common-alert-scenarios">
+  ## Escenarios comunes de alertas
+</div>
+
+Aquí tienes algunos escenarios comunes de alertas para los que puedes usar HyperDX:
+
+**Errores:** Recomendamos configurar alertas para las búsquedas guardadas predeterminadas
+`All Error Events` y `HTTP Status >= 400` a fin de recibir notificaciones cuando se
+produzca un exceso de errores.
+
+**Operaciones lentas:** Puedes configurar una búsqueda de operaciones lentas (p. ej.,
+`duration:>5000`) y luego generar una alerta cuando se produzcan demasiadas operaciones lentas.
+
+**Eventos de usuario:** También puedes configurar alertas para que los equipos orientados al cliente
+reciban notificaciones cuando se registren nuevos usuarios o se lleve a cabo una acción crítica del usuario.

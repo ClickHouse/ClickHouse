@@ -1,0 +1,128 @@
+---
+title: SQLで円周率を計算してみましょう
+description: 今日は「Pi Day」！ClickHouse SQLで円周率を計算してみましょう
+date: 2023-03-14
+tags: ['ユースケース']
+keywords: ['円周率の計算', 'SQL']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="its-pi-day-lets-calculate-pi-using-sql">
+  ## 円周率の日！SQLで円周率を計算してみよう
+</div>
+
+円周率の日おめでとうございます！ClickHouseのSQLクエリで円周率を計算したら面白そうだと思い、実際に試してみました。現時点での結果をご紹介します…
+
+1. これは ClickHouse の `numbers_mt` テーブル関数を使って 10億行を返し、その計算もわずか 40ms で完了します:
+
+```sql
+SELECT 4 * sum(if(number % 2, -1, 1) / ((number * 2) + 1)) AS pi
+FROM numbers_mt(1000000000.)
+
+┌────────────────pi─┐
+│ 3.141592652589797 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.432 sec. Processed 1.00 billion rows, 8.00 GB (2.32 billion rows/s., 18.53 GB/s.)
+```
+
+2. 以下の例でも10億個の数値を処理できますが、これほど速くはありません:
+
+```sql
+SELECT 3 + (4 * sum(if((number % 2) = 0, if((number % 4) = 0, -1 / ((number * (number + 1)) * (number + 2)), 1 / ((number * (number + 1)) * (number + 2))), 0))) AS pi
+FROM numbers_mt(2, 10000000000)
+
+┌─────────────────pi─┐
+│ 3.1415926525808087 │
+└────────────────────┘
+
+1 row in set. Elapsed: 9.825 sec. Processed 10.00 billion rows, 80.00 GB (1.02 billion rows/s., 8.14 GB/s.)
+```
+
+3. これは、ClickHouse で私たちがいちばん気に入っている方法であり (しかも最も正確です！) :
+
+```sql
+SELECT pi()
+
+┌──────────────pi()─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.008 sec.
+```
+
+4. これは、三角法をよくわかっている人が作ったものですね。
+
+```sql
+SELECT 2 * asin(1) AS pi
+
+┌────────────────pi─┐
+│ 3.141592653589793 │
+└───────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+5. 必要な桁数を指定できる便利な API はこちらです:
+
+```sql
+SELECT *
+FROM url('https://api.pi.delivery/v1/pi?start=0&numberOfDigits=100', 'JSONEachRow')
+
+┌───────────────content─┐
+│ 3.1415926535897933e99 │
+└───────────────────────┘
+
+1 row in set. Elapsed: 0.556 sec.
+```
+
+6. これは巧妙です  - ClickHouseの距離関数を使っています:
+
+```sql
+WITH random_points AS
+    (
+        SELECT (rand64(1) / pow(2, 64), rand64(2) / pow(2, 64)) AS point
+        FROM numbers(1000000000)
+    )
+SELECT (4 * countIf(L2Norm(point) < 1)) / count() AS pi
+FROM random_points
+
+┌──────────pi─┐
+│ 3.141627208 │
+└─────────────┘
+
+1 row in set. Elapsed: 4.742 sec. Processed 1.00 billion rows, 8.00 GB (210.88 million rows/s., 1.69 GB/s.)
+```
+
+7. 物理学者なら、これで満足できるでしょう：
+
+```sql
+SELECT 22 / 7
+
+┌─────divide(22, 7)─┐
+│ 3.142857142857143 │
+└───────────────────┘
+```
+
+8. もう1つの間接的な方法 (Alexey Milovidov によるもの) があります。これは小数点以下7桁まで正確で、しかも高速です:
+
+```sql
+WITH
+    10 AS length,
+    (number / 1000000000.) * length AS x
+SELECT pow((2 * length) * avg(exp(-(x * x))), 2) AS pi
+FROM numbers_mt(1000000000.)
+
+┌─────────────────pi─┐
+│ 3.1415926890388595 │
+└────────────────────┘
+
+1 row in set. Elapsed: 1.245 sec. Processed 1.00 billion rows, 8.00 GB (803.25 million rows/s., 6.43 GB/s.)
+```
+
+<Note>
+  ほかにもあれば、ぜひお寄せください。ありがとうございます！
+</Note>

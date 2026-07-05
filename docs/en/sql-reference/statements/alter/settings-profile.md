@@ -16,6 +16,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [ON CLUSTER cluster_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
     [ADD|MODIFY SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...]
+    [SET variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] [,...] ]
     [DROP SETTINGS variable [,...] ]
     [ADD PROFILES 'profile_name' [,...] ]
     [DROP PROFILES 'profile_name' [,...] ]
@@ -62,6 +63,8 @@ The `ADD`, `MODIFY` and `DROP` keywords change individual entries while leaving 
 - `DROP ALL SETTINGS` / `DROP ALL PROFILES` — remove all settings or all parent profiles.
 
 Several of these clauses can be combined in a single statement, for example `DROP SETTINGS a ADD SETTINGS b = 1`.
+
+`SET variable = value` is an alias for `MODIFY SETTINGS variable = value`. It is offered because `SET` feels natural and because typing the replacing `SETTINGS` clause when an incremental change was intended is a common mistake.
 
 ## Examples {#examples}
 
@@ -110,7 +113,7 @@ Both `ADD SETTINGS` and `MODIFY SETTINGS` preserve the other settings in the pro
 In short, use `MODIFY SETTINGS` when you only want to tweak one aspect of a setting (e.g. just the value, while keeping an existing `MAX`); use `ADD SETTINGS` when you want to redefine a setting from scratch.
 :::
 
-## Examples {#examples}
+## Examples {#profile-examples}
 
 Create a profile to use in the examples below:
 

@@ -1,0 +1,102 @@
+---
+description: 'Documentation de référence pour la politique de masquage'
+sidebarTitle: 'POLITIQUE DE MASQUAGE'
+slug: /sql-reference/statements/create/masking-policy
+title: 'CREATE MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/fr/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+Crée une politique de masquage, qui permet de transformer ou de masquer dynamiquement les valeurs de colonnes pour des utilisateurs ou des rôles spécifiques lorsqu’ils interrogent une table.
+
+<Tip>
+  Les politiques de masquage assurent la sécurité des données au niveau des colonnes en transformant les données sensibles au moment de la requête, sans modifier les données stockées.
+</Tip>
+
+Syntaxe :
+
+```sql
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+```
+
+<div id="update-clause">
+  ## Clause `UPDATE`
+</div>
+
+La clause `UPDATE` précise quelles colonnes masquer et comment les transformer. Vous pouvez masquer plusieurs colonnes dans une même politique.
+
+Exemples :
+
+* Masquage simple : `UPDATE email = '***masked***'`
+* Masquage partiel : `UPDATE email = concat(substring(email, 1, 3), '***@***.***')`
+* Masquage fondé sur le hachage : `UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
+* Plusieurs colonnes : `UPDATE email = '***@***.***', phone = '***-***-****'`
+
+<div id="where-clause">
+  ## Clause WHERE
+</div>
+
+La clause `WHERE` facultative permet un masquage conditionnel en fonction des valeurs des lignes. Seules les lignes qui satisfont à la condition seront masquées.
+
+Exemple :
+
+```sql
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+```
+
+<div id="to-clause">
+  ## Clause TO
+</div>
+
+Dans la section `TO`, indiquez à quels utilisateurs et rôles la politique doit s&#39;appliquer.
+
+* `TO user1, user2` : s&#39;applique à des utilisateurs/rôles spécifiques
+* `TO ALL` : s&#39;applique à tous les utilisateurs
+* `TO ALL EXCEPT user1, user2` : s&#39;applique à tous les utilisateurs sauf ceux spécifiés
+
+<Note>
+  Contrairement aux politiques de lignes, les politiques de masquage n&#39;affectent pas les utilisateurs auxquels elles ne s&#39;appliquent pas. Si aucune politique de masquage ne s&#39;applique à un utilisateur, il voit les données d&#39;origine.
+</Note>
+
+<div id="priority-clause">
+  ## Clause PRIORITY
+</div>
+
+Lorsque plusieurs politiques de masquage ciblent la même colonne pour un utilisateur donné, la clause `PRIORITY` détermine l’ordre dans lequel elles sont appliquées. Les politiques sont appliquées de la priorité la plus élevée à la plus faible.
+
+La priorité par défaut est 0. Les politiques ayant la même priorité sont appliquées dans un ordre indéterminé.
+
+Exemple :
+
+```sql
+-- Applied second (lower priority)
+CREATE MASKING POLICY mask1 ON users
+UPDATE email = 'low@priority.com'
+TO analyst
+PRIORITY 1;
+
+-- Applied first (higher priority)
+CREATE MASKING POLICY mask2 ON users
+UPDATE email = 'high@priority.com'
+TO analyst
+PRIORITY 10;
+
+-- analyst sees 'low@priority.com' because it's applied last
+```
+
+<Info>
+  **Considérations relatives aux performances**
+
+  * Les politiques de masquage peuvent affecter les performances des requêtes selon la complexité des expressions
+  * Certaines optimisations peuvent être désactivées pour les tables dotées de politiques de masquage actives
+</Info>

@@ -2,6 +2,7 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
 #include <Interpreters/Context.h>
@@ -93,6 +94,8 @@
     M(DefaultImplementationForNullsRowsWithNulls, "Number of rows which contain null values processed by default implementation for nulls in function execution", ValueType::Number) \
     M(MarkCacheHits, "Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.", ValueType::Number) \
     M(MarkCacheMisses, "Number of times an entry has not been found in the mark cache, so we had to load a mark file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
+    M(UniqueKeyBitmapLoadMicroseconds, "Time spent reading and deserializing UNIQUE KEY delete-bitmap sidecar files on a DeleteBitmapCache miss.", ValueType::Microseconds) \
+    M(UniqueKeyBitmapUpdates, "Number of UNIQUE KEY delete-bitmap sidecar files written (one per supersession / DELETE commit).", ValueType::Number) \
     M(PrimaryIndexCacheHits, "Number of times an entry has been found in the primary index cache, so we didn't have to load a index file.", ValueType::Number) \
     M(PrimaryIndexCacheMisses, "Number of times an entry has not been found in the primary index cache, so we had to load a index file in memory, which is a costly operation, adding to query latency.", ValueType::Number) \
     M(IcebergMetadataFilesCacheHits, "Number of times iceberg metadata files have been found in the cache.", ValueType::Number) \
@@ -104,7 +107,7 @@
     M(ParquetMetadataCacheMisses, "Number of times parquet metadata has not been found in the cache and had to be read from disk.", ValueType::Number) \
     M(ParquetMetadataCacheWeightLost, "Approximate number of bytes evicted from the parquet metadata cache.", ValueType::Number) \
     M(IcebergIteratorInitializationMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
-    M(IcebergMetadataUpdateMicroseconds, "Total time spent on synchronous initialization of iceberg data iterators.", ValueType::Microseconds) \
+    M(IcebergMetadataUpdateMicroseconds, "Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).", ValueType::Microseconds) \
     M(IcebergMetadataReturnedObjectInfos, "Total number of returned object infos from iceberg iterator.", ValueType::Number) \
     M(IcebergMinMaxNonPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
     M(IcebergMinMaxPrunedDeleteFiles, "Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.", ValueType::Number) \
@@ -121,6 +124,8 @@
     M(TextIndexReadSparseIndexBlocks, "Number of times a sparse index block has been read from the text index.", ValueType::Number) \
     M(TextIndexReaderTotalMicroseconds, "Total time spent reading the text index.", ValueType::Microseconds) \
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
+    M(TextIndexPositionsDecodeMicroseconds, "Total time spent decoding text index position lists (.pos) for phrase search.", ValueType::Microseconds) \
+    M(TextIndexPhraseMatchMicroseconds, "Total time spent in the roaringish phrase-match intersection.", ValueType::Microseconds) \
     M(TextIndexReadPostings, "Number of times a posting list has been read from the text index.", ValueType::Number) \
     M(TextIndexUsedEmbeddedPostings, "Number of times a posting list embedded in the dictionary has been used.", ValueType::Number) \
     M(TextIndexUseHint, "Number of index granules where a direct reading from the text index was added as hint and was used.", ValueType::Number) \
@@ -245,7 +250,7 @@
     M(ReaderExecutorCacheGetRequests, "Number of ICacheHandle::get invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorCachePopulateRequests, "Number of ICacheHandle::put invocations in ReaderExecutor. Zero until the ReaderExecutor cache tiers are introduced.", ValueType::Number) \
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
-    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextChunk (opening, seeking and reading the served chunk). Direct contributor to query read latency.", ValueType::Microseconds) \
+    M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
@@ -367,6 +372,7 @@
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.", ValueType::Number) \
     M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only", ValueType::Number) \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.", ValueType::Number) \
+    M(DistributedShardsSkipped, "Number of shards silently skipped in a query to a Distributed table (or the remote/cluster table functions) when `skip_unavailable_shards` is enabled, either because the shard was unavailable or because it raised an exception covered by `skip_unavailable_shards_mode`.", ValueType::Number) \
     \
     M(Shards, "The number of shards involved in a query, summed across all distributed tables and table functions. A single host is counted multiple times if it appears in multiple tables. The number counts the total expected number of shards, which includes skipped shards with the `skip_unavailable_shards` setting.", ValueType::Number) \
     \
@@ -411,6 +417,10 @@
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \
     M(JoinOptimizeMicroseconds, "Total time spent executing JOIN plan optimizations.", ValueType::Microseconds) \
     M(QueryPlanOptimizeMicroseconds, "Total time spent executing query plan optimizations.", ValueType::Microseconds) \
+    M(QueryParseMicroseconds, "Total time spent parsing the query text into an AST.", ValueType::Microseconds) \
+    M(QueryAnalysisMicroseconds, "Total time spent building the query tree and running analyzer passes (resolves identifiers, types, expressions).", ValueType::Microseconds) \
+    M(QueryPlanBuildMicroseconds, "Total time spent building the QueryPlan from the analyzed query tree.", ValueType::Microseconds) \
+    M(QueryPipelineBuildMicroseconds, "Total time spent constructing the QueryPipeline from the optimized QueryPlan.", ValueType::Microseconds) \
     \
     M(DeltaLakePartitionPrunedFiles, "Number of skipped files during DeltaLake partition pruning", ValueType::Number) \
     M(DeltaLakeSnapshotInitializations, "Number of times a DeltaLake table snapshot was initialized (loaded from object storage)", ValueType::Number) \
@@ -563,6 +573,14 @@
     \
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
+    M(RowPolicyCacheRecalculations, "Number of times the row policy cache re-mixed filters for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets, off the RowPolicyCache mutex (so it does not block the ContextAccess build path).", ValueType::Microseconds) \
+    M(RoleCacheRecalculations, "Number of times the role cache recalculated all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(RoleCacheRecalculationMicroseconds, "Total time spent recalculating all live enabled role sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(SettingsProfileCacheRecalculations, "Number of times the settings profile cache re-merged settings and constraints for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(SettingsProfileCacheRecalculationMicroseconds, "Total time spent re-merging settings and constraints for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(QuotaCacheRecalculations, "Number of times the quota cache re-chose quotas for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
+    M(QuotaCacheRecalculationMicroseconds, "Total time spent re-choosing quotas for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     M(FileProgressCallbackInvocations, "Number of times the per-query `FileProgressCallback` was invoked (counts each per-file `FileProgress` event delivered to the client over native TCP or via `clickhouse-local`).", ValueType::Number) \
     \
     M(StorageBufferFlush, "Number of times a buffer in a 'Buffer' table was flushed.", ValueType::Number) \
@@ -606,8 +624,6 @@ Number of times data after merge is not byte-identical to the data on another re
 The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 )", ValueType::Number) \
     M(DataAfterMutationDiffersFromReplica, "Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.", ValueType::Number) \
-    M(PolygonsAddedToPool, "A polygon has been added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Number) \
-    M(PolygonsInPoolAllocatedBytes, "The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.", ValueType::Bytes) \
     \
     M(NaiveBayesClassifierModelsLoaded, "Number of Naive Bayes Classifier models loaded.", ValueType::Number) \
     M(NaiveBayesClassifierModelsAllocatedBytes, "Number of bytes allocated for Naive Bayes Classifier models.", ValueType::Bytes) \
@@ -843,8 +859,10 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheEvictionSkippedMovingFileSegments, "Number of file segments skipped for eviction because of being in moving state", ValueType::Number) \
     M(FilesystemCacheEvictionTries, "Number of filesystem cache eviction attempts", ValueType::Number) \
     M(FilesystemCacheEvictionReusedIterator, "Number of filesystem cache iterator reusing", ValueType::Number) \
+    M(FilesystemCacheOvercommitCandidatesIterationSteps, "Number of outer iterations the overcommit eviction loop ran beyond its first pass to satisfy a reservation's deficit", ValueType::Number) \
     M(FilesystemCacheLockKeyMicroseconds, "Lock cache key time", ValueType::Microseconds) \
     M(FilesystemCacheLockMetadataMicroseconds, "Lock filesystem cache metadata time", ValueType::Microseconds) \
+    M(FilesystemCacheLockOriginPoolMicroseconds, "Lock filesystem cache shared origin pool time", ValueType::Microseconds) \
     M(FilesystemCachePriorityWriteLockMicroseconds, "Lock filesystem cache time for write to priority queue", ValueType::Microseconds) \
     M(FilesystemCachePriorityReadLockMicroseconds, "Lock filesystem cache time for read in priority queue", ValueType::Microseconds) \
     M(FilesystemCacheStateLockMicroseconds, "Lock filesystem cache time for state lock", ValueType::Microseconds) \
@@ -856,6 +874,8 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheGetMicroseconds, "Filesystem cache get() time", ValueType::Microseconds) \
     M(FilesystemCacheBackgroundEvictedFileSegments, "Number of file segments evicted by background thread", ValueType::Number) \
     M(FilesystemCacheBackgroundEvictedBytes, "Number of bytes evicted by background thread", ValueType::Number) \
+    M(FilesystemCacheBackgroundRemovedInvalidatedEntries, "Number of invalidated (lazily-removed) priority queue entries purged by the background cleanup thread", ValueType::Number) \
+    M(FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds, "Time for which the background thread executed the invalidated priority queue entries cleanup job", ValueType::Milliseconds) \
     M(FilesystemCacheCheckCorrectness, "Number of times FileCache::assertCacheCorrectness was called", ValueType::Number) \
     M(FilesystemCacheCheckCorrectnessMicroseconds, "How much time does FileCache::assertCacheCorrectness takes", ValueType::Microseconds) \
     M(FileSegmentWaitMicroseconds, "Wait on DOWNLOADING state", ValueType::Microseconds) \
@@ -872,6 +892,7 @@ The server successfully detected this situation and will download merged part fr
     M(FilesystemCacheUnusedHoldFileSegments, "Filesystem cache file segments count, which were hold, but not used (because of seek or LIMIT n, etc)", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadRun, "Number of times background thread executed free space keeping job", ValueType::Number) \
     M(FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds, "Time for which background thread executed free space keeping job", ValueType::Milliseconds) \
+    M(FilesystemCacheFreeSpaceKeepingThreadErrors, "Number of exceptions caught by the background free space keeping job (collection, removal or finalization)", ValueType::Number) \
     M(FilesystemCacheFailedEvictionCandidates, "Number of file segments which unexpectedly failed to be evicted during dynamic filesystem cache eviction", ValueType::Number) \
     \
     M(RemoteFSSeeks, "Total number of seeks for async buffer", ValueType::Number) \
@@ -922,6 +943,7 @@ The server successfully detected this situation and will download merged part fr
     \
     M(AggregationPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for aggregation.", ValueType::Number) \
     M(AggregationHashTablesInitializedAsTwoLevel, "How many hash tables were inited as two-level for aggregation.", ValueType::Number) \
+    M(AggregationConvertedToTwoLevel, "How many times a single-level aggregation hash table was converted to two-level at runtime.", ValueType::Number) \
     M(AggregationOptimizedEqualRangesOfKeys, "For how many blocks optimization of equal ranges of keys was applied", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
@@ -1049,6 +1071,8 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperCheckWatchRequest, "Number of remove watches requests", ValueType::Number) \
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount, "Number requests that have been rejected due to soft memory limit exceeded", ValueType::Number) \
     M(KeeperStaleRequestsSkipped, "Number of Keeper requests skipped because the session is no longer live", ValueType::Number) \
+    M(KeeperTTLRemoveRequestsEnqueued, "Number of TTL remove requests successfully enqueued", ValueType::Number) \
+    M(KeeperTTLRemoveRequestsDropped, "Number of TTL remove requests dropped because the queue was full", ValueType::Number) \
     M(KeeperLiveSessionsLockWaitMicroseconds, "Time spent waiting to acquire Keeper live sessions lock", ValueType::Microseconds) \
     M(KeeperWatchesTriggered, "Number of watch triggers", ValueType::Number) \
     M(KeeperWatchTriggeredNodeCreated, "Number of watch triggers by `CREATE` operation", ValueType::Number) \
@@ -1145,19 +1169,27 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheRangeChange, "Distributed Cache read buffer event. Number of times we changed read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetBackward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
     M(DistrCacheRangeResetForward, "Distributed Cache read buffer event. Number of times we reset read range because of seek/last_position change", ValueType::Number) \
-    M(DistrCacheReconnectsAfterTimeout, "Distributed Cache read buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheReadRequestRetries, "Distributed Cache read buffer event. The number of read request retries after a retriable error (including retries of the initial request creation)", ValueType::Number) \
     M(DistrCacheServerUpdates, "Distributed Cache event. The number of server switches during read or write because the hash-chosen server changed (e.g. due to server deregistration)", ValueType::Number) \
-    M(DistrCacheReadErrors, "Distributed Cache read buffer event. Number of distributed cache errors during read", ValueType::Number) \
-    M(DistrCacheWriteErrors, "Distributed Cache write buffer event. Number of distributed cache errors during write", ValueType::Number) \
-    M(DistrCacheWriteReconnectsAfterTimeout, "Distributed Cache write buffer event. The number of reconnects after timeout", ValueType::Number) \
+    M(DistrCacheReadErrors, "Distributed Cache client event. Total number of distributed cache errors during read requests (equals DistrCacheReadErrorsRetriable + DistrCacheReadErrorsNonRetriable)", ValueType::Number) \
+    M(DistrCacheReadErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during read requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
+    M(DistrCacheReadErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during read requests", ValueType::Number) \
+    M(DistrCacheReadRequestRetriesExhausted, "Distributed Cache read buffer event. Number of times a retriable read error did not succeed within the read request retries limit", ValueType::Number) \
+    M(DistrCacheWriteErrors, "Distributed Cache client event. Total number of distributed cache errors during write requests (equals DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). A server-initiated write-through cache `Stop` is flow control, not an error, and is not counted", ValueType::Number) \
+    M(DistrCacheWriteErrorsRetriable, "Distributed Cache client event. Number of retriable distributed cache errors during write requests (counted on each occurrence, including the ones recovered by a retry)", ValueType::Number) \
+    M(DistrCacheWriteErrorsNonRetriable, "Distributed Cache client event. Number of non-retriable distributed cache errors during write requests", ValueType::Number) \
+    M(DistrCacheWriteRequestRetriesExhausted, "Distributed Cache write buffer event. Number of times a retriable write error did not succeed within the write request retries limit", ValueType::Number) \
+    M(DistrCacheWriteRequestRetries, "Distributed Cache write buffer event. The number of write request retries after a retriable error", ValueType::Number) \
     M(DistrCacheWriteMicroseconds, "Distributed Cache write buffer event. Time spent in WriteBufferFromDistributedCache::writeToFileSegment", ValueType::Microseconds) \
     M(DistrCacheWriteBytes, "Distributed Cache write buffer event. Number of bytes written to distributed cache", ValueType::Bytes) \
     M(DistrCacheObjectStorageWriteMicroseconds, "Distributed Cache write buffer event. Time spent writing to object storage", ValueType::Microseconds) \
     M(DistrCacheObjectStorageWriteBytes, "Distributed Cache write buffer event. Number of bytes written to object storage", ValueType::Bytes) \
     \
     M(DistrCacheGetResponseMicroseconds, "Distributed Cache client event. Time spend to wait for response from distributed cache", ValueType::Microseconds) \
+    M(DistrCacheConnectErrors, "Distributed Cache client event. Number of failures to connect to a distributed cache server before making a request (counted once per request, after all connect attempts are exhausted, unlike per-attempt DistrCacheUnsuccessfulConnectAttempts). A timeout while waiting for a free pooled connection is counted here as well. Failures to reconnect during request creation are counted in DistrCacheMakeRequestErrors instead", ValueType::Number) \
     M(DistrCacheMakeRequestErrors, "Distributed Cache client event. Number of distributed cache errors when making a request", ValueType::Number) \
     M(DistrCacheReceiveResponseErrors, "Distributed Cache client event. Number of distributed cache errors when receiving response a request", ValueType::Number) \
+    M(DistrCacheSystemTablesErrors, "Distributed Cache client event. Number of distributed cache errors during introspection system table requests (system.distributed_cache, system.distributed_cache_metrics, system.distributed_cache_events). These requests are not retried, so retriable and non-retriable errors are counted together", ValueType::Number) \
     \
     M(DistrCacheReceivedDataPackets, "Distributed Cache client event. Total number of received data packets received from distributed cache", ValueType::Number) \
     M(DistrCacheReceivedDataPacketsBytes, "Distributed Cache client event. The number of bytes in Data packets received from distributed cache", ValueType::Bytes) \
@@ -1210,6 +1242,7 @@ The server successfully detected this situation and will download merged part fr
     M(DistrCacheServerCachedReadBufferObjectStorageReadBytes, "Distributed Cache server event. The number of bytes read from object storage in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerCachedReadBufferCachePredownloadBytes, "Distributed Cache server event. The number of bytes read from object storage for predownload in distributed cache while reading from filesystem cache", ValueType::Number) \
     M(DistrCacheServerSkipped, "Distributed Cache server event. The number of times distributed cache server was skipped because of previous failed connection attempts", ValueType::Number) \
+    M(DistrCacheServerShutdownConnectionsMicroseconds, "Distributed Cache server event. Time spent in shutdownAllConnections waiting for active connections to finish (or be forcefully closed) during server shutdown", ValueType::Microseconds) \
     \
     M(LogTest, "Number of log messages with level Test", ValueType::Number) \
     M(LogTrace, "Number of log messages with level Trace", ValueType::Number) \
@@ -1236,6 +1269,10 @@ The server successfully detected this situation and will download merged part fr
     M(ParallelReplicasUsedCount, "Number of replicas used to execute a query with task-based parallel replicas", ValueType::Number) \
     M(ParallelReplicasAvailableCount, "Number of replicas available to execute a query with task-based parallel replicas", ValueType::Number) \
     M(ParallelReplicasUnavailableCount, "Number of replicas which was chosen, but found to be unavailable during query execution with task-based parallel replicas", ValueType::Number) \
+    \
+    M(DistributedPlanRemoteTasks, "Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.", ValueType::Number) \
+    M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
+    M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
     \
     M(SharedMergeTreeVirtualPartsUpdates, "Virtual parts update count", ValueType::Number) \
     M(SharedMergeTreeVirtualPartsUpdatesByLeader, "Virtual parts updates by leader", ValueType::Number) \
@@ -1269,6 +1306,7 @@ The server successfully detected this situation and will download merged part fr
     M(SharedMergeTreeReplicaSetUpdateTaskRuns, "Number of times updateReplicaSetTask has run", ValueType::Number) \
     M(SharedMergeTreeOptimizeAsync, "Asynchronous OPTIMIZE queries executed", ValueType::Number) \
     M(SharedMergeTreeOptimizeSync, "Synchronous OPTIMIZE queries executed", ValueType::Number) \
+    M(SharedMergeTreePartitionOperationRetries, "How many times a partition-level operation (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) had to retry the Keeper multi-write because of a concurrent change", ValueType::Number) \
     M(SharedMergeTreeScheduleDataProcessingJob, "How many times scheduleDataProcessingJob called/", ValueType::Number) \
     M(SharedMergeTreeScheduleDataProcessingJobNothingToScheduled, "How many times scheduleDataProcessingJob called but nothing to do", ValueType::Number) \
     M(SharedMergeTreeScheduleDataProcessingJobMicroseconds, "scheduleDataProcessingJob execute time", ValueType::Number) \
@@ -1352,10 +1390,10 @@ The server successfully detected this situation and will download merged part fr
     M(WriteBufferFromHTTPBytes, "Total size of payload bytes received and sent by WriteBufferFromHTTP. Doesn't include HTTP headers.", ValueType::Bytes) \
     \
     M(ConcurrencyControlSlotsGranted, "Number of CPU slot granted according to guarantee of 1 thread per query and for queries with setting 'use_concurrency_control' = 0", ValueType::Number) \
-    M(ConcurrencyControlSlotsDelayed, "Number of CPU slot not granted initially and required to wait for a free CPU slot", ValueType::Number) \
+    M(ConcurrencyControlSlotsDelayed, "Number of CPU slots not granted at allocation time due to capacity pressure. Excludes slots held back by lazy allocation.", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquired, "Total number of CPU slots acquired", ValueType::Number) \
     M(ConcurrencyControlSlotsAcquiredNonCompeting, "Total number of noncompeting CPU slot acquired", ValueType::Number) \
-    M(ConcurrencyControlQueriesDelayed, "Total number of CPU slot allocations (queries) that were required to wait for slots to upscale", ValueType::Number) \
+    M(ConcurrencyControlQueriesDelayed, "Number of queries delayed by CPU slot capacity pressure. Contention indicator — excludes lazy-upscale waits on an uncontested server.", ValueType::Number) \
     M(ConcurrencyControlWaitMicroseconds, "Total time a query was waiting on resource requests for CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptedMicroseconds, "Total time a query was waiting due to preemption of CPU slots.", ValueType::Microseconds) \
     M(ConcurrencyControlPreemptions, "Total number of CPU preemptions", ValueType::Number) \
@@ -1364,6 +1402,13 @@ The server successfully detected this situation and will download merged part fr
     \
     M(ConcurrentQuerySlotsAcquired, "Total number of query slots acquired", ValueType::Number) \
     M(ConcurrentQueryWaitMicroseconds, "Total time a query was waiting for a query slots", ValueType::Microseconds) \
+    \
+    M(MemoryReservationAdmitMicroseconds, "Total time a query was waiting for initial memory reservation to be admitted", ValueType::Microseconds) \
+    M(MemoryReservationIncreaseMicroseconds, "Total time a query was waiting for memory reservation increase to be approved", ValueType::Microseconds) \
+    M(MemoryReservationIncreases, "Total number of approved memory reservation increase requests", ValueType::Number) \
+    M(MemoryReservationDecreases, "Total number of approved memory reservation decrease requests", ValueType::Number) \
+    M(MemoryReservationKilled, "Total number of memory reservation kill signals", ValueType::Number) \
+    M(MemoryReservationFailed, "Total number of failed memory reservations", ValueType::Number) \
     \
     M(CoordinatedMergesMergeCoordinatorUpdateCount, "Total number of merge coordinator updates", ValueType::Number) \
     M(CoordinatedMergesMergeCoordinatorUpdateMicroseconds, "Total time spend on updating merge coordinator state", ValueType::Microseconds) \
@@ -1488,10 +1533,74 @@ namespace ProfileEvents
 #undef M
 constexpr Event END = Event(__COUNTER__);
 
-/// Global variable, initialized by zeros.
-static constinit Counter global_counters_array[END] {};
-/// Constant-initialized so it is ready before any dynamic initializer can allocate memory.
-constinit Counters global_counters(global_counters_array);
+/// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
+/// few events of one row share a cache line with the first events of the next row, causing
+/// false sharing across CPUs at row boundaries.
+constexpr size_t counts_per_cache_line = DB::CH_CACHE_LINE_SIZE / sizeof(Count);
+static_assert((counts_per_cache_line & (counts_per_cache_line - 1)) == 0);
+constexpr size_t per_cpu_stride = (static_cast<size_t>(END) + counts_per_cache_line - 1) & ~(counts_per_cache_line - 1);
+
+/// Cell count for a layout: `cpus` padded rows, or a compact single row of raw events.
+ALWAYS_INLINE inline size_t cellCount(uint32_t cpus)
+{
+    return cpus ? static_cast<size_t>(cpus) * per_cpu_stride : static_cast<size_t>(END);
+}
+
+/// Cells are plain `Count` accessed via `std::atomic_ref`; over a suitably aligned object it is
+/// lock-free and generates the same code as a `std::atomic` member (required_alignment == 8).
+ALWAYS_INLINE inline std::atomic_ref<Count> cell(Count * counters, size_t cpu, Event event)
+{
+    return std::atomic_ref<Count>(counters[cpu * per_cpu_stride + event]);
+}
+
+ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n)
+{
+    return AlignedCounters(new (std::align_val_t{DB::CH_CACHE_LINE_SIZE}) Count[n] {});
+}
+
+/// Per-CPU storage for `global_counters`, cache-line aligned. `Count` is trivially default-
+/// constructible, so this static array is a guaranteed zero-init BSS with no dynamic initializer:
+/// valid before any dynamic initializer can touch `global_counters` (which points here), and only
+/// touched rows fault in. An `atomic` element is not trivially constructible and would reintroduce
+/// dynamic initialization for an array this large — hence plain `Count` cells + `atomic_ref`.
+static_assert(std::is_trivially_default_constructible_v<Count>);
+alignas(DB::CH_CACHE_LINE_SIZE) static Count global_counters_storage[PerCPU::MAX_CPUS * per_cpu_stride];
+
+/// `cpus` starts at 0 (single-row layout); `ProfileEventsPerCPUInitializer` flips it to
+/// `PerCPU::getNumCPUs()` before any worker thread exists.
+constexpr Counters::Counters(Count * allocated_counters) noexcept
+    : counters(allocated_counters)
+    , parent(nullptr)
+    , level(VariableContext::Global)
+{}
+
+constinit Counters global_counters(global_counters_storage);
+
+/// Per-CPU width applied to newly-created `User`-level `Counters`. Set to `getNumCPUs()` during
+/// dynamic static init; `setUserPerCPUEnabled(false)` resets it to 0 to force the compact single-row
+/// layout. Read once per `User` ctor; the server sets it at startup before any user exists.
+constinit std::atomic<uint32_t> user_counters_cpus = 0;
+
+/// Switches `global_counters` to per-CPU layout during dynamic static init. Only `cpus` is
+/// mutated — storage stays put, so both pre- and post-flip readers see a valid view of the same
+/// BSS array (pre-flip increments land in row 0, which post-flip sums include). The store is
+/// relaxed-atomic because a thread spawned by an earlier TU's dynamic initializer may already be
+/// incrementing counters while this runs.
+struct ProfileEventsPerCPUInitializer
+{
+    ProfileEventsPerCPUInitializer()
+    {
+        const uint32_t cpus = PerCPU::getNumCPUs();
+        global_counters.cpus.store(cpus, std::memory_order_relaxed);
+        user_counters_cpus.store(cpus, std::memory_order_relaxed);
+    }
+};
+static const ProfileEventsPerCPUInitializer profile_events_per_cpu_initializer;
+
+void setUserPerCPUEnabled(bool enabled)
+{
+    user_counters_cpus.store(enabled ? PerCPU::getNumCPUs() : 0, std::memory_order_relaxed);
+}
 
 const Event Counters::num_counters = END;
 
@@ -1519,15 +1628,20 @@ void Timer::end()
 }
 
 Counters::Counters(VariableContext level_, Counters * parent_)
-    : counters_holder(new Counter[num_counters] {}),
-      parent(parent_),
-      level(level_)
+    /// `User`-level instances snapshot `user_counters_cpus` (stable post-init, server-tunable);
+    /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
+    /// sized from it, so the layout and the row count cannot disagree.
+    : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
+    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+    , parent(parent_)
+    , level(level_)
 {
     counters = counters_holder.get();
 }
 
 Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
+    , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
@@ -1539,11 +1653,60 @@ Counters::Counters(Counters && src) noexcept
 
 void Counters::resetCounters()
 {
-    if (counters)
+    if (!counters)
+        return;
+    const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
+    for (size_t i = 0; i < total; ++i)
+        std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
+}
+
+Count Counters::load(Event event) const
+{
+    const uint32_t rows = cpus.load(std::memory_order_relaxed);
+    if (!rows)
+        return cell(counters, 0, event).load(std::memory_order_relaxed);
+    Count sum = 0;
+    for (uint32_t s = 0; s < rows; ++s)
+        sum += cell(counters, s, event).load(std::memory_order_relaxed);
+    return sum;
+}
+
+void Counters::setParent(Counters * parent_)
+{
+    parent.store(parent_, std::memory_order_relaxed);
+}
+
+void Counters::setUserCounters(Counters * user)
+{
+    auto * current_val = this;
+    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+
+    while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
-        for (Event i = Event(0); i < num_counters; ++i)
-            counters[i].store(0, std::memory_order_relaxed);
+        current_val = parent_val;
+        parent_val = current_val->parent.load(std::memory_order_relaxed);
     }
+
+    current_val->parent.store(user, std::memory_order_relaxed);
+}
+
+void Counters::setTraceAllProfileEvents()
+{
+    trace_all_profile_events.store(true, std::memory_order_relaxed);
+}
+
+void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
+{
+    const uint32_t rows = cpus.load(std::memory_order_relaxed);
+    if (rows)
+    {
+        /// `cpu` may be >= rows if a CPU above `MAX_CPUS` is online, and -1 on error. In both
+        /// cases, fall back to row 0 — still atomic, still correct, just with less cache locality.
+        const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
+        cell(counters, row, event).fetch_add(amount, std::memory_order_relaxed);
+    }
+    else
+        cell(counters, 0, event).fetch_add(amount, std::memory_order_relaxed);
 }
 
 void Counters::reset()
@@ -1560,7 +1723,7 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
     for (Event i = Event(0); i < num_counters; ++i)
-        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
+        res.counters_holder[i] = load(i);
     return res;
 }
 
@@ -1693,12 +1856,17 @@ void incrementNoTrace(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
 }
 
+void incrementSignalSafe(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
+}
+
 double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
 {
     /// It's possible that we'll have slightly inconsistent values between wait time and busy time. But since we take the value of CPU wait time first,
     /// it should not affect the situation a lot. In the worst case scenario we will have a slightly lower CPU overload value than it should be, but it's fine.
-    Int64 curr_cpu_wait_microseconds = counters[OSCPUWaitMicroseconds];
-    Int64 curr_cpu_virtual_time_microseconds = counters[OSCPUVirtualTimeMicroseconds];
+    Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
+    Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
     Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
     Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
@@ -1721,10 +1889,11 @@ void Counters::increment(Event event, Count amount)
 {
     Counters * current = this;
     bool send_to_trace_log = false;
+    const int32_t cpu = PerCPU::getCurrentCPU();
 
     do
     {
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current->fetchAdd(event, amount, cpu);
         if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
@@ -1739,31 +1908,24 @@ void Counters::increment(Event event, Count amount)
 void Counters::incrementNoTrace(Event event, Count amount)
 {
     Counters * current = this;
+    const int32_t cpu = PerCPU::getCurrentCPU();
     do
     {
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current->fetchAdd(event, amount, cpu);
         current = current->parent;
     } while (current != nullptr);
 }
 
-void incrementForLogMessage(Poco::Message::Priority priority)
+void Counters::incrementSignalSafe(Event event, Count amount)
 {
-    switch (priority)
+    Counters * current = this;
+    /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
+    /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
+    do
     {
-        case Poco::Message::PRIO_TEST: increment(LogTest); break;
-        case Poco::Message::PRIO_TRACE: increment(LogTrace); break;
-        case Poco::Message::PRIO_DEBUG: increment(LogDebug); break;
-        case Poco::Message::PRIO_INFORMATION: increment(LogInfo); break;
-        case Poco::Message::PRIO_WARNING: increment(LogWarning); break;
-        case Poco::Message::PRIO_ERROR: increment(LogError); break;
-        case Poco::Message::PRIO_FATAL: increment(LogFatal); break;
-        default: break;
-    }
-}
-
-void incrementLoggerElapsedNanoseconds(UInt64 ns)
-{
-    increment(LoggerElapsedNanoseconds, ns);
+        current->fetchAdd(event, amount, -1);
+        current = current->parent;
+    } while (current != nullptr);
 }
 
 CountersIncrement::CountersIncrement(Counters::Snapshot const & snapshot)
