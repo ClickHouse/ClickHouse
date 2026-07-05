@@ -1,0 +1,205 @@
+---
+sidebarTitle: 'Configurar el modo no ordenado'
+title: 'Configuración del modo no ordenado para la ingestión continua'
+slug: /integrations/clickpipes/object-storage/s3/unordered-mode
+description: 'Guía paso a paso para configurar el modo no ordenado para la ingestión continua en ClickPipes de S3.'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+De forma predeterminada, el ClickPipe de S3 asume que los archivos se agregan a un bucket en [orden lexicográfico](/es/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). Es posible configurar un ClickPipe de S3 para ingestar archivos que no tengan un orden implícito mediante la configuración de una cola de [Amazon SQS](https://aws.amazon.com/sqs/) conectada al bucket y, opcionalmente, usando [Amazon EventBridge](https://aws.amazon.com/eventbridge/) como enrutador de eventos. Esto permite a ClickPipes escuchar eventos `ObjectCreated:*` e ingestar cualquier archivo nuevo, independientemente de la convención de nomenclatura de los archivos.
+
+<Note>
+  El modo no ordenado **solo** es compatible con Amazon S3 y **no** es compatible con buckets públicos ni con servicios compatibles con S3. Requiere configurar una cola de [Amazon SQS](https://aws.amazon.com/sqs/) conectada al bucket y, opcionalmente, usar [Amazon EventBridge](https://aws.amazon.com/eventbridge/) como enrutador de eventos.
+</Note>
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+En este modo, el ClickPipe de S3 realiza una carga inicial de **todos los archivos** de la ruta seleccionada y luego escucha eventos `ObjectCreated:*` en la cola que coincidan con la ruta especificada. Cualquier mensaje correspondiente a un archivo ya visto, a un archivo que no coincida con la ruta o a un evento de otro tipo se **ignorará**. Los archivos se ingestan cuando se alcanza el umbral configurado en `max insert bytes` o `max file count`, o después de un intervalo configurable (30 segundos de forma predeterminada). **No es posible** iniciar la ingestión desde un archivo concreto o un momento específico: ClickPipes siempre cargará todos los archivos de la ruta seleccionada.
+
+Pueden producirse varios tipos de fallos al ingestar datos, lo que puede dar lugar a inserciones parciales o a datos duplicados. Object Storage ClickPipes tolera los fallos de inserción y proporciona semántica exactly-once mediante tablas temporales de staging. Los datos se insertan primero en una tabla de staging; si algo sale mal, la tabla de staging se trunca y la inserción se reintenta desde un estado limpio. Las particiones solo se mueven a la tabla de destino una vez que la inserción se ha completado correctamente.
+
+<Steps>
+  <Step>
+    ## Crear una cola de Amazon SQS
+
+    **1.** En la AWS Console, navegue a **Simple Queue Service &gt; Create queue**. Utilice los valores predeterminados para crear una nueva cola estándar.
+
+    <Tip>
+      Recomendamos encarecidamente configurar una **Dead-Letter-Queue (DLQ)** para la cola de SQS, para facilitar la depuración y el reintento de los mensajes fallidos. Si se configura una DLQ, los mensajes fallidos se volverán a encolar y se reprocesarán hasta alcanzar el número de intentos configurado en el parámetro `maxReceiveCount` de la DLQ.
+    </Tip>
+
+    **2.** Conecte su bucket de S3 a la cola SQS mediante una de las dos opciones que se describen a continuación. EventBridge es la opción recomendada para la mayoría de los casos de uso, ya que admite fan-out, un filtrado de eventos más flexible y no está sujeto a la restricción de S3 de una regla de notificación por tipo de evento y por prefijo.
+
+    <Tabs>
+      <Tab title="vía EventBridge">
+        **a.** En las propiedades del bucket de S3, ve a **Event notifications &gt; Amazon EventBridge** y habilita el envío de notificaciones a EventBridge. Haz clic en **Save changes**.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="Habilitación de las notificaciones de Amazon EventBridge en las propiedades del bucket de S3" size="lg" border />
+
+        **b.** En la Console de AWS, ve a **Amazon EventBridge &gt; Rules &gt; Create rule**. Asigna un nombre a la regla (por ejemplo, `S3ObjectCreated`), elige el bus de eventos **default** y haz clic en **Next**. En el paso **Build event pattern**, selecciona **AWS events or EventBridge partner events** como origen del evento y luego introduce manualmente el siguiente patrón de evento, sustituyendo `<bucket-name>` por el nombre de tu bucket:
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="Definición del nombre de la regla de EventBridge y del bus de eventos" size="lg" border />
+
+        ```json
+        {
+          "source": ["aws.s3"],
+          "detail-type": ["Object Created"],
+          "detail": {
+            "bucket": {
+              "name": ["<bucket-name>"]
+            }
+          }
+        }
+        ```
+
+        Opcionalmente, añade una condición `object.key` al patrón para filtrar por prefijo o sufijo. Si lo haces, asegúrate de que coincida con la ruta configurada para el ClickPipe.
+
+        **c.** En el paso **Select target(s)**, elige **AWS service** como tipo de destino y selecciona **SQS queue**. Elige la cola creada en el paso anterior. Deja marcada la opción **Use execution role (recommended)** para que EventBridge cree automáticamente el IAM role necesario y, a continuación, haz clic en **Next** y completa el asistente.
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="Configuración de la cola de SQS como destino de la regla de EventBridge" size="lg" border />
+
+        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="Regla de EventBridge creada correctamente" size="lg" border />
+
+        **d.** Edita la política de acceso de la cola de SQS para permitir que EventBridge le envíe mensajes. Sustituye `<sqs-queue-arn>` y `<eventbridge-rule-arn>` por los valores correspondientes:
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowEventBridgeToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<eventbridge-rule-arn>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+      </Tab>
+
+      <Tab title="S3 directo → SQS">
+        **a.** Edita la política de acceso de la cola de SQS para permitir que tu bucket de S3 le envíe mensajes. Sustituye `<sqs-queue-arn>`, `<bucket-arn>` y `<aws-account-id>` por los valores correspondientes:
+
+        ```json
+        {
+          "Version": "2012-10-17",
+          "Id": "example-ID",
+          "Statement": [
+            {
+              "Sid": "AllowS3ToSendMessage",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "s3.amazonaws.com"
+              },
+              "Action": "SQS:SendMessage",
+              "Resource": "<sqs-queue-arn>",
+              "Condition": {
+                "ArnLike": {
+                  "aws:SourceArn": "<bucket-arn>"
+                },
+                "StringEquals": {
+                  "aws:SourceAccount": "<aws-account-id>"
+                }
+              }
+            }
+          ]
+        }
+        ```
+
+        **b.** En las propiedades del bucket de S3, habilita **Event notifications** para los eventos `ObjectCreated` y configura la cola de SQS como destino. Opcionalmente, especifica un prefijo o sufijo para filtrar qué objetos activan las notificaciones; si lo haces, asegúrate de que coincida con la ruta configurada para el ClickPipe.
+
+        <Note>
+          S3 no permite varias reglas de notificación superpuestas para los mismos tipos de eventos en un mismo bucket. Si ya tienes una regla de notificación para eventos `ObjectCreated` en este bucket, usa en su lugar el enfoque con EventBridge.
+        </Note>
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ## Configurar un rol de IAM
+
+    **1.** En la consola de ClickHouse Cloud, ve a **Settings &gt; Network security information** y copia el **ARN del rol de IAM** de tu servicio.
+
+    **2.** En la consola de AWS, ve a **IAM &gt; Roles &gt; Create role**. Elige **Custom trust policy** y pega lo siguiente, sustituyendo `<ch-cloud-arn>` por el ARN del rol de IAM que copiaste en el paso anterior:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "AllowAssumeRole",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "<ch-cloud-arn>"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+
+    **3.** Cree una política en línea para el rol de IAM con los [permisos requeridos](/es/integrations/clickpipes/object-storage/amazon-s3/overview#permissions) para leer objetos de S3 y administrar mensajes en la cola de SQS. Sustituya `<bucket-arn>` y `<sqs-queue-arn>` por los valores correspondientes:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "S3BucketMetadataAccess",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": "<bucket-arn>"
+        },
+        {
+          "Sid": "AllowGetListObjects",
+          "Effect": "Allow",
+          "Action": [
+            "s3:Get*",
+            "s3:List*"
+          ],
+          "Resource": "<bucket-arn>/*"
+        },
+        {
+          "Sid": "SQSNotificationsAccess",
+          "Effect": "Allow",
+          "Action": [
+            "sqs:DeleteMessage",
+            "sqs:ListQueues",
+            "sqs:ReceiveMessage",
+            "sqs:GetQueueAttributes"
+          ],
+          "Resource": "<sqs-queue-arn>"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## Crear un ClickPipe con modo no ordenado
+
+    **1.** En la consola de ClickHouse Cloud, vaya a **Data Sources &gt; Create ClickPipe** y seleccione **Amazon S3**. Introduzca la información necesaria para conectarse a su bucket de S3. En **Authentication method**, elija **IAM role** y proporcione el ARN del rol que creó en el paso anterior.
+
+    **2.** En **Incoming data**, active **Continuous ingestion**. Seleccione **Any order** como modo de ingestión y proporcione la **SQS queue URL** de la cola conectada a su bucket.
+
+    **3.** En **Parse information**, defina una **Sorting key** para la tabla de destino. Haga los ajustes necesarios en el esquema asignado y, a continuación, configure un rol para el usuario de la base de datos de ClickPipes.
+
+    **4.** Revise la configuración y haga clic en **Create ClickPipe**. ClickPipes realizará un escaneo inicial de su bucket para cargar todos los archivos existentes que coincidan con la ruta especificada y luego comenzará a procesar los archivos a medida que lleguen nuevos eventos `ObjectCreated:*` a la cola.
+  </Step>
+</Steps>

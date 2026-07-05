@@ -1,0 +1,134 @@
+---
+title: كيفية إدراج جميع الصفوف من جدول إلى آخر؟
+description: "مقالة في قاعدة المعرفة حول كيفية إدراج جميع الصفوف من جدول إلى آخر."
+date: 2024-12-17
+tags: ['إدخال البيانات']
+keywords: ['الإدراج من جدول']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## مقدمة
+</div>
+
+أحيانًا تحتاج إلى إعادة إدخال جميع البيانات من جدول إلى آخر.
+
+على سبيل المثال، قد ترغب في إعادة إدخال البيانات من جدول مرحلي إلى جدول الإنتاج. تشرح هذه المقالة كيفية تنفيذ ذلك باستخدام عبارة `INSERT INTO`.
+
+<div id="example">
+  ## مثال
+</div>
+
+فيما يلي مثال بسيط يوضح آلية العمل وكيفية الاختبار:
+
+* أنشئ قاعدة بيانات تجريبية
+
+```sql
+CREATE DATABASE db1;
+```
+
+* إنشاء جدول لعينة
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* أدرِج بعض البيانات في الجدول المصدر
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* تحقّق من عدد الصفوف في جدول المصدر
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* أنشئ جدولًا جديدًا بالبنية نفسها التي للجدول المصدر.
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* أدرِج جميع الصفوف من الجدول المصدر في الجدول المستهدف.
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* تحقّق من عدد الصفوف في الجدول المستهدف
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+إذا كنت تريد تعديل بنية الجدول الجديد، يمكنك أولًا عرض بنية جدول المصدر.
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+ثم أنشئ الجدول الجديد باستخدام البنية المعدّلة. في حالتنا، نريد إضافة عمود جديد `population` إلى الجدول المستهدف.
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* أدخِل جميع الصفوف من الجدول المصدر إلى الجدول المستهدف، بما في ذلك العمود الجديد. يُضبط الحقل population على 0 في جميع الصفوف.
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* تحقّق من البيانات في الجدول المستهدف
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

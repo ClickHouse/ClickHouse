@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'Sélection des données'
+title: 'Sélection des données dans ClickHouse'
+slug: /guides/writing-queries
+description: 'Découvrez comment sélectionner des données dans ClickHouse'
+keywords: ['SELECT', 'formats de données']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouse est une base de données SQL, et vous interrogez vos données en écrivant le même type de requêtes `SELECT` que celles que vous connaissez déjà. Par exemple :
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+```
+
+<Note>
+  Consultez la [référence SQL](/fr/reference/statements/select/index) pour plus de détails sur la syntaxe, ainsi que sur les clauses et options disponibles.
+</Note>
+
+Notez que la réponse s’affiche dans un tableau bien lisible :
+
+```response
+┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
+│     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
+│     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
+│     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
+│     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
+└─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.008 sec.
+```
+
+Ajoutez une clause `FORMAT` pour spécifier l’un des [nombreux formats de sortie pris en charge par ClickHouse](/fr/reference/formats/index#formats-overview) :
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+FORMAT TabSeparated
+```
+
+Dans la requête ci-dessus, le résultat est renvoyé sous forme de valeurs séparées par des tabulations :
+
+```response
+Query id: 3604df1c-acfd-4117-9c56-f86c69721121
+
+102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
+102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
+101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
+101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
+
+4 rows in set. Elapsed: 0.005 sec.
+```
+
+<Note>
+  ClickHouse prend en charge plus de 70 formats d’entrée et de sortie. Avec ses milliers de fonctions et tous ces formats de données, vous pouvez utiliser ClickHouse pour effectuer des transformations de données de type ETL, rapides et impressionnantes. En fait, vous n’avez même pas
+  besoin qu’un ClickHouse server soit en cours d’exécution pour transformer des données : vous pouvez utiliser l’outil `clickhouse-local`. Consultez la [page de documentation de `clickhouse-local`](/fr/concepts/features/interfaces/cli) pour plus de détails.
+</Note>
