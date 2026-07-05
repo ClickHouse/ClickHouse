@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnTuple.h>
@@ -7,6 +8,7 @@
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
@@ -75,6 +77,27 @@ ColumnPtr replicatedSparseUInt16(UInt16 value, size_t n)
 ColumnPtr tupleOf(ColumnPtr element)
 {
     return ColumnTuple::create(Columns{std::move(element)});
+}
+
+/// A dense `Nullable(UInt16)` where every row holds a non-null `value`.
+ColumnPtr nullableUInt16(UInt16 value, size_t n)
+{
+    auto null_map = ColumnUInt8::create();
+    null_map->getData().assign(n, static_cast<UInt8>(0));
+    return ColumnNullable::create(denseUInt16(value, n), std::move(null_map));
+}
+
+/// A sparse `Nullable(UInt16)` sort key where every row holds the default (non-null `value`). The
+/// canonical representation wraps the nullable column in the sparse layer --
+/// `ColumnSparse(ColumnNullable(...))` -- because `ISerialization`'s SPARSE kind is applied outermost
+/// (`IDataType::createColumn`), and `ColumnNullable` rejects a sparse nested column
+/// (`ColumnSparse::canBeInsideNullable()` is false). So this is the shape a `Nullable(UInt16)` key
+/// actually takes on the read-in-order path when it uses sparse serialization. Built as a fully
+/// default sparse column: a one-row nullable "values" column holding the default and empty offsets.
+ColumnPtr sparseNullableUInt16(UInt16 value, size_t n)
+{
+    auto offsets = ColumnUInt64::create();
+    return ColumnSparse::create(nullableUInt16(value, 1)->assumeMutable(), std::move(offsets), n);
 }
 
 ColumnPtr denseUInt64Iota(size_t n)
@@ -191,4 +214,30 @@ TEST(FinishSortingTransform, TupleReplicatedChildSortKeyDoesNotBadCast)
     /// Before the fix this aborts with the same `Bad cast ... ColumnReplicated ... ColumnVector<unsigned short>`.
     EXPECT_NO_THROW(runFinishSorting(
         key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
+}
+
+/// A `Nullable(UInt16)` sort key that is dense in the stored chunk and sparse in the next (raised in
+/// review). A sparse nullable column is `ColumnSparse(ColumnNullable(...))` (sparse is the OUTER
+/// wrapper -- see `sparseNullableUInt16`), so the top-level `convertToFullColumnIfSparse` in the fix
+/// densifies it before `less()`; `ColumnNullable::compareAt` then sees a dense nested rhs. Confirms
+/// the reachable sparse-nullable shape does not bad-cast.
+TEST(FinishSortingTransform, NullableSparseSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt16>());
+    EXPECT_NO_THROW(runFinishSorting(key_type, nullableUInt16(0, n), sparseNullableUInt16(0, n), n));
+}
+
+/// The nesting the review worried about -- `ColumnNullable(ColumnSparse(...))`, a dense null map over
+/// a sparse nested values column -- is unconstructible: `ColumnNullable`'s constructor rejects a
+/// nested column whose `canBeInsideNullable()` is false, and `ColumnSparse` inherits the `false`
+/// default. So a `Nullable` sort key can never reach `less()` with a sparse nested column; the sparse
+/// layer is always outside the nullable one (`NullableSparseSortKeyDoesNotBadCast`). This pins that
+/// invariant so a future change that makes sparse nullable-able would fail here loudly.
+TEST(FinishSortingTransform, NullableCannotWrapSparse)
+{
+    constexpr size_t n = 8;
+    auto null_map = ColumnUInt8::create();
+    null_map->getData().assign(n, static_cast<UInt8>(0));
+    EXPECT_ANY_THROW(ColumnNullable::create(sparseUInt16(0, n)->assumeMutable(), std::move(null_map)));
 }
