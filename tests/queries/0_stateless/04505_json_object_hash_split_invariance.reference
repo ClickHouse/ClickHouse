@@ -1,0 +1,9 @@
+splits	1	1
+equal	1
+hash	4
+parallel_hash	4
+grace_hash	4
+group_by	1
+distinct	1
+uniqExact	1
+spill_join	1

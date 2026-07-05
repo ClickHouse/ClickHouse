@@ -1198,53 +1198,45 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
 
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
-    /// Like `updateHashWithValueRange`, this hashes the physical path layout: it does NOT guarantee
-    /// equal hashes for a logically equal object whose paths are split differently between dynamic
-    /// columns and `shared_data` across blocks; the in-memory scatter consumers only need fast
-    /// per-query partitioning.
+    /// The hash must be representation-independent: a logically equal object must hash the same
+    /// regardless of how its paths are split between dynamic columns and `shared_data` (the split
+    /// varies per block, and a value round-tripped through a temporary file may land in a different
+    /// section). Hashing sub-columns in physical order would break that, producing different hashes
+    /// for equal objects. This is not a mere partitioning nuisance: hash joins scatter and match keys
+    /// by this hash, so a split-dependent hash silently drops matches for JSON join keys, and the
+    /// grace-hash spill relies on a stable hash across the temp-file round-trip (a value re-hashing to
+    /// an earlier bucket after a spill triggers a `FileBucket` state-machine assertion).
     ///
-    /// Build the finalized per-row object hash by chaining the sub-objects in the existing
-    /// typed paths → dynamic paths → shared data order. `shared_data` always exists, so the
-    /// buffer is always seeded (no empty-object special case needed).
-    auto computeFinalizedInto = [&](UInt32 * out)
-    {
-        bool first = true;
-        for (const auto & [_, column] : typed_paths)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        for (const auto & [_, column] : dynamic_paths_ptrs)
-        {
-            column->computeHashInto(row_begin, row_end, out, first);
-            first = false;
-        }
-        shared_data->computeHashInto(row_begin, row_end, out, first);
-    };
-
-    if (initial)
-    {
-        computeFinalizedInto(hash_out);
-        return;
-    }
-
-    /// Non-initial: build the finalized object hash in a scratch buffer, then combine that single
-    /// value into the prior key columns' hash (rather than streaming sub-objects straight into
-    /// `hash_out`) so composition stays representation-independent. See IColumn::computeHashInto.
+    /// To stay consistent with equality (and with `serializeValueIntoArena`, used by DISTINCT /
+    /// uniqExact / the hash-table key), hash the same canonical per-row serialization: typed paths in
+    /// sorted order, then dynamic paths and shared data merged in sorted path order. Both a dynamic
+    /// path and a shared-data path emit identical `(path, binary value)` bytes for the same value.
     const size_t n = row_end - row_begin;
-    PaddedPODArray<UInt32> object_hash(n);
-    computeFinalizedInto(object_hash.data());
+    Arena arena;
     for (size_t i = 0; i < n; ++i)
-        hash_out[i] = combineWeakHash32(object_hash[i], hash_out[i]);
+    {
+        const char * begin = nullptr;
+        std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
+        const UInt32 h = ::updateWeakHash32(
+            reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
+        hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
+        arena.rollback(serialized.size());
+    }
 }
 
 void ColumnObject::updateHashFast(SipHash & hash) const
 {
-    for (const auto & [_, column] : typed_paths)
-        column->updateHashFast(hash);
-    for (const auto & [_, column] : dynamic_paths_ptrs)
-        column->updateHashFast(hash);
-    shared_data->updateHashFast(hash);
+    /// Must match `computeHashInto`: hash the canonical, split-invariant per-row serialization so a
+    /// logically equal object hashes the same regardless of the dynamic/shared_data split.
+    const size_t rows = size();
+    Arena arena;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const char * begin = nullptr;
+        std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
+        hash.update(serialized.data(), serialized.size());
+        arena.rollback(serialized.size());
+    }
 }
 
 ColumnPtr ColumnObject::filter(const Filter & filt, ssize_t result_size_hint) const
