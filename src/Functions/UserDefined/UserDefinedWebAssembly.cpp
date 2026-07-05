@@ -867,6 +867,33 @@ private:
         return total;
     }
 
+    /// Estimate the serialized byte size of a single row across all argument columns.
+    /// Used for the cumulative flush pass below: a fixed stride derived from the average
+    /// row size can still put an oversized row in the same batch as its neighbors and
+    /// blow the input budget on a skewed block (e.g. one huge string among many tiny ones).
+    size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row, bool preserve_const) const
+    {
+        size_t total = 0;
+        for (const auto & arg : arguments)
+        {
+            const IColumn * col = arg.column.get();
+            if (typeid_cast<const ColumnConst *>(col))
+            {
+                if (preserve_const)
+                    continue; // fixed per-batch cost, not per-row
+                col = &typeid_cast<const ColumnConst &>(*col).getDataColumn();
+                row = 0; // materialized const columns only ever have row 0
+            }
+            if (const auto * s = typeid_cast<const ColumnString *>(col))
+                total += s->getOffsets()[row] - (row > 0 ? s->getOffsets()[row - 1] : 0);
+            else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += arg.type->getSizeOfValueInMemory();
+            else
+                total += 256; // conservative fallback
+        }
+        return total;
+    }
+
     ColumnPtr execute(WebAssembly::WasmCompartment * compartment, const ColumnsWithTypeAndName & arguments, size_t input_rows_count) const
     {
         MutableColumnPtr result_column = user_defined_function->getResultType()->createColumn();
@@ -917,14 +944,30 @@ private:
         {
             // O(1) block-level check: only scan per-row when splits are actually needed.
             // The common case (block fits in budget) pays zero per-row overhead.
-            // When splits are required, use a fixed stride derived from the average row size.
             size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, preserve_const);
             if (total_bytes > input_budget)
             {
-                size_t avg_row_bytes = std::max(size_t(1), total_bytes / input_rows_count);
-                size_t stride = std::max(size_t(1), input_budget / avg_row_bytes);
-                for (size_t row = stride; row < input_rows_count; row += stride)
-                    flush_batch(row);
+                // Cumulative per-row pass: flush before the next row would cross the
+                // budget. A fixed stride derived from the average row size cannot bound
+                // a skewed block (e.g. one huge string among many tiny ones) — the
+                // oversized row would still land in a batch together with its neighbors.
+                size_t running_bytes = 0;
+                for (size_t row = 0; row < input_rows_count; ++row)
+                {
+                    size_t row_bytes = estimateRowSerializedSize(arguments, row, preserve_const);
+                    if (row_bytes > input_budget)
+                        throw Exception(ErrorCodes::WASM_ERROR,
+                            "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
+                            "{} byte input budget derived from the module's linear memory; it cannot be "
+                            "split into a smaller batch",
+                            row, row_bytes, input_budget);
+                    if (row > batch_start && running_bytes + row_bytes > input_budget)
+                    {
+                        flush_batch(row);
+                        running_bytes = 0;
+                    }
+                    running_bytes += row_bytes;
+                }
             }
         }
         else if (fixed_block_size > 0)
