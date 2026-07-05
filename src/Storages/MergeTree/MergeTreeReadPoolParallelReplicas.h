@@ -31,6 +31,9 @@ public:
     void profileFeedback(ReadBufferFromFileBase::ProfileInfo) override {}
     MergeTreeReadTaskPtr getTask(size_t task_idx, MergeTreeReadTask * previous_task) override;
 
+    size_t getMinMarksPerRequest() const { return min_marks_per_request; }
+    size_t getMarkSegmentSize() const { return mark_segment_size; }
+
 private:
     mutable std::mutex mutex;
 
@@ -42,6 +45,7 @@ private:
     /// New initiators (protocol >= DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK)
     /// use the value from the initial announcement instead.
     size_t min_marks_per_request{0};
+    size_t mark_segment_size{0};
 
     RangesInDataPartsDescription buffered_ranges;
     bool no_more_tasks_available{false};

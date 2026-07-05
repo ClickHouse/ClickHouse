@@ -59,6 +59,8 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 
@@ -304,6 +306,58 @@ void StorageMaterializedPostgreSQL::read(
 }
 
 
+void StorageMaterializedPostgreSQL::backupData(
+    BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions)
+{
+    /// The data lives in the nested ReplacingMergeTree table, delegate the backup to it.
+    auto nested = tryGetNested();
+    if (!nested)
+        throw Exception(
+            ErrorCodes::CANNOT_BACKUP_TABLE,
+            "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not have "
+            "finished its initial synchronization from PostgreSQL yet). Failing closed instead of producing a "
+            "backup with table metadata but no data.",
+            getStorageID().getNameForLogs());
+
+    nested->backupData(backup_entries_collector, data_path_in_backup, partitions);
+}
+
+
+bool StorageMaterializedPostgreSQL::supportsBackupPartition() const
+{
+    /// Partition backups are delegated to the nested ReplacingMergeTree (see `backupData`), so report whatever
+    /// it supports. If the nested table does not exist yet, fall back to the default (no partition support);
+    /// `backupData` will then fail closed with a clear message anyway.
+    if (auto nested = tryGetNested())
+        return nested->supportsBackupPartition();
+    return false;
+}
+
+
+void StorageMaterializedPostgreSQL::restoreDataFromBackup(
+    RestorerFromBackup &, const String &, const std::optional<ASTs> &)
+{
+    /// A MaterializedPostgreSQL table starts replicating from the live PostgreSQL source as soon as it is
+    /// created (the constructor calls `replication_handler->startup`). Restoring the backed-up parts of the
+    /// nested ReplacingMergeTree on top of that freshly replicated data would mix the backup snapshot with the
+    /// current remote state, so an in-place restore into an already-existing MaterializedPostgreSQL table cannot
+    /// faithfully represent the backup. Fail closed and direct the user to restore the data into a separately
+    /// pre-created ReplacingMergeTree table instead - the data is still captured by `backupData`. Restoring
+    /// `... AS <new_table>` into a not-yet-existing table never reaches this point: that path would recreate the
+    /// table from the backup definition (again as MaterializedPostgreSQL) and is rejected earlier, in the storage
+    /// factory, before the table is created (see `registerStorageMaterializedPostgreSQL`). `allow_different_table_def`
+    /// only skips the definition comparison against an already existing target.
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "Restoring a MaterializedPostgreSQL table ({}) in place is not supported, because the table would start "
+        "replicating from the live PostgreSQL source and mix it with the backup snapshot. "
+        "Restore the data into a separate ReplacingMergeTree table that you have created beforehand with the same "
+        "structure as the nested table (including the _sign and _version columns), e.g.: "
+        "RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
+        getStorageID().getNameForLogs());
+}
+
+
 boost::intrusive_ptr<ASTColumnDeclaration> StorageMaterializedPostgreSQL::getMaterializedColumnsDeclaration(
         String name, String type, UInt64 default_value)
 {
@@ -530,6 +584,23 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
 {
     auto creator_fn = [](const StorageFactory::Arguments & args)
     {
+        /// Restoring a MaterializedPostgreSQL table from a backup is not supported, and must be rejected here -
+        /// before the storage is constructed - to fail closed. The constructor calls `replication_handler->startup`,
+        /// so by the time `restoreDataFromBackup` could reject the restore the table would already exist and be
+        /// replicating from the live PostgreSQL source (`RestorerFromBackup` does not roll back the created table on
+        /// a later failure). The table data is still captured by the backup (delegated to the nested
+        /// ReplacingMergeTree, see `backupData`); restore it into a ReplacingMergeTree created beforehand instead.
+        if (args.is_restore_from_backup)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Restoring a MaterializedPostgreSQL table ({}) from a backup is not supported, because the table "
+                "would start replicating from the live PostgreSQL source as soon as it is created, mixing the backup "
+                "snapshot with the current remote state. The table data is still captured by the backup (delegated "
+                "to the nested ReplacingMergeTree); restore it into a ReplacingMergeTree table that you have created "
+                "beforehand with the same structure as the nested table (including the _sign and _version columns), "
+                "e.g.: RESTORE TABLE <src> AS <existing_replacing_mergetree> SETTINGS allow_different_table_def = 1.",
+                args.table_id.getNameForLogs());
+
         StorageInMemoryMetadata metadata;
         metadata.setColumns(args.columns);
         metadata.setConstraints(args.constraints);
@@ -578,7 +649,7 @@ void registerStorageMaterializedPostgreSQL(StorageFactory & factory)
                             "Declare the desired `Date`/`DateTime` or `Date32`/`DateTime64` types directly in the table definition.");
 
         return std::make_shared<StorageMaterializedPostgreSQL>(
-                args.table_id, args.mode, configuration.database, configuration.table, connection_info,
+                args.table_id, args.mode, configuration.database, configuration.table_or_query.getTableName(), connection_info,
                 metadata, args.getContext(),
                 std::move(postgresql_replication_settings));
     };

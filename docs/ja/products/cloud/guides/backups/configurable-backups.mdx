@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'バックアップスケジュールを設定する'
+slug: /cloud/manage/backups/configurable-backups
+description: 'バックアップの設定方法を説明するガイド'
+title: 'バックアップスケジュールを設定する'
+keywords: ['バックアップ', 'クラウドバックアップ', '復元']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="設定可能なバックアップ" linking_verb_are="True" />
+
+サービスのバックアップスケジュールを設定するには、コンソールの **Settings** タブに移動し、**Change backup configuration** をクリックします。
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="バックアップ設定を設定する" border />
+
+クリックすると右側にタブが開き、バックアップ保持期間、頻度、開始時刻を選択できます。設定を反映するには、選択した内容を保存する必要があります。
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="バックアップ保持期間と頻度を選択する" border />
+
+<Note>
+  開始時刻と頻度は相互排他的です。開始時刻が優先されます。
+</Note>
+
+<Note>
+  バックアップスケジュールを変更すると、一部のバックアップがサービスのデフォルトバックアップの対象外になる可能性があるため、ストレージの月額料金が高くなる場合があります。詳細は [&quot;バックアップコストについて理解する&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost) を参照してください。
+</Note>

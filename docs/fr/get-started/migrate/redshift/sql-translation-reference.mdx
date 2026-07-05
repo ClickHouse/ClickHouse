@@ -1,0 +1,93 @@
+---
+sidebarTitle: 'Référence de traduction SQL'
+slug: /migrations/redshift/sql-translation-reference
+description: 'Référence de traduction SQL d’Amazon Redshift vers ClickHouse'
+keywords: ['Redshift']
+title: 'Guide de traduction SQL pour Amazon Redshift'
+doc_type: 'reference'
+---
+
+<div id="data-types">
+  ## Types de données
+</div>
+
+Les utilisateurs qui déplacent des données entre ClickHouse et Redshift remarqueront immédiatement
+que ClickHouse propose une gamme de types plus étendue, et également moins
+restrictive. Alors que Redshift oblige les utilisateurs à spécifier les
+longueurs possibles des chaînes, même lorsqu’elles sont variables, ClickHouse supprime cette restriction et cette contrainte
+pour l’utilisateur en stockant les chaînes comme des octets, sans encodage. Le type
+String de ClickHouse n’a donc ni limite ni exigence de longueur.
+
+En outre, vous pouvez exploiter les Arrays, Tuples et Enums, absents de
+Redshift en tant que types natifs (même si les Arrays/Structs peuvent être imités
+avec `SUPER`), ce qui est une source fréquente de frustration pour les utilisateurs. ClickHouse permet aussi
+de conserver des états d’agrégation, soit au moment de la requête, soit même dans une table.
+Cela permet de préagréger les données, généralement
+à l’aide d’une vue matérialisée, et peut considérablement améliorer les performances des requêtes
+courantes.
+
+Ci-dessous, nous indiquons le type ClickHouse équivalent pour chaque type Redshift :
+
+| Redshift                                                                                                                             | ClickHouse                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [`SMALLINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                | [`Int8`](/fr/reference/data-types/int-uint) *                                                                                                                                                                                                       |
+| [`INTEGER`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                 | [`Int32`](/fr/reference/data-types/int-uint) *                                                                                                                                                                                                      |
+| [`BIGINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                  | [`Int64`](/fr/reference/data-types/int-uint) *                                                                                                                                                                                                      |
+| [`DECIMAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-decimal-or-numeric-type)       | [`UInt128`, `UInt256`, `Int128`, `Int256`](/fr/reference/data-types/int-uint), [`Decimal(P, S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`, `Decimal256(S)`](/fr/reference/data-types/decimal) - (haute précision et plages de valeurs étendues) |
+| [`REAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types)             | [`Float32`](/fr/reference/data-types/float)                                                                                                                                                                                                         |
+| [`DOUBLE PRECISION`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types) | [`Float64`](/fr/reference/data-types/float)                                                                                                                                                                                                         |
+| [`BOOLEAN`](https://docs.aws.amazon.com/redshift/latest/dg/r_Boolean_type.html)                                                      | [`Bool`](/fr/reference/data-types/boolean)                                                                                                                                                                                                          |
+| [`CHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-char-or-character)                  | [`String`](/fr/reference/data-types/string), [`FixedString`](/fr/reference/data-types/fixedstring)                                                                                                                                                     |
+| [`VARCHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-varchar-or-character-varying) ** | [`String`](/fr/reference/data-types/string)                                                                                                                                                                                                         |
+| [`DATE`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-date)                                 | [`Date32`](/fr/reference/data-types/date32)                                                                                                                                                                                                         |
+| [`TIMESTAMP`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamp)                       | [`DateTime`](/fr/reference/data-types/datetime), [`DateTime64`](/fr/reference/data-types/datetime64)                                                                                                                                                   |
+| [`TIMESTAMPTZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamptz)                   | [`DateTime`](/fr/reference/data-types/datetime), [`DateTime64`](/fr/reference/data-types/datetime64)                                                                                                                                                   |
+| [`GEOMETRY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                                | [Types de données géo](/fr/reference/data-types/geo)                                                                                                                                                                                                |
+| [`GEOGRAPHY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                               | [Types de données Geo](/fr/reference/data-types/geo) (moins aboutis, p. ex. sans systèmes de coordonnées - cela peut être émulé [avec des fonctions](/fr/reference/functions/regular-functions/geo/index))                                             |
+| [`HLLSKETCH`](https://docs.aws.amazon.com/redshift/latest/dg/r_HLLSKTECH_type.html)                                                  | [`AggregateFunction(uniqHLL12, X)`](/fr/reference/data-types/aggregatefunction)                                                                                                                                                                     |
+| [`SUPER`](https://docs.aws.amazon.com/redshift/latest/dg/r_SUPER_type.html)                                                          | [`Tuple`](/fr/reference/data-types/tuple), [`Nested`](/fr/reference/data-types/nested-data-structures/index), [`Array`](/fr/reference/data-types/array), [`JSON`](/fr/reference/data-types/newjson), [`Map`](/fr/reference/data-types/map)                      |
+| [`TIME`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-time)                                 | [`DateTime`](/fr/reference/data-types/datetime), [`DateTime64`](/fr/reference/data-types/datetime64)                                                                                                                                                   |
+| [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/fr/reference/data-types/datetime), [`DateTime64`](/fr/reference/data-types/datetime64)                                                                                                                                                   |
+| [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/fr/reference/data-types/string) associé aux fonctions [`Bit`](/fr/reference/functions/regular-functions/bit-functions) et [d’encodage](/fr/reference/functions/regular-functions/encoding-functions#hex)                                      |
+
+<sub><span>*</span> ClickHouse prend également en charge les entiers non signés avec des plages de valeurs étendues, c.-à-d. <a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` et `UInt64`</a>.</sub><br />
+<sub><span>**</span>Le type String de ClickHouse n’est pas limité par défaut, mais il peut être restreint à des longueurs spécifiques à l’aide de <a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">contraintes</a>.</sub>
+
+<div id="compression">
+  ## Syntaxe DDL
+</div>
+
+<div id="sorting-keys">
+  ### Clés de tri
+</div>
+
+ClickHouse et Redshift reposent tous deux sur le concept de « clé de tri », qui définit
+la manière dont les données sont triées lors de leur stockage. Redshift définit la clé de tri à l’aide de la
+clause `SORTKEY` :
+
+```sql
+CREATE TABLE some_table(...) SORTKEY (column1, column2)
+```
+
+En revanche, ClickHouse utilise une clause `ORDER BY` pour définir l’ordre de tri :
+
+```sql
+CREATE TABLE some_table(...) ENGINE = MergeTree ORDER BY (column1, column2)
+```
+
+Dans la plupart des cas, vous pouvez utiliser dans ClickHouse les mêmes colonnes de clé de tri et le même ordre que dans Redshift, en supposant que vous utilisez le type `COMPOUND` par défaut. Lorsque des données sont ajoutées à Redshift, vous devez exécuter les commandes `VACUUM` et `ANALYZE` pour réordonner les données nouvellement ajoutées et mettre à jour les statistiques du planificateur de requêtes ; sinon, l’espace non trié augmente. Aucun processus de ce type n’est nécessaire dans ClickHouse.
+
+Redshift prend en charge quelques fonctionnalités pratiques pour les clés de tri. La première concerne les clés de tri automatiques (avec `SORTKEY AUTO`). Bien que cela puisse convenir pour démarrer, des clés de tri explicites garantissent les meilleures performances et la meilleure efficacité de stockage lorsque la clé de tri est optimale. La seconde est la clé de tri `INTERLEAVED`,
+qui accorde le même poids à un sous-ensemble de colonnes de la clé de tri afin d’améliorer
+les performances lorsqu’une requête utilise une ou plusieurs colonnes de tri secondaires. ClickHouse
+prend en charge des [projections](/fr/concepts/features/projections/projections) explicites, qui permettent d’obtenir le
+même résultat final avec une configuration légèrement différente.
+
+Vous devez savoir que le concept de « clé primaire » recouvre des réalités différentes
+dans ClickHouse et Redshift. Dans Redshift, la clé primaire se rapproche du concept traditionnel
+des SGBDR, destiné à imposer des contraintes. Cependant, celles-ci ne sont pas strictement
+appliquées dans Redshift et servent plutôt d’indications pour le planificateur de requêtes et la
+distribution des données entre les nœuds. Dans ClickHouse, la clé primaire désigne les colonnes utilisées
+pour construire l’index primaire sparse, qui sert à garantir que les données sont ordonnées sur
+le disque, afin de maximiser la compression tout en évitant de surcharger l’index primaire et de
+gaspiller de la mémoire.

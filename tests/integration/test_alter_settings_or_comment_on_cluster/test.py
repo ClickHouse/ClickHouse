@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -86,6 +88,43 @@ def wait_for_ddl_entry_failed_on_hosts(node, entry_path, expected_hosts):
     )
 
 
+def wait_show_create(
+    node, table, *, contains=(), not_contains=(), retries=60, sleep_time=0.5
+):
+    # An ON CLUSTER ALTER returns once the distributed DDL task is finished on every
+    # host, which does not guarantee the change is already visible in that host's
+    # in-memory metadata: the replicated ALTER_METADATA entry (or the local
+    # settings/comment fast path) can still be in flight, especially right after a
+    # replica restart. Poll SHOW CREATE until it converges; a value that never
+    # converges still fails the caller's assert with the final SHOW CREATE.
+    show_create = ""
+    for _ in range(retries):
+        show_create = node.query(
+            database="test_db", sql=f"SHOW CREATE {table} FORMAT TSVRaw"
+        )
+        if all(s in show_create for s in contains) and all(
+            s not in show_create for s in not_contains
+        ):
+            break
+        time.sleep(sleep_time)
+    return show_create
+
+
+def wait_column_order(node, table, expected, *, retries=60, sleep_time=0.5):
+    # Same convergence reasoning as wait_show_create, for the column order read from
+    # system.columns after an ON CLUSTER MODIFY COLUMN with a positional modifier.
+    order = []
+    for _ in range(retries):
+        order = node.query(
+            database="test_db",
+            sql=f"SELECT name FROM system.columns WHERE database = 'test_db' AND table = '{table}' ORDER BY position FORMAT TSVRaw",
+        ).split()
+        if order == expected:
+            break
+        time.sleep(sleep_time)
+    return order
+
+
 def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     # ON CLUSTER ALTER batches mixing MODIFY SETTING / RESET SETTING with
     # column or table comments must converge on every replica. The storage
@@ -117,9 +156,8 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
 
     # Both replicas must see the new comment and the new setting value.
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE mixed_alter FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "mixed_alter", contains=["old_parts_lifetime = 123", "mixed-on-cluster"]
         )
         assert "old_parts_lifetime = 123" in show_create, (node.name, show_create)
         assert "mixed-on-cluster" in show_create, (node.name, show_create)
@@ -131,9 +169,11 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE mixed_alter FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node,
+            "mixed_alter",
+            contains=["second-mixed"],
+            not_contains=["old_parts_lifetime = 123"],
         )
         assert "old_parts_lifetime = 123" not in show_create, (node.name, show_create)
         assert "second-mixed" in show_create, (node.name, show_create)
@@ -145,9 +185,8 @@ def test_mixed_settings_and_comment_alter_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE mixed_alter FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "mixed_alter", contains=["old_parts_lifetime = 234", "x-col-comment"]
         )
         assert "old_parts_lifetime = 234" in show_create, (node.name, show_create)
         assert "x-col-comment" in show_create, (node.name, show_create)
@@ -185,9 +224,8 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
 
     assert get_zk_metadata_version(ch1, zookeeper_path) == version_before
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "modcol_comment", contains=["modcol-comment-v1"]
         )
         assert "modcol-comment-v1" in show_create, (node.name, show_create)
 
@@ -198,9 +236,10 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node,
+            "modcol_comment",
+            contains=["modcol-comment-v2", "old_parts_lifetime = 345"],
         )
         assert "modcol-comment-v2" in show_create, (node.name, show_create)
         assert "old_parts_lifetime = 345" in show_create, (node.name, show_create)
@@ -212,9 +251,10 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node,
+            "modcol_comment",
+            contains=["modcol-comment-v3", "table-comment-modcol"],
         )
         assert "modcol-comment-v3" in show_create, (node.name, show_create)
         assert "table-comment-modcol" in show_create, (node.name, show_create)
@@ -235,15 +275,11 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
 
     assert get_zk_metadata_version(ch1, zookeeper_path) > version_before
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "modcol_comment", contains=["modcol-placement-comment"]
         )
         assert "modcol-placement-comment" in show_create, (node.name, show_create)
-        order = node.query(
-            database="test_db",
-            sql="SELECT name FROM system.columns WHERE database = 'test_db' AND table = 'modcol_comment' ORDER BY position FORMAT TSVRaw",
-        ).split()
+        order = wait_column_order(node, "modcol_comment", ["x", "id"])
         assert order == ["x", "id"], (node.name, order)
 
     # Restart both replicas: the local columns (reordered to x, id) must match the
@@ -252,14 +288,10 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
     for node in [ch1, ch2]:
         node.restart_clickhouse()
     for node in [ch1, ch2]:
-        order = node.query(
-            database="test_db",
-            sql="SELECT name FROM system.columns WHERE database = 'test_db' AND table = 'modcol_comment' ORDER BY position FORMAT TSVRaw",
-        ).split()
+        order = wait_column_order(node, "modcol_comment", ["x", "id"])
         assert order == ["x", "id"], (node.name, order)
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "modcol_comment", contains=["modcol-placement-comment"]
         )
         assert "modcol-placement-comment" in show_create, (node.name, show_create)
 
@@ -271,9 +303,8 @@ def test_modify_column_comment_only_on_cluster(started_cluster):
     )
 
     for node in [ch1, ch2]:
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE modcol_comment FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "modcol_comment", contains=["modcol-with-type"]
         )
         assert "modcol-with-type" in show_create, (node.name, show_create)
 
@@ -327,9 +358,8 @@ def test_mixed_setting_escape_index_filenames_on_cluster(started_cluster):
             node.name,
             index_files,
         )
-        show_create = node.query(
-            database="test_db",
-            sql="SHOW CREATE escape_mixed FORMAT TSVRaw",
+        show_create = wait_show_create(
+            node, "escape_mixed", contains=["escape_index_filenames = 0", "escape-mixed"]
         )
         assert "escape_index_filenames = 0" in show_create, (node.name, show_create)
         assert "escape-mixed" in show_create, (node.name, show_create)

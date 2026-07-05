@@ -1,0 +1,70 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/cache
+title: 'cache 辞書レイアウト'
+sidebarTitle: 'cache'
+description: '固定サイズのインメモリ cache に辞書を格納します。'
+doc_type: 'reference'
+---
+
+`cached` 辞書レイアウト型では、固定数の cell を持つ cache に辞書を格納します。
+これらの cell には、頻繁に使用される要素が格納されます。
+
+辞書キーは [UInt64](/ja/reference/data-types/int-uint) 型です。
+
+辞書を検索するときは、まず cache が検索されます。データの各 block について、cache に存在しないキー、または古くなったキーは、`SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)` を使用してソースへ要求されます。取得したデータはその後 cache に書き込まれます。
+
+辞書内にキーが見つからない場合は、cache 更新用の task が作成され、更新 queue に追加されます。更新 queue のプロパティは、`max_update_queue_size`、`update_queue_push_timeout_milliseconds`、`query_wait_timeout_milliseconds`、`max_threads_for_updates` の各設定で制御できます。
+
+cache 辞書では、cache 内のデータの有効期限 [lifetime](/ja/reference/statements/create/dictionary/lifetime) を設定できます。cell にデータを読み込んでから `lifetime` を超える時間が経過すると、その cell の値は使用されず、キーは期限切れになります。そのキーは、次回必要になったときに再度要求されます。この動作は `allow_read_expired_keys` 設定で構成できます。
+
+これは、辞書の格納方法の中で最も効率が低いものです。cache の速度は、適切な設定と使用シナリオに大きく依存します。cache 型辞書が十分に高い性能を発揮するのは、ヒット率が十分高い場合のみです (推奨は 99% 以上) 。平均ヒット率は [system.dictionaries](/ja/reference/system-tables/dictionaries) table で確認できます。
+
+`allow_read_expired_keys` 設定が 1 の場合 (デフォルトは 0) 、辞書は非同期更新をサポートできます。クライアントがキーを要求し、それらがすべて cache 内にあるものの一部が期限切れの場合、辞書は期限切れのキーをクライアントに返しつつ、それらをソースに非同期で要求します。
+
+cache の性能を向上させるには、`LIMIT` を含むサブクエリを使用し、辞書の外側で関数を呼び出してください。
+
+すべての種類のソースがサポートされています。
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
+    ```
+  </Tab>
+
+  <Tab title="構成ファイル">
+    ```xml
+    <layout>
+        <cache>
+            <!-- cell 数で表した cache のサイズ。2 の累乗に切り上げられます。 -->
+            <size_in_cells>1000000000</size_in_cells>
+            <!-- 期限切れキーの読み取りを許可します。 -->
+            <allow_read_expired_keys>0</allow_read_expired_keys>
+            <!-- 更新 queue の最大サイズ。 -->
+            <max_update_queue_size>100000</max_update_queue_size>
+            <!-- 更新 task を queue に追加する際の最大タイムアウト（ミリ秒）。 -->
+            <update_queue_push_timeout_milliseconds>10</update_queue_push_timeout_milliseconds>
+            <!-- 更新 task の完了を待機する最大タイムアウト（ミリ秒）。 -->
+            <query_wait_timeout_milliseconds>60000</query_wait_timeout_milliseconds>
+            <!-- cache 辞書更新用の最大スレッド数。 -->
+            <max_threads_for_updates>4</max_threads_for_updates>
+        </cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+十分に大きな cache サイズを設定してください。cell 数の選定には試行が必要です:
+
+1. 適当な値を設定します。
+2. cache が完全に埋まるまでクエリを実行します。
+3. `system.dictionaries` table を使ってメモリ消費量を評価します。
+4. 必要なメモリ消費量に達するまで、cell 数を増減します。
+
+<Note>
+  このレイアウトのソースとして ClickHouse を使用することは推奨されません。Dictionary のルックアップにはランダムなポイント read が必要ですが、これは ClickHouse が最適化しているアクセスパターンではありません。
+</Note>

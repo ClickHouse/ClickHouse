@@ -118,7 +118,7 @@ TEST(SchedulerEventQueue, Smoke)
 
     using namespace std::chrono_literals;
 
-    EventQueue::TimePoint start = std::chrono::system_clock::now();
+    EventQueue::TimePoint start = EventQueue::Clock::now();
     t.process(start, "", 0);
 
     // Activations

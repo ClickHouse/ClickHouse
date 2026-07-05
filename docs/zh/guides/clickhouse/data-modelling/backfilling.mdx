@@ -1,0 +1,720 @@
+---
+slug: /data-modeling/backfilling
+title: '数据回填'
+description: '如何在 ClickHouse 中回填大型数据集'
+keywords: ['materialized views', '数据回填', '插入数据', '可靠数据加载']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+无论你是刚开始接触 ClickHouse，还是负责现有部署，都会不可避免地需要用历史数据回填表。在某些情况下，这项工作相对简单；但如果还需要填充 materialized view，复杂度就会增加。本指南整理了完成这项任务的一些流程，你可以根据自己的使用场景加以应用。
+
+<Note>
+  本指南假定用户已经熟悉[增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)的概念，以及[使用 s3 和 gcs 等 table function 进行数据加载](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)。我们也建议用户阅读我们的[优化从对象存储进行插入性能](/zh/integrations/connectors/data-ingestion/AWS/performance)指南，其中的建议同样适用于本指南中的各类插入操作。
+</Note>
+
+<div id="example-dataset">
+  ## 示例数据集
+</div>
+
+在本指南中，我们使用一个 PyPI 数据集。该数据集中的每一行都表示一次通过 `pip` 等工具下载 Python 软件包的记录。
+
+例如，这个子集仅涵盖一天的数据——`2024-12-17`，并可在 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/` 公开获取。你可以使用以下方式查询：
+
+```sql
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4 亿
+└────────────┘
+
+1 行，耗时：32.726 秒。处理了 20.4 亿行，170.05 KB（6234 万行/秒，5.20 KB/秒）
+峰值内存占用：239.50 MiB。
+```
+
+此存储桶的完整数据集包含超过 320 GB 的 Parquet 文件。在下面的示例中，我们特意使用 glob 模式 来选取其中的子集。
+
+我们假设用户正在消费此日期之后的这部分数据流，例如来自 Kafka 或对象存储。该数据的 schema 如下所示：
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FORMAT PrettyCompactNoEscapesMonoBlock
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────┬─type────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ timestamp │ Nullable(DateTime64(6))                                                                                                                 │
+│ country_code       │ Nullable(String)                                                                                                                        │
+│ url │ Nullable(String)                                                                                                                        │
+│ project            │ Nullable(String)                                                                                                                        │
+│ file │ Tuple(filename Nullable(String), project Nullable(String), version Nullable(String), type Nullable(String))                             │
+│ installer          │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ python             │ Nullable(String)                                                                                                                        │
+│ implementation     │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ distro             │ Tuple(name Nullable(String), version Nullable(String), id Nullable(String), libc Tuple(lib Nullable(String), version Nullable(String))) │
+│ system │ Tuple(name Nullable(String), release Nullable(String))                                                                                  │
+│ cpu                │ Nullable(String)                                                                                                                        │
+│ openssl_version    │ Nullable(String)                                                                                                                        │
+│ setuptools_version │ Nullable(String)                                                                                                                        │
+│ rustc_version      │ Nullable(String)                                                                                                                        │
+│ tls_protocol       │ Nullable(String)                                                                                                                        │
+│ tls_cipher         │ Nullable(String)                                                                                                                        │
+└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  完整的 PyPI 数据集包含超过 1 万亿行，可在我们的公开演示环境 [clickpy.clickhouse.com](https://clickpy.clickhouse.com) 中查看。有关该数据集的更多信息，包括此演示如何利用 materialized view 提升性能，以及数据如何按日填充，请参见[此处](https://github.com/ClickHouse/clickpy)。
+</Note>
+
+<div id="backfilling-scenarios">
+  ## 回填场景
+</div>
+
+当从某一时间点开始进行流式消费时，通常需要进行回填。这些数据会被插入 ClickHouse 表中，并在插入时按块触发 [增量materialized view](/zh/concepts/features/materialized-views/incremental-materialized-view)。这些视图可能会在插入前转换数据，或计算聚合结果并将其写入目标表，供下游应用后续使用。
+
+我们将尝试涵盖以下场景：
+
+1. **在现有数据摄取的情况下回填数据** - 新数据正在持续加载，同时需要回填历史数据。这些历史数据已经明确。
+2. **向现有表添加 materialized view** - 需要在一套历史数据已完成填充且数据已在持续流式传输的系统中添加新的 materialized view。
+
+我们假设数据将从对象存储中进行回填。在所有情况下，我们的目标都是避免暂停数据插入。
+
+我们建议从对象存储回填历史数据。在可能的情况下，应将数据导出为 Parquet，以获得最佳读取性能和压缩效果 (减少网络传输) 。通常建议文件大小控制在 150MB 左右，但 ClickHouse 支持超过 [70 种文件格式](/zh/reference/formats/index)，并且能够处理各种大小的文件。
+
+<div id="using-duplicate-tables-and-views">
+  ## 使用副本表与视图
+</div>
+
+在所有场景中，我们都依赖&quot;副本表与视图&quot;的概念。这些表和视图是实时流式数据所用对象的副本，可在隔离环境中执行回填操作，并在发生故障时提供便捷的恢复手段。例如，以下是主 `pypi` 表和 materialized view，用于计算每个 Python 项目的下载次数：
+
+```sql
+CREATE TABLE pypi
+(
+    `timestamp` DateTime,
+    `country_code` LowCardinality(String),
+    `project` String,
+    `type` LowCardinality(String),
+    `installer` LowCardinality(String),
+    `python_minor` LowCardinality(String),
+    `system` LowCardinality(String),
+    `on` String
+)
+ENGINE = MergeTree
+ORDER BY (project, timestamp)
+
+CREATE TABLE pypi_downloads
+(
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY project
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv TO pypi_downloads
+AS SELECT
+ project,
+    count() AS count
+FROM pypi
+GROUP BY project
+```
+
+我们向主表及其关联视图中写入部分数据：
+
+```sql
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 15.702 sec. Processed 41.23 million rows, 3.94 GB (2.63 million rows/s., 251.01 MB/s.)
+峰值内存占用: 977.49 MiB.
+```
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 20612750 │ -- 2061万
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   20612750 │ -- 2061万
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
+Peak memory usage: 682.38 KiB.
+```
+
+假设我们希望加载另一个子集 `{101..200}`。虽然可以直接向 `pypi` 插入数据，但我们也可以通过创建副本表来隔离执行此次回填操作。
+
+如果回填失败，主表不会受到任何影响，只需对副本表执行 [truncate](/zh/concepts/features/operations/delete/truncate) 操作并重新执行即可。
+
+要创建这些视图的新副本，可以使用带有后缀 `_v2` 的 `CREATE TABLE AS` 子句：
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY project
+```
+
+我们将大小大致相同的第二个数据子集写入该表，并确认数据加载成功。
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 17.545 sec. Processed 40.80 million rows, 3.90 GB (2.33 million rows/s., 222.29 MB/s.)
+峰值内存占用：991.50 MiB。
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+```response
+┌──count()─┐
+│ 20400020 │ -- 2040万
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads_v2
+```
+
+```response
+┌─sum(count)─┐
+│   20400020 │ -- 2040 万
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
+峰值内存占用: 688.77 KiB.
+```
+
+如果在第二次加载过程中的任何时候发生故障，我们只需[清空](/zh/concepts/features/operations/delete/truncate) `pypi_v2` 和 `pypi_downloads_v2`，然后重新加载数据即可。
+
+数据加载完成后，我们可以使用 [`ALTER TABLE MOVE PARTITION`](/zh/reference/statements/alter/partition#move-partition-to-table) 子句，将数据从副本表移动到主表。
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+```
+
+```response
+0 rows in set. Elapsed: 1.401 sec.
+```
+
+```sql
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+```response
+0 rows in set. Elapsed: 0.389 sec.
+```
+
+<Info>
+  **分区名称**
+
+  上面的 `MOVE PARTITION` 调用使用的分区名称是 `()`。这表示该表只有一个分区 (即未分区) 。对于已分区的表，你需要多次调用 `MOVE PARTITION`——每个分区调用一次。当前分区的名称可以从 [`system.parts`](/zh/reference/system-tables/parts) 表中查询，例如 `SELECT DISTINCT partition FROM system.parts WHERE (table = 'pypi_v2')`。
+</Info>
+
+现在我们可以确认，`pypi` 和 `pypi_downloads` 已包含完整数据。`pypi_downloads_v2` 和 `pypi_v2` 可以安全地删除。
+
+```sql
+SELECT count()
+FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 41012770 │ -- 约 4101 万
+└──────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   41012770 │ -- 4101.2770 万
+└────────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+重要的是，`MOVE PARTITION` 操作既轻量 (利用硬链接) ，又具备原子性；也就是说，它要么失败，要么成功，不会出现中间状态。
+
+在下面的数据回填场景中，我们会大量利用这一过程。
+
+请注意，这一过程要求用户自行确定每次插入操作的规模。
+
+插入越大，也就是行数越多，所需的 `MOVE PARTITION` 操作就越少。不过，这需要与插入失败时 (例如因网络中断) 所带来的恢复成本进行权衡。你还可以通过将文件分批处理来降低风险。这既可以通过范围查询实现，例如 `WHERE timestamp BETWEEN 2024-12-17 09:00:00 AND 2024-12-17 10:00:00`，也可以通过 glob 模式实现。例如，
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+--持续执行直到所有文件加载完毕，或调用 MOVE PARTITION
+```
+
+<Note>
+  ClickPipes 在从对象存储加载数据时会采用这种方法，自动为目标表及其 materialized view 创建副本，从而无需用户执行上述步骤。再配合多个工作线程，每个工作线程分别处理不同的子集 (通过 glob 模式划分) ，并使用各自的副本表，即可快速加载数据，同时保证精确一次语义。感兴趣的读者可在[这篇博客](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)中了解更多细节。
+</Note>
+
+<div id="scenario-1-backfilling-data-with-existing-data-ingestion">
+  ## 场景 1：在现有数据持续摄取时回填数据
+</div>
+
+在此场景中，我们假设需要回填的数据不在独立的 bucket 中，因此需要进行过滤。数据已经在持续插入，并且可以识别出某个时间戳或单调递增的列，以此确定需要回填的历史数据范围。
+
+该过程包括以下步骤：
+
+1. 确定检查点——即需要恢复历史数据的时间戳或列值。
+2. 为主表和 materialized view 的目标表创建副本。
+3. 为所有指向步骤 (2) 中所创建目标表的 materialized view 创建副本。
+4. 向我们在步骤 (2) 中创建的主表副本插入数据。
+5. 将所有分区从副本表移动到原始表。删除副本表。
+
+例如，在我们的 PyPI 数据中，假设已经有数据加载完成。我们可以识别出最小时间戳，从而确定“检查点”。
+
+```sql
+SELECT min(timestamp)
+FROM pypi
+```
+
+```response
+┌──────min(timestamp)─┐
+│ 2024-12-17 09:00:00 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.163 sec. Processed 1.34 billion rows, 5.37 GB (8.24 billion rows/s., 32.96 GB/s.)
+峰值内存占用: 227.84 MiB.
+```
+
+根据上述内容，我们知道需要加载 `2024-12-17 09:00:00` 之前的数据。按照前面介绍的流程，我们创建副本表和视图，并通过基于 timestamp 的过滤器加载这部分子集数据。
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT project, count() AS count
+FROM pypi_v2
+GROUP BY project
+
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 500.152 sec. Processed 2.74 billion rows, 364.40 GB (5.47 million rows/s., 728.59 MB/s.)
+```
+
+<Note>
+  对 Parquet 中的 timestamp 列进行过滤通常非常高效。ClickHouse 只需读取 timestamp 列即可确定需要加载的完整数据范围，从而尽可能减少网络流量。ClickHouse 查询引擎还可以利用 Parquet 索引，例如最小值-最大值索引。
+</Note>
+
+此次插入完成后，我们就可以移动相关分区。
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+如果历史数据位于独立的存储桶中，则不需要上述时间过滤器。如果没有可用的时间列或单调列，请将历史数据单独隔离。
+
+<Info>
+  **直接使用 ClickHouse Cloud 中的 ClickPipes**
+
+  如果你使用的是 ClickHouse Cloud，并且数据可以单独隔离在自己的存储桶中 (即不需要过滤器) ，那么应使用 ClickPipes 来恢复历史备份。除了通过多个工作线程并行加载来缩短加载时间外，ClickPipes 还会自动完成上述流程，并为主表和 materialized view 创建副本表。
+</Info>
+
+<div id="scenario-2-adding-materialized-views-to-existing-tables">
+  ## 场景 2：向现有表添加 materialized views
+</div>
+
+对于已经写入了大量数据且仍在持续插入数据的系统，新增 materialized views 是很常见的需求。此时，如果有一个时间戳或单调递增的列可用于标识 stream 中的某个位置，就会很有帮助，并且可以避免暂停数据摄取。在下面的示例中，我们假设这两种情况都存在，并优先采用无需暂停摄取的方法。
+
+<Info>
+  **避免使用 POPULATE**
+
+  除了在已暂停摄取的小型数据集上为 materialized views 执行回填之外，我们不建议使用 [`POPULATE`](/zh/reference/statements/create/view#materialized-view) 命令。该操作可能会遗漏插入其源表的行，因为 materialized view 是在 POPULATE 完成后才创建的。此外，POPULATE 会对全部数据运行，在大型数据集上很容易受到中断或内存限制的影响。
+</Info>
+
+<div id="timestamp-or-monotonically-increasing-column-available">
+  ### 时间戳或单调递增列可用
+</div>
+
+在这种情况下，我们建议新的 materialized view 包含一个过滤条件，将行限制为仅包含大于未来某个任意时间点的那些行。随后可以使用主表中的历史数据，从该日期开始对该 materialized view 进行回填。具体采用哪种回填方法，取决于数据规模以及相关查询的复杂程度。
+
+最简单的方法包括以下步骤：
+
+1. 创建 materialized view，并添加一个过滤条件，使其只处理大于最近未来某个任意时间点的行。
+2. 运行 `INSERT INTO SELECT` 查询，将数据插入 materialized view 的目标表，同时按该视图的聚合查询从源表读取数据。
+
+这还可以进一步优化：在步骤 (2) 中仅针对部分数据执行，和/或为 materialized view 使用一个额外的目标表 (待插入完成后，再将分区附加到原始表) ，以便在发生故障后更轻松地恢复。
+
+请看下面这个 materialized view，它用于计算每小时最热门的项目。
+
+```sql
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+```
+
+虽然我们可以添加目标表，但在添加 materialized view 之前，我们会先修改其 `SELECT` 子句，加入一个过滤条件，只考虑时间晚于不久后某个任意时刻的行——这里我们假设 `2024-12-17 09:00:00` 是几分钟之后的时间。
+
+```sql
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) AS hour,
+ project, count() AS count
+FROM pypi WHERE timestamp >= '2024-12-17 09:00:00'
+GROUP BY hour, project
+```
+
+添加此视图后，我们可以为早于这些数据的所有数据执行 materialized view 回填。
+
+最简单的方法是直接在主表上运行 materialized view 中的查询，并加上一个忽略最近新增数据的过滤条件，然后通过 `INSERT INTO SELECT` 将结果插入该视图的目标表。例如，对于上述视图：
+
+```sql
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) AS hour,
+ project,
+    count() AS count
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+GROUP BY
+    hour,
+ project
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.830 sec. Processed 798.89 million rows, 17.40 GB (282.28 million rows/s., 6.15 GB/s.)
+Peak memory usage: 543.71 MiB.
+```
+
+<Note>
+  在上述示例中，我们的目标表是 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree)。在这种情况下，我们可以直接使用原始的聚合查询。对于使用 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 的更复杂用例，你需要对聚合使用 `-State` 函数。相关示例可参见这篇[集成指南](/zh/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)。
+</Note>
+
+对于我们的场景，这是一个相对轻量的聚合，可在 3 秒内完成，并且内存占用低于 600MiB。对于更复杂或运行时间更长的聚合，你可以采用前面介绍的副本表方法来提高这一过程的稳健性，即创建一个影子目标表，例如 `pypi_downloads_per_day_v2`，向其中插入数据，然后将其生成的分区附加到 `pypi_downloads_per_day`。
+
+materialized view 的查询通常会更复杂 (这并不少见，否则用户也不会使用视图！) ，而且会消耗资源。在极少数情况下，查询所需的资源甚至会超出服务器的承载能力。这也凸显了 ClickHouse materialized view 的一个优势——它们是增量式的，不会一次处理整个数据集！
+
+在这种情况下，用户有以下几种选择：
+
+1. 修改查询以回填各个时间范围，例如 `WHERE timestamp BETWEEN 2024-12-17 08:00:00 AND 2024-12-17 09:00:00`、`WHERE timestamp BETWEEN 2024-12-17 07:00:00 AND 2024-12-17 08:00:00` 等。
+2. 使用 [Null 表引擎](/zh/reference/engines/table-engines/special/null) 来填充 materialized view。这样可以模拟 materialized view 典型的增量填充过程，在数据块 (大小可配置) 上执行其查询。
+
+(1) 是最简单的方法，而且通常已经足够。为简洁起见，这里不提供示例。
+
+下面将进一步介绍 (2)。
+
+<div id="using-a-null-table-engine-for-filling-materialized-views">
+  #### 使用 Null 表引擎填充 materialized view
+</div>
+
+[Null 表引擎](/zh/reference/engines/table-engines/special/null) 提供了一种不会持久化数据的存储引擎 (可以把它看作表引擎世界里的 `/dev/null`) 。虽然这看起来有些矛盾，但 materialized view 仍会基于插入到该表引擎中的数据执行。这使我们能够在不持久化原始数据的情况下构建 materialized view，从而避免 I/O 以及相关的存储开销。
+
+需要注意的是，任何关联到该表引擎的 materialized views 在数据插入时仍会按数据块执行，并将结果发送到目标表。这些块的大小可以配置。更大的块虽然可能更高效 (处理速度也更快) ，但也会消耗更多资源 (主要是内存) 。使用这种表引擎意味着我们可以以增量方式构建 materialized view，即一次处理一个块，从而避免将整个聚合保存在内存中。
+
+<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="ClickHouse 中的反规范化" />
+
+<br />
+
+请看下面的示例：
+
+```sql
+CREATE TABLE pypi_v2
+(
+    `timestamp` DateTime,
+    `project` String
+)
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv_v2 TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+这里，我们创建一个 Null 表 `pypi_v2,`，用于接收将被用来构建 materialized view 的行。请注意，我们将 schema 限制为仅包含所需的列。我们的 materialized view 会对插入到该表中的行执行聚合 (一次处理一个块) ，并将结果发送到目标表 `pypi_downloads_per_day`。
+
+<Note>
+  这里我们使用 `pypi_downloads_per_day` 作为目标表。为了提高弹性，用户可以创建一个副本表 `pypi_downloads_per_day_v2`，并像前面的示例所示那样将其用作该视图的目标表。插入完成后，`pypi_downloads_per_day_v2` 中的分区随后可以移动到 `pypi_downloads_per_day`。这样一来，如果插入因内存问题或服务器中断而失败，我们就能够进行恢复；也就是说，只需 TRUNCATE `pypi_downloads_per_day_v2`、调整 settings，然后重试即可。
+</Note>
+
+要填充这个 materialized view，我们只需将 `pypi` 中用于回填的相关数据插入到 `pypi_v2` 中。
+
+```sql
+INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 27.325 sec. Processed 1.50 billion rows, 33.48 GB (54.73 million rows/s., 1.23 GB/s.)
+峰值内存占用: 639.47 MiB.
+```
+
+请注意，这里的内存占用为 `639.47 MiB`。
+
+<div id="tuning-performance--resources">
+  ##### 性能与资源调优
+</div>
+
+上述场景中的性能和资源消耗受多种因素影响。在尝试调优之前，建议读者先了解 [Optimizing for S3 Insert and Read Performance guide](/zh/integrations/connectors/data-ingestion/AWS/performance) 中 [Using Threads for Reads](/zh/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 部分详细介绍的插入机制。概括如下：
+
+* **读取并行度** - 用于读取操作的线程数。通过 [`max_threads`](/zh/reference/settings/session-settings#max_threads) 控制。在 ClickHouse Cloud 中，该值由实例规格决定，默认等于 vCPU 数量。提高该值可能会提升读取性能，但代价是更高的内存使用量。
+* **插入并行度** - 用于执行插入操作的线程数。通过 [`max_insert_threads`](/zh/reference/settings/session-settings#max_insert_threads) 控制。**注意**：该值受 `max_threads` 限制，因此实际插入并行度为 `min(max_insert_threads, max_threads)`。在 ClickHouse Cloud 中，该值由实例大小决定 (介于 2 到 4 之间) ，而在 OSS 中固定为 1。增大该值可能会提升性能，但代价是更高的内存使用量。
+* **插入块大小** - 数据会在一个循环中处理：先被拉取、解析，再根据[分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)组成为内存中的插入块。这些块随后会被排序、优化、压缩，并作为新的[数据分区片段](/zh/concepts/core-concepts/parts)写入存储。插入块的大小由设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings#min_insert_block_size_bytes) (未压缩) 控制，会影响内存占用和磁盘 I/O。较大的块会占用更多内存，但会生成更少的 parts，从而减少 I/O 和后台合并。这些设置表示最小阈值 (哪个先达到，就会先触发一次刷盘) 。
+* **materialized view 的块大小** - 除了上述适用于主插入的机制外，在插入到 materialized view 之前，块也会先合并，以提升处理效率。这些块的大小由设置 [`min_insert_block_size_bytes_for_materialized_views`](/zh/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) 和 [`min_insert_block_size_rows_for_materialized_views`](/zh/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views) 决定。块越大，处理效率通常越高，但代价是内存占用也会增加。默认情况下，这些设置会分别回退到源表设置 [`min_insert_block_size_rows`](/zh/reference/settings/session-settings#min_insert_block_size_rows) 和 [`min_insert_block_size_bytes`](/zh/reference/settings/session-settings#min_insert_block_size_bytes) 的值。
+
+<Note>
+  **简单 INSERT SELECT 查询提示**：对于不含复杂转换的简单 `INSERT INTO t1 SELECT * FROM t2` 查询，可考虑启用 `optimize_trivial_insert_select=1`。该设置 (自 24.7 版本起默认禁用) 会自动调整 SELECT 的并行度，使其与 `max_insert_threads` 一致，从而减少资源占用以及创建的 parts 数量。这对于在表之间进行大批量数据迁移尤其实用。
+</Note>
+
+如需提升性能，可参考 [S3 插入与读取性能优化指南](/zh/integrations/connectors/data-ingestion/AWS/performance) 中的[调整插入的线程数与块大小](/zh/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts)章节所述的指导原则。在大多数情况下，无需额外修改 `min_insert_block_size_bytes_for_materialized_views` 和 `min_insert_block_size_rows_for_materialized_views` 来提升性能。如需修改这些参数，请遵循针对 `min_insert_block_size_rows` 和 `min_insert_block_size_bytes` 所讨论的最佳实践。
+
+若要降低内存占用，可以尝试调整这些设置，但这不可避免地会影响性能。以下使用前面的查询展示相关示例。
+
+将 `max_insert_threads` 降低至 1 可减少内存开销。
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1
+```
+
+```response
+0 行。耗时：27.752 秒。已处理 15 亿行，33.48 GB（5389 万行/秒，1.21 GB/秒）
+峰值内存占用：506.78 MiB。
+```
+
+我们可以将 `max_threads` 设置调低至 1，以进一步减少内存占用。
+
+```sql
+INSERT INTO pypi_v2
+SELECT timestamp, project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 43.907 sec. Processed 1.50 billion rows, 33.48 GB (34.06 million rows/s., 762.54 MB/s.)
+Peak memory usage: 272.53 MiB.
+```
+
+最后，我们还可以将 `min_insert_block_size_rows` 设为 0 (不再将其作为决定块大小的因素) ，并将 `min_insert_block_size_bytes` 设为 10485760 (10MiB) ，以进一步降低内存占用。
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 10485760
+```
+
+```response
+0 rows in set. Elapsed: 43.293 sec. Processed 1.50 billion rows, 33.48 GB (34.54 million rows/s., 773.36 MB/s.)
+Peak memory usage: 218.64 MiB.
+```
+
+最后，请注意，减小块大小会产生更多的 parts，并带来更大的合并压力。如[此处](/zh/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)所述，应谨慎调整这些设置。
+
+<div id="no-timestamp-or-monotonically-increasing-column">
+  ### 没有时间戳或单调递增列
+</div>
+
+上述流程依赖用户具备时间戳列或单调递增列。但在某些情况下，这类列并不存在。此时，我们建议采用以下流程：它利用了前文介绍的许多步骤，但需要用户暂停摄取。
+
+1. 暂停向主表插入数据。
+2. 使用 `CREATE AS` 语法为主目标表创建一个副本表。
+3. 使用 [`ALTER TABLE ATTACH`](/zh/reference/statements/alter/partition#attach-partitionpart) 将原始目标表中的分区附加到副本表。**注意：** 此处的 attach 操作不同于前文使用的 move。虽然它依赖硬链接，但原始表中的数据会被保留。
+4. 创建新的 materialized view。
+5. 恢复插入。**注意：** 插入操作只会更新目标表，不会更新副本表；副本表只会引用原始数据。
+6. 对 materialized view 进行回填，沿用上文针对带时间戳数据的相同步骤，并将副本表作为来源表。
+
+请看下面这个示例：使用 PyPI 和我们之前新建的 materialized view `pypi_downloads_per_day` (假设我们无法使用时间戳) ：
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4 亿
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- (1) 暂停写入
+-- (2) 创建目标表的副本
+
+CREATE TABLE pypi_v2 AS pypi
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4 亿
+└────────────┘
+
+结果中有 1 行。已用时间：0.004 秒。
+```
+
+```sql
+-- (3) 将原始目标表的分区挂载到副本表。
+
+ALTER TABLE pypi_v2
+ (ATTACH PARTITION tuple() FROM pypi)
+
+-- (4) 创建新的 materialized view
+
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+
+-- (4) 重启写入。此处通过插入单行来模拟复制。
+
+INSERT INTO pypi SELECT *
+FROM pypi
+LIMIT 1
+
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988138 │ -- 20.4 亿
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- 注意 pypi_v2 包含的行数与之前相同
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 20.4亿
+└────────────┘
+```
+
+```sql
+-- (5) 使用备份表 pypi_v2 回填视图
+
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+```response
+0 rows in set. Elapsed: 3.719 sec. Processed 2.04 billion rows, 47.15 GB (548.57 million rows/s., 12.68 GB/s.)
+```
+
+```sql
+DROP TABLE pypi_v2;
+```
+
+在倒数第二步中，我们使用前文[较早部分](#timestamp-or-monotonically-increasing-column-available)介绍的简单 `INSERT INTO SELECT` 方法，对 `pypi_downloads_per_day` 执行回填。也可以进一步采用[上文](#using-a-null-table-engine-for-filling-materialized-views)所述的 Null 表方法，并可选择使用副本表来增强稳健性。
+
+虽然此操作确实需要暂停插入，但中间步骤通常都能很快完成，从而将数据中断降至最低。

@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Descripción general'
+slug: /manage/scaling
+description: 'Descripción general del escalado automático en ClickHouse Cloud'
+keywords: ['autoescalado', 'escalado automático', 'escalado', 'horizontal', 'vertical', 'ráfagas']
+title: 'Escalado automático'
+doc_type: 'guide'
+---
+
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+El escalado es la capacidad de ajustar los recursos disponibles para satisfacer la demanda de los clientes. Los servicios de los niveles Scale y Enterprise (con el perfil estándar 1:4) pueden escalarse horizontalmente mediante llamadas programáticas a una API o cambiando la configuración en la UI para ajustar los recursos del sistema. Estos servicios también pueden **escalarse automáticamente** de forma vertical para satisfacer la demanda de la aplicación.
+
+<ScalePlanFeatureBadge feature="Escalado vertical automático" />
+
+<Note>
+  Los niveles Scale y Enterprise admiten servicios tanto de una sola réplica como de múltiples réplicas, mientras que el nivel Basic solo admite servicios de una sola réplica. Los servicios de una sola réplica están diseñados para tener un tamaño fijo y no permiten escalado vertical ni horizontal. Puede actualizar al nivel Scale o Enterprise para escalar sus servicios.
+</Note>
+
+<div id="how-scaling-works-in-clickhouse-cloud">
+  ## Cómo funciona el escalado en ClickHouse Cloud
+</div>
+
+Actualmente, ClickHouse Cloud admite autoescalado vertical y escalado horizontal manual para los servicios del nivel Scale.
+
+Para los servicios del nivel Enterprise, el escalado funciona de la siguiente manera:
+
+* **Escalado horizontal**: El escalado horizontal manual estará disponible en todos los perfiles estándar y personalizados del nivel Enterprise.
+* **Escalado vertical**:
+  * Los perfiles estándar (1:4) admitirán autoescalado vertical.
+  * Los perfiles personalizados (`highMemory` y `highCPU`) no admiten autoescalado vertical ni escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente poniéndose en contacto con el soporte.
+
+<Note>
+  El escalado en ClickHouse Cloud se realiza mediante lo que denominamos el enfoque [&quot;Make Before Break&quot; (MBB)](/es/products/cloud/features/autoscaling/make-before-break).
+  Este enfoque añade una o más réplicas del nuevo tamaño antes de retirar las réplicas antiguas, lo que evita cualquier pérdida de capacidad durante las operaciones de escalado.
+  Al eliminar el intervalo entre retirar las réplicas existentes y añadir las nuevas, MBB ofrece un proceso de escalado más fluido y menos disruptivo.
+  Esto resulta especialmente beneficioso en escenarios de scale-up, donde una alta utilización de recursos desencadena la necesidad de capacidad adicional, ya que retirar réplicas prematuramente solo agravaría las limitaciones de recursos.
+  Como parte de este enfoque, esperamos hasta una hora para que las consultas en curso en las réplicas antiguas puedan completarse antes de retirarlas.
+  De este modo, se equilibra la necesidad de que las consultas existentes finalicen con la garantía de que las réplicas antiguas no permanezcan activas durante demasiado tiempo.
+</Note>
+
+<div id="learn-more">
+  ## Más información
+</div>
+
+* [Autoescalado vertical](/es/products/cloud/features/autoscaling/vertical) — Escalado automático de CPU y memoria según el uso
+* [Escalado horizontal](/es/products/cloud/features/autoscaling/horizontal) — Escalado manual de réplicas mediante API o UI
+* [Make Before Break (MBB)](/es/products/cloud/features/autoscaling/make-before-break) — Cómo ClickHouse Cloud realiza operaciones de escalado sin interrupciones
+* [Inactividad automática](/es/products/cloud/features/autoscaling/idling) — Ahorro de costes mediante la suspensión automática del servicio
+* [Recomendaciones de escalado](/es/products/cloud/features/autoscaling/scaling-recommendations) — Cómo interpretar las recomendaciones de escalado
+* [Escalado programado](/es/products/cloud/features/autoscaling/scheduled-scaling) — Comprenda la función de Escalado programado, que le permite definir exactamente cuándo su servicio debe ampliar o reducir sus recursos, independientemente de las métricas en tiempo real

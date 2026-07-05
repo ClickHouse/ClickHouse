@@ -1,0 +1,512 @@
+---
+sidebarTitle: 'FAQ'
+description: 'Perguntas frequentes sobre o ClickPipes for Postgres.'
+slug: /integrations/clickpipes/postgres/faq
+title: 'FAQ do ClickPipes for Postgres'
+keywords: ['faq do postgres', 'clickpipes', 'colunas TOAST', 'slot de replicação', 'publicações']
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<div id="are-transaction-rollbacks-replicated">
+  ### Rollbacks de transações são replicados para o ClickHouse?
+</div>
+
+Não. O CDC replica apenas transações confirmadas. Transações revertidas nunca são enviadas ao ClickHouse.
+
+<div id="retain-data-longer-in-clickhouse">
+  ### Posso manter os dados no ClickHouse por mais tempo do que no meu Postgres de origem?
+</div>
+
+Sim. O Postgres de origem e o ClickHouse de destino têm retenção independente. Por exemplo, você pode manter apenas 3 meses de dados no Postgres e reter o histórico completo no ClickHouse. A exclusão de linhas antigas no Postgres gera eventos DELETE que são replicados para o ClickHouse, então, se você quiser preservar dados históricos, deverá excluir os DELETEs da sua [publicação](/pt-BR/integrations/clickpipes/postgres/faq#ignore-delete-truncate) ou tratá-los na camada de consulta.
+
+<div id="data-enrichment">
+  ### Como posso enriquecer os dados à medida que fluem do Postgres para o ClickHouse?
+</div>
+
+Use [visões materializadas](/pt-BR/concepts/features/materialized-views/index) sobre suas tabelas de destino do CDC. As visões materializadas no ClickHouse funcionam como gatilhos de inserção, portanto cada linha replicada do Postgres pode ser transformada, combinada via join com tabelas de referência ou enriquecida com colunas adicionais antes de ser gravada em uma tabela de destino final.
+
+<div id="multi-region-multi-source">
+  ### Posso replicar de várias instâncias do Postgres para um ou mais serviços do ClickHouse?
+</div>
+
+Sim. Você pode criar ClickPipes separados de diferentes instâncias do Postgres (inclusive em diferentes regiões da AWS) para um ou mais serviços do ClickHouse. Por exemplo, é possível enviar dados de um Postgres regional para um cluster local do ClickHouse para análises de baixa latência e, ao mesmo tempo, para um cluster centralizado do ClickHouse em outra região para relatórios consolidados. Tenha em mente que configurações entre regiões geram custos de transferência de dados entre regiões da AWS e latência de rede adicional.
+
+<div id="how-does-idling-affect-my-postgres-cdc-clickpipe">
+  ### Como a ociosidade afeta meu ClickPipe de CDC do Postgres?
+</div>
+
+Se o seu serviço do ClickHouse Cloud estiver ocioso, seu ClickPipe de CDC do Postgres continuará sincronizando os dados, e o serviço será reativado no próximo intervalo de sincronização para processar os dados recebidos. Quando a sincronização for concluída e o período de inatividade for atingido, o serviço voltará a ficar ocioso.
+
+Por exemplo, se o intervalo de sincronização estiver definido como 30 min e o tempo de inatividade do serviço estiver definido como 10 min, o serviço será reativado a cada 30 min, ficará ativo por 10 min e depois voltará a ficar ocioso.
+
+<div id="how-are-toast-columns-handled-in-clickpipes-for-postgres">
+  ### Como o ClickPipes for Postgres lida com colunas TOAST?
+</div>
+
+Consulte a página [Tratamento de colunas TOAST](/pt-BR/integrations/clickpipes/postgres/toast) para mais informações.
+
+<div id="how-are-generated-columns-handled-in-clickpipes-for-postgres">
+  ### Como o ClickPipes for Postgres lida com colunas geradas?
+</div>
+
+Consulte a página [Colunas geradas no Postgres: armadilhas e práticas recomendadas](/pt-BR/integrations/clickpipes/postgres/postgres-generated-columns) para mais informações.
+
+<div id="do-tables-need-to-have-primary-keys-to-be-part-of-postgres-cdc">
+  ### As tabelas precisam ter chaves primárias para fazer parte do Postgres CDC?
+</div>
+
+Para que uma tabela seja replicada usando o ClickPipes for Postgres, ela deve ter uma chave primária ou uma [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) definida.
+
+* **Chave primária**: A abordagem mais simples é definir uma chave primária na tabela. Isso fornece um identificador único para cada linha, o que é essencial para rastrear atualizações e exclusões. Nesse caso, você pode manter a REPLICA IDENTITY como `DEFAULT` (o comportamento padrão).
+* **Identidade de réplica**: Se uma tabela não tiver chave primária, você pode definir uma identidade de réplica. A identidade de réplica pode ser definida como `FULL`, o que significa que a linha inteira será usada para identificar alterações. Como alternativa, você pode configurá-la para usar um índice único, caso exista um na tabela, e então definir a REPLICA IDENTITY como `USING INDEX index_name`.
+  Para definir a identidade de réplica como `FULL`, você pode usar o seguinte comando SQL:
+
+```sql
+ALTER TABLE your_table_name REPLICA IDENTITY FULL;
+```
+
+`REPLICA IDENTITY FULL` também permite a replicação de colunas TOAST inalteradas. Mais sobre isso [aqui](/pt-BR/integrations/clickpipes/postgres/toast).
+
+Observe que usar `REPLICA IDENTITY FULL` pode ter implicações de desempenho e também acelerar o crescimento do WAL, especialmente em tabelas sem chave primária e com atualizações ou exclusões frequentes, pois exige que mais dados sejam registrados em log a cada alteração. Se você tiver alguma dúvida ou precisar de ajuda para configurar chaves primárias ou identidades de réplica para suas tabelas, entre em contato com nossa equipe de suporte para obter orientação.
+
+É importante observar que, se não houver uma chave primária nem uma identidade de réplica definida, o ClickPipes não conseguirá replicar alterações dessa tabela, e você poderá encontrar erros durante o processo de replicação. Portanto, é recomendável revisar os esquemas das suas tabelas e garantir que eles atendam a esses requisitos antes de configurar seu ClickPipe.
+
+<div id="do-you-support-partitioned-tables-as-part-of-postgres-cdc">
+  ### Há suporte para tabelas particionadas como parte do Postgres CDC?
+</div>
+
+Sim, tabelas particionadas têm suporte nativo, desde que tenham uma PRIMARY KEY ou REPLICA IDENTITY definida. A PRIMARY KEY e a REPLICA IDENTITY devem estar presentes tanto na tabela pai quanto nas suas partições. Você pode ler mais sobre isso [aqui](https://blog.peerdb.io/real-time-change-data-capture-for-postgres-partitioned-tables).
+
+<div id="can-i-connect-postgres-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### Posso conectar bancos de dados Postgres que não têm IP público ou estão em redes privadas?
+</div>
+
+Sim! ClickPipes for Postgres oferece duas formas de se conectar a bancos de dados em redes privadas:
+
+1. **Tunelamento SSH**
+   * Funciona bem para a maioria dos casos de uso
+   * Consulte as instruções de configuração [aqui](/pt-BR/integrations/clickpipes/postgres/index#adding-your-source-postgres-database-connection)
+   * Funciona em todas as regiões
+
+2. **AWS PrivateLink**
+   * Disponível em três regiões da AWS:
+     * us-east-1
+     * us-east-2
+     * eu-central-1
+   * Para instruções detalhadas de configuração, consulte nossa [documentação do PrivateLink](/pt-BR/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+   * Para as regiões em que o PrivateLink não está disponível, use o tunelamento SSH
+
+<div id="how-do-you-handle-updates-and-deletes">
+  ### Como lidar com UPDATEs e DELETEs?
+</div>
+
+O ClickPipes for Postgres captura tanto INSERTs quanto UPDATEs do Postgres como novas linhas com versões diferentes (usando a coluna de versão `_peerdb_`) no ClickHouse. O mecanismo de tabela ReplacingMergeTree executa periodicamente a desduplicação em segundo plano com base na chave de ordenação (colunas de ORDER BY), mantendo apenas a linha com a versão `_peerdb_` mais recente.
+
+Os DELETEs do Postgres são propagados como novas linhas marcadas como excluídas (usando a coluna `_peerdb_is_deleted`). Como o processo de desduplicação é assíncrono, talvez você veja duplicatas temporariamente. Para resolver isso, é necessário tratar a desduplicação na camada de consulta.
+
+Observe também que, por padrão, o Postgres não envia os valores de colunas que não fazem parte da chave primária nem da identidade de réplica durante operações de DELETE. Se você quiser capturar os dados completos da linha durante DELETEs, pode definir a [REPLICA IDENTITY](https://www.postgresql.org/docs/current/sql-altertable.html#SQL-ALTERTABLE-REPLICA-IDENTITY) como FULL.
+
+Para mais detalhes, consulte:
+
+* [Boas práticas do mecanismo de tabela ReplacingMergeTree](https://docs.peerdb.io/bestpractices/clickhouse_datamodeling#replacingmergetree-table-engine)
+* [Blog sobre o funcionamento interno do CDC de Postgres para ClickHouse](https://clickhouse.com/blog/postgres-to-clickhouse-data-modeling-tips)
+
+<div id="can-i-update-primary-key-columns-in-postgresql">
+  ### Posso atualizar colunas de chave primária no PostgreSQL?
+</div>
+
+<Warning>
+  Por padrão, atualizações de chave primária no PostgreSQL não podem ser reproduzidas corretamente no ClickHouse.
+
+  Essa limitação existe porque a desduplicação do `ReplacingMergeTree` funciona com base nas colunas de `ORDER BY` (que normalmente correspondem à chave primária). Quando uma chave primária é atualizada no PostgreSQL, ela passa a aparecer no ClickHouse como uma nova linha com uma chave diferente, em vez de uma atualização da linha existente. Isso pode fazer com que tanto os valores antigos quanto os novos da chave primária coexistam na sua tabela do ClickHouse.
+</Warning>
+
+Observe que atualizar colunas de chave primária não é uma prática comum na modelagem de bancos de dados no PostgreSQL, pois chaves primárias devem ser identificadores imutáveis. A maioria das aplicações evita atualizações de chave primária por definição, o que faz com que essa limitação raramente apareça em casos de uso típicos.
+
+Há uma configuração experimental que pode habilitar o tratamento de atualizações de chave primária, mas ela traz impactos significativos no desempenho e não é recomendada para uso em produção sem uma análise cuidadosa.
+
+Se o seu caso de uso exigir a atualização de colunas de chave primária no PostgreSQL e que essas alterações sejam refletidas corretamente no ClickHouse, entre em contato com nossa equipe de suporte em [db-integrations-support@clickhouse.com](mailto:db-integrations-support@clickhouse.com) para discutir seus requisitos específicos e possíveis soluções.
+
+<div id="do-you-support-schema-changes">
+  ### Há suporte para alterações de esquema?
+</div>
+
+Consulte a página [ClickPipes for Postgres: Suporte à propagação de alterações de esquema](/pt-BR/integrations/clickpipes/postgres/schema-changes) para mais informações.
+
+<div id="what-are-the-costs-for-clickpipes-for-postgres-cdc">
+  ### Quais são os custos do ClickPipes for Postgres CDC?
+</div>
+
+Para obter informações detalhadas sobre preços, consulte a [seção de preços do ClickPipes for Postgres CDC em nossa página principal de visão geral de faturamento](/pt-BR/products/cloud/reference/billing/clickpipes/index).
+
+<div id="my-replication-slot-size-is-growing-or-not-decreasing-what-might-be-the-issue">
+  ### O tamanho do meu slot de replicação está aumentando ou não diminuindo; qual pode ser o problema?
+</div>
+
+Se você percebe que o tamanho do seu slot de replicação do Postgres continua aumentando ou não volta a cair, isso geralmente significa que os **registros de WAL (Write-Ahead Log) não estão sendo consumidos (ou &quot;reproduzidos&quot;) com rapidez suficiente** pelo seu pipeline de CDC ou processo de replicação. Abaixo estão as causas mais comuns e como resolvê-las.
+
+1. **Picos repentinos de atividade no banco de dados**
+   * Grandes atualizações em lote, inserts em massa ou mudanças significativas no esquema podem gerar rapidamente uma grande quantidade de dados de WAL.
+   * O slot de replicação manterá esses registros de WAL até que sejam consumidos, causando um aumento temporário no tamanho.
+
+2. **Transações de longa duração**
+   * Uma transação aberta força o Postgres a manter todos os segmentos de WAL gerados desde o início da transação, o que pode aumentar drasticamente o tamanho do slot.
+   * Defina `statement_timeout` e `idle_in_transaction_session_timeout` com valores razoáveis para evitar que transações permaneçam abertas indefinidamente:
+     ```sql
+     SELECT
+         pid,
+         state,
+         age(now(), xact_start) AS transaction_duration,
+         query AS current_query
+     FROM
+         pg_stat_activity
+     WHERE
+         xact_start IS NOT NULL
+     ORDER BY
+         age(now(), xact_start) DESC;
+     ```
+     Use esta consulta para identificar transações anormalmente longas.
+
+3. **Operações de manutenção ou utilitárias (por exemplo, `pg_repack`)**
+   * Ferramentas como `pg_repack` podem reescrever tabelas inteiras, gerando grandes volumes de dados de WAL em pouco tempo.
+   * Programe essas operações para períodos de menor tráfego ou monitore de perto o uso de WAL enquanto elas estiverem em execução.
+
+4. **VACUUM e VACUUM ANALYZE**
+   * Embora sejam necessários para a saúde do banco de dados, esses procedimentos podem gerar tráfego adicional de WAL, especialmente se fizerem varredura em tabelas grandes.
+   * Considere usar parâmetros de ajuste do autovacuum ou programar operações manuais de VACUUM fora dos horários de pico.
+
+5. **O consumidor de replicação não está lendo o slot ativamente**
+   * Se o seu pipeline de CDC (por exemplo, ClickPipes) ou outro consumidor de replicação parar, ficar pausado ou falhar, os dados de WAL se acumularão no slot.
+   * Garanta que seu pipeline esteja em execução contínua e verifique os logs em busca de erros de conectividade ou authentication.
+
+Para um excelente aprofundamento neste tema, confira nosso post no blog: [Overcoming Pitfalls of Postgres Logical Decoding](https://blog.peerdb.io/overcoming-pitfalls-of-postgres-logical-decoding#heading-beware-of-replication-slot-growth-how-to-monitor-it).
+
+<div id="how-are-postgres-data-types-mapped-to-clickhouse">
+  ### Como os tipos de dados do Postgres são mapeados para o ClickHouse?
+</div>
+
+O ClickPipes for Postgres busca mapear os tipos de dados do Postgres de forma o mais nativa possível no ClickHouse. Este documento fornece uma lista completa de cada tipo de dado e seu mapeamento: [Matriz de tipos de dados](https://docs.peerdb.io/datatypes/datatype-matrix).
+
+<div id="can-i-define-my-own-data-type-mapping-while-replicating-data-from-postgres-to-clickhouse">
+  ### Posso definir meu próprio mapeamento de tipos de dados ao replicar dados do Postgres para o ClickHouse?
+</div>
+
+Atualmente, não oferecemos suporte à definição de mapeamentos personalizados de tipos de dados como parte do pipe. No entanto, vale notar que o mapeamento padrão de tipos de dados usado pelo ClickPipes é bastante fiel aos tipos nativos. A maioria dos tipos de coluna do Postgres é replicada o mais próximo possível de seus equivalentes nativos no ClickHouse. Tipos de array de inteiros no Postgres, por exemplo, são replicados como arrays de inteiros no ClickHouse.
+
+<div id="how-are-json-and-jsonb-columns-replicated-from-postgres">
+  ### Como as colunas JSON e JSONB são replicadas do Postgres?
+</div>
+
+As colunas JSON e JSONB são replicadas como tipo String no ClickHouse. Como o ClickHouse tem suporte nativo ao [tipo JSON](/pt-BR/reference/data-types/newjson), você pode criar uma visão materializada sobre as tabelas do ClickPipes para fazer a conversão, se necessário. Como alternativa, você pode usar [funções JSON](/pt-BR/reference/functions/regular-functions/json-functions) diretamente nas colunas String. Estamos trabalhando ativamente em um recurso que replica colunas JSON e JSONB diretamente para o tipo JSON no ClickHouse. A expectativa é que esse recurso esteja disponível em alguns meses.
+
+<div id="what-happens-to-inserts-when-a-mirror-is-paused">
+  ### O que acontece com os inserts quando um mirror é pausado?
+</div>
+
+Quando você pausa o mirror, as mensagens ficam enfileiradas no slot de replicação no Postgres de origem, garantindo que fiquem em buffer e não sejam perdidas. No entanto, pausar e retomar o mirror restabelece a conexão, o que pode levar algum tempo, dependendo da origem.
+
+Durante esse processo, tanto as operações de sincronização (extração de dados do Postgres e streaming para a tabela raw do ClickHouse) quanto as de normalização (da tabela raw para a tabela de destino) são abortadas. No entanto, elas preservam o estado necessário para serem retomadas com segurança.
+
+* Para a sincronização, se ela for cancelada no meio do processo, o confirmed&#95;flush&#95;lsn no Postgres não é avançado, então a próxima sincronização começará da mesma posição da que foi abortada, garantindo a consistência dos dados.
+* Para a normalização, a ordem de insert do ReplacingMergeTree lida com a desduplicação.
+
+Em resumo, embora os processos de sincronização e normalização sejam encerrados durante uma pausa, isso é seguro, pois eles podem ser retomados sem perda de dados nem inconsistências.
+
+<div id="can-clickpipe-creation-be-automated-or-done-via-api-or-cli">
+  ### A criação de ClickPipe pode ser automatizada ou feita por meio da API ou da CLI?
+</div>
+
+Um ClickPipe do Postgres também pode ser criado e gerenciado por meio de endpoints do [OpenAPI](/pt-BR/products/cloud/features/admin-features/api/openapi). Esse recurso está em beta, e a referência da API pode ser encontrada [aqui](/pt-BR/api-reference/organization/get-list-of-available-organizations#tag/beta). Também estamos trabalhando ativamente no suporte ao Terraform para criar ClickPipes do Postgres.
+
+<div id="how-do-i-speed-up-my-initial-load">
+  ### Como acelerar a carga inicial?
+</div>
+
+Não é possível acelerar uma carga inicial que já está em execução. No entanto, você pode otimizar cargas iniciais futuras ajustando determinadas configurações. Por padrão, as configurações usam 4 threads em paralelo e o número de linhas do snapshot por partição é definido como 100.000. Essas são configurações avançadas e, em geral, são suficientes para a maioria dos casos de uso.
+
+Para versões 13 ou anteriores do Postgres, as varreduras por intervalo de CTID são muito lentas e, por isso, o ClickPipes não as usa. Em vez disso, lemos a tabela inteira como uma única partição, o que, na prática, faz com que o processo seja executado em uma única thread (ignorando, portanto, as configurações de número de linhas por partição e de threads em paralelo). Para acelerar a carga inicial nesse caso, você pode aumentar `snapshot number of tables in parallel` ou especificar uma coluna de particionamento personalizada e indexada para tabelas grandes.
+
+<div id="how-should-i-scope-my-publications-when-setting-up-replication">
+  ### Como devo delimitar o escopo das minhas publicações ao configurar a replicação?
+</div>
+
+Você pode deixar que o ClickPipes gerencie suas publicações (isso requer permissões adicionais) ou criá-las você mesmo. Com publicações gerenciadas pelo ClickPipes, lidamos automaticamente com a adição e a remoção de tabelas conforme você edita o pipe. Se preferir gerenciar isso por conta própria, delimite cuidadosamente o escopo das suas publicações para incluir apenas as tabelas que você precisa replicar — incluir tabelas desnecessárias deixará a decodificação do WAL do Postgres mais lenta.
+
+Se você incluir qualquer tabela na sua publicação, certifique-se de que ela tenha uma chave primária ou `REPLICA IDENTITY FULL`. Se houver tabelas sem chave primária, criar uma publicação para todas as tabelas fará com que as operações DELETE e UPDATE falhem nessas tabelas.
+
+Para identificar tabelas sem chaves primárias no seu banco de dados, você pode usar esta consulta:
+
+```sql
+SELECT table_schema, table_name
+FROM information_schema.tables
+WHERE
+    (table_catalog, table_schema, table_name) NOT IN (
+        SELECT table_catalog, table_schema, table_name
+        FROM information_schema.table_constraints
+        WHERE constraint_type = 'PRIMARY KEY') AND
+    table_schema NOT IN ('information_schema', 'pg_catalog', 'pgq', 'londiste');
+```
+
+Você tem duas opções ao lidar com tabelas sem chaves primárias:
+
+1. **Excluir do ClickPipes as tabelas sem chaves primárias**:
+   Crie a publicação apenas com as tabelas que têm chave primária:
+   ```sql
+   CREATE PUBLICATION clickpipes_publication FOR TABLE table_with_primary_key1, table_with_primary_key2, ...;
+   ```
+
+2. **Incluir no ClickPipes as tabelas sem chaves primárias**:
+   Se quiser incluir tabelas sem chave primária, você precisará alterar a identidade da réplica delas para `FULL`. Isso garante que as operações de UPDATE e DELETE funcionem corretamente:
+   ```sql
+   ALTER TABLE table_without_primary_key1 REPLICA IDENTITY FULL;
+   ALTER TABLE table_without_primary_key2 REPLICA IDENTITY FULL;
+   CREATE PUBLICATION clickpipes_publication FOR TABLE <...>, <...>;
+   ```
+
+<Tip>
+  Se você estiver criando uma publicação manualmente, em vez de deixar o ClickPipes gerenciá-la, não recomendamos criar uma publicação `FOR ALL TABLES`, pois isso gera mais tráfego do Postgres para o ClickPipes (ao enviar alterações de outras tabelas que não estão no pipe) e reduz a eficiência geral.
+
+  Em publicações criadas manualmente, adicione à publicação todas as tabelas desejadas antes de adicioná-las ao pipe.
+</Tip>
+
+<Warning>
+  Se você estiver replicando a partir de uma réplica de leitura/hot standby do Postgres, precisará criar sua própria publicação na instância primária, que será propagada automaticamente para o standby. Nesse caso, o ClickPipe não poderá gerenciar a publicação, pois não é possível criar publicações em um standby.
+</Warning>
+
+<div id="recommended-max_slot_wal_keep_size-settings">
+  ### Configurações recomendadas de `max_slot_wal_keep_size`
+</div>
+
+* **No mínimo:** defina [`max_slot_wal_keep_size`](https://www.postgresql.org/docs/devel/runtime-config-replication.html#GUC-MAX-SLOT-WAL-KEEP-SIZE) para reter pelo menos **dois dias de** dados de WAL.
+* **Para bancos de dados grandes (alto volume de transações):** retenha pelo menos **2 a 3 vezes** o pico diário de geração de WAL.
+* **Para ambientes com restrição de armazenamento:** ajuste esse parâmetro de forma conservadora para **evitar o esgotamento do disco**, garantindo ao mesmo tempo a estabilidade da replicação.
+
+<div id="how-to-calculate-the-right-value">
+  #### Como calcular o valor ideal
+</div>
+
+Para determinar o valor ideal, meça a taxa de geração de WAL:
+
+<div id="for-postgresql-10">
+  ##### Para PostgreSQL 10+
+</div>
+
+```sql
+SELECT pg_wal_lsn_diff(pg_current_wal_insert_lsn(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+<div id="for-postgresql-96-and-below">
+  ##### Para PostgreSQL 9.6 e versões anteriores:
+</div>
+
+```sql
+SELECT pg_xlog_location_diff(pg_current_xlog_insert_location(), '0/0') / 1024 / 1024 AS wal_generated_mb;
+```
+
+* Execute a consulta acima em diferentes horários do dia, especialmente durante períodos de alta atividade transacional.
+* Calcule quanto WAL é gerado em um período de 24 horas.
+* Multiplique esse número por 2 ou 3 para garantir retenção suficiente.
+* Defina `max_slot_wal_keep_size` com o valor resultante em MB ou GB.
+
+<div id="example">
+  ##### Exemplo
+</div>
+
+Se o seu banco de dados gera 100 GB de WAL por dia, defina:
+
+```sql
+max_slot_wal_keep_size = 200GB
+```
+
+<div id="im-seeing-a-receivemessage-eof-error-in-the-logs-what-does-it-mean">
+  ### Estou vendo um erro `ReceiveMessage EOF` nos logs. O que isso significa?
+</div>
+
+`ReceiveMessage` é uma função do protocolo de logical decoding do Postgres que lê mensagens do stream de replicação. Um erro EOF (End of File) indica que a conexão com o servidor Postgres foi encerrada inesperadamente ao tentar ler do stream de replicação.
+
+É um erro recuperável e totalmente não fatal. O ClickPipes tentará se reconectar automaticamente e retomar o processo de replicação.
+
+Isso pode acontecer por alguns motivos:
+
+* **Problemas de rede:** Interrupções temporárias na rede podem fazer a conexão cair.
+* **Reinicialização do servidor Postgres:** Se o servidor Postgres for reiniciado ou falhar, a conexão será perdida.
+
+<div id="my-replication-slot-is-invalidated-what-should-i-do">
+  ### Meu slot de replicação foi invalidado. O que devo fazer?
+</div>
+
+A única maneira de recuperar o ClickPipe é iniciar uma ressincronização, o que você pode fazer na página Settings.
+
+A causa mais comum da invalidação do slot de replicação é uma configuração baixa de `max_slot_wal_keep_size` no seu banco de dados PostgreSQL (por exemplo, alguns gigabytes). Recomendamos aumentar esse valor. [Consulte esta seção](/pt-BR/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings) sobre o ajuste de `max_slot_wal_keep_size`. O ideal é configurá-lo para pelo menos 200 GB para evitar a invalidação do slot de replicação.
+
+Em casos raros, vimos esse problema ocorrer mesmo quando `max_slot_wal_keep_size` não está configurado. Isso pode ser causado por um bug raro e complexo no PostgreSQL, embora a causa exata permaneça incerta.
+
+<div id="i-am-seeing-out-of-memory-ooms-on-clickhouse-while-my-clickpipe-is-ingesting-data-can-you-help">
+  ### Estou vendo erros de falta de memória (OOMs) no ClickHouse enquanto meu ClickPipe está ingerindo dados. Podem ajudar?
+</div>
+
+Um motivo comum para OOMs no ClickHouse é que seu serviço está subdimensionado. Isso significa que a configuração atual do serviço não tem recursos suficientes (por exemplo, memória ou CPU) para lidar com a carga de ingestão com eficiência. Recomendamos fortemente aumentar a escala do serviço para atender às demandas da ingestão de dados do seu ClickPipe.
+
+Outro motivo que observamos é a presença de visões materializadas downstream com junções potencialmente não otimizadas:
+
+* Uma técnica comum de otimização para JOINs é quando você tem um `LEFT JOIN` em que a tabela do lado direito é muito grande. Nesse caso, reescreva a consulta para usar um `RIGHT JOIN` e mova a tabela maior para o lado esquerdo. Isso permite que o planejador de consultas seja mais eficiente em termos de memória.
+
+* Outra otimização para JOINs é filtrar explicitamente as tabelas por meio de `subqueries` ou `CTEs` e, em seguida, executar o `JOIN` entre essas subconsultas. Isso dá ao planejador indicações de como filtrar linhas com eficiência e executar o `JOIN`.
+
+<div id="i-am-seeing-an-invalid-snapshot-identifier-during-the-initial-load-what-should-i-do">
+  ### Estou vendo um `invalid snapshot identifier` durante a carga inicial. O que devo fazer?
+</div>
+
+O erro `invalid snapshot identifier` ocorre quando há uma queda na conexão entre o ClickPipes e seu banco de dados Postgres. Isso pode acontecer devido a timeouts no gateway, reinicializações do banco de dados ou outros problemas transitórios.
+
+Recomenda-se não realizar operações disruptivas, como upgrades ou reinicializações, no seu banco de dados Postgres enquanto a carga inicial estiver em andamento, e garantir que a conexão de rede com o banco esteja estável.
+
+Para resolver esse problema, você pode acionar uma ressincronização pela UI do ClickPipes. Isso reiniciará o processo de carga inicial desde o início.
+
+<div id="what-happens-if-i-drop-a-publication-in-postgres">
+  ### O que acontece se eu excluir uma publicação no Postgres?
+</div>
+
+Excluir uma publicação no Postgres interromperá a conexão do seu ClickPipe, já que a publicação é necessária para que o ClickPipe extraia as alterações da origem. Quando isso acontece, você normalmente receberá um alerta de erro informando que a publicação não existe mais.
+
+Para recuperar seu ClickPipe após excluir uma publicação:
+
+1. Crie uma nova publicação com o mesmo nome e as tabelas necessárias no Postgres
+2. Clique no botão &#39;Resync tables&#39; na aba Settings do seu ClickPipe
+
+Essa ressincronização é necessária porque a publicação recriada terá um identificador de objeto (OID) diferente no Postgres, mesmo que tenha o mesmo nome. O processo de ressincronização atualiza suas tabelas de destino e restaura a conexão.
+
+Como alternativa, você pode criar um pipe totalmente novo, se preferir.
+
+Observe que, se você estiver trabalhando com tabelas particionadas, certifique-se de criar sua publicação com as configurações apropriadas:
+
+```sql
+CREATE PUBLICATION clickpipes_publication
+FOR TABLE <...>, <...>
+WITH (publish_via_partition_root = true);
+```
+
+<div id="what-if-i-am-seeing-unexpected-datatype-errors">
+  ### E se eu estiver vendo erros `Unexpected Datatype` ou `Cannot parse type XX ...`
+</div>
+
+Esse erro geralmente ocorre quando o banco de dados Postgres de origem tem um tipo de dado que não pode ser mapeado durante a ingestão.
+Para problemas mais específicos, consulte as possibilidades abaixo.
+
+<div id="postgres-invalid-memalloc-bug">
+  ### Estou recebendo erros como `invalid memory alloc request size <XXX>` durante a replicação/criação de slot
+</div>
+
+Foi introduzido um bug nas versões de patch 17.5/16.9/15.13/14.18/13.21 do Postgres que pode fazer com que determinados workloads causem um aumento exponencial no uso de memória, levando a uma solicitação de alocação de memória &gt;1GB, que o Postgres considera inválida. Esse bug [foi corrigido](https://github.com/postgres/postgres/commit/d87d07b7ad3b782cb74566cd771ecdb2823adf6a) e estará disponível na próxima série de patches do Postgres (17.6...). Consulte seu provedor de Postgres para saber quando essa versão de patch estará disponível para atualização. Se não for possível atualizar imediatamente, será necessário fazer uma ressincronização do pipe quando o erro ocorrer.
+
+<div id="ignore-delete-truncate">
+  ### Preciso manter um histórico completo no ClickHouse, mesmo quando os dados forem excluídos do banco de dados Postgres de origem. Posso ignorar completamente as operações DELETE e TRUNCATE do Postgres no ClickPipes?
+</div>
+
+Sim! Antes de criar seu ClickPipe do Postgres, crie uma publicação sem operações DELETE. Por exemplo:
+
+```sql
+CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish = 'insert,update');
+```
+
+Em seguida, ao [configurar](/pt-BR/integrations/clickpipes/postgres/index#configuring-the-replication-settings) seu ClickPipe do Postgres, certifique-se de selecionar esse nome de publicação.
+
+Observe que operações TRUNCATE são ignoradas pelo ClickPipes e não serão replicadas no ClickHouse.
+
+<div id="replicate-table-dot">
+  ### Por que não consigo replicar minha tabela que tem um ponto no nome?
+</div>
+
+No momento, o PeerDB tem uma limitação: pontos em identificadores de tabela de origem — isto é, no nome do esquema ou no nome da tabela — não são compatíveis com a replicação, pois, nesse caso, o PeerDB não consegue distinguir o que é esquema e o que é tabela, já que faz a separação pelo ponto.
+Está sendo feito um esforço para permitir a inserção separada do esquema e da tabela, contornando essa limitação.
+
+<div id="initial-load-issue">
+  ### A carga inicial foi concluída, mas não há dados ou estão faltando dados no ClickHouse. Qual pode ser o problema?
+</div>
+
+Se a sua carga inicial foi concluída sem erro, mas a tabela de destino no ClickHouse está sem dados, pode ser que haja políticas de RLS (Row Level Security) habilitadas nas tabelas de origem do Postgres.
+Também vale verificar:
+
+* Se o usuário tem permissões suficientes para ler as tabelas de origem.
+* Se há políticas de linha no ClickHouse que possam estar filtrando linhas.
+
+<div id="failover-slot">
+  ### Posso fazer com que o ClickPipe crie um slot de replicação com failover habilitado?
+</div>
+
+Sim, em um ClickPipe do Postgres com modo de replicação CDC ou Snapshot + CDC, você pode fazer com que o ClickPipes crie um slot de replicação com failover habilitado ativando a opção abaixo na seção `Advanced Settings` ao criar o ClickPipe. Observe que sua versão do Postgres deve ser 17 ou superior para usar esse recurso.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+
+Se a origem estiver configurada adequadamente, o slot será preservado após failovers para uma réplica de leitura do Postgres, garantindo a replicação contínua dos dados. Saiba mais [aqui](https://www.postgresql.org/docs/current/logical-replication-failover.html).
+
+<div id="transient-logical-decoding-errors">
+  ### Estou vendo erros como `Internal error encountered during logical decoding of aborted sub-transaction`
+</div>
+
+Esse erro indica um problema transitório na logical decoding de uma subtransação abortada e é específico de implementações personalizadas do Aurora Postgres. Como o erro vem da rotina `ReorderBufferPreserveLastSpilledSnapshot`, isso indica que a logical decoding não está conseguindo ler o snapshot gravado em disco. Pode valer a pena tentar aumentar o [`logical_decoding_work_mem`](https://www.postgresql.org/docs/current/runtime-config-resource.html#GUC-LOGICAL-DECODING-WORK-MEM) para um valor mais alto.
+
+<div id="logical-message-processing-errors">
+  ### Estou vendo erros como `error converting new tuple to map` ou `error parsing logical message` durante a replicação por CDC
+</div>
+
+O Postgres envia informações sobre alterações na forma de mensagens que seguem um protocolo fixo. Esses erros ocorrem quando o ClickPipe recebe uma mensagem que não consegue analisar, seja devido à corrupção durante a transmissão ou ao envio de mensagens inválidas. Embora a causa exata varie, já vimos vários casos em fontes Neon Postgres. Se você também estiver enfrentando esse problema com o Neon, abra um ticket de suporte com eles. Nos demais casos, entre em contato com nossa equipe de suporte para receber orientação.
+
+<div id="include-excluded-columns">
+  ### Posso incluir colunas que inicialmente excluí da replicação?
+</div>
+
+Isso ainda não é suportado; uma alternativa é [ressincronizar a tabela](/pt-BR/integrations/clickpipes/postgres/table-resync) para incluir as colunas desejadas.
+
+<div id="snapshot-no-data-flow">
+  ### Estou percebendo que meu ClickPipe entrou em Snapshot, mas os dados não estão entrando. Qual pode ser o problema?
+</div>
+
+Isso pode acontecer por alguns motivos, principalmente porque alguns pré-requisitos do snapshot podem estar levando mais tempo do que o normal. Para mais informações, leia nossa documentação sobre snapshot paralelo [aqui](/pt-BR/integrations/clickpipes/postgres/parallel-initial-load).
+
+<div id="parallel-snapshotting-taking-time">
+  #### O snapshot paralelo está demorando para obter partições
+</div>
+
+O snapshot paralelo tem algumas etapas iniciais para obter partições lógicas das suas tabelas. Se as suas tabelas forem pequenas, isso será concluído em questão de segundos; no entanto, para tabelas muito grandes (na ordem de terabytes), isso pode levar mais tempo. Você pode monitorar as consultas em execução na sua origem Postgres na aba **Source** para verificar se há consultas de longa duração relacionadas à obtenção de partições para o snapshot. Depois que as partições forem obtidas, os dados começarão a fluir.
+
+<div id="replication-slot-creation-transaction-locked">
+  #### A criação do replication slot está bloqueada por uma transação
+</div>
+
+Na aba **Source**, na seção Activity, você verá a consulta `CREATE_REPLICATION_SLOT` travada no estado `Lock`. Isso pode acontecer porque outra transação está mantendo bloqueios em objetos que o Postgres usa para criar replication slots.
+Para ver as consultas que estão causando o bloqueio, você pode executar a consulta abaixo na sua origem Postgres:
+
+```sql
+SELECT
+  blocked.pid AS blocked_pid,
+  blocked.query AS blocked_query,
+  blocking.pid AS blocking_pid,
+  blocking.query AS blocking_query,
+  blocking.state AS blocking_state
+FROM pg_locks blocked_lock
+JOIN pg_stat_activity blocked
+  ON blocked_lock.pid = blocked.pid
+JOIN pg_locks blocking_lock
+  ON blocking_lock.locktype = blocked_lock.locktype
+  AND blocking_lock.database IS NOT DISTINCT FROM blocked_lock.database
+  AND blocking_lock.relation IS NOT DISTINCT FROM blocked_lock.relation
+  AND blocking_lock.page IS NOT DISTINCT FROM blocked_lock.page
+  AND blocking_lock.tuple IS NOT DISTINCT FROM blocked_lock.tuple
+  AND blocking_lock.virtualxid IS NOT DISTINCT FROM blocked_lock.virtualxid
+  AND blocking_lock.transactionid IS NOT DISTINCT FROM blocked_lock.transactionid
+  AND blocking_lock.classid IS NOT DISTINCT FROM blocked_lock.classid
+  AND blocking_lock.objid IS NOT DISTINCT FROM blocked_lock.objid
+  AND blocking_lock.objsubid IS NOT DISTINCT FROM blocked_lock.objsubid
+  AND blocking_lock.pid != blocked_lock.pid
+JOIN pg_stat_activity blocking
+  ON blocking_lock.pid = blocking.pid
+WHERE NOT blocked_lock.granted;
+```
+
+Depois de identificar a consulta que está bloqueando, você pode optar por esperar que ela termine ou cancelá-la, caso não seja crítica. Depois que a consulta bloqueadora for resolvida, a criação do replication slot deverá prosseguir, permitindo que o snapshot seja iniciado e que os dados comecem a fluir.

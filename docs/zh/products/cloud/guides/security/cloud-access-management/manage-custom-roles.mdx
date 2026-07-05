@@ -1,0 +1,113 @@
+---
+sidebarTitle: '管理自定义角色'
+slug: /cloud/guides/security/manage-custom-roles
+title: '管理自定义角色'
+description: '本页介绍管理员如何添加、修改和删除自定义角色。'
+doc_type: 'guide'
+keywords: ['自定义角色', '安全', '权限']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南适用于在 ClickHouse Cloud 中拥有 Admin 角色的用户。
+
+ClickHouse Cloud 客户可以选择预定义的系统角色，也可以创建自定义角色并分配给用户。有关系统角色及其对应权限的更多信息，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。本指南将详细介绍如何管理自定义角色。
+
+<div id="create-custom-role">
+  ## 创建自定义角色
+</div>
+
+自定义角色可以包含组织、服务和数据库权限的任意组合。权限可应用于全部或部分服务和数据库。
+
+<Steps>
+  <Step>
+    ### 访问组织设置并选择 Users and roles
+
+    在 services 页面中，选择你的组织名称。然后在弹出菜单中选择 `Users and roles` 菜单项。
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 选择 `Roles` 选项卡
+
+    在屏幕顶部中间选择 `Roles` 选项卡。
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 在右上角选择 `Create new role`
+
+    点击屏幕右上角的 `Create new role` 按钮。
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### 为角色命名
+
+    输入一个便于识别的角色名称。这将是在为用户和 API 密钥 分配角色时显示的名称。
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### 点击 `Allow` 并选择权限范围
+
+    点击 `Allow` 按钮，然后从 Organization、Service 和/或 Database 权限中进行选择。有关所有权限的说明，请参阅[控制台角色和权限](/zh/products/cloud/reference/security/console-roles)。
+
+    <Tip>
+      确保需要登录控制台的用户至少具有 Organization &gt; Access organization 权限。
+    </Tip>
+
+    <Info>
+      **Data Sources 选项卡访问**
+
+      要访问 **Data Sources** 选项卡，该角色目前需要 `Manage and Delete Selected Services` 权限。
+    </Info>
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### 检查新角色
+
+    完成之前，请检查分配给新角色的权限。确认无误后，点击 `Create role`。
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+  </Step>
+</Steps>
+
+<div id="update-custom-role">
+  ## 更新自定义角色
+</div>
+
+自定义角色创建后可以更新。用户会失去从该角色中移除的所有权限，并获得新增的所有权限。
+
+<Tip>
+  用户权限是叠加的。如果用户通过多个角色拥有执行某项操作的权限，那么仅从其中一个角色移除该权限时，他们可能不会立即失去访问权限。
+</Tip>
+
+1. 进入组织设置，然后选择 `Users and roles`
+2. 选择 `Roles` 选项卡
+3. 选择要更新的角色旁边的三个点
+4. 选择 `Edit`
+5. 修改权限
+6. 选择 `Edit role`
+
+<div id="delete-custom-role">
+  ## 删除自定义角色
+</div>
+
+自定义角色可随时删除。
+
+<Warning>
+  组织中必须至少有一位用户拥有管理权限。如果删除该角色会导致最后一位用户失去管理权限，则无法删除该角色。要解决此问题，请先为至少一位用户分配 Admin 系统角色，然后再删除自定义角色。
+</Warning>
+
+1. 进入组织设置并选择 `Users and roles`
+2. 选择 `Roles` 选项卡
+3. 选择要删除的角色旁边的三个点
+4. 查看删除该角色后将失去访问权限的用户和 API 密钥，并按需调整分配。
+5. 选择 `Delete role` 完成删除

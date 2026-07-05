@@ -1,0 +1,38 @@
+---
+title: كيفية قياس زمن معالجة الاستعلام دون إرجاع صفوف
+description: تعرّف على كيفية استخدام الخيار `FORMAT Null` في ClickHouse لقياس زمن معالجة الاستعلام دون إرجاع أي صفوف إلى العميل.
+date: 2023-06-07
+tags: ['الأداء والتحسينات']
+keywords: ['زمن معالجة الاستعلام']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+يعرض استعلامي العديد من الصفوف، لكن ما يهمني فقط هو زمن معالجة الاستعلام. كيف يمكنني تجاهل ناتج الاستعلام والتحقق من زمن معالجة الاستعلام؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+أضِف `FORMAT Null` إلى استعلامك لضبط تنسيق الإخراج على `Null`. وهذا يمنع إرسال البيانات إلى العميل.
+
+على سبيل المثال:
+
+```sql
+SELECT
+    customer_id,
+    count() AS total,
+    any(review_headline)
+FROM amazon_reviews
+GROUP BY customer_id
+ORDER BY total DESC
+FORMAT Null
+```
+
+ستُرجع الاستجابة عدد الصفوف المُعالجة والزمن المستغرق، ولكن لن يتم إرجاع أي صفوف (0):
+
+```response
+0 rows in set. Elapsed: 25.288 sec. Processed 222.04 million rows, 13.50 GB (8.78 million rows/s., 533.77 MB/s.)
+```
