@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Tags: no-async-insert
+# no-async-insert: read_rows and written_rows are correctly missing from the initial query,
+# and the secondary insert query (AsyncInsertFlush) is not logged
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,7 +22,7 @@ function execute_query()
 function check_query_span_query_only()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
     SELECT attribute['db.statement']       as query
     FROM system.opentelemetry_span_log
     WHERE finish_date                      >= yesterday()
@@ -32,7 +35,7 @@ ${CLICKHOUSE_CLIENT} -q "
 function check_query_span()
 {
 ${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
     SELECT attribute['db.statement']             as query,
            attribute['clickhouse.read_rows']     as read_rows,
            attribute['clickhouse.written_rows']  as written_rows
@@ -47,7 +50,7 @@ ${CLICKHOUSE_CLIENT} -q "
 function check_query_settings()
 {
 result=$(${CLICKHOUSE_CLIENT} -q "
-    SYSTEM FLUSH LOGS;
+    SYSTEM FLUSH LOGS opentelemetry_span_log;
     SELECT attribute['clickhouse.setting.min_compress_block_size'],
            attribute['clickhouse.setting.max_block_size'],
            attribute['clickhouse.setting.max_execution_time']
@@ -82,7 +85,7 @@ function check_tcp_attributes()
   local client_version="not found"
 
   result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS;
+      SYSTEM FLUSH LOGS opentelemetry_span_log;
       SELECT attribute['client.version']
       FROM system.opentelemetry_span_log
       WHERE finish_date >= yesterday()
@@ -117,7 +120,7 @@ function check_http_attributes()
   local method="not found"
   
   result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS;
+      SYSTEM FLUSH LOGS opentelemetry_span_log;
       SELECT attribute['http.referer'],
              attribute['http.user.agent'],
              attribute['http.method']

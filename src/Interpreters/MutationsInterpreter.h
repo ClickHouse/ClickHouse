@@ -2,36 +2,53 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/PreparedSets.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/MergeTree/AlterConversions.h>
 
 
 namespace DB
 {
 
+class ASTAlterCommand;
+class ActionsChain;
 class Context;
 class QueryPlan;
 
 class QueryPipelineBuilder;
 using QueryPipelineBuilderPtr = std::unique_ptr<QueryPipelineBuilder>;
 
+struct IsStorageTouched
+{
+    bool any_rows_affected = false;
+    bool all_rows_affected = false;
+};
+
+ASTPtr prepareQueryAffectedAST(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
+/// Evaluate the AST size of mutation commands without constructing a full MutationsInterpreter.
+size_t evaluateMutationCommandsSize(const std::vector<MutationCommand> & commands, const StoragePtr & storage, ContextPtr context);
+
 /// Return false if the data isn't going to be changed by mutations.
-bool isStorageTouchedByMutations(
+IsStorageTouched isStorageTouchedByMutations(
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::MutationsSnapshotPtr mutations_snapshot,
     const StorageMetadataPtr & metadata_snapshot,
     const std::vector<MutationCommand> & commands,
-    ContextPtr context
+    ContextPtr context,
+    std::function<void(const Progress & value)> check_operation_is_not_cancelled
 );
 
+/// Build the WHERE-style filter for a mutation command. The parsed
+/// `ASTAlterCommand` is passed in so the caller can reuse the same parse for
+/// other accesses; the function does not call `MutationCommand::ast` itself.
 ASTPtr getPartitionAndPredicateExpressionForMutationCommand(
-    const MutationCommand & command,
+    const ASTAlterCommand * alter,
     const StoragePtr & storage,
     ContextPtr context
 );
-
-MutationCommand createCommandToApplyDeletedMask(const MutationCommand & command);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.
@@ -50,10 +67,12 @@ public:
         bool return_all_columns = false;
         /// Whether we should return mutated or all existing rows
         bool return_mutated_rows = false;
-        /// Where we should filter deleted rows by lightweight DELETE.
+        /// Whether we should filter deleted rows by lightweight DELETE.
         bool apply_deleted_mask = true;
-        /// Where we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
+        /// Whether we should recalculate skip indexes, TTL expressions, etc. that depend on updated columns.
         bool recalculate_dependencies_of_updated_columns = true;
+        /// Number of threads for resulting pipeline.
+        size_t max_threads = 1;
     };
 
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
@@ -62,6 +81,15 @@ public:
         StoragePtr storage_,
         StorageMetadataPtr metadata_snapshot_,
         MutationCommands commands_,
+        ContextPtr context_,
+        Settings settings_);
+
+    /// Same but with explicit list of available columns
+    MutationsInterpreter(
+        StoragePtr storage_,
+        StorageMetadataPtr metadata_snapshot_,
+        MutationCommands commands_,
+        Names available_columns_,
         ContextPtr context_,
         Settings settings_);
 
@@ -77,7 +105,15 @@ public:
         Settings settings_);
 
     void validate();
-    size_t evaluateCommandsSize();
+
+    /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
+    /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
+    /// without constructing a full `MutationsInterpreter` (which would require the predicate
+    /// to be analyzable — see `validate_mutation_query`).
+    static void validateNonDeterministicMutationsForStorage(
+        const StoragePtr & storage,
+        const MutationCommands & commands,
+        ContextPtr context);
 
     /// The resulting stream will return blocks containing only changed columns and columns, that we need to recalculate indices.
     QueryPipelineBuilder execute();
@@ -91,6 +127,8 @@ public:
     bool isAffectingAllColumns() const;
 
     NameSet grabMaterializedIndices() { return std::move(materialized_indices); }
+
+    NameSet grabDroppedIndices() { return std::move(dropped_indices); }
 
     NameSet grabMaterializedStatistics() { return std::move(materialized_statistics); }
 
@@ -120,13 +158,17 @@ public:
     /// Additionally we propagate some storage properties.
     struct Source
     {
-        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_) const;
+        StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & snapshot_, const ContextPtr & context_, bool with_data) const;
+
         StoragePtr getStorage() const;
         const MergeTreeData * getMergeTreeData() const;
+        AlterConversionsPtr getAlterConversions() const { return alter_conversions; }
         MergeTreeData::DataPartPtr getMergeTreeDataPart() const;
+        bool isMutatingDataPart() const;
+
         bool supportsLightweightDelete() const;
         bool materializeTTLRecalculateOnly() const;
-        bool hasSecondaryIndex(const String & name) const;
+        bool hasSecondaryIndex(const String & name, StorageMetadataPtr metadata) const;
         bool hasProjection(const String & name) const;
         bool hasBrokenProjection(const String & name) const;
         bool isCompactPart() const;
@@ -136,8 +178,7 @@ public:
             QueryPlan & plan,
             const StorageMetadataPtr & snapshot_,
             const ContextPtr & context_,
-            bool apply_deleted_mask_,
-            bool can_execute_) const;
+            const Settings & mutation_settings) const;
 
         explicit Source(StoragePtr storage_);
         Source(MergeTreeData & storage_, MergeTreeData::DataPartPtr source_part_, AlterConversionsPtr alter_conversions_);
@@ -161,14 +202,15 @@ private:
         Settings settings_);
 
     void prepare(bool dry_run);
+    void addStageIfNeeded(std::optional<UInt64> mutation_version, bool is_filter_stage);
 
     void initQueryPlan(Stage & first_stage, QueryPlan & query_plan);
     void prepareMutationStages(std::vector<Stage> &prepared_stages, bool dry_run);
     QueryPipelineBuilder addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, QueryPlan & plan) const;
-
     std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+    static std::optional<ActionsDAG> createFilterDAGForStage(const Stage & stage);
 
-    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const MutationCommand & command) const;
+    ASTPtr getPartitionAndPredicateExpressionForMutationCommand(const ASTAlterCommand * alter) const;
 
     Source source;
     StorageMetadataPtr metadata_snapshot;
@@ -182,6 +224,7 @@ private:
     ContextPtr context;
     Settings settings;
     SelectQueryOptions select_limits;
+    bool use_analyzer = false;
 
     LoggerPtr logger;
 
@@ -203,7 +246,10 @@ private:
 
     struct Stage
     {
-        explicit Stage(ContextPtr context_) : expressions_chain(context_) {}
+        explicit Stage(ContextPtr context_);
+        ~Stage();
+        Stage(Stage &&) noexcept;
+        Stage & operator=(Stage &&) noexcept;
 
         ASTs filters;
         std::unordered_map<String, ASTPtr> column_to_updated;
@@ -212,13 +258,27 @@ private:
         /// the previous stages and also columns needed by the next stages.
         NameSet output_columns;
 
+        /// --- Old analyzer path (populated when analyzer is not enabled) ---
         std::unique_ptr<ExpressionAnalyzer> analyzer;
 
         /// A chain of actions needed to execute this stage.
         /// First steps calculate filter columns for DELETEs (in the same order as in `filter_column_names`),
         /// then there is (possibly) an UPDATE step, and finally a projection step.
         ExpressionActionsChain expressions_chain;
+
+        /// --- New analyzer path (populated when analyzer is enabled) ---
+        std::unique_ptr<ActionsChain> new_actions_chain;
+        PreparedSetsPtr new_prepared_sets;
+
+        /// --- Common ---
         Names filter_column_names;
+
+        bool affects_all_columns = false;
+        std::optional<UInt64> mutation_version;
+
+        /// True if columns in column_to_updated are not changed, but they need
+        /// to be read (for example to materialize projection).
+        bool is_readonly = false;
 
         /// Check that stage affects all storage columns
         bool isAffectingAllColumns(const Names & storage_columns) const;
@@ -232,6 +292,7 @@ private:
     NameSet materialized_indices;
     NameSet materialized_projections;
     NameSet materialized_statistics;
+    NameSet dropped_indices; /// Indices dropped by mutation due to alter_column_secondary_index_mode
 
     MutationKind mutation_kind; /// Do we meet any index or projection mutation.
 

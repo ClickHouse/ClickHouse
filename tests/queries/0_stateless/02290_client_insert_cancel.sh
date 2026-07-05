@@ -12,6 +12,8 @@ while [ "$($CLICKHOUSE_CLIENT -q "select count() from system.processes where que
     sleep 0.1
 done
 
+sleep 0.1
+
 kill -INT $client_pid
 wait $client_pid
 # if client does not cancel it properly (i.e. cancel the query), then return code will be 2, otherwise 0

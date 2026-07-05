@@ -1,1 +1,1 @@
-x	LowCardinality(Nullable(UInt64))					
+x	LowCardinality(UInt64)					

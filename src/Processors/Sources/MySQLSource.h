@@ -74,12 +74,16 @@ public:
 
     Chunk generate() override;
 
+protected:
+    void onCancel() noexcept override;
+
 private:
     void onStart();
 
     mysqlxx::PoolWithFailoverPtr pool;
     std::string query_str;
-    bool is_initialized = false;
+    std::atomic<bool> is_initialized{false};
+    std::atomic<uint64_t> mysql_connection_id{0};
 };
 
 }

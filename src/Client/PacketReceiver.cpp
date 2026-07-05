@@ -20,7 +20,7 @@ bool PacketReceiver::checkBeforeTaskResume()
 
 void PacketReceiver::processAsyncEvent(int fd [[maybe_unused]], Poco::Timespan socket_timeout, AsyncEventTimeoutType, const std::string &, uint32_t)
 {
-    assert(fd == socket_fd);
+    chassert(fd == socket_fd);
     timeout_descriptor.setRelative(socket_timeout);
     timeout = socket_timeout;
     is_read_in_process = true;
@@ -62,7 +62,7 @@ void PacketReceiver::Task::run(AsyncCallback async_callback, SuspendCallback sus
     while (true)
     {
         {
-            AsyncCallbackSetter async_setter(receiver.connection, async_callback);
+            AsyncCallbackSetter<Connection> async_setter(receiver.connection, async_callback);
             receiver.packet = receiver.connection->receivePacket();
         }
         suspend_callback();

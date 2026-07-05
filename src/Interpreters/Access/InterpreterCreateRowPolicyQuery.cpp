@@ -11,7 +11,6 @@
 #include <Parsers/Access/ASTCreateRowPolicyQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
-#include <Parsers/formatAST.h>
 #include <boost/range/algorithm/sort.hpp>
 
 
@@ -42,7 +41,7 @@ namespace
             policy.setRestrictive(*query.is_restrictive);
 
         for (const auto & [filter_type, filter] : query.filters)
-            policy.filters[static_cast<size_t>(filter_type)] = filter ? serializeAST(*filter) : String{};
+            policy.filters[static_cast<size_t>(filter_type)] = filter ? filter->formatWithSecretsOneLine() : String{};
 
         if (override_to_roles)
             policy.to_roles = *override_to_roles;
@@ -66,7 +65,7 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
         return executeDDLQueryOnCluster(updated_query_ptr, getContext(), params);
     }
 
-    assert(query.names->cluster.empty());
+    chassert(query.names->cluster.empty());
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
 
@@ -149,6 +148,7 @@ AccessRightsElements InterpreterCreateRowPolicyQuery::getRequiredAccess() const
     return res;
 }
 
+void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory);
 void registerInterpreterCreateRowPolicyQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

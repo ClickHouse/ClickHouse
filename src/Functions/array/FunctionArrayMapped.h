@@ -58,8 +58,8 @@ namespace ErrorCodes
   *
   * See the example of Impl template parameter in arrayMap.cpp
   */
-template <typename Impl, typename Name>
-class FunctionArrayMapped : public IFunction
+template <typename Impl, typename Name, bool IsDeterministic = true>
+class FunctionArrayMapped final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -72,6 +72,9 @@ public:
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
+    bool isHigherOrderFunction() const override { return true; }
+    bool isDeterministic() const override { return IsDeterministic; }
+    bool isDeterministicInScopeOfQuery() const override { return IsDeterministic; }
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
@@ -139,7 +142,7 @@ public:
             && tuple_argument_size > 1
             && tuple_argument_size == num_function_arguments)
         {
-            assert(nested_types.size() == 1);
+            chassert(nested_types.size() == 1);
 
             auto argument_type = nested_types[0];
             const auto & tuple_type = assert_cast<const DataTypeTuple &>(*argument_type);
@@ -248,7 +251,17 @@ public:
         return Impl::getReturnType(return_type, first_array_type->getNestedType());
     }
 
-    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/) const override
+    ColumnPtr executeImplDryRun(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/true);
+    }
+
+    ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        return executeImplCommon(arguments, result_type, input_rows_count, /*dry_run=*/false);
+    }
+
+    ColumnPtr executeImplCommon(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t /*input_rows_count*/, bool dry_run) const
     {
         if (arguments.size() == 1 + num_fixed_params)
         {
@@ -378,15 +391,14 @@ public:
             auto & replicated_column_function = typeid_cast<ColumnFunction &>(*replicated_column_function_ptr);
             replicated_column_function.appendArguments(arrays);
 
-            auto lambda_result = replicated_column_function.reduce();
+            auto lambda_result = replicated_column_function.reduce(dry_run);
 
             /// Convert LowCardinality(T) -> T and Const(LowCardinality(T)) -> Const(T),
             /// because we removed LowCardinality from return type of lambda expression.
             if (lambda_result.column->lowCardinality())
                 lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
-            if (const auto * const_column = checkAndGetColumnConst<ColumnLowCardinality>(lambda_result.column.get()))
-                lambda_result.column = const_column->removeLowCardinality();
+            lambda_result.column = lambda_result.column->convertToFullColumnIfLowCardinality();
 
             if (Impl::needBoolean())
             {

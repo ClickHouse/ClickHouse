@@ -58,6 +58,7 @@ public:
         set(reinterpret_cast<Position>(vector.data()), vector.size());
         finalized = false;
         canceled = false;
+        bytes = 0;
     }
 
 protected:
@@ -67,6 +68,8 @@ protected:
             ((position() - reinterpret_cast<Position>(vector.data())) /// NOLINT
                 + sizeof(ValueType) - 1)  /// Align up. /// NOLINT
             / sizeof(ValueType));
+
+        bytes += offset();
 
         /// Prevent further writes.
         set(nullptr, 0);

@@ -1,15 +1,40 @@
 #include <Parsers/ASTSetQuery.h>
-#include <Parsers/formatSettingName.h>
-#include <Common/SipHash.h>
-#include <Common/FieldVisitorHash.h>
-#include <Common/FieldVisitorToString.h>
-#include <Common/quoteString.h>
+
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <IO/Operators.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/formatSettingName.h>
+#include <Storages/Kafka/Kafka_fwd.h>
+#include <Storages/NATS/NATS_fwd.h>
+#include <Storages/ObjectStorageQueue/AzureQueue_fwd.h>
+#include <Storages/ObjectStorageQueue/S3Queue_fwd.h>
+#include <Storages/RabbitMQ/RabbitMQ_fwd.h>
+#include <Poco/Exception.h>
+#include <Poco/URI.h>
+#include <Common/FieldVisitorHash.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
+#include <Common/quoteString.h>
 
+static constexpr std::string_view format_avro_schema_registry_url = "format_avro_schema_registry_url";
 
 namespace DB
 {
+
+namespace
+{
+std::optional<Poco::URI> tryParseURI(const String & uri)
+{
+    try
+    {
+        return Poco::URI (uri);
+    }
+    catch (const Poco::SyntaxException &)
+    {
+        return std::nullopt;
+    }
+}
+}
 
 class FieldVisitorToSetting : public StaticVisitor<String>
 {
@@ -69,7 +94,7 @@ void ASTSetQuery::updateTreeHashImpl(SipHash & hash_state, bool /*ignore_aliases
 void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked state) const
 {
     if (is_standalone)
-        ostr << (format.hilite ? hilite_keyword : "") << "SET " << (format.hilite ? hilite_none : "");
+        ostr << "SET ";
 
     bool first = true;
 
@@ -91,12 +116,66 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
                 return true;
             }
 
-            if (state.create_engine_name == "Iceberg")
+            if (change.name == format_avro_schema_registry_url)
             {
-                const std::set<std::string_view> secret_settings = {"catalog_credential", "auth_header"};
-                if (secret_settings.contains(change.name))
+                auto uri_string = change.value.safeGet<String>();
+                const auto maybe_uri = tryParseURI(uri_string);
+                if (!maybe_uri || maybe_uri->getUserInfo().empty())
+                    return false;
+
+                const auto & user_info = maybe_uri->getUserInfo();
+                const auto user_name = user_info.substr(0, user_info.find(':'));
+                const auto new_user_info = user_name + ":[HIDDEN]";
+                uri_string.replace(uri_string.find(user_info),user_info.size(), new_user_info);
+                ostr << " = '" << uri_string << "'";
+                return true;
+            }
+
+            if (DataLake::DATABASE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
                 {
-                    ostr << " = " << "'[HIDDEN]'";
+                    ostr << " = " << DataLake::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (RabbitMQ::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << RabbitMQ::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (NATS::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << NATS::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (Kafka::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << Kafka::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (AzureQueue::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << AzureQueue::SETTINGS_TO_HIDE.at(change.name)(change.value);
+                    return true;
+                }
+            }
+            if (S3Queue::TABLE_ENGINE_NAME == state.create_engine_name)
+            {
+                if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
+                {
+                    ostr << " = " << S3Queue::SETTINGS_TO_HIDE.at(change.name)(change.value);
                     return true;
                 }
             }
@@ -133,12 +212,42 @@ void ASTSetQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, 
 
 void ASTSetQuery::appendColumnName(WriteBuffer & ostr) const
 {
-    Hash hash = getTreeHash(/*ignore_aliases=*/ true);
+    IASTHash hash = getTreeHash(/*ignore_aliases=*/ true);
 
     writeCString("__settings_", ostr);
     writeText(hash.low64, ostr);
     ostr.write('_');
     writeText(hash.high64, ostr);
+}
+
+bool ASTSetQuery::hasSecretParts() const
+{
+    for (const auto & change : changes)
+    {
+        CustomType custom;
+        if (change.value.tryGet<CustomType>(custom) && custom.isSecret())
+            return true;
+        if (DataLake::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (RabbitMQ::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (NATS::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (Kafka::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (AzureQueue::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+        if (S3Queue::SETTINGS_TO_HIDE.contains(change.name))
+            return true;
+
+        if (change.name == format_avro_schema_registry_url)
+        {
+            const auto maybe_uri = tryParseURI(change.value.safeGet<String>());
+            if (maybe_uri && !maybe_uri->getUserInfo().empty())
+                return true;
+        }
+    }
+    return false;
 }
 
 }

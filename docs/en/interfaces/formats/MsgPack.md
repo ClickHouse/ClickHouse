@@ -1,10 +1,12 @@
 ---
-title: MsgPack
-slug: /interfaces/formats/MsgPack
-keywords: [MsgPack]
-input_format: true
-output_format: true
 alias: []
+description: 'Documentation for the MsgPack format'
+input_format: true
+keywords: ['MsgPack']
+output_format: true
+slug: /interfaces/formats/MsgPack
+title: 'MsgPack'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -15,7 +17,7 @@ alias: []
 
 ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data files.
 
-## Data Types Matching {#data-types-matching}
+## Data types matching {#data-types-matching}
 
 | MessagePack data type (`INSERT`)                                   | ClickHouse data type                                                                                    | MessagePack data type (`SELECT`) |
 |--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|----------------------------------|
@@ -40,7 +42,7 @@ ClickHouse supports reading and writing [MessagePack](https://msgpack.org/) data
 | `int 64`                                                           | [`Decimal64`](/sql-reference/data-types/decimal.md)                                               | `int 64`                         |
 | `bin 8`                                                            | [`Decimal128`/`Decimal256`](/sql-reference/data-types/decimal.md)                                   | `bin 8 `                         |
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Writing to a file ".msgpk":
 
@@ -50,7 +52,7 @@ $ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 2
 $ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
 ```
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 | Setting                                                                                                                                    | Description                                                                                    | Default |
 |--------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|---------|

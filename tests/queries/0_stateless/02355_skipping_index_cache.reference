@@ -1,7 +1,0 @@
-SkippingIndexCacheSize	0
-SkippingIndexCacheSize	0
-0
-SkippingIndexCacheSize	1	1
-1
-SELECT count() FROM tab where val = 25;	0	10
-SELECT count() FROM tab WHERE val = 30;	10	0

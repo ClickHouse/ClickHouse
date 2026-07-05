@@ -1,6 +1,7 @@
 #pragma once
 
 #include <ctime>
+#include <map>
 #include <memory>
 #include <optional>
 
@@ -40,6 +41,9 @@ public:
 
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
+
+    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
+    virtual std::map<String, String> getEngineSettings() const = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
@@ -104,7 +108,7 @@ public:
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getCheckum()` but faster.
+    /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
@@ -112,7 +116,7 @@ public:
 
     /// Reads an entry from the backup.
     virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;

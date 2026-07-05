@@ -24,7 +24,6 @@ $CLICKHOUSE_CLIENT -q "
 use $db;
 create table test_03327 (x Int64) engine MergeTree order by x;
 insert into test_03327 select number from numbers(1000);
--- create materialized view mv_test_03327 (x Int64) refresh every 1 minute as select x*10 as x from test_03327;
 create materialized view mv_test_03327 refresh every 10 minute append (x Int64) engine Memory empty as select x*10 as x from test_03327;
 "
 

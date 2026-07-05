@@ -2,6 +2,7 @@ import pymysql.cursors
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.config_cluster import mysql_pass
 
 cluster = ClickHouseCluster(__file__)
 configs = ["configs/remote_servers.xml", "configs/backups_disk.xml"]
@@ -59,7 +60,7 @@ def drop_mysql_table(conn, tableName):
 def get_mysql_conn(cluster):
     conn = pymysql.connect(
         user="root",
-        password="clickhouse",
+        password=mysql_pass,
         host=cluster.mysql8_ip,
         port=cluster.mysql8_port,
     )
@@ -89,7 +90,7 @@ SETTINGS input_format_with_names_use_header = 0"""
         )
         conn.commit()
 
-    parameters = "'mysql80:3306', 'clickhouse', 'inference_table', 'root', 'clickhouse'"
+    parameters = f"'mysql80:3306', 'clickhouse', 'inference_table', 'root', '{mysql_pass}'"
 
     node1.query(
         f"CREATE TABLE {dbname}.mysql_schema_inference_engine ENGINE=MySQL({parameters})"
@@ -122,7 +123,7 @@ SETTINGS input_format_with_names_use_header = 0"""
 
     node1.query(
         f"CREATE DICTIONARY {dbname}.dict1 (id INT, data String) PRIMARY KEY id "
-        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD 'clickhouse' DB 'clickhouse' TABLE 'inference_table'))"
+        f"SOURCE(MYSQL(HOST 'mysql80' PORT 3306 USER 'root' PASSWORD '{mysql_pass}' DB 'clickhouse' TABLE 'inference_table'))"
         f"LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 10)"
     )
 
@@ -155,7 +156,7 @@ def start_cluster():
 def test_restore_table(start_cluster):
     fill_tables(cluster, "replicated")
     backup_name = new_backup_name()
-    node2.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node2.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     node2.query(f"BACKUP DATABASE replicated TO {backup_name}")
 
@@ -166,7 +167,7 @@ def test_restore_table(start_cluster):
     node2.query("DROP TABLE replicated.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated.mysql_schema_inference_function")
 
-    node3.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node3.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     assert node3.query("EXISTS replicated.mysql_schema_inference_engine") == "0\n"
     assert node3.query("EXISTS replicated.mysql_schema_inference_function") == "0\n"
@@ -174,7 +175,7 @@ def test_restore_table(start_cluster):
     node3.query(
         f"RESTORE DATABASE replicated FROM {backup_name} SETTINGS allow_different_database_def=true"
     )
-    node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated")
+    node1.query("SYSTEM SYNC DATABASE REPLICA replicated")
 
     assert (
         node1.query(
@@ -205,7 +206,7 @@ def test_restore_table_null(start_cluster):
     fill_tables(cluster, "replicated2")
 
     backup_name = new_backup_name()
-    node2.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node2.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     node2.query(f"BACKUP DATABASE replicated2 TO {backup_name}")
 
@@ -216,7 +217,7 @@ def test_restore_table_null(start_cluster):
     node2.query("DROP TABLE replicated2.mysql_schema_inference_engine")
     node2.query("DROP TABLE replicated2.mysql_schema_inference_function")
 
-    node3.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node3.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     assert node3.query("EXISTS replicated2.mysql_schema_inference_engine") == "0\n"
     assert node3.query("EXISTS replicated2.mysql_schema_inference_function") == "0\n"
@@ -225,7 +226,7 @@ def test_restore_table_null(start_cluster):
         f"RESTORE DATABASE replicated2 FROM {backup_name} SETTINGS allow_different_database_def=1, allow_different_table_def=1 "
         f"SETTINGS restore_replace_external_engines_to_null=1, restore_replace_external_table_functions_to_null=1, restore_replace_external_dictionary_source_to_null=1"
     )
-    node1.query(f"SYSTEM SYNC DATABASE REPLICA replicated2")
+    node1.query("SYSTEM SYNC DATABASE REPLICA replicated2")
 
     assert (
         node1.query(

@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class JSONColumnsWithMetadataReader : public JSONColumnsReader
+class JSONColumnsWithMetadataReader final : public JSONColumnsReader
 {
 public:
     JSONColumnsWithMetadataReader(ReadBuffer & in_, const Block & header_, const FormatSettings & format_settings_);
@@ -18,7 +18,7 @@ private:
     const Block header;
 };
 
-class JSONColumnsWithMetadataSchemaReader : public ISchemaReader
+class JSONColumnsWithMetadataSchemaReader final : public ISchemaReader
 {
 public:
     explicit JSONColumnsWithMetadataSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_);

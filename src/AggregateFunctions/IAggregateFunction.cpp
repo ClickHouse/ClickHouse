@@ -1,4 +1,3 @@
-#include "config.h"
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -87,12 +86,18 @@ bool IAggregateFunction::haveSameStateRepresentation(const IAggregateFunction & 
 {
     const auto & lhs_base = getBaseAggregateFunctionWithSameStateRepresentation();
     const auto & rhs_base = rhs.getBaseAggregateFunctionWithSameStateRepresentation();
+
     return lhs_base.haveSameStateRepresentationImpl(rhs_base);
 }
 
 bool IAggregateFunction::haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const
 {
     return getStateType()->equals(*rhs.getStateType());
+}
+
+bool IAggregateFunction::haveSameDefinition(const IAggregateFunction & rhs) const
+{
+    return assert_cast<const DataTypeAggregateFunction &>(*getStateType()).equalsIgnoringVariant(*rhs.getStateType());
 }
 
 void IAggregateFunction::parallelizeMergePrepare(
@@ -102,7 +107,20 @@ void IAggregateFunction::parallelizeMergePrepare(
         ErrorCodes::NOT_IMPLEMENTED, "parallelizeMergePrepare() with thread pool parameter isn't implemented for {} ", getName());
 }
 
-void IAggregateFunction::merge(
+void IAggregateFunction::mergeStateFromDifferentVariant(
+    AggregateDataPtr __restrict /*place*/, const IAggregateFunction & rhs, ConstAggregateDataPtr /*rhs_place*/, Arena * /*arena*/) const
+{
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "mergeStateFromDifferentVariant() is not implemented for aggregate function '{}' ({} state variant). "
+        "Cannot merge state produced by '{}' ({} state variant)",
+        getName(),
+        toString(getStateVariant()),
+        rhs.getName(),
+        toString(rhs.getStateVariant()));
+}
+
+void IAggregateFunction::mergeImpl(
     AggregateDataPtr __restrict /*place*/,
     ConstAggregateDataPtr /*rhs*/,
     ThreadPool & /*thread_pool*/,
@@ -110,6 +128,21 @@ void IAggregateFunction::merge(
     Arena * /*arena*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "merge() with thread pool parameter isn't implemented for {} ", getName());
+}
+
+void IAggregateFunction::parallelizeMergeMulti(
+    AggregateDataPtrs & places,
+    ThreadPool & thread_pool,
+    std::atomic<bool> & is_cancelled,
+    Arena * arena) const
+{
+    /// Default: fall back to pairwise parallel merge.
+    for (size_t i = 1; i < places.size(); ++i)
+    {
+        if (is_cancelled.load(std::memory_order_seq_cst))
+            return;
+        merge(places[0], places[i], thread_pool, is_cancelled, arena);
+    }
 }
 
 void IAggregateFunction::insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const
@@ -131,8 +164,6 @@ void IAggregateFunction::predictValues(
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method predictValues is not supported for {}", getName());
 }
-
-#if USE_EMBEDDED_COMPILER
 
 void IAggregateFunction::compileCreate(llvm::IRBuilderBase & /*builder*/, llvm::Value * /*aggregate_data_ptr*/) const
 {
@@ -156,5 +187,4 @@ llvm::Value * IAggregateFunction::compileGetResult(llvm::IRBuilderBase & /*build
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "{} is not JIT-compilable", getName());
 }
 
-#endif
 }

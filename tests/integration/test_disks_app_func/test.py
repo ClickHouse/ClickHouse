@@ -12,6 +12,8 @@ def started_cluster():
             "disks_app_test",
             main_configs=["config.xml"],
             with_minio=True,
+            with_zookeeper=True,
+            with_remote_database_disk=False,  # The tests work on the local disk and check local files
         )
         cluster.start()
 
@@ -117,6 +119,20 @@ def remove(source, disk, path):
     )
 
 
+def remove_recurive(source, disk, path):
+    return source.exec_in_container(
+        [
+            "/usr/bin/clickhouse",
+            "disks",
+            "--save-logs",
+            "--disk",
+            f"{disk}",
+            "--query",
+            f"remove -r {path}",
+        ]
+    )
+
+
 def init_data(source):
     source.query("DROP TABLE IF EXISTS test_table")
 
@@ -215,6 +231,8 @@ def test_disks_app_func_ld(started_cluster):
 
 def test_disks_app_func_ls(started_cluster):
     source = cluster.instances["disks_app_test"]
+
+    remove_recurive(source, "test1", ".")
 
     init_data(source)
 

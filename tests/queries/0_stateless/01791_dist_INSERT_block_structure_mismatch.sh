@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-
+# Tags: no-async-insert
+# no-async-insert: no warning
 # NOTE: this is a partial copy of the 01683_dist_INSERT_block_structure_mismatch,
 # but this test also checks the log messages
 

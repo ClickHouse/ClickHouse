@@ -1,0 +1,102 @@
+-- { echoOn }
+
+SELECT 'Original bug case:';
+Original bug case:
+SELECT date_trunc('day', toDate32('1911-01-01'));
+1911-01-01 00:00:00
+SELECT 'date_trunc with pre-1970 Date32:';
+date_trunc with pre-1970 Date32:
+SELECT date_trunc('year', toDate32('1911-01-01'));
+1911-01-01
+SELECT date_trunc('quarter', toDate32('1911-01-01'));
+1911-01-01
+SELECT date_trunc('month', toDate32('1911-01-01'));
+1911-01-01
+SELECT date_trunc('week', toDate32('1911-01-01'));
+1910-12-26
+SELECT date_trunc('day', toDate32('1911-01-01'));
+1911-01-01 00:00:00
+SELECT 'Dates just before epoch:';
+Dates just before epoch:
+SELECT date_trunc('year', toDate32('1969-12-31'));
+1969-01-01
+SELECT date_trunc('quarter', toDate32('1969-12-31'));
+1969-10-01
+SELECT date_trunc('month', toDate32('1969-12-31'));
+1969-12-01
+SELECT date_trunc('week', toDate32('1969-12-31'));
+1969-12-29
+SELECT date_trunc('day', toDate32('1969-12-31'));
+1969-12-31 00:00:00
+SELECT 'Epoch date:';
+Epoch date:
+SELECT date_trunc('year', toDate32('1970-01-01'));
+1970-01-01
+SELECT date_trunc('quarter', toDate32('1970-01-01'));
+1970-01-01
+SELECT date_trunc('month', toDate32('1970-01-01'));
+1970-01-01
+SELECT date_trunc('week', toDate32('1970-01-01'));
+1969-12-29
+SELECT date_trunc('day', toDate32('1970-01-01'));
+1970-01-01 00:00:00
+SELECT 'Date just after epoch:';
+Date just after epoch:
+SELECT date_trunc('year', toDate32('1970-01-02'));
+1970-01-01
+SELECT date_trunc('quarter', toDate32('1970-01-02'));
+1970-01-01
+SELECT date_trunc('month', toDate32('1970-01-02'));
+1970-01-01
+SELECT date_trunc('week', toDate32('1970-01-02'));
+1969-12-29
+SELECT date_trunc('day', toDate32('1970-01-02'));
+1970-01-02 00:00:00
+SELECT 'Near Date32 minimum:';
+Near Date32 minimum:
+SELECT date_trunc('year', toDate32('1900-01-01'));
+1900-01-01
+SELECT date_trunc('quarter', toDate32('1900-01-01'));
+1900-01-01
+SELECT date_trunc('month', toDate32('1900-01-01'));
+1900-01-01
+SELECT date_trunc('week', toDate32('1900-01-01'));
+1900-01-01
+SELECT date_trunc('day', toDate32('1900-01-01'));
+1900-01-01 00:00:00
+SELECT 'Mid-year pre-1970 dates:';
+Mid-year pre-1970 dates:
+SELECT date_trunc('year', toDate32('1950-06-15'));
+1950-01-01
+SELECT date_trunc('quarter', toDate32('1950-06-15'));
+1950-04-01
+SELECT date_trunc('month', toDate32('1950-06-15'));
+1950-06-01
+SELECT date_trunc('week', toDate32('1950-06-15'));
+1950-06-12
+SELECT date_trunc('day', toDate32('1950-06-15'));
+1950-06-15 00:00:00
+SELECT 'Return types for Date32 input:';
+Return types for Date32 input:
+SELECT toTypeName(date_trunc('year', toDate32('1911-01-01')));
+Date32
+SELECT toTypeName(date_trunc('quarter', toDate32('1911-01-01')));
+Date32
+SELECT toTypeName(date_trunc('month', toDate32('1911-01-01')));
+Date32
+SELECT toTypeName(date_trunc('week', toDate32('1911-01-01')));
+Date32
+SELECT toTypeName(date_trunc('day', toDate32('1911-01-01')));
+DateTime64(0)
+SELECT 'Comparison Date32 vs Date for post-1970:';
+Comparison Date32 vs Date for post-1970:
+SELECT date_trunc('day', toDate32('2022-09-16')) = date_trunc('day', toDate('2022-09-16'));
+1
+SELECT date_trunc('week', toDate32('2022-09-16')) = date_trunc('week', toDate('2022-09-16'));
+1
+SELECT date_trunc('month', toDate32('2022-09-16')) = date_trunc('month', toDate('2022-09-16'));
+1
+SELECT date_trunc('quarter', toDate32('2022-09-16')) = date_trunc('quarter', toDate('2022-09-16'));
+1
+SELECT date_trunc('year', toDate32('2022-09-16')) = date_trunc('year', toDate('2022-09-16'));
+1

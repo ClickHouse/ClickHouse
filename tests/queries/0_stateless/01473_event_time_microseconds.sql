@@ -1,4 +1,4 @@
--- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug
+-- Tags: no-tsan, no-asan, no-ubsan, no-msan, no-debug, no-flaky-check
 
 -- This file contains tests for the event_time_microseconds field for various tables.
 -- Note: Only event_time_microseconds for asynchronous_metric_log table is tested via
@@ -18,6 +18,7 @@ SELECT '01473_metric_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.metric_log
+        WHERE event_date >= yesterday() AND event_time >= now() - 600
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -27,6 +28,7 @@ SELECT '01473_trace_log_table_event_start_time_microseconds_test';
 WITH (
           SELECT event_time_microseconds, event_time
           FROM system.trace_log
+          WHERE event_date >= yesterday() AND event_time >= now() - 600
           ORDER BY event_time DESC
           LIMIT 1
       ) AS time
@@ -36,7 +38,7 @@ SELECT '01473_query_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time
@@ -46,7 +48,7 @@ SELECT '01473_query_thread_log_table_event_start_time_microseconds_test';
 WITH (
         SELECT event_time_microseconds, event_time
         FROM system.query_thread_log
-        WHERE current_database = currentDatabase()
+        WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
         ORDER BY event_time DESC
         LIMIT 1
     ) AS time

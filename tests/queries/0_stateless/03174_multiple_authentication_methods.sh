@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, no-openssl-fips
 # Tag no-replicated-database: https://s3.amazonaws.com/clickhouse-test-reports/65277/43e9a7ba4bbf7f20145531b384a31304895b55bc/stateless_tests__release__old_analyzer__s3__databasereplicated__[1_2].html and https://github.com/ClickHouse/ClickHouse/blob/011c694117845500c82f9563c65930429979982f/tests/queries/0_stateless/01175_distributed_ddl_output_mode_long.sh#L4
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

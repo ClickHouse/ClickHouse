@@ -1,10 +1,11 @@
 ---
-slug: /operations/utilities/
+description: 'Page listing various useful ClickHouse tools and utilities.'
+keywords: ['tools', 'utilities']
+sidebar_label: 'List of tools and utilities'
 sidebar_position: 56
-sidebar_label: List of tools and utilities
-title: List of tools and utilities
-description: "Page listing various useful ClickHouse tools and utilities."
-keywords: ["tools", "utilities"]
+slug: /operations/utilities/
+title: 'List of tools and utilities'
+doc_type: 'landing-page'
 ---
 
 | Tool/Utility | Description |
@@ -17,3 +18,5 @@ keywords: ["tools", "utilities"]
 | [clickhouse-disks](../../operations/utilities/clickhouse-disks.md) | Provides filesystem-like operations on files among different ClickHouse disks.|
 | [clickhouse-odbc-bridge](../../operations/utilities/odbc-bridge.md) | A proxy server for ODBC driver.|
 | [clickhouse_backupview](../../operations/utilities/backupview.md) | A python module to analyze ClickHouse backups.|
+| [clickhouse-keeper-client](../../operations/utilities/clickhouse-keeper-client.md) | A client application to interact with ClickHouse Keeper.|
+| [Keeper HTTP API](../../operations/utilities/clickhouse-keeper-http-api.md) | HTTP API and embedded dashboard for ClickHouse Keeper.|

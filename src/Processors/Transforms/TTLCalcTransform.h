@@ -12,12 +12,12 @@ namespace DB
 
 class Block;
 
-class TTLCalcTransform : public IAccumulatingTransform
+class TTLCalcTransform final : public IAccumulatingTransform
 {
 public:
     TTLCalcTransform(
         const ContextPtr & context,
-        const Block & header_,
+        SharedHeader header_,
         const MergeTreeData & storage_,
         const StorageMetadataPtr & metadata_snapshot_,
         const MergeTreeData::MutableDataPartPtr & data_part_,

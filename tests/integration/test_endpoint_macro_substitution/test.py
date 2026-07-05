@@ -1,7 +1,6 @@
 import pytest
 
-from helpers.cluster import ClickHouseCluster, is_arm
-from helpers.test_tools import TSV
+from helpers.cluster import ClickHouseCluster
 
 disk_types = {
     "default": "Local",
@@ -17,6 +16,9 @@ def cluster():
         cluster.add_instance(
             "node",
             main_configs=["configs/storage.xml", "configs/macros.xml"],
+            # Disable with_remote_database_disk to reduce diversion between the public and private repo.
+            # So we do not handle the test differently in the private repo
+            with_remote_database_disk=False,
             with_minio=True,
         )
         cluster.start()

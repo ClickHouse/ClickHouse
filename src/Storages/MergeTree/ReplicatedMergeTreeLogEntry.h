@@ -3,13 +3,14 @@
 #include <Common/CopyableAtomic.h>
 #include <Common/ZooKeeper/Types.h>
 #include <base/types.h>
-#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeType.h>
 #include <Storages/MergeTree/MergeTreeDataFormatVersion.h>
 #include <Disks/IDisk.h>
+#include <Poco/Timestamp.h>
 
 #include <condition_variable>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -65,12 +66,13 @@ struct ReplicatedMergeTreeLogEntryData
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
     MergeTreeDataPartFormat new_part_format;
-    String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
+    std::vector<std::string> deduplication_block_ids;       /// For parts of level zero, the block identifier for deduplication (node name in /blocks/ or /deduplication_hashes/ or /async_blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
     mutable std::unordered_set<String> replace_range_actual_new_part_names;     /// Same as above, but for REPLACE_RANGE
     UUID new_part_uuid = UUIDHelpers::Nil;
 
     Strings source_parts;
+    Strings patch_parts;
     bool deduplicate = false; /// Do deduplicate on merge
     Strings deduplicate_by_columns = {}; // Which columns should be checked for duplicates, empty means 'all' (default).
     bool cleanup = false;
@@ -91,7 +93,7 @@ struct ReplicatedMergeTreeLogEntryData
         Strings src_part_names; // as in from_table
         Strings new_part_names;
         Strings part_names_checksums;
-        int columns_version;
+        int columns_version{};
 
         void writeText(WriteBuffer & out) const;
         void readText(ReadBuffer & in);
@@ -134,7 +136,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// Access under queue_mutex, see ReplicatedMergeTreeQueue.
     size_t num_tries = 0;                 /// The number of attempts to perform the action (since the server started, including the running one).
     std::exception_ptr exception;         /// The last exception, in the case of an unsuccessful attempt to perform the action.
-    time_t last_exception_time = 0;       /// The time at which the last exception occurred.
+    UInt64 last_exception_time_ms = 0;       /// The time at which the last exception occurred.
     time_t last_attempt_time = 0;         /// The time at which the last attempt was attempted to complete the action.
     size_t num_postponed = 0;             /// The number of times the action was postponed.
     String postpone_reason;               /// The reason why the action was postponed, if it was postponed.
@@ -154,6 +156,12 @@ struct ReplicatedMergeTreeLogEntryData
     {
         return type == MUTATE_PART && alter_version != -1;
     }
+
+    void updateLastExeption(std::exception_ptr _exception)
+    {
+        last_exception_time_ms = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds()) / 1000ull;
+        exception = _exception;
+    }
 };
 
 
@@ -161,7 +169,7 @@ struct ReplicatedMergeTreeLogEntry : public ReplicatedMergeTreeLogEntryData, std
 {
     using Ptr = std::shared_ptr<ReplicatedMergeTreeLogEntry>;
 
-    std::condition_variable execution_complete; /// Awake when currently_executing becomes false.
+    std::condition_variable_any execution_complete; /// Awake when currently_executing becomes false.
 
     static Ptr parse(const String & s, const Coordination::Stat & stat, MergeTreeDataFormatVersion format_version);
 };

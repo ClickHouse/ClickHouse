@@ -1,9 +1,10 @@
 ---
+description: 'Documentation for DISTINCT Clause'
+sidebar_label: 'DISTINCT'
 slug: /sql-reference/statements/select/distinct
-sidebar_label: DISTINCT
+title: 'DISTINCT Clause'
+doc_type: 'reference'
 ---
-
-# DISTINCT Clause
 
 If `SELECT DISTINCT` is specified, only unique rows will remain in a query result. Thus, only a single row will remain out of all the sets of fully matching rows in the result.
 
@@ -57,7 +58,7 @@ ClickHouse supports using the `DISTINCT` and `ORDER BY` clauses for different co
 
 Consider the table:
 
-``` text
+```text
 ┌─a─┬─b─┐
 │ 2 │ 1 │
 │ 1 │ 2 │
@@ -72,7 +73,7 @@ Selecting data:
 SELECT DISTINCT a FROM t1 ORDER BY b ASC;
 ```
 
-``` text
+```text
 ┌─a─┐
 │ 2 │
 │ 1 │
@@ -85,7 +86,7 @@ Selecting data with the different sorting direction:
 SELECT DISTINCT a FROM t1 ORDER BY b DESC;
 ```
 
-``` text
+```text
 ┌─a─┐
 │ 3 │
 │ 1 │

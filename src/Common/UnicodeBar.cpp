@@ -72,23 +72,18 @@ namespace UnicodeBar
         size_t floor_width = (int_width / GRADES_IN_FULL_BAR);
 
         for (size_t i = 0; i < floor_width; ++i)
-        {
             dst = checkedCopy(FULL_BAR, UNICODE_BAR_CHAR_SIZE, dst, dst_end);
-        }
 
         size_t remainder = int_width % GRADES_IN_FULL_BAR;
 
         if (remainder)
-        {
-            dst = checkedCopy(&FRACTIONAL_BARS[(remainder - 1) * UNICODE_BAR_CHAR_SIZE], UNICODE_BAR_CHAR_SIZE, dst, dst_end);
-        }
-
-        checkedCopy("\0", 1, dst, dst_end);
+            checkedCopy(&FRACTIONAL_BARS[(remainder - 1) * UNICODE_BAR_CHAR_SIZE], UNICODE_BAR_CHAR_SIZE, dst, dst_end);
     }
 
     std::string render(double width)
     {
-        std::string res(getWidthInBytes(width) + 1, '\0');
+        std::string res;
+        res.resize(getWidthInBytes(width));
         render(width, res.data(), res.data() + res.size());
         return res;
     }

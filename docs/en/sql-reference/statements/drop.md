@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/statements/drop
+description: 'Documentation for DROP Statements'
+sidebar_label: 'DROP'
 sidebar_position: 44
-sidebar_label: DROP
+slug: /sql-reference/statements/drop
+title: 'DROP Statements'
+doc_type: 'reference'
 ---
-
-# DROP Statements
 
 Deletes existing entity. If the `IF EXISTS` clause is specified, these queries do not return an error if the entity does not exist. If the `SYNC` modifier is specified, the entity is dropped without delay.
 
@@ -14,7 +15,7 @@ Deletes all tables inside the `db` database, then deletes the `db` database itse
 
 Syntax:
 
-``` sql
+```sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster] [SYNC]
 ```
 
@@ -28,12 +29,12 @@ To undo the deletion of a table, please see [UNDROP TABLE](/sql-reference/statem
 
 Syntax:
 
-``` sql
+```sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [IF EMPTY]  [db1.]name_1[, [db2.]name_2, ...] [ON CLUSTER cluster] [SYNC]
 ```
 
 Limitations:
-- If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.  
+- If the clause `IF EMPTY` is specified, the server checks the emptiness of the table only on the replica which received the query.
 - Deleting multiple tables at once is not an atomic operation, i.e. if the deletion of a table fails, subsequent tables will not be deleted.
 
 ## DROP DICTIONARY {#drop-dictionary}
@@ -42,7 +43,7 @@ Deletes the dictionary.
 
 Syntax:
 
-``` sql
+```sql
 DROP DICTIONARY [IF EXISTS] [db.]name [SYNC]
 ```
 
@@ -52,7 +53,7 @@ Deletes a user.
 
 Syntax:
 
-``` sql
+```sql
 DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
@@ -62,7 +63,7 @@ Deletes a role. The deleted role is revoked from all the entities where it was a
 
 Syntax:
 
-``` sql
+```sql
 DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
@@ -72,8 +73,18 @@ Deletes a row policy. Deleted row policy is revoked from all the entities where 
 
 Syntax:
 
-``` sql
+```sql
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
+```
+
+## DROP MASKING POLICY {#drop-masking-policy}
+
+Deletes a masking policy.
+
+Syntax:
+
+```sql
+DROP MASKING POLICY [IF EXISTS] name ON [database.]table [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
 ## DROP QUOTA {#drop-quota}
@@ -82,7 +93,7 @@ Deletes a quota. The deleted quota is revoked from all the entities where it was
 
 Syntax:
 
-``` sql
+```sql
 DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
@@ -92,7 +103,7 @@ Deletes a settings profile. The deleted settings profile is revoked from all the
 
 Syntax:
 
-``` sql
+```sql
 DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name] [FROM access_storage_type]
 ```
 
@@ -102,7 +113,7 @@ Deletes a view. Views can be deleted by a `DROP TABLE` command as well but `DROP
 
 Syntax:
 
-``` sql
+```sql
 DROP VIEW [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
 ```
 
@@ -113,13 +124,13 @@ System functions can not be dropped.
 
 **Syntax**
 
-``` sql
+```sql
 DROP FUNCTION [IF EXISTS] function_name [on CLUSTER cluster]
 ```
 
 **Example**
 
-``` sql
+```sql
 CREATE FUNCTION linear_equation AS (x, k, b) -> k*x + b;
 DROP FUNCTION linear_equation;
 ```
@@ -130,13 +141,13 @@ Deletes a named collection.
 
 **Syntax**
 
-``` sql
+```sql
 DROP NAMED COLLECTION [IF EXISTS] name [on CLUSTER cluster]
 ```
 
 **Example**
 
-``` sql
+```sql
 CREATE NAMED COLLECTION foobar AS a = '1', b = '2';
 DROP NAMED COLLECTION foobar;
 ```

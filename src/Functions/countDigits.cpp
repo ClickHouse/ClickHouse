@@ -58,7 +58,7 @@ int digits10(T x)
 /// For Decimal values takes in account their scales: calculates result over underlying int type which is (value * scale).
 /// countDigits(42) = 2, countDigits(42.000) = 5, countDigits(0.04200) = 4.
 /// I.e. you may check decimal overflow for Decimal64 with 'countDecimal(x) > 18'. It's a slow variant of isDecimalOverflow().
-class FunctionCountDigits : public IFunction
+class FunctionCountDigits final : public IFunction
 {
 public:
     static constexpr auto name = "countDigits";
@@ -73,13 +73,13 @@ public:
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which_first(arguments[0]->getTypeId());
+        FunctionArgumentDescriptors mandatory_arguments{
+            {"x", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isIntegerOrDecimal), nullptr, "(U)Int* or Decimal"}, // Adds float
+        };
 
-        if (!which_first.isInt() && !which_first.isUInt() && !which_first.isDecimal())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument of function {}",
-                            arguments[0]->getName(), getName());
+        validateFunctionArguments(*this, arguments, mandatory_arguments);
 
         return std::make_shared<DataTypeUInt8>(); /// Up to 255 decimal digits.
     }
@@ -134,18 +134,24 @@ private:
             if constexpr (is_decimal<T>)
             {
                 auto value = src_data[i].value;
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    /// Cast to unsigned before negation: `-INT_MIN` on a signed integer type is
+                    /// undefined behavior. Unary minus on the unsigned representation is
+                    /// well-defined modular arithmetic and preserves the correct magnitude.
+                    /// The outer cast back to `NativeT` is needed because integer promotion
+                    /// widens narrower unsigned types to `int` before applying unary minus.
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
             else
             {
                 auto value = src_data[i];
-                if (unlikely(value < 0))
-                    dst_data[i] = digits10<NativeT>(-static_cast<NativeT>(value));
+                if (value < 0) [[unlikely]]
+                    /// See note above.
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(static_cast<NativeT>(-static_cast<NativeT>(value))));
                 else
-                    dst_data[i] = digits10<NativeT>(value);
+                    dst_data[i] = static_cast<UInt8>(digits10<NativeT>(value));
             }
         }
     }
@@ -155,7 +161,48 @@ private:
 
 REGISTER_FUNCTION(CountDigits)
 {
-    factory.registerFunction<FunctionCountDigits>();
+    FunctionDocumentation::Description description = R"(
+Returns the number of decimal digits needed to represent a value.
+
+:::note
+This function takes into account the scales of decimal values i.e., it calculates the result over the underlying integer type which is `(value * scale)`.
+
+For example:
+- `countDigits(42) = 2`
+- `countDigits(42.000) = 5`
+- `countDigits(0.04200) = 4`
+:::
+
+:::tip
+You can check decimal overflow for `Decimal64` with `countDigits(x) > 18`,
+although it is slower than [`isDecimalOverflow`](#isDecimalOverflow).
+:::
+)";
+    FunctionDocumentation::Syntax syntax = "countDigits(x)";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "An integer or decimal value.", {"(U)Int*", "Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns the number of digits needed to represent `x`.", {"UInt8"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
+       countDigits(toDecimal64(1, 18)), countDigits(toDecimal64(-1, 18)),
+       countDigits(toDecimal128(1, 38)), countDigits(toDecimal128(-1, 38));
+        )",
+        R"(
+┌─countDigits(toDecimal32(1, 9))─┬─countDigits(toDecimal32(-1, 9))─┬─countDigits(toDecimal64(1, 18))─┬─countDigits(toDecimal64(-1, 18))─┬─countDigits(toDecimal128(1, 38))─┬─countDigits(toDecimal128(-1, 38))─┐
+│                             10 │                              10 │                              19 │                               19 │                               39 │                                39 │
+└────────────────────────────────┴─────────────────────────────────┴─────────────────────────────────┴──────────────────────────────────┴──────────────────────────────────┴───────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 8};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionCountDigits>(documentation);
 }
 
 }

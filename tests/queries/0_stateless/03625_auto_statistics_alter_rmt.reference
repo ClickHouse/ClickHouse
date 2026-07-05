@@ -1,0 +1,29 @@
+no auto statistics
+a	UInt64	[]	\N	\N	\N
+b	UInt64	['MinMax']	\N	1	1
+c	String	[]	\N	\N	\N
+materialized minmax, uniq, tdigest
+a	UInt64	['TDigest','Uniq','MinMax']	1	1	1
+b	UInt64	['TDigest','Uniq','MinMax']	1	1	1
+c	String	['Uniq']	1	\N	\N
+added minmax, uniq, countmin
+a	UInt64	['TDigest','Uniq','MinMax']	1	1	1
+b	UInt64	['TDigest','Uniq','MinMax']	1	1	1
+c	String	['Uniq']	1	\N	\N
+a	UInt64	['Uniq','CountMinSketch','MinMax']	1	2	2
+b	UInt64	['Uniq','CountMinSketch','MinMax']	1	2	2
+c	String	['Uniq','CountMinSketch']	1	\N	\N
+materialized minmax, uniq, countmin
+a	UInt64	['Uniq','CountMinSketch','MinMax']	1	1	1
+b	UInt64	['Uniq','CountMinSketch','MinMax']	1	1	1
+c	String	['Uniq','CountMinSketch']	1	\N	\N
+a	UInt64	['Uniq','CountMinSketch','MinMax']	1	2	2
+b	UInt64	['Uniq','CountMinSketch','MinMax']	1	2	2
+c	String	['Uniq','CountMinSketch']	1	\N	\N
+cleared statistics
+a	UInt64	[]	\N	\N	\N
+b	UInt64	[]	\N	\N	\N
+c	String	[]	\N	\N	\N
+a	UInt64	[]	\N	\N	\N
+b	UInt64	[]	\N	\N	\N
+c	String	[]	\N	\N	\N

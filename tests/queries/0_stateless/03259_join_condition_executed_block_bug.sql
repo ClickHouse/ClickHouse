@@ -8,7 +8,7 @@ INSERT INTO t1 VALUES ('key1', 'a', 1, 1, 2), ('key1', 'b', 2, 3, 2), ('key1', '
 INSERT INTO t2 VALUES ('key1', 'A', 1, 2, 1), ('key1', 'B', 2, 1, 2), ('key1', 'C', 3, 4, 5), ('key1', 'D', 4, 1, 6), ('key3', 'a3', 1, 1, 1), ('key4', 'F', 1,1,1);
 
 SET allow_experimental_join_condition = true;
-SET allow_experimental_analyzer = true;
+SET enable_analyzer = true;
 
 SELECT t1.* FROM t1 FULL OUTER JOIN t2 ON t1.key = t2.key AND (t1.a = 2 OR indexHint(t2.a = 2)) FORMAT Null
 ;

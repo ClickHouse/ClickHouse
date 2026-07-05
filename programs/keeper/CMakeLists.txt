@@ -13,8 +13,11 @@ set (CLICKHOUSE_KEEPER_LINK
         clickhouse-keeper-converter-lib
         clickhouse-keeper-client-lib
         clickhouse_functions
-        dbms
 )
+
+# Track dependencies for #embed directives so that changes to embedded files trigger recompilation.
+set_source_files_properties(Keeper.cpp PROPERTIES OBJECT_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/keeper_embedded.xml")
 
 clickhouse_program_add(keeper)
 
@@ -23,7 +26,7 @@ install(FILES keeper_config.xml DESTINATION "${CLICKHOUSE_ETC_DIR}/clickhouse-ke
 if (BUILD_STANDALONE_KEEPER)
     # Straight list of all required sources
     clickhouse_add_executable(clickhouse-keeper ${CLICKHOUSE_KEEPER_SOURCES})
-
+    target_include_directories(clickhouse-keeper PRIVATE .)
     target_link_libraries(clickhouse-keeper PUBLIC ${CLICKHOUSE_KEEPER_LINK})
 
     set_target_properties(clickhouse-keeper PROPERTIES RUNTIME_OUTPUT_DIRECTORY ../)
@@ -32,5 +35,10 @@ if (BUILD_STANDALONE_KEEPER)
     else()
         clickhouse_make_empty_debug_info_for_nfpm(TARGET clickhouse-keeper DESTINATION_DIR ${CMAKE_CURRENT_BINARY_DIR}/../${SPLIT_DEBUG_SYMBOLS_DIR})
         install(TARGETS clickhouse-keeper RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
+    endif()
+
+    if (ENABLE_CLICKHOUSE_KEEPER_CLIENT)
+        add_custom_command (TARGET clickhouse-keeper POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink clickhouse-keeper clickhouse-keeper-client)
+        install (FILES "${CMAKE_CURRENT_BINARY_DIR}/clickhouse-keeper-client" DESTINATION "${CMAKE_INSTALL_BINDIR}" COMPONENT clickhouse-keeper)
     endif()
 endif()

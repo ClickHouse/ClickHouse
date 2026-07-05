@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Avro وArrow وORC'
+slug: /integrations/data-formats/arrow-avro-orc
+title: 'العمل مع بيانات Avro وArrow وORC في ClickHouse'
+description: 'صفحة تشرح كيفية العمل مع بيانات Avro وArrow وORC في ClickHouse'
+keywords: ['Apache Avro', 'Apache Arrow', 'تنسيق ORC', 'columnar formats', 'big data formats']
+doc_type: 'guide'
+---
+
+أصدرت Apache عدة تنسيقات بيانات تُستخدم على نطاق واسع في بيئات التحليلات، من بينها [Avro](https://avro.apache.org/) و[Arrow](https://arrow.apache.org/) و[Orc](https://orc.apache.org/). ويدعم ClickHouse استيراد البيانات وتصديرها باستخدام أيٍّ من هذه التنسيقات.
+
+<div id="importing-and-exporting-in-avro-format">
+  ## الاستيراد والتصدير بتنسيق Avro
+</div>
+
+يدعم ClickHouse قراءة ملفات بيانات [Apache Avro](https://avro.apache.org/) وكتابتها، وهي تُستخدم على نطاق واسع في أنظمة Hadoop.
+
+للاستيراد من [ملف Avro](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.avro)، ينبغي استخدام تنسيق [Avro](/ar/reference/formats/Avro/Avro) في تعليمة `INSERT`:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.avro'
+FORMAT Avro
+```
+
+باستخدام الدالة [file()](/ar/reference/functions/regular-functions/files#file)، يمكننا أيضًا معاينة ملفات Avro قبل استيراد البيانات فعليًا:
+
+```sql
+SELECT path, hits
+FROM file('data.avro', Avro)
+ORDER BY hits DESC
+LIMIT 5;
+```
+
+```response
+┌─path────────────┬──hits─┐
+│ Amy_Poehler     │ 62732 │
+│ Adam_Goldberg   │ 42338 │
+│ Aaron_Spelling  │ 25128 │
+│ Absence_seizure │ 18152 │
+│ Ammon_Bundy     │ 11890 │
+└─────────────────┴───────┘
+```
+
+للتصدير إلى ملف Avro:
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.avro'
+FORMAT Avro;
+```
+
+<div id="avro-and-clickhouse-data-types">
+  ### أنواع بيانات Avro وClickHouse
+</div>
+
+راجِع [مطابقة أنواع البيانات](/ar/reference/formats/Avro/Avro#data-type-mapping) عند استيراد ملفات Avro أو تصديرها. استخدم التحويل الصريح للأنواع عند تحميل البيانات من ملفات Avro:
+
+```sql
+SELECT
+    date,
+    toDate(date)
+FROM file('data.avro', Avro)
+LIMIT 3;
+```
+
+```response
+┌──date─┬─toDate(date)─┐
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+└───────┴──────────────┘
+```
+
+<div id="avro-messages-in-kafka">
+  ### رسائل Avro في Kafka
+</div>
+
+عندما تكون رسائل Kafka بتنسيق Avro، يمكن لـ ClickHouse قراءة مثل هذه التدفقات باستخدام تنسيق [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent) ومحرك [Kafka](/ar/reference/engines/table-engines/integrations/kafka):
+
+```sql
+CREATE TABLE some_topic_stream
+(
+    field1 UInt32,
+    field2 String
+)
+ENGINE = Kafka() SETTINGS
+kafka_broker_list = 'localhost',
+kafka_topic_list = 'some_topic',
+kafka_group_name = 'some_group',
+kafka_format = 'AvroConfluent';
+```
+
+<div id="working-with-arrow-format">
+  ## العمل مع تنسيق Arrow
+</div>
+
+تنسيق عمودي آخر هو [Apache Arrow](https://arrow.apache.org/)، ويدعمه ClickHouse أيضًا في الاستيراد والتصدير. ولاستيراد البيانات من [ملف Arrow](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.arrow)، نستخدم تنسيق [Arrow](/ar/reference/formats/Arrow/Arrow):
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.arrow'
+FORMAT Arrow
+```
+
+يتم التصدير إلى ملف Arrow بالطريقة نفسها:
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.arrow'
+FORMAT Arrow
+```
+
+راجع أيضًا [مطابقة أنواع البيانات](/ar/reference/formats/Arrow/Arrow#data-types-matching) لمعرفة ما إذا كان ينبغي تحويل أي منها يدويًا.
+
+<div id="arrow-data-streaming">
+  ### بث بيانات Arrow
+</div>
+
+يمكن استخدام تنسيق [ArrowStream](/ar/reference/formats/Arrow/ArrowStream) للعمل مع Arrow streaming (المستخدم في المعالجة داخل الذاكرة). ويمكن لـ ClickHouse قراءة تدفقات Arrow وكتابتها.
+
+ولتوضيح كيفية بث ClickHouse لبيانات Arrow، فلنمررها إلى برنامج بايثون النصي التالي (إذ يقرأ تدفق الإدخال بتنسيق Arrow streaming ويُخرج النتيجة على شكل جدول Pandas):
+
+```python
+import sys, pyarrow as pa
+
+with pa.ipc.open_stream(sys.stdin.buffer) as reader:
+  print(reader.read_pandas())
+```
+
+يمكننا الآن تمرير البيانات من ClickHouse عبر توجيه مخرجاته إلى البرنامج النصي:
+
+```bash
+clickhouse-client -q "SELECT path, hits FROM some_data LIMIT 3 FORMAT ArrowStream" | python3 arrow.py
+```
+
+```response
+                           path  hits
+0       b'Akiba_Hebrew_Academy'   241
+1           b'Aegithina_tiphia'    34
+2  b'1971-72_Utah_Stars_season'     1
+```
+
+يمكن لـ ClickHouse أيضًا قراءة تدفقات Arrow باستخدام تنسيق ArrowStream ذاته:
+
+```sql
+arrow-stream | clickhouse-client -q "INSERT INTO sometable FORMAT ArrowStream"
+```
+
+استخدمنا `arrow-stream` بوصفه مصدرًا محتملًا لبيانات Arrow المتدفقة.
+
+<div id="importing-and-exporting-orc-data">
+  ## استيراد وتصدير بيانات ORC
+</div>
+
+يُعد تنسيق [Apache ORC](https://orc.apache.org/) تنسيقَ تخزينٍ عموديًا يُستخدم عادةً مع Hadoop. يدعم ClickHouse استيراد [بيانات ORC](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.orc) وتصديرها باستخدام [تنسيق ORC](/ar/reference/formats/ORC):
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'data.orc'
+FORMAT ORC;
+
+INSERT INTO sometable
+FROM INFILE 'data.orc'
+FORMAT ORC;
+```
+
+راجع أيضًا [مطابقة أنواع البيانات](/ar/reference/formats/ORC) و[إعدادات إضافية](/ar/reference/formats/Parquet/Parquet#format-settings) لضبط التصدير والاستيراد.
+
+<div id="further-reading">
+  ## لمزيد من القراءة
+</div>
+
+يدعم ClickHouse العديد من التنسيقات، سواء النصية أو الثنائية، لتلبية مختلف السيناريوهات والمنصات. استكشف المزيد من التنسيقات وطرق العمل معها في المقالات التالية:
+
+* [تنسيقات CSV وTSV](/ar/guides/clickhouse/data-formats/csv-tsv)
+* [تنسيقات JSON](/ar/guides/clickhouse/data-formats/json/intro)
+* [Regex وTemplate](/ar/guides/clickhouse/data-formats/templates-regex)
+* [التنسيقات الأصلية والثنائية](/ar/guides/clickhouse/data-formats/binary)
+* [تنسيقات SQL](/ar/guides/clickhouse/data-formats/sql)
+
+واطّلع أيضًا على [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local) - وهي أداة محمولة متكاملة الميزات للتعامل مع الملفات المحلية أو البعيدة دون الحاجة إلى ClickHouse server.

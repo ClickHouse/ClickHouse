@@ -1,9 +1,11 @@
-#include "Core/Protocol.h"
+#include <Core/Protocol.h>
 #if defined(OS_LINUX)
 
 #include <Client/HedgedConnections.h>
+#include <Client/scaleInteractiveDelayByFanout.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
+#include <Core/ProtocolDefines.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 
@@ -18,12 +20,12 @@ namespace Setting
 {
     extern const SettingsBool allow_changing_replica_until_first_data_packet;
     extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 connections_with_failover_max_tries;
     extern const SettingsDialect dialect;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 group_by_two_level_threshold;
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
+    extern const SettingsUInt64 interactive_delay;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsUInt64 parallel_replica_offset;
@@ -54,9 +56,7 @@ HedgedConnections::HedgedConnections(
           timeouts_,
           context_->getSettingsRef()[Setting::connections_with_failover_max_tries].value,
           context_->getSettingsRef()[Setting::fallback_to_stale_replicas_for_distributed_queries].value,
-          context_->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas].value > 0
-            ? context_->getSettingsRef()[Setting::max_parallel_replicas].value
-            : 1,
+          context_->getSettingsRef()[Setting::max_parallel_replicas].value,
           context_->getSettingsRef()[Setting::skip_unavailable_shards].value,
           table_to_check_,
           priority_func)
@@ -118,6 +118,23 @@ void HedgedConnections::sendScalarsData(Scalars & data)
     pipeline_for_new_replicas.add(send_scalars_data);
 }
 
+void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
+{
+    std::lock_guard lock(cancel_mutex);
+
+    if (!sent_query)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send query plan: query not yet sent.");
+
+    auto send_query_plan = [&query_plan](ReplicaState & replica) { replica.connection->sendQueryPlan(query_plan); };
+
+    for (auto & offset_state : offset_states)
+        for (auto & replica : offset_state.replicas)
+            if (replica.connection)
+                send_query_plan(replica);
+
+    pipeline_for_new_replicas.add(send_query_plan);
+}
+
 void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> & data)
 {
     std::lock_guard lock(cancel_mutex);
@@ -140,23 +157,6 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
                 send_external_tables_data(replica);
 
     pipeline_for_new_replicas.add(send_external_tables_data);
-}
-
-void HedgedConnections::sendIgnoredPartUUIDs(const std::vector<UUID> & uuids)
-{
-    std::lock_guard lock(cancel_mutex);
-
-    if (sent_query)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot send uuids after query is sent.");
-
-    auto send_ignored_part_uuids = [&uuids](ReplicaState & replica) { replica.connection->sendIgnoredPartUUIDs(uuids); };
-
-    for (auto & offset_state : offset_states)
-        for (auto & replica : offset_state.replicas)
-            if (replica.connection)
-                send_ignored_part_uuids(replica);
-
-    pipeline_for_new_replicas.add(send_ignored_part_uuids);
 }
 
 void HedgedConnections::sendQuery(
@@ -200,6 +200,10 @@ void HedgedConnections::sendQuery(
         /// Queries in foreign languages are transformed to ClickHouse-SQL. Ensure the setting before sending.
         modified_settings[Setting::dialect] = Dialect::clickhouse;
         modified_settings[Setting::dialect].changed = false;
+
+        modified_settings[Setting::interactive_delay] = scaleInteractiveDelayByFanout(
+            modified_settings[Setting::interactive_delay],
+            distributed_fanout * offset_states.size());
 
         if (disable_two_level_aggregation)
         {
@@ -375,7 +379,7 @@ HedgedConnections::ReplicaLocation HedgedConnections::getReadyReplicaLocation(As
             return location;
     }
 
-    int event_fd;
+    int event_fd = 0;
     while (true)
     {
         /// Get ready file descriptor from epoll and process it.
@@ -440,7 +444,7 @@ bool HedgedConnections::resumePacketReceiver(const HedgedConnections::ReplicaLoc
 
 int HedgedConnections::getReadyFileDescriptor(AsyncCallback async_callback)
 {
-    epoll_event event;
+    epoll_event event{};
     event.data.fd = -1;
     size_t events_count = 0;
     bool blocking = !static_cast<bool>(async_callback);

@@ -68,6 +68,9 @@ def test_select_clamps_settings():
         node.query("INSERT INTO sometable_select VALUES (toDate('2010-01-10'), 1, 1)")
 
     distributed.query(
+        "CREATE TABLE sometable_select (date Date, id UInt32, value Int32) ENGINE = MergeTree() ORDER BY id;"
+    )
+    distributed.query(
         "CREATE TABLE proxy_select (date Date, id UInt32, value Int32) ENGINE = Distributed(test_cluster, default, sometable_select, toUInt64(date));"
     )
 
@@ -135,8 +138,11 @@ def test_select_clamps_settings():
         "node2\treadonly\t1\n"
     )
 
+    # Value below node1's MIN constraint (11111111) so the shard clamps it to MIN;
+    # must still leave the initiator enough headroom to run the system.settings
+    # query itself (~1-2 MiB peak).
     assert (
-        distributed.query(query, settings={"max_memory_usage": 1})
+        distributed.query(query, settings={"max_memory_usage": 10000000})
         == "node1\tmax_memory_usage\t11111111\n"
         "node1\treadonly\t0\n"
         "node2\tmax_memory_usage\t0\n"
@@ -184,4 +190,5 @@ def test_insert_clamps_settings():
         settings={"max_memory_usage": 5000000},
     )
     distributed.query("SYSTEM FLUSH DISTRIBUTED proxy_insert")
-    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy_insert", "4")
+    # settings serialize_query_plan=0 because default.sometable_insert does not exist on distributed node.
+    assert_eq_with_retry(distributed, "SELECT COUNT() FROM proxy_insert settings serialize_query_plan=0", "4")

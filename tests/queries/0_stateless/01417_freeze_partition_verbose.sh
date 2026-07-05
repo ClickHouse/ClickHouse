@@ -22,40 +22,40 @@ ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze_old_syntax SELECT toD
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE WITH NAME 'test_01417' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE PARTITION '3' WITH NAME 'test_01417_single_part' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze DETACH PARTITION '3';"
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO table_for_freeze VALUES (3, '3');"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze ATTACH PARTITION '3' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $ATTACH_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, old_part_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, old_part_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze DETACH PARTITION '5';"
 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE PARTITION '7' WITH NAME 'test_01417_single_part_7', ATTACH PART '5_6_6_0' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE, $ATTACH_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name, old_part_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name, old_part_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 # Unfreeze partition
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze UNFREEZE PARTITION '7' WITH NAME 'test_01417_single_part_7' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 # Freeze partition with old syntax
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_old_syntax FREEZE PARTITION '202103' WITH NAME 'test_01417_single_part_old_syntax' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 # Unfreeze partition with old syntax
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze_old_syntax UNFREEZE PARTITION '202103' WITH NAME 'test_01417_single_part_old_syntax' FORMAT TSVWithNames SETTINGS alter_partition_verbose_result = 1;" \
   | ${CLICKHOUSE_LOCAL} --structure "$ALTER_OUT_STRUCTURE, $FREEZE_OUT_STRUCTURE" \
-      --query "SELECT command_type, partition_id, part_name, backup_name FROM table FORMAT TSVWithNames"
+      --query "SELECT command_type, partition_id, part_name, backup_name FROM table ORDER BY partition_id FORMAT TSVWithNames"
 
 # Unfreeze the whole backup with SYSTEM query
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE table_for_freeze FREEZE PARTITION '7' WITH NAME 'test_01417_single_part_7_system'"

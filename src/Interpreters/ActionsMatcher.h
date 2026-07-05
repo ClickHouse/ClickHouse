@@ -60,7 +60,7 @@ struct ScopeStack : WithContext
 
     size_t getColumnLevel(const std::string & name);
 
-    void addColumn(ColumnWithTypeAndName column);
+    void addColumn(ColumnConstPtr column, DataTypePtr type, std::string name);
     void addAlias(const std::string & name, std::string alias);
     void addArrayJoin(const std::string & source_name, std::string result_name);
     void addFunction(const FunctionOverloadResolverPtr & function, const Names & argument_names, std::string result_name);
@@ -156,9 +156,9 @@ public:
         bool hasColumn(const String & column_name) const;
         std::vector<std::string_view> getAllColumnNames() const;
 
-        void addColumn(ColumnWithTypeAndName column)
+        void addColumn(ColumnConstPtr column, DataTypePtr type, std::string name)
         {
-            actions_stack.addColumn(std::move(column));
+            actions_stack.addColumn(std::move(column), std::move(type), std::move(name));
         }
 
         void addAlias(const std::string & name, std::string alias)

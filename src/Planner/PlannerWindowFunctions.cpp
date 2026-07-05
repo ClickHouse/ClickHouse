@@ -139,7 +139,7 @@ extractWindowDescriptions(const QueryTreeNodes & window_function_nodes, const Pl
 
 void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions)
 {
-    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs)
+    auto window_description_comparator = [](const WindowDescription & lhs, const WindowDescription & rhs) -> bool
     {
         const auto & left = lhs.full_sort_description;
         const auto & right = rhs.full_sort_description;
@@ -159,7 +159,19 @@ void sortWindowDescriptions(std::vector<WindowDescription> & window_descriptions
             if (left[i].nulls_direction > right[i].nulls_direction)
                 return false;
 
-            assert(left[i] == right[i]);
+            if (left[i].collator || right[i].collator)
+            {
+                if (!left[i].collator)
+                    return true;
+                if (!right[i].collator)
+                    return false;
+                if (left[i].collator->getLocale() < right[i].collator->getLocale())
+                    return true;
+                if (left[i].collator->getLocale() > right[i].collator->getLocale())
+                    return false;
+            }
+
+            chassert(left[i] == right[i]);
         }
 
         /** Note that we check the length last, because we want to put together the

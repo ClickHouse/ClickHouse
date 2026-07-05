@@ -1,8 +1,8 @@
 -- Tags: no-fasttest
 -- no-fasttest: 'countmin' sketches need a 3rd party library
 
-SET allow_experimental_statistics = 1;
-SET allow_statistics_optimize = 1;
+SET allow_statistics = 1;
+SET use_statistics = 1;
 
 CREATE TABLE tab (c Nullable(Int)) ENGINE = MergeTree() ORDER BY tuple();
 INSERT INTO tab (c) VALUES (1);

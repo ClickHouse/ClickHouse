@@ -22,6 +22,7 @@ struct Message
     decimal128 @16 : Data;
     decimal256 @17 : Data;
 }
+
 Dates
 
 struct Message
@@ -31,6 +32,7 @@ struct Message
     datetime @2 : UInt32;
     datatime64 @3 : Int64;
 }
+
 Strings
 
 struct Message
@@ -38,6 +40,7 @@ struct Message
     string @0 : Data;
     fixedstring @1 : Data;
 }
+
 Special
 
 struct Message
@@ -46,6 +49,7 @@ struct Message
     ipv6 @1 : Data;
     uuid @2 : Data;
 }
+
 Nullable
 
 struct Message
@@ -60,6 +64,7 @@ struct Message
     }
     nullable @0 : Nullable;
 }
+
 Enums
 
 struct Message
@@ -82,6 +87,7 @@ struct Message
     }
     enum16 @1 : Enum16;
 }
+
 Arrays
 
 struct Message
@@ -89,6 +95,7 @@ struct Message
     arr1 @0 : List(UInt32);
     arr2 @1 : List(List(List(UInt32)));
 }
+
 Tuples
 
 struct Message
@@ -123,6 +130,7 @@ struct Message
     }
     tuple2 @1 : Tuple2;
 }
+
 Maps
 
 struct Message
@@ -166,6 +174,7 @@ struct Message
     }
     map2 @1 : Map2;
 }
+
 Complex
 
 struct Message
@@ -234,6 +243,7 @@ struct Message
     }
     c1 @0 : List(C1);
 }
+
 Read/write with no schema
 0
 1
@@ -278,6 +288,7 @@ message Message
     bytes decimal128 = 17;
     bytes decimal256 = 18;
 }
+
 Dates
 
 message Message
@@ -287,6 +298,7 @@ message Message
     uint32 datetime = 3;
     uint64 datatime64 = 4;
 }
+
 Strings
 
 message Message
@@ -294,6 +306,7 @@ message Message
     bytes string = 1;
     bytes fixedstring = 2;
 }
+
 Special
 
 message Message
@@ -302,12 +315,14 @@ message Message
     bytes ipv6 = 2;
     bytes uuid = 3;
 }
+
 Nullable
 
 message Message
 {
     uint32 nullable = 1;
 }
+
 Enums
 
 message Message
@@ -330,6 +345,7 @@ message Message
     }
     Enum16 enum16 = 2;
 }
+
 Arrays
 
 message Message
@@ -345,6 +361,7 @@ message Message
     }
     repeated Arr2 arr2 = 2;
 }
+
 Tuples
 
 message Message
@@ -379,6 +396,7 @@ message Message
     }
     Tuple2 tuple2 = 2;
 }
+
 Maps
 
 message Message
@@ -394,6 +412,7 @@ message Message
     }
     map<string, Map2Value> map2 = 2;
 }
+
 Complex
 
 message Message
@@ -436,6 +455,7 @@ message Message
     }
     repeated C1 c1 = 1;
 }
+
 Read/write with no schema
 0
 1

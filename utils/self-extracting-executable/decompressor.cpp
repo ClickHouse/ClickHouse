@@ -1,10 +1,6 @@
 #include <zstd.h>
 #include <sys/mman.h>
-#if defined(OS_DARWIN) || defined(OS_FREEBSD)
-#   include <sys/mount.h>
-#else
-#   include <sys/statfs.h>
-#endif
+#include <sys/statvfs.h>
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -37,10 +33,10 @@
 #   include <sys/sysctl.h>
 #endif
 
-#include "types.h"
+#include <types.h>
 
 /// decompress part
-int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
+static int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_offset,
                off_t input_size, off_t output_size, ZSTD_DCtx* dctx)
 {
     size_t decompressed_size = ZSTD_decompressDCtx(dctx, output + out_offset, output_size, input + in_offset, input_size);
@@ -54,7 +50,7 @@ int doDecompress(char * input, char * output, off_t & in_offset, off_t & out_off
 }
 
 /// decompress data from in_fd into out_fd
-int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
+static int decompress(char * input, char * output, off_t start, off_t end, size_t max_number_of_forks=10)
 {
     off_t in_pointer = start;
     off_t out_pointer = 0;
@@ -70,7 +66,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
         std::cerr << "Error (ZSTD): failed to create decompression context" << std::endl;
         return 1;
     }
-    pid_t pid;
+    pid_t pid = 0;
     bool error_happened = false;
 
     /// Decompress data
@@ -118,7 +114,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
             while (number_of_forks >= max_number_of_forks)
             {
                 /// Wait any fork
-                int status;
+                int status = 0;
                 waitpid(0, &status, 0);
 
                 /// If error happened, stop processing
@@ -139,7 +135,7 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     while (number_of_forks > 0)
     {
         /// Wait any fork
-        int status;
+        int status = 0;
         waitpid(0, &status, 0);
 
         if (WIFEXITED(status))
@@ -174,17 +170,17 @@ int decompress(char * input, char * output, off_t start, off_t end, size_t max_n
     return 0;
 }
 
-bool isSudo()
+static bool isSudo()
 {
     return geteuid() == 0;
 }
 
 /// Read data about files and decompress them.
-int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
+static int decompressFiles(int input_fd, char * path, char * name, bool & have_compressed_analoge, bool & has_exec, char * decompressed_suffix, uint64_t * decompressed_umask)
 {
     /// Read data about output file.
     /// Compressed data will replace data in file
-    struct stat info_in;
+    struct stat info_in{};
     if (0 != fstat(input_fd, &info_in))
     {
         perror("fstat");
@@ -216,17 +212,18 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
     }
 
     /// Check free space
-    struct statfs fs_info;
-    if (0 != fstatfs(input_fd, &fs_info))
+    struct statvfs fs_info{};
+    if (0 != fstatvfs(input_fd, &fs_info))
     {
-        perror("fstatfs");
+        perror("fstatvfs");
         if (0 != munmap(input, info_in.st_size))
                 perror("munmap");
         return 1;
     }
-    if (fs_info.f_blocks * info_in.st_blksize < decompressed_full_size)
+    /// Available space in bytes = free blocks * block size
+    if (fs_info.f_bavail * fs_info.f_frsize < decompressed_full_size)
     {
-        std::cerr << "Not enough space for decompression. Have " << fs_info.f_blocks * info_in.st_blksize << ", need " << decompressed_full_size << std::endl;
+        std::cerr << "Not enough space for decompression. Have " << fs_info.f_bavail * fs_info.f_frsize << ", need " << decompressed_full_size << std::endl;
         return 1;
     }
 
@@ -347,7 +344,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if defined(OS_DARWIN)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         uint32_t size = static_cast<uint32_t>(buf_sz);
         std::vector<char> apple(size);
@@ -360,7 +357,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #elif defined(OS_FREEBSD)
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         int name[] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1 };
         size_t length = buf_sz;
@@ -372,7 +369,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #else
 
-    int read_exe_path(char *exe, size_t buf_sz)
+    static int read_exe_path(char *exe, size_t buf_sz)
     {
         ssize_t n = readlink("/proc/self/exe", exe, buf_sz - 1);
         if (n > 0)
@@ -384,7 +381,7 @@ int decompressFiles(int input_fd, char * path, char * name, bool & have_compress
 
 #if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
 
-uint64_t getInode(const char * self)
+static uint64_t getInode(const char * self)
 {
     std::ifstream maps("/proc/self/maps");
     if (maps.fail())
@@ -438,7 +435,7 @@ int main(int/* argc*/, char* argv[])
     else
         name = file_path.data();
 
-    struct stat input_info;
+    struct stat input_info{};
     if (0 != stat(self, &input_info))
     {
         perror("stat");
@@ -483,7 +480,7 @@ int main(int/* argc*/, char* argv[])
     /// then file referred by path "self" is already pointing to different inode
     if (input_info.st_ino != inode)
     {
-        struct stat lock_info;
+        struct stat lock_info{};
         if (0 != fstat(lock, &lock_info))
         {
             perror("fstat lock");
@@ -492,7 +489,7 @@ int main(int/* argc*/, char* argv[])
 
         /// size 1 of lock file indicates that another decompressor has found active executable
         if (lock_info.st_size == 1)
-            execv(self, argv);
+            execv(self, argv);  // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
         printf("No target executable - decompression only was performed.\n"); // NOLINT(modernize-use-std-print)
         return 0;
@@ -554,7 +551,7 @@ int main(int/* argc*/, char* argv[])
             return 1;
         }
 #endif
-        if (chmod(self, static_cast<uint32_t>(decompressed_umask)))
+        if (chmod(self, static_cast<mode_t>(decompressed_umask)))
         {
             perror("chmod");
             return 1;
@@ -576,7 +573,7 @@ int main(int/* argc*/, char* argv[])
             /// execution should be performed
             write(lock, "1", 1);
 #endif
-            execv(self, argv);
+            execv(self, argv); // NOLINT(clang-analyzer-optin.taint.GenericTaint)
 
             /// This part of code will be reached only if error happened
             perror("execv");

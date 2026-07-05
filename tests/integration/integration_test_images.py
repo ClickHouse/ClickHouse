@@ -1,1 +1,0 @@
-../ci/integration_test_images.py

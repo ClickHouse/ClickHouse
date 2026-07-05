@@ -1,9 +1,10 @@
 ---
+description: 'Guide for integrating Rust libraries into ClickHouse'
+sidebar_label: 'Rust Libraries'
 slug: /development/integrating_rust_libraries
-sidebar_label: Rust Libraries
+title: 'Integrating Rust Libraries'
+doc_type: 'guide'
 ---
-
-# Rust Libraries
 
 Rust library integration will be described based on BLAKE3 hash-function integration.
 

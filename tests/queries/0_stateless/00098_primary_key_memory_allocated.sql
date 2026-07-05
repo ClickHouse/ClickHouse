@@ -1,4 +1,4 @@
--- Tags: stateful, no-s3-storage
+-- Tags: stateful, no-object-storage
 -- Force PK load
 SELECT CounterID FROM test.hits WHERE CounterID > 0 LIMIT 1 FORMAT Null;
 -- Check PK size

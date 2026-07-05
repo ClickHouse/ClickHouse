@@ -1,0 +1,3 @@
+<clickhouse>
+    <access_control_path>/var/lib/clickhouse/access/</access_control_path>
+</clickhouse>

@@ -46,7 +46,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTOrderByElement>(*this);
+        auto clone = make_intrusive<ASTOrderByElement>(*this);
         clone->cloneChildren();
         return clone;
     }
@@ -92,7 +92,7 @@ public:
 
     ASTPtr clone() const override
     {
-        auto clone = std::make_shared<ASTStorageOrderByElement>(*this);
+        auto clone = make_intrusive<ASTStorageOrderByElement>(*this);
         clone->cloneChildren();
         return clone;
     }

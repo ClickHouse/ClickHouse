@@ -1,10 +1,12 @@
 ---
-title: SQLInsert
-slug: /interfaces/formats/SQLInsert
-keywords: [SQLInsert]
-input_format: false
-output_format: true
 alias: []
+description: 'Documentation for the SQLInsert format'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
+doc_type: 'reference'
 ---
 
 | Input | Output | Alias |
@@ -15,7 +17,7 @@ alias: []
 
 Outputs data as a sequence of `INSERT INTO table (columns...) VALUES (...), (...) ...;` statements.
 
-## Example Usage {#example-usage}
+## Example usage {#example-usage}
 
 Example:
 
@@ -33,7 +35,7 @@ INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
 
 To read data output by this format you can use [MySQLDump](../formats/MySQLDump.md) input format.
 
-## Format Settings {#format-settings}
+## Format settings {#format-settings}
 
 | Setting                                                                                                                                | Description                                         | Default   |
 |----------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------|
@@ -42,4 +44,3 @@ To read data output by this format you can use [MySQLDump](../formats/MySQLDump.
 | [`output_format_sql_insert_include_column_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_include_column_names) | Include column names in INSERT query.               | `true`    |
 | [`output_format_sql_insert_use_replace`](../../operations/settings/settings-formats.md/#output_format_sql_insert_use_replace)          | Use REPLACE statement instead of INSERT.            | `false`   |
 | [`output_format_sql_insert_quote_names`](../../operations/settings/settings-formats.md/#output_format_sql_insert_quote_names)          | Quote column names with "\`" characters.            | `true`    |
-

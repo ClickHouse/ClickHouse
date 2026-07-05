@@ -109,13 +109,13 @@ Row 18:
 Row 19:
 ───────
 [1mexp2(number):[0m           26[4m2[0m144[90m -- 262.14 thousand[0m
-[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 1.00 quintillion[0m
+[1mexp10(number):[0m          [4m1[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000
 [1mconcat('test', number):[0m test18
 
 Row 20:
 ───────
 [1mexp2(number):[0m           52[4m4[0m288[90m -- 524.29 thousand[0m
-[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000[90m -- 10.00 quintillion[0m
+[1mexp10(number):[0m          1[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m00[4m0[0m000
 [1mconcat('test', number):[0m test19
 
 Row 21:
@@ -342,43 +342,43 @@ Row 57:
 
 Row 58:
 ───────
-[1mexp2(number):[0m           14[4m4[0m11[4m5[0m18[4m8[0m07[4m5[0m85[4m5[0m870[90m -- 144.12 quadrillion[0m
+[1mexp2(number):[0m           14[4m4[0m11[4m5[0m18[4m8[0m07[4m5[0m85[4m5[0m870
 [1mexp10(number):[0m          1e57[90m -- 1.00 octodecillion[0m
 [1mconcat('test', number):[0m test57
 
 Row 59:
 ───────
-[1mexp2(number):[0m           28[4m8[0m23[4m0[0m37[4m6[0m15[4m1[0m71[4m1[0m740[90m -- 288.23 quadrillion[0m
+[1mexp2(number):[0m           28[4m8[0m23[4m0[0m37[4m6[0m15[4m1[0m71[4m1[0m740
 [1mexp10(number):[0m          1e58[90m -- 10.00 octodecillion[0m
 [1mconcat('test', number):[0m test58
 
 Row 60:
 ───────
-[1mexp2(number):[0m           57[4m6[0m46[4m0[0m75[4m2[0m30[4m3[0m42[4m3[0m500[90m -- 576.46 quadrillion[0m
+[1mexp2(number):[0m           57[4m6[0m46[4m0[0m75[4m2[0m30[4m3[0m42[4m3[0m500
 [1mexp10(number):[0m          1e59[90m -- 100.00 octodecillion[0m
 [1mconcat('test', number):[0m test59
 
 Row 61:
 ───────
-[1mexp2(number):[0m           [4m1[0m15[4m2[0m92[4m1[0m50[4m4[0m60[4m6[0m84[4m7[0m000[90m -- 1.15 quintillion[0m
+[1mexp2(number):[0m           [4m1[0m15[4m2[0m92[4m1[0m50[4m4[0m60[4m6[0m84[4m7[0m000
 [1mexp10(number):[0m          1e60[90m -- 1000.00 octodecillion[0m
 [1mconcat('test', number):[0m test60
 
 Row 62:
 ───────
-[1mexp2(number):[0m           [4m2[0m30[4m5[0m84[4m3[0m00[4m9[0m21[4m3[0m69[4m4[0m000[90m -- 2.31 quintillion[0m
+[1mexp2(number):[0m           [4m2[0m30[4m5[0m84[4m3[0m00[4m9[0m21[4m3[0m69[4m4[0m000
 [1mexp10(number):[0m          1e61[90m -- 10.00 novemdecillion[0m
 [1mconcat('test', number):[0m test61
 
 Row 63:
 ───────
-[1mexp2(number):[0m           [4m4[0m61[4m1[0m68[4m6[0m01[4m8[0m42[4m7[0m38[4m8[0m000[90m -- 4.61 quintillion[0m
+[1mexp2(number):[0m           [4m4[0m61[4m1[0m68[4m6[0m01[4m8[0m42[4m7[0m38[4m8[0m000
 [1mexp10(number):[0m          1e62[90m -- 100.00 novemdecillion[0m
 [1mconcat('test', number):[0m test62
 
 Row 64:
 ───────
-[1mexp2(number):[0m           [4m9[0m22[4m3[0m37[4m2[0m03[4m6[0m85[4m4[0m77[4m6[0m000[90m -- 9.22 quintillion[0m
+[1mexp2(number):[0m           [4m9[0m22[4m3[0m37[4m2[0m03[4m6[0m85[4m4[0m77[4m6[0m000
 [1mexp10(number):[0m          1e63[90m -- 1.00 vigintillion[0m
 [1mconcat('test', number):[0m test63
 Row 1:
@@ -492,13 +492,13 @@ concat('test', number): test17
 Row 19:
 ───────
 exp2(number):           262144 -- 262.14 thousand
-exp10(number):          1000000000000000000 -- 1.00 quintillion
+exp10(number):          1000000000000000000
 concat('test', number): test18
 
 Row 20:
 ───────
 exp2(number):           524288 -- 524.29 thousand
-exp10(number):          10000000000000000000 -- 10.00 quintillion
+exp10(number):          10000000000000000000
 concat('test', number): test19
 
 Row 21:
@@ -725,43 +725,43 @@ concat('test', number): test56
 
 Row 58:
 ───────
-exp2(number):           144115188075855870 -- 144.12 quadrillion
+exp2(number):           144115188075855870
 exp10(number):          1e57 -- 1.00 octodecillion
 concat('test', number): test57
 
 Row 59:
 ───────
-exp2(number):           288230376151711740 -- 288.23 quadrillion
+exp2(number):           288230376151711740
 exp10(number):          1e58 -- 10.00 octodecillion
 concat('test', number): test58
 
 Row 60:
 ───────
-exp2(number):           576460752303423500 -- 576.46 quadrillion
+exp2(number):           576460752303423500
 exp10(number):          1e59 -- 100.00 octodecillion
 concat('test', number): test59
 
 Row 61:
 ───────
-exp2(number):           1152921504606847000 -- 1.15 quintillion
+exp2(number):           1152921504606847000
 exp10(number):          1e60 -- 1000.00 octodecillion
 concat('test', number): test60
 
 Row 62:
 ───────
-exp2(number):           2305843009213694000 -- 2.31 quintillion
+exp2(number):           2305843009213694000
 exp10(number):          1e61 -- 10.00 novemdecillion
 concat('test', number): test61
 
 Row 63:
 ───────
-exp2(number):           4611686018427388000 -- 4.61 quintillion
+exp2(number):           4611686018427388000
 exp10(number):          1e62 -- 100.00 novemdecillion
 concat('test', number): test62
 
 Row 64:
 ───────
-exp2(number):           9223372036854776000 -- 9.22 quintillion
+exp2(number):           9223372036854776000
 exp10(number):          1e63 -- 1.00 vigintillion
 concat('test', number): test63
 Row 1:
@@ -875,13 +875,13 @@ Row 18:
 Row 19:
 ───────
 [1mexp2(number):[0m           262144[90m -- 262.14 thousand[0m
-[1mexp10(number):[0m          1000000000000000000[90m -- 1.00 quintillion[0m
+[1mexp10(number):[0m          1000000000000000000
 [1mconcat('test', number):[0m test18
 
 Row 20:
 ───────
 [1mexp2(number):[0m           524288[90m -- 524.29 thousand[0m
-[1mexp10(number):[0m          10000000000000000000[90m -- 10.00 quintillion[0m
+[1mexp10(number):[0m          10000000000000000000
 [1mconcat('test', number):[0m test19
 
 Row 21:
@@ -1108,43 +1108,43 @@ Row 57:
 
 Row 58:
 ───────
-[1mexp2(number):[0m           144115188075855870[90m -- 144.12 quadrillion[0m
+[1mexp2(number):[0m           144115188075855870
 [1mexp10(number):[0m          1e57[90m -- 1.00 octodecillion[0m
 [1mconcat('test', number):[0m test57
 
 Row 59:
 ───────
-[1mexp2(number):[0m           288230376151711740[90m -- 288.23 quadrillion[0m
+[1mexp2(number):[0m           288230376151711740
 [1mexp10(number):[0m          1e58[90m -- 10.00 octodecillion[0m
 [1mconcat('test', number):[0m test58
 
 Row 60:
 ───────
-[1mexp2(number):[0m           576460752303423500[90m -- 576.46 quadrillion[0m
+[1mexp2(number):[0m           576460752303423500
 [1mexp10(number):[0m          1e59[90m -- 100.00 octodecillion[0m
 [1mconcat('test', number):[0m test59
 
 Row 61:
 ───────
-[1mexp2(number):[0m           1152921504606847000[90m -- 1.15 quintillion[0m
+[1mexp2(number):[0m           1152921504606847000
 [1mexp10(number):[0m          1e60[90m -- 1000.00 octodecillion[0m
 [1mconcat('test', number):[0m test60
 
 Row 62:
 ───────
-[1mexp2(number):[0m           2305843009213694000[90m -- 2.31 quintillion[0m
+[1mexp2(number):[0m           2305843009213694000
 [1mexp10(number):[0m          1e61[90m -- 10.00 novemdecillion[0m
 [1mconcat('test', number):[0m test61
 
 Row 63:
 ───────
-[1mexp2(number):[0m           4611686018427388000[90m -- 4.61 quintillion[0m
+[1mexp2(number):[0m           4611686018427388000
 [1mexp10(number):[0m          1e62[90m -- 100.00 novemdecillion[0m
 [1mconcat('test', number):[0m test62
 
 Row 64:
 ───────
-[1mexp2(number):[0m           9223372036854776000[90m -- 9.22 quintillion[0m
+[1mexp2(number):[0m           9223372036854776000
 [1mexp10(number):[0m          1e63[90m -- 1.00 vigintillion[0m
 [1mconcat('test', number):[0m test63
 Row 1:

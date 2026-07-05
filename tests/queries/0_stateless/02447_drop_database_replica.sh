@@ -11,7 +11,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 db="rdb_$CLICKHOUSE_DATABASE"
 
-$CLICKHOUSE_CLIENT -q "system flush logs"
+$CLICKHOUSE_CLIENT -q "system flush logs query_log"
 $CLICKHOUSE_CLIENT -q "create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1')"
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "create table $db.t as system.query_log"   # Suppress style check: current_database=$CLICKHOUSE_DATABASE
 $CLICKHOUSE_CLIENT -q "show tables from $db"

@@ -1,7 +1,5 @@
 #pragma once
 
-#if defined(OS_LINUX)
-
 #include <iostream>
 
 namespace DB
@@ -35,9 +33,9 @@ public:
 
     virtual void closeServerDescriptors() = 0;
 
+    virtual void closeStdIn() = 0;
+
     virtual ~IClientDescriptorSet() = default;
 };
 
 }
-
-#endif

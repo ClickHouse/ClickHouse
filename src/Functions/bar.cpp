@@ -24,7 +24,7 @@ namespace
 /** bar(x, min, max, width) - draws a strip from the number of characters proportional to (x - min) and equal to width for x == max.
   * Returns a string with nice Unicode-art bar with resolution of 1/8 part of symbol.
   */
-class FunctionBar : public IFunction
+class FunctionBar final : public IFunction
 {
 public:
     static constexpr auto name = "bar";
@@ -106,7 +106,7 @@ public:
         ColumnString::Offsets & dst_offsets = res_column->getOffsets();
 
         dst_offsets.resize(input_rows_count);
-        dst_chars.reserve(input_rows_count * (UnicodeBar::getWidthInBytes(max_width) + 1)); /// strings are 0-terminated.
+        dst_chars.reserve(input_rows_count * UnicodeBar::getWidthInBytes(max_width));
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
@@ -119,7 +119,7 @@ public:
             if (!isFinite(width))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value of width must not be NaN and Inf");
 
-            size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width) + 1;
+            size_t next_size = current_offset + UnicodeBar::getWidthInBytes(width);
             dst_chars.resize(next_size);
             UnicodeBar::render(width, reinterpret_cast<char *>(&dst_chars[current_offset]), reinterpret_cast<char *>(&dst_chars[next_size]));
             current_offset = next_size;
@@ -134,7 +134,65 @@ public:
 
 REGISTER_FUNCTION(Bar)
 {
-    factory.registerFunction<FunctionBar>();
+    FunctionDocumentation::Description description = R"(
+Builds a bar chart.
+Draws a band with width proportional to (x - min) and equal to width characters when x = max.
+The band is drawn with accuracy to one eighth of a symbol.
+)";
+    FunctionDocumentation::Syntax syntax = "bar(x, min, max[, width])";
+    FunctionDocumentation::Arguments arguments = {
+        {"x", "Size to display.", {"(U)Int*", "Float*", "Decimal"}},
+        {"min", "The minimum value.", {"(U)Int*", "Float*", "Decimal"}},
+        {"max", "The maximum value.", {"(U)Int*", "Float*", "Decimal"}},
+        {"width", "Optional. The width of the bar in characters. The default is `80`.", {"const (U)Int*", "const Float*", "const Decimal"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a unicode-art bar string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+toHour(EventTime) AS h,
+count() AS c,
+bar(c, 0, 600000, 20) AS bar
+FROM test.hits
+GROUP BY h
+ORDER BY h ASC
+        )",
+        R"(
+┌──h─┬──────c─┬─bar────────────────┐
+│  0 │ 292907 │ █████████▋         │
+│  1 │ 180563 │ ██████             │
+│  2 │ 114861 │ ███▋               │
+│  3 │  85069 │ ██▋                │
+│  4 │  68543 │ ██▎                │
+│  5 │  78116 │ ██▌                │
+│  6 │ 113474 │ ███▋               │
+│  7 │ 170678 │ █████▋             │
+│  8 │ 278380 │ █████████▎         │
+│  9 │ 391053 │ █████████████      │
+│ 10 │ 457681 │ ███████████████▎   │
+│ 11 │ 493667 │ ████████████████▍  │
+│ 12 │ 509641 │ ████████████████▊  │
+│ 13 │ 522947 │ █████████████████▍ │
+│ 14 │ 539954 │ █████████████████▊ │
+│ 15 │ 528460 │ █████████████████▌ │
+│ 16 │ 539201 │ █████████████████▊ │
+│ 17 │ 523539 │ █████████████████▍ │
+│ 18 │ 506467 │ ████████████████▊  │
+│ 19 │ 520915 │ █████████████████▎ │
+│ 20 │ 521665 │ █████████████████▍ │
+│ 21 │ 542078 │ ██████████████████ │
+│ 22 │ 493642 │ ████████████████▍  │
+│ 23 │ 400397 │ █████████████▎     │
+└────┴────────┴────────────────────┘
+        )"
+        }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    factory.registerFunction<FunctionBar>(documentation);
 }
 
 }

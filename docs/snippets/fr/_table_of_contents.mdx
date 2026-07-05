@@ -1,0 +1,16 @@
+---
+title: Table des matières
+---
+
+| Page                                                                                            | Description                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Choisir une clé primaire](/fr/concepts/best-practices/choosing-a-primary-key)                     | Comment sélectionner des clés primaires qui maximisent les performances des requêtes tout en limitant le surcoût de stockage.                  |
+| [Sélectionner les types de données](/fr/concepts/best-practices/select-data-type)                  | Choisissez les types de données les plus adaptés pour réduire l’utilisation de la mémoire, améliorer la compression et accélérer les requêtes. |
+| [Utiliser des vues matérialisées](/fr/concepts/best-practices/use-materialized-views)              | Tirez parti des vues matérialisées pour pré-agréger les données et accélérer considérablement les requêtes analytiques.                        |
+| [Minimiser et optimiser les JOIN](/fr/concepts/best-practices/minimize-optimize-joins)             | Bonnes pratiques pour utiliser efficacement les fonctionnalités `JOIN` de ClickHouse.                                                          |
+| [Choisir une clé de partitionnement](/fr/concepts/best-practices/partitioning-keys)                | Sélectionnez des stratégies de partitionnement qui permettent un data pruning efficace et une exécution plus rapide des requêtes.              |
+| [Sélectionner une stratégie d’insertion](/fr/concepts/best-practices/selecting-an-insert-strategy) | Optimisez le débit d’ingestion des données et réduisez la consommation des ressources grâce à des schémas d’insertion adaptés.                 |
+| [Index de data skipping](/fr/concepts/best-practices/using-data-skipping-indices)                  | Appliquez les index secondaires de manière stratégique pour ignorer les blocs de données non pertinents et accélérer les requêtes filtrées.    |
+| [Éviter les mutations](/fr/concepts/best-practices/avoid-mutations)                                | Concevez des schémas et des workflows qui éliminent les opérations `UPDATE`/`DELETE` coûteuses pour de meilleures performances.                |
+| [Éviter OPTIMIZE FINAL](/fr/concepts/best-practices/avoid-optimize-final)                          | Évitez les goulets d’étranglement en comprenant dans quels cas `OPTIMIZE FINAL` nuit plus qu’il n’aide.                                        |
+| [Utiliser JSON lorsque c’est pertinent](/fr/concepts/best-practices/json-type)                     | Trouvez le bon équilibre entre flexibilité et performances lorsque vous manipulez des données JSON semi-structurées dans ClickHouse.           |

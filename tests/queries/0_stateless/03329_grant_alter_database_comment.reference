@@ -1,0 +1,4 @@
+GRANT ALTER MODIFY DATABASE COMMENT ON test_database_03329_grant_alter_database_comment_default.* TO test_user_03329_grant_alter_database_comment_default
+GRANT ALTER MODIFY DATABASE COMMENT ON test_database_03329_grant_alter_database_comment_default.*
+test_database_03329_grant_alter_database_comment_default	test database with comment
+test_database_03329_grant_alter_database_comment_default	new comment on database

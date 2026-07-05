@@ -1,6 +1,7 @@
-#include "insertPostgreSQLValue.h"
+#include <Core/PostgreSQL/insertPostgreSQLValue.h>
 
 #if USE_LIBPQXX
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
@@ -15,6 +16,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Common/assert_cast.h>
 #include <pqxx/pqxx>
 
@@ -38,7 +40,7 @@ void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_colum
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         ExternalResultDescription::ValueType type, DataTypePtr data_type,
-        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
+        const UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t idx)
 {
     switch (type)
     {
@@ -50,7 +52,7 @@ void insertPostgreSQLValue(
             else if (value == "f")
                 assert_cast<ColumnUInt8 &>(column).insertValue(0);
             else
-                assert_cast<ColumnUInt8 &>(column).insertValue(pqxx::from_string<uint16_t>(value));
+                assert_cast<ColumnUInt8 &>(column).insertValue(static_cast<UInt8>(pqxx::from_string<uint16_t>(value)));
             break;
         }
         case ExternalResultDescription::ValueType::vtUInt16:
@@ -63,7 +65,7 @@ void insertPostgreSQLValue(
             assert_cast<ColumnUInt64 &>(column).insertValue(pqxx::from_string<uint64_t>(value));
             break;
         case ExternalResultDescription::ValueType::vtInt8:
-            assert_cast<ColumnInt8 &>(column).insertValue(pqxx::from_string<int16_t>(value));
+            assert_cast<ColumnInt8 &>(column).insertValue(static_cast<Int8>(pqxx::from_string<int16_t>(value)));
             break;
         case ExternalResultDescription::ValueType::vtInt16:
             assert_cast<ColumnInt16 &>(column).insertValue(pqxx::from_string<int16_t>(value));
@@ -74,6 +76,17 @@ void insertPostgreSQLValue(
         case ExternalResultDescription::ValueType::vtInt64:
             assert_cast<ColumnInt64 &>(column).insertValue(pqxx::from_string<int64_t>(value));
             break;
+        case ExternalResultDescription::ValueType::vtInt256:
+        {
+            /// Used for PostgreSQL `numeric` with precision wider than Decimal256 can hold.
+            Int256 v = parse<Int256>(value.data(), value.size());
+            /// Wide-integer text parsing does not detect overflow, so verify by round-tripping
+            /// the parsed value back to text to avoid silently storing a wrapped-around value.
+            if (toString(v) != value)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", String(value));
+            assert_cast<ColumnInt256 &>(column).insertValue(v);
+            break;
+        }
         case ExternalResultDescription::ValueType::vtFloat32:
             assert_cast<ColumnFloat32 &>(column).insertValue(pqxx::from_string<float>(value));
             break;
@@ -132,7 +145,7 @@ void insertPostgreSQLValue(
             size_t max_dimension = 0;
             size_t expected_dimensions = array_info.at(idx).num_dimensions;
             const auto parse_value = array_info.at(idx).pqxx_parser;
-            std::vector<Row> dimensions(expected_dimensions + 1);
+            VectorWithMemoryTracking<Row> dimensions(expected_dimensions + 1);
 
             while (parsed.first != pqxx::array_parser::juncture::done)
             {
@@ -148,6 +161,9 @@ void insertPostgreSQLValue(
                 else if (parsed.first == pqxx::array_parser::juncture::row_end)
                 {
                     max_dimension = std::max(max_dimension, dimension);
+
+                    if (dimension == 0)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected array closing bracket");
 
                     --dimension;
                     if (dimension == 0)
@@ -174,7 +190,7 @@ void insertPostgreSQLValue(
 
 
 void preparePostgreSQLArrayInfo(
-        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
+        UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type)
 {
     const auto * array_type = typeid_cast<const DataTypeArray *>(data_type.get());
     auto nested = array_type->getNestedType();
@@ -193,7 +209,16 @@ void preparePostgreSQLArrayInfo(
     WhichDataType which(nested);
     std::function<Field(std::string & fields)> parser;
 
-    if (which.isUInt8() || which.isUInt16())
+    if (which.isUInt8())
+        parser = [](std::string & field) -> Field
+        {
+            if (field == "t")
+                return UInt8(1);
+            else if (field == "f")
+                return UInt8(0);
+            return pqxx::from_string<uint16_t>(field);
+        };
+    else if (which.isUInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint16_t>(field); };
     else if (which.isInt8() || which.isInt16())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int16_t>(field); };
@@ -205,6 +230,16 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return pqxx::from_string<uint64_t>(field); };
     else if (which.isInt64())
         parser = [](std::string & field) -> Field { return pqxx::from_string<int64_t>(field); };
+    else if (which.isInt256())
+        parser = [](std::string & field) -> Field
+        {
+            /// Used for PostgreSQL `numeric` wider than Decimal256 can hold. Wide-integer text
+            /// parsing does not detect overflow, so verify by round-tripping the parsed value.
+            Int256 v = parse<Int256>(field.data(), field.size());
+            if (toString(v) != field)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Value '{}' is out of range of Int256", field);
+            return v;
+        };
     else if (which.isFloat32())
         parser = [](std::string & field) -> Field { return pqxx::from_string<float>(field); };
     else if (which.isFloat64())
@@ -215,6 +250,8 @@ void preparePostgreSQLArrayInfo(
         parser = [](std::string & field) -> Field { return field; };
     else if (which.isDate())
         parser = [](std::string & field) -> Field { return UInt16{LocalDate{field}.getDayNum()}; };
+    else if (which.isDate32())
+        parser = [](std::string & field) -> Field { return Int32{LocalDate{field}.getExtenedDayNum()}; };
     else if (which.isDateTime())
         parser = [nested](std::string & field) -> Field
         {

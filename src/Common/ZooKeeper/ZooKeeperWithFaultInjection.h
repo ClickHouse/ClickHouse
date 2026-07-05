@@ -140,7 +140,7 @@ public:
     Strings getChildren(
         const std::string & path,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     zkutil::ZooKeeper::MultiGetChildrenResponse getChildren(
@@ -150,46 +150,26 @@ public:
         const std::string & path,
         Strings & res,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     zkutil::ZooKeeper::MultiTryGetChildrenResponse tryGetChildren(
         const std::vector<std::string> & paths, Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
-    Coordination::Error tryGetChildrenWatch(
-        const std::string & path,
-        Strings & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
     Strings getChildrenWatch(
         const std::string & path,
         Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
-
-    Strings getChildrenWatch(
-        const std::string & path,
-        Coordination::Stat * stat,
-        Coordination::WatchCallbackPtr watch_callback,
+        Coordination::WatchCallbackPtrOrEventPtr watch_callback,
         Coordination::ListRequestType list_request_type = Coordination::ListRequestType::ALL);
 
     bool tryGet(
         const std::string & path,
         std::string & res,
         Coordination::Stat * stat = nullptr,
-        const zkutil::EventPtr & watch = nullptr,
+        const Coordination::EventPtr & watch = nullptr,
         Coordination::Error * code = nullptr);
 
-    bool tryGetWatch(
-        const std::string & path,
-        std::string & res,
-        Coordination::Stat * stat,
-        Coordination::WatchCallback watch_callback,
-        Coordination::Error * code = nullptr);
-
-    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr);
+    std::string get(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
 
     zkutil::ZooKeeper::MultiGetResponse get(const std::vector<std::string> & paths);
 
@@ -199,7 +179,7 @@ public:
 
     void remove(const String & path, int32_t version = -1);
 
-    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const zkutil::EventPtr & watch = nullptr);
+    bool exists(const std::string & path, Coordination::Stat * stat = nullptr, const Coordination::EventPtr & watch = nullptr);
 
     zkutil::ZooKeeper::MultiExistsResponse exists(const std::vector<std::string> & paths);
 
@@ -251,11 +231,10 @@ public:
     /// so we might need to copy them
     ///
 
-    zkutil::ZooKeeper::FutureExists asyncExists(std::string path, Coordination::WatchCallback watch_callback = {});
-
     zkutil::ZooKeeper::FutureGet asyncTryGet(std::string path);
 
     zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(const Coordination::Requests & ops);
+    zkutil::ZooKeeper::FutureMulti asyncTryMultiNoThrow(std::span<const Coordination::RequestPtr> ops);
 
     zkutil::ZooKeeper::FutureRemove asyncTryRemove(std::string path, int32_t version = -1);
 

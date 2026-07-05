@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTWithElement::clone() const
 {
-    const auto res = std::make_shared<ASTWithElement>(*this);
+    const auto res = make_intrusive<ASTWithElement>(*this);
     res->children.clear();
     res->subquery = subquery->clone();
     if (aliases)
@@ -21,21 +21,19 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 {
     std::string indent_str = settings.one_line ? "" : std::string(4 * frame.indent, ' ');
 
-    ostr << (settings.hilite ? hilite_alias : "");
     settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
-    ostr << (settings.hilite ? hilite_none : "");
     if (aliases)
     {
         const bool prep_whitespace = frame.expression_list_prepend_whitespace;
         frame.expression_list_prepend_whitespace = false;
 
-        ostr << " (";
+        ostr << "(";
         aliases->format(ostr, settings, state, frame);
         ostr << ")";
 
         frame.expression_list_prepend_whitespace = prep_whitespace;
     }
-    ostr << (settings.hilite ? hilite_keyword : "") << " AS" << (settings.hilite ? hilite_none : "");
+    ostr << " AS" << (is_materialized ? " MATERIALIZED" : "");
     ostr << settings.nl_or_ws << indent_str;
     dynamic_cast<const ASTWithAlias &>(*subquery).formatImplWithoutAlias(ostr, settings, state, frame);
 }

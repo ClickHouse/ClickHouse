@@ -135,5 +135,8 @@ def test_restart_multinode(started_cluster):
         except Exception as ex:
             print("Got exception as ex", ex)
         finally:
+            for i in range(100):
+                if node1_zk.exists("/test_read_write_multinode_node" + str(i)):
+                    node1_zk.delete("/test_read_write_multinode_node" + str(i))
             for zk in [node1_zk, node2_zk, node3_zk]:
                 stop_zk(zk)

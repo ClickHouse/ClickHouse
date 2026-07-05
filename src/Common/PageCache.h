@@ -1,9 +1,10 @@
 #pragma once
 
 #include <Common/CacheBase.h>
+#include <Common/CacheLine.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/thread_local_rng.h>
-#include <IO/BufferWithOwnMemory.h>
 
 /// "Userspace page cache"
 /// A cache for contents of remote files.
@@ -18,10 +19,10 @@
 namespace DB
 {
 
-/// Identifies a chunk of a file or object.
+/// Identifies a file or object.
 /// We assume that contents of such file/object don't change (without file_version changing), so
 /// cache invalidation is not needed.
-struct PageCacheKey
+struct PageCacheFile
 {
     /// Path, usually prefixed with storage system name and anything else needed to make it unique.
     /// E.g. "s3:<bucket>/<path>"
@@ -29,6 +30,17 @@ struct PageCacheKey
     /// Optional string with ETag, or file modification time, or anything else.
     std::string file_version {};
 
+    /// PageCache key is SipHash of concatenation of PageCacheFile and PageCacheByteRange.
+    /// This function returns SipHash state with PageCacheFile hashed.
+    /// It can then be finalized with a PageCacheByteRange to produce a key.
+    /// The intermediate SipHash can be copied and reused for different blocks of the same file.
+    SipHash baseHash() const;
+
+    size_t heapMemoryUsage() const { return path.capacity() + file_version.capacity(); }
+};
+
+struct PageCacheByteRange
+{
     /// Byte range in the file: [offset, offset + size).
     ///
     /// Note: for simplicity, PageCache doesn't do any interval-based lookup to handle partially
@@ -42,16 +54,18 @@ struct PageCacheKey
     size_t offset = 0;
     size_t size = 0;
 
-    UInt128 hash() const;
-    std::string toString() const;
+    /// Computes full hash from a precomputed base hash state and block offset+size.
+    UInt128 hash(SipHash base) const;
 };
 
 class PageCacheCell
 {
 public:
-    PageCacheKey key;
+    PageCacheFile file;
+    PageCacheByteRange range;
 
     size_t size() const { return m_size; }
+    size_t memoryUsage() const { return sizeof(*this) + file.heapMemoryUsage() + m_size; }
     const char * data() const { return m_data; }
     char * data() { return m_data; }
 
@@ -59,7 +73,7 @@ public:
     PageCacheCell(const PageCacheCell &) = delete;
     PageCacheCell & operator=(const PageCacheCell &) = delete;
 
-    PageCacheCell(PageCacheKey key_, bool temporary);
+    PageCacheCell(PageCacheFile file_, PageCacheByteRange range_, bool temporary);
 
 private:
     size_t m_size = 0;
@@ -71,37 +85,63 @@ struct PageCacheWeightFunction
 {
     size_t operator()(const PageCacheCell & x) const
     {
-        return x.size();
+        return x.memoryUsage();
     }
 };
 
 extern template class CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
 
-/// The key is hash of PageCacheKey.
-/// Private inheritance because we have to add MemoryTrackerBlockerInThread to all operations that
-/// lock the mutex and allocate memory, to avoid deadlocking if MemoryTracker calls autoResize().
-class PageCache : private CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>
+/// The key is hash of PageCacheFile + PageCacheByteRange.
+///
+/// Experimentally sharded, to reduce mutex contention. Contention seems unlikely to be a problem as
+/// the blocks are pretty big (typically 1 MiB), and the main mutex is only locked during lookup,
+/// not while downloading.
+/// (If it turns out that having more than 1 shard never improves performance in practice, feel free
+///  to simplify this by removing sharding.)
+///
+/// Implementation should be careful to always use MemoryTrackerBlockerInThread for all operations
+/// that lock the mutex or allocate memory. Otherwise we'll can deadlock when MemoryTracker calls
+/// autoResize.
+class PageCache
 {
-public:
+private:
     using Base = CacheBase<UInt128, PageCacheCell, UInt128TrivialHash, PageCacheWeightFunction>;
+
+    class alignas(CH_CACHE_LINE_SIZE) Shard : public Base
+    {
+    public:
+        using Base::Base;
+
+        void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr) override;
+    };
+
+public:
     using Key = typename Base::Key;
     using Mapped = typename Base::Mapped;
     using MappedPtr = typename Base::MappedPtr;
 
-    PageCache(size_t default_block_size_, size_t default_lookahead_blocks_, std::chrono::milliseconds history_window_, const String & cache_policy, double size_ratio, size_t min_size_in_bytes_, size_t max_size_in_bytes_, double free_memory_ratio_);
+    PageCache(
+        std::chrono::milliseconds history_window_,
+        const String & cache_policy,
+        double size_ratio,
+        size_t min_size_in_bytes_,
+        size_t max_size_in_bytes_,
+        double free_memory_ratio_,
+        size_t num_shards);
 
     /// Get or insert a chunk for the given key.
     ///
     /// If detached_if_missing = true, and the key is not present in the cache, the returned chunk
     /// will be just a standalone PageCacheCell not connected to the cache.
-    MappedPtr getOrSet(const PageCacheKey & key, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load);
+    MappedPtr getOrSet(const PageCacheFile & file, const PageCacheByteRange & range, bool detached_if_missing, bool inject_eviction, std::function<void(const MappedPtr &)> load, std::optional<UInt128> key_hash_opt = {});
 
-    bool contains(const PageCacheKey & key, bool inject_eviction) const;
+    MappedPtr get(UInt128 key_hash, bool inject_eviction);
 
-    void autoResize(size_t memory_usage, size_t memory_limit);
+    bool contains(UInt128 key_hash, bool inject_eviction) const;
 
-    size_t defaultBlockSize() const { return default_block_size; }
-    size_t defaultLookaheadBlocks() const { return default_lookahead_blocks; }
+    /// Make the cache smaller by `memory_limit - memory_usage` bytes.
+    /// Returns true if succeeded, false if cache size was reduced as much as possible but it wasn't enough.
+    bool autoResize(Int64 memory_usage, size_t memory_limit);
 
     void clear();
     size_t sizeInBytes() const;
@@ -109,9 +149,6 @@ public:
     size_t maxSizeInBytes() const;
 
 private:
-    size_t default_block_size;
-    size_t default_lookahead_blocks;
-
     /// Cache size is automatically adjusted by background thread, within this range,
     /// targeting cache size (total_memory_limit * (1 - free_memory_ratio) - memory_used_excluding_cache).
     size_t min_size_in_bytes = 0;
@@ -121,11 +158,18 @@ private:
     /// To avoid overreacting to brief drops in memory usage, we use peak memory usage over the last
     /// `history_window` milliseconds. It's calculated using this "sliding" (leapfrogging?) window.
     /// If history_window <= 0, there's no window and we just use current memory usage.
-    std::chrono::milliseconds history_window;
-    std::array<size_t, 2> peak_memory_buckets {0, 0};
-    int64_t cur_bucket = 0;
+    std::mutex mutex;
+    std::chrono::milliseconds history_window TSA_GUARDED_BY(mutex);
+    std::array<size_t, 2> peak_memory_buckets TSA_GUARDED_BY(mutex) {0, 0};
+    int64_t cur_bucket TSA_GUARDED_BY(mutex) = 0;
 
-    void onRemoveOverflowWeightLoss(size_t /*weight_loss*/) override;
+    std::vector<std::unique_ptr<Shard>> shards;
+
+    size_t getShardIdx(UInt128 key) const
+    {
+        /// UInt128TrivialHash uses the lower 64 bits, we use the upper 64 bits.
+        return key.items[UInt128::_impl::little(1)] % shards.size();
+    }
 };
 
 using PageCachePtr = std::shared_ptr<PageCache>;

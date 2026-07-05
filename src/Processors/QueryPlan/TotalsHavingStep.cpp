@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/TotalsHavingStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -40,7 +41,7 @@ static ITransformingStep::Traits getTraits(bool has_filter)
 }
 
 TotalsHavingStep::TotalsHavingStep(
-    const Header & input_header_,
+    SharedHeader input_header_,
     const AggregateDescriptions & aggregates_,
     bool overflow_row_,
     std::optional<ActionsDAG> actions_dag_,
@@ -51,13 +52,13 @@ TotalsHavingStep::TotalsHavingStep(
     bool final_)
     : ITransformingStep(
         input_header_,
-        TotalsHavingTransform::transformHeader(
-            input_header_,
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_header_,
             actions_dag_ ? &*actions_dag_ : nullptr,
             filter_column_,
             remove_filter_,
             final_,
-            getAggregatesMask(input_header_, aggregates_)),
+            getAggregatesMask(*input_header_, aggregates_))),
         getTraits(!filter_column_.empty()))
     , aggregates(aggregates_)
     , overflow_row(overflow_row_)
@@ -72,7 +73,11 @@ TotalsHavingStep::TotalsHavingStep(
 
 void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
-    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), settings.getActionsSettings()) : nullptr;
+    auto actions_settings = settings.getActionsSettings();
+    /// ArrayJoin is not supported in Having and we have to disable lazy columns
+    /// replication to avoid block structure mismatch during query analisys.
+    actions_settings.enable_lazy_columns_replication = false;
+    auto expression_actions = actions_dag ? std::make_shared<ExpressionActions>(std::move(*actions_dag), actions_settings) : nullptr;
 
     auto totals_having = std::make_shared<TotalsHavingTransform>(
         pipeline.getHeader(),
@@ -86,6 +91,9 @@ void TotalsHavingStep::transformPipeline(QueryPipelineBuilder & pipeline, const 
         final);
 
     pipeline.addTotalsHavingTransform(std::move(totals_having));
+
+    /// Pipeline is resized to single stream before TotalsHavingTransform. So, we need to resize it back to "default" number of streams after transform.
+    pipeline.resize(settings.max_threads);
 }
 
 static String totalsModeToString(TotalsMode totals_mode, double auto_include_threshold)
@@ -105,33 +113,35 @@ static String totalsModeToString(TotalsMode totals_mode, double auto_include_thr
 
 void TotalsHavingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
-    settings.out << prefix << "Filter column: " << filter_column_name;
-    if (remove_filter)
-        settings.out << " (removed)";
-    settings.out << '\n';
-    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, auto_include_threshold) << '\n';
+    const String & prefix = settings.detail_prefix;
 
-    if (actions_dag)
+    settings.out << prefix << "Filter column: ";
+
+    settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+
+    if (!settings.pretty && remove_filter)
+        settings.out << " (removed)";
+
+    settings.out << '\n';
+    settings.out << prefix << "Mode: " << totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)) << '\n';
+
+    if (!settings.compact && actions_dag)
     {
         bool first = true;
-        if (actions_dag)
+        auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
+        for (const auto & action : expression->getActions())
         {
-            auto expression = std::make_shared<ExpressionActions>(actions_dag->clone());
-            for (const auto & action : expression->getActions())
-            {
-                settings.out << prefix << (first ? "Actions: "
-                                                : "         ");
-                first = false;
-                settings.out << action.toString() << '\n';
-            }
+            settings.out << prefix << (first ? "Actions: "
+                                            : "         ");
+            first = false;
+            settings.out << action.toString() << '\n';
         }
     }
 }
 
 void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
-    map.add("Mode", totalsModeToString(totals_mode, auto_include_threshold));
+    map.add("Mode", totalsModeToString(totals_mode, static_cast<double>(auto_include_threshold)));
     if (actions_dag)
     {
         map.add("Filter column", filter_column_name);
@@ -146,13 +156,13 @@ void TotalsHavingStep::describeActions(JSONBuilder::JSONMap & map) const
 void TotalsHavingStep::updateOutputHeader()
 {
     output_header =
-        TotalsHavingTransform::transformHeader(
-            input_headers.front(),
+        std::make_shared<const Block>(TotalsHavingTransform::transformHeader(
+            *input_headers.front(),
             getActions(),
             filter_column_name,
             remove_filter,
             final,
-            getAggregatesMask(input_headers.front(), aggregates));
+            getAggregatesMask(*input_headers.front(), aggregates)));
 }
 
 void TotalsHavingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
@@ -184,12 +194,12 @@ void TotalsHavingStep::serialize(Serialization & ctx) const
     }
 }
 
-std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & ctx)
+QueryPlanStepPtr TotalsHavingStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "TotalsHaving must have one input stream");
 
-    UInt8 flags;
+    UInt8 flags = 0;
     readIntBinary(flags, ctx.in);
 
     bool final = bool(flags & 1);
@@ -221,6 +231,7 @@ std::unique_ptr<IQueryPlanStep> TotalsHavingStep::deserialize(Deserialization & 
         final);
 }
 
+void registerTotalsHavingStep(QueryPlanStepRegistry & registry);
 void registerTotalsHavingStep(QueryPlanStepRegistry & registry)
 {
     registry.registerStep("TotalsHaving", TotalsHavingStep::deserialize);

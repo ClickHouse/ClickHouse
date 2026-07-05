@@ -1,6 +1,6 @@
 -- Tags: no-parallel, no-replicated-database, no-shared-merge-tree
 -- Tag: no-parallel - to avoid polluting FETCH PARTITION thread pool with other fetches
--- Tag: no-database-replicated - replica_path is different
+-- Tag: no-replicated-database - replica_path is different
 
 drop table if exists data1;
 drop table if exists data2;
@@ -15,5 +15,8 @@ select 'parts in data1', count() from system.parts where database = currentDatab
 alter table data2 fetch partition () from '/tables/{database}/data1';
 select 'detached parts in data2', count() from system.detached_parts where database = currentDatabase() and table = 'data2';
 
-system flush logs;
-select 'FETCH PARTITION uses multiple threads', peak_threads_usage>10 from system.query_log where event_date >= yesterday() and type != 'QueryStart' and query_kind = 'Alter' and current_database = currentDatabase();
+system flush logs query_log;
+-- LIFO scheduling in `ThreadPool` concentrates short tasks on fewer OS threads,
+-- so we only assert that more than one thread is used (no full serialization),
+-- not a fixed minimum count.
+select 'FETCH PARTITION uses multiple threads', peak_threads_usage>1 from system.query_log where event_date >= yesterday() AND event_time >= now() - 600 and type != 'QueryStart' and query_kind = 'Alter' and current_database = currentDatabase();

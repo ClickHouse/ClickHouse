@@ -38,7 +38,7 @@ protected:
 
 ASTPtr ASTCreateDefines::clone() const
 {
-    auto res = std::make_shared<ASTCreateDefines>(*this);
+    auto res = make_intrusive<ASTCreateDefines>(*this);
     res->children.clear();
 
     if (columns)
@@ -61,9 +61,9 @@ bool ParserCreateDefines::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected 
     if (!create_defines_parser.parse(pos, create_defines, expected))
         return false;
 
-    ASTPtr columns = std::make_shared<ASTExpressionList>();
-    ASTPtr indices = std::make_shared<ASTExpressionList>();
-    ASTPtr constraints = std::make_shared<ASTExpressionList>();
+    ASTPtr columns = make_intrusive<ASTExpressionList>();
+    ASTPtr indices = make_intrusive<ASTExpressionList>();
+    ASTPtr constraints = make_intrusive<ASTExpressionList>();
 
     for (const auto & create_define : create_defines->children)
     {
@@ -77,7 +77,7 @@ bool ParserCreateDefines::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected 
             return false;
     }
 
-    auto res = std::make_shared<ASTCreateDefines>();
+    auto res = make_intrusive<ASTCreateDefines>();
     if (!columns->children.empty())
         res->set(res->columns, columns);
     if (!indices->children.empty())

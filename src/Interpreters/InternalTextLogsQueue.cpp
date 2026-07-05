@@ -1,4 +1,4 @@
-#include "InternalTextLogsQueue.h"
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>

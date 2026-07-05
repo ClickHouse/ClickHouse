@@ -1,5 +1,5 @@
 SET join_algorithm = 'full_sorting_merge';
-SET allow_experimental_analyzer = 1;
+SET enable_analyzer = 1;
 
 DROP TABLE IF EXISTS events0;
 
@@ -62,4 +62,3 @@ FROM probes p
 ASOF LEFT JOIN events e
 ON p.key = e.key AND p.ts >= e.begin
 ORDER BY p.key, p.ts ASC NULLS FIRST;
-

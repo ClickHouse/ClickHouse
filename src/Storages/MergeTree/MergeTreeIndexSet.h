@@ -23,23 +23,37 @@ struct MergeTreeIndexGranuleSet final : public IMergeTreeIndexGranule
         const Block & index_sample_block_,
         size_t max_rows_,
         MutableColumns && columns_,
-        std::vector<Range> && set_hyperrectangle_);
+        Ranges && set_hyperrectangle_);
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     size_t size() const { return block.rows(); }
     bool empty() const override { return !size(); }
-
     size_t memoryUsageBytes() const override { return block.bytes() + (set_hyperrectangle.capacity() * sizeof(Range)); }
 
     ~MergeTreeIndexGranuleSet() override = default;
 
-    const String index_name;
+    const String & index_name;
     const size_t max_rows;
 
     Block block;
-    std::vector<Range> set_hyperrectangle;
+    Serializations serializations;
+    Ranges set_hyperrectangle;
+};
+
+
+struct MergeTreeIndexBulkGranulesSet final : public IMergeTreeIndexBulkGranules
+{
+    explicit MergeTreeIndexBulkGranulesSet(const Block & index_sample_block_);
+    void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+
+    size_t min_granule = 0;
+    size_t max_granule = 0;
+    Block block;
+    Block block_for_reading;
+    Serializations serializations;
+    bool empty = true;
 };
 
 
@@ -77,7 +91,7 @@ private:
     ClearableSetVariants data;
     Sizes key_sizes;
     MutableColumns columns;
-    std::vector<Range> set_hyperrectangle;
+    Ranges set_hyperrectangle;
 };
 
 
@@ -86,29 +100,37 @@ class MergeTreeIndexConditionSet final : public IMergeTreeIndexCondition
 public:
     MergeTreeIndexConditionSet(
         size_t max_rows_,
-        const ActionsDAG * filter_dag,
+        const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const IndexDescription & index_description);
 
     bool alwaysUnknownOrTrue() const override;
 
-    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const override;
+    bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const override;
+
+    FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
+
+    std::string getDescription() const override;
 
     ~MergeTreeIndexConditionSet() override = default;
+
 private:
     const ActionsDAG::Node & traverseDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     const ActionsDAG::Node * atomFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
-        const ContextPtr & context) const;
+        const ContextPtr & context,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     const ActionsDAG::Node * operatorFromDAG(const ActionsDAG::Node & node,
         ActionsDAG & result_dag,
         const ContextPtr & context,
-        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node) const;
+        std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Node *> & node_to_result_node,
+        std::unordered_map<String, const ActionsDAG::Node *> & key_column_inputs) const;
 
     bool checkDAGUseless(const ActionsDAG::Node & node, const ContextPtr & context, std::vector<FutureSetPtr> & sets_to_prepare, bool atomic = false) const;
 
@@ -133,19 +155,26 @@ class MergeTreeIndexSet final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexSet(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t max_rows_)
-        : IMergeTreeIndex(index_)
+        : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
         , max_rows(max_rows_)
     {}
 
     ~MergeTreeIndexSet() override = default;
 
+    bool supportsBulkFiltering() const override
+    {
+        return true;
+    }
+
     MergeTreeIndexGranulePtr createIndexGranule() const override;
-    MergeTreeIndexAggregatorPtr createIndexAggregator(const MergeTreeWriterSettings & settings) const override;
+    MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
+    MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
     MergeTreeIndexConditionPtr createIndexCondition(
-            const ActionsDAG * filter_actions_dag, ContextPtr context) const override;
+        const ActionsDAG::Node * predicate, ContextPtr context) const override;
 
     size_t max_rows = 0;
 };

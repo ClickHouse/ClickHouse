@@ -15,7 +15,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
     if (function.name != "or")
         return;
 
-    std::unordered_map<String, std::shared_ptr<ASTLiteral>> identifier_to_literals;
+    std::unordered_map<String, boost::intrusive_ptr<ASTLiteral>> identifier_to_literals;
     for (auto & child : function.children)
     {
         if (auto * expr_list_fn = child->as<ASTExpressionList>())
@@ -55,7 +55,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
 
                     if (it == identifier_to_literals.end())
                     {
-                        it = identifier_to_literals.insert({identifier->getAliasOrColumnName(), std::make_shared<ASTLiteral>(Field{Array{}})}).first;
+                        it = identifier_to_literals.insert({identifier->getAliasOrColumnName(), make_intrusive<ASTLiteral>(Field{Array{}})}).first;
                         auto match = makeASTFunction("multiMatchAny");
                         match->arguments->children.push_back(arguments[0]);
                         match->arguments->children.push_back(it->second);
@@ -67,7 +67,7 @@ void ConvertFunctionOrLikeData::visit(ASTFunction & function, ASTPtr &)
 
             /// OR must have at least two arguments.
             if (unique_elems.size() == 1)
-                unique_elems.push_back(std::make_shared<ASTLiteral>(Field(false)));
+                unique_elems.push_back(make_intrusive<ASTLiteral>(Field(false)));
 
             expr_list_fn->children = std::move(unique_elems);
         }

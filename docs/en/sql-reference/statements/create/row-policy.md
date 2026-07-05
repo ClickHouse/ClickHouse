@@ -1,8 +1,10 @@
 ---
-slug: /sql-reference/statements/create/row-policy
+description: 'Documentation for Row Policy'
+sidebar_label: 'ROW POLICY'
 sidebar_position: 41
-sidebar_label: ROW POLICY
-title: "CREATE ROW POLICY"
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: 'reference'
 ---
 
 Creates a [row policy](../../../guides/sre/user-management/index.md#row-policy-management), i.e. a filter used to determine which rows a user can read from a table.
@@ -13,7 +15,7 @@ Row policies make sense only for users with readonly access. If a user can modif
 
 Syntax:
 
-``` sql
+```sql
 CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
         [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
     [IN access_storage_type]
@@ -31,18 +33,6 @@ Allows specifying a condition to filter rows. A user will see a row if the condi
 In the `TO` section you can provide a list of users and roles this policy should work for. For example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
-
-:::note
-If there are no row policies defined for a table, then any user can `SELECT` all the rows from the table. Defining one or more row policies for the table makes access to the table dependent on the row policies, no matter if those row policies are defined for the current user or not. For example, the following policy:
-
-`CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter`
-
-forbids the users `mira` and `peter` from seeing the rows with `b != 1`, and any non-mentioned user (e.g., the user `paul`) will see no rows from `mydb.table1` at all.
-
-If that's not desirable, it can be fixed by adding one more row policy, like the following:
-
-`CREATE ROW POLICY pol2 ON mydb.table1 USING 1 TO ALL EXCEPT mira, peter`
-:::
 
 ## AS Clause {#as-clause}
 
@@ -89,12 +79,9 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
 
-
-
 ## ON CLUSTER Clause {#on-cluster-clause}
 
 Allows creating row policies on a cluster, see [Distributed DDL](../../../sql-reference/distributed-ddl.md).
-
 
 ## Examples {#examples}
 

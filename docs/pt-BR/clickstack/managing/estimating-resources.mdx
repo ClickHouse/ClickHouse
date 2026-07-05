@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/estimating-resources
+title: 'Estimativa de recursos'
+sidebarTitle: 'Estimativa de recursos'
+description: 'Orientações para estimativa de recursos em implantações do Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'recursos', 'dimensionamento', 'capacidade computacional', 'produção', 'planejamento de capacidade']
+---
+
+import ResourceEstimation from '/snippets/pt-BR/_resource_estimation.mdx';
+
+<ResourceEstimation />
+
+<div id="refining-sizing-assumptions">
+  ## Refinando as premissas de dimensionamento para o seu ambiente
+</div>
+
+O modelo assume uma média sustentada de 1 QPS no ClickStack, agregando todos os tipos de consulta, incluindo busca, dashboards e alertas.
+
+Para volumes maiores de consultas, dimensione os requisitos de CPU linearmente, multiplicando-os pelo QPS alvo. Por exemplo, uma implantação com ingestão de 100 MB/s e meta de 9 QPS exigiria 90 CPUs para consultas (10 × 9), em vez da linha de base de 10, resultando em um total revisado de 100 CPUs (10 de ingestão + 90 de consulta).
+
+As estimativas de armazenamento assumem uma taxa de compressão conservadora de 10x. Na prática, logs, traces e métricas frequentemente alcançam compressão maior. Recomendamos testar com uma amostra dos dados para determinar sua taxa de compressão e seus requisitos de armazenamento antes da produção. Para calcular o armazenamento necessário para retenção mais longa, multiplique o armazenamento mensal pelo número de meses que precisam ser retidos.
+
+Isso pressupõe uma distribuição de consultas relativamente equilibrada. Cargas de trabalho mais voltadas a consultas históricas ou de arquivamento mais pesadas podem ter requisitos de computação significativamente diferentes e devem ser validadas por meio de testes de carga. Planejamos introduzir um modelo de dimensionamento mais flexível que permita extrapolar a capacidade computacional das consultas com base em diferentes padrões de distribuição de consultas.
+
+<div id="worked-example">
+  ### Exemplo prático
+</div>
+
+**Requisitos:** 1,5 PB/mês de ingestão, 5 QPS, retenção de 3 meses.
+
+**Convertendo para MB/s**
+
+O modelo de dimensionamento é expresso em MB/s. Convertendo 1,5 PB/mês (1.500 TB) em vazão sustentada:
+
+* 1.500 TB = 1.500.000.000 MB
+* Segundos por mês (30 dias): 30 × 24 × 60 × 60 = 2.592.000
+* MB/s = 1.500.000.000 ÷ 2.592.000 ≈ **579 MB/s**
+
+**Compute de ingestão**
+
+Com 1 vCPU para cada 10 MB/s de ingestão sustentada:
+
+579 ÷ 10 = **~58 vCPUs** para ingestão
+
+**Compute de consulta**
+
+O compute de consulta escala tanto com a vazão de ingestão quanto com o QPS. Com 5 QPS:
+
+(579 ÷ 10) × 5 = 58 × 5 = **290 vCPUs** para consulta
+
+**Armazenamento**
+
+Com 579 MB/s sustentados ao longo de 30 dias, a ingestão bruta equivale a 1.500 TB/mês. Aplicando a taxa de compressão assumida de 10x:
+
+* Comprimido por mês: 1.500 TB ÷ 10 = **150 TB/mês**
+* Para retenção de 3 meses: 150 TB × 3 = **450 TB no total**
+
+**Resumo**
+
+| Recurso                                | Valor     |
+| -------------------------------------- | --------- |
+| Compute de ingestão                    | 58 vCPUs  |
+| Compute de consulta                    | 290 vCPUs |
+| Compute total                          | 348 vCPUs |
+| Armazenamento por mês (comprimido)     | 150 TB    |
+| Armazenamento para retenção de 3 meses | 450 TB    |
+
+<div id="isolating-workloads">
+  ## Isolando cargas de trabalho de observabilidade
+</div>
+
+Se você estiver adicionando o ClickStack a um **serviço existente do ClickHouse Cloud** que já atende a outras cargas de trabalho, como análises de aplicações em tempo real, é altamente recomendável isolar o tráfego de observabilidade.
+
+Use [**Warehouses gerenciados**](/pt-BR/products/cloud/features/infrastructure/warehouses) para criar um **serviço filho** dedicado ao ClickStack. Isso permite:
+
+* Isolar a carga de ingestão e de consultas das aplicações existentes
+* Escalar as cargas de trabalho de observabilidade de forma independente
+* Evitar que consultas de observabilidade afetem as análises em produção
+* Compartilhar os mesmos conjuntos de dados subjacentes entre serviços, quando necessário
+
+Essa abordagem garante que suas cargas de trabalho existentes não sejam afetadas, ao mesmo tempo em que permite que o ClickStack escale de forma independente à medida que os dados de observabilidade aumentam.
+
+Para implantações maiores ou orientações sobre dimensionamento personalizado, entre em contato com o suporte para obter uma estimativa mais precisa.

@@ -13,7 +13,7 @@ MAX_TIMEOUT_SEC=$(awk "BEGIN {printf \"%.3f\", ${MAX_TIMEOUT_MS}/1000}") # Use 1
 # Function to check the output for maximum execution time in milliseconds
 function check_output() {
   # Extract the maximum time used from the output, including 'ms'
-  MAXTIME_USED=$(echo "$1" | grep -Eo "maximum: [0-9]+(?:\.[0-9]+)? ms" | head -n1 || true)
+  MAXTIME_USED=$(echo "$1" | grep -Eo "maximum: [0-9]+(\.[0-9]+)? ms" | head -n1 || true)
   EXPECTED="maximum: ${MAX_TIMEOUT_MS} ms"
   if [ "${MAXTIME_USED}" != "${EXPECTED}" ]; then
     echo "'${MAXTIME_USED}' is not equal to '${EXPECTED}'"

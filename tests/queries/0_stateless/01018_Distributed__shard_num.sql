@@ -58,7 +58,10 @@ SELECT key FROM dist_2;
 
 -- multiple _shard_num
 SELECT 'remote(Distributed)';
-SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key;
+SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key settings serialize_query_plan=0;
+SELECT 'remote(DistributedQueryPlan)';
+-- distributed over distributed does not work, because _shard_num is not analyzed from QueryPlan.
+SELECT _shard_num, key FROM remote('127.0.0.1', currentDatabase(), dist_2) order by _shard_num, key settings serialize_query_plan=1, prefer_localhost_replica=0, enable_analyzer=1;
 
 -- JOIN system.clusters
 SELECT 'JOIN system.clusters';

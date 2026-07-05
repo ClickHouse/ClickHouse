@@ -67,7 +67,7 @@ public:
 
         for (size_t i = 0; i < objects.size(); ++i)
         {
-            const double algo_prob = 1.0 * selects[i] / N;
+            const double algo_prob = 1.0 * static_cast<double>(selects[i]) / static_cast<double>(N);
             ASSERT_TRUE(probability[i] - ERROR <= algo_prob && algo_prob <= probability[i] + ERROR);
         }
     }

@@ -1,12 +1,13 @@
 -- Tags: long, no-fasttest, no-parallel, no-tsan, no-msan, no-asan
 
-set output_format_parquet_use_custom_encoder = 1;
+set optimize_trivial_insert_select = 0;
 set output_format_parquet_row_group_size = 1000;
 set output_format_parquet_data_page_size = 800;
 set output_format_parquet_batch_size = 100;
 set output_format_parquet_row_group_size_bytes = 1000000000;
-set engine_file_truncate_on_insert=1;
-set allow_suspicious_low_cardinality_types=1;
+set engine_file_truncate_on_insert = 1;
+set allow_suspicious_low_cardinality_types = 1;
+set output_format_parquet_enum_as_byte_array=0;
 
 -- Write random data to parquet file, then read from it and check that it matches what we wrote.
 -- Do this for all kinds of data types: primitive, Nullable(primitive), Array(primitive),
@@ -160,13 +161,11 @@ select total_compressed_size < 10000, total_uncompressed_size > 15000 from file(
 insert into function file(compressed_02735.parquet) select if(number%3==1, NULL, 42) as x from numbers(70) settings output_format_parquet_compression_method='zstd';
 select sum(cityHash64(*)) from file(compressed_02735.parquet);
 
--- Single-threaded encoding and Arrow encoder.
+-- Single-threaded encoding.
 drop table if exists other_encoders_02735;
 create temporary table other_encoders_02735 as select number, number*2 from numbers(10000);
 insert into function file(single_thread_02735.parquet) select * from other_encoders_02735 settings max_threads = 1;
 select sum(cityHash64(*)) from file(single_thread_02735.parquet);
-insert into function file(arrow_02735.parquet) select * from other_encoders_02735 settings output_format_parquet_use_custom_encoder = 0;
-select sum(cityHash64(*)) from file(arrow_02735.parquet);
 
 -- String -> binary vs string; FixedString -> fixed-length-binary vs binary vs string.
 insert into function file(strings1_02735.parquet) select 'never', toFixedString('gonna', 5) settings output_format_parquet_string_as_string = 1, output_format_parquet_fixed_string_as_fixed_byte_array = 1;
@@ -190,3 +189,7 @@ insert into function file(datetime64_02735.parquet) select
     from numbers(2000);
 desc file(datetime64_02735.parquet);
 select sum(cityHash64(*)) from file(datetime64_02735.parquet);
+
+insert into function file(date_as_uint16.parquet) select toDate('2025-08-12') as d settings output_format_parquet_date_as_uint16 = 1;
+select * from file(date_as_uint16.parquet);
+desc file(date_as_uint16.parquet);

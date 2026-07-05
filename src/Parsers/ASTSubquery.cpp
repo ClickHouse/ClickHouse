@@ -34,9 +34,7 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     ///   (select 1 in ((select 1) as sub))
     if (!cte_name.empty())
     {
-        ostr << (settings.hilite ? hilite_identifier : "");
         settings.writeIdentifier(ostr, cte_name, /*ambiguous=*/false);
-        ostr << (settings.hilite ? hilite_none : "");
         return;
     }
 
@@ -46,6 +44,7 @@ void ASTSubquery::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
     ostr << "(" << nl_or_nothing;
     FormatStateStacked frame_nested = frame;
     frame_nested.need_parens = false;
+    frame_nested.parent_has_trailing_settings = false;
     ++frame_nested.indent;
     children[0]->format(ostr, settings, state, frame_nested);
     ostr << nl_or_nothing << indent_str << ")";
@@ -75,4 +74,3 @@ String ASTSubquery::tryGetAlias() const
 }
 
 }
-

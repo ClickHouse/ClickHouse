@@ -21,7 +21,7 @@ static void removeFromOutputs(ActionsDAG & dag, const ActionsDAG::Node & node)
     }
 }
 
-size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
+size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return false;
@@ -46,10 +46,18 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
             return 0;
 
+        /// Propagate the flag from either side: if the child is a discarding step (or any
+        /// step whose inputs must not be stripped), the merged step must keep the same
+        /// invariant, otherwise `removeUnusedColumns` would prune the inherited inputs and
+        /// trigger an infinite loop with re-inserted discarding steps.
+        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_expr->isInputRemovalPrevented();
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
 
         auto expr = std::make_unique<ExpressionStep>(child_expr->getInputHeaders().front(), std::move(merged));
-        expr->setStepDescription("(" + parent_expr->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
+        expr->setStepDescription(fmt::format("({} + {})", parent_expr->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (prevent_input_removal)
+            expr->setPreventInputRemoval();
 
         parent_node->step = std::move(expr);
         parent_node->children.swap(child_node->children);
@@ -63,14 +71,20 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
             return 0;
 
+        const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
+
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
+
+        merged.deduplicateSubtrees();
 
         auto filter = std::make_unique<FilterStep>(
             child_expr->getInputHeaders().front(),
             std::move(merged),
             parent_filter->getFilterColumnName(),
             parent_filter->removesFilterColumn());
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_expr->getStepDescription() + ")");
+        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_expr->getStepDescription()), settings.max_step_description_length);
+        if (prevent_input_removal)
+            filter->setPreventInputRemoval();
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);
@@ -79,7 +93,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
     return 0;
 }
-size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & /*settings*/)
+size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
         return false;
@@ -114,14 +128,16 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
         const auto & condition = child_actions.addFunction(func_builder_and, {&child_filter_node, &parent_filter_node}, {});
         auto & outputs = child_actions.getOutputs();
         outputs.insert(outputs.begin(), &condition);
+        /// condition name may be changed by deduplicateSubtrees
+        auto condition_name = condition.result_name;
 
-        child_actions.removeUnusedActions(false);
+        child_actions.deduplicateSubtrees();
 
         auto filter = std::make_unique<FilterStep>(child_filter->getInputHeaders().front(),
                                                    std::move(child_actions),
-                                                   condition.result_name,
+                                                   condition_name,
                                                    true);
-        filter->setStepDescription("(" + parent_filter->getStepDescription() + " + " + child_filter->getStepDescription() + ")");
+        filter->setStepDescription(fmt::format("({} + {})", parent_filter->getStepDescription(), child_filter->getStepDescription()), settings.max_step_description_length);
 
         parent_node->step = std::move(filter);
         parent_node->children.swap(child_node->children);

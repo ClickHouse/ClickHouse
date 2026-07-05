@@ -6,8 +6,8 @@
 #include <Core/Types.h>
 #include <libnuraft/nuraft.hxx>
 #include <Poco/Util/AbstractConfiguration.h>
-#include "Coordination/KeeperStateMachine.h"
-#include "Coordination/RaftServerConfig.h"
+#include <Coordination/KeeperStateMachine.h>
+#include <Coordination/RaftServerConfig.h>
 #include <Access/AuthenticationData.h>
 
 namespace DB
@@ -88,6 +88,12 @@ public:
         return configuration_wrapper.cluster_config->get_servers().size();
     }
 
+    ClusterConfigPtr getClusterConfig() const
+    {
+        std::lock_guard lock(configuration_wrapper_mutex);
+        return configuration_wrapper.cluster_config;
+    }
+
     /// Read all log entries in log store from the begging and return latest config (with largest log_index)
     ClusterConfigPtr getLatestConfigFromLogStore() const;
 
@@ -106,7 +112,7 @@ private:
     struct KeeperConfigurationWrapper
     {
         /// Our port
-        int port;
+        int port = -1;
         /// Our config
         KeeperServerConfigPtr config;
         /// Password to access keeper

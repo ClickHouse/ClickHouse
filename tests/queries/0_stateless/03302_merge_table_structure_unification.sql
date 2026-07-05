@@ -26,6 +26,7 @@ CREATE TABLE test_merge ENGINE = Merge(currentDatabase(), '^test_');
 -- TODO: defaults are not calculated
 SELECT * FROM test_merge ORDER BY a;
 
+SELECT '--- table function';
 DESCRIBE merge('^test_');
 
 -- Note that this will also pick up the test_merge table, duplicating the results
@@ -37,11 +38,28 @@ SET merge_table_max_tables_to_look_for_schema_inference = 1;
 
 CREATE TABLE test_merge ENGINE = Merge(currentDatabase(), '^test_');
 
+SELECT '--- merge_table_max_tables_to_look_for_schema_inference = 1';
 SELECT * FROM test_merge ORDER BY a;
 
+SELECT '--- table function';
 DESCRIBE merge('^test_');
 
 SELECT * FROM merge('^test_') ORDER BY a;
+
+DROP TABLE test_merge;
+
+-- With explicit columns, AS merge() should use them, including columns not present in any source table
+CREATE TABLE test_merge
+(
+    a Int32,
+    b String,
+    c Array(Nullable(String)),
+    d DateTime('UTC') DEFAULT now(),
+    e UInt64 DEFAULT 42
+) AS merge(currentDatabase(), '^test_[ab]$');
+
+SELECT '--- explicit columns with AS merge()';
+SELECT * FROM test_merge ORDER BY a;
 
 DROP TABLE test_merge;
 

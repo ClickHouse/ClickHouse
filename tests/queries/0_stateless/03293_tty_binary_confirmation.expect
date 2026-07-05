@@ -25,13 +25,13 @@ expect_after {
 # useful debugging configuration
 # exp_internal 1
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --highlight 0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
 # Make a query
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "y\r"
 
 expect "PAR"
@@ -39,22 +39,22 @@ expect ":) "
 
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "n\r"
 
 expect {
     "PAR" { exit 1 }
-    ":) " { send -- "\r" }
+    ":) " {}
 }
 
 send -- "SELECT 1 FORMAT Parquet\r"
 expect "is binary and could produce side-effects"
-expect "Do you want to output it anyway\?"
+expect -ex "Do you want to output it anyway? \[y/N\] "
 send -- "\r"
 
 expect {
     "PAR" { exit 1 }
-    ":) " { send -- "\r" }
+    ":) " {}
 }
 
 send -- "exit\r"

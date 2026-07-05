@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/statements/rename
+description: 'Documentation for RENAME Statement'
+sidebar_label: 'RENAME'
 sidebar_position: 48
-sidebar_label: RENAME
+slug: /sql-reference/statements/rename
+title: 'RENAME Statement'
+doc_type: 'reference'
 ---
-
-# RENAME Statement
 
 Renames databases, tables, or dictionaries. Several entities can be renamed in a single query.
 Note that the `RENAME` query with several entities is non-atomic operation. To swap entities names atomically, use the [EXCHANGE](./exchange.md) statement.
@@ -34,7 +35,7 @@ If you rename multiple tables in one query, the operation is not atomic. It may 
 
 **Syntax**
 
-``` sql
+```sql
 RENAME TABLE [db1.]name1 TO [db2.]name2 [,...] [ON CLUSTER cluster]
 ```
 
@@ -61,4 +62,4 @@ RENAME DICTIONARY [db0.]dict_A TO [db1.]dict_B [,...] [ON CLUSTER cluster]
 
 **See Also**
 
-- [Dictionaries](../../sql-reference/dictionaries/index.md)
+- [Dictionaries](./create/dictionary/overview.md)

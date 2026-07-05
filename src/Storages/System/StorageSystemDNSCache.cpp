@@ -1,11 +1,12 @@
 #include <Access/ContextAccess.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Interpreters/Context.h>
 #include <Common/DNSResolver.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include "StorageSystemDNSCache.h"
+#include <Storages/System/StorageSystemDNSCache.h>
 
 namespace DB
 {
@@ -59,3 +60,6 @@ void StorageSystemDNSCache::fillData(MutableColumns & res_columns, ContextPtr, c
 }
 
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDNSCache) }

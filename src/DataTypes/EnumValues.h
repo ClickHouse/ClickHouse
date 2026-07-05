@@ -1,92 +1,94 @@
 #pragma once
 
-#include <unordered_map>
-#include <Common/HashTable/HashMap.h>
+#include <limits>
+#include <unordered_set>
+#include <string>
+#include <string_view>
+#include <Core/Names.h>
 #include <Common/NamePrompter.h>
 
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int UNKNOWN_ELEMENT_OF_ENUM;
-}
-
+/// Compact enum storage with efficient lookups.
+/// - Strings stored in values vector (sorted by value for compatibility)
+/// - Name-to-value: binary search on sorted name index (O(log N))
+/// - Value-to-name: direct array lookup (O(1)) for small ranges, binary search for large ranges
 template <typename T>
 class EnumValues : public IHints<>
 {
 public:
     using Value = std::pair<std::string, T>;
     using Values = std::vector<Value>;
-    using NameToValueMap = HashMap<StringRef, T, StringRefHash>;
-    using ValueToNameMap = std::unordered_map<T, StringRef>;
+    /// `TemporaryAdd` is only for intermediate `ADD ENUM VALUES` state:
+    /// values stay in parser order and duplicate numeric placeholders are allowed
+    /// until `mergeEnumTypes` remaps and validates the final enum values.
+    enum class ValidationMode
+    {
+        Normal,
+        TemporaryAdd,
+    };
 
 private:
+    /// Original values sorted by numeric value (for getValues() compatibility)
     Values values;
-    NameToValueMap name_to_value_map;
-    ValueToNameMap value_to_name_map;
 
-    void fillMaps();
+    /// Index into values, sorted by name (for binary search on names)
+    std::vector<uint16_t> name_sorted_index;
+
+    /// Value-to-name lookup strategy.
+    /// For Enum8: always direct (max 256 entries of `uint16_t` = 512 bytes).
+    /// For Enum16: direct if range <= `DIRECT_LOOKUP_THRESHOLD`, otherwise binary search.
+    bool use_direct_value_lookup = true;
+
+    /// Direct lookup array: `value_to_index[value - min_value]` = index into `values`.
+    /// Only used when `use_direct_value_lookup` is true.
+    /// Min/max values accessed via `values.front()`/`values.back()` since `values` is sorted.
+    std::vector<uint16_t> value_to_index;
+
+    static constexpr uint16_t INVALID_INDEX = std::numeric_limits<uint16_t>::max();
+    static constexpr size_t DIRECT_LOOKUP_THRESHOLD = 1024;
+    /// `value_to_index` stores indices into `values`, whose size is bounded by the lookup range.
+    /// The `INVALID_INDEX` sentinel must not collide with a real index.
+    static_assert(DIRECT_LOOKUP_THRESHOLD < INVALID_INDEX);
+
+    void buildLookupStructures(ValidationMode validation_mode);
+
+    /// Exact-name lookup without numeric-string fallback.
+    /// Returns true and writes the value into `result` if `field_name` matches an enum name.
+    bool findValueByName(std::string_view field_name, T & result) const;
 
 public:
-    explicit EnumValues(const Values & values_);
+    explicit EnumValues(const Values & values_, ValidationMode validation_mode = ValidationMode::Normal);
+    ~EnumValues() override;
 
     const Values & getValues() const { return values; }
 
-    auto findByValue(const T & value) const
-    {
-        auto it = value_to_name_map.find(value);
-        if (it == value_to_name_map.end())
-            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_OF_ENUM, "Unexpected value {} in enum", toString(value));
+    /// Approximate number of heap-allocated bytes owned by this object:
+    /// the `values` vector (including each name's string capacity) plus the
+    /// `name_sorted_index` and `value_to_index` lookup vectors.
+    size_t allocatedBytes() const;
 
-        return it;
-    }
+    /// Check if value exists in enum
+    bool hasValue(T value) const;
 
-    bool hasValue(const T & value) const
-    {
-        return value_to_name_map.contains(value);
-    }
+    /// Get name for value, throws if not found
+    std::string_view getNameForValue(T value) const;
 
-    /// throws exception if value is not valid
-    const StringRef & getNameForValue(const T & value) const
-    {
-        return findByValue(value)->second;
-    }
+    /// Get name for value, returns false if not found
+    bool getNameForValue(T value, std::string_view & result) const;
 
-    /// returns false if value is not valid
-    bool getNameForValue(const T & value, StringRef & result) const
-    {
-        const auto it = value_to_name_map.find(value);
-        if (it == value_to_name_map.end())
-            return false;
+    /// Get value for name, throws if not found
+    T getValue(std::string_view field_name) const;
 
-        result = it->second;
-        return true;
-    }
-
-    T getValue(StringRef field_name) const;
-    bool tryGetValue(T & x, StringRef field_name) const;
+    /// Get value for name, returns false if not found
+    bool tryGetValue(T & x, std::string_view field_name) const;
 
     template <typename TValues>
-    bool containsAll(const TValues & rhs_values) const
-    {
-        auto check = [&](const auto & value)
-        {
-            auto it = name_to_value_map.find(value.first);
-            /// If we don't have this name, than we have to be sure,
-            /// that this value exists in enum
-            if (it == name_to_value_map.end())
-                return value_to_name_map.count(value.second) > 0;
+    bool containsAll(const TValues & rhs_values) const;
 
-            /// If we have this name, than it should have the same value
-            return it->value.second == value.second;
-        };
-
-        return std::all_of(rhs_values.begin(), rhs_values.end(), check);
-    }
-
-    Names getAllRegisteredNames() const override;
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override;
 
     std::unordered_set<String> getSetOfAllNames(bool to_lower) const;
 

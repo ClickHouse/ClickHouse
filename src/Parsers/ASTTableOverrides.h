@@ -27,10 +27,10 @@ public:
     String getID(char) const override { return "TableOverride " + table_name; }
     ASTPtr clone() const override;
 
-    void forEachPointerToChild(std::function<void(void**)> f) override
+    void forEachPointerToChild(std::function<void(IAST **, boost::intrusive_ptr<IAST> *)> f) override
     {
-        f(reinterpret_cast<void **>(&columns));
-        f(reinterpret_cast<void **>(&storage));
+        f(reinterpret_cast<IAST **>(&columns), nullptr);
+        f(reinterpret_cast<IAST **>(&storage), nullptr);
     }
 
 protected:

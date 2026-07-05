@@ -8,8 +8,6 @@
 #include <boost/algorithm/string/split.hpp>
 #include <Poco/String.h>
 
-#include <format>
-
 
 namespace DB::ErrorCodes
 {
@@ -34,7 +32,7 @@ bool Base64EncodeFromGuid::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto argument = getArgument(function_name, pos);
-    out = std::format(
+    out = fmt::format(
         "if(toTypeName({0}) not in ['UUID', 'Nullable(UUID)'], toString(throwIf(true, 'Expected guid as argument')), "
         "base64Encode(UUIDStringToNum(toString({0}), 2)))",
         argument,
@@ -56,7 +54,7 @@ bool Base64DecodeToArray::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String str = getConvertedArgument(fn_name, pos);
 
-    out = std::format("arrayMap(x -> (reinterpretAsUInt8(x)), splitByRegexp ('',base64Decode({})))", str);
+    out = fmt::format("arrayMap(x -> (reinterpretAsUInt8(x)), splitByRegexp ('',base64Decode({})))", str);
 
     return true;
 }
@@ -68,7 +66,7 @@ bool Base64DecodeToGuid::convertImpl(String & out, IParser::Pos & pos)
         return false;
 
     const auto argument = getArgument(function_name, pos);
-    out = std::format("toUUIDOrNull(UUIDNumToString(toFixedString(base64Decode({}), 16), 2))", argument);
+    out = fmt::format("toUUIDOrNull(UUIDNumToString(toFixedString(base64Decode({}), 16), 2))", argument);
 
     return true;
 }
@@ -91,7 +89,7 @@ bool CountOf::convertImpl(String & out, IParser::Pos & pos)
         ++pos;
         kind = getConvertedArgument(fn_name, pos);
     }
-    assert(kind == "'normal'" || kind == "'regex'");
+    chassert(kind == "'normal'" || kind == "'regex'");
 
     if (kind == "'normal'")
         out = "countSubstrings(" + source + ", " + search + ")";
@@ -128,7 +126,10 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
     String regex = getConvertedArgument(fn_name, pos);
 
     ++pos;
-    size_t capture_group = stoi(getConvertedArgument(fn_name, pos));
+    String capture_group_str = getConvertedArgument(fn_name, pos);
+    if (capture_group_str.empty())
+        return false;
+    size_t capture_group = stoi(capture_group_str);
 
     ++pos;
     String source = getConvertedArgument(fn_name, pos);
@@ -146,7 +147,7 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
 
             type_literal = String(pos->begin, pos->end);
 
-            if (type_cast.find(type_literal) == type_cast.end())
+            if (!type_cast.contains(type_literal))
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for extract", type_literal);
 
             type_literal = type_cast[type_literal];
@@ -159,54 +160,56 @@ bool Extract::convertImpl(String & out, IParser::Pos & pos)
 
     if (capture_group == 0)
     {
-        String tmp_regex;
-        for (auto c : regex)
+        /// Group 0 = entire match. Use extract with non-capturing groups.
+        /// Track character class depth so `(` inside `[...]` is not rewritten.
+        String no_groups_regex;
+        bool in_char_class = false;
+        for (size_t i = 0; i < regex.length(); ++i)
         {
-            if (c != '(' && c != ')')
-                tmp_regex += c;
+            auto c = regex[i];
+            if (c == '\\' && i + 1 < regex.length())
+            {
+                /// Skip escaped characters
+                no_groups_regex += c;
+                no_groups_regex += regex[i + 1];
+                ++i;
+                continue;
+            }
+            if (c == '[')
+                in_char_class = true;
+            else if (c == ']')
+                in_char_class = false;
+            /// Replace ( with (?: to make all groups non-capturing, but only outside character classes
+            if (!in_char_class && c == '(' && i + 1 < regex.length() && regex[i + 1] != '?')
+                no_groups_regex += "(?:";
+            else
+                no_groups_regex += c;
         }
-        regex = std::move(tmp_regex);
+        out = "extract(" + source + ", " + no_groups_regex + ")";
     }
     else
     {
-        size_t group_idx = 0;
-        size_t str_idx = -1;
-        for (size_t i = 0; i < regex.length(); ++i)
-        {
-            if (regex[i] == '(')
-            {
-                ++group_idx;
-                if (group_idx == capture_group)
-                {
-                    str_idx = i + 1;
-                    break;
-                }
-            }
-        }
-        String tmp_regex;
-        if (str_idx > 0)
-        {
-            for (size_t i = str_idx; i < regex.length(); ++i)
-            {
-                if (regex[i] == ')')
-                    break;
-                tmp_regex += regex[i];
-            }
-        }
-        regex = "'" + tmp_regex + "'";
+        /// Use extractAllGroupsHorizontal to get specific capture group.
+        /// `extractAllGroupsHorizontal` returns Array(Array(String)) shaped as [group][match],
+        /// so the outer length is the number of groups and the inner length is the number of
+        /// matches for that group. Both must be checked: a regex may contain group `n` yet the
+        /// input may produce zero matches for it, in which case `g[n][1]` would index an empty array.
+        out = fmt::format(
+            "if(length(extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})) >= {2} "
+            "AND length(extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})[{2}]) >= 1, "
+            "extractAllGroupsHorizontal(ifNull(toString({0}), ''), {1})[{2}][1], '')",
+            source, regex, capture_group);
     }
-
-    out = "extract(" + source + ", " + regex + ")";
 
     if (type_literal == "Decimal")
     {
-        out = std::format("countSubstrings({0}, '.') > 1 ? NULL: {0}, length(substr({0}, position({0},'.') + 1)))", out);
-        out = std::format("toDecimal128OrNull({0})", out);
+        out = fmt::format("countSubstrings({0}, '.') > 1 ? NULL: {0}, length(substr({0}, position({0},'.') + 1)))", out);
+        out = fmt::format("toDecimal128OrNull({0})", out);
     }
     else
     {
         if (type_literal == "Boolean")
-            out = std::format("toInt64OrNull({})", out);
+            out = fmt::format("toInt64OrNull({})", out);
 
         if (!type_literal.empty())
             out = "accurateCastOrNull(" + out + ", '" + type_literal + "')";
@@ -280,7 +283,7 @@ bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
 
             datatype = String(pos->begin, pos->end);
 
-            if (type_cast.find(datatype) == type_cast.end())
+            if (!type_cast.contains(datatype))
                 throw Exception(ErrorCodes::UNKNOWN_TYPE, "{} is not a supported kusto data type for {}", datatype, fn_name);
             datatype = type_cast[datatype];
             ++pos;
@@ -289,20 +292,20 @@ bool ExtractJSON::convertImpl(String & out, IParser::Pos & pos)
                 throw Exception(ErrorCodes::SYNTAX_ERROR, "Syntax error near typeof");
         }
     }
-    const auto json_val = std::format("JSON_VALUE({0},{1})", json_datasource, json_datapath);
+    const auto json_val = fmt::format("JSON_VALUE({0},{1})", json_datasource, json_datapath);
 
     if (datatype == "Decimal")
     {
-        out = std::format("countSubstrings({0}, '.') > 1 ? NULL: length(substr({0}, position({0},'.') + 1)))", json_val);
-        out = std::format("toDecimal128OrNull({0}::String, {1})", json_val, out);
+        out = fmt::format("countSubstrings({0}, '.') > 1 ? NULL: length(substr({0}, position({0},'.') + 1)))", json_val);
+        out = fmt::format("toDecimal128OrNull({0}::String, {1})", json_val, out);
     }
     else
     {
         if (datatype == "Boolean")
-            out = std::format("toInt64OrNull({})", json_val);
+            out = fmt::format("toInt64OrNull({})", json_val);
 
         if (!datatype.empty())
-            out = std::format("accurateCastOrNull({},'{}')", json_val, datatype);
+            out = fmt::format("accurateCastOrNull({},'{}')", json_val, datatype);
     }
     return true;
 }
@@ -318,8 +321,8 @@ bool HasAnyIndex::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     const String lookup = getConvertedArgument(fn_name, pos);
-    String src_array = std::format("splitByChar(' ',{})", source);
-    out = std::format(
+    String src_array = fmt::format("splitByChar(' ',{})", source);
+    out = fmt::format(
         "if(empty({1}), -1, indexOf(arrayMap(x->(x in {0}), if(empty({1}),[''], arrayMap(x->(toString(x)),{1}))),1) - 1)",
         src_array,
         lookup);
@@ -345,17 +348,26 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        start_index = stoi(getConvertedArgument(fn_name, pos));
+        String start_index_str = getConvertedArgument(fn_name, pos);
+        if (start_index_str.empty())
+            return false;
+        start_index = stoi(start_index_str);
 
         if (pos->type == TokenType::Comma)
         {
             ++pos;
-            length = stoi(getConvertedArgument(fn_name, pos));
+            String length_str = getConvertedArgument(fn_name, pos);
+            if (length_str.empty())
+                return false;
+            length = stoi(length_str);
 
             if (pos->type == TokenType::Comma)
             {
                 ++pos;
-                occurrence = stoi(getConvertedArgument(fn_name, pos));
+                String occurrence_str = getConvertedArgument(fn_name, pos);
+                if (occurrence_str.empty())
+                    return false;
+                occurrence = stoi(occurrence_str);
             }
         }
     }
@@ -378,17 +390,32 @@ bool IndexOf::convertImpl(String & out, IParser::Pos & pos)
 
 bool IsEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "empty");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(empty({}))", arg);
+    return true;
 }
 
 bool IsNotEmpty::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "notEmpty");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(notEmpty({}))", arg);
+    return true;
 }
 
 bool IsNotNull::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "isNotNull");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(isNotNull({}))", arg);
+    return true;
 }
 
 bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
@@ -406,7 +433,7 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
     if (type != "'windows'")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Supported type argument is windows for {}", fn_name);
 
-    out = std::format(
+    out = fmt::format(
         "if(empty({0}) OR hasAll(splitByChar(' ', {0}) , ['']) , arrayMap(x->null, splitByChar(' ', '')), splitByChar(' ', {0}))",
         json_string);
     return true;
@@ -414,7 +441,12 @@ bool ParseCommandLine::convertImpl(String & out, IParser::Pos & pos)
 
 bool IsNull::convertImpl(String & out, IParser::Pos & pos)
 {
-    return directMapping(out, pos, "isNull");
+    const auto fn_name = getKQLFunctionName(pos);
+    if (fn_name.empty())
+        return false;
+    const auto arg = getArgument(fn_name, pos);
+    out = fmt::format("toBool(isNull({}))", arg);
+    return true;
 }
 
 bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
@@ -426,7 +458,7 @@ bool ParseCSV::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String csv_string = getConvertedArgument(fn_name, pos);
 
-    out = std::format(
+    out = fmt::format(
         "if(position({0} ,'\n')::UInt8, (splitByChar(',', substring({0}, 1, position({0},'\n') -1))), (splitByChar(',', substring({0}, 1, "
         "length({0})))))",
         csv_string);
@@ -442,15 +474,17 @@ bool ParseJSON::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     if (String(pos->begin, pos->end) == "dynamic")
     {
-        --pos;
-        auto arg = getArgument(fn_name, pos);
-        auto result = kqlCallToExpression("dynamic", {arg}, pos.max_depth, pos.max_backtracks);
-        out = std::format("{}", result);
+        /// `parse_json(dynamic(...))` is equivalent to the `dynamic` value itself —
+        /// parse the inner `dynamic(...)` call directly instead of re-wrapping
+        /// it in another `dynamic(...)` (which would nest the SQL output inside a
+        /// fresh dynamic parser and fail on `CAST` tokens produced by the inner call).
+        out = getConvertedArgument(fn_name, pos);
     }
     else
     {
         auto arg = getConvertedArgument(fn_name, pos);
-        out = std::format("if (isValidJSON({0}) , JSON_QUERY({0}, '$') , toJSONString({0}))", arg);
+        /// Cast to JSON type for native member access (o.field)
+        out = fmt::format("CAST({0} AS JSON)", arg);
     }
     return true;
 }
@@ -464,21 +498,21 @@ bool ParseURL::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String url = getConvertedArgument(fn_name, pos);
 
-    const String scheme = std::format(R"(concat('"Scheme":"', protocol({0}),'"'))", url);
-    const String host = std::format(R"(concat('"Host":"', domain({0}),'"'))", url);
-    const String port = std::format(R"(concat('"Port":"', toString(port({0})),'"'))", url);
-    const String path = std::format(R"(concat('"Path":"', path({0}),'"'))", url);
-    const String username_pwd = std::format("netloc({0})", url);
-    const String query_string = std::format("queryString({0})", url);
-    const String fragment = std::format(R"(concat('"Fragment":"',fragment({0}),'"'))", url);
-    const String username = std::format(
+    const String scheme = fmt::format(R"(concat('"Scheme":"', protocol({0}),'"'))", url);
+    const String host = fmt::format(R"(concat('"Host":"', domain({0}),'"'))", url);
+    const String port = fmt::format(R"(concat('"Port":"', toString(port({0})),'"'))", url);
+    const String path = fmt::format(R"(concat('"Path":"', path({0}),'"'))", url);
+    const String username_pwd = fmt::format("netloc({0})", url);
+    const String query_string = fmt::format("queryString({0})", url);
+    const String fragment = fmt::format(R"(concat('"Fragment":"',fragment({0}),'"'))", url);
+    const String username = fmt::format(
         R"(concat('"Username":"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),1),'"'))", username_pwd);
-    const String password = std::format(
+    const String password = fmt::format(
         R"(concat('"Password":"', arrayElement(splitByChar(':',arrayElement(splitByChar('@',{0}) ,1)),2),'"'))", username_pwd);
-    const String query_parameters = std::format(
+    const String query_parameters = fmt::format(
         R"(concat('"Query Parameters":', concat('{{"', replace(replace({}, '=', '":"'),'&','","') ,'"}}')))", query_string);
 
-    out = std::format(
+    out = fmt::format(
         "concat('{{',{},',',{},',',{},',',{},',',{},',',{},',',{},',',{},'}}')",
         scheme,
         host,
@@ -499,10 +533,10 @@ bool ParseURLQuery::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String query = getConvertedArgument(fn_name, pos);
 
-    const String query_string = std::format("if (position({},'?') > 0, queryString({}), {})", query, query, query);
-    const String query_parameters = std::format(
+    const String query_string = fmt::format("if (position({},'?') > 0, queryString({}), {})", query, query, query);
+    const String query_parameters = fmt::format(
         R"(concat('"Query Parameters":', concat('{{"', replace(replace({}, '=', '":"'),'&','","') ,'"}}')))", query_string);
-    out = std::format("concat('{{',{},'}}')", query_parameters);
+    out = fmt::format("concat('{{',{},'}}')", query_parameters);
     return true;
 }
 
@@ -514,7 +548,7 @@ bool ParseVersion::convertImpl(String & out, IParser::Pos & pos)
     String arg;
     ++pos;
     arg = getConvertedArgument(fn_name, pos);
-    out = std::format(
+    out = fmt::format(
         "length(splitByChar('.', {0})) > 4 OR  length(splitByChar('.', {0})) < 1 OR match({0}, '.*[a-zA-Z]+.*') = 1 ? "
         "toDecimal128OrNull('NULL' , 0)  : toDecimal128OrNull(substring(arrayStringConcat(arrayMap(x -> leftPad(x, 8, '0'), arrayMap(x -> "
         "if(empty(x), '0', x), arrayResize(splitByChar('.', {0}), 4)))), 8),0)",
@@ -537,7 +571,7 @@ bool Reverse::convertImpl(String & out, IParser::Pos & pos)
 
     auto arg = getConvertedArgument(fn_name, pos);
 
-    out = std::format("reverse(accurateCastOrNull({} , 'String'))", arg);
+    out = fmt::format("reverse(accurateCastOrNull({} , 'String'))", arg);
 
     return true;
 }
@@ -553,7 +587,7 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
 
     ++pos;
     const String delimiter = getConvertedArgument(fn_name, pos);
-    auto split_res = std::format("empty({0}) ? splitByString(' ' , {1}) : splitByString({0} , {1})", delimiter, source);
+    auto split_res = fmt::format("empty({0}) ? splitByString(' ' , {1}) : splitByString({0} , {1})", delimiter, source);
     int requested_index = -1;
 
     if (pos->type == TokenType::Comma)
@@ -564,7 +598,7 @@ bool Split::convertImpl(String & out, IParser::Pos & pos)
         arg.erase(remove_if(arg.begin(), arg.end(), isspace), arg.end());
         requested_index = std::stoi(arg);
         requested_index += 1;
-        out = std::format(
+        out = fmt::format(
             "multiIf(length({0}) >= {1} AND {1} > 0, arrayPushBack([],arrayElement({0}, {1})), {1}=0, {0}, arrayPushBack([] "
             ",arrayElement(NULL,1)))",
             split_res,
@@ -622,7 +656,7 @@ bool StrCmp::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     const String string2 = getConvertedArgument(fn_name, pos);
 
-    out = std::format("multiIf({0} == {1}, 0, {0} < {1}, -1, 1)", string1, string2);
+    out = fmt::format("multiIf({0} == {1}, 0, {0} < {1}, -1, 1)", string1, string2);
     return true;
 }
 
@@ -673,16 +707,25 @@ bool SubString::convertImpl(String & out, IParser::Pos & pos)
     if (pos->type == TokenType::Comma)
     {
         ++pos;
-        auto length = getConvertedArgument(fn_name, pos);
+        auto len = getConvertedArgument(fn_name, pos);
 
         if (starting_index.empty())
             throw Exception(ErrorCodes::SYNTAX_ERROR, "number of arguments do not match in function: {}", fn_name);
-        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + ", " + "((" + starting_index + "% toInt64(length(" + source
-            + "))  + toInt64(length(" + source + "))) % toInt64(length(" + source + ")))  + 1, " + length + ") )";
+
+        /// KQL substring(source, startingIndex, length):
+        /// - If startingIndex < 0, clamp to 0
+        /// - If startingIndex >= length(source), return empty
+        /// - length is clamped to available characters
+        out = fmt::format(
+            "if(toInt64(length({0})) <= 0 OR greatest({1}, 0) >= toInt64(length({0})), '', "
+            "substr({0}, greatest({1}, 0) + 1, {2}))",
+            source, starting_index, len);
     }
     else
-        out = "if(toInt64(length(" + source + ")) <= 0, '', substr(" + source + "," + "((" + starting_index + "% toInt64(length(" + source
-            + ")) + toInt64(length(" + source + "))) % toInt64(length(" + source + "))) + 1))";
+        out = fmt::format(
+            "if(toInt64(length({0})) <= 0 OR greatest({1}, 0) >= toInt64(length({0})), '', "
+            "substr({0}, greatest({1}, 0) + 1))",
+            source, starting_index);
 
     return true;
 }
@@ -711,14 +754,14 @@ bool Translate::convertImpl(String & out, IParser::Pos & pos)
     ++pos;
     String source = getConvertedArgument(fn_name, pos);
 
-    String len_diff = std::format("length({}) - length({})", from, to);
-    String to_str = std::format(
+    String len_diff = fmt::format("length({}) - length({})", from, to);
+    String to_str = fmt::format(
         "multiIf(length({1}) = 0, {0}, {2} > 0, concat({1},repeat(substr({1},length({1}),1),toUInt16({2}))),{2} < 0, "
         "substr({1},1,length({0})),{1})",
         from,
         to,
         len_diff);
-    out = std::format("if (length({3}) = 0,'',translate({0},{1},{2}))", source, from, to_str, to);
+    out = fmt::format("if (length({3}) = 0,'',translate({0},{1},{2}))", source, from, to_str, to);
     return true;
 }
 
@@ -730,7 +773,7 @@ bool Trim::convertImpl(String & out, IParser::Pos & pos)
 
     const auto regex = getArgument(fn_name, pos, ArgumentState::Raw);
     const auto source = getArgument(fn_name, pos, ArgumentState::Raw);
-    out = kqlCallToExpression("trim_start", {regex, std::format("trim_end({0}, {1})", regex, source)}, pos.max_depth, pos.max_backtracks);
+    out = kqlCallToExpression("trim_start", {regex, fmt::format("trim_end({0}, {1})", regex, source)}, pos);
 
     return true;
 }
@@ -743,7 +786,7 @@ bool TrimEnd::convertImpl(String & out, IParser::Pos & pos)
 
     const auto regex = getArgument(fn_name, pos);
     const auto source = getArgument(fn_name, pos);
-    out = std::format("replaceRegexpOne({0}, concat({1}, '$'), '')", source, regex);
+    out = fmt::format("replaceRegexpOne({0}, concat({1}, '$'), '')", source, regex);
 
     return true;
 }
@@ -756,7 +799,7 @@ bool TrimStart::convertImpl(String & out, IParser::Pos & pos)
 
     const auto regex = getArgument(fn_name, pos);
     const auto source = getArgument(fn_name, pos);
-    out = std::format("replaceRegexpOne({0}, concat('^', {1}), '')", source, regex);
+    out = fmt::format("replaceRegexpOne({0}, concat('^', {1}), '')", source, regex);
 
     return true;
 }

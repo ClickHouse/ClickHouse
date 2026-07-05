@@ -204,6 +204,32 @@ JUST_WRONG_CONFIG = """
 </clickhouse>
 """
 
+INVALID_ROTATE_INTERVAL_CONFIG = """
+<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+        <coordination_settings>
+            <operation_timeout_ms>5000</operation_timeout_ms>
+            <session_timeout_ms>10000</session_timeout_ms>
+            <raft_logs_level>trace</raft_logs_level>
+            <rotate_log_storage_interval>0</rotate_log_storage_interval>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+"""
+
 
 def test_invalid_configs(started_cluster):
     node1.stop_clickhouse()
@@ -220,6 +246,7 @@ def test_invalid_configs(started_cluster):
     assert_config_fails(LOCALHOST_WITH_REMOTE)
     assert_config_fails(MULTIPLE_LOCAL_WITH_REMOTE)
     assert_config_fails(JUST_WRONG_CONFIG)
+    assert_config_fails(INVALID_ROTATE_INTERVAL_CONFIG)
 
     node1.replace_config(
         "/etc/clickhouse-server/config.d/enable_keeper1.xml", NORMAL_CONFIG

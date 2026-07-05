@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -15,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -35,7 +34,7 @@ namespace
   * And you're right. But actually it's made similar to a random Python library from the internet:
   * https://github.com/jmoiron/humanize/blob/b37dc30ba61c2446eecb1a9d3e9ac8c9adf00f03/src/humanize/time.py#L462
   */
-class FunctionFormatReadableTimeDelta : public IFunction
+class FunctionFormatReadableTimeDelta final : public IFunction
 {
 public:
     static constexpr auto name = "formatReadableTimeDelta";
@@ -49,38 +48,19 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                            getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(
+                +[](const IDataType & type) { return isNumber(type) || isInterval(type); }), nullptr, "Number or Interval"},
+        };
 
-        if (arguments.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3.",
-                            getName(), arguments.size());
+        FunctionArgumentDescriptors optional_args{
+            {"maximum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"minimum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+        };
 
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
-
-        if (arguments.size() >= 2)
-        {
-            const auto * maximum_unit_arg = arguments[1].get();
-            if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
-                                maximum_unit_arg->getName(), getName());
-
-            if (arguments.size() == 3)
-            {
-                const auto * minimum_unit_arg = arguments[2].get();
-                if (!isStringOrFixedString(minimum_unit_arg))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument minimum_unit of function {}",
-                                    minimum_unit_arg->getName(), getName());
-            }
-        }
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -116,14 +96,14 @@ public:
             const ColumnPtr & maximum_unit_column = arguments[1].column;
             const ColumnConst * maximum_unit_const_col = checkAndGetColumnConstStringOrFixedString(maximum_unit_column.get());
             if (maximum_unit_const_col)
-                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                maximum_unit_str = maximum_unit_const_col->getDataColumn().getDataAt(0);
 
             if (arguments.size() == 3)
             {
                 const ColumnPtr & minimum_unit_column = arguments[2].column;
                 const ColumnConst * minimum_unit_const_col = checkAndGetColumnConstStringOrFixedString(minimum_unit_column.get());
                 if (minimum_unit_const_col)
-                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0).toView();
+                    minimum_unit_str = minimum_unit_const_col->getDataColumn().getDataAt(0);
             }
         }
         /// Default means "use all available whole units".
@@ -149,11 +129,13 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
+            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
@@ -172,7 +154,7 @@ public:
                 /// To output separators between parts: ", " and " and ".
                 bool has_output = false;
 
-                Float64 whole_part;
+                Float64 whole_part = 0;
                 std::string fractional_str = getFractionalString(std::modf(value, &whole_part));
 
                 switch (max_unit) /// A kind of Duff Device.
@@ -230,7 +212,6 @@ public:
                 }
             }
 
-            writeChar(0, buf_to);
             offsets_to[i] = buf_to.count();
         }
 
@@ -245,7 +226,11 @@ public:
         if (unlikely(whole_part + 1.0 == whole_part))
         {
             /// The case when value is too large so exact representation for subsequent smaller units is not possible.
-            writeText(std::floor(whole_part * DecimalUtils::scaleMultiplier<Int64>(unit_scale) / unit_multiplier), buf_to);
+            writeText(
+                std::floor(
+                    whole_part * static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(unit_scale))
+                    / static_cast<Float64>(unit_multiplier)),
+                buf_to);
             buf_to.write(unit_name, unit_name_size);
             writeChar('s', buf_to);
             has_output = true;
@@ -255,7 +240,7 @@ public:
         UInt64 num_units = 0;
         if (unit_scale == 0)  /// dealing with whole number of seconds
         {
-            num_units = static_cast<UInt64>(std::floor(whole_part / unit_multiplier));
+            num_units = static_cast<UInt64>(std::floor(whole_part / static_cast<double>(unit_multiplier)));
 
             if (!num_units)
             {
@@ -265,7 +250,7 @@ public:
             }
 
             /// Remaining value to print on next iteration.
-            whole_part -= num_units * unit_multiplier;
+            whole_part -= static_cast<double>(num_units * unit_multiplier);
         }
         else   /// dealing with sub-seconds, a bit more peculiar to avoid more precision issues
         {
@@ -358,7 +343,66 @@ private:
 
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
-    factory.registerFunction<FunctionFormatReadableTimeDelta>();
+    FunctionDocumentation::Description description = R"(
+Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+
+This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+
+When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
+    )";
+    FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
+    FunctionDocumentation::Arguments arguments = {
+        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
+        {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
+        {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns a time delta as a string.", {"String"}};
+    FunctionDocumentation::Examples examples = {
+    {
+        "Usage example",
+        R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed) AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                        │
+│      12345 │ 3 hours, 25 minutes and 45 seconds                             │
+│  432546534 │ 13 years, 8 months, 17 days, 7 hours, 48 minutes and 54 seconds│
+└────────────┴────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With maximum unit", R"(
+SELECT
+    arrayJoin([100, 12345, 432546534]) AS elapsed,
+    formatReadableTimeDelta(elapsed, 'minutes') AS time_delta
+        )",
+        R"(
+┌────elapsed─┬─time_delta─────────────────────────────────────────────────────┐
+│        100 │ 1 minute and 40 seconds                                         │
+│      12345 │ 205 minutes and 45 seconds                                      │
+│  432546534 │ 7209108 minutes and 54 seconds                                  │
+└────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With an INTERVAL expression", R"(
+SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
+        )",
+        R"(
+┌─time_delta─────────────────────────┐
+│ 3 hours, 25 minutes and 45 seconds │
+└────────────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in = {20, 12};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionFormatReadableTimeDelta>(documentation);
 }
 
 }

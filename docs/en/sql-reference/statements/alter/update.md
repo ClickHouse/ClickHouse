@@ -1,12 +1,13 @@
 ---
-slug: /sql-reference/statements/alter/update
+description: 'Documentation for ALTER TABLE ... UPDATE Statements'
+sidebar_label: 'UPDATE'
 sidebar_position: 40
-sidebar_label: UPDATE
+slug: /sql-reference/statements/alter/update
+title: 'ALTER TABLE ... UPDATE Statements'
+doc_type: 'reference'
 ---
 
-# ALTER TABLE ... UPDATE Statements
-
-``` sql
+```sql
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_id] WHERE filter_expr
 ```
 
@@ -27,7 +28,8 @@ The synchronicity of the query processing is defined by the [mutations_sync](/op
 - [Mutations](/sql-reference/statements/alter/index.md#mutations)
 - [Synchronicity of ALTER Queries](/sql-reference/statements/alter/index.md#synchronicity-of-alter-queries)
 - [mutations_sync](/operations/settings/settings.md/#mutations_sync) setting
-
+- [Lightweight `UPDATE`](/sql-reference/statements/update) - Alternative lightweight update using patch parts
+- [`APPLY PATCHES`](/sql-reference/statements/alter/apply-patches) - Manually apply patches from lightweight updates
 
 ## Related content {#related-content}
 

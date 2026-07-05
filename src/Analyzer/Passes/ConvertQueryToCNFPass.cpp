@@ -30,6 +30,13 @@ namespace Setting
 namespace
 {
 
+/// Constraint-based optimization is scoped to a single query node: each (sub)query is optimized
+/// independently. Subqueries (`isSubqueryNodeType`) must therefore be treated as opaque boundaries,
+/// both when one is a clause root (e.g. constraint reduction collapses `cond OR (subquery)` to just
+/// the subquery) and when one is nested inside an expression (e.g. `exists((subquery))`). Crossing
+/// the boundary would rewrite a subquery's correlated columns, which must stay plain ColumnNodes for
+/// decorrelation.
+
 std::optional<Analyzer::CNF> tryConvertQueryToCNF(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto cnf_form = Analyzer::CNF::tryBuildCNF(node, context);
@@ -47,7 +54,7 @@ enum class MatchState : uint8_t
     NONE,
 };
 
-MatchState match(const Analyzer::CNF::AtomicFormula & a, const Analyzer::CNF::AtomicFormula & b)
+MatchState match(const Analyzer::CNFAtomicFormula & a, const Analyzer::CNFAtomicFormula & b)
 {
     using enum MatchState;
     if (a.node_with_hash != b.node_with_hash)
@@ -125,7 +132,7 @@ bool checkIfGroupAlwaysTrueAtoms(const Analyzer::CNF::OrGroup & group)
     return false;
 }
 
-bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
+bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNFAtomicFormula & atom, const ConstraintsDescription::QueryTreeData & query_tree_constraints)
 {
     const auto constraint_atom_ids = query_tree_constraints.getAtomIds(atom.node_with_hash);
     if (constraint_atom_ids)
@@ -141,7 +148,7 @@ bool checkIfAtomAlwaysFalseFullMatch(const Analyzer::CNF::AtomicFormula & atom, 
     return false;
 }
 
-bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     const auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
@@ -158,6 +165,12 @@ bool checkIfAtomAlwaysFalseGraph(const Analyzer::CNF::AtomicFormula & atom, cons
 
 void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
+    /// Do not cross into subqueries: replacing a correlated column with its constant equivalent
+    /// would corrupt the subquery's correlated_columns_list, which the planner expects to hold
+    /// ColumnNodes (see isSubqueryNodeType).
+    if (isSubqueryNodeType(term->getNodeType()))
+        return;
+
     const auto equal_constant = graph.getEqualConst(term);
     if (equal_constant)
     {
@@ -172,7 +185,7 @@ void replaceToConstants(QueryTreeNodePtr & term, const ComparisonGraph<QueryTree
     }
 }
 
-Analyzer::CNF::AtomicFormula replaceTermsToConstants(const Analyzer::CNF::AtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
+Analyzer::CNFAtomicFormula replaceTermsToConstants(const Analyzer::CNFAtomicFormula & atom, const ComparisonGraph<QueryTreeNodePtr> & graph)
 {
     auto node = atom.node_with_hash.node->clone();
     replaceToConstants(node, graph);
@@ -299,7 +312,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
 
             for (const auto & primary_key_node : primary_key_only_nodes)
             {
-                ComparisonGraphCompareResult actual_result;
+                ComparisonGraphCompareResult actual_result = {};
                 if (index == 0)
                     actual_result = graph.compare(primary_key_node, arguments[index]);
                 else
@@ -312,7 +325,7 @@ Analyzer::CNF::OrGroup createIndexHintGroup(
                     helper_function_node.getArguments().getNodes()[index] = primary_key_node->clone();
                     auto reverse_function_name = getReverseRelationMap().at(mostStrict(expected_result, actual_result));
                     helper_function_node.resolveAsFunction(FunctionFactory::instance().get(reverse_function_name, context));
-                    result.insert(Analyzer::CNF::AtomicFormula{atom.negative, std::move(helper_node)});
+                    result.insert(Analyzer::CNFAtomicFormula{atom.negative, std::move(helper_node)});
                     return true;
                 }
             }
@@ -418,6 +431,11 @@ public:
         : components(components_), query_node_to_component(query_node_to_component_), graph(graph_)
     {}
 
+    static bool needChildVisit(const VisitQueryTreeNodeType &, const VisitQueryTreeNodeType & child)
+    {
+        return !isSubqueryNodeType(child->getNodeType());
+    }
+
     void visitImpl(const QueryTreeNodePtr & node)
     {
         if (auto id = graph.getComponentId(node))
@@ -471,6 +489,11 @@ public:
         ContextPtr context_)
         : query_node_to_component(query_node_to_component_), id_to_query_node_map(id_to_query_node_map_), context(std::move(context_))
     {}
+
+    static bool needChildVisit(QueryTreeNodePtr &, QueryTreeNodePtr & child)
+    {
+        return !isSubqueryNodeType(child->getNodeType());
+    }
 
     void visitImpl(QueryTreeNodePtr & node)
     {
@@ -581,16 +604,24 @@ void substituteColumns(QueryNode & query_node, const QueryTreeNodes & table_expr
 
         auto run_for_all = [&](const auto function)
         {
-            function(query_node.getProjectionNode());
+            /// The needChildVisit guards in the visitors only stop subqueries nested inside a larger
+            /// expression; a clause that is itself a subquery is the visit root, so guard it here.
+            const auto run_unless_subquery = [&](QueryTreeNodePtr & node)
+            {
+                if (!isSubqueryNodeType(node->getNodeType()))
+                    function(node);
+            };
+
+            run_unless_subquery(query_node.getProjectionNode());
 
             if (query_node.hasWhere())
-                function(query_node.getWhere());
+                run_unless_subquery(query_node.getWhere());
 
             if (query_node.hasPrewhere())
-                function(query_node.getPrewhere());
+                run_unless_subquery(query_node.getPrewhere());
 
             if (query_node.hasHaving())
-                function(query_node.getHaving());
+                run_unless_subquery(query_node.getHaving());
         };
 
         std::set<UInt64> components;
@@ -673,7 +704,7 @@ void optimizeWithConstraints(Analyzer::CNF & cnf, const QueryTreeNodes & table_e
                return !checkIfGroupAlwaysTrueFullMatch(group, query_tree_constraints)
                    && !checkIfGroupAlwaysTrueGraph(group, compare_graph) && !checkIfGroupAlwaysTrueAtoms(group);
            })
-           .filterAlwaysFalseAtoms([&](const Analyzer::CNF::AtomicFormula & atom)
+           .filterAlwaysFalseAtoms([&](const Analyzer::CNFAtomicFormula & atom)
            {
                /// remove always false atoms from CNF
                return !checkIfAtomAlwaysFalseFullMatch(atom, query_tree_constraints) && !checkIfAtomAlwaysFalseGraph(atom, compare_graph);
@@ -704,6 +735,22 @@ void optimizeNode(QueryTreeNodePtr & node, const QueryTreeNodes & table_expressi
         optimizeWithConstraints(*cnf, table_expressions, context);
 
     auto new_node = cnf->toQueryTree();
+
+    /// Constraint reduction can collapse a filter into a standalone correlated subquery. For example,
+    /// with `CONSTRAINT c ASSUME (a <= b) AND (b <= c) AND (c <= d) AND (d <= a)` (so all columns are
+    /// equal), the filter
+    ///     WHERE (b < d) OR (SELECT a < c)
+    /// reduces to
+    ///     WHERE (SELECT a < c)
+    /// because `b < d` is always false. A standalone correlated subquery predicate is not always
+    /// decorrelated correctly today: the outer plan may not keep the captured columns (e.g.
+    /// `SELECT count() ... WHERE (SELECT a < c)` raises NOT_FOUND_COLUMN_IN_BLOCK, while `SELECT *`
+    /// works). Keep the original filter so the optimization never turns a working query into a
+    /// failing one. `new_node` is null when the filter reduces to a constant and is dropped, which is
+    /// fine to apply.
+    if (new_node && isCorrelatedQueryOrUnionNode(new_node))
+        return;
+
     node = std::move(new_node);
 }
 

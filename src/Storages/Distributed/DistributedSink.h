@@ -1,18 +1,16 @@
 #pragma once
 
-#include <Parsers/formatAST.h>
+#include <Client/ConnectionPool.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
-#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
 #include <memory>
-#include <chrono>
 #include <optional>
 #include <Interpreters/Cluster.h>
 
@@ -38,7 +36,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink : public SinkToStorage
+class DistributedSink final : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -126,10 +124,13 @@ private:
         size_t replica_index = 0;
         bool is_local_job = false;
 
+        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
+        bool skip = false;
+
         Block current_shard_block;
 
         ConnectionPool::Entry connection_entry;
-        ContextPtr local_context;
+        ContextMutablePtr local_context;
         QueryPipeline pipeline;
         std::unique_ptr<PushingPipelineExecutor> executor;
 

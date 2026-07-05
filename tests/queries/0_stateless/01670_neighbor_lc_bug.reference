@@ -9,7 +9,6 @@
 1	1	1
 2	2	2
 ┌─[1mrowNr[0m─┬─[1mval_string[0m─┬─[1mstr_m1[0m───┬─[1mstr_p1[0m───┬─[1mval_low[0m──┬─[1mlow_m1[0m───┬─[1mlow_p1[0m───┐
-├───────┼────────────┼──────────┼──────────┼──────────┼──────────┼──────────┤
 │     1 │ String 1   │          │ String 1 │ String 1 │          │ String 1 │
 │     2 │ String 1   │ String 1 │ String 2 │ String 1 │ String 1 │ String 2 │
 │     3 │ String 2   │ String 1 │          │ String 2 │ String 1 │          │

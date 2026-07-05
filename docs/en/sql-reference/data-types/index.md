@@ -1,10 +1,11 @@
 ---
-slug: /sql-reference/data-types/
-sidebar_label: List of data types
+description: 'Documentation for Data Types in ClickHouse'
+sidebar_label: 'List of data types'
 sidebar_position: 1
+slug: /sql-reference/data-types/
+title: 'Data Types in ClickHouse'
+doc_type: 'reference'
 ---
-
-# Data Types in ClickHouse
 
 This section describes the data types supported by ClickHouse, for example [integers](int-uint.md), [floats](float.md) and [strings](string.md).
 

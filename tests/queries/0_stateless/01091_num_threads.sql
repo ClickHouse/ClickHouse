@@ -12,7 +12,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) like normalizeQuery('WITH 01091 AS id SELECT 1;')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -27,7 +27,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id
@@ -42,7 +42,7 @@ WITH
     (
         SELECT query_id
         FROM system.query_log
-        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1))
+        WHERE current_database = currentDatabase() AND (normalizeQuery(query) = normalizeQuery('with 01091 as id select sum(number) from numbers_mt(1000000);')) AND (event_date >= (today() - 1) AND event_time >= now() - 600)
         ORDER BY event_time DESC
         LIMIT 1
     ) AS id

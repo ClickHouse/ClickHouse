@@ -1,10 +1,12 @@
 ---
-slug: /sql-reference/data-types/enum
+description: 'Documentation for the Enum data type in ClickHouse, which represents
+  a set of named constant values'
+sidebar_label: 'Enum'
 sidebar_position: 20
-sidebar_label: Enum
+slug: /sql-reference/data-types/enum
+title: 'Enum'
+doc_type: 'reference'
 ---
-
-# Enum
 
 Enumerated type consisting of named values.
 
@@ -21,7 +23,7 @@ ClickHouse automatically chooses the type of `Enum` when data is inserted. You c
 
 Here we create a table with an `Enum8('hello' = 1, 'world' = 2)` type column:
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello' = 1, 'world' = 2)
@@ -31,7 +33,7 @@ ENGINE = TinyLog
 
 Similarly, you could omit numbers. ClickHouse will assign consecutive numbers automatically. Numbers are assigned starting from 1 by default.
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello', 'world')
@@ -41,7 +43,7 @@ ENGINE = TinyLog
 
 You can also specify legal starting number for the first name.
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum('hello' = 1, 'world')
@@ -49,7 +51,7 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-``` sql
+```sql
 CREATE TABLE t_enum
 (
     x Enum8('hello' = -129, 'world')
@@ -57,37 +59,37 @@ CREATE TABLE t_enum
 ENGINE = TinyLog
 ```
 
-``` text
+```text
 Exception on server:
 Code: 69. DB::Exception: Value -129 for element 'hello' exceeds range of Enum8.
 ```
 
 Column `x` can only store values that are listed in the type definition: `'hello'` or `'world'`. If you try to save any other value, ClickHouse will raise an exception. 8-bit size for this `Enum` is chosen automatically.
 
-``` sql
+```sql
 INSERT INTO t_enum VALUES ('hello'), ('world'), ('hello')
 ```
 
-``` text
+```text
 Ok.
 ```
 
-``` sql
-INSERT INTO t_enum values('a')
+```sql
+INSERT INTO t_enum VALUES('a')
 ```
 
-``` text
+```text
 Exception on client:
 Code: 49. DB::Exception: Unknown element 'a' for type Enum('hello' = 1, 'world' = 2)
 ```
 
 When you query data from the table, ClickHouse outputs the string values from `Enum`.
 
-``` sql
+```sql
 SELECT * FROM t_enum
 ```
 
-``` text
+```text
 ┌─x─────┐
 │ hello │
 │ world │
@@ -97,11 +99,11 @@ SELECT * FROM t_enum
 
 If you need to see the numeric equivalents of the rows, you must cast the `Enum` value to integer type.
 
-``` sql
+```sql
 SELECT CAST(x, 'Int8') FROM t_enum
 ```
 
-``` text
+```text
 ┌─CAST(x, 'Int8')─┐
 │               1 │
 │               2 │
@@ -111,11 +113,11 @@ SELECT CAST(x, 'Int8') FROM t_enum
 
 To create an Enum value in a query, you also need to use `CAST`.
 
-``` sql
+```sql
 SELECT toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))
 ```
 
-``` text
+```text
 ┌─toTypeName(CAST('a', 'Enum(\'a\' = 1, \'b\' = 2)'))─┐
 │ Enum8('a' = 1, 'b' = 2)                             │
 └─────────────────────────────────────────────────────┘
@@ -129,7 +131,7 @@ Neither the string nor the numeric value in an `Enum` can be [NULL](../../sql-re
 
 An `Enum` can be contained in [Nullable](../../sql-reference/data-types/nullable.md) type. So if you create a table using the query
 
-``` sql
+```sql
 CREATE TABLE t_enum_nullable
 (
     x Nullable( Enum8('hello' = 1, 'world' = 2) )
@@ -139,8 +141,8 @@ ENGINE = TinyLog
 
 it can store not only `'hello'` and `'world'`, but `NULL`, as well.
 
-``` sql
-INSERT INTO t_enum_nullable Values('hello'),('world'),(NULL)
+```sql
+INSERT INTO t_enum_nullable VALUES('hello'),('world'),(NULL)
 ```
 
 In RAM, an `Enum` column is stored in the same way as `Int8` or `Int16` of the corresponding numerical values.
@@ -160,3 +162,26 @@ Enum values are also convertible to numeric types using the `toT` function, wher
 The Enum type can be changed without cost using ALTER, if only the set of values is changed. It is possible to both add and remove members of the Enum using ALTER (removing is safe only if the removed value has never been used in the table). As a safeguard, changing the numeric value of a previously defined Enum member will throw an exception.
 
 Using ALTER, it is possible to change an Enum8 to an Enum16 or vice versa, just like changing an Int8 to Int16.
+
+## ADD ENUM VALUES {#add-enum-values}
+
+There is a syntactic sugar to add new values to enum using ALTER [MODIFY COLUMN ADD ENUM VALUES](../../sql-reference/statements/alter/column.md#modify-column-add-enum-values)
+
+```sql
+CREATE TABLE enum
+(
+    x Enum('One' = 1, 'Two', 'Three')
+) ENGINE = Memory;
+ALTER TABLE enum MODIFY COLUMN x ADD ENUM VALUES ('Zero' = 0, 'Four' = 4);
+SHOW CREATE TABLE enum;
+```
+
+```text
+┌─statement────────────────────────────────────────────────────────────────┐
+│CREATE TABLE default.enum                                                 │
+│(                                                                         │
+│    `x` Enum8('Zero' = 0, 'One' = 1, 'Two' = 2, 'Three' = 3, 'Four' = 4)  │
+│)                                                                         │
+│ENGINE = Memory                                                           │
+└──────────────────────────────────────────────────────────────────────────┘
+```

@@ -1,0 +1,191 @@
+---
+description: '지리 좌표 관련 문서'
+sidebarTitle: '지리 좌표'
+slug: /sql-reference/functions/geo/coordinates
+title: '지리 좌표를 다루는 함수'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+[대권 공식](https://en.wikipedia.org/wiki/Great-circle_distance)을 사용하여 지구 표면에 있는 두 지점 사이의 거리를 계산합니다.
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**입력 매개변수**
+
+* `lon1Deg` — 첫 번째 지점의 경도(도)입니다. 범위: `[-180°, 180°]`.
+* `lat1Deg` — 첫 번째 지점의 위도(도)입니다. 범위: `[-90°, 90°]`.
+* `lon2Deg` — 두 번째 지점의 경도(도)입니다. 범위: `[-180°, 180°]`.
+* `lat2Deg` — 두 번째 지점의 위도(도)입니다. 범위: `[-90°, 90°]`.
+
+양수는 북위 및 동경을, 음수는 남위 및 서경을 나타냅니다.
+
+**반환 값**
+
+지구 표면의 두 지점 사이 거리이며, 단위는 미터입니다.
+
+입력 매개변수 값이 범위를 벗어나면 예외가 발생합니다.
+
+**예시**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+`greatCircleDistance`와 유사하지만, 구면이 아니라 WGS-84 타원체에서 거리를 계산합니다. 이는 지구 지오이드를 더 정확하게 근사합니다.
+성능은 `greatCircleDistance`와 동일하며(성능 저하 없음), 지구상 거리를 계산할 때는 `geoDistance`를 사용하는 것이 좋습니다.
+
+기술 참고: 서로 충분히 가까운 지점의 경우, 좌표 중간점의 접평면 메트릭을 사용하는 평면 근사로 거리를 계산합니다.
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**입력 매개변수**
+
+* `lon1Deg` — 첫 번째 지점의 경도(도 단위)입니다. 범위: `[-180°, 180°]`.
+* `lat1Deg` — 첫 번째 지점의 위도(도 단위)입니다. 범위: `[-90°, 90°]`.
+* `lon2Deg` — 두 번째 지점의 경도(도 단위)입니다. 범위: `[-180°, 180°]`.
+* `lat2Deg` — 두 번째 지점의 위도(도 단위)입니다. 범위: `[-90°, 90°]`.
+
+양수는 북위와 동경을, 음수는 남위와 서경을 나타냅니다.
+
+**반환 값**
+
+지구 표면상의 두 지점 사이의 거리(미터)입니다.
+
+입력 매개변수 값이 범위를 벗어나면 예외가 발생합니다.
+
+**예시**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+[대권 공식](https://en.wikipedia.org/wiki/Great-circle_distance)을 사용해 지구 표면의 두 지점 사이 중심각을 계산합니다.
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**입력 매개변수**
+
+* `lon1Deg` — 첫 번째 지점의 경도이며, 단위는 도입니다.
+* `lat1Deg` — 첫 번째 지점의 위도이며, 단위는 도입니다.
+* `lon2Deg` — 두 번째 지점의 경도이며, 단위는 도입니다.
+* `lat2Deg` — 두 번째 지점의 위도이며, 단위는 도입니다.
+
+**반환 값**
+
+두 지점 사이의 중심각입니다. 단위는 도입니다.
+
+**예시**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+점이 타원 중 하나 이상에 속하는지 확인합니다.
+좌표는 데카르트 좌표계의 기하 좌표입니다.
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**입력 매개변수**
+
+* `x, y` — 평면 위 한 점의 좌표입니다.
+* `xᵢ, yᵢ` — `i`번째 타원 중심의 좌표입니다.
+* `aᵢ, bᵢ` — `i`번째 타원의 x축, y축 방향 반지름입니다.
+
+입력 매개변수의 개수는 `2+4⋅n`이어야 하며, 여기서 `n`은 타원의 개수입니다.
+
+**반환 값**
+
+점이 하나 이상의 타원 내부에 있으면 `1`, 그렇지 않으면 `0`입니다.
+
+**예시**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+평면상에서 점이 폴리곤에 포함되는지 확인합니다.
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**입력 값**
+
+* `(x, y)` — 평면 위 한 점의 좌표입니다. 데이터 타입 — [Tuple](/ko/reference/data-types/tuple) — 두 개의 숫자로 이루어진 튜플입니다.
+* `[(a, b), (c, d) ...]` — 다각형의 꼭짓점입니다. 데이터 타입 — [Array](/ko/reference/data-types/array). 각 꼭짓점은 좌표 쌍 `(a, b)`로 표현됩니다. 꼭짓점은 시계 방향 또는 반시계 방향 순서로 지정해야 합니다. 꼭짓점의 최소 개수는 3개입니다. 다각형은 상수여야 합니다.
+* 이 함수는 구멍(비어 있는 내부 영역)이 있는 다각형도 지원합니다. 데이터 타입 — [Polygon](/ko/reference/data-types/geo#polygon). 전체 `Polygon`을 두 번째 인수로 전달하거나, 바깥쪽 링을 먼저 전달한 다음 각 구멍을 별도의 추가 인수로 전달할 수 있습니다.
+* 이 함수는 다중 다각형도 지원합니다. 데이터 타입 — [MultiPolygon](/ko/reference/data-types/geo#multipolygon). 전체 `MultiPolygon`을 두 번째 인수로 전달하거나, 각 구성 다각형을 각각의 인수로 나열할 수 있습니다.
+
+**반환 값**
+
+점이 다각형 내부에 있으면 `1`, 그렇지 않으면 `0`입니다.
+점이 다각형 경계 위에 있으면 함수는 `0` 또는 `1`을 반환할 수 있습니다.
+
+**예시**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+> **참고**
+> • `validate_polygons = 0`을 설정하면 geometry 유효성 검사를 건너뛸 수 있습니다.
+> • `pointInPolygon`은 모든 다각형이 올바른 형식이라고 가정합니다. 입력이 자기 교차하거나, Ring의 순서가 잘못되었거나, edge가 겹치면 결과를 신뢰할 수 없게 됩니다. 특히 edge나 vertex 위에 정확히 놓인 점이나, &quot;inside&quot;와 &quot;outside&quot;의 개념이 정의되지 않는 자기 교차 내부의 점에서는 더욱 그렇습니다.
+> • 다각형 인수가 상수이고 점이 인덱스가 적용된 키 컬럼으로 표현되는 경우(예: `x, y`가 `PRIMARY KEY`의 일부이거나 `minmax` 인덱스로 처리되는 테이블에서 `pointInPolygon((x, y), constant_polygon)`를 사용하는 경우), ClickHouse는 프라이머리 키(primary key)와 `minmax` 데이터 스키핑 인덱스를 모두 사용해 관련 없는 그래뉼을 걸러낼 수 있습니다.

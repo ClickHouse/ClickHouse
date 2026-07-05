@@ -29,6 +29,8 @@ public:
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return "Identifier" + (delim + name()); }
 
+    /** Check if identifier is a parameter */
+    bool isParam() const;
     /** Get the query param out of a non-compound identifier. */
     ASTPtr getParam() const;
 
@@ -50,7 +52,7 @@ public:
     void updateTreeHashImpl(SipHash & hash_state, bool ignore_alias) const override;
 
     void restoreTable();  // TODO(ilezhankin): get rid of this
-    std::shared_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
+    boost::intrusive_ptr<ASTTableIdentifier> createTable() const;  // returns |nullptr| if identifier is not table.
 
     String full_name;
     std::vector<String> name_parts;
@@ -83,6 +85,10 @@ public:
     ASTPtr clone() const override;
 
     UUID uuid = UUIDHelpers::Nil;  // FIXME(ilezhankin): make private
+    /// True iff the parser saw an explicit `UUID '...'` clause, set even when the parsed value is `Nil`.
+    /// Use this (not `uuid != UUIDHelpers::Nil`) when you need to distinguish "user wrote `UUID '...'`"
+    /// from "no UUID clause": explicit `UUID '00000000-0000-0000-0000-000000000000'` parses to `Nil`.
+    bool has_uuid = false;
 
     StorageID getTableId() const;
     String getDatabaseName() const;

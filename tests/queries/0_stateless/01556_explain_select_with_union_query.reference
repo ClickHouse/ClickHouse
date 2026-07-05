@@ -1,180 +1,180 @@
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Distinct
     Union
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
   Distinct
     Union
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Distinct
   Union
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
     Expression ((Project names + (Projection + Change column names to column identifiers)))
-      ReadFromStorage (SystemOne)
+      ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Distinct
     Union
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
       Expression ((Project names + (Projection + Change column names to column identifiers)))
-        ReadFromStorage (SystemOne)
+        ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
 Union
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne
   Expression ((Project names + (Projection + Change column names to column identifiers)))
-    ReadFromStorage (SystemOne)
+    ReadFromSystemOne

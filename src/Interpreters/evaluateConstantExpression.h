@@ -4,7 +4,7 @@
 #include <Core/Field.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context_fwd.h>
-#include <Parsers/IAST.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <memory>
 #include <optional>

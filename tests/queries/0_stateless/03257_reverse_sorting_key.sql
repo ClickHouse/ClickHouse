@@ -1,7 +1,9 @@
 -- Tags: no-random-merge-tree-settings
+SET explain_query_plan_default = 'legacy';
 
 set optimize_read_in_order = 1;
 set read_in_order_two_level_merge_threshold=100;
+set read_in_order_use_virtual_row = 0;
 
 drop table if exists x1;
 
@@ -17,8 +19,8 @@ select * from x1 where i = 3;
 
 select count() from x1 where i between 3 and 10;
 
-select trimLeft(explain) from (explain actions=1 select * from x1 order by i desc limit 5) where explain ilike '%sort%' settings max_threads=1, enable_analyzer=1;
-explain pipeline select * from x1 order by i desc limit 5 settings max_threads=1;
+select trimLeft(explain) from (explain actions=1 select * from x1 order by i desc nulls first limit 5) where explain ilike '%sort%' settings max_threads=1, enable_analyzer=1;
+explain pipeline select * from x1 order by i desc nulls first limit 5 settings max_threads=1;
 
 select * from x1 order by i desc limit 5;
 
@@ -37,8 +39,8 @@ select * from x2 where j = 1003;
 
 select count() from x2 where i between 3 and 10 and j between 1003 and 1008;
 
-select trimLeft(explain) from (explain actions=1 select * from x2 order by i, j desc limit 5) where explain ilike '%sort%' settings max_threads=1, enable_analyzer=1;
-explain pipeline select * from x2 order by i, j desc limit 5 settings max_threads=1;
+select trimLeft(explain) from (explain actions=1 select * from x2 order by i, j desc nulls first limit 5) where explain ilike '%sort%' settings max_threads=1, enable_analyzer=1;
+explain pipeline select * from x2 order by i, j desc nulls first limit 5 settings max_threads=1;
 
 select * from x2 order by i, j desc limit 5;
 

@@ -1,4 +1,4 @@
-#include "OvercommitTracker.h"
+#include <Common/OvercommitTracker.h>
 
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
@@ -57,7 +57,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
         return OvercommitResult::DISABLED;
 
     pickQueryToExclude();
-    assert(cancellation_state != QueryCancellationState::NONE);
+    chassert(cancellation_state != QueryCancellationState::NONE);
     global_lock.unlock();
 
     // If no query was chosen we need to stop current query.
@@ -66,7 +66,7 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     {
         // Here state can not be RUNNING, because it requires
         // picked_tracker to be not null pointer.
-        assert(cancellation_state == QueryCancellationState::SELECTED);
+        chassert(cancellation_state == QueryCancellationState::SELECTED);
         cancellation_state = QueryCancellationState::NONE;
         return OvercommitResult::DISABLED;
     }
@@ -82,12 +82,12 @@ OvercommitResult OvercommitTracker::needToStopQuery(MemoryTracker * tracker, Int
     allow_release = true;
 
     required_memory += amount;
-    auto wait_start_time = std::chrono::system_clock::now();
+    auto wait_start_time = std::chrono::steady_clock::now();
     bool timeout = !cv.wait_for(lk, max_wait_time, [this, id]()
     {
         return id < id_to_release || cancellation_state == QueryCancellationState::NONE;
     });
-    auto wait_end_time = std::chrono::system_clock::now();
+    auto wait_end_time = std::chrono::steady_clock::now();
     ProfileEvents::increment(ProfileEvents::MemoryOvercommitWaitTimeMicroseconds, (wait_end_time - wait_start_time) / 1us);
 
     required_memory -= amount;

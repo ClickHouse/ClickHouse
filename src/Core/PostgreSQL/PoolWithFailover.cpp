@@ -1,9 +1,9 @@
-#include "PoolWithFailover.h"
+#include <Core/PostgreSQL/PoolWithFailover.h>
 #include <memory>
 
 #if USE_LIBPQXX
 
-#include "Utils.h"
+#include <Core/PostgreSQL/Utils.h>
 #include <Common/ReplicasReconnector.h>
 #include <Common/parseRemoteDescription.h>
 #include <Common/Exception.h>

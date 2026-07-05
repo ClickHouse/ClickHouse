@@ -195,7 +195,7 @@ def test_config_merge_from_env_overrides(start_cluster):
         node7.query(
             "SELECT value FROM system.server_settings WHERE name='max_thread_pool_size'"
         )
-        == "10000\n"
+        == "1000\n"
     )
     with node7.with_replace_config(
         "/etc/clickhouse-server/config.d/010-server_with_env_subst.xml",

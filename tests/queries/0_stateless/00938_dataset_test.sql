@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS model;
 create table model engine = Memory as select stochasticLinearRegressionState(0.03, 0.00001, 2, 'Momentum')(target, param1, param2) as state from defaults;
 
 select ans > -67.0 and ans < -66.9 from
-(with (select state + state + state from model) as model select evalMLMethod(model, predict1, predict2) as ans from defaults limit 1);
+(with (select state + state + state from model) as model select evalMLMethod(model, predict1, predict2) as ans from defaults order by all limit 1);
 
 DROP TABLE defaults;
 DROP TABLE model;

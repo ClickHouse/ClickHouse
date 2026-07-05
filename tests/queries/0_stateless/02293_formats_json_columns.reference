@@ -42,13 +42,13 @@ JSONColumnsWithMetadata
 
 	"data":
 	{
-		"sum": ["1", "2", "3", "4"],
+		"sum": [1, 2, 3, 4],
 		"avg": [1, 2, 3, 2]
 	},
 
 	"totals":
 	{
-		"sum": "10",
+		"sum": 10,
 		"avg": 2
 	},
 
@@ -56,12 +56,12 @@ JSONColumnsWithMetadata
 	{
 		"min":
 		{
-			"sum": "1",
+			"sum": 1,
 			"avg": 1
 		},
 		"max":
 		{
-			"sum": "4",
+			"sum": 4,
 			"avg": 3
 		}
 	},

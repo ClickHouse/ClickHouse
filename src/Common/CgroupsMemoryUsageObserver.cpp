@@ -5,15 +5,13 @@
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
-#include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <base/cgroupsv2.h>
 #include <base/getMemoryAmount.h>
-#include <base/sleep.h>
-#include <fmt/ranges.h>
 
 #include <cstdint>
+
 
 using namespace DB;
 
@@ -61,7 +59,7 @@ void CgroupsMemoryUsageObserver::stopThread()
 
 void CgroupsMemoryUsageObserver::runThread()
 {
-    setThreadName("CgrpMemUsgObsr");
+    DB::setThreadName(DB::ThreadName::CGROUP_MEMORY_OBSERVER);
 
     last_available_memory_amount = getMemoryAmount();
     LOG_INFO(log, "Memory amount initially available to the process is {}", ReadableSize(last_available_memory_amount));
