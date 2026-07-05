@@ -1,0 +1,77 @@
+---
+description: 'Документация по применению патчей из легковесных обновлений'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: 'Применение патчей из легковесных обновлений'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+Команда вручную запускает физическую материализацию патч-частей, созданных командами [легковесного `UPDATE`](/ru/reference/statements/update). Она принудительно применяет отложенные патчи к частям данных, переписывая только затронутые столбцы.
+
+<Note>
+  * Работает только для таблиц семейства [`MergeTree`](/ru/reference/engines/table-engines/mergetree-family/mergetree) (включая [реплицируемые](/ru/reference/engines/table-engines/mergetree-family/replication) таблицы).
+  * Это операция мутации, которая выполняется асинхронно в фоновом режиме.
+</Note>
+
+<div id="when-to-use">
+  ## Когда использовать APPLY PATCHES
+</div>
+
+<Tip>
+  Как правило, использовать `APPLY PATCHES` не требуется.
+</Tip>
+
+Патч-части обычно применяются автоматически в ходе слияний, когда включена настройка [`apply_patches_on_merge`](/ru/reference/settings/merge-tree-settings#apply_patches_on_merge) (по умолчанию). Однако в следующих случаях может потребоваться вручную запустить применение патчей:
+
+* Чтобы уменьшить накладные расходы на применение патчей при выполнении запросов `SELECT`
+* Чтобы объединить несколько патч-частей, прежде чем они накопятся
+* Чтобы подготовить данные к резервному копированию или экспорту, уже материализовав патчи
+* Когда `apply_patches_on_merge` отключена и вы хотите сами определять, когда применять патчи
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Примените все отложенные патчи для таблицы:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+Применяйте патчи только к конкретной партиции:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+Сочетайте с другими операциями:
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## Мониторинг применения патча
+</div>
+
+Вы можете отслеживать ход применения патча с помощью таблицы [`system.mutations`](/ru/reference/system-tables/mutations):
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Легковесный `UPDATE`](/ru/reference/statements/update) - Создание патч-частей при легковесных обновлениях
+* [настройка `apply_patches_on_merge`](/ru/reference/settings/merge-tree-settings#apply_patches_on_merge) - Управление автоматическим применением патчей во время слияний

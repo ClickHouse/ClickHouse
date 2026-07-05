@@ -1,0 +1,72 @@
+---
+sidebarTitle: 'Créer des tables'
+title: 'Créer des tables dans ClickHouse'
+slug: /guides/creating-tables
+description: 'Découvrez comment créer des tables dans ClickHouse'
+keywords: ['création de tables', 'CREATE TABLE', 'création de table', 'guide des bases de données', 'MergeTree engine']
+doc_type: 'guide'
+---
+
+Comme la plupart des systèmes de gestion de bases de données, ClickHouse regroupe logiquement les tables dans des **bases de données**. Utilisez la commande `CREATE DATABASE` pour créer une nouvelle base de données dans ClickHouse :
+
+```sql
+CREATE DATABASE IF NOT EXISTS helloworld
+```
+
+De même, utilisez `CREATE TABLE` pour définir une nouvelle table. Si vous ne précisez pas le nom de la base de données, la table sera créée dans la
+base de données `default`.
+
+La table suivante, nommée `my_first_table`, est créée dans la base de données `helloworld` :
+
+```sql
+  CREATE TABLE helloworld.my_first_table
+  (
+      user_id UInt32,
+      message String,
+      timestamp DateTime,
+      metric Float32
+  )
+  ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)
+```
+
+Dans l’exemple ci-dessus, `my_first_table` est une table `MergeTree` comportant quatre colonnes :
+
+* `user_id` : un entier non signé de 32 bits
+* `message` : un type de données `String`, qui remplace des types comme `VARCHAR`, `BLOB`, `CLOB` et d’autres utilisés dans d’autres systèmes de base de données
+* `timestamp` : une valeur `DateTime`, qui représente un moment précis
+* `metric` : un nombre à virgule flottante de 32 bits
+
+<Note>
+  Le moteur de table détermine :
+
+  * Comment et où les données sont stockées
+  * Quelles requêtes sont prises en charge
+  * Si les données sont répliquées ou non
+
+  Il existe de nombreux engines parmi lesquels choisir, mais pour une table simple sur un serveur ClickHouse à nœud unique, [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) sera probablement votre choix par défaut.
+</Note>
+
+<div id="a-brief-intro-to-primary-keys">
+  ## Une brève introduction aux clés primaires
+</div>
+
+Avant d&#39;aller plus loin, il est important de comprendre comment fonctionnent les clés primaires dans ClickHouse (leur implémentation
+peut sembler inattendue !):
+
+* dans ClickHouse, les clés primaires ne sont ***pas uniques*** pour chaque ligne d&#39;une table
+
+La clé primaire d&#39;une table ClickHouse détermine l&#39;ordre de tri des données lors de leur écriture sur disque. Toutes les 8 192 lignes ou tous les 10 MB de
+données (ce qu&#39;on appelle la **granularité de l&#39;index**) créent une entrée dans le fichier d&#39;index de la clé primaire. Ce principe de granularité
+crée un **index clairsemé** qui tient facilement en mémoire, et les granules représentent un segment correspondant à la plus petite quantité de
+données de colonnes traitée pendant les requêtes `SELECT`.
+
+La clé primaire peut être définie à l&#39;aide du paramètre `PRIMARY KEY`. Si vous définissez une table sans `PRIMARY KEY`,
+la clé devient alors le tuple spécifié dans la clause `ORDER BY`. Si vous spécifiez à la fois un `PRIMARY KEY` et un `ORDER BY`, la clé primaire doit être un préfixe de l&#39;ordre de tri.
+
+La clé primaire est aussi la clé de tri, c&#39;est-à-dire un tuple `(user_id, timestamp)`. Par conséquent, les données stockées dans chaque
+fichier de colonne seront triées par `user_id`, puis par `timestamp`.
+
+<Tip>
+  Pour plus de détails, consultez le [module de formation Modeling Data](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs) dans ClickHouse Academy.
+</Tip>

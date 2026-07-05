@@ -1,0 +1,67 @@
+---
+slug: /faq/operations/delete-old-data
+title: 'ClickHouseテーブルから古いレコードを削除できますか？'
+toc_hidden: true
+toc_priority: 20
+description: 'このページでは、ClickHouseテーブルから古いレコードを削除できるかどうかについて説明します'
+doc_type: 'reference'
+keywords: ['データ削除', 'TTL', 'データ保持', 'クリーンアップ', 'データライフサイクル']
+---
+
+短く答えると、「はい」です。ClickHouseには、古いデータを削除してディスク容量を解放するための仕組みが複数用意されています。それぞれの仕組みは、異なるユースケースを想定しています。
+
+<div id="ttl">
+  ## 有効期限 (TTL)
+</div>
+
+ClickHouse では、条件が満たされたときに値を自動的に削除できます。この条件は任意のカラムに基づく式として設定し、通常はタイムスタンプカラムに対する固定オフセットを指定します。
+
+この方法の主な利点は、トリガーするための外部システムが不要なことです。TTL を設定すると、データの削除はバックグラウンドで自動的に行われます。
+
+<Note>
+  TTL は、データを [/dev/null](https://en.wikipedia.org/wiki/Null_device) に移動するだけでなく、SSD から HDD のように異なるストレージシステム間で移動する用途にも使用できます。
+</Note>
+
+詳細は、[有効期限 (TTL) の設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)を参照してください。
+
+<div id="delete-from">
+  ## DELETE FROM
+</div>
+
+[DELETE FROM](/ja/reference/statements/delete) を使用すると、ClickHouse で標準的な DELETE クエリを実行できます。フィルタ句で対象となった行は削除済みとしてマークされ、以降の結果セットには含まれなくなります。行のクリーンアップは非同期で実行されます。
+
+<Note>
+  DELETE FROM はバージョン 23.3 以降で一般提供されています。これより前のバージョンでは Experimental であり、次の設定で有効にする必要があります。
+
+  ```sql
+  SET allow_experimental_lightweight_delete = true;
+  ```
+</Note>
+
+<div id="alter-delete">
+  ## ALTER DELETE
+</div>
+
+ALTER DELETE は、非同期のバッチ操作を使用して行を削除します。DELETE FROM とは異なり、ALTER DELETE の実行後、バッチ操作が完了する前に実行されたクエリには、削除対象の行が含まれます。詳細については、[ALTER DELETE](/ja/reference/statements/alter/delete) のドキュメントを参照してください。
+
+`ALTER DELETE` は、古いデータを柔軟に削除するために実行できます。これを定期的に行う必要がある場合の主な欠点は、クエリを送信するための外部システムが必要になることです。また、削除対象が 1 行だけであっても、mutation では完全なパーツを書き換えるため、パフォーマンス面での考慮も必要です。
+
+これは、ClickHouse ベースのシステムを [GDPR](https://gdpr-info.eu) に準拠させるための最も一般的なアプローチです。
+
+[mutation](/ja/reference/statements/alter/index#mutations) の詳細も参照してください。
+
+<div id="drop-partition">
+  ## DROP PARTITION
+</div>
+
+`ALTER TABLE ... DROP PARTITION` は、パーティション全体を低コストで削除できる方法です。柔軟性はそれほど高くなく、テーブル作成時に適切なパーティション化方式を設定しておく必要がありますが、一般的なユースケースの大半には対応できます。mutation と同じく、通常利用する場合は外部システムから実行する必要があります。
+
+詳しくは[パーティションの操作](/ja/reference/statements/alter/partition)を参照してください。
+
+<div id="truncate">
+  ## TRUNCATE
+</div>
+
+テーブルからすべてのデータを削除するのはかなり大胆な操作ですが、場合によっては、まさにそれが必要になることもあります。
+
+詳細は[テーブルの TRUNCATE](/ja/reference/statements/truncate)を参照してください。

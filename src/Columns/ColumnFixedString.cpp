@@ -174,6 +174,39 @@ void ColumnFixedString::updateHashFast(SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
 }
 
+Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
+{
+    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+    chassert(this->n == rhs.n);
+
+    const auto * lhs_data = chars.data() + p1 * n;
+    const auto * rhs_data = rhs.chars.data() + p2 * n;
+
+    Int64 res = memcmpSmallAllowOverflow15(lhs_data, rhs_data, n);
+
+    if (res < 0)
+    {
+        const auto * lhs_end = chars.data() + chars.size();
+        lhs_data += n;
+        while (lhs_data < lhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) < 0))
+        {
+            --res;
+            lhs_data += n;
+        }
+    }
+    else if (res > 0)
+    {
+        const auto * rhs_end = rhs.chars.data() + rhs.chars.size();
+        rhs_data += n;
+        while (rhs_data < rhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) > 0))
+        {
+            ++res;
+            rhs_data += n;
+        }
+    }
+    return res;
+}
+
 #if USE_EMBEDDED_COMPILER
 bool ColumnFixedString::isComparatorCompilable() const { return true; }
 llvm::Value * ColumnFixedString::compileComparator(llvm::IRBuilderBase & b, llvm::Value * lhs, llvm::Value * rhs, llvm::Value * /*nan_direction_hint*/) const

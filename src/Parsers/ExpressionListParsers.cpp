@@ -3244,6 +3244,7 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::GLOBAL_IN),     Operator("globalIn",        9,  2)},
     {toStringView(Keyword::GLOBAL_NOT_IN), Operator("globalNotIn",     9,  2)},
     {"||",            Operator("concat",          10, 2, OperatorType::Mergeable)},
+    {toStringView(Keyword::AT_TIME_ZONE),        Operator("toTimeZone",      13, 2)},
     {"+",             Operator("plus",            11, 2)},
     {"-",             Operator("minus",           11, 2)},
     {"−",             Operator("minus",           11, 2)},
@@ -3284,6 +3285,11 @@ std::optional<ExpressionOperatorPrettyInfo> tryGetExpressionOperatorPrettyInfo(s
                 || op.type == OperatorType::Cast)
                 return;
             if (op.function_name == "match")
+                return;
+            /// AT TIME ZONE desugars to toTimeZone at parse time; do not register toTimeZone as a
+            /// pretty-printer infix symbol — any toTimezone() node in the ActionsDAG may have been
+            /// written directly by the user, not via AT TIME ZONE.
+            if (op.function_name == "toTimeZone")
                 return;
 
             result.insert_or_assign(op.function_name, ExpressionOperatorPrettyInfo{lexeme, op.priority});
@@ -3762,6 +3768,40 @@ Action ParserExpressionImpl::tryParseOperator(Layers & layers, IParser::Pos & po
         /// Not a LIKE operator on top, push the popped operator back and fall through
         if (popped)
             layers.back()->pushOperator(top_op);
+    }
+
+    /// 'expr AT LOCAL' → toTimeZone(expr, timeZone()). Must be checked before the
+    /// operators_table loop so it takes precedence over any 'AT ...' entry there.
+    if (ParserKeyword(Keyword::AT).checkWithoutMoving(pos, stub))
+    {
+        auto at_local_pos = pos;
+        ParserKeyword(Keyword::AT).ignore(at_local_pos, expected);
+        if (ParserKeyword(Keyword::LOCAL).ignore(at_local_pos, expected))
+        {
+            /// Fold pending operators with priority >= 13 (AT TIME ZONE priority) so that
+            /// e.g. 'a * ts AT LOCAL' gives a * toTimeZone(ts, ...), matching PostgreSQL.
+            constexpr int at_local_priority = 13;
+            while (layers.back()->previousPriority() >= at_local_priority)
+            {
+                Operator prev_op;
+                layers.back()->popOperator(prev_op);
+                ASTPtr function = makeASTFunction(prev_op);
+                if (!layers.back()->popLastNOperands(function->children[0]->children, prev_op.arity))
+                    return Action::NONE;
+                layers.back()->pushOperand(std::move(function));
+            }
+
+            ASTPtr operand;
+            if (layers.back()->popOperand(operand))
+            {
+                pos = at_local_pos;
+                auto tz_func = makeASTFunction("timeZone");
+                auto function = makeASTFunction("toTimeZone", std::move(operand), std::move(tz_func));
+                function->setIsOperator(true);
+                layers.back()->pushOperand(std::move(function));
+                return Action::OPERATOR;
+            }
+        }
     }
 
     /// Try to find operators from 'operators_table'
