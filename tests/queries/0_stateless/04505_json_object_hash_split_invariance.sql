@@ -56,7 +56,12 @@ DROP TABLE t_shared;
 DROP TABLE t_both;
 
 -- Grace-hash spill on a JSON key whose per-block dynamic/shared split varies must not raise a
--- FileBucket state-machine assertion (the hash must be stable across the temp-file round-trip).
+-- FileBucket state-machine assertion, and must not silently drop matches (the hash must be stable
+-- across the temp-file round-trip). The self-join cardinality is deterministic: the key is fully
+-- determined by number % 50 (the b index (number * 7 + 1) % 50 also depends only on number % 50),
+-- so there are 50 distinct keys with 400 rows each => 50 * 400 * 400 = 8000000 matched pairs.
+-- Asserting the exact count catches a spill that keeps one bucket alive but drops most matches,
+-- which a count() > 0 check would not. The non-spilling hash join on the same data must agree.
 DROP TABLE IF EXISTS t_spill;
 CREATE TABLE t_spill (id UInt64, k JSON(max_dynamic_paths = 1)) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1,
@@ -67,8 +72,12 @@ INSERT INTO t_spill SELECT number,
     concat('{"a', toString(number % 50), '":1, "b', toString((number * 7 + 1) % 50), '":2}')::JSON(max_dynamic_paths = 1)
 FROM numbers(20000);
 
-SELECT 'spill_join', count() > 0
+SELECT 'spill_join_grace', count()
 FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
 SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, max_joined_block_size_rows = 1;
+
+SELECT 'spill_join_hash', count()
+FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
+SETTINGS join_algorithm = 'hash';
 
 DROP TABLE t_spill;
