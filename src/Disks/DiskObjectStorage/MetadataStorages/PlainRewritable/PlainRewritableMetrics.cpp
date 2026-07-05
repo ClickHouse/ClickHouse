@@ -61,6 +61,7 @@ std::shared_ptr<PlainRewritableMetrics> createPlainRewritableMetrics(ObjectStora
             });
         }
         case ObjectStorageType::None:
+        case ObjectStorageType::GCS:
         case ObjectStorageType::HDFS:
         case ObjectStorageType::Web:
         case ObjectStorageType::Max:
