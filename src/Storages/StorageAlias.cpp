@@ -743,8 +743,8 @@ INSERT INTO events_alias VALUES (3, 'data3');
 -- Check parts count
 SELECT count() FROM system.parts
 WHERE database = currentDatabase()
-AND table = 'events'
-AND active;
+  AND table = 'events'
+  AND active;
 
 -- Optimize through alias
 OPTIMIZE TABLE events_alias FINAL;
@@ -752,8 +752,8 @@ OPTIMIZE TABLE events_alias FINAL;
 -- Parts are merged in target table
 SELECT count() FROM system.parts
 WHERE database = currentDatabase()
-AND table = 'events'
-AND active;  -- Returns 1
+  AND table = 'events'
+  AND active;  -- Returns 1
 ```
 
 ### Alias Management {#alias-management}

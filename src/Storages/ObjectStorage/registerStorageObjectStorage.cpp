@@ -142,8 +142,8 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 - `account_key` - if storage_account_url is used, then account key can be specified here
 - `format` — The [format](/interfaces/formats.md) of the file.
 - `compression` — Supported values: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. By default, it will autodetect compression by file extension. (same as setting to `auto`).
-- `partition_strategy` – Options: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`WILDCARD` under `compatibility` settings older than `26.6`, `HIVE` otherwise).
-- `partition_columns_in_data_file` - Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
+- `partition_strategy` – Options: `wildcard` or `hive`. `wildcard` requires a `{_partition_id}` in the path, which is replaced with the partition key. `hive` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Defaults to the `file_like_engine_default_partition_strategy` setting (`wildcard` under `compatibility` settings older than `26.6`, `hive` otherwise).
+- `partition_columns_in_data_file` - Only used with `hive` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.
 - `extra_credentials` - Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.
 
 **Example**
@@ -218,27 +218,25 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`wildcard`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default only under `compatibility` settings older than `26.6`; otherwise the default is `hive` (see the `file_like_engine_default_partition_strategy` setting).
 
-`HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
+`hive` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern. Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
-Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
+Note: When using `hive` partition strategy, the `use_hive_partitioning` setting has no effect.
 
-Example of `HIVE` partition strategy:
+Example of `hive` partition strategy:
 
 ```sql
-create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
 
-insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
 
-select _path, * from azure_table;
-```
+arthur :) select _path, * from azure_table;
 
-```text
-┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
-│ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
-│ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
-└────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+   ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+1. │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
+2. │ cont/hive_partitioned/year=2021/country=Brazil/7351305360894636032.parquet │ 2021 │ Brazil  │       2 │
+   └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
 ## See also {#see-also}
@@ -342,9 +340,9 @@ For partitioning by month, use the `toYYYYMM(date_column)` expression, where `da
 
 #### Partition strategy {#partition-strategy}
 
-`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported.
+`WILDCARD`: Replaces the `{_partition_id}` wildcard in the file path with the actual partition key. Reading is not supported. Selected by default only under `compatibility` settings older than `26.6`; otherwise the default is `HIVE` (see the `file_like_engine_default_partition_strategy` setting).
 
-`HIVE` (the default) implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
+`HIVE` implements hive style partitioning for reads & writes. Reading is implemented using a recursive glob pattern, it is equivalent to `SELECT * FROM s3('table_root/**.parquet')`.
 Writing generates files using the following format: `<prefix>/<key1=val1/key2=val2...>/<snowflakeid>.<toLower(file_format)>`.
 
 Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting has no effect.
@@ -352,11 +350,11 @@ Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting 
 Example of `HIVE` partition strategy:
 
 ```sql
-CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
 PARTITION BY (year, country);
 
-INSERT INTO t_03363_parquet VALUES
+arthur :) INSERT INTO t_03363_parquet VALUES
     (2022, 'USA', 1),
     (2022, 'Canada', 2),
     (2023, 'USA', 3),
@@ -369,23 +367,21 @@ INSERT INTO t_03363_parquet VALUES
     (2024, 'CN', 10),
     (2025, '', 11);
 
-select _path, * from t_03363_parquet;
-```
+arthur :) select _path, * from t_03363_parquet;
 
-```text
-┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
-│ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
-│ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
-│ test/t_03363_parquet/year=2022/country=Canada/7329604473314914304.parquet  │ 2022 │ Canada  │       2 │
-│ test/t_03363_parquet/year=1999/country=Brazil/7329604473289748480.parquet  │ 1999 │ Brazil  │       8 │
-│ test/t_03363_parquet/year=2023/country=Mexico/7329604473293942784.parquet  │ 2023 │ Mexico  │       4 │
-│ test/t_03363_parquet/year=2023/country=USA/7329604473319108608.parquet     │ 2023 │ USA     │       3 │
-│ test/t_03363_parquet/year=2025/country=/7329604473327497216.parquet        │ 2025 │         │      11 │
-│ test/t_03363_parquet/year=2024/country=CN/7329604473310720000.parquet      │ 2024 │ CN      │      10 │
-│ test/t_03363_parquet/year=2022/country=USA/7329604473298137088.parquet     │ 2022 │ USA     │       1 │
-│ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       6 │
-│ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       7 │
-└────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
+    ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
+ 1. │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
+ 2. │ test/t_03363_parquet/year=2024/country=France/7329604473323302912.parquet  │ 2024 │ France  │       5 │
+ 3. │ test/t_03363_parquet/year=2022/country=Canada/7329604473314914304.parquet  │ 2022 │ Canada  │       2 │
+ 4. │ test/t_03363_parquet/year=1999/country=Brazil/7329604473289748480.parquet  │ 1999 │ Brazil  │       8 │
+ 5. │ test/t_03363_parquet/year=2023/country=Mexico/7329604473293942784.parquet  │ 2023 │ Mexico  │       4 │
+ 6. │ test/t_03363_parquet/year=2023/country=USA/7329604473319108608.parquet     │ 2023 │ USA     │       3 │
+ 7. │ test/t_03363_parquet/year=2025/country=/7329604473327497216.parquet        │ 2025 │         │      11 │
+ 8. │ test/t_03363_parquet/year=2024/country=CN/7329604473310720000.parquet      │ 2024 │ CN      │      10 │
+ 9. │ test/t_03363_parquet/year=2022/country=USA/7329604473298137088.parquet     │ 2022 │ USA     │       1 │
+10. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       6 │
+11. │ test/t_03363_parquet/year=2024/country=Germany/7329604473306525696.parquet │ 2024 │ Germany │       7 │
+    └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
 ### Querying partitioned data {#querying-partitioned-data}
@@ -502,9 +498,9 @@ For more information about virtual columns see [here](../../../engines/table-eng
   - Indexes.
   - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not supported.
 
-:::note Zero-copy replication is not ready for production
-Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
+  :::note Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 ## Wildcards in path {#wildcards-in-path}
 
@@ -683,6 +679,13 @@ CREATE TABLE my_s3_table(name String, value UInt32)
 ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'), 'CSV')
 ```
 
+An optional `external_id` can also be supplied alongside `role_arn`. It is passed as the `ExternalId` parameter of the AWS STS `AssumeRole` call, allowing the role's trust policy to require a shared secret to mitigate the [confused deputy problem](https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html):
+
+```sql
+CREATE TABLE my_s3_table(name String, value UInt32)
+ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', external_id = 'my-external-id'), 'CSV')
+```
+
 ## See also {#see-also}
 
 - [s3 table function](../../../sql-reference/table-functions/s3.md)
@@ -828,9 +831,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   - Indexes.
   - [Zero-copy](../../../operations/storing-data.md#zero-copy) replication is possible, but not recommended.
 
-:::note Zero-copy replication is not ready for production
-Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
-:::
+  :::note Zero-copy replication is not ready for production
+  Zero-copy replication is disabled by default in ClickHouse version 22.8 and higher.  This feature is not recommended for production use.
+  :::
 
 **Globs in path**
 
@@ -892,14 +895,14 @@ Similar to GraphiteMergeTree, the HDFS engine supports extended configuration us
 ```xml
 <!-- Global configuration options for HDFS engine type -->
 <hdfs>
-<hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
-<hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
-<hadoop_security_authentication>kerberos</hadoop_security_authentication>
+  <hadoop_kerberos_keytab>/tmp/keytab/clickhouse.keytab</hadoop_kerberos_keytab>
+  <hadoop_kerberos_principal>clickuser@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  <hadoop_security_authentication>kerberos</hadoop_security_authentication>
 </hdfs>
 
 <!-- Configuration specific for user "root" -->
 <hdfs_root>
-<hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
+  <hadoop_kerberos_principal>root@TEST.CLICKHOUSE.TECH</hadoop_kerberos_principal>
 </hdfs_root>
 ```
 
@@ -981,9 +984,9 @@ libhdfs3 support HDFS namenode HA.
 - Add following piece to ClickHouse config file:
 
 ```xml
-<hdfs>
+  <hdfs>
     <libhdfs3_conf>/etc/clickhouse-server/hdfs-site.xml</libhdfs3_conf>
-</hdfs>
+  </hdfs>
 ```
 
 - Then use `dfs.nameservices` tag value of `hdfs-site.xml` as the namenode address in the HDFS URI. For example, replace `hdfs://appadmin@192.168.101.11:8020/abc/` with `hdfs://appadmin@my_nameservice/abc/`.
@@ -1113,7 +1116,7 @@ Note that the Iceberg table must already exist in the storage, this command does
 
 ```sql
 CREATE TABLE iceberg_table_s3
-    ENGINE = IcebergS3(url, [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
+    ENGINE = IcebergS3(url,  [, NOSIGN | access_key_id, secret_access_key, [session_token]], format, [,compression], [,extra_credentials])
 
 CREATE TABLE iceberg_table_azure
     ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
@@ -1225,15 +1228,15 @@ The following deletion method is **not supported**:
 - [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (introduced in v3)
 
 ### Basic usage {#basic-usage}
-```sql
+ ```sql
  SELECT * FROM example_table ORDER BY 1
-SETTINGS iceberg_timestamp_ms = 1714636800000
-```
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+ ```
 
-```sql
+ ```sql
  SELECT * FROM example_table ORDER BY 1
-SETTINGS iceberg_snapshot_id = 3547395809148285433
-```
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+ ```
 
 Note: You cannot specify both `iceberg_timestamp_ms` and `iceberg_snapshot_id` parameters in the same query.
 
@@ -1253,30 +1256,30 @@ All scenarios are written in Spark because CH doesn't support writing to Iceberg
 
 Consider this sequence of operations:
 
-```sql
--- Create a table with two columns
-CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
-order_number int,
-product_code string
+ ```sql
+ -- Create a table with two columns
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number int,
+  product_code string
   )
-USING iceberg
-OPTIONS ('format-version'='2')
+  USING iceberg
+  OPTIONS ('format-version'='2')
 
 -- Insert data into the table
-INSERT INTO spark_catalog.db.time_travel_example VALUES
+  INSERT INTO spark_catalog.db.time_travel_example VALUES
     (1, 'Mars')
 
   ts1 = now() // A piece of pseudo code
 
 -- Alter table to add a new column
-ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
 
-ts2 = now()
+  ts2 = now()
 
 -- Insert data into the table
-INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
 
-ts3 = now()
+   ts3 = now()
 
 -- Query the table at each timestamp
   SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
@@ -1315,20 +1318,20 @@ A time travel query at a current moment might show a different schema than the c
 
 ```sql
 -- Create a table
-CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
-order_number int,
-product_code string
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number int,
+  product_code string
   )
-USING iceberg
-OPTIONS ('format-version'='2')
+  USING iceberg
+  OPTIONS ('format-version'='2')
 
 -- Insert initial data into the table
-INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
 
 -- Alter table to add a new column
-ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
 
-ts = now();
+  ts = now();
 
 -- Query the table at a current moment but using timestamp syntax
 
@@ -1357,14 +1360,14 @@ The second one is that while doing time travel you can't get state of table befo
 
 ```sql
 -- Create a table
-CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
-order_number int,
-product_code string
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number int,
+  product_code string
   )
-USING iceberg
-OPTIONS ('format-version'='2');
+  USING iceberg
+  OPTIONS ('format-version'='2');
 
-ts = now();
+  ts = now();
 
 -- Query the table at a specific timestamp
   SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- Finises with error: Cannot find a snapshot older than ts.
@@ -1684,7 +1687,7 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url, [, access_key_id, secret_access_key] [,format] [,compression])
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
 
 CREATE TABLE paimon_table_azure
     ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -2251,11 +2254,11 @@ INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
 ```
 
-Delta Lake writes are a Beta feature disabled by default and must be enabled with `SET allow_delta_lake_writes = 1;` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1;`).
-
 :::note
 Writing using the table engine is supported only through delta kernel.
 Writes to Azure are not yet supported but work for S3 and GCS.
+
+Delta Lake writes are a Beta feature and must be enabled with `SET allow_delta_lake_writes = 1` (available from version 26.7; on earlier versions use `SET allow_experimental_delta_lake_writes = 1`).
 :::
 
 ### Data cache {#data-cache}

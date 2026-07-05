@@ -233,9 +233,9 @@ SELECT * FROM yt_saurus;
 ```
 
 ```response title="Response"
-┌──a─┬─b──┐
-│ 10 │ 20 │
-└────┴────┘
+ ┌──a─┬─b──┐
+ │ 10 │ 20 │
+ └────┴────┘
 ```
 
 ## Data types {#data-types}

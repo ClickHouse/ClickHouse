@@ -227,22 +227,24 @@ void registerInputFormatRowBinary(FormatFactory & factory)
 
     factory.setDocumentation("RowBinary", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
 
 ## Description {#description}
 
-The `RowBinary` format parses data by row in binary format. 
-Rows and values are listed consecutively, without separators. 
-Because data is in the binary format the delimiter after `FORMAT RowBinary` is strictly specified as follows: 
+The `RowBinary` format parses data by row in binary format.
+Rows and values are listed consecutively, without separators.
+Because data is in the binary format the delimiter after `FORMAT RowBinary` is strictly specified as follows:
 
 - Any number of whitespaces:
   - `' '` (space - code `0x20`)
   - `'\t'` (tab - code `0x09`)
-  - `'\f'` (form feed - code `0x0C`) 
+  - `'\f'` (form feed - code `0x0C`)
 - Followed by exactly one new line sequence:
-  - Windows style `"\r\n"` 
+  - Windows style `"\r\n"`
   - or Unix style `'\n'`
 - Immediately followed by binary data.
 
@@ -526,7 +528,7 @@ SELECT CAST('15:32:16', 'Time') AS t
 
 ### Time64 {#time64}
 
-Internally stored as a `Decimal64` (which is stored as `Int64`) representing a time value with fractional seconds, with configurable precision. Negative values are valid. 
+Internally stored as a `Decimal64` (which is stored as `Int64`) representing a time value with fractional seconds, with configurable precision. Negative values are valid.
 
 Syntax:
 
@@ -673,7 +675,7 @@ It can be used when a new record was inserted, but the UUID value was not specif
 Stored in four bytes as `UInt32` in **little-endian** byte order. Note that this differs from the traditional network byte order (big-endian) commonly used for IP addresses. Sample underlying values for `IPv4`:
 
 ```sql
-SELECT    
+SELECT
   CAST('0.0.0.0',         'IPv4') AS a,
   CAST('127.0.0.1',       'IPv4') AS b,
   CAST('192.168.0.1',     'IPv4') AS c,
@@ -702,13 +704,13 @@ SELECT
 
 ```text
 // 2a02:aa08:e000:3100::2
-0x2A, 0x02, 0xAA, 0x08, 0xE0, 0x00, 0x31, 0x00, 
+0x2A, 0x02, 0xAA, 0x08, 0xE0, 0x00, 0x31, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
 // 2001:44c8:129:2632:33:0:252:2
-0x20, 0x01, 0x44, 0xC8, 0x01, 0x29, 0x26, 0x32, 
+0x20, 0x01, 0x44, 0xC8, 0x01, 0x29, 0x26, 0x32,
 0x00, 0x33, 0x00, 0x00, 0x02, 0x52, 0x00, 0x02,
 // 2a02:e980:1e::1
-0x2A, 0x02, 0xE9, 0x80, 0x00, 0x1E, 0x00, 0x00, 
+0x2A, 0x02, 0xE9, 0x80, 0x00, 0x1E, 0x00, 0x00,
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ```
 
@@ -724,7 +726,7 @@ A nullable data type is encoded as follows:
 For example, a `Nullable(UInt32)` value:
 
 ```sql
-SELECT    
+SELECT
    CAST(42,   'Nullable(UInt32)') AS a,
    CAST(NULL, 'Nullable(UInt32)') AS b
 ```
@@ -778,7 +780,7 @@ SELECT array('foobar', 'qaz') AS arr
 ```text
 0x02,             // LEB128 - the array has 2 elements
 0x06,             // LEB128 - the first string has 6 bytes
-0x66, 0x6f, 0x6f, 
+0x66, 0x6f, 0x6f,
 0x62, 0x61, 0x72, // 'foobar'
 0x03,             // LEB128 - the second string has 3 bytes
 0x71, 0x61, 0x7a, // 'qaz'
@@ -843,7 +845,6 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
@@ -918,14 +919,14 @@ SELECT * FROM foo FORMAT RowBinary;
 0x01,                               // type index -> Bool
  0x01,                               // true
  0x03,                               // type index -> FixedString(6)
- 0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar' 
+ 0x66, 0x6F, 0x6F, 0x62, 0x61, 0x72, // 'foobar'
  0x05,                               // type index -> Float64
- 0x00, 0x00, 0x00, 0x00, 
+ 0x00, 0x00, 0x00, 0x00,
  0x00, 0x20, 0x59, 0x40,             // 100.5 as Float64
  0x06,                               // type index -> Int128
- 0x64, 0x00, 0x00, 0x00, 
- 0x00, 0x00, 0x00, 0x00, 
- 0x00, 0x00, 0x00, 0x00, 
+ 0x64, 0x00, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00,
  0x00, 0x00, 0x00, 0x00,             // 100 as Int128
  0x00,                               // type index -> Array(Int16)
  0x03,                               // LEB128 - the array has 3 elements
@@ -1173,58 +1174,58 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
 // Ring - or Array(Tuple(Float64, Float64))
 0x02, // LEB128 - the "ring" array has 2 points
    // Ring - Point #1
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40, 
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x40,
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x40,
    // Ring - Point #2
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40, 
-   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, 
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x14, 0x40,
+   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40,
 // Polygon - or Array(Array(Tuple(Float64, Float64)))
 0x02, // LEB128 - the "polygon" array has 2 rings
    0x02, // LEB128 - the first ring has 2 points
       // Polygon - Ring #1 - Point #1
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1C, 0x40,
       0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40,
       // Polygon - Ring #1 - Point #2
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x40, 
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x40,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x24, 0x40,
   0x01, // LEB128 - the second ring has 1 point
       // Polygon - Ring #2 - Point #1 (the only one)
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0x40, 
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x40, 
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0x40,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x28, 0x40,
 // MultiPolygon - or Array(Array(Array(Tuple(Float64, Float64))))
 0x01, // LEB128 - the "multi_polygon" array has 1 polygon
    0x02, // LEB128 - the first polygon has 2 rings
       0x02, // LEB128 - the first ring has 2 points
          // MultiPolygon - Polygon #1 - Ring #1 - Point #1
-         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2A, 0x40,
          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2C, 0x40,
          // MultiPolygon - Polygon #1 - Ring #1 - Point #2
-         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2E, 0x40, 
-         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2E, 0x40,
+         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40,
       0x01, // LEB128 - the second ring has 1 point
         // MultiPolygon - Polygon #1 - Ring #2 - Point #1 (the only one)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x40, 
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0x40, 
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x31, 0x40,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x32, 0x40,
  // LineString - or Array(Tuple(Float64, Float64))
  0x02, // LEB128 - the line string has 2 points
     // LineString - Point #1
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x33, 0x40,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x34, 0x40,
     // LineString - Point #2
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x40, 
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x40, 
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x40,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x40,
  // MultiLineString - or Array(Array(Tuple(Float64, Float64)))
  0x02, // LEB128 - the multi line string has 2 line strings
    0x02, // LEB128 - the first line string has 2 points
      // MultiLineString - LineString #1 - Point #1
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x37, 0x40, 
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x37, 0x40,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x40,
      // MultiLineString - LineString #1 - Point #2
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40, 
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3A, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x39, 0x40,
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3A, 0x40,
    0x01, // LEB128 - the second line string has 1 point
      // MultiLineString - LineString #2 - Point #1 (the only one)
-     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3B, 0x40, 
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3B, 0x40,
      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
 ```
 
@@ -1466,19 +1467,13 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithDefaults", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
@@ -1505,19 +1500,13 @@ SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 
     factory.setDocumentation("RowBinaryWithNames", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -1533,19 +1522,11 @@ Similar to the [`RowBinary`](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 
 :::note
 - If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to `1`,
-the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped. 
+the columns from input data will be mapped to the columns from the table by their names, columns with unknown names will be skipped.
 - If setting [`input_format_skip_unknown_fields`](/operations/settings/settings-formats.md/#input_format_skip_unknown_fields) is set to `1`.
 Otherwise, the first row will be skipped.
 :::
@@ -1553,6 +1534,8 @@ Otherwise, the first row will be skipped.
 
     factory.setDocumentation("RowBinaryWithNamesAndTypes", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✔      |       |
@@ -1569,15 +1552,7 @@ Similar to the [RowBinary](./RowBinary.md) format, but with added header:
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 
 :::note
 If setting [`input_format_with_names_use_header`](/operations/settings/settings-formats.md/#input_format_with_names_use_header) is set to 1,
@@ -1590,6 +1565,8 @@ the types from input data will be compared with the types of the corresponding c
 
     factory.setDocumentation("RowBinaryWithNamesAndTypesAndDefaults", Documentation{
         .description = R"DOCS_MD(
+import RowBinaryFormatSettings from './_snippets/common-row-binary-format-settings.md'
+
 | Input | Output | Alias |
 |-------|--------|-------|
 | ✔     | ✗      |       |
@@ -1654,15 +1631,7 @@ SELECT * FROM format(
 
 ## Format settings {#format-settings}
 
-The following settings are common to all `RowBinary` type formats.
-
-| Setting                                                                                                                                              | Description                                                                                                                                                                                                                                         | Default |
-|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
-| [`format_binary_max_string_size`](/operations/settings/settings-formats.md/#format_binary_max_string_size)                                           | The maximum allowed size for String in RowBinary format.                                                                                                                                                                                          | `1GiB`  |
-| [`output_format_binary_encode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Allows to write types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) output format.  | `false` |
-| [`input_format_binary_decode_types_in_binary_format`](/operations/settings/formats#input_format_binary_decode_types_in_binary_format)   | Allows to read types in header using [`binary encoding`](/sql-reference/data-types/data-types-binary-encoding.md) instead of strings with type names in [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md) input format.    | `false` |
-| [`output_format_binary_write_json_as_string`](/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)                   | Allows to write values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) output format.                            | `false` |
-| [`input_format_binary_read_json_as_string`](/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)                       | Allows to read values of the [`JSON`](/sql-reference/data-types/newjson.md) data type as `JSON` [String](/sql-reference/data-types/string.md) values in [`RowBinary`](../RowBinary.md) input format.                              | `false` |
+<RowBinaryFormatSettings/>
 )DOCS_MD"});
 }
 

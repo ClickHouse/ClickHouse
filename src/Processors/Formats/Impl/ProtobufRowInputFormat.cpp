@@ -461,7 +461,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```bash
+```sql
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -497,7 +497,7 @@ cat protobuf_messages.bin | clickhouse client --host <hostname> --secure --passw
 
 Select the data inserted into the table:
 
-```bash
+```sql
 clickhouse client --host <hostname> --secure --password <password> --query "SELECT * FROM testing.protobuf_messages"
 ```
 
@@ -548,9 +548,9 @@ SYSTEM DROP FORMAT SCHEMA CACHE FOR Protobuf
 
     factory.setDocumentation("ProtobufSingle", Documentation{
         .description = R"DOCS_MD(
-:::note
-This format is not supported in ClickHouse Cloud.
-:::
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge/>
 
 | Input | Output | Alias |
 |-------|--------|-------|

@@ -344,7 +344,7 @@ def main():
         # Generate some random rows
         for id in range(0, i):
             letters = string.ascii_letters
-            random_string = ''.join(random.choices(letters, k=10))
+            random_string =  ''.join(random.choices(letters ,k=10))
             print(str(id) + '\t' + random_string + '\n', end='')
 
         # Flush results to stdout
@@ -393,8 +393,8 @@ This example uses the `hackernews` table described [here](/engines/table-engines
 
 ```sql
 CREATE TABLE sentiment (
-id UInt64,
-sentiment Float32
+   id UInt64,
+   sentiment Float32
 )
 ENGINE = Executable(
     'sentiment.py',
@@ -499,8 +499,8 @@ We can easily convert the `sentiment` table above to use `ExecutablePool` instea
 
 ```sql
 CREATE TABLE sentiment_pooled (
-id UInt64,
-sentiment Float32
+   id UInt64,
+   sentiment Float32
 )
 ENGINE = ExecutablePool(
     'sentiment.py',
@@ -570,7 +570,7 @@ def main():
         # Generate some random rows
         for id in range(0, i):
             letters = string.ascii_letters
-            random_string = ''.join(random.choices(letters, k=10))
+            random_string =  ''.join(random.choices(letters ,k=10))
             print(str(id) + '\t' + random_string + '\n', end='')
 
         # Flush results to stdout
@@ -619,8 +619,8 @@ This example uses the `hackernews` table described [here](/engines/table-engines
 
 ```sql
 CREATE TABLE sentiment (
-id UInt64,
-sentiment Float32
+   id UInt64,
+   sentiment Float32
 )
 ENGINE = Executable(
     'sentiment.py',
@@ -725,8 +725,8 @@ We can easily convert the `sentiment` table above to use `ExecutablePool` instea
 
 ```sql
 CREATE TABLE sentiment_pooled (
-id UInt64,
-sentiment Float32
+   id UInt64,
+   sentiment Float32
 )
 ENGINE = ExecutablePool(
     'sentiment.py',

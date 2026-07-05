@@ -1109,7 +1109,7 @@ import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
 # MergeTree table engine
 
-The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree`) are the most commonly used and most robust table engines in ClickHouse.
+The `MergeTree` engine and other engines of the `MergeTree` family (e.g. `ReplacingMergeTree`, `AggregatingMergeTree` ) are the most commonly used and most robust table engines in ClickHouse.
 
 `MergeTree`-family table engines are designed for high data ingest rates and huge data volumes.
 Insert operations create table parts which are merged by a background process with other table parts.
@@ -1167,7 +1167,7 @@ For a detailed description of the parameters, see the [CREATE TABLE](/sql-refere
 
 A tuple of column names or arbitrary expressions. Example: `ORDER BY (CounterID + 1, EventDate)`.
 
-If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the the sorting key as primary key.
+If no primary key is defined (i.e. `PRIMARY KEY` was not specified), ClickHouse uses the sorting key as primary key.
 
 If no sorting is required, you can use syntax `ORDER BY tuple()`.
 Alternatively, if setting `create_table_empty_primary_key_by_default` is enabled, `ORDER BY ()` is implicitly added to `CREATE TABLE` statements. See [Selecting a Primary Key](#selecting-a-primary-key).
@@ -1558,7 +1558,7 @@ For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter in
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
@@ -1588,7 +1588,7 @@ AS
 
 CREATE FUNCTION bfEstimateBmSize [ON CLUSTER cluster]
 AS
-(total_number_of_all_grams, probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
+(total_number_of_all_grams,  probability_of_false_positives) -> ceil((total_number_of_all_grams * log(probability_of_false_positives)) / log(1 / pow(2, log(2))));
 
 CREATE FUNCTION bfEstimateFalsePositive [ON CLUSTER cluster]
 AS
@@ -1630,7 +1630,7 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 ```text title="Syntax"
@@ -1647,11 +1647,11 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/engines/table-engines/mergetree-family/textindexes) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
-Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -1668,7 +1668,9 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✗    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
 | [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
 | [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -1970,7 +1972,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
+- [`gcs` for GCS](/integrations/gcs#creating-a-disk)
 - [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)
@@ -2354,7 +2356,7 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `MinMax` statistics support part pruning. When MinMax statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `MinMax` and `Basic` statistics support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
@@ -2387,6 +2389,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Available types of column statistics {#available-types-of-column-statistics}
 
+- `Basic`
+
+    A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
+  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+
+    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `MinMax`, `Basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+
+    Syntax: `basic`
+
 - `MinMax`
 
     The minimum and maximum column value which allows to estimate the selectivity of range filters on numeric columns.
@@ -2413,21 +2426,29 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | String or FixedString |
-|-----------|----------------------------------------------------|-----------------------|
-| CountMin  | ✔                                                  | ✔                     |
-| MinMax    | ✔                                                  | ✗                     |
-| TDigest   | ✔                                                  | ✗                     |
-| Uniq      | ✔                                                  | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
+|-----------|----------------------------------------------------|------|-----------------------|
+| Basic     | ✔                                                  | ✔    | ✔                     |
+| CountMin  | ✔                                                  | ✔    | ✔                     |
+| MinMax    | ✔                                                  | ✔    | ✗                     |
+| TDigest   | ✔                                                  | ✗    | ✗                     |
+| Uniq      | ✔                                                  | ✔    | ✔                     |
+
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
 
 ### Supported operations {#supported-operations}
 
 |           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|------------------------------|
-| CountMin  | ✔                     | ✗                            |
-| MinMax    | ✗                     | ✔                            |
-| TDigest   | ✗                     | ✔                            |
-| Uniq      | ✔                     | ✗                            |
+|-----------|-----------------------|--------------------------------|
+| Basic     | ✗                     | ✔ (numeric columns only)       |
+| CountMin  | ✔                     | ✗                              |
+| MinMax    | ✗                     | ✔ (numeric columns only)       |
+| TDigest   | ✗                     | ✔ (numeric columns only)       |
+| Uniq      | ✔                     | ✗                              |
+
+For `Basic` on `String` / `FixedString` columns the statistic only records the total
+non-NULL byte length (used to estimate average string length) and the null count;
+range filters and part pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 
@@ -2926,7 +2947,7 @@ SELECT * FROM mySecondReplacingMT FINAL;
 
 `is_deleted` —  Name of a column used during a merge to determine whether the data in this row represents the state or is to be deleted; `1` is a "deleted" row, `0` is a "state" row.
 
-Column data type — `UInt8`.
+  Column data type — `UInt8`.
 
 :::note
 `is_deleted` can only be enabled when `ver` is used.
@@ -3342,7 +3363,7 @@ Insert data into the `test.visits` table:
 
 ```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
-VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
 ```
 
 The data is inserted in both `test.visits` and `test.agg_visits`.
@@ -3369,7 +3390,7 @@ Add another couple of records to `test.visits`, but this time try using a differ
 
 ```sql
 INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
-VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
 ```
 
 Run the `SELECT` query again, which will return the following output:
@@ -3480,7 +3501,7 @@ For a description of request parameters, see [request description](../../../sql-
 `columns` - a tuple with the names of columns where values will be summed. Optional parameter.
     The columns must be of a numeric type and must not be in the partition or sorting key.
 
-If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
+ If `columns` is not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the sorting key.
 
 ### Query clauses {#query-clauses}
 
@@ -3763,8 +3784,8 @@ The settings for rollup are defined by the [graphite_rollup](../../../operations
 
 Rollup configuration structure:
 
-- required-columns
-- patterns
+      required-columns
+      patterns
 
 ### Required columns {#required-columns}
 
@@ -4289,7 +4310,7 @@ To store table metadata in an auxiliary ZooKeeper cluster instead of the default
 ReplicatedMergeTree engine as follows:
 
 ```sql
-CREATE TABLE table_name (...) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
+CREATE TABLE table_name ( ... ) ENGINE = ReplicatedMergeTree('zookeeper_name_configured_in_auxiliary_zookeepers:path', 'replica_name') ...
 ```
 You can specify any existing ZooKeeper cluster and the system will use a directory on it for its own data (the directory is specified when creating a replicatable table).
 

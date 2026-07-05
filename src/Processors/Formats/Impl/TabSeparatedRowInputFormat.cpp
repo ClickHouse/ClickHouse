@@ -893,8 +893,8 @@ Date    Int16   LowCardinality(String)  LowCardinality(String)  Int8    Int8
 
     factory.setDocumentation("TabSeparatedWithNames", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                          |
-|-------|--------|--------------------------------|
+| Input | Output | Alias          |
+|-------|--------|----------------|
 |     ✔    |     ✔     | `TSVWithNames` |
 
 ## Description {#description}
@@ -980,8 +980,8 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 
     factory.setDocumentation("TabSeparatedWithNamesAndTypes", Documentation{
         .description = R"DOCS_MD(
-| Input | Output | Alias                                          |
-|-------|--------|------------------------------------------------|
+| Input | Output | Alias                  |
+|-------|--------|------------------------|
 |     ✔    |     ✔     | `TSVWithNamesAndTypes` |
 
 ## Description {#description}

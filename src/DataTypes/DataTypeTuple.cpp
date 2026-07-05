@@ -700,9 +700,9 @@ SELECT * FROM test WHERE data IS NULL;
 ```
 
 ```txt
-┌─id─┬─data─┐
-│  2 │ ᴺᵁᴸᴸ │
-└────┴──────┘
+ ┌─id─┬─data─┐
+ │  2 │ ᴺᵁᴸᴸ │
+ └────┴──────┘
 ```
 )DOCS_MD",
             .syntax = "Tuple(T1, T2, ...)",

@@ -656,7 +656,7 @@ void registerStorageMongoDB(StorageFactory & factory)
         .description = R"DOCS_MD(
 MongoDB engine is read-only table engine which allows to read data from a remote [MongoDB](https://www.mongodb.com/) collection.
 
-Only MongoDB >=7 is supported.
+Only MongoDB v3.6+ servers are supported.
 [Seed list(`mongodb+srv`)](https://www.mongodb.com/docs/manual/reference/glossary/#std-term-seed-list) is not yet supported.
 
 ## Creating a table {#creating-a-table}
@@ -822,9 +822,9 @@ SELECT count() FROM sample_mflix_table
 ```
 
 ```text title="Response"
-┌─count()─┐
-│   21349 │
-└─────────┘
+   ┌─count()─┐
+1. │   21349 │
+   └─────────┘
 ```
 
 ```sql title="Query"
@@ -867,11 +867,11 @@ LIMIT 3;
 ```
 
 ```text title="Response"
-┌─title──────────────────┬─rating─┐
-│ No Country for Old Men │    8.1 │
-│ The Sunset Limited     │    7.4 │
-│ The Road               │    7.3 │
-└────────────────────────┴────────┘
+   ┌─title──────────────────┬─rating─┐
+1. │ No Country for Old Men │    8.1 │
+2. │ The Sunset Limited     │    7.4 │
+3. │ The Road               │    7.3 │
+   └────────────────────────┴────────┘
 ```
 
 ## Troubleshooting {#troubleshooting}

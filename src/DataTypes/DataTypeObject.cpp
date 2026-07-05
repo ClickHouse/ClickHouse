@@ -865,9 +865,22 @@ void registerDataTypeJSON(DataTypeFactory & factory)
 {
     factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive, Documentation{
             .description = String(R"DOCS_MD(
-:::tip
-Check out our [JSON best practice guide](/docs/best-practices/use-json-where-appropriate) for examples, advanced features and considerations for using the JSON type.
-:::
+import {CardSecondary} from '@clickhouse/click-ui/bundled';
+import WhenToUseJson from '@site/docs/best-practices/_snippets/_when-to-use-json.md';
+import Link from '@docusaurus/Link'
+
+<Link to="/docs/best-practices/use-json-where-appropriate" style={{display: 'flex', textDecoration: 'none', width: 'fit-content'}}>
+<CardSecondary
+  badgeState="success"
+  badgeText=""
+  description="Check out our JSON best practice guide for examples, advanced features and considerations for using the JSON type."
+  icon="book"
+  infoText="Read more"
+  infoUrl="/docs/best-practices/use-json-where-appropriate"
+  title="Looking for a guide?"
+/>
+</Link>
+<br/>
 
 The `JSON` type stores JavaScript Object Notation (JSON) documents in a single column.
 
@@ -896,6 +909,8 @@ Where the parameters in the syntax above are defined as:
 | `some.path TypeName`        | An optional type hint for particular path in the JSON. Such paths will be always stored as sub-columns with specified type.                                                                                                                                                                                                                                                                                                                                                                                  |               |
 | `SKIP path.to.skip`         | An optional hint for particular path that should be skipped during JSON parsing. Such paths will never be stored in the JSON column. If specified path is a nested JSON object, the whole nested object will be skipped.                                                                                                                                                                                                                                                                                     |               |
 | `SKIP REGEXP 'path_regexp'` | An optional hint with a regular expression that is used to skip paths during JSON parsing. All paths that match this regular expression will never be stored in the JSON column.                                                                                                                                                                                                                                                                                                                             |               |
+
+<WhenToUseJson />
 
 ## Creating `JSON` {#creating-json}
 
@@ -987,17 +1002,17 @@ SELECT CAST('{"a.b.c" : 42}', 'JSON') AS json
 will return:
 
 ```response title="Response"
-┌─json───────────────────┐
-│ {"a":{"b":{"c":"42"}}} │
-└────────────────────────┘
+   ┌─json───────────────────┐
+1. │ {"a":{"b":{"c":"42"}}} │
+   └────────────────────────┘
 ```
 
 and **not**:
 
-```text
-┌─json───────────┐
-│ {"a.b.c":"42"} │
-└────────────────┘
+```sql
+   ┌─json───────────┐
+1. │ {"a.b.c":"42"} │
+   └────────────────┘
 ```
 :::
 
@@ -1011,7 +1026,7 @@ For example:
 
 ```sql title="Query"
 CREATE TABLE test (json JSON(a.b UInt32, SKIP a.e)) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : 42, "g" : 42.42}, "c" : [1, 2, 3], "d" : "2020-01-01"}'), ('{"f" : "Hello, World!", "d" : "2020-01-02"}'), ('{"a" : {"b" : 43, "e" : 10, "g" : 43.43}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -1138,7 +1153,7 @@ The `JSON` type supports reading nested objects as sub-columns with type `JSON` 
 
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
-INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
+INSERT INTO test VALUES ('{"a" : {"b" : {"c" : 42, "g" : 42.42}}, "c" : [1, 2, 3], "d" : {"e" : {"f" : {"g" : "Hello, World", "h" : [1, 2, 3]}}}}'), ('{"f" : "Hello, World!", "d" : {"e" : {"f" : {"h" : [4, 5, 6]}}}}'), ('{"a" : {"b" : {"c" : 43, "e" : 10, "g" : 43.43}}, "c" : [4, 5, 6]}');
 SELECT json FROM test;
 ```
 
@@ -1286,9 +1301,9 @@ To read an array of objects, you can extract it from the `Dynamic` column as a s
 ```sql title="Query"
 CREATE TABLE test (json JSON) ENGINE = Memory;
 INSERT INTO test VALUES
-('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]], "k" : {"j" : 2000}}]}}'),
+('{"a" : {"b" : [{"c" : 42, "d" : "Hello", "f" : [[{"g" : 42.42}]], "k" : {"j" : 1000}}, {"c" : 43}, {"e" : [1, 2, 3], "d" : "My", "f" : [[{"g" : 43.43, "h" : "2020-01-01"}]],  "k" : {"j" : 2000}}]}}'),
 ('{"a" : {"b" : [1, 2, 3]}}'),
-('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]], "k" : {"j" : 3000}}]}}');
+('{"a" : {"b" : [{"c" : 44, "f" : [[{"h" : "2020-01-02"}]]}, {"e" : [4, 5, 6], "d" : "World", "f" : [[{"g" : 44.44}]],  "k" : {"j" : 3000}}]}}');
 SELECT json FROM test;
 ```
 
@@ -2186,7 +2201,7 @@ Before creating `JSON` column and loading data into it, consider the following t
 - Investigate your data and specify as many path hints with types as you can. It will make storage and reading much more efficient.
 - Think about what paths you will need and what paths you will never need. Specify paths that you won't need in the `SKIP` section, and `SKIP REGEXP` section if needed. This will improve the storage.
 - Don't set the `max_dynamic_paths` parameter to very high values, as it can make storage and reading less efficient.
-While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
+  While highly dependent on system parameters such as memory, CPU, etc., a general rule of thumb would be to not set `max_dynamic_paths` greater than 10 000 for the local filesystem storage and 1024 for the remote filesystem storage.
 
 ## Further Reading {#further-reading}
 

@@ -131,6 +131,16 @@ SELECT toIntervalMicrosecond(179999999) < toIntervalMinute(3);
 └─────────────────────────────────────────────────────────────┘
 ```
 
+```sql
+SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
+```
+
+```text
+┌─equals(toIntervalMicrosecond(3600000000), toIntervalHour(1))─┐
+│                                                            1 │
+└──────────────────────────────────────────────────────────────┘
+```
+
 ## Mixed-type Intervals {#mixed-type-intervals}
 
 Intervals of mixed type, e.g. multiple hours and multiple minutes, can be created using `INTERVAL 'value' <from_kind> TO <to_kind>` syntax.

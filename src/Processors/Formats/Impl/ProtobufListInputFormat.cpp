@@ -165,9 +165,9 @@ void registerInputFormatProtobufList(FormatFactory & factory)
 
     factory.setDocumentation("ProtobufList", Documentation{
         .description = R"DOCS_MD(
-:::note
-This format is not supported in ClickHouse Cloud.
-:::
+import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
+
+<CloudNotSupportedBadge/>
 
 | Input | Output | Alias |
 |-------|--------|-------|

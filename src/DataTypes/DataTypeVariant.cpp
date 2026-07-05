@@ -450,7 +450,7 @@ SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(varia
 ```
 
 ```sql
-SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
 ```
 
 ```text
@@ -478,7 +478,7 @@ It is possible to convert an ordinary column with type `T` to a `Variant` column
 
 ```sql
 SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
-```
+ ```
 
 ```text
 ┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
@@ -491,7 +491,7 @@ Note: converting from `String` type is always performed through parsing, if you 
 SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
 ```
 
-```text
+```sql
 ┌─variant───┬─variant_type─┐
 │ [1, 2, 3] │ String       │
 └───────────┴──────────────┘
@@ -588,7 +588,6 @@ INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, [
 ```
 
 ```sql
-SET allow_suspicious_types_in_order_by = 1;
 SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
@@ -604,7 +603,6 @@ SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
 ```
 
 ```sql
-SET use_variant_default_implementation_for_comparisons = 0;
 SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
 ```
 
@@ -625,7 +623,6 @@ If you need to find the row with specific `Variant` value, you can do one of the
 - Cast value to the corresponding `Variant` type:
 
 ```sql
-SET use_variant_default_implementation_for_comparisons = 0;
 SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
 ```
 
@@ -679,7 +676,6 @@ Example:
 
 ```sql
 SET allow_suspicious_variant_types = 1;
-SET allow_suspicious_types_in_order_by = 1;
 CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
 INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
 SELECT v, variantType(v) FROM test ORDER by v;
@@ -744,16 +740,15 @@ This allows you to use regular functions with Variant columns without special ha
 **Example:**
 
 ```sql
-SET variant_throw_on_type_mismatch = 0;
 CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
 INSERT INTO test VALUES (42), ('hello'), (NULL);
 SELECT *, toTypeName(v) FROM test WHERE v = 42;
 ```
 
 ```text
-┌─v──┬─toTypeName(v)───────────┐
-│ 42 │ Variant(String, UInt32) │
-└────┴─────────────────────────┘
+   ┌─v──┬─toTypeName(v)───────────┐
+1. │ 42 │ Variant(String, UInt32) │
+   └────┴─────────────────────────┘
 ```
 
 The comparison operator is automatically applied to each variant type separately, allowing filtering on Variant columns.
@@ -763,34 +758,32 @@ The comparison operator is automatically applied to each variant type separately
 The result type depends on what the function returns for each variant:
 
 - **Different result types**: `Variant(T1, T2, ...)`
-```sql
-SET variant_throw_on_type_mismatch = 0;
-CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
-INSERT INTO test2 VALUES (42::UInt64), (42.42);
-SELECT v + 1 AS result, toTypeName(result) FROM test2;
-```
+  ```sql
+  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
+  INSERT INTO test2 VALUES (42::UInt64), (42.42);
+  SELECT v + 1 AS result, toTypeName(result) FROM test2;
+  ```
 
-```text
-┌─result─┬─toTypeName(plus(v, 1))──┐
-│     43 │ Variant(Float64, UInt64) │
-│  43.42 │ Variant(Float64, UInt64) │
-└────────┴─────────────────────────┘
-```
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 1))──┐
+  │     43 │ Variant(Float64, UInt64) │
+  │  43.42 │ Variant(Float64, UInt64) │
+  └────────┴─────────────────────────┘
+  ```
 
 - **Type incompatibility**: `NULL` for incompatible variants
-```sql
-SET variant_throw_on_type_mismatch = 0;
-CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
-INSERT INTO test3 VALUES ([1,2,3]), (42);
-SELECT v + 10 AS result, toTypeName(result) FROM test3;
-```
+  ```sql
+  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test3 VALUES ([1,2,3]), (42);
+  SELECT v + 10 AS result, toTypeName(result) FROM test3;
+  ```
 
-```text
-┌─result─┬─toTypeName(plus(v, 10))─┐
-│   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
-│     52 │ Nullable(UInt64)        │
-└────────┴─────────────────────────┘
-```
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 10))─┐
+  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
+  │     52 │ Nullable(UInt64)        │
+  └────────┴─────────────────────────┘
+  ```
 
 :::note
 **Error handling:** When a function cannot process a variant type, only type-related errors (ILLEGAL_TYPE_OF_ARGUMENT,
