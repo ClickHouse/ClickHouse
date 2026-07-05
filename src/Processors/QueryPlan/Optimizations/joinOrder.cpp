@@ -614,8 +614,6 @@ static std::optional<UInt64> estimateJoinCardinality(
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
-    if (join_kind == JoinKind::Inner)
-        joined_rows = std::max(joined_rows, std::max(lhs, rhs));
     if (join_kind == JoinKind::Left)
         joined_rows = std::max(joined_rows, lhs);
     if (join_kind == JoinKind::Right)

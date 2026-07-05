@@ -1018,8 +1018,28 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+static std::optional<UInt64> getMaxBaseRelationRows(const BitSet & relations, const std::vector<RelationStats> & relation_stats)
+{
+    std::optional<UInt64> result;
+    for (size_t relation_id = 0; relation_id < relation_stats.size(); ++relation_id)
+    {
+        if (!relations.test(relation_id))
+            continue;
+
+        const auto & rows = relation_stats[relation_id].estimated_rows;
+        if (!rows)
+            continue;
+
+        if (!result || rows.value() > result.value())
+            result = rows;
+    }
+    return result;
+}
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
+    auto base_relation_stats = query_graph_builder.relation_stats;
+
     QueryGraph query_graph;
     query_graph.relation_stats = std::move(query_graph_builder.relation_stats);
     query_graph.edges = std::move(query_graph_builder.join_edges);
@@ -1154,6 +1174,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 ? optimization_settings.join_swap_table.value()
                 : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
                     && lhs_estimation.value() < rhs_estimation.value();
+
+            if (swap_on_sizes && !optimization_settings.join_swap_table.has_value() && left_rels.count() > 1)
+            {
+                auto lhs_max_base_rows = getMaxBaseRelationRows(left_rels, base_relation_stats);
+                if (lhs_max_base_rows && rhs_estimation && lhs_max_base_rows.value() > rhs_estimation.value())
+                    swap_on_sizes = false;
+            }
 
             bool flip_join = has_prepared_storage_at_left || (!has_prepared_storage_at_right && swap_on_sizes);
 
