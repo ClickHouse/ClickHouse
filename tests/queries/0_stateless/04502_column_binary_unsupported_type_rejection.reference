@@ -5,4 +5,5 @@ nested Nullable inside Array/Tuple
 nested Nullable inside Array/Tuple
 LowCardinality is not supported
 LowCardinality is not supported
+Nullable(Array/Tuple/Variant) is not supported
 66

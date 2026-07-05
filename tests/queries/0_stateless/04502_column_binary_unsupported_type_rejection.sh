@@ -31,5 +31,11 @@ ${CLICKHOUSE_CLIENT} --query "SELECT toLowCardinality('a') AS x FROM numbers(1) 
 ${CLICKHOUSE_CLIENT} --query "SELECT [toLowCardinality('a')] AS x FROM numbers(1) FORMAT ColumnBinary" 2>&1 \
     | grep -o "LowCardinality is not supported"
 
+# Nullable(Tuple(...)) has no COL_COMPLEX null-map slot at the top level either
+# (only COL_BYTES/COL_FIXED* carry COL_IS_NULLABLE); without this check it slips past
+# validation and crashes deep in buildColDescriptor instead of being rejected upfront.
+${CLICKHOUSE_CLIENT} --enable_nullable_tuple_type=1 --query "SELECT CAST(tuple(1), 'Nullable(Tuple(UInt64))') AS t FROM numbers(1) FORMAT ColumnBinary" 2>&1 \
+    | grep -o "Nullable(Array/Tuple/Variant) is not supported"
+
 # A well-formed signature is unaffected.
 ${CLICKHOUSE_CLIENT} --query "SELECT 'ok' AS s FROM numbers(1) FORMAT ColumnBinary" | wc -c

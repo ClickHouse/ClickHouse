@@ -132,7 +132,17 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
         if (is_nested)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1/ColumnBinary: nested Nullable inside Array/Tuple is not supported: {}", type->getName());
-        validateColumnarV1SupportedType(nullable_type->getNestedType(), is_nested);
+        const DataTypePtr & nested_type = nullable_type->getNestedType();
+        // Only COL_BYTES/COL_FIXED* carry a COL_IS_NULLABLE null map; COL_COMPLEX
+        // (Array/Tuple) and COL_VARIANT have no wire slot for a top-level null map of
+        // their own, so a Nullable wrapping one of them must be rejected here too, not
+        // just once already nested inside an Array/Tuple.
+        if (typeid_cast<const DataTypeArray *>(nested_type.get())
+            || typeid_cast<const DataTypeTuple *>(nested_type.get())
+            || typeid_cast<const DataTypeVariant *>(nested_type.get()))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1/ColumnBinary: Nullable(Array/Tuple/Variant) is not supported: {}", type->getName());
+        validateColumnarV1SupportedType(nested_type, is_nested);
         return;
     }
     if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
