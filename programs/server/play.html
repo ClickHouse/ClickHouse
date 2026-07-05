@@ -4381,12 +4381,28 @@ function resetCredentialsStatus() {
 /// it there and logging a spurious failed login; and a `url` keystroke that happens to hit a
 /// reachable intermediate endpoint would send the credentials there. `focusout` bubbles, so one
 /// listener on `#inputs` catches focus leaving any field, and `relatedTarget` (the element gaining
-/// focus) tells a move within the block from a move out of it — `Node.contains(null)` is false, so
-/// leaving to nothing (or off the page) counts as finished. The commit runs `checkURL(true)`, which
-/// pings the url and only then probes the credentials, so an unreachable server leaves the fields
-/// neutral rather than blaming them. The `connection_edited` guard means merely tabbing through the
-/// fields, without changing anything, emits no request. This subsumes the old paste handlers: a
-/// pasted value is committed by the following focus change just like typed input.
+/// focus) usually tells a move within the block from a move out of it. But `relatedTarget` is `null`
+/// both when focus truly leaves (off the page, or a keyboard move to nothing) and when a pointer
+/// press lands on a non-focusable spot *inside* the block — the status dot, or any gap in `#inputs` —
+/// which blurs the field without moving focus anywhere. Treating that as a commit would probe the
+/// still-old server mid-edit, disclosing the password there; so `pointer_down_inside_inputs` (below)
+/// distinguishes the two, and only a real exit commits. The commit runs `checkURL(true)`, which pings
+/// the url and only then probes the credentials, so an unreachable server leaves the fields neutral
+/// rather than blaming them. The `connection_edited` guard means merely tabbing through the fields,
+/// without changing anything, emits no request. This subsumes the old paste handlers: a pasted value
+/// is committed by the following focus change just like typed input.
+///
+/// A pointer press on a non-focusable element inside `#inputs` blurs the active field with
+/// `relatedTarget === null`, indistinguishable by target alone from focus genuinely leaving the block.
+/// Track whether the current press landed inside `#inputs` so the commit below can tell the two apart.
+/// It is scoped to an active press (reset on release/cancel), so a later keyboard move to nothing —
+/// which has no active press — is unaffected and still commits.
+let pointer_down_inside_inputs = false;
+document.addEventListener('pointerdown', (event) => {
+    pointer_down_inside_inputs = document.getElementById('inputs').contains(event.target);
+});
+document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
+document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
 let connection_edited = false;
 function onCredentialInput() {
     connection_edited = true;
@@ -4394,7 +4410,11 @@ function onCredentialInput() {
     resetCredentialsStatus();
 }
 function onConnectionFocusOut(event) {
+    /// Focus moved to another field in the block — still editing, not a commit.
     if (document.getElementById('inputs').contains(event.relatedTarget)) { return; }
+    /// Blur with no new focus target caused by a pointer press inside the block (e.g. the status dot):
+    /// the interaction stayed in `#inputs`, so this is not a commit.
+    if (event.relatedTarget === null && pointer_down_inside_inputs) { return; }
     if (!connection_edited) { return; }
     connection_edited = false;
     checkURL(true);
