@@ -39,14 +39,15 @@ def get_coordination_settings(node):
 
 DYNAMIC_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_dynamic.xml"
 
-UPDATED_DYNAMIC_CONFIG = """
+UPDATED_MAX_REQUEST_SIZE = "1024"
+UPDATED_DYNAMIC_CONFIG = f"""
 <clickhouse>
     <keeper_server>
         <coordination_settings>
             <snapshot_distance>99999</snapshot_distance>
             <max_requests_batch_size>42</max_requests_batch_size>
             <quorum_reads>true</quorum_reads>
-            <max_request_size>1024</max_request_size>
+            <max_request_size>{UPDATED_MAX_REQUEST_SIZE}</max_request_size>
         </coordination_settings>
     </keeper_server>
 </clickhouse>
@@ -105,16 +106,16 @@ def test_max_request_size_hot_reload(started_cluster):
         "VALUES ('big_before', '/test_max_req', repeat('x', 3000))"
     )
 
-    # 2. Reload config with max_request_size=1024.
+    # 2. Reload config with a small max_request_size
     with node.with_replace_config(DYNAMIC_CONFIG_PATH, UPDATED_DYNAMIC_CONFIG, reload_after=True):
         for _ in range(30):
             time.sleep(1)
             settings = get_coordination_settings(node)
-            if settings.get("max_request_size") == "1024":
+            if settings.get("max_request_size") == UPDATED_MAX_REQUEST_SIZE:
                 break
         else:
             assert False, (
-                "max_request_size did not change to 1024 after config reload; "
+                "max_request_size hasn't been updated after config reload; "
                 f"current value: {settings.get('max_request_size')}"
             )
 
