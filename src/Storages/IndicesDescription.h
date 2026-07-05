@@ -2,6 +2,8 @@
 
 #include <base/types.h>
 
+#include <functional>
+#include <unordered_map>
 #include <vector>
 #include <Core/Field.h>
 #include <Parsers/IAST_fwd.h>
@@ -119,6 +121,22 @@ Field getFieldFromIndexArgumentAST(const ASTPtr & ast);
 
 /// Convert all children of an index arguments AST (ASTExpressionList) to a FieldVector.
 FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments);
+
+using NamedIndexArgumentsMap = std::unordered_map<String, ASTPtr>;
+using NamedIndexArgumentParseErrorHandler = std::function<void(const ASTPtr &)>;
+using DuplicateNamedIndexArgumentErrorHandler = std::function<void(std::string_view)>;
+
+/// Parse all children of an index arguments AST as `key = value` pairs.
+/// The callers provide error handlers because individual index types have user-facing
+/// diagnostics with different wording.
+NamedIndexArgumentsMap parseNamedIndexArguments(
+    const ASTPtr & arguments,
+    const NamedIndexArgumentParseErrorHandler & on_invalid_argument,
+    const NamedIndexArgumentParseErrorHandler & on_invalid_key,
+    const DuplicateNamedIndexArgumentErrorHandler & on_duplicate_argument);
+
+/// Extract a named option AST from a parsed named-arguments map, removing it if present.
+ASTPtr extractASTOption(NamedIndexArgumentsMap & options, std::string_view option_name);
 
 ASTPtr createImplicitMinMaxIndexAST(const String & column_name);
 IndexDescription createImplicitMinMaxIndexDescription(

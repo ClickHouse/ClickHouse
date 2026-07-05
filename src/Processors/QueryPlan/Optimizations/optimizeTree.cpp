@@ -224,7 +224,7 @@ void optimizeTreeSecondPass(
         updateQueryConditionCache(stack, optimization_settings);
 
         /// Must be executed after index analysis and before PREWHERE optimization.
-        processAndOptimizeTextIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
+        processAndOptimizeIndexFunctions(stack, nodes, optimization_settings.direct_read_from_text_index);
 
         auto & frame = stack.back();
 

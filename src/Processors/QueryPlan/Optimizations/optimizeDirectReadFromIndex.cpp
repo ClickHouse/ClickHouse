@@ -43,14 +43,15 @@ namespace
 
 using NodesReplacementMap = absl::flat_hash_map<const ActionsDAG::Node *, const ActionsDAG::Node *>;
 
-struct TextIndexReadInfo
+struct IndexReadInfo
 {
     const MergeTreeIndexWithCondition * index;
     bool is_materialized;
     bool is_fully_materialized;
 };
 
-using TextIndexReadInfos = absl::flat_hash_map<String, TextIndexReadInfo>;
+using IndexReadInfos = absl::flat_hash_map<String, IndexReadInfo>;
+using TextIndexReadInfos = IndexReadInfos;
 
 String getNameWithoutAliases(const ActionsDAG::Node * node)
 {
@@ -154,9 +155,13 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
     return result;
 }
 
-/// Helper function.
-/// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+// Shared direct-read/hint helpers.
+
+template <typename IndexCondition>
+void collectIndexReadInfos(
+    const ReadFromMergeTree * read_from_merge_tree_step,
+    IndexReadInfos & index_read_infos,
+    const char * disabled_reason_prefix)
 {
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
@@ -166,7 +171,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
     if (parts_with_ranges.empty())
         return;
 
-    auto logger = getLogger("optimizeDirectReadFromTextIndex");
+    auto logger = getLogger("optimizeDirectReadFromIndex");
     auto metadata_snapshot = read_from_merge_tree_step->getStorageMetadata();
     auto mutations_snapshot = read_from_merge_tree_step->getMutationsSnapshot();
     auto context = read_from_merge_tree_step->getContext();
@@ -176,8 +181,8 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         unique_parts.insert(part.data_part);
 
     /// Compute the union of updated columns only across the parts that will actually be read by this step.
-    /// Using `mutations_snapshot->getAllUpdatedColumns()` directly would include pending updates from
-    /// other partitions/parts not in `parts_with_ranges`, disabling direct text index reads even when
+    /// Using `mutations_snapshot->getAllUpdatedColumns` directly would include pending updates from
+    /// other partitions/parts not in `parts_with_ranges`, disabling direct index reads and token hints even when
     /// the queried parts have no on-the-fly updates for the index columns.
     NameSet all_updated_columns;
     for (const auto & part : unique_parts)
@@ -193,12 +198,12 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
-        if (!index.index->isTextIndex())
+        if (!typeid_cast<const IndexCondition *>(index.condition_template->generateUnsubstituted().get()))
             continue;
 
         if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
         {
-            LOG_TRACE(logger, "Cannot use direct reading from text index. Reason: {}", result.error().text);
+            LOG_TRACE(logger, "{}. Reason: {}", disabled_reason_prefix, result.error().text);
             continue;
         }
 
@@ -208,7 +213,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
             return !!index.index->getDeserializedFormat(part->checksums, index.index->getFileName(), &part->getDataPartStorage());
         });
 
-        text_index_read_infos[index.index->index.name] =
+        index_read_infos[index.index->index.name] =
         {
             .index = &index,
             .is_materialized = num_materialized_parts > 0,
@@ -216,6 +221,16 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         };
     }
 }
+
+void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+{
+    collectIndexReadInfos<MergeTreeIndexConditionText>(
+        read_from_merge_tree_step,
+        text_index_read_infos,
+        "Cannot use direct reading from text index");
+}
+
+// Text-index direct-read and preprocessing helpers.
 
 /// Converts an ActionsDAG node to an AST node.
 /// It is not correct in the general case, but is
@@ -313,7 +328,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 ///
 /// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens):
 /// applies tokenizer and preprocessors (lower, upper, etc.) for the haystack and needles arguments.
-/// It allows their stadalone executions without the direct read from text index.
+/// It allows their standalone execution without the direct read from text index.
 /// It is required to return the the same results as with the direct read.
 ///
 /// For example, for the index `idx_s (s) type = text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s))`
@@ -417,7 +432,7 @@ private:
         TextSearchQueryPtr search_query;
         String index_name;
         String virtual_column_name;
-        const TextIndexReadInfo * info = nullptr;
+        const IndexReadInfo * info = nullptr;
     };
 
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
@@ -867,16 +882,21 @@ static bool processAndOptimizeTextIndexFunctionsInPrewhere(
     return true;
 }
 
-/// Applies text index optimizations to the query plan.
+// Generic plan entry point.
+
+/// Applies direct index-read optimizations to the query plan.
 ///
 /// Always preprocesses `hasAllTokens`/`hasAnyTokens` arguments with text index metadata
 /// (preprocessor wrapping, string-to-array tokenization, tokenizer arguments).
 ///
 /// When `direct_read_from_text_index` is true, also replaces text-search functions
-/// with virtual columns for direct index reads (both WHERE and PREWHERE clauses).
+/// with virtual columns for direct text-index reads.
 ///
-/// See TextIndexDAGReplacer class for more details.
-void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes & /*nodes*/, bool direct_read_from_text_index)
+/// See `TextIndexDAGReplacer` above for more details.
+void processAndOptimizeIndexFunctions(
+    const Stack & stack,
+    QueryPlan::Nodes & /*nodes*/,
+    bool direct_read_from_text_index)
 {
     const auto & frame = stack.back();
     ReadFromMergeTree * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
@@ -885,12 +905,15 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
 
     TextIndexReadInfos text_index_read_infos;
     collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos);
+
     if (text_index_read_infos.empty())
         return;
 
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
+    {
         optimized = processAndOptimizeTextIndexFunctionsInPrewhere(*read_from_merge_tree_step, prewhere_info, text_index_read_infos, direct_read_from_text_index);
+    }
 
     if (stack.size() < 2)
         return;
@@ -902,7 +925,12 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     ActionsDAG & filter_dag = filter_step->getExpression();
-    const auto * result_filter_node = processAndOptimizeTextIndexDAG(*read_from_merge_tree_step, filter_dag, text_index_read_infos, filter_step->getFilterColumnName(), direct_read_from_text_index && !optimized);
+    const ActionsDAG::Node * result_filter_node = processAndOptimizeTextIndexDAG(
+        *read_from_merge_tree_step,
+        filter_dag,
+        text_index_read_infos,
+        filter_step->getFilterColumnName(),
+        direct_read_from_text_index && !optimized);
 
     if (!result_filter_node)
         return;

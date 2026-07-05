@@ -186,6 +186,57 @@ FieldVector getFieldsFromIndexArgumentsAST(const ASTPtr & arguments)
     return result;
 }
 
+NamedIndexArgumentsMap parseNamedIndexArguments(
+    const ASTPtr & arguments,
+    const NamedIndexArgumentParseErrorHandler & on_invalid_argument,
+    const NamedIndexArgumentParseErrorHandler & on_invalid_key,
+    const DuplicateNamedIndexArgumentErrorHandler & on_duplicate_argument)
+{
+    NamedIndexArgumentsMap options;
+    if (!arguments)
+        return options;
+
+    for (const auto & child : arguments->children)
+    {
+        const auto * ast_equal_function = child->as<ASTFunction>();
+        if (!ast_equal_function
+            || ast_equal_function->name != "equals"
+            || ast_equal_function->arguments->children.size() != 2)
+        {
+            on_invalid_argument(child);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index argument error handler returned without throwing");
+        }
+
+        const auto & equal_arguments = ast_equal_function->arguments;
+        const auto * key_identifier = equal_arguments->children[0]->as<ASTIdentifier>();
+        if (!key_identifier)
+        {
+            on_invalid_key(child);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index argument error handler returned without throwing");
+        }
+
+        String key = key_identifier->name();
+        if (!options.emplace(key, equal_arguments->children[1]).second)
+        {
+            on_duplicate_argument(key);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Index argument error handler returned without throwing");
+        }
+    }
+
+    return options;
+}
+
+ASTPtr extractASTOption(NamedIndexArgumentsMap & options, std::string_view option_name)
+{
+    auto it = options.find(String(option_name));
+    if (it == options.end())
+        return nullptr;
+
+    ASTPtr ast = it->second;
+    options.erase(it);
+    return ast;
+}
+
 bool IndexDescription::isSimpleSingleColumnIndex() const
 {
     return expression_list_ast && expression_list_ast->children.size() == 1 && expression_list_ast->children[0]->as<ASTIdentifier>();
