@@ -891,39 +891,56 @@ private:
                     // once per row): a huge constant string/geometry contributes that value's
                     // actual size here, not 0, or a large-const-plus-tiny-varying-args call
                     // could skip the split path and still build an oversized guest buffer.
-                    const IColumn & data_col = const_col->getDataColumn();
-                    if (const auto * const_s = typeid_cast<const ColumnString *>(&data_col))
-                        total += const_s->getChars().size();
+                    const IColumn * data_col = &const_col->getDataColumn();
+                    size_t null_map_bytes = 0;
+                    if (const auto * const_null = typeid_cast<const ColumnNullable *>(data_col))
+                    {
+                        data_col = &const_null->getNestedColumn();
+                        null_map_bytes = 1; // one null byte for the single represented value
+                    }
+                    if (const auto * const_s = typeid_cast<const ColumnString *>(data_col))
+                        total += const_s->getChars().size() + null_map_bytes;
                     else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                        total += declared_type->getSizeOfValueInMemory();
-                    else if (typeid_cast<const ColumnArray *>(&data_col) || typeid_cast<const ColumnTuple *>(&data_col))
-                        total += ColumnarV1::complexDataSize(data_col, 1);
+                        total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
+                    else if (typeid_cast<const ColumnArray *>(data_col) || typeid_cast<const ColumnTuple *>(data_col))
+                        total += ColumnarV1::complexDataSize(*data_col, 1) + null_map_bytes;
                     else
-                        total += 256;
+                        total += 256 + null_map_bytes;
                     continue;
                 }
                 col = &const_col->getDataColumn();
                 materialized_const = true;
             }
+            // Declared Nullable(String)/Nullable(Array)/Nullable(Tuple) arguments carry a
+            // real ColumnNullable at runtime; unwrap it so the String/Array/Tuple branches
+            // below actually match instead of silently falling to the flat 256-byte guess,
+            // and add the null map's own byte cost (1 byte/row).
+            bool is_col_nullable = false;
+            if (const auto * null_col = typeid_cast<const ColumnNullable *>(col))
+            {
+                col = &null_col->getNestedColumn();
+                is_col_nullable = true;
+            }
+            size_t null_map_bytes = is_col_nullable ? row_count : 0;
             if (const auto * s = typeid_cast<const ColumnString *>(col))
             {
                 size_t bytes = s->getChars().size(); // raw bytes including null terminators
                 // Wire offsets[row_count+1] (uint64) accompany every non-const String column,
                 // whether it started that way or was just materialized from a ColumnConst.
                 size_t offset_bytes = (row_count + 1) * sizeof(uint64_t);
-                total += (materialized_const ? bytes * row_count : bytes) + offset_bytes;
+                total += (materialized_const ? bytes * row_count : bytes) + offset_bytes + null_map_bytes;
             }
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += declared_type->getSizeOfValueInMemory() * row_count;
+                total += declared_type->getSizeOfValueInMemory() * row_count + null_map_bytes;
             else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
                 // complexDataSize matches the exact COL_COMPLEX byte layout (uint64 offsets +
                 // nested payload); a flat 256-byte guess badly undercounts e.g. an Array(UInt64)
                 // row with thousands of elements, letting the splitter miss a needed split.
-                total += materialized_const
+                total += (materialized_const
                     ? ColumnarV1::complexDataSize(*col, 1) * row_count
-                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count));
+                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count))) + null_map_bytes;
             else
-                total += 256 * row_count; // conservative fallback (e.g. Variant, LowCardinality)
+                total += 256 * row_count + null_map_bytes; // conservative fallback (e.g. Variant, LowCardinality)
         }
         return total;
     }
@@ -982,17 +999,25 @@ private:
                 col = &typeid_cast<const ColumnConst &>(*col).getDataColumn();
                 row_index = 0; // materialized const columns only ever have row 0
             }
+            // See the matching unwrap in estimateTotalSerializedSize above.
+            bool is_col_nullable = false;
+            if (const auto * null_col = typeid_cast<const ColumnNullable *>(col))
+            {
+                col = &null_col->getNestedColumn();
+                is_col_nullable = true;
+            }
+            size_t null_map_bytes = is_col_nullable ? 1 : 0;
             if (const auto * s = typeid_cast<const ColumnString *>(col))
                 // + sizeof(uint64_t): amortized per-row share of the wire offsets[row_count+1]
                 // array that accompanies every non-const String column; see the matching
                 // comment in estimateTotalSerializedSize above.
-                total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t);
+                total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t) + null_map_bytes;
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += declared_type->getSizeOfValueInMemory();
+                total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
             else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
-                total += estimateComplexRowBytes(*col, row_index);
+                total += estimateComplexRowBytes(*col, row_index) + null_map_bytes;
             else
-                total += 256; // conservative fallback
+                total += 256 + null_map_bytes; // conservative fallback
         }
         return total;
     }
