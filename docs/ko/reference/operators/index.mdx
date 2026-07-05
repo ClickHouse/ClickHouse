@@ -1,0 +1,693 @@
+---
+description: '연산자 문서'
+sidebarTitle: '연산자'
+slug: /sql-reference/operators/
+title: '연산자'
+doc_type: 'reference'
+---
+
+ClickHouse는 쿼리 파싱 단계에서 연산자의 priority, precedence, 결합 방향에 따라 해당하는 함수로 변환합니다.
+
+<div id="access-operators">
+  ## 접근 연산자
+</div>
+
+`a[N]` – 배열 요소에 접근합니다. `arrayElement(a, N)` 함수입니다.
+
+`a.N` – 튜플 요소에 접근합니다. `tupleElement(a, N)` 함수입니다.
+
+<div id="numeric-negation-operator">
+  ## 숫자 부호 반전 연산자
+</div>
+
+`-a` – `negate(a)` 함수입니다.
+
+튜플 부호 반전은 다음을 참조하십시오: [tupleNegate](/ko/reference/functions/regular-functions/tuple-functions#tupleNegate).
+
+<div id="multiplication-and-division-operators">
+  ## 곱셈 및 나눗셈 연산자
+</div>
+
+`a * b` – `multiply(a, b)` 함수입니다.
+
+튜플에 숫자를 곱하려면 [tupleMultiplyByNumber](/ko/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber), 스칼라 곱에는 [dotProduct](/ko/reference/functions/regular-functions/array-functions#arrayDotProduct)를 사용합니다.
+
+`a / b` – `divide(a, b)` 함수입니다.
+
+튜플을 숫자로 나누려면 [tupleDivideByNumber](/ko/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber)를 사용합니다.
+
+`a % b` – `modulo(a, b)` 함수입니다。
+
+<div id="addition-and-subtraction-operators">
+  ## 덧셈 및 뺄셈 연산자
+</div>
+
+`a + b` – `plus(a, b)` 함수입니다.
+
+튜플 덧셈: [tuplePlus](/ko/reference/functions/regular-functions/tuple-functions#tuplePlus).
+
+`a - b` – `minus(a, b)` 함수입니다.
+
+튜플 뺄셈: [tupleMinus](/ko/reference/functions/regular-functions/tuple-functions#tupleMinus).
+
+<div id="comparison-operators">
+  ## 비교 연산자
+</div>
+
+<div id="equals-function">
+  ### equals 함수
+</div>
+
+`a = b` – `equals(a, b)` 함수입니다.
+
+`a == b` – `equals(a, b)` 함수입니다.
+
+<div id="notequals-function">
+  ### notEquals 함수
+</div>
+
+`a != b` – `notEquals(a, b)` 함수입니다.
+
+`a <> b` – `notEquals(a, b)` 함수입니다.
+
+<div id="lessorequals-function">
+  ### lessOrEquals 함수
+</div>
+
+`a <= b` - `lessOrEquals(a, b)` 함수입니다.
+
+<div id="greaterorequals-function">
+  ### greaterOrEquals 함수
+</div>
+
+`a >= b` – `greaterOrEquals(a, b)` 함수입니다.
+
+<div id="less-function">
+  ### less 함수
+</div>
+
+`a < b` – `less(a, b)` 함수입니다.
+
+<div id="greater-function">
+  ### greater 함수
+</div>
+
+`a > b` – `greater(a, b)` 함수입니다.
+
+<div id="like-function">
+  ### like 함수
+</div>
+
+`a LIKE b` – `like(a, b)` 함수입니다.
+
+<div id="notlike-function">
+  ### notLike 함수
+</div>
+
+`a NOT LIKE b` – `notLike(a, b)` 함수입니다.
+
+<div id="ilike-function">
+  ### ilike 함수
+</div>
+
+`a ILIKE b` – `ilike(a, b)` 함수입니다.
+
+<div id="between-function">
+  ### BETWEEN 함수
+</div>
+
+`a BETWEEN b AND c` – `a >= b AND a <= c`와 동일합니다.
+
+`a NOT BETWEEN b AND c` – `a < b OR a > c`와 동일합니다.
+
+<div id="is-not-distinct-from">
+  ### is not distinct from 연산자 (`<=>`)
+</div>
+
+<Note>
+  25.10부터는 `<=>`를 다른 연산자와 마찬가지로 사용할 수 있습니다.
+  25.10 이전에는 JOIN 표현식에서만 사용할 수 있었으며, 예를 들면 다음과 같습니다:
+
+  ```sql
+  CREATE TABLE a (x String) ENGINE = Memory;
+  INSERT INTO a VALUES ('ClickHouse');
+
+  SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+  ┌─x──────────┬─a2.x───────┐
+  │ ClickHouse │ ClickHouse │
+  └────────────┴────────────┘
+  ```
+</Note>
+
+`<=>` 연산자는 `NULL`-안전 동등 연산자이며, `IS NOT DISTINCT FROM`과 동일합니다.
+이 연산자는 일반 동등 연산자(`=`)처럼 동작하지만, `NULL` 값도 비교할 수 있도록 처리합니다.
+두 `NULL` 값은 같다고 간주되며, `NULL`을 `NULL`이 아닌 값과 비교하면 `NULL`이 아니라 0(false)을 반환합니다.
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<div id="operators-for-working-with-strings">
+  ## 문자열을 다루는 연산자
+</div>
+
+<div id="overlay">
+  ### OVERLAY
+</div>
+
+* `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 함수입니다.
+* `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 함수입니다.
+* `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 함수입니다.
+* `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 함수입니다.
+
+<div id="operators-for-working-with-data-sets">
+  ## 데이터 세트 작업을 위한 연산자
+</div>
+
+[IN 연산자](/ko/reference/statements/in) 및 [EXISTS](/ko/reference/operators/exists) 연산자를 참조하십시오.
+
+<div id="in-function">
+  ### in 함수
+</div>
+
+`a IN ...` – `in(a, b)` 함수입니다.
+
+<div id="notin-function">
+  ### notIn 함수
+</div>
+
+`a NOT IN ...`에 해당하는 `notIn(a, b)` 함수입니다.
+
+<div id="globalin-function">
+  ### globalIn 함수
+</div>
+
+`a GLOBAL IN ...` – `globalIn(a, b)` 함수입니다.
+
+<div id="globalnotin-function">
+  ### globalNotIn 함수
+</div>
+
+`a GLOBAL NOT IN ...` – `globalNotIn(a, b)` 함수입니다.
+
+<div id="in-subquery-function">
+  ### in 서브쿼리 함수
+</div>
+
+`a = ANY (subquery)` – `in(a, subquery)` 함수와 같습니다.
+
+<div id="notin-subquery-function">
+  ### notIn 서브쿼리 함수
+</div>
+
+`a != ANY (subquery)` – `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)`와 동일합니다.
+
+<div id="in-subquery-function-1">
+  ### in subquery 함수
+</div>
+
+`a = ALL (subquery)` – `a IN (SELECT singleValueOrNull(*) FROM subquery)`와 같습니다.
+
+<div id="notin-subquery-function">
+  ### notIn 서브쿼리 함수
+</div>
+
+`a != ALL (subquery)` – `notIn(a, subquery)` 함수입니다.
+
+**예시**
+
+ALL을 사용한 쿼리:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+ANY를 사용한 쿼리:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+<div id="some-all-on-arrays">
+  ### 배열에 대한 `SOME` / `ALL`
+</div>
+
+위에서 설명한 서브쿼리 형식 외에도 `SOME` / `ALL`의 오른쪽에는 배열 표현식(배열 리터럴, 배열 타입의 컬럼, 또는 배열을 반환하는 임의의 표현식)이 올 수 있습니다. 이는 PostgreSQL 스타일의 배열 한정자 구문입니다. 이 구문은 구문 분석 시점에 인식되어 배열 함수로 재작성되므로 수동으로 재작성할 필요가 없습니다:
+
+| 구문                                   | 재작성 결과                             |
+| ------------------------------------ | ---------------------------------- |
+| `expr = SOME(arr)`                   | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`                   | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (그 밖의 모든 비교 연산자) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (그 밖의 모든 비교 연산자)  | `arrayAll(x -> expr OP x, arr)`    |
+
+`SOME`은 존재 한정자입니다(`ANY`의 SQL 동의어). `=` 및 `<>`는 최적화된 구현이 있으므로 예외적으로 `has` / `NOT has`로 재작성됩니다. 일반 형식은 고차 함수인 `arrayExists` / `arrayAll`로 처리됩니다.
+
+배열 형식은 비교 연산자 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=`에서만 인식됩니다. 오른쪽에 배열을 받을 수 있는 다른 연산자(예: `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, `IN`)는 배열 한정자로 **재작성되지 않으며** 원래 의미를 유지합니다. 예를 들어 `'abc' LIKE SOME(['a%', 'b%'])`는 배열 한정자 구문이 아닙니다. 이런 경우에는 `arrayExists` / `arrayAll`를 직접 사용하십시오.
+
+<Info>
+  **배열 형식에서는 `ANY`가 지원되지 않습니다**
+
+  오른쪽에 배열을 받을 수 있는 것은 `SOME`과 `ALL`뿐입니다. `ANY`는 `any`가 집계 함수이기도 하므로 제외됩니다. 따라서 `expr = any(x)` 형태의 표현식은 함수 호출이라는 의미를 유지합니다. 배열 한정자에는 `SOME`을 사용하십시오.
+</Info>
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+<Info>
+  **`NULL` 처리는 서브쿼리 형식과 다릅니다**
+
+  배열 형식은 파서에서 재작성되므로(`transform_null_in`과 같은 쿼리 설정을 사용할 수 없고, 행별 배열 컬럼은 분석기의 null-safe `IN` 경로를 사용할 수 없음) `has`의 2값 의미론(`=` / `<>`의 경우)과 `arrayExists` / `arrayAll`을 사용합니다(`NULL` 비교의 미확정 결과는 `0`으로 접힘). 따라서 `NULL` 처리가 `IN` / `NOT IN`을 통해 수행되고 `transform_null_in`에 따라 달라지는 서브쿼리 형식과는 결과가 다를 수 있습니다:
+
+  ```sql
+  SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+  SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+  SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+  SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+  ```
+</Info>
+
+<div id="operators-for-working-with-dates-and-times">
+  ## 날짜 및 시간을 다루는 연산자
+</div>
+
+<div id="extract">
+  ### EXTRACT
+</div>
+
+```sql
+EXTRACT(part FROM date);
+```
+
+주어진 날짜에서 특정 부분을 추출합니다. 예를 들어, 날짜에서 월을 가져오거나 시간에서 초를 가져올 수 있습니다.
+
+`part` 매개변수는 날짜에서 추출할 부분을 지정합니다. 사용할 수 있는 값은 다음과 같습니다.
+
+* `NANOSECOND` — 나노초입니다. 가능한 값: 0–999999999.
+* `MICROSECOND` — 마이크로초입니다. 가능한 값: 0–999999.
+* `MILLISECOND` — 밀리초입니다. 가능한 값: 0–999.
+* `SECOND` — 초입니다. 가능한 값: 0–59.
+* `MINUTE` — 분입니다. 가능한 값: 0–59.
+* `HOUR` — 시입니다. 가능한 값: 0–23.
+* `DAY` — 일입니다. 가능한 값: 1–31.
+* `WEEK` — ISO 8601 주 번호입니다. 가능한 값: 1–53.
+* `MONTH` — 월 번호입니다. 가능한 값: 1–12.
+* `QUARTER` — 분기입니다. 가능한 값: 1–4.
+* `YEAR` — 연도입니다.
+* `EPOCH` — Unix timestamp(1970-01-01 00:00:00 UTC 이후의 초)입니다. 참고: `DateTime64`의 경우 소수점 이하 초 부분은 잘립니다.
+* `DOW` — 요일(PostgreSQL 호환)입니다. 0 = 일요일, 6 = 토요일입니다.
+* `DOY` — 연중 날짜입니다. 가능한 값: 1–366.
+* `ISODOW` — ISO 요일입니다. 1 = 월요일, 7 = 일요일입니다.
+* `ISOYEAR` — ISO 8601 주 번호 기준 연도입니다.
+* `CENTURY` — 세기입니다. 예를 들어, 2024년은 21세기에 속합니다.
+* `DECADE` — 10년 단위입니다(연도를 10으로 나눈 값). 예를 들어, 2024년의 decade는 202입니다.
+* `MILLENNIUM` — 천년 단위입니다. 예를 들어, 2024년은 세 번째 millennium에 속합니다.
+* `TIMEZONE_HOUR` — 피연산자 시간대의 UTC 오프셋에서 부호 있는 시 부분입니다. 예를 들어, `+5:30`은 `5`를 반환하고 `-3:30`은 `-3`을 반환합니다.
+* `TIMEZONE_MINUTE` — 피연산자 시간대의 UTC 오프셋에서 부호 있는 분 부분입니다. 예를 들어, `+5:30`은 `30`을 반환하고 `-3:30`은 `-30`을 반환합니다.
+
+`part` 매개변수는 대소문자를 구분하지 않습니다.
+
+`date` 매개변수는 처리할 값을 지정합니다. [Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64), [Interval](/ko/reference/data-types/special-data-types/interval) 타입을 지원합니다. `date`가 `Interval`인 경우, 요청한 `part`는 인터벌에 저장된 종류와 일치해야 합니다(예: `EXTRACT(DAY FROM INTERVAL 5 DAY)`는 허용되지만 `EXTRACT(HOUR FROM INTERVAL 5 DAY)`는 거부됩니다. ClickHouse 인터벌은 단일 종류만 저장하기 때문입니다). `Interval` 피연산자에 대한 결과는 `Int64`입니다.
+
+예시:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
+```
+
+다음 예시에서는 테이블을 생성한 다음 `DateTime` 유형의 값을 삽입합니다.
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+) ENGINE = MergeTree
+ORDER BY ();
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+[tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql)에서 더 많은 예시를 확인할 수 있습니다.
+
+<div id="interval">
+  ### INTERVAL
+</div>
+
+[Date](/ko/reference/data-types/date) 및 [DateTime](/ko/reference/data-types/datetime) 타입 값과의 산술 연산에 사용되는 [인터벌](/ko/reference/data-types/special-data-types/interval) 타입 값을 생성합니다.
+
+인터벌 타입은 다음과 같습니다.
+
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+`INTERVAL` 값을 지정할 때 문자열 리터럴을 사용할 수도 있습니다. 예를 들어 `INTERVAL 1 HOUR`는 `INTERVAL '1 hour'` 또는 `INTERVAL '1' hour`와 동일합니다.
+
+<Tip>
+  타입이 서로 다른 인터벌은 결합할 수 없습니다. `INTERVAL 4 DAY 1 HOUR`와 같은 표현식은 사용할 수 없습니다. 인터벌은 가장 작은 단위 이상으로 지정해야 합니다. 예를 들어 `INTERVAL 25 HOUR`와 같이 지정합니다. 아래 예시와 같이 연속된 연산을 사용할 수 있습니다.
+</Tip>
+
+예시:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  `INTERVAL` 구문 또는 `addDays` 함수를 사용하는 것이 항상 권장됩니다. 단순한 덧셈이나 뺄셈(`now() + ...` 같은 구문)은 시간 설정을 반영하지 않습니다. 예를 들어 일광 절약 시간제는 고려되지 않습니다.
+</Note>
+
+예시:
+
+```sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+```text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
+**관련 항목**
+
+* [인터벌](/ko/reference/data-types/special-data-types/interval) 데이터 타입
+* [toInterval](/ko/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 변환 함수
+
+<div id="date-time-addition">
+  ### 날짜 및 시간 덧셈
+</div>
+
+[Date](/ko/reference/data-types/date) 또는 [Date32](/ko/reference/data-types/date32) 값은 `+` 연산자를 사용해 [Time](/ko/reference/data-types/time) 또는 [Time64](/ko/reference/data-types/time64) 값에 더할 수 있습니다. 결과는 해당 날짜의 지정된 시각을 나타내는 [DateTime](/ko/reference/data-types/datetime) 또는 [DateTime64](/ko/reference/data-types/datetime64)입니다. 이 연산은 교환법칙이 성립합니다.
+
+결과 유형은 피연산자 유형에 따라 달라집니다.
+
+| 왼쪽 피연산자  | 오른쪽 피연산자    | 결과 유형           |
+| -------- | ----------- | --------------- |
+| `Date`   | `Time`      | `DateTime`      |
+| `Date`   | `Time64(s)` | `DateTime64(s)` |
+| `Date32` | `Time`      | `DateTime64(0)` |
+| `Date32` | `Time64(s)` | `DateTime64(s)` |
+
+<Note>
+  결과에는 세션 시간대([session timezone](/ko/reference/settings/session-settings#session_timezone))가 사용됩니다(세션 시간대가 설정되지 않은 경우 서버 기본 시간대 사용). [`date_time_overflow_behavior`](/ko/reference/settings/formats#date_time_overflow_behavior) 설정은 결과가 표현 가능한 범위를 벗어날 때의 동작을 제어합니다.
+</Note>
+
+예시:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
+<div id="logical-and-operator">
+  ## 논리 AND 연산자
+</div>
+
+구문 `SELECT a AND b` — 함수 [and](/ko/reference/functions/regular-functions/logical-functions#and)로 `a`와 `b`의 논리곱을 계산합니다.
+
+<div id="logical-or-operator">
+  ## 논리 OR 연산자
+</div>
+
+구문 `SELECT a OR b` — [or](/ko/reference/functions/regular-functions/logical-functions#or) 함수를 사용해 `a`와 `b`의 논리합을 계산합니다.
+
+<div id="logical-negation-operator">
+  ## 논리 부정 연산자
+</div>
+
+구문 `SELECT NOT a` — 함수 [not](/ko/reference/functions/regular-functions/logical-functions#not)를 사용해 `a`의 논리 부정을 계산합니다.
+
+<div id="conditional-operator">
+  ## 조건 연산자
+</div>
+
+`a ? b : c` – `if(a, b, c)` 함수입니다.
+
+참고:
+
+조건 연산자는 먼저 b와 c의 값을 계산한 다음, 조건 a가 참인지 확인하고 그에 해당하는 값을 반환합니다. `b` 또는 `C`가 [arrayJoin()](/ko/reference/functions/regular-functions/array-join) 함수인 경우, &quot;a&quot; 조건과 관계없이 각 행이 복제됩니다.
+
+<div id="conditional-expression">
+  ## 조건부 표현식
+</div>
+
+```sql
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    [ELSE c]
+END
+```
+
+`x`가 지정되면 `transform(x, [a, ...], [b, ...], c)` 함수를 사용합니다. 그렇지 않으면 `multiIf(a, b, ..., c)`를 사용합니다.
+
+표현식에 `ELSE c` 절이 없으면 기본값은 `NULL`입니다.
+
+`transform` 함수는 `NULL`에서는 작동하지 않습니다.
+
+<div id="concatenation-operator">
+  ## 연결 연산자
+</div>
+
+`s1 || s2` – `concat(s1, s2)` 함수입니다.
+
+<div id="lambda-creation-operator">
+  ## 람다 생성 연산자
+</div>
+
+`x -> expr` – `lambda(x, expr) 함수.`
+
+다음 연산자는 괄호이므로 우선순위가 없습니다:
+
+<div id="array-creation-operator">
+  ## 배열 생성 연산자
+</div>
+
+`[x1, ...]` – `array(x1, ...)` 함수.
+
+<div id="tuple-creation-operator">
+  ## 튜플 생성 연산자
+</div>
+
+`(x1, x2, ...)` – `tuple(x2, x2, ...)` 함수입니다.
+
+<div id="associativity">
+  ## 결합 방향
+</div>
+
+모든 이항 연산자는 좌결합입니다. 예를 들어 `1 + 2 + 3`은 `plus(plus(1, 2), 3)`으로 변환됩니다.
+하지만 때로는 이것이 예상대로 동작하지 않을 수 있습니다. 예를 들어 `SELECT 4 > 2 > 3`의 결과는 0입니다.
+
+효율성을 위해 `and` 및 `or` 함수는 인수를 개수 제한 없이 받을 수 있습니다. 이에 해당하는 `AND` 및 `OR` 연산자 체인은 이 함수를 한 번 호출하는 형태로 변환됩니다.
+
+<div id="checking-for-null">
+  ## `NULL` 검사하기
+</div>
+
+ClickHouse는 `IS NULL` 및 `IS NOT NULL` 연산자를 지원합니다.
+
+<div id="is_null">
+  ### IS NULL
+</div>
+
+* [널 허용](/ko/reference/data-types/nullable) 타입 값에서 `IS NULL` 연산자는 다음을 반환합니다.
+  * 값이 `NULL`이면 `1`
+  * 그렇지 않으면 `0`
+* 그 밖의 값에서는 `IS NULL` 연산자가 항상 `0`을 반환합니다.
+
+[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 이 동작을 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. `SELECT n IS NULL FROM table` 쿼리는 `SELECT n.null FROM TABLE`로 변환됩니다.
+
+{/* */}
+
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+
+```text
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+```
+
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
+
+* [널 허용](/ko/reference/data-types/nullable) 타입의 값에 대해 `IS NOT NULL` 연산자는 다음 값을 반환합니다.
+  * 값이 `NULL`이면 `0`
+  * 그렇지 않으면 `1`
+* 그 밖의 값에 대해서는 `IS NOT NULL` 연산자가 항상 `1`을 반환합니다.
+
+{/* */}
+
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+
+```text
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+[optimize&#95;functions&#95;to&#95;subcolumns](/ko/reference/settings/session-settings#optimize_functions_to_subcolumns) 설정을 활성화하면 이를 최적화할 수 있습니다. `optimize_functions_to_subcolumns = 1`이면 함수는 전체 컬럼 데이터를 읽고 처리하는 대신 [null](/ko/reference/data-types/nullable#finding-null) 서브컬럼만 읽습니다. 쿼리 `SELECT n IS NOT NULL FROM table`는 `SELECT NOT n.null FROM TABLE`로 변환됩니다.
+
+<div id="checking-boolean-values">
+  ## 불리언 값 확인
+</div>
+
+ClickHouse는 `IS TRUE`, `IS FALSE`, `IS UNKNOWN`, `IS NOT TRUE`, `IS NOT FALSE`, `IS NOT UNKNOWN` 연산자를 지원합니다.
+이 연산자들은 [Bool](/ko/reference/data-types/boolean) 및 `Nullable(Bool)` 표현식과 함께 사용됩니다.
+
+* `expr IS TRUE`는 `expr`가 `true`인 경우에만 `1`을 반환합니다.
+* `expr IS FALSE`는 `expr`가 `false`인 경우에만 `1`을 반환합니다.
+* `expr IS UNKNOWN`는 `expr`가 `NULL`인 경우에만 `1`을 반환합니다.
+* `expr IS NOT TRUE`는 `expr`가 `false` 또는 `NULL`인 경우 `1`을 반환합니다.
+* `expr IS NOT FALSE`는 `expr`가 `true` 또는 `NULL`인 경우 `1`을 반환합니다.
+* `expr IS NOT UNKNOWN`는 `expr`가 `NULL`이 아닌 경우 `1`을 반환합니다.
+
+불리언 표현식에서 `IS UNKNOWN`은 `IS NULL`과 동일하며, `IS NOT UNKNOWN`은 `IS NOT NULL`과 동일합니다.
+
+{/* */}
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

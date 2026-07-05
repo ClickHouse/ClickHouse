@@ -1,0 +1,128 @@
+---
+description: 'يحتفظ محرك الجدول File بالبيانات في ملف بأحد
+  تنسيقات الملفات المدعومة (`TabSeparated`, `Native`، إلخ).'
+sidebarTitle: 'File'
+slug: /engines/table-engines/special/file
+title: 'محرك الجدول File'
+doc_type: 'reference'
+---
+
+يحتفظ محرك الجدول File بالبيانات في ملف بأحد [تنسيقات الملفات](/ar/reference/formats/index#formats-overview) المدعومة (`TabSeparated`, `Native`، إلخ).
+
+سيناريوهات الاستخدام:
+
+* تصدير البيانات من ClickHouse إلى ملف.
+* تحويل البيانات من تنسيق إلى آخر.
+* تحديث البيانات في ClickHouse من خلال تحرير ملف على قرص.
+
+<Note>
+  هذا المحرك غير متاح حاليًا في ClickHouse Cloud، يُرجى [استخدام دالة الجدول S3 بدلًا من ذلك](/ar/reference/functions/table-functions/s3).
+</Note>
+
+<div id="usage-in-clickhouse-server">
+  ## الاستخدام في خادم ClickHouse
+</div>
+
+```sql
+File(Format)
+```
+
+تحدِّد المعلمة `Format` أحد تنسيقات الملفات المتاحة. ولتنفيذ استعلامات
+`SELECT`، يجب أن يكون التنسيق مدعومًا للإدخال، أما لتنفيذ
+استعلامات `INSERT`، فيجب أن يكون مدعومًا للإخراج. تُسرد التنسيقات المتاحة في قسم
+[التنسيقات](/ar/reference/formats/index#formats-overview).
+
+لا يسمح ClickHouse بتحديد مسار filesystem للمحرّك `File`. وسيستخدم المجلد المحدَّد بواسطة إعداد [path](/ar/reference/settings/server-settings/settings) في تهيئة الخادم.
+
+عند إنشاء جدول باستخدام `File(Format)`، يُنشأ مجلد فرعي فارغ داخل ذلك المجلد. وعند كتابة البيانات إلى ذلك الجدول، تُحفظ في الملف `data.Format` داخل ذلك المجلد الفرعي.
+
+يمكنك إنشاء هذا المجلد الفرعي والملف يدويًا في filesystem الخاص بالخادم، ثم تنفيذ [ATTACH](/ar/reference/statements/attach) لهما وربطهما بمعلومات الجدول المطابقة للاسم، بحيث يمكنك الاستعلام عن البيانات من ذلك الملف.
+
+<Note>
+  توخَّ الحذر عند استخدام هذه الوظيفة، لأن ClickHouse لا يتتبّع التغييرات الخارجية التي تطرأ على مثل هذه الملفات. ونتيجة الكتابة المتزامنة عبر ClickHouse ومن خارجه غير معرّفة.
+</Note>
+
+<div id="example">
+  ## مثال
+</div>
+
+**1.** أنشئ الجدول `file_engine_table`:
+
+```sql
+CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
+```
+
+افتراضيًا، سينشئ ClickHouse المجلد `/var/lib/clickhouse/data/default/file_engine_table`.
+
+**2.** أنشئ يدويًا الملف `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` بحيث يتضمن:
+
+```bash
+$ cat data.TabSeparated
+one 1
+two 2
+```
+
+**3.** نفِّذ استعلامًا على البيانات:
+
+```sql
+SELECT * FROM file_engine_table
+```
+
+```text
+┌─name─┬─value─┐
+│ one  │     1 │
+│ two  │     2 │
+└──────┴───────┘
+```
+
+<div id="usage-in-clickhouse-local">
+  ## الاستخدام في ClickHouse-local
+</div>
+
+في [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، يقبل محرك File مسار الملف بالإضافة إلى `Format`. ويمكن تحديد تدفقات الإدخال/الإخراج الافتراضية باستخدام أسماء رقمية أو أسماء مقروءة بشريًا مثل `0` أو `stdin`، و`1` أو `stdout`. كما يمكن قراءة الملفات المضغوطة وكتابتها استنادًا إلى مَعلَمة إضافية للمحرك أو امتداد الملف (`gz` أو `br` أو `xz`).
+
+**مثال:**
+
+```bash
+$ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
+```
+
+<div id="details-of-implementation">
+  ## تفاصيل التنفيذ
+</div>
+
+* يمكن تنفيذ عدة استعلامات `SELECT` بالتزامن، لكن استعلامات `INSERT` تنتظر بعضها بعضًا.
+* يدعم إنشاء ملف جديد باستخدام استعلام `INSERT`.
+* إذا كان الملف موجودًا، فإن `INSERT` يُلحِق به قيماً جديدة.
+* غير مدعوم:
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * الفهارس
+  * النسخ المتماثل
+
+<div id="partition-by">
+  ## PARTITION BY
+</div>
+
+`PARTITION BY` — اختياري. يمكن إنشاء ملفات منفصلة عبر تقسيم البيانات باستخدام مفتاح تقسيم. في معظم الحالات، لن تحتاج إلى مفتاح تقسيم، وحتى عند الحاجة إليه، فغالباً لا تحتاج إلى مفتاح تقسيم أدق من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على خلاف تعبير `ORDER BY`). ويجب ألا تستخدم أبداً تقسيمًا شديد الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (وعوضاً عن ذلك، اجعل معرّف العميل أو اسمه هو العمود الأول في تعبير `ORDER BY`).
+
+للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+* [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ar/reference/settings/session-settings#engine_file_empty_if_not_exists) - يتيح قراءة بيانات فارغة من ملف غير موجود. يكون معطّلًا افتراضيًا.
+* [engine&#95;file&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings#engine_file_truncate_on_insert) - يتيح اقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.
+* [engine&#95;file&#95;allow&#95;create&#95;multiple&#95;files](/ar/reference/settings/session-settings#engine_file_allow_create_multiple_files) - يتيح إنشاء ملف جديد عند كل عملية إدراج إذا كان للتنسيق لاحقة. يكون معطّلًا افتراضيًا.
+* [engine&#95;file&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#engine_file_skip_empty_files) - يتيح تخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+* [storage&#95;file&#95;read&#95;method](/ar/reference/settings/session-settings#engine_file_empty_if_not_exists) - طريقة قراءة البيانات من ملف التخزين، وتكون إحدى القيم التالية: `read`، `pread`، `mmap`. لا تنطبق طريقة mmap على clickhouse-server (فهي مخصّصة لـ clickhouse-local). القيمة الافتراضية: `pread` لـ clickhouse-server، و`mmap` لـ clickhouse-local.

@@ -367,6 +367,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -1337,6 +1338,8 @@ try
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
+
+    ProfileEvents::setUserPerCPUEnabled(server_settings[ServerSetting::user_profile_events_per_cpu]);
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.

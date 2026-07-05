@@ -398,9 +398,8 @@ void applyPatchesToBlockRaw(
 
             if (canApplyPatchInplace(*result_column.column))
             {
-                /// `assumeMutableRef` `chassert(use_count() == 1)` would fire when the column
-                /// is shared (e.g., the same `ColumnPtr` is held by a substream cache).
-                /// `IColumn::mutate` clones when shared, so the in-place update is safe.
+                /// COW-safe in-place update: clone when the column is shared instead of mutating
+                /// a column still referenced by another owner via `assumeMutableRef`.
                 auto mutable_column = IColumn::mutate(std::move(result_column.column));
                 mutable_column->updateInplaceFrom(patch);
                 result_column.column = std::move(mutable_column);
@@ -437,9 +436,8 @@ void applyPatchesToBlockCombined(
 
         if (canApplyPatchInplace(*result_column.column))
         {
-            /// `assumeMutableRef` `chassert(use_count() == 1)` would fire when the column
-            /// is shared (e.g., the same `ColumnPtr` is held by a substream cache).
-            /// `IColumn::mutate` clones when shared, so the in-place update is safe.
+            /// COW-safe in-place update: clone when the column is shared instead of mutating
+            /// a column still referenced by another owner via `assumeMutableRef`.
             auto mutable_column = IColumn::mutate(std::move(result_column.column));
             mutable_column->updateInplaceFrom(multi_patch);
             result_column.column = std::move(mutable_column);
