@@ -313,12 +313,15 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
             return dest, new, "create"
 
     if gen["method"] == "content-drift":
-        # Existing page for a source-documented item. The provenance badge
-        # marks ownership: a badged page is generated and the embedded
-        # documentation wins; an unbadged page whose body already equals the
-        # embedded documentation is adopted (gains the badge, nothing else
-        # changes); an unbadged page that diverged is never overwritten and
-        # is reported as CONTENT-DRIFT until docs and source are reconciled.
+        # Existing page for a source-documented item. `docs/en` is the
+        # pre-cutover source of truth: when the embedded documentation is
+        # verified in sync with it (`synced`), the reference page is fully
+        # replaced by the generated version; when the embedded copy lags
+        # `docs/en`, the page is left alone and the item is reported as
+        # SOURCE-STALE. Without a `docs/en` counterpart to verify against,
+        # the provenance badge marks ownership: badged pages are generated
+        # (the source wins), unbadged identical pages are adopted, and
+        # unbadged diverged pages are reported as CONTENT-DRIFT.
         with open(dest, encoding="utf-8") as f:
             page = f.read()
         fm = FRONTMATTER_RE.match(page)
@@ -327,6 +330,11 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
         # Always render a fresh badge; the badge-date reconciliation keeps
         # the committed date when the content is otherwise unchanged.
         new = prefix + catalog.badge("system.documentation") + "\n\n" + body
+        synced = gen.get("synced")
+        if synced is True:
+            return dest, new, "update"
+        if synced is False:
+            return dest, new, "source-stale"
         if catalog.BADGE_RE.search(page) or prefix + body == page:
             return dest, new, "update"
         return dest, new, "content-drift"
@@ -412,7 +420,7 @@ def main(argv=None):
     if any(family_selected(f) for f in
            ("table-engines", "database-engines", "data-types", "formats")):
         all_generators += catalog_domains.build_generators(
-            docs_map, binary, docs_dir, migrate
+            docs_map, binary, docs_dir, migrate, lk
         )
     if any(family_selected(f) for f in ("skipping-indexes", "disk-types")):
         all_generators += generated_groups.build_generators(docs_map, docs_dir)
@@ -472,9 +480,34 @@ def main(argv=None):
             with open(dest, encoding="utf-8") as f:
                 new = catalog.reconcile_badge_date(f.read(), new)
 
+        if kind == "source-stale":
+            # The embedded documentation lags docs/en (the source of truth);
+            # the page is left alone until the C++ is updated, at which point
+            # it is replaced automatically on the next run.
+            if args.content_drift != "ignore":
+                print(f"SOURCE-STALE: {rel} (embedded docs lag"
+                      f" {gen.get('en_file', 'docs/en')})")
+                content_drift += 1
+                if args.reconcile_report:
+                    reconcile_entries.append({
+                        "generator": gen["name"],
+                        "page": rel,
+                        "en_file": gen.get("en_file", ""),
+                        "source": gen.get("source", ""),
+                        "diff": "\n".join(difflib.unified_diff(
+                            gen.get("en_body", "").strip().splitlines(),
+                            gen["content"].strip().splitlines(),
+                            fromfile=f"docs/{gen.get('en_file', '')}",
+                            tofile=f"embedded ({gen.get('source', '')})",
+                            lineterm="",
+                        )),
+                    })
+            continue
+
         if kind == "content-drift":
-            # Unbadged and diverged: the page wins; never written, only
-            # compared and reported (the reconcile report carries the diff).
+            # No docs/en counterpart to verify against, unbadged, and
+            # diverged: the page wins; never written, only compared and
+            # reported (the reconcile report carries the diff).
             if args.content_drift != "ignore":
                 print(f"CONTENT-DRIFT: {rel} differs from the embedded docs")
                 content_drift += 1

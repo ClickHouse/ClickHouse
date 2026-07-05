@@ -6,13 +6,15 @@ exposed by `system.documentation` (the unified source for all embedded docs;
 the per-domain tables are queried only for non-documentation metadata such as
 format input/output flags and data-type aliases).
 
-Policy (pre-cutover): existing pages are never overwritten -- differences
-between a page and the embedded documentation are reported as `CONTENT-DRIFT`
-(the embedded copy and the docs must be reconciled before flipping to
-source-wins). Items that are documented in the source (a full-page
-`description`) but have no page get one created, plus a navigation entry.
-Items with only a short summary and no page are counted as coverage gaps for
-upstream enrichment, not created.
+Policy (pre-cutover, `docs/en` is the source of truth): a matched item's
+embedded documentation is verified against its `docs/en` page. When they
+agree, the reference page is fully replaced by the generated version (it IS
+the migrated `docs/en` content); when the embedded copy lags `docs/en`, the
+item is reported as `SOURCE-STALE` with the diff to upstream into the C++,
+and the page is left alone. Items that are documented in the source (a
+full-page `description`) but have no page get one created, plus a navigation
+entry. Items with only a short summary and no page are counted as coverage
+gaps for upstream enrichment, not created.
 
 Also provides the listing-table generators that refresh the
 `| Page | Description |` tables on the index pages between their
@@ -94,9 +96,15 @@ def _description_fm(migrate, description):
     )
 
 
-def _item_generators(domain, rows, docs_dir, migrate):
-    """Common per-domain flow: match rows to existing pages (content-drift),
-    create pages for full-page items without one, count coverage gaps."""
+def _item_generators(domain, rows, docs_dir, migrate, lk):
+    """Common per-domain flow: match rows to existing pages, create pages for
+    full-page items without one, count coverage gaps.
+
+    `docs/en` is the pre-cutover source of truth: a matched item's embedded
+    documentation is compared against its `docs/en` page (via the slug map's
+    `docusaurus_file`). When they agree, the reference page is fully replaced
+    by the generated version; when the embedded copy lags `docs/en`, the item
+    is reported as `SOURCE-STALE` with the diff to upstream into the C++."""
     index = catalog.scan_pages(docs_dir, domain["dirs"],
                                exclude_dirs=domain.get("exclude_dirs", ()))
     gens = []
@@ -113,16 +121,33 @@ def _item_generators(domain, rows, docs_dir, migrate):
             with open(page_path, encoding="utf-8") as f:
                 fm = catalog.parse_frontmatter(f.read())
             slug = fm.get("slug") or "/" + page_rel[: -len(".mdx")]
-            gens.append({
+            slug_row = (lk.by_mintlify_file.get(page_rel)
+                        or lk.by_mintlify_file.get(page_rel[:-1]))
+            docu = (slug_row or {}).get("docusaurus_file", "")
+            gen = {
                 "name": f"{domain['family']}:{name}",
                 "method": "content-drift",
                 "content": row["description"],
-                "dest": f"docs{slug}.md",
+                # The Docusaurus source path anchors relative-link rewriting;
+                # the slug map's real file path (e.g. the formats family
+                # subdirectories) beats the slug-derived guess.
+                "dest": docu or f"docs{slug}.md",
                 "dest_rel": page_rel,
                 "title": fm.get("title"),
                 "full_transform": True,
                 "source": row.get("source", ""),
-            })
+            }
+            en_path = (os.path.join(docs_dir, "en", docu[len("docs/"):])
+                       if docu.startswith("docs/") else "")
+            if en_path and os.path.isfile(en_path):
+                with open(en_path, encoding="utf-8") as f:
+                    en_body = catalog.page_body(f.read())
+                gen["en_file"] = os.path.relpath(en_path, docs_dir)
+                gen["synced"] = (catalog.norm_ws(row["description"])
+                                 == catalog.norm_ws(en_body))
+                if not gen["synced"]:
+                    gen["en_body"] = en_body
+            gens.append(gen)
         elif len(row["description"]) > FULL_PAGE_MIN_LEN:
             page_rel, nav_group, fm_text, title = domain["new_item"](row)
             gens.append({
@@ -146,7 +171,7 @@ def _item_generators(domain, rows, docs_dir, migrate):
     return gens
 
 
-def build_generators(docs_map, binary, docs_dir, migrate):
+def build_generators(docs_map, binary, docs_dir, migrate, lk):
     def doc_rows(entity_type):
         # The documentation body with the machine-assembled tail peeled off;
         # for full-page items the body IS the page. The catalog domains never
@@ -194,6 +219,7 @@ def build_generators(docs_map, binary, docs_dir, migrate):
         doc_rows("Table Engine"),
         docs_dir,
         migrate,
+        lk,
     )
 
     # --- Database engines ---
@@ -220,6 +246,7 @@ def build_generators(docs_map, binary, docs_dir, migrate):
         doc_rows("Database Engine"),
         docs_dir,
         migrate,
+        lk,
     )
 
     # --- Data types ---
@@ -259,6 +286,7 @@ def build_generators(docs_map, binary, docs_dir, migrate):
         doc_rows("Data Type"),
         docs_dir,
         migrate,
+        lk,
     )
 
     # --- Formats ---
@@ -308,6 +336,7 @@ def build_generators(docs_map, binary, docs_dir, migrate):
         doc_rows("Format"),
         docs_dir,
         migrate,
+        lk,
     )
 
     return gens
