@@ -967,10 +967,10 @@ static WorkerAddress resolveWorkerAddress(
     return address;
 }
 
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 server_exchange_port)
+UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port)
 {
     for (const auto & stream : exchange_stream_sources.stream_hosts)
-        if (stream.second.port != server_exchange_port)
+        if (stream.second.port != destination_exchange_port)
             return 2;
     return 1;
 }
@@ -1577,7 +1577,6 @@ protected:
         task_description.settings_changes = context->getSettingsRef().changes();
 
         const String unique_temp_file_path = toString(unique_query_id);
-        const auto server_exchange_port = context->getConfigRef().getUInt("distributed_query.streaming_exchange_port", 0);
 
         for (const auto & task : stage.tasks)
         {
@@ -1592,7 +1591,11 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
-            task_description.serialization_version = chooseTaskSerializationVersion(task_description.exchange_stream_sources, server_exchange_port);
+            /// A version-1 consumer dials producers on its OWN exchange port, so the decision must
+            /// compare against the destination worker's port, not the initiator's.
+            const auto & destination_worker = task_to_host_map->getTaskHosts().at(task.task_id);
+            task_description.serialization_version = chooseTaskSerializationVersion(
+                task_description.exchange_stream_sources, destination_worker.streaming_exchange_port);
 
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.

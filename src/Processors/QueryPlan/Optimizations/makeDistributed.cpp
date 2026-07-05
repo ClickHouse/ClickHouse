@@ -7,6 +7,7 @@
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
@@ -192,6 +193,14 @@ void convertLogicalJoinsForLocalExecution(QueryPlan::Node & root, QueryPlan::Nod
 /// Throws if the Cascades optimizer cannot distribute this step correctly.
 static void checkStepSupportedByCascades(const IQueryPlanStep & step)
 {
+    /// These reads have no `clone` support, and the Cascades plan builder clones every step of
+    /// the winning plan; reject them up front instead of failing in the middle of optimization.
+    /// (`ReadFromStorageStep`, e.g. a `viewExplain` read, derives from `ReadFromPreparedSource`.)
+    if (dynamic_cast<const ReadFromPreparedSource *>(&step))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan with enable_cascades_optimizer does not support the '{}' step",
+            step.getName());
+
     /// A LOCAL JOIN must use only co-located data, but Cascades would implement it as a
     /// gathered, broadcast or shuffle join over non-co-located data (the rule-based planner
     /// refuses to distribute such joins too).

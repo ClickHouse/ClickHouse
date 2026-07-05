@@ -105,8 +105,10 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
+    extern const SettingsBool enable_cascades_optimizer;
     extern const SettingsBool enable_unaligned_array_join;
     extern const SettingsBool join_use_nulls;
+    extern const SettingsBool make_distributed_plan;
     extern const SettingsJoinAlgorithm join_algorithm;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_columns_to_read;
@@ -341,6 +343,11 @@ bool applyTrivialCountIfPossible(
 {
     const auto & settings = query_context->getSettingsRef();
     if (!settings[Setting::optimize_trivial_count_query])
+        return false;
+
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
         return false;
 
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();

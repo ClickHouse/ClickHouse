@@ -47,4 +47,15 @@ SELECT k, sum(x) FROM t_gating GROUP BY k ORDER BY k
 SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1,
     force_aggregation_in_order = 1, distributed_plan_execute_locally = 1; -- { serverError SUPPORT_IS_DISABLED }
 
+-- The trivial-count rewrite is disabled under Cascades (its `ReadFromPreparedSource` leaf
+-- cannot be cloned); the count runs as a distributed read instead.
+SELECT '-- 6. Trivial count works under Cascades';
+SELECT count() FROM t_gating
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1, distributed_plan_execute_locally = 1;
+
+-- Reads without clone support (e.g. the `viewExplain` table function) are rejected up front.
+SELECT '-- 7. A read without clone support is rejected (fail-close)';
+SELECT count() FROM (EXPLAIN PLAN SELECT 1)
+SETTINGS enable_cascades_optimizer = 1, make_distributed_plan = 1; -- { serverError SUPPORT_IS_DISABLED }
+
 DROP TABLE t_gating;

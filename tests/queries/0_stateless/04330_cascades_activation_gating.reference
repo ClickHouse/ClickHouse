@@ -16,3 +16,6 @@
 -- 4. LOCAL JOIN is rejected (fail-close)
 2000
 -- 5. force_aggregation_in_order is rejected (in-order aggregation is not serializable)
+-- 6. Trivial count works under Cascades
+1000
+-- 7. A read without clone support is rejected (fail-close)
