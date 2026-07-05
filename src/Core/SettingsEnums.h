@@ -474,6 +474,21 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+/// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
+enum class SkipUnavailableShardsMode : uint8_t
+{
+    /// Ignore only connection-related errors.
+    UNAVAILABLE = 0,
+    /// Additionally ignore errors caused by a missing table or database on the shard
+    /// (the historical behavior of `skip_unavailable_shards`, and the default).
+    UNAVAILABLE_OR_TABLE_MISSING,
+    /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
+    /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
+    /// emitting a block, so its partial work can still be silently discarded. This is the most permissive mode.
+    UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,
+};
+
+DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
@@ -593,6 +608,13 @@ enum class S3UriStyle : uint8_t
 };
 
 DECLARE_SETTING_ENUM(S3UriStyle)
+
+enum class ExplainQueryPlanDefault : uint8_t
+{
+    LEGACY,
+    PRETTY,
+};
+DECLARE_SETTING_ENUM(ExplainQueryPlanDefault)
 
 enum class FileLikeEngineDefaultPartitionStrategy : uint8_t
 {

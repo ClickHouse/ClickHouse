@@ -3,6 +3,7 @@
 #if USE_AWS_S3
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <Common/Throttler.h>
 #include <Common/threadPoolCallbackRunner.h>
 #include <Interpreters/Context.h>
 #include <IO/SharedThreadPools.h>
@@ -214,6 +215,46 @@ private:
     {
         return fs::path{s3_uri.key} / file_name;
     }
+
+    /// Serializes the S3 request settings effectively used by the backup. The HTTP-client-level values
+    /// that makeS3Client overrides (retries, redirects, timeout, slow-thread/logging behavior) are
+    /// replaced with the authoritative values from the client configuration; the throttle fields with the
+    /// resolved client throttlers (S3RequestSettings::finishInit derives bursts from rps); and the seek
+    /// threshold with the read setting (remote_read_min_bytes_for_seek) actually used by ReadBufferFromS3.
+    std::map<String, String> serializeBackupS3RequestSettings(
+        const S3::S3RequestSettings & request_settings, const S3::PocoHTTPClientConfiguration & client_config,
+        const ReadSettings & read_settings)
+    {
+        auto res = request_settings.getSettingsRepresentation();
+
+        res["retry_attempts"] = std::to_string(client_config.retry_strategy.max_retries);
+        res["retry_initial_delay_ms"] = std::to_string(client_config.retry_strategy.initial_delay_ms);
+        res["retry_max_delay_ms"] = std::to_string(client_config.retry_strategy.max_delay_ms);
+        res["max_redirects"] = std::to_string(client_config.s3_max_redirects);
+        res["request_timeout_ms"] = std::to_string(client_config.requestTimeoutMs);
+        res["slow_all_threads_after_network_error"] = client_config.s3_slow_all_threads_after_network_error ? "1" : "0";
+        res["slow_all_threads_after_retryable_error"] = client_config.s3_slow_all_threads_after_retryable_error ? "1" : "0";
+        res["enable_request_logging"] = client_config.enable_s3_requests_logging ? "1" : "0";
+        res["min_bytes_for_seek"] = std::to_string(read_settings.remote_fs_settings.min_bytes_for_seek);
+
+        const auto & get_throttler = client_config.request_throttler.get_throttler;
+        const auto & put_throttler = client_config.request_throttler.put_throttler;
+        res["max_get_rps"] = std::to_string(get_throttler ? get_throttler->getMaxSpeed() : 0UL);
+        res["max_get_burst"] = std::to_string(get_throttler ? get_throttler->getMaxBurst() : 0UL);
+        res["max_put_rps"] = std::to_string(put_throttler ? put_throttler->getMaxSpeed() : 0UL);
+        res["max_put_burst"] = std::to_string(put_throttler ? put_throttler->getMaxBurst() : 0UL);
+
+        /// Drop request settings that backup S3 IO never consumes, so the map reflects only what the
+        /// backup engine actually uses:
+        ///  - objects_chunk_size_to_delete: `removeFiles` always deletes in chunks of 1000 (the S3
+        ///    DeleteObjects API limit), ignoring this setting;
+        ///  - list_object_keys_size: `fileExists`/`getFileSize` use HeadObject, backup never lists keys;
+        ///  - read_only, throw_on_zero_files_match: disk/storage configuration not used by backup IO.
+        for (const auto * key : {"objects_chunk_size_to_delete", "list_object_keys_size", "read_only", "throw_on_zero_files_match"})
+            res.erase(key);
+
+        return res;
+    }
 }
 
 
@@ -276,6 +317,11 @@ BackupReaderS3::BackupReaderS3(
 }
 
 BackupReaderS3::~BackupReaderS3() = default;
+
+std::map<String, String> BackupReaderS3::getSerializedSettings() const
+{
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
+}
 
 bool BackupReaderS3::fileExists(const String & file_name)
 {
@@ -456,6 +502,11 @@ void BackupWriterS3::copyDataToFile(const String & path_in_backup, const CreateR
 }
 
 BackupWriterS3::~BackupWriterS3() = default;
+
+std::map<String, String> BackupWriterS3::getSerializedSettings() const
+{
+    return serializeBackupS3RequestSettings(s3_settings.request_settings, client->getClientConfiguration(), read_settings);
+}
 
 bool BackupWriterS3::fileExists(const String & file_name)
 {
