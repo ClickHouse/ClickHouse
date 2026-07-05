@@ -79,6 +79,17 @@ ColumnPtr tupleOf(ColumnPtr element)
     return ColumnTuple::create(Columns{std::move(element)});
 }
 
+/// A non-null `Nullable(Tuple(UInt16))` wrapping a single-element tuple built from `element`.
+/// `Tuple` (unlike `Sparse`) can be inside `Nullable`, and a tuple can carry sparse/replicated
+/// children, so `Nullable(Tuple(Sparse))` / `Nullable(Tuple(Replicated))` are constructible sort
+/// keys whose sparse/replicated column sits two wrappers deep.
+ColumnPtr nullableTupleOf(ColumnPtr element, size_t n)
+{
+    auto null_map = ColumnUInt8::create();
+    null_map->getData().assign(n, static_cast<UInt8>(0));
+    return ColumnNullable::create(tupleOf(std::move(element)), std::move(null_map));
+}
+
 /// A dense `Nullable(UInt16)` where every row holds a non-null `value`.
 ColumnPtr nullableUInt16(UInt16 value, size_t n)
 {
@@ -240,4 +251,35 @@ TEST(FinishSortingTransform, NullableCannotWrapSparse)
     auto null_map = ColumnUInt8::create();
     null_map->getData().assign(n, static_cast<UInt8>(0));
     EXPECT_ANY_THROW(ColumnNullable::create(sparseUInt16(0, n)->assumeMutable(), std::move(null_map)));
+}
+
+/// `ColumnNullable` can hide a `ColumnTuple` that carries a sparse/replicated child (raised in
+/// review): `Tuple` can be inside `Nullable`, and a tuple keeps sparse/replicated children, so
+/// `Nullable(Tuple(Sparse(UInt16)))` is a constructible sort key. `ColumnNullable::compareAt`
+/// delegates to the nested tuple, which delegates to its child, reaching
+/// `ColumnVector::compareAt(..., ColumnSparse)` -- the same bad cast two wrappers deep. The generic
+/// subcolumn walk materializes children at every level, so this case must not bad-cast.
+TEST(FinishSortingTransform, NullableTupleSparseChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeNullable>(
+        std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    /// Stored chunk: dense `Nullable(Tuple(UInt16))`. Next chunk: same key with a sparse tuple child.
+    /// Before the fix this aborts with `Bad cast ... ColumnSparse to ColumnVector<unsigned short>`.
+    EXPECT_NO_THROW(runFinishSorting(
+        key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(sparseUInt16(0, n), n), n));
+}
+
+/// The replicated sibling of the case above: `Nullable(Tuple(Replicated(UInt16)))`. Peeling only the
+/// top-level wrapper leaves the replicated column reachable through the nullable+tuple delegation.
+/// The generic walk expands the replicated child, so `less()` compares dense columns.
+TEST(FinishSortingTransform, NullableTupleReplicatedChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeNullable>(
+        std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()}));
+    /// Stored chunk: dense `Nullable(Tuple(UInt16))`. Next chunk: same key with a replicated tuple child.
+    /// Before the fix this aborts with `Bad cast ... ColumnReplicated to ColumnVector<unsigned short>`.
+    EXPECT_NO_THROW(runFinishSorting(
+        key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(replicatedUInt16(0, n), n), n));
 }
