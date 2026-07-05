@@ -480,10 +480,19 @@ public:
         std::vector<bool> is_const_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::vector<bool> is_nullable_flags(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
         std::vector<uint32_t> row_counts(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS
+        std::vector<ColumnPtr> casted_columns(num_cols); // STYLE_CHECK_ALLOW_STD_CONTAINERS -- keeps casted columns alive through writeColData below
 
         for (uint32_t ci = 0; ci < num_cols; ++ci)
         {
-            const IColumn * col = cols[ci].column.get();
+            // Cast to the declared argument type: getReturnTypeImpl accepts numeric
+            // coercions (i32->i64, int->float, ...), but the wire only encodes a coarse
+            // width class (COL_FIXED8/16/32/64), not the declared width/signedness. Without
+            // this cast, a declared UInt64 argument passed as an actual UInt8 would still
+            // serialize as 1 byte, and the guest's get_u64-style reader would read past it.
+            casted_columns[ci] = cols[ci].type->equals(*arguments[ci])
+                ? cols[ci].column
+                : castColumn(cols[ci], arguments[ci]);
+            const IColumn * col = casted_columns[ci].get();
             bool is_const = false;
 
             if (const auto * cc = typeid_cast<const ColumnConst *>(col))
