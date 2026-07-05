@@ -1463,6 +1463,9 @@ Write Date values as plain 16-bit numbers (read back as UInt16), instead of conv
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
 Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
 )", 0) \
+    DECLARE(UInt64, output_format_arrow_row_group_size, 1000000, R"(
+Maximum number of rows per record batch for Arrow and ArrowStream output formats. It may split larger incoming blocks into multiple Arrow record batches, but it does not combine smaller incoming blocks into larger record batches.
+)", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
 Use ORC String type instead of Binary for String columns
