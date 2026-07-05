@@ -4397,9 +4397,20 @@ function resetCredentialsStatus() {
 /// Track whether the current press landed inside `#inputs` so the commit below can tell the two apart.
 /// It is scoped to an active press (reset on release/cancel), so a later keyboard move to nothing —
 /// which has no active press — is unaffected and still commits.
+///
+/// Suppressing that internal-click blur is not enough by itself: the field has already lost focus, so
+/// when the user later leaves the block (e.g. clicks the query editor or the `Run` button) no second
+/// `focusout` fires and the commit would never run, leaving the fields neutral forever. So when such a
+/// blur is suppressed while the block was edited, remember it in `commit_deferred` and commit on the
+/// first later press outside `#inputs`. A credential field regaining focus (`focusin` inside the block)
+/// means editing resumed and the normal `focusout` will commit, so the deferred flag is dropped then.
 let pointer_down_inside_inputs = false;
+let commit_deferred = false;
 document.addEventListener('pointerdown', (event) => {
     pointer_down_inside_inputs = document.getElementById('inputs').contains(event.target);
+    /// A press outside the block after a suppressed internal-click blur: the user has finished editing
+    /// the connection, but the field lost focus earlier so no `focusout` is coming — commit now.
+    if (!pointer_down_inside_inputs && commit_deferred) { commitConnection(); }
 });
 document.addEventListener('pointerup', () => { pointer_down_inside_inputs = false; });
 document.addEventListener('pointercancel', () => { pointer_down_inside_inputs = false; });
@@ -4409,19 +4420,32 @@ function onCredentialInput() {
     ++connection_generation;
     resetCredentialsStatus();
 }
+/// Re-check the credentials against the server using the final, complete connection tuple.
+function commitConnection() {
+    connection_edited = false;
+    commit_deferred = false;
+    checkURL(true);
+}
 function onConnectionFocusOut(event) {
     /// Focus moved to another field in the block — still editing, not a commit.
     if (document.getElementById('inputs').contains(event.relatedTarget)) { return; }
     /// Blur with no new focus target caused by a pointer press inside the block (e.g. the status dot):
-    /// the interaction stayed in `#inputs`, so this is not a commit.
-    if (event.relatedTarget === null && pointer_down_inside_inputs) { return; }
+    /// the interaction stayed in `#inputs`, so this is not a commit. But the field has now lost focus,
+    /// so leaving the block later raises no second `focusout`; defer the commit to the next press
+    /// outside `#inputs` instead (see the `pointerdown` handler above).
+    if (event.relatedTarget === null && pointer_down_inside_inputs) {
+        if (connection_edited) { commit_deferred = true; }
+        return;
+    }
     if (!connection_edited) { return; }
-    connection_edited = false;
-    checkURL(true);
+    commitConnection();
 }
 user_elem.addEventListener('input', onCredentialInput);
 password_elem.addEventListener('input', onCredentialInput);
 document.getElementById('inputs').addEventListener('focusout', onConnectionFocusOut);
+/// A credential field regaining focus means editing resumed; the normal `focusout` will commit, so drop
+/// any deferred commit left over from an earlier suppressed internal-click blur.
+document.getElementById('inputs').addEventListener('focusin', () => { commit_deferred = false; });
 
 /// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
 /// previous URL must not paint the fields. `checkURL` (registered on `url` `input` earlier) clears
