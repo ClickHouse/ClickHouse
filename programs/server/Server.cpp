@@ -855,8 +855,13 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
         server.context()->addOrUpdateWarningMessage(
             Context::WarningType::LINUX_RSEQ_UNAVAILABLE,
             PreformattedMessage::create(
-                "rseq is not registered by libc (it requires glibc 2.35+ and the glibc.pthread.rseq tunable enabled), "
-                "so sched_getcpu uses a slower fallback and per-CPU profile counters are more expensive."));
+                "The Linux 'restartable sequences' (rseq) feature is not enabled for this process. "
+                "ClickHouse uses it to cheaply detect which CPU core a thread is running on, which keeps "
+                "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
+                "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
+                "making these counters more expensive and slightly degrading performance. "
+                "rseq is normally enabled automatically since glibc 2.35; if it is off, "
+                "check that the 'glibc.pthread.rseq' tunable is enabled."));
 
     try
     {
