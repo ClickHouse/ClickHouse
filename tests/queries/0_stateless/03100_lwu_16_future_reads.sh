@@ -18,12 +18,14 @@ if [[ "$storage_policy" == "s3_with_keeper" ]]; then
     failpoint_name="smt_lightweight_update_sleep_after_block_allocation"
 fi
 
-# Disable the process-global ONCE failpoint and reap the background client on any exit
-# path, so a wait_for_block_allocated timeout can't leave the failpoint armed for a later test.
+# Disable the process-global ONCE failpoint, reap the background client and drop the
+# replicated table on any exit path, so a wait_for_block_allocated timeout can't leave the
+# failpoint armed or an orphaned zookeeper path behind for a later test.
 function cleanup()
 {
     $CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT $failpoint_name" 2>/dev/null || true
     wait || true
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_lwu_block_number SYNC" 2>/dev/null || true
 }
 trap cleanup EXIT
 
