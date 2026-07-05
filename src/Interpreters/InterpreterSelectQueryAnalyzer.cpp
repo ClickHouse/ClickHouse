@@ -64,6 +64,7 @@ extern const SettingsBool parallel_replicas_filter_pushdown;
 extern const SettingsBool serialize_query_plan;
 extern const SettingsBool force_index_by_date;
 extern const SettingsBool force_primary_key;
+extern const SettingsMap additional_table_filters;
 extern const SettingsString cluster_for_parallel_replicas;
 }
 
@@ -178,7 +179,11 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
         /// is lost there and the guard still throws on the follower. Ship the AST so the filter arrives. This is
         /// a transport choice (serialize_query_plan is off by default) so we override it even when it was set,
         /// but only while the pushdown is active, i.e. only when a guard is set and parallel replicas is used.
-        if (result_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        /// Do not override it when additional_table_filters is set: that combination is only supported with
+        /// serialize_query_plan = 1 (Planner.cpp throws SUPPORT_IS_DISABLED / disables parallel replicas
+        /// otherwise), and it does not need the AST-shipped pushdown, so leave serialize_query_plan as is.
+        if (result_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown]
+            && result_context->getSettingsRef()[Setting::additional_table_filters].value.empty())
             result_context->setSetting("serialize_query_plan", false);
     }
 

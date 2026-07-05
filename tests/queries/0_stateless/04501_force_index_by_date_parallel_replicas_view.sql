@@ -104,6 +104,26 @@ SELECT count() FROM v_force_index_pr
 WHERE value = 1
 SETTINGS serialize_query_plan = 1, force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
+-- The fix ships the query AST (serialize_query_plan = 0) so the pushed filter reaches followers, but only
+-- when additional_table_filters is empty. additional_table_filters with parallel replicas is supported only
+-- with serialize_query_plan = 1 (the analyzer throws SUPPORT_IS_DISABLED or disables parallel replicas
+-- otherwise), so the override must not fire for it. These read a plain table (no view) with a primary-key
+-- additional filter and a guard set, which must keep working under serialize_query_plan = 1 (they used to
+-- throw SUPPORT_IS_DISABLED when the guard forced serialize_query_plan = 0). parallel_replicas_local_plan = 1
+-- pins the initiator-local plan so the additional filter is applied deterministically (follower-side
+-- additional_table_filters delivery is not guaranteed and is not what this case checks).
+SELECT count() FROM t_force_index_pr
+SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
+    serialize_query_plan = 1, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, force_primary_key = 1;
+
+SELECT count() FROM t_force_index_pr
+SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
+    serialize_query_plan = 1, enable_parallel_replicas = 1, parallel_replicas_local_plan = 1, force_primary_key = 1;
+
+SELECT count() FROM t_force_index_pr
+SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
+    serialize_query_plan = 1, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, force_index_by_date = 1;
+
 DROP VIEW va_force_index_pr;
 DROP VIEW vv_force_index_pr;
 DROP VIEW v_force_index_pr;
