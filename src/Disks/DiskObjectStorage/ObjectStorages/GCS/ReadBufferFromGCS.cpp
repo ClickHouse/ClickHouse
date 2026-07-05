@@ -56,7 +56,7 @@ void ReadBufferFromGCS::initialize()
     /// GCS ReadRange is right-open [begin, end), which matches read_until_position (exclusive).
     if (read_until_position)
     {
-        if (static_cast<off_t>(read_until_position) < offset)
+        if (read_until_position < offset)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Attempt to read beyond the right offset ({} > {})", offset, read_until_position - 1);
 

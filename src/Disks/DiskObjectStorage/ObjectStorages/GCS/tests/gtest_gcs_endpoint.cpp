@@ -67,7 +67,9 @@ TEST(GCSEndpoint, EmulatorEndpointKeptAsOverride)
 
 TEST(GCSEndpoint, RejectsUnknownScheme)
 {
-    String b, k, e;
+    String b;
+    String k;
+    String e;
     EXPECT_THROW(parseGCSEndpoint("ftp://my-bucket/x", b, k, e), Exception);
 }
 

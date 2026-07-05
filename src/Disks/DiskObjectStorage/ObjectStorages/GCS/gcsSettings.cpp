@@ -2,9 +2,6 @@
 
 #if USE_GOOGLE_CLOUD
 
-#include <fstream>
-#include <sstream>
-
 #include <google/cloud/credentials.h>
 #include <google/cloud/options.h>
 #include <google/cloud/storage/options.h>
@@ -17,6 +14,8 @@
 #include <Core/ServerSettings.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 
 namespace gcs = ::google::cloud::storage;
@@ -28,7 +27,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 static constexpr auto DEFAULT_GCS_HOST = "storage.googleapis.com";
@@ -50,7 +48,7 @@ void parseGCSEndpoint(const String & endpoint, String & bucket, String & key_pre
     }
     else if (scheme == "http" || scheme == "https")
     {
-        const auto host = uri.getHost();
+        const auto & host = uri.getHost();
         String path = uri.getPath();
 
         static const String default_suffix = String(".") + DEFAULT_GCS_HOST;
@@ -145,12 +143,10 @@ void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const Conte
 
 static String readFileToString(const String & path)
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file)
-        throw Exception(ErrorCodes::CANNOT_OPEN_FILE, "Cannot open GCS service-account key file '{}'", path);
-    std::ostringstream contents;
-    contents << file.rdbuf();
-    return contents.str();
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
 }
 
 std::unique_ptr<gcs::Client> getGCSClient(const GCSObjectStorageSettings & settings)
