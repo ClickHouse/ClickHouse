@@ -120,8 +120,9 @@ static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 // Recursively check that `type` can round-trip through the COLUMNAR_V1 wire format,
 // throwing INCORRECT_DATA immediately with the exact reason otherwise. Without this,
 // callers only discover an unsupported signature (nested Nullable/Variant inside
-// Array/Tuple, Map, LowCardinality, or a fixed-width type wider than 8 bytes such as
-// UUID/IPv6/Int128/UInt128/Decimal128/256) when the first block is actually serialized.
+// Array/Tuple, Map, LowCardinality, or a fixed-width type whose size isn't exactly
+// 1/2/4/8 bytes such as UUID/IPv6/Int128/UInt128/Decimal128/256/FixedString) when the
+// first block is actually serialized.
 // is_nested is false only for the outermost call; Nullable/Variant are only
 // disallowed once already inside an Array/Tuple (COL_COMPLEX), where there is no
 // wire slot for a nested null map or discriminator.
@@ -173,11 +174,20 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
     }
     if (typeid_cast<const DataTypeString *>(type.get()))
         return;
-    if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion()
-        && type->getSizeOfValueInMemory() > 8)
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1/ColumnBinary: fixed-width type wider than 8 bytes is not supported "
-            "(e.g. UUID, IPv6, Int128/UInt128, Decimal128/256): {}", type->getName());
+    if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+    {
+        // buildColDescriptor only has top-level wire tags for widths 1/2/4/8
+        // (COL_FIXED8/16/32/64); anything else — not just >8 bytes, but also e.g.
+        // FixedString(3) or Decimal32(3)-adjacent odd widths — throws "unsupported
+        // fixed-width element size" only once the first block is actually serialized.
+        size_t size = type->getSizeOfValueInMemory();
+        if (size != 1 && size != 2 && size != 4 && size != 8)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1/ColumnBinary: fixed-width type of size {} bytes is not supported; "
+                "only 1/2/4/8-byte fixed-width types are supported (e.g. UUID, IPv6, "
+                "Int128/UInt128, Decimal128/256, and FixedString of any length are not): {}",
+                size, type->getName());
+    }
 }
 
 // ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
