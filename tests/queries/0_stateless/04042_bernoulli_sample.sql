@@ -84,6 +84,14 @@ SELECT count() FROM t_bernoulli_memory SAMPLE 0.1; -- { serverError SAMPLING_NOT
 SELECT 'very small probability';
 SELECT count() FROM t_bernoulli SAMPLE 0.001 SETTINGS bernoulli_sample_seed = 42;
 
+SELECT 'tiny probability below double epsilon (no invalid skip arithmetic)';
+-- A syntactically valid but tiny ratio: 1.0 - 1e-17 rounds back to 1.0 in double precision,
+-- so log(1.0 - probability) would be exactly 0 and the geometric inverse-CDF would divide by
+-- zero (then convert an out-of-range double to size_t). BernoulliGranuleFilter::build uses
+-- log1p(-probability) instead, which stays finite and strictly negative, so the sample is
+-- empty (or extremely sparse) rather than undefined. Expected ~1e-12 hits over 100000 rows: 0.
+SELECT count() FROM t_bernoulli SAMPLE 1e-17 SETTINGS bernoulli_sample_seed = 42;
+
 SELECT 'multi-part table';
 DROP TABLE IF EXISTS t_bernoulli_multi;
 CREATE TABLE t_bernoulli_multi (x UInt64) ENGINE = MergeTree ORDER BY x;

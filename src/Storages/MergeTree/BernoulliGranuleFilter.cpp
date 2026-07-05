@@ -86,7 +86,13 @@ BernoulliGranuleFilter::build(const MergeTreeIndexGranularity & index_granularit
 
     chassert(probability > 0.0 && probability < 1.0);
 
-    filter->log_one_minus_p = std::log(1.0 - probability);
+    /// Use `log1p(-p)` rather than `log(1.0 - p)`: for tiny ratios (e.g. `SAMPLE 1e-17`)
+    /// `1.0 - probability` rounds back to `1.0`, so `log(1.0 - probability)` becomes `0`
+    /// and the geometric inverse-CDF in `nextGeometricSkip` would divide by zero (then
+    /// convert an out-of-range `double` to `size_t`). `log1p(-probability)` stays finite
+    /// and strictly negative for any `probability` in `(0, 1)`, giving a huge (correctly
+    /// clamped) skip so the sample is empty or extremely sparse instead of undefined.
+    filter->log_one_minus_p = std::log1p(-probability);
     filter->granules_selected.resize(num_marks, false);
     filter->checkpoints.reserve((num_marks + CHECKPOINT_STRIDE - 1) / CHECKPOINT_STRIDE);
 

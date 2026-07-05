@@ -28,6 +28,8 @@ parallel replicas sampling_key mode without sample by
 non-MergeTree engine rejected
 very small probability
 82
+tiny probability below double epsilon (no invalid skip arithmetic)
+0
 multi-part table
 14936
 thread-count independence
