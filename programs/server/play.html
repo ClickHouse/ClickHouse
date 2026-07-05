@@ -4357,12 +4357,16 @@ function resetCredentialsStatus() {
 /// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
 ///
 /// Instead the check runs once editing is finished, so a correct value is confirmed with green and a
-/// wrong one with red without any explicit action, using only the final, complete pair. "Finished"
-/// means focus has left the credential pair as a whole: probing on a per-field `change` (blur) would
-/// fire while focus is merely travelling from `user` to `password`, sending a mismatched pair (the
-/// new user against the old password, or vice versa) as an unintended login attempt before the pair
-/// is complete. `focusout` bubbles and carries `relatedTarget` (the element gaining focus), so a move
-/// to the sibling credential field is distinguishable from leaving the pair, and is skipped. The
+/// wrong one with red without any explicit action, using only the final, complete connection tuple.
+/// "Finished" means focus has left the whole connection block `#inputs` (url + user + password), not
+/// merely the credential pair. Probing as soon as focus leaves `user`/`password` would misfire while
+/// the user is still assembling the connection: moving between `user` and `password` sends a
+/// mismatched half-typed pair, and — worse — moving on to change `url` (a natural order: type the
+/// credentials for a new server, then point `url` at it) would send the full final password to the
+/// *previous* server via `getServerStatus(old_url, ...)`, disclosing it there and logging a spurious
+/// failed login. `focusout` bubbles and carries `relatedTarget` (the element gaining focus), so a
+/// move that keeps focus anywhere inside `#inputs` is distinguishable from leaving the block, and is
+/// skipped; a genuine `url` edit is re-checked by `checkURL`'s success path instead. The
 /// `credentials_edited` guard means merely tabbing through the fields, without changing anything,
 /// emits no login attempt. This subsumes the old paste handlers: a pasted value is committed by the
 /// following focus change just like typed input.
@@ -4372,7 +4376,10 @@ function onCredentialInput() {
     resetCredentialsStatus();
 }
 function onCredentialFocusOut(event) {
-    if (event.relatedTarget === user_elem || event.relatedTarget === password_elem) { return; }
+    /// Focus is still inside the connection block (moved to `url` or the sibling credential field):
+    /// the connection is not finished being edited yet, so do not probe. `Node.contains(null)` is
+    /// false, so focus leaving to nothing (or outside the page) correctly counts as finished.
+    if (document.getElementById('inputs').contains(event.relatedTarget)) { return; }
     if (!credentials_edited) { return; }
     credentials_edited = false;
     checkCredentials();
