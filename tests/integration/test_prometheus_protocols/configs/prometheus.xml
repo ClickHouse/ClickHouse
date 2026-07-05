@@ -23,6 +23,13 @@
                     <enable_table_name_url_routing>true</enable_table_name_url_routing>
                 </handler>
             </my_rule_1_dynamic_api_v1>
+            <my_rule_1_dynamic_api_v1_query>
+                <url>regex:^/[^/]+/[^/]+/api/v1/query$</url>
+                <handler>
+                    <type>prometheus_api_v1</type>
+                    <enable_table_name_url_routing>true</enable_table_name_url_routing>
+                </handler>
+            </my_rule_1_dynamic_api_v1_query>
             <my_rule_1_dynamic_query_params>
                 <url>/write_query_params</url>
                 <handler>

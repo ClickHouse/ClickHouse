@@ -68,6 +68,8 @@ When configuring a Prometheus remote-write handler with `enable_table_name_url_r
 </my_rule>
 ```
 
+For a `prometheus_api_v1` handler, `enable_table_name_url_routing` is supported only for the remote-write `/write` endpoint. The `/read`, `/query`, and metadata endpoints must use a fixed table in the handler configuration or the existing `database` and `table` query parameters.
+
 ### Outer columns {#outer-columns}
 
 Columns of a TimeSeries table are generated automatically. These are outer columns, they store no data, they just provide interface for SELECT/INSERT. Actual data is stored in [target tables](#target-tables). Here is the list of the outer columns:

@@ -228,3 +228,16 @@ def test_table_query_param():
         params={"database": "other"}, expect_error=True,
     )
     assert "cannot be overridden" in error
+
+
+def test_api_v1_url_path_routing_is_write_only():
+    response = get_response_to_http_api_query(
+        node.ip_address,
+        9093,
+        "/default/prometheus/api/v1/query",
+        "foo",
+        150,
+    )
+
+    assert response.status_code == requests.codes.bad_request
+    assert "URL path routing for prometheus_api_v1 is supported only for remote write" in response.text

@@ -705,6 +705,11 @@ private:
 
         if (path.ends_with("/write"))
             return write_impl;
+        if (config().enable_table_name_url_routing)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing for prometheus_api_v1 is supported only for remote write");
+
         if (path.ends_with("/read"))
             return read_impl;
 
