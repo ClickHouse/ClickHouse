@@ -124,17 +124,22 @@ GCSObjectStorageSettings GCSObjectStorageSettings::loadFromConfig(
     result.read_only = config.getBool(config_prefix + ".readonly", false);
     result.list_object_keys_size = config.getUInt64(config_prefix + ".list_object_keys_size", 1000);
 
-    /// Exchange a refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.
-    if (result.access_token.empty() && !result.google_adc_refresh_token.empty())
-    {
-        auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-        auto token = fetchGCPOAuthToken(
-            result.google_adc_client_id, result.google_adc_client_secret, result.google_adc_refresh_token, timeouts);
-        result.access_token = std::move(token.access_token);
-        result.access_token_expires_in_seconds = token.expires_in;
-    }
+    resolveGCSCredentialsToken(result, context);
 
     return result;
+}
+
+void resolveGCSCredentialsToken(GCSObjectStorageSettings & settings, const ContextPtr & context)
+{
+    /// Exchange a refresh-token triple for an access token eagerly, reusing the existing S3-compat helper.
+    if (!settings.access_token.empty() || settings.google_adc_refresh_token.empty())
+        return;
+
+    auto timeouts = ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto token = fetchGCPOAuthToken(
+        settings.google_adc_client_id, settings.google_adc_client_secret, settings.google_adc_refresh_token, timeouts);
+    settings.access_token = std::move(token.access_token);
+    settings.access_token_expires_in_seconds = token.expires_in;
 }
 
 static String readFileToString(const String & path)

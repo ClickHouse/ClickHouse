@@ -11,6 +11,9 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#include <Storages/ObjectStorage/GCS/Configuration.h>
+#endif
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
@@ -32,6 +35,7 @@ namespace Setting
 {
     extern const SettingsBool write_full_path_in_iceberg_metadata;
     extern const SettingsBool allow_experimental_paimon_storage_engine;
+    extern const SettingsBool use_native_gcs;
 }
 
 namespace DataLakeStorageSetting
@@ -707,7 +711,13 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
 
     factory.registerStorage(name, [=](const StorageFactory::Arguments & args)
     {
-        auto configuration = std::make_shared<StorageS3Configuration>();
+        StorageObjectStorageConfigurationPtr configuration;
+#if USE_GOOGLE_CLOUD
+        if (name == GCSDefinition::storage_engine_name && args.getLocalContext()->getSettingsRef()[Setting::use_native_gcs])
+            configuration = std::make_shared<StorageGCSConfiguration>();
+        else
+#endif
+            configuration = std::make_shared<StorageS3Configuration>();
         return createStorageObjectStorage(args, configuration);
     },
     {

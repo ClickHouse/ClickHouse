@@ -22,6 +22,9 @@
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
 #include <Storages/ObjectStorage/Local/Configuration.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+#include <Storages/ObjectStorage/GCS/Configuration.h>
+#endif
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
@@ -38,6 +41,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
+    extern const SettingsBool use_native_gcs;
 }
 
 namespace ErrorCodes
@@ -311,6 +315,25 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     return storage;
 }
 
+#if USE_AWS_S3 && USE_GOOGLE_CLOUD
+/// `gcs()` table function. Picks the backend per query: the native GCS configuration when
+/// `use_native_gcs` is set, otherwise the S3-compatibility configuration (the default, unchanged).
+/// The argument grammar is identical to `s3()` in both cases.
+class TableFunctionGCS : public TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>
+{
+public:
+    void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override
+    {
+        if (context->getSettingsRef()[Setting::use_native_gcs])
+            configuration = std::make_shared<StorageGCSConfiguration>();
+        else
+            configuration = std::make_shared<StorageS3Configuration>();
+
+        StorageObjectStorageConfiguration::initialize(*configuration, args, context, /* with_structure */ true);
+    }
+};
+#endif
+
 void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
 {
     UNUSED(factory);
@@ -324,6 +347,16 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         {.allow_readonly = false}
     );
 
+#if USE_GOOGLE_CLOUD
+    factory.registerFunction<TableFunctionGCS>(
+        {
+            .description=R"(The table function can be used to read the data stored on GCS. Set `use_native_gcs=1` to use the native Google Cloud SDK instead of the S3-compatibility path.)",
+            .examples{{GCSDefinition::name, "SELECT * FROM gcs(url, access_key_id, secret_access_key)", ""}},
+            .category = FunctionDocumentation::Category::TableFunction
+        },
+        {.allow_readonly = false}
+    );
+#else
     factory.registerFunction<TableFunctionObjectStorage<GCSDefinition, StorageS3Configuration>>(
         {
             .description=R"(The table function can be used to read the data stored on GCS.)",
@@ -332,6 +365,7 @@ void registerTableFunctionObjectStorage(TableFunctionFactory & factory)
         },
         {.allow_readonly = false}
     );
+#endif
 
     factory.registerFunction<TableFunctionObjectStorage<COSNDefinition, StorageS3Configuration>>(
         {
