@@ -63,6 +63,12 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
+    ObjectStorageIteratorPtr iterate(
+        const std::string & path_prefix,
+        size_t max_keys,
+        bool with_tags,
+        const std::optional<std::string> & start_after) const override;
+
     void removeObjectIfExists(const StoredObject & object) override;
     void removeObjectsIfExist(const StoredObjects & objects) override;
 

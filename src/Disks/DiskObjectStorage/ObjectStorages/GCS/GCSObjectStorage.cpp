@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/GCSCommon.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/ReadBufferFromGCS.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/GCS/WriteBufferFromGCS.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Common/logger_useful.h>
 
 #include <google/cloud/storage/object_metadata.h>
@@ -108,6 +109,29 @@ void GCSObjectStorage::listObjects(const std::string & path, RelativePathsWithMe
         if (max_keys && ++count >= max_keys)
             break;
     }
+}
+
+ObjectStorageIteratorPtr GCSObjectStorage::iterate(
+    const std::string & path_prefix,
+    size_t /* max_keys */,
+    bool /* with_tags */,
+    const std::optional<std::string> & start_after) const
+{
+    /// Callers (e.g. the glob source in StorageObjectStorageSource) expect the iterator to enumerate
+    /// *all* matching objects, using max_keys only as a page-size hint. To avoid silently truncating
+    /// at the first page, enumerate everything eagerly and wrap it in a from-list iterator.
+    /// NOTE: this materializes the full listing in memory; a lazy paginating iterator (like S3's) is a
+    /// future optimization for buckets with a very large number of objects under one prefix.
+    RelativePathsWithMetadata files;
+    listObjects(path_prefix, files, 0);
+
+    if (start_after && !start_after->empty())
+    {
+        /// `start_after` is exclusive, matching the S3 backend's ListObjectsV2 semantics.
+        std::erase_if(files, [&](const RelativePathWithMetadataPtr & file) { return file->relative_path <= *start_after; });
+    }
+
+    return std::make_shared<ObjectStorageIteratorFromList>(std::move(files));
 }
 
 void GCSObjectStorage::removeObjectIfExists(const StoredObject & object)
