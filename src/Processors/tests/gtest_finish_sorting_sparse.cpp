@@ -2,10 +2,12 @@
 
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/SortDescription.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Processors/Chunk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -45,10 +47,20 @@ ColumnPtr sparseUInt16(UInt16 value, size_t n)
     return ColumnSparse::create(std::move(values), std::move(offsets), n);
 }
 
+/// A Replicated over a dense UInt16 where every row holds `value` (single stored row, replicated
+/// n times by the indexes). `convertToFullColumnIfReplicated` expands it to a dense column.
+ColumnPtr replicatedUInt16(UInt16 value, size_t n)
+{
+    ColumnPtr nested = denseUInt16(value, 1);
+    auto indexes = ColumnUInt8::create();
+    indexes->getData().assign(n, static_cast<UInt8>(0));
+    return ColumnReplicated::create(nested, std::move(indexes));
+}
+
 /// A Replicated(Sparse) over UInt16 where every row holds `value`. Expanding the replicated
 /// wrapper (`convertToFullColumnIfReplicated`) calls `ColumnSparse::index`, which keeps the
-/// sparse wrapper, so the result is still a plain ColumnSparse: exactly the case the plain
-/// `convertToFullColumnIfSparse()->convertToFullColumnIfReplicated()` chain fails to densify.
+/// sparse wrapper, so the result is still a plain ColumnSparse: exactly the case only materializing
+/// the replicated wrapper fails to densify.
 ColumnPtr replicatedSparseUInt16(UInt16 value, size_t n)
 {
     /// Single-row sparse nested column holding `value`, replicated n times by the indexes.
@@ -56,6 +68,13 @@ ColumnPtr replicatedSparseUInt16(UInt16 value, size_t n)
     auto indexes = ColumnUInt8::create();
     indexes->getData().assign(n, static_cast<UInt8>(0));
     return ColumnReplicated::create(nested, std::move(indexes));
+}
+
+/// A single-element `Tuple(UInt16)` wrapping `element`. `FunctionTuple` builds tuples without
+/// materializing replicated/sparse children, so a tuple sort key can carry a replicated child.
+ColumnPtr tupleOf(ColumnPtr element)
+{
+    return ColumnTuple::create(Columns{std::move(element)});
 }
 
 ColumnPtr denseUInt64Iota(size_t n)
@@ -69,31 +88,31 @@ ColumnPtr denseUInt64Iota(size_t n)
 }
 
 /// Feed two chunks into FinishSortingTransform where the already-sorted prefix `x` holds the
-/// SAME key value in both, so consume() runs its cross-chunk binary-search `less()`. The stored
-/// chunk's prefix is a dense UInt16 column; the current chunk's prefix uses `second_prefix`.
-/// Before the fix, a non-dense `second_prefix` makes `ColumnVector<UInt16>::doCompareAt` bad-cast
-/// its rhs (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
-void runFinishSorting(ColumnPtr second_prefix, size_t n)
+/// SAME key value in both, so consume() runs its cross-chunk binary-search `less()`. `key_type`
+/// is the declared type of `x`; the stored chunk uses `first_prefix` and the current chunk uses
+/// `second_prefix`. Before the fix, a `second_prefix` carrying a sparse or replicated column
+/// (possibly nested in a tuple) makes the raw `compareAt` in `less()` bad-cast its rhs
+/// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
+void runFinishSorting(DataTypePtr key_type, ColumnPtr first_prefix, ColumnPtr second_prefix, size_t n)
 {
-    auto type_u16 = std::make_shared<DataTypeUInt16>();
     auto type_u64 = std::make_shared<DataTypeUInt64>();
 
     Block header({
-        ColumnWithTypeAndName(type_u16->createColumn(), type_u16, "x"),
+        ColumnWithTypeAndName(key_type->createColumn(), key_type, "x"),
         ColumnWithTypeAndName(type_u64->createColumn(), type_u64, "y"),
     });
     auto shared_header = std::make_shared<const Block>(header);
 
-    /// First chunk: prefix `x` is a DENSE column (all zeros), sorted.
+    /// First chunk: prefix `x` is a DENSE column (all the same key value), sorted.
     Chunk chunk_first;
     {
         Columns cols;
-        cols.push_back(denseUInt16(0, n));
+        cols.push_back(std::move(first_prefix));
         cols.push_back(denseUInt64Iota(n));
         chunk_first.setColumns(std::move(cols), n);
     }
 
-    /// Second chunk: prefix `x` holds the SAME key value (all zeros) as `second_prefix`.
+    /// Second chunk: prefix `x` holds the SAME key value as `first_prefix`.
     /// The equal prefix forces the cross-chunk `less()` comparison in consume().
     Chunk chunk_second;
     {
@@ -132,6 +151,12 @@ void runFinishSorting(ColumnPtr second_prefix, size_t n)
         ;
 }
 
+/// Shorthand: a plain `UInt16` sort key, dense in the stored chunk and `second_prefix` in the next.
+void runFinishSortingUInt16(ColumnPtr second_prefix, size_t n)
+{
+    runFinishSorting(std::make_shared<DataTypeUInt16>(), denseUInt16(0, n), std::move(second_prefix), n);
+}
+
 }
 
 /// Regression test for STID 1499-2393: a dense sort-key column in the stored chunk and the same
@@ -141,16 +166,29 @@ TEST(FinishSortingTransform, SparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
     /// Before the fix this aborts with `Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSorting(sparseUInt16(0, n), n));
+    EXPECT_NO_THROW(runFinishSortingUInt16(sparseUInt16(0, n), n));
 }
 
-/// The `Replicated(Sparse)` variant of the same bug (raised in review): expanding the replicated
-/// wrapper leaves a plain ColumnSparse, so the plain `convertToFullColumnIfSparse()->
-/// convertToFullColumnIfReplicated()` chain did NOT densify it and `less()` bad-cast again.
-/// `removeSpecialRepresentations` (replicated first, then recursive sparse) fixes both.
+/// The `Replicated(Sparse)` variant of the same bug: expanding the replicated wrapper leaves a
+/// plain ColumnSparse, so only materializing the replicated wrapper is not enough and `less()`
+/// bad-casts again. The fix strips replicated then sparse.
 TEST(FinishSortingTransform, ReplicatedSparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
     /// Before the fix this aborts with the same `Bad cast ... ColumnSparse to ColumnVector<unsigned short>`.
-    EXPECT_NO_THROW(runFinishSorting(replicatedSparseUInt16(0, n), n));
+    EXPECT_NO_THROW(runFinishSortingUInt16(replicatedSparseUInt16(0, n), n));
+}
+
+/// A tuple sort key whose child stays replicated in the next chunk (raised in review): only the
+/// top-level column was materialized, so a `Tuple(Replicated(UInt16))` reached `less()` and
+/// `ColumnTuple::compareAt` delegated to `ColumnVector::compareAt(..., ColumnReplicated)` -- the
+/// same bad cast one level deeper. The fix recurses into tuple children.
+TEST(FinishSortingTransform, TupleReplicatedChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
+    /// Stored chunk: dense `Tuple(UInt16)`. Next chunk: same key as `Tuple(Replicated(UInt16))`.
+    /// Before the fix this aborts with the same `Bad cast ... ColumnReplicated ... ColumnVector<unsigned short>`.
+    EXPECT_NO_THROW(runFinishSorting(
+        key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
 }

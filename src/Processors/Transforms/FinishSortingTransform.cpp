@@ -1,6 +1,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 
-#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/IColumn.h>
 
 namespace DB
 {
@@ -8,6 +9,29 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+/// Expand replicated and sparse wrappers, recursing into `ColumnTuple` children, so the raw
+/// `IColumn::compareAt` used by `less()` below never receives a sparse or replicated column
+/// (it handles neither) even when one is nested inside a tuple sort key. LowCardinality and const
+/// are intentionally left as-is, matching the base `SortingTransform` cursor preparation.
+static ColumnPtr materializeSortKeyColumn(const ColumnPtr & column)
+{
+    ColumnPtr full = column->convertToFullColumnIfReplicated();
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(full.get()))
+    {
+        auto elements = column_tuple->getColumns();
+        if (elements.empty())
+            return full;
+
+        for (auto & element : elements)
+            element = materializeSortKeyColumn(element);
+
+        return ColumnTuple::create(elements);
+    }
+
+    return full->convertToFullColumnIfSparse();
 }
 
 static bool isPrefix(const SortDescription & pref_descr, const SortDescription & descr)
@@ -72,13 +96,12 @@ void FinishSortingTransform::consume(Chunk chunk)
     removeConstColumns(chunk);
 
     /// Materialize sort-key columns before the cross-chunk `less()` below: it uses a raw
-    /// `IColumn::compareAt` that handles neither sparse nor replicated columns.
-    /// `removeSpecialRepresentations` also strips `Replicated(Sparse)` and tuple-wrapped sparse,
-    /// which a plain `convertToFullColumnIfSparse()->convertToFullColumnIfReplicated()` chain leaves sparse.
+    /// `IColumn::compareAt` that handles neither sparse nor replicated columns, including when
+    /// they are nested inside a tuple sort key.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (const auto & desc : description_with_positions)
-        columns[desc.column_number] = removeSpecialRepresentations(columns[desc.column_number]);
+        columns[desc.column_number] = materializeSortKeyColumn(columns[desc.column_number]);
     chunk.setColumns(std::move(columns), num_rows);
 
     /// Compact the remaining duplicated columns.
