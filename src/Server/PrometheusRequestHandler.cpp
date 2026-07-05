@@ -354,7 +354,6 @@ public:
         /// missing or non-`TimeSeries` table (or, with dynamic routing, a table that does not opt into it) are
         /// rejected without first decompressing and materializing the whole protobuf payload.
         const bool is_url_path_dynamic_routing = config().enable_table_name_url_routing;
-        const bool should_check_dynamic_routing_setting = is_url_path_dynamic_routing || isTimeSeriesTableNameSetFromRequest();
         if (is_url_path_dynamic_routing && isTimeSeriesTableNameSetFromRequest())
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
@@ -365,7 +364,7 @@ public:
             : getTimeSeriesTableID();
         auto table = DatabaseCatalog::instance().getTable(table_id, context);
         auto time_series_storage = storagePtrToTimeSeries(table);
-        if (should_check_dynamic_routing_setting)
+        if (is_url_path_dynamic_routing)
         {
             const auto & time_series_settings = time_series_storage->getStorageSettings();
             if (!(*time_series_settings)[TimeSeriesSetting::prometheus_remote_write_dynamic_routing_enabled])

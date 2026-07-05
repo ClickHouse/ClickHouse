@@ -260,43 +260,22 @@ def test_remote_write_dynamic_routing_disabled_for_table():
     )
 
 
-def test_remote_write_query_parameter_dynamic_routing_checks_table_setting():
+def test_remote_write_query_parameter_routing_keeps_existing_behavior_without_table_setting():
     timestamp = time.time()
-    disabled_write_request = convert_time_series_to_protobuf(
-        [({"__name__": "disabled_dynamic_query_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
+    write_request = convert_time_series_to_protobuf(
+        [({"__name__": "query_parameter_route_metric", "job": "dynamic_test"}, {timestamp: 1.0})]
     )
 
-    response = get_response_to_remote_write(
-        node.ip_address,
-        9093,
-        "write_query_params?database=default&table=prometheus",
-        disabled_write_request,
-    )
-
-    assert response.status_code == requests.codes.internal_server_error
-    assert "Prometheus remote write dynamic routing is disabled" in response.text
-    assert "default.prometheus" in response.text
-    assert (
-        node.query(
-            "SELECT count() FROM timeSeriesTags(prometheus) "
-            "WHERE metric_name = 'disabled_dynamic_query_metric'"
-        ).strip()
-        == "0"
-    )
-
-    enabled_write_request = convert_time_series_to_protobuf(
-        [({"__name__": "enabled_dynamic_query_metric", "job": "dynamic_test"}, {time.time(): 1.0})]
-    )
     send_protobuf_to_remote_write(
         node.ip_address,
         9093,
-        "write_query_params?database=default&table=prometheus_dynamic",
-        enabled_write_request,
+        "write_query_params?database=default&table=prometheus",
+        write_request,
     )
     assert_eq_with_retry(
         node,
-        "SELECT count() FROM timeSeriesTags(prometheus_dynamic) "
-        "WHERE metric_name = 'enabled_dynamic_query_metric'",
+        "SELECT count() FROM timeSeriesTags(prometheus) "
+        "WHERE metric_name = 'query_parameter_route_metric'",
         "1",
     )
 
