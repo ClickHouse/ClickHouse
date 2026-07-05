@@ -41,6 +41,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below materialize_statistics_on_insert_max_table_size, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
+            {"materialize_statistics_on_insert_max_table_size", 1073741824, 1073741824, "New setting: only materialize column statistics on INSERT for tables whose current size is below this threshold."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
             {"format_geojson_validate_geometry", true, true, "New setting that controls whether the GeoJSON format enforces RFC 7946 geometry validity (minimum points per line and ring, ring closure, non-empty multi-geometries) when reading and writing"},
             {"allow_delta_lake_writes", false, false, "Added an alias for setting `allow_experimental_delta_lake_writes`, which was moved to Beta."},

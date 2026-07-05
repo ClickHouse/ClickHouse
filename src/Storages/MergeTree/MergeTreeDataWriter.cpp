@@ -79,6 +79,7 @@ namespace Setting
     extern const SettingsBool materialize_skip_indexes_on_insert;
     extern const SettingsString exclude_materialize_skip_indexes_on_insert;
     extern const SettingsBool materialize_statistics_on_insert;
+    extern const SettingsUInt64 materialize_statistics_on_insert_max_table_size;
     extern const SettingsBool optimize_on_insert;
     extern const SettingsBool throw_on_max_partitions_per_insert_block;
     extern const SettingsUInt64 min_free_disk_bytes_to_perform_insert;
@@ -793,9 +794,16 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
     ColumnsStatistics statistics;
     if (context->getSettingsRef()[Setting::materialize_statistics_on_insert])
     {
-        ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
-        statistics = ColumnsStatistics(metadata_snapshot->getColumns());
-        statistics.build(block);
+        const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
+        /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
+        /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
+        /// is an O(1) atomic load. `0` disables the size limit.
+        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() <= max_table_size)
+        {
+            ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
+            statistics = ColumnsStatistics(metadata_snapshot->getColumns());
+            statistics.build(block);
+        }
     }
 
     /// Size of part would not be greater than block.bytes() + epsilon
