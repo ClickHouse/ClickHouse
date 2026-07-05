@@ -860,8 +860,9 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
                 "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
                 "making these counters more expensive and slightly degrading performance. "
-                "rseq is normally enabled automatically since glibc 2.35; if it is off, "
-                "check that the 'glibc.pthread.rseq' tunable is enabled."));
+                "rseq requires glibc 2.35 or newer, where it is enabled automatically. "
+                "If the runtime glibc is older, this feature is simply unavailable (upgrade glibc to benefit from it); "
+                "otherwise, check that it has not been disabled via the 'glibc.pthread.rseq' tunable."));
 
     try
     {
