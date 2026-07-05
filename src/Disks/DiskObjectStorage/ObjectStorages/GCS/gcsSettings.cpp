@@ -10,6 +10,7 @@
 #include <google/cloud/storage/options.h>
 
 #include <Poco/URI.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 #include <Common/Exception.h>
 #include <Common/Macros.h>
