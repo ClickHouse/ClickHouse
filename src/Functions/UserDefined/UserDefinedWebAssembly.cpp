@@ -842,9 +842,15 @@ private:
     /// Runs in O(1) — reads column metadata, no per-row scanning.
     size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count, bool preserve_const) const
     {
+        const auto & declared_arguments = user_defined_function->getArguments();
         size_t total = 0;
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
+            const auto & arg = arguments[i];
+            // Size by the declared (post-cast) type, not arg.type: getArgumentsBlock casts
+            // every argument to declared_arguments[i] before serialization, so e.g. a UInt8
+            // argument cast to a declared Int32 is written as 4 bytes/row, not 1.
+            const DataTypePtr & declared_type = declared_arguments[i];
             const IColumn * col = arg.column.get();
             bool materialized_const = false;
             if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
@@ -859,8 +865,8 @@ private:
                 size_t bytes = s->getChars().size(); // raw bytes including null terminators
                 total += materialized_const ? bytes * row_count : bytes;
             }
-            else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += arg.type->getSizeOfValueInMemory() * row_count;
+            else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += declared_type->getSizeOfValueInMemory() * row_count;
             else
                 total += 256 * row_count; // conservative fallback
         }
@@ -873,9 +879,13 @@ private:
     /// blow the input budget on a skewed block (e.g. one huge string among many tiny ones).
     size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row, bool preserve_const) const
     {
+        const auto & declared_arguments = user_defined_function->getArguments();
         size_t total = 0;
-        for (const auto & arg : arguments)
+        for (size_t i = 0; i < arguments.size(); ++i)
         {
+            const auto & arg = arguments[i];
+            // Size by the declared (post-cast) type; see estimateTotalSerializedSize above.
+            const DataTypePtr & declared_type = declared_arguments[i];
             const IColumn * col = arg.column.get();
             size_t row_index = row;
             if (typeid_cast<const ColumnConst *>(col))
@@ -887,8 +897,8 @@ private:
             }
             if (const auto * s = typeid_cast<const ColumnString *>(col))
                 total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0);
-            else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-                total += arg.type->getSizeOfValueInMemory();
+            else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                total += declared_type->getSizeOfValueInMemory();
             else
                 total += 256; // conservative fallback
         }
