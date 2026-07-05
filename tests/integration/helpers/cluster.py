@@ -1932,12 +1932,9 @@ class ClickHouseCluster:
         self.with_gcs = True
         env_variables["GCS_PORT"] = str(self.gcs_port)
         # Endpoint the ClickHouse container uses to reach fake-gcs-server (the docker-network host).
+        # Tests build object/bucket URLs from cluster.gcs_host + cluster.gcs_port; this is also
+        # exported for config-based tests that want a ready endpoint.
         env_variables["GCS_ENDPOINT"] = f"http://{self.gcs_host}:{env_variables['GCS_PORT']}"
-        # Ready-to-use endpoint (bucket root) for a native GCS storage disk; referenced from configs
-        # via <endpoint from_env="GCS_DISK_ENDPOINT"/>.
-        env_variables["GCS_DISK_ENDPOINT"] = (
-            f"{env_variables['GCS_ENDPOINT']}/{self.gcs_bucket}/"
-        )
 
         self.base_cmd.extend(
             ["--file", p.join(docker_compose_yml_dir, "docker_compose_gcs.yml")]

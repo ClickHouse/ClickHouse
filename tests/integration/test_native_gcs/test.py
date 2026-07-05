@@ -4,6 +4,12 @@ These exercise the native JSON-API client (selected by `use_native_gcs=1` for th
 function / `GCS` engine, and by `object_storage_type: gcs` for the storage disk) against a
 `fake-gcs-server` emulator. minio cannot be used here because it only speaks the S3 API,
 which is the *default* (S3-compatibility) path, not the native one.
+
+The native backend requires ClickHouse to be built with the google-cloud-cpp SDK
+(`USE_GOOGLE_CLOUD=1`, the default on Linux amd64/aarch64). The whole module is skipped on
+builds without it. The disk is defined inline in the CREATE query rather than in a static
+config so that the server starts even on such builds (a static `gcs` disk would otherwise
+fail startup with UNKNOWN_ELEMENT_IN_CONFIG).
 """
 
 import pytest
@@ -16,12 +22,19 @@ cluster = ClickHouseCluster(__file__)
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
-        cluster.add_instance(
-            "node",
-            main_configs=["configs/storage.xml"],
-            with_gcs=True,
-        )
+        cluster.add_instance("node", with_gcs=True)
         cluster.start()
+
+        node = cluster.instances["node"]
+        built_with_sdk = (
+            node.query(
+                "SELECT value FROM system.build_options WHERE name = 'USE_GOOGLE_CLOUD'"
+            ).strip()
+            == "1"
+        )
+        if not built_with_sdk:
+            pytest.skip("ClickHouse was built without the google-cloud-cpp SDK (USE_GOOGLE_CLOUD=0)")
+
         yield cluster
     finally:
         cluster.shutdown()
@@ -68,10 +81,19 @@ def test_table_function_glob(started_cluster):
 
 def test_mergetree_on_gcs_disk(started_cluster):
     node = started_cluster.instances["node"]
+    disk_endpoint = f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/mergetree/"
+
     node.query("DROP TABLE IF EXISTS gcs_mt SYNC")
     node.query(
         "CREATE TABLE gcs_mt (a UInt64, b String) ENGINE = MergeTree ORDER BY a "
-        "SETTINGS storage_policy = 'gcs_policy'"
+        "SETTINGS disk = disk("
+        "  name = 'gcs_disk_test',"
+        "  type = object_storage,"
+        "  object_storage_type = gcs,"
+        "  metadata_type = local,"
+        f"  endpoint = '{disk_endpoint}',"
+        "  no_sign_request = true"
+        ")"
     )
 
     node.query("INSERT INTO gcs_mt SELECT number, toString(number) FROM numbers(1000)")
