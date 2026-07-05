@@ -12,7 +12,7 @@ A set of queries that allow changing the table structure.
 Syntax:
 
 ```sql
-ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE|RECOMPRESS COLUMN ...
 ```
 
 In the query, specify a list of one or more comma-separated actions.
@@ -31,6 +31,7 @@ The following actions are supported:
 - [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) - Reset column settings.
 - [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) - Adds new values to Enum.
 - [MATERIALIZE COLUMN](#materialize-column) — Materializes the column in the parts where the column is missing.
+- [RECOMPRESS COLUMN](#recompress-column) — Re-compresses the column's existing data with its current codec.
 These actions are described in detail below.
 
 ## ADD COLUMN {#add-column}
@@ -357,6 +358,37 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 **See Also**
 
 - [MATERIALIZED](/sql-reference/statements/create/view#materialized-view).
+
+## RECOMPRESS COLUMN {#recompress-column}
+
+Re-compresses the existing data of a column with the column's current compression codec.
+
+Changing a column's codec with `ALTER TABLE ... MODIFY COLUMN col CODEC(...)` only updates the metadata: the new codec applies to newly written data, while data already stored in existing parts keeps its old codec until the parts are merged. `RECOMPRESS COLUMN` rewrites the data of `col` in existing parts so that it is compressed with the codec currently set in the table metadata.
+
+Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole.
+
+Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+
+Syntax:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] RECOMPRESS COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
+```
+
+- If you specify a `PARTITION`, only the data in the specified partition is recompressed.
+
+**Example**
+
+```sql
+CREATE TABLE tmp (x UInt64, s String CODEC(NONE)) ENGINE = MergeTree ORDER BY x;
+INSERT INTO tmp SELECT number, repeat('a', 100) FROM numbers(1000000);
+
+-- Metadata-only change: existing data is still stored with CODEC(NONE).
+ALTER TABLE tmp MODIFY COLUMN s CODEC(ZSTD);
+
+-- Re-compress the existing data of `s` with ZSTD.
+ALTER TABLE tmp RECOMPRESS COLUMN s;
+```
 
 ## Limitations {#limitations}
 

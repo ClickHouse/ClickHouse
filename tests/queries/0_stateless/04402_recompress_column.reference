@@ -1,0 +1,12 @@
+wide part	Wide
+wide before	100000	100000	100000
+wide none is large	1
+wide after	100000	100000	100000
+wide zstd is small	1
+wide point	1
+wide scan	14286
+1
+compact part	Compact
+compact before	1000	1000
+compact after	1000	1000
+1

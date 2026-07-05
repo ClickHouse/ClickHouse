@@ -200,6 +200,12 @@ std::optional<MutationCommand> MutationCommand::parse(
         res.column_name = getIdentifierName(command.column);
         return res;
     }
+    if (command.type == ASTAlterCommand::RECOMPRESS_COLUMN)
+    {
+        res.type = RECOMPRESS_COLUMN;
+        res.column_name = getIdentifierName(command.column);
+        return res;
+    }
     /// MODIFY COLUMN x REMOVE MATERIALIZED/RESET SETTING/MODIFY SETTING is a valid alter command, but doesn't have any specified column type,
     /// thus no mutation is needed
     if (parse_alter_commands && command.type == ASTAlterCommand::MODIFY_COLUMN && command.remove_property.empty()

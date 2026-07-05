@@ -276,6 +276,7 @@ void StorageMemory::mutate(const MutationCommands & commands, ContextPtr context
             case MutationCommand::MATERIALIZE_PROJECTION:
             case MutationCommand::MATERIALIZE_STATISTICS:
             case MutationCommand::REWRITE_PARTS:
+            case MutationCommand::RECOMPRESS_COLUMN:
                 continue;
             default:
                 commands_to_run.push_back(command);

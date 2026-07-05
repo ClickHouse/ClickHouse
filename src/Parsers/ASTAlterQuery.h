@@ -32,6 +32,7 @@ public:
         COMMENT_COLUMN,
         RENAME_COLUMN,
         MATERIALIZE_COLUMN,
+        RECOMPRESS_COLUMN,
 
         MODIFY_ORDER_BY,
         MODIFY_SAMPLE_BY,

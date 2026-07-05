@@ -156,6 +156,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
             partition->format(ostr, settings, state, frame);
         }
     }
+    else if (type == ASTAlterCommand::RECOMPRESS_COLUMN)
+    {
+        ostr << "RECOMPRESS COLUMN ";
+        column->format(ostr, settings, state, frame);
+        if (partition)
+        {
+            ostr << " IN PARTITION ";
+            partition->format(ostr, settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::COMMENT_COLUMN)
     {
         ostr << "COMMENT COLUMN " << (if_exists ? "IF EXISTS " : "")

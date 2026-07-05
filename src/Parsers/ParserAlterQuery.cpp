@@ -37,6 +37,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_rename_column(Keyword::RENAME_COLUMN);
     ParserKeyword s_comment_column(Keyword::COMMENT_COLUMN);
     ParserKeyword s_materialize_column(Keyword::MATERIALIZE_COLUMN);
+    ParserKeyword s_recompress_column(Keyword::RECOMPRESS_COLUMN);
 
     ParserKeyword s_modify_order_by(Keyword::MODIFY_ORDER_BY);
     ParserKeyword s_modify_sample_by(Keyword::MODIFY_SAMPLE_BY);
@@ -254,6 +255,19 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 
                 command->type = ASTAlterCommand::MATERIALIZE_COLUMN;
                 command->detach = false;
+
+                if (s_in_partition.ignore(pos, expected))
+                {
+                    if (!parser_partition.parse(pos, command_partition, expected))
+                        return false;
+                }
+            }
+            else if (s_recompress_column.ignore(pos, expected))
+            {
+                if (!parser_name.parse(pos, command_column, expected))
+                    return false;
+
+                command->type = ASTAlterCommand::RECOMPRESS_COLUMN;
 
                 if (s_in_partition.ignore(pos, expected))
                 {

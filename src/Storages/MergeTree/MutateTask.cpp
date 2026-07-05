@@ -33,6 +33,7 @@
 #include <Processors/Transforms/TTLTransform.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
+#include <Storages/MergeTree/MergeTreeColumnRecompression.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
@@ -202,6 +203,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
+    NameSet & for_recompression,
     bool suitable_for_ttl_optimization,
     LoggerPtr log)
 {
@@ -319,6 +321,13 @@ static void splitAndModifyMutationCommands(
                      || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
                 for_file_renames.push_back(command);
+            }
+            else if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            {
+                /// Compact (and packed / dynamic) parts store all columns together, so a single
+                /// column cannot be recompressed without deserializing. The column is left out of
+                /// `mutated_columns`, so it is picked up by the READ_COLUMN back-fill below and
+                /// re-serialized (with its current codec) as part of the whole-part rewrite.
             }
             else if (bool share_nested = (*part->storage.getSettings())[MergeTreeSetting::share_nested_offsets],
                           has_column = part_columns.has(command.column_name),
@@ -561,6 +570,14 @@ static void splitAndModifyMutationCommands(
                     for_interpreter.push_back(command);
                     for_file_renames.push_back(command);
                 }
+            }
+            else if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
+            {
+                /// Recompress the column's data streams in place (no deserialization). Only columns
+                /// physically present in this part are recompressed. Dynamic-subcolumn types are
+                /// already routed to the whole-part rewrite branch above (haveMutationsOfDynamicColumns).
+                if (part_columns.has(command.column_name))
+                    for_recompression.insert(command.column_name);
             }
             /// If we don't have this column in source part, we don't need to materialize it.
             else if (part_columns.has(command.column_name))
@@ -1495,6 +1512,11 @@ struct MutationContext
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
+
+    /// Columns whose data streams must be re-compressed in place (RECOMPRESS COLUMN) without
+    /// deserializing the values. Populated only for wide, full-storage parts; other cases fall
+    /// back to a normal re-serializing rewrite.
+    NamesAndTypesList columns_to_recompress;
 
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
@@ -2537,6 +2559,24 @@ private:
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
 
+        /// Re-compress the data streams of RECOMPRESS COLUMN columns with their current codec,
+        /// without deserializing the values. This must happen after the source checksums are copied
+        /// above (so the recompressed files' checksums replace the stale ones) and after the
+        /// hardlink loop (their files were excluded via files_to_skip and are written fresh here).
+        for (const auto & column : ctx->columns_to_recompress)
+        {
+            recompressColumnStreams(
+                *ctx->source_part,
+                *ctx->new_data_part,
+                column,
+                ctx->metadata_snapshot,
+                ctx->source_part->default_codec,
+                *ctx->data->getSettings(),
+                ctx->context->getReadSettings(),
+                ctx->context->getWriteSettings(),
+                ctx->new_data_part->checksums);
+        }
+
         /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
         /// the inherited skp_idx.packed entry must not survive untouched into the new part's
         /// checksums: it points at a file that may not exist in the new part. Drop it up front;
@@ -3365,6 +3405,7 @@ bool MutateTask::prepare()
     context_for_reading->setSetting("read_from_distributed_cache_if_exists_otherwise_bypass_cache", 1);
 
     bool suitable_for_ttl_optimization = ctx->metadata_snapshot->hasOnlyRowsTTL() && (*ctx->data->getSettings())[MergeTreeSetting::ttl_only_drop_parts];
+    NameSet columns_to_recompress;
     MutationHelpers::splitAndModifyMutationCommands(
         ctx->source_part,
         ctx->metadata_snapshot,
@@ -3372,6 +3413,7 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
+        columns_to_recompress,
         suitable_for_ttl_optimization,
         ctx->log);
 
@@ -3545,6 +3587,25 @@ bool MutateTask::prepare()
             projections_to_skip,
             updated_columns_in_patches,
             ctx->packed_skip_index_archive_dirty);
+
+        /// Columns that are only recompressed (RECOMPRESS COLUMN) must not be hardlinked from the
+        /// source part, otherwise `recompressColumnStreams` would overwrite the shared inode. Add
+        /// their data streams to `files_to_skip` and record the columns for the task to recompress.
+        /// Columns that are also rewritten by the interpreter are excluded (the rewrite already
+        /// applies the current codec).
+        for (const auto & column_name : columns_to_recompress)
+        {
+            if (ctx->updated_header.has(column_name))
+                continue;
+
+            auto column = ctx->new_data_part->getColumns().tryGetByName(column_name);
+            if (!column)
+                continue;
+
+            ctx->columns_to_recompress.push_back(*column);
+            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, *column, *ctx->data->getSettings()))
+                ctx->files_to_skip.insert(file);
+        }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

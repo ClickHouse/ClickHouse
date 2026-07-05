@@ -611,6 +611,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_COLUMN, database, table);
             break;
         }
+        case ASTAlterCommand::RECOMPRESS_COLUMN:
+        {
+            required_access.emplace_back(AccessType::ALTER_RECOMPRESS_COLUMN, database, table, column_name());
+            break;
+        }
         case ASTAlterCommand::MODIFY_ORDER_BY:
         {
             required_access.emplace_back(AccessType::ALTER_ORDER_BY, database, table);
