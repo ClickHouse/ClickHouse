@@ -563,10 +563,25 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint8_t * outer_offs = p;
             p += outer_bytes;
             uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + n * 8u));
+            // outer_offs holds n+1 cumulative counts (offs[0]==0, offs[n]==total_elems); the
+            // module fully controls these, so reject anything non-monotonic or not starting
+            // at 0 before using them as ColumnArray offsets, or a crafted [0, 3, 1]-style frame
+            // can make later offset differences underflow into a huge size downstream.
+            if (unalignedLoad<uint64_t>(outer_offs) != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX Array offsets must start at 0");
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(n);
+            uint64_t prev_off = 0;
             for (uint32_t i = 0; i < n; ++i)
-                offsets_col->getData()[i] = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+            {
+                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+                if (off < prev_off)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
+                offsets_col->getData()[i] = off;
+                prev_off = off;
+            }
             return ColumnArray::create(std::move(nested_col), std::move(offsets_col));
         }
         if (const auto * tup_type = typeid_cast<const DataTypeTuple *>(type.get()))
@@ -592,15 +607,27 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
             const uint8_t * chars_src = p;
             p += total_chars;
+            // wire_offs holds n+1 cumulative byte offsets (offs[0]==0, offs[n]==total_chars);
+            // the module fully controls these, so reject anything non-monotonic before using
+            // them to slice chars_src, or a crafted offset pair can underflow str_len into a
+            // huge size and drive an out-of-bounds memcpy.
+            if (unalignedLoad<uint64_t>(wire_offs) != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX String offsets must start at 0");
             auto col_str = ColumnString::create();
             auto & chars   = col_str->getChars();
             auto & offsets = col_str->getOffsets();
             offsets.resize(n);
             uint64_t ch_pos = 0ull;
+            uint64_t prev_wire_end = 0;
             for (uint32_t i = 0; i < n; ++i)
             {
                 uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offs + (i + 1u) * 8u);
                 uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + i * 8u);
+                if (wire_start != prev_wire_end || wire_end < wire_start)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "COLUMNAR_V1: COL_COMPLEX String offsets must be non-decreasing and contiguous");
+                prev_wire_end = wire_end;
                 uint64_t str_len    = wire_end - wire_start;
                 chars.resize(ch_pos + str_len);
                 std::memcpy(chars.data() + ch_pos, chars_src + wire_start, str_len);
@@ -760,6 +787,22 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint8_t * outer_offs = p;
             p += outer_offset_bytes;
             uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + rows_to_dec * 8u));
+            // Same guest-controlled offsets as the nested decode() branch above: reject
+            // anything not starting at 0 or non-monotonic before trusting total_elems for
+            // the nested allocation/decode, or a crafted [0, 3, 1]-style frame can build a
+            // ColumnArray whose per-row size underflows into a huge value downstream.
+            if (unalignedLoad<uint64_t>(outer_offs) != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX Array offsets must start at 0");
+            uint64_t prev_off = 0;
+            for (uint32_t i = 0; i < rows_to_dec; ++i)
+            {
+                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+                if (off < prev_off)
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
+                prev_off = off;
+            }
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(rows_to_dec);
             for (uint32_t i = 0; i < rows_to_dec; ++i)
