@@ -1,0 +1,225 @@
+---
+noindex: true
+title: "إعداد مراقبة Prometheus"
+sidebarTitle: "إعداد مراقبة Prometheus"
+description: "هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها باستخدام لوحات معلومات Grafana الجاهزة عبر kube-prometheus-stack وGrafana mixin الخاص بـ ClickHouse"
+---
+
+هيّئ Prometheus لجمع مقاييس ClickHouse وعرضها باستخدام لوحات معلومات Grafana الجاهزة عبر kube-prometheus-stack وGrafana mixin الخاص بـ ClickHouse.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* نشر ClickHouse Private عامل
+* توفّر [Helm](https://helm.sh/) على محطة العمل لديك
+* توفّر إمكانية الوصول إلى المجموعة المستهدفة باستخدام `kubectl`
+* توفّر حزمة Helm الخاصة بـ kube-prometheus-stack وصور الحاويات التابعة لها في السجل الخاص لديك (راجع [إعداد الصور لبيئة Airgap](#prepare-images-for-airgap) أدناه)
+
+<div id="steps">
+  ## الخطوات
+</div>
+
+<Steps>
+  <Step>
+    ### 1. ثبّت kube-prometheus-stack
+
+    أضِف مستودع Helm التابع لمجتمع Prometheus إلى عميل Helm المحلي لديك، ثم اسحب الـ chart:
+
+    ```bash
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+    helm repo update
+    helm pull prometheus-community/kube-prometheus-stack --version <version>
+    ```
+
+    ثم ثبّته من مستودع Helm لديك:
+
+    ```bash
+    helm install kube-prometheus-stack \
+      oci://<your-registry>/helm-charts/kube-prometheus-stack \
+      --version <version> \
+      --namespace monitoring \
+      --create-namespace \
+      --values kube-prometheus-stack-values.yaml
+    ```
+
+    > **ملاحظة:** تضم kube-prometheus-stack كلاً من Prometheus وAlertmanager وGrafana وPrometheus Operator. راجع [وثائق الـ chart](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack) للاطلاع على القائمة الكاملة للصور التي يجب مزامنتها إلى سجل الحاويات الخاص بك.
+  </Step>
+
+  <Step>
+    ### 2. فعِّل PodMonitors في ClickHouse Operator
+
+    يتضمن مخطط Helm الخاص بـ ClickHouse Operator تعريفات PodMonitor لكلٍّ من ClickHouse Server وKeeper. فعِّلها ضمن قيم Helm الخاصة بالمشغّل:
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseKeeper: true
+    ```
+
+    طبّق قيم التهيئة بترقية إصدار المشغّل:
+
+    ```bash
+    helm upgrade clickhouse-operator \
+      oci://<your-registry>/helm-charts/clickhouse-operator \
+      --version <version> \
+      --namespace clickhouse-operator-system \
+      --values operator-values.yaml
+    ```
+
+    ينشئ هذا موردي PodMonitor اثنين:
+
+    | PodMonitor                  | الأهداف                                                         | المنفذ              | المقاييس                                                     |
+    | --------------------------- | --------------------------------------------------------------- | ------------------- | ------------------------------------------------------------ |
+    | `clickhouse-server-metrics` | البودات الموسومة بـ `app.kubernetes.io/name: clickhouse-server` | `prometheus` (8001) | مقاييس الخادم، وتسميات الإصدار المستخرجة من وسم صورة الحاوية |
+    | `clickhouse-keeper-metrics` | البودات الموسومة بـ `app.kubernetes.io/name: clickhouse-keeper` | `prometheus` (8001) | مقاييس Keeper                                                |
+
+    يحمل كلا موردي PodMonitor التسمية `release: kube-prometheus-stack`، وهي تطابق القيمة الافتراضية لـ `podMonitorSelector` في مثيل Prometheus ضمن kube-prometheus-stack.
+
+    > **ملاحظة:** إذا كان مثيل Prometheus لديك يستخدم اسم إصدار مختلفًا، فحدّث محدد تسمية PodMonitor وفقًا لذلك، إما بتجاوز قوالب مخطط الـoperator أو بتهيئة `prometheus.prometheusSpec.podMonitorSelector` في values الخاصة بـ kube-prometheus-stack.
+  </Step>
+
+  <Step>
+    ### 3. فعِّل معالج المقاييس المخصّصة (اختياري)
+
+    يكشف خادم ClickHouse عن مقاييس إضافية `ClickHouse_CustomMetric_*` عبر معالج HTTP مخصّص على المنفذ 3123. تتطلب نقطة النهاية هذه المصادقة. لتمكين الكشط:
+
+    ```yaml
+    metrics:
+      enabled: true
+      podmonitor:
+        enabled: true
+        scrape:
+          clickhouseServer: true
+          clickhouseServerCustomHandler: true
+          clickhouseKeeper: true
+        basicAuth:
+          username: prometheus-internal
+          password: "<password>"
+    ```
+
+    يخزّن المشغّل بيانات الاعتماد في Kubernetes Secret ويشير إليه من خلال إعداد `basicAuth` الخاص بـ PodMonitor.
+
+    للاطلاع على القائمة الكاملة للمقاييس المخصّصة وعتبات التنبيهات الموصى بها، راجع [مرجع المقاييس والتنبيهات](/ar/products/clickhouse-private/reference/metrics-and-alerts-reference).
+  </Step>
+
+  <Step>
+    ### 4. التحقق من أهداف Prometheus
+
+    بعد النشر، تأكد من أن Prometheus يكتشف أهداف ClickHouse ويجمع مقاييسها:
+
+    ```bash
+    kubectl port-forward -n monitoring svc/kube-prometheus-stack-prometheus 9090:9090
+    ```
+
+    افتح `http://localhost:9090/targets` في مستعرض. ابحث عن مجموعات الأهداف المسماة `podMonitor/clickhouse-operator-system/clickhouse-server-metrics` و`podMonitor/clickhouse-operator-system/clickhouse-keeper-metrics`. يجب أن تُظهر جميع الأهداف **الحالة** `UP`.
+
+    شغّل استعلامًا اختباريًا للتأكد من أن المقاييس تصل:
+
+    ```text
+    up{job="clickhouse-server-metrics"}
+    ```
+  </Step>
+
+  <Step>
+    ### 5. استيراد لوحات معلومات ClickHouse Grafana Mixin
+
+    يوفّر [ClickHouse Grafana mixin](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) لوحات معلومات مُعدّة مسبقًا لمقاييس خادم ClickHouse وKeeper. في بيئة معزولة عن الإنترنت، استورد ملفات JSON الخاصة بلوحات المعلومات يدويًا.
+
+    #### تنزيل لوحات المعلومات
+
+    نزّل ملفات JSON الخاصة بلوحات معلومات mixin من [صفحة تكامل Grafana](https://grafana.com/docs/grafana-cloud/monitor-infrastructure/integrations/integration-reference/integration-clickhouse/) أو صدّرها من مثيل Grafana موجود.
+
+    #### الاستيراد عبر واجهة مستخدم Grafana
+
+    1. افتح Grafana (المضمنة مع kube-prometheus-stack):
+
+       ```bash
+       kubectl port-forward -n monitoring svc/kube-prometheus-stack-grafana 3000:80
+       ```
+
+    2. سجّل الدخول إلى `http://localhost:3000` (بيانات الاعتماد الافتراضية: `admin` / `prom-operator`).
+
+    3. انتقل إلى **Dashboards &gt; Import**.
+
+    4. ارفع كل ملف JSON للوحة معلومات أو الصق محتواه.
+
+    5. حدّد مصدر بيانات Prometheus عندما يُطلب منك ذلك.
+
+    #### الاستيراد عبر ConfigMap
+
+    لإدارة لوحات المعلومات بوصفها تعليمات برمجية، أنشئ ConfigMap في مساحة الاسم monitoring مع وسم Grafana sidecar:
+
+    ```yaml
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: clickhouse-grafana-dashboards
+      namespace: monitoring
+      labels:
+        grafana_dashboard: "1"
+    data:
+      clickhouse-overview.json: |
+        { ... dashboard JSON ... }
+    ```
+
+    تكتشف الحاوية الجانبية لـ Grafana تلقائيًا كائنات ConfigMap التي تحمل الوسم `grafana_dashboard: "1"` وتحمّل لوحات المعلومات.
+  </Step>
+
+  <Step>
+    ### 6. اضبط قواعد التنبيه (اختياري)
+
+    استورد قواعد تنبيه ClickHouse الموصى بها إلى Prometheus عبر إنشاء مورد `PrometheusRule`. راجع [إعداد التنبيهات](/ar/products/clickhouse-private/guides/configure-alerting-for-clickhouse) و[مرجع المقاييس والتنبيهات](/ar/products/clickhouse-private/reference/metrics-and-alerts-reference) للاطلاع على جميع تعريفات التنبيهات.
+
+    مثال:
+
+    ```yaml
+    apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: clickhouse-alerts
+      namespace: monitoring
+      labels:
+        release: kube-prometheus-stack
+    spec:
+      groups:
+        - name: clickhouse-server
+          rules:
+            - alert: ClickhouseOperatorNotReconciling
+              expr: avg(increase(last_cluster_reconcile[90m])) by (app) == 0
+              for: 120m
+              labels:
+                severity: warning
+              annotations:
+                summary: "Operator has not reconciled {{ $labels.app }} in 2 hours"
+            - alert: ClickHouseDataLoss
+              expr: ClickHouse_CustomMetric_LostPartCount > 0
+              labels:
+                severity: critical
+              annotations:
+                summary: "Lost parts detected on {{ $labels.instance }}"
+    ```
+  </Step>
+</Steps>
+
+<div id="prepare-images-for-airgap">
+  ## إعداد الصور لبيئة Airgap
+</div>
+
+يتطلب kube-prometheus-stack صور الحاويات التالية. انقلها إلى السجل الخاص بك قبل التثبيت:
+
+| المكوّن             | الصورة                                                  |
+| ------------------- | ------------------------------------------------------- |
+| Prometheus          | `quay.io/prometheus/prometheus`                         |
+| Alertmanager        | `quay.io/prometheus/alertmanager`                       |
+| Grafana             | `docker.io/grafana/grafana`                             |
+| Grafana sidecar     | `quay.io/kiwigrid/k8s-sidecar`                          |
+| Prometheus Operator | `quay.io/prometheus-operator/prometheus-operator`       |
+| kube-state-metrics  | `registry.k8s.io/kube-state-metrics/kube-state-metrics` |
+| node-exporter       | `quay.io/prometheus/node-exporter`                      |
+
+> **ملاحظة:** تعتمد وسوم الصور الدقيقة على إصدار حزمة لـ kube-prometheus-stack الذي تنشره. شغّل `helm template` على الـ حزمة الذي سحبته لاستخراج مراجع الصور الدقيقة الخاصة بإصدارك.

@@ -1,0 +1,76 @@
+---
+slug: /cloud/managed-postgres/high-availability
+sidebarTitle: '高可用性'
+title: '高可用性'
+description: '在 ClickHouse Managed Postgres 中配置待机节点和复制模式，以实现高可用性'
+keywords: ['高可用性', 'ha', '待机节点', '复制', '故障转移', 'postgres 高可用性']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
+
+Managed Postgres 提供不同级别的高可用性，以满足您的持久性和性能需求。您可以在配置数据库时添加一个或两个待机节点，也可以稍后根据需要在**设置**页面调整此配置。
+
+{/* TODO(kaushik-ubi): 高可用性配置界面的截图
+    路径: /images/cloud/managed-postgres/high-availability-config.png */}
+
+<div id="high-availability-options">
+  ## 高可用性选项
+</div>
+
+<div id="two-standbys">
+  ### 2 个待机节点
+</div>
+
+使用两个待机节点时，系统会在主节点之外额外配置两个副本节点。这两个待机节点与主节点规格相同，并且在主节点发生故障时，任意一个都可以接管。
+
+此配置使用**同步复制**，也就是说，主节点在确认写入前，会先等待至少一个待机节点返回确认。相比异步复制，这种方式能提供更强的数据持久性保障。由于只需要一个确认 (而不是两个) ，因此其性能影响比只有一个待机节点时的同步复制更小。
+
+<div id="one-standby">
+  ### 1 个 待机节点
+</div>
+
+配置 1 个 待机节点时，系统会在主节点旁边部署一个副本节点。该 待机节点 与主节点规格相同，并可在主节点发生故障时接管服务。
+
+数据会通过**异步复制**同步到 待机节点。这意味着写入会先在主节点上提交，无需等待 待机节点 确认。异步复制可确保高可用不会因额外的网络延迟而拖慢写入。不过，这也意味着在主节点发生故障时，待机节点 可能还未收到最新的事务。对大多数应用来说，在性能与极小概率丢失最新写入之间，这种权衡是值得的。如果必须确保写入持久性，建议选择 2 个 待机节点。
+
+<div id="no-standby">
+  ### 无待机节点
+</div>
+
+使用此选项时，系统只会按您选择的规格预配一个主节点，不会创建待机节点。系统仍会监控主节点是否发生故障，但由于没有可立即接管的副本，恢复时间可能会更长，具体取决于问题的性质。此配置最适合开发环境、测试或可接受一定停机时间的非关键工作负载。
+
+<div id="standbys-vs-read-replicas">
+  ## 待机节点与只读副本
+</div>
+
+在 Managed Postgres 中，待机节点和只读副本用途不同，并且需要分别配置。
+
+**待机节点** 专门用于高可用性和自动故障转移。它们通过流式复制从主节点同步数据，并始终处于就绪状态，以便在主节点发生故障时立即提升为主节点。待机节点不对外提供读查询。
+
+**只读副本** 用于读扩展。它们从对象存储中拉取 WAL (预写日志) 数据，并运行在独立的网络环境中，拥有自己的连接端点。只读副本可将读流量从主节点卸载出去，同时不影响高可用性保障。
+
+<div id="why-standbys-dont-serve-read-queries">
+  ### 为什么待机节点不提供读查询
+</div>
+
+虽然有些数据库提供商会开放热待机节点来承担读查询，但 Managed Postgres 有意不这么做。因为允许在待机节点上执行读查询，可能会影响它们最核心的作用：在主节点发生故障时立即接管。
+
+主要有两个方面的顾虑：
+
+1. **WAL 重放竞争**：在写入密集型工作负载下，待机节点上的读查询会与 WAL 重放争抢系统资源。这种竞争可能导致较高的复制延迟，也就是待机节点落后于主节点。如果在待机节点存在延迟时发生故障转移，它将不具备最新数据，也可能无法顺利完成接管。
+
+2. **VACUUM 干扰**：待机节点上的长时间运行读查询，可能会阻止主节点上的 `VACUUM` (以及 `AUTOVACUUM`) 清理死元组。PostgreSQL 无法删除任何副本上仍可能被活动查询访问的行。这会导致表膨胀，并随着时间推移造成性能下降。
+
+通过让待机节点专用于故障转移，Managed Postgres 可确保它们始终保持同步，并能在尽量减少数据丢失和停机时间的情况下完成接管。如需进行读取扩缩容，请改用[只读副本](/zh/products/managed-postgres/read-replicas)。
+
+<div id="handling-failures">
+  ## 故障处理
+</div>
+
+无论是否启用高可用性，系统都会持续监控所有 Managed Postgres 实例的故障情况。在所有情况下，系统都会尝试自动从故障中恢复。
+
+当有待机节点可用时，自动恢复会更快、更直接。系统通常会在几分钟内通过将待机节点提升为主节点来完成恢复。没有待机节点时，恢复可能需要人工干预，从而显著延长停机时间。

@@ -1,0 +1,176 @@
+---
+description: 'ClickHouse におけるリソース使用量の QUOTA を設定および管理するためのガイド'
+sidebarTitle: 'QUOTA'
+slug: /operations/quotas
+title: 'QUOTA'
+doc_type: 'guide'
+---
+
+<Info>
+  **ClickHouse Cloud の QUOTA**
+
+  ClickHouse Cloud では QUOTA がサポートされていますが、作成には [DDL 構文](/ja/reference/statements/create/quota) を使用する必要があります。以下で説明する XML 設定の方法は **サポートされていません**。
+</Info>
+
+QUOTA を使用すると、一定期間にわたるリソース使用量を制限したり、リソースの使用状況を追跡したりできます。
+QUOTA はユーザー設定で構成し、通常は &#39;users.xml&#39; に設定します。
+
+システムには、単一のクエリの複雑さを制限する機能もあります。[クエリの複雑さに関する制限](/ja/concepts/features/configuration/settings/query-complexity) のセクションを参照してください。
+
+クエリの複雑さに関する制限とは異なり、QUOTA には次の特徴があります。
+
+* 単一のクエリを制限するのではなく、一定期間内に実行される一連のクエリに制限を課します。
+* 分散クエリ処理において、すべてのリモートサーバーで消費されたリソースを計上します。
+
+それでは、QUOTA を定義する &#39;users.xml&#39; ファイル内のセクションを見ていきましょう。
+
+```xml
+<!-- QUOTA -->
+<quotas>
+    <!-- QUOTA名 -->
+    <default>
+        <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+        <interval>
+            <!-- インターバルの長さ -->
+            <duration>3600</duration>
+
+            <!-- 無制限。指定したインターバルのデータを収集するのみ。 -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+デフォルトでは、QUOTA は使用量を制限せずに、1時間ごとのリソース消費量を追跡します。
+各インターバルごとに計算されたリソース消費量は、各リクエストの後にサーバーログに出力されます。
+
+```xml
+<statbox>
+    <!-- 期間に対する制限。異なる制限を持つ複数のインターバルを設定できます。 -->
+    <interval>
+        <!-- インターバルの長さ。 -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+`statbox` QUOTA では、1 時間ごとおよび 24 時間ごと (86,400 秒) に制限が設定されます。このインターバルは、実装で定義された固定の時点を起点として計算されます。言い換えると、24 時間のインターバルは必ずしも午前 0 時に始まるわけではありません。
+
+このインターバルが終了すると、蓄積されたすべての値はクリアされます。次の 1 時間については、QUOTA の計算が最初からやり直されます。
+
+制限できる項目は次のとおりです。
+
+`queries` – リクエストの総数。
+
+`query_selects` – SELECT リクエストの総数。
+
+`query_inserts` – INSERT リクエストの総数。
+
+`errors` – 例外を発生させたクエリの数。
+
+`result_rows` – 結果として返された行の総数。
+
+`result_bytes` - 結果として返された行の合計サイズ。
+
+`read_rows` – すべてのリモートサーバーでクエリを実行するために、テーブルから読み取られた行の総数。
+
+`read_bytes` - すべてのリモートサーバーでクエリを実行するために、テーブルから読み取られた合計サイズ。
+
+`written_bytes` - 書き込み操作の合計サイズ。
+
+`execution_time` – 秒単位のクエリの総実行時間 (実時間) 。
+
+`failed_sequential_authentications` - 連続した認証エラーの総数。
+
+`queries_per_normalized_hash` – 単一の正規化クエリの最大実行回数です。正規化クエリとは、リテラルをプレースホルダーに置き換えたクエリのことで、たとえば `SELECT 1` と `SELECT 2` は同じ正規化クエリと見なされます。この制限は、それぞれの異なる正規化クエリパターンごとに独立して追跡されます。
+
+少なくとも1つのインターバルでこの制限を超えると、どの制限に違反したのか、どのインターバルに対するものか、また新しいインターバルがいつ始まるか (再びクエリを送信できるようになる時点) を示すテキスト付きで例外がスローされます。
+
+QUOTA では、複数のキーのリソース使用状況をそれぞれ独立して報告するために &quot;quota key&quot; 機能を使用できます。以下に例を示します。
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+正規化クエリハッシュをキーとしてQUOTAを設定することもできます。これにより、異なる各クエリパターンごとに独立したQUOTAバケットが割り当てられます。XML設定では、`<keyed_by_normalized_query_hash />` と記述します:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+同じことはDDL構文でも記述できます。
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+この例では、ユーザーは1時間あたり、個々の正規化クエリごとに最大100回まで実行できます。`SELECT number FROM numbers(1)` と `SELECT number FROM numbers(2)` は同じバケットを共有します (正規化形式が同じであるため) が、`SELECT number, number FROM numbers(1)` は別のバケットを使用します。
+
+QUOTA は、config の &#39;users&#39; セクションでユーザーに割り当てられます。&quot;アクセス権&quot; のセクションを参照してください。
+
+分散クエリ処理では、累積値はリクエスト元のサーバーに保存されます。そのため、ユーザーが別のサーバーに移ると、そのサーバーのQUOTAは &quot;最初から&quot; になります。
+
+サーバーを再起動すると、QUOTA はリセットされます。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouse を使用したシングルページアプリケーションの構築](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

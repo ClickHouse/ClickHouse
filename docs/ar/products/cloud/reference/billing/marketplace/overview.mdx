@@ -1,0 +1,117 @@
+---
+slug: /cloud/marketplace/marketplace-billing
+title: 'فوترة Marketplace'
+description: 'اشترك في ClickHouse Cloud من خلال Marketplace لدى AWS وGCP وAzure.'
+keywords: ['aws', 'azure', 'gcp', 'google cloud', 'marketplace', 'الفوترة']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكنك الاشتراك في ClickHouse Cloud عبر AWS Marketplace وGCP Marketplace وAzure Marketplace. يتيح لك ذلك دفع تكاليف ClickHouse Cloud من خلال نظام الفوترة الحالي لدى مزود الخدمة السحابية لديك.
+
+يمكنك إما استخدام نموذج الدفع حسب الاستخدام (PAYG) أو إبرام عقد التزام مع ClickHouse Cloud عبر المتجر. ستتم الفوترة بواسطة مزود الخدمة السحابية، وستتلقى فاتورة واحدة لجميع خدماتك السحابية.
+
+* [AWS Marketplace بنظام PAYG](/ar/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace بعقد التزام](/ar/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace بنظام PAYG](/ar/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace بعقد التزام](/ar/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace بنظام PAYG](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace بعقد التزام](/ar/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+<div id="faqs">
+  ## الأسئلة الشائعة
+</div>
+
+<div id="how-can-i-verify-that-my-organization-is-connected-to-marketplace-billing">
+  ### كيف يمكنني التحقق من أن مؤسستي مرتبطة بفوترة Marketplace؟​
+</div>
+
+في ClickHouse Cloud console، انتقل إلى **Billing**. ينبغي أن ترى اسم الـ Marketplace والرابط في قسم **Payment details**.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
+  ### أنا مستخدم حالي لـ ClickHouse Cloud. ماذا يحدث عندما أشترك في ClickHouse Cloud عبر متجر AWS / GCP / Azure؟​
+</div>
+
+يتم التسجيل في ClickHouse Cloud من خلال متجر موفّر السحابة على خطوتين:
+
+1. تبدأ أولًا &quot;بالاشتراك&quot; في ClickHouse Cloud عبر بوابة متجر موفّر السحابة. وبعد إكمال الاشتراك، انقر على &quot;Pay Now&quot; أو &quot;Manage on Provider&quot; (بحسب المتجر). سيُعاد توجيهك بعد ذلك إلى ClickHouse Cloud.
+2. في ClickHouse Cloud، يمكنك إما تسجيل حساب جديد أو تسجيل الدخول باستخدام حسابك الحالي. وفي كلتا الحالتين، سيتم إنشاء مؤسسة جديدة لك في ClickHouse Cloud تكون مرتبطة بفوترة المتجر الخاصة بك.
+
+ملاحظة: ستظل خدماتك ومؤسساتك الحالية من أي عمليات تسجيل سابقة في ClickHouse Cloud كما هي، ولن تكون مرتبطة بفوترة المتجر. يتيح لك ClickHouse Cloud استخدام الحساب نفسه لإدارة عدة مؤسسات، لكل منها فوترة مختلفة.
+
+يمكنك التبديل بين المؤسسات من القائمة السفلية اليسرى في وحدة تحكم ClickHouse Cloud.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
+  ### أنا مستخدم حالي لـ ClickHouse Cloud. ماذا يجب أن أفعل إذا أردت أن تتم فوترة خدماتي الحالية عبر Marketplace؟​
+</div>
+
+ستحتاج إلى الاشتراك في ClickHouse Cloud عبر Marketplace الخاص بمزود الخدمة السحابية. بعد إكمال الاشتراك في Marketplace وإعادة توجيهك إلى ClickHouse Cloud، سيظهر لك خيار ربط organization حالية في ClickHouse Cloud بالفوترة عبر Marketplace. ومن تلك اللحظة فصاعدًا، ستتم فوترة مواردك الحالية عبر Marketplace.
+
+<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="التسجيل في Marketplace وربط organization" border />
+
+يمكنك التأكد من صفحة الفوترة الخاصة بـ organization من أن الفوترة أصبحت مرتبطة بالفعل بـ Marketplace. يُرجى التواصل مع [ClickHouse Cloud support](https://clickhouse.com/support/program) إذا واجهت أي مشكلات.
+
+<Note>
+  ستظل خدماتك وorganizations الحالية الناتجة عن أي اشتراكات سابقة في ClickHouse Cloud كما هي، ولن تكون مرتبطة بالفوترة عبر Marketplace.
+</Note>
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-how-can-i-unsubscribe">
+  ### اشتركتُ في ClickHouse Cloud كمستخدم عبر marketplace. كيف يمكنني إلغاء الاشتراك؟​
+</div>
+
+لاحظ أنه يمكنك ببساطة التوقف عن استخدام ClickHouse Cloud وحذف جميع خدمات ClickHouse Cloud الحالية. وحتى إذا ظل الاشتراك نشطًا، فلن تدفع شيئًا لأن ClickHouse Cloud لا يفرض أي رسوم متكررة.
+
+إذا كنت تريد إلغاء الاشتراك، فيُرجى الانتقال إلى Console الخاصة بـ Cloud Provider وإلغاء تجديد الاشتراك هناك.
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-and-then-unsubscribed-now-i-want-to-subscribe-back-what-is-the-process">
+  ### اشتركتُ في ClickHouse Cloud كمستخدم عبر Marketplace، ثم ألغيتُ الاشتراك. والآن أريد الاشتراك مجددًا، فما الإجراء؟​
+</div>
+
+في هذه الحالة، يُرجى الاشتراك في ClickHouse Cloud كالمعتاد (راجع الأقسام الخاصة بالاشتراك في ClickHouse Cloud عبر Marketplace).
+
+* بالنسبة إلى AWS Marketplace، سيتم إنشاء organization جديدة في ClickHouse Cloud وربطها بـ Marketplace.
+* بالنسبة إلى GCP Marketplace، ستُعاد تنشيط organization القديمة الخاصة بك.
+
+إذا واجهت أي مشكلة في إعادة تنشيط org الخاصة بك عبر Marketplace، يُرجى التواصل مع [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="how-do-i-access-my-invoice-for-my-marketplace-subscription-to-the-clickhouse-cloud-service">
+  ### كيف يمكنني الوصول إلى فاتورتي لاشتراك Marketplace في خدمة ClickHouse Cloud؟​
+</div>
+
+* [وحدة تحكم فوترة AWS](https://us-east-1.console.aws.amazon.com/billing/home)
+* [طلبات GCP Marketplace](https://console.cloud.google.com/marketplace/orders) (حدِّد حساب الفوترة الذي استخدمته للاشتراك)
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### لماذا لا تتطابق التواريخ في كشوف Usage مع فاتورة Marketplace الخاصة بي؟​
+</div>
+
+تتبع فوترة Marketplace دورة الشهر الميلادي. على سبيل المثال، بالنسبة إلى الاستخدام بين 1 ديسمبر و1 يناير، تُصدر الفاتورة بين 3 يناير و5 يناير.
+
+تتبع كشوف Usage في ClickHouse Cloud دورة فوترة مختلفة، إذ يُقاس الاستخدام ويُبلَّغ عنه على مدى 30 يومًا بدءًا من يوم التسجيل.
+
+ستختلف تواريخ الاستخدام والفاتورة إذا لم تتطابق هذه التواريخ. ونظرًا إلى أن كشوف Usage تتتبع الاستخدام يوميًا لخدمة معيّنة، يمكنك الاعتماد عليها للاطّلاع على تفصيل التكاليف.
+
+<div id="where-can-i-find-general-billing-information">
+  ### أين يمكنني العثور على معلومات عامة عن الفوترة؟
+</div>
+
+يرجى الاطلاع على [صفحة لمحة عامة عن الفوترة](/ar/products/cloud/reference/billing/index).
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### هل يوجد فرق في تسعير ClickHouse Cloud بين الدفع عبر marketplace الخاص بمزوّد الخدمة السحابية والدفع مباشرةً إلى ClickHouse؟
+</div>
+
+لا يوجد أي فرق في التسعير بين الفوترة عبر marketplace والاشتراك مباشرةً مع ClickHouse. وفي كلتا الحالتين، يُحتسَب استخدامك لـ ClickHouse Cloud بوحدة ClickHouse Cloud Credits‏ (CHCs)، وتُقاس بالطريقة نفسها وتُفوَّتر وفقًا لذلك.
+
+<div id="multiple-organizations-to-bill-to-single-cloud-marketplace-account">
+  ### هل يمكنني إعداد عدة مؤسسات في ClickHouse بحيث تُفوَّتر على حساب واحد لفوترة cloud marketplace ‏(AWS أو GCP أو Azure)؟
+</div>
+
+نعم. يمكن تهيئة عدة مؤسسات في ClickHouse بحيث تُفوَّتر رسوم الاستخدام اللاحقة على حساب فوترة cloud marketplace نفسه (AWS أو GCP أو Azure). ومع ذلك، لا تتم مشاركة الأرصدة المدفوعة مسبقًا بين المؤسسات افتراضيًا. إذا كنت بحاجة إلى مشاركة الأرصدة بين المؤسسات، فيُرجى التواصل مع [ClickHouse Cloud Support](https://clickhouse.com/support/program).
+
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### إذا كانت منظمة ClickHouse الخاصة بي تُفوَّتر عبر اتفاقية التزام بالإنفاق في سوق سحابي، فهل سأنتقل تلقائيًا إلى فوترة PAYG عند نفاد الأرصدة؟
+</div>
+
+إذا كان عقد التزام الإنفاق الخاص بك في السوق لا يزال ساريًا ونفدت الأرصدة، فسننقل منظمتك تلقائيًا إلى فوترة PAYG. ومع ذلك، عند انتهاء عقدك الحالي، ستحتاج إلى ربط عقد جديد من السوق بمنظمتك أو نقل منظمتك إلى الفوترة المباشرة باستخدام بطاقة ائتمان.

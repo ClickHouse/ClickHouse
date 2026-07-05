@@ -1,0 +1,78 @@
+---
+description: 'Use o ClickHouse para consultar, acelerar e analisar dados em formatos abertos de tabela, como Apache Iceberg, Delta Lake, Apache Hudi e Apache Paimon.'
+slug: /use-cases/data-lake
+title: 'Lago de dados'
+keywords: ['lago de dados', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'glue', 'unity', 'rest', 'OneLake', 'BigLake']
+doc_type: 'landing-page'
+---
+
+O ClickHouse se integra a formatos abertos de tabela, incluindo [Apache Iceberg](/pt-BR/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/pt-BR/reference/engines/table-engines/integrations/deltalake), [Apache Hudi](/pt-BR/reference/engines/table-engines/integrations/hudi) e [Apache Paimon](/pt-BR/reference/functions/table-functions/paimon). Isso permite conectar o ClickHouse a dados já armazenados nesses formatos no armazenamento de objetos, combinando o poder analítico do ClickHouse com a infraestrutura de lago de dados existente.
+
+<div id="why-clickhouse-uses-lake-formats">
+  ## Por que usar o ClickHouse com formatos abertos de tabelas?
+</div>
+
+<div id="querying-data-in-place">
+  ### Consultar dados existentes no próprio local
+</div>
+
+O ClickHouse pode consultar formatos abertos de tabela diretamente no armazenamento de objetos sem duplicar os dados. Organizações que padronizaram Iceberg, Delta Lake, Hudi ou Paimon podem apontar o ClickHouse para tabelas existentes e usar imediatamente seu dialeto SQL, funções analíticas e o eficiente leitor nativo de Parquet. Ao mesmo tempo, ferramentas como [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) e [chDB](/pt-BR/products/chdb/index) permitem análises exploratórias e ad hoc em mais de 70 formatos de arquivo no armazenamento remoto, possibilitando que os usuários explorem interativamente conjuntos de dados em lagos de dados sem precisar configurar infraestrutura.
+
+Os usuários podem fazer isso com leitura direta, usando [funções de tabela e motores de tabela](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly), ou [conectando-se a um catálogo de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="real-time-with-clickhouse">
+  ### Workloads de analytics em tempo real com ClickHouse
+</div>
+
+Para workloads que exigem alta concorrência e respostas de baixa latência, os usuários podem carregar dados de formatos de tabela abertos para o motor [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) do ClickHouse. Isso fornece uma camada de analytics em tempo real sobre dados originados em um lago de dados, com suporte a dashboards, relatórios operacionais e outros workloads sensíveis à latência que se beneficiam do armazenamento colunar e dos recursos de indexação do MergeTree.
+
+Consulte o guia de primeiros passos para [acelerar analytics com MergeTree](/pt-BR/guides/use-cases/data-warehousing/getting-started/accelerating-analytics).
+
+<div id="capabilities">
+  ## Capabilities
+</div>
+
+<div id="read-data-directly">
+  ### Ler dados diretamente
+</div>
+
+O ClickHouse fornece [funções de tabela](/pt-BR/reference/functions/table-functions/index) e [motores](/pt-BR/reference/engines/table-engines/integrations/index) para ler formato aberto de tabela diretamente no armazenamento de objetos. Funções como [`iceberg()`](/pt-BR/reference/functions/table-functions/iceberg), [`deltaLake()`](/pt-BR/reference/functions/table-functions/deltalake), [`hudi()`](/pt-BR/reference/functions/table-functions/hudi) e [`paimon()`](/pt-BR/reference/functions/table-functions/paimon) permitem que os usuários consultem tabelas em formato aberto de tabela a partir de uma instrução SQL, sem nenhuma configuração prévia. Existem versões dessas funções para os serviços de armazenamento de objetos mais comuns, como S3, Azure Blob Storage e GCS. Essas funções também têm motores de tabela equivalentes, que podem ser usados para criar tabelas no ClickHouse que fazem referência ao armazenamento de objetos subjacente desses formato aberto de tabela, tornando as consultas mais convenientes.
+
+Consulte nosso guia de Primeiros passos para [consultar diretamente](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly) ou para [conectar-se a um catálogo de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="expose-catalogs-as-databases">
+  ### Expor catálogos como bancos de dados
+</div>
+
+Usando o mecanismo de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake), os usuários podem conectar o ClickHouse a um catálogo externo e expô-lo como um banco de dados. As tabelas registradas no catálogo aparecem como tabelas no ClickHouse, permitindo usar de forma transparente toda a sintaxe do ClickHouse SQL e suas funções analíticas. Isso significa que os usuários podem executar consultas, joins e agregações em tabelas gerenciadas pelo catálogo como se fossem tabelas nativas do ClickHouse, aproveitando a otimização de consultas, a execução paralela e os recursos de leitura do ClickHouse.
+
+Os catálogos compatíveis incluem:
+
+| Catálogo                 | Guia                                                                                |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| AWS Glue                 | [Guia do Glue Catalog](/pt-BR/guides/use-cases/data-warehousing/glue-catalog)             |
+| BigLake Metastore        | [Guia do BigLake Metastore](/pt-BR/guides/use-cases/data-warehousing/biglake-catalog)     |
+| Databricks Unity Catalog | [Guia do Unity Catalog](/pt-BR/guides/use-cases/data-warehousing/unity-catalog)           |
+| Iceberg REST Catalog     | [Guia do REST Catalog](/pt-BR/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper               | [Guia do Lakekeeper Catalog](/pt-BR/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie           | [Guia do Nessie Catalog](/pt-BR/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake        | [Guia do OneLake Catalog](/pt-BR/guides/use-cases/data-warehousing/onelake-catalog)       |
+
+Consulte o guia de primeiros passos para [conectar-se a catálogos](/pt-BR/guides/use-cases/data-warehousing/getting-started/connecting-catalogs).
+
+<div id="write-back-to-lakehouse-formats">
+  ### Gravar de volta em formatos abertos de tabela
+</div>
+
+O ClickHouse oferece suporte à gravação de dados de volta em formatos abertos de tabela, o que é relevante em cenários como:
+
+* **De tempo real para armazenamento de longo prazo** - Os dados passam pelo ClickHouse como uma camada de analytics em tempo real, e os usuários precisam descarregar os resultados no Iceberg ou em outros formatos para um armazenamento durável e econômico de longo prazo.
+* **ETL reverso** - Os usuários realizam transformações no ClickHouse usando visões materializadas ou consultas agendadas e desejam persistir os resultados em formatos abertos de tabela para uso por outras ferramentas no ecossistema de dados.
+
+Consulte o guia de Primeiros passos para [gravar em lagos de dados](/pt-BR/guides/use-cases/data-warehousing/getting-started/writing-data).
+
+<div id="next-steps">
+  ## Próximas etapas
+</div>
+
+Pronto para testar? O [guia de Primeiros passos](/pt-BR/guides/use-cases/data-warehousing/getting-started/overview) mostra como consultar formato aberto de tabela diretamente, conectar-se a um catálogo, carregar dados no MergeTree para análises rápidas e gravar os resultados de volta — tudo em um único fluxo de trabalho de ponta a ponta.

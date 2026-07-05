@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'FAQ'
+description: 'MySQL용 ClickPipes에 대한 자주 묻는 질문입니다.'
+slug: /integrations/clickpipes/mysql/faq
+title: 'MySQL용 ClickPipes FAQ'
+doc_type: '참고'
+keywords: ['MySQL ClickPipes FAQ', 'ClickPipes MySQL 문제 해결', 'MySQL ClickHouse 복제', 'ClickPipes MySQL 지원', 'MySQL CDC ClickHouse']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="does-the-clickpipe-support-mariadb">
+  ### MySQL ClickPipe는 MariaDB를 지원합니까?
+</div>
+
+예, MySQL ClickPipe는 MariaDB 10.0 이상을 지원합니다. 구성 방식은 MySQL과 매우 유사하며, 기본적으로 GTID 복제를 사용합니다.
+
+<div id="does-the-clickpipe-support-planetscale-vitess">
+  ### MySQL ClickPipe는 PlanetScale, Vitess 또는 TiDB를 지원합니까?
+</div>
+
+아니요, 이들 서비스는 MySQL의 binlog API를 지원하지 않습니다.
+
+<div id="how-is-replication-managed">
+  ### 복제는 어떻게 관리되나요?
+</div>
+
+`GTID` 및 `FilePos` 복제를 모두 지원합니다. Postgres와 달리 오프셋을 관리하는 슬롯은 없습니다. 대신 MySQL 서버에 충분한 binlog 보존 기간을 설정해야 합니다. binlog 내 오프셋이 무효화되면 *(예: 미러가 너무 오래 일시 중지되었거나, `FilePos` 복제를 사용하는 동안 데이터베이스 failover가 발생한 경우)* 파이프를 resync해야 합니다. 비효율적인 쿼리로 인해 수집 속도가 느려져 보존 기간을 따라가지 못할 수 있으므로, 대상 테이블에 맞게 구체화된 뷰(Materialized View)를 최적화해야 합니다.
+
+비활성 데이터베이스에서는 ClickPipes가 더 최근 오프셋으로 진행하지 못한 상태에서 log file이 rotate될 수도 있습니다. 정기적으로 업데이트되도록 heartbeat 테이블을 설정해야 할 수 있습니다.
+
+초기 적재가 시작될 때 시작 지점이 되는 binlog 오프셋을 기록합니다. CDC가 계속 진행되려면 초기 적재가 완료될 때도 이 오프셋이 여전히 유효해야 합니다. 많은 양의 데이터를 수집하는 경우 적절한 binlog 보존 기간을 반드시 설정하십시오. 테이블을 설정하는 동안에는 고급 설정에서 대형 테이블에 대해 *Use a custom partitioning key for initial load*를 구성하면 단일 테이블을 병렬로 적재할 수 있어 초기 적재 속도를 높일 수 있습니다.
+
+<div id="binlog-event-exceeded-max-allowed-packet">
+  ### max_allowed_packet binlog 오류로 파이프가 실패하는 이유는 무엇인가요?
+</div>
+
+파이프가 다음과 유사한 오류와 함께 실패하는 경우:
+
+```text
+MySQL execute error: ERROR 1236 (HY000): log event entry exceeded max_allowed_packet;
+Increase max_allowed_packet on source
+```
+
+이는 단일 binlog 이벤트(한 번의 행 변경에 해당)의 크기가 MySQL 서버의 [`max_allowed_packet`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet) 설정값보다 크다는 뜻입니다. server는 이 한도를 초과하는 이벤트를 전송할 수 없으므로 binlog 스트림 읽기가 중단되고, CDC가 더 이상 진행되지 않습니다.
+
+대부분 `BLOB`, `TEXT` 또는 `JSON` 값이 큰 행에서 이런 문제가 발생합니다. 해결 방법은 다음과 같습니다.
+
+* **원본에서 `max_allowed_packet` 값을 늘리십시오.** 가장 큰 행 변경 크기보다 크게 설정하십시오. 일반적으로 최대값인 `1G`로 설정해도 안전합니다:
+  ```sql
+  SET GLOBAL max_allowed_packet = 1073741824; -- 1 GiB
+  ```
+  재시작 후에도 유지되도록 서버 구성(예: `my.cnf` 또는 DB Parameter Group)에도 함께 설정하십시오.
+* **단일 행의 크기가 1G보다 큰 경우:** 파이프를 resync하십시오.
+
+<div id="tls-certificate-validation-error">
+  ### MySQL에 연결할 때 TLS 인증서 유효성 검사 오류가 발생하는 이유는 무엇인가요?
+</div>
+
+MySQL에 연결할 때 `x509: certificate is not valid for any names` 또는 `x509: certificate signed by unknown authority`와 같은 인증서 오류가 발생할 수 있습니다. 이는 ClickPipes가 기본적으로 TLS 암호화를 활성화하기 때문입니다.
+
+이 문제를 해결하는 방법은 여러 가지가 있습니다:
+
+1. **TLS Host 필드 설정** - 연결에 사용하는 호스트명이 인증서와 다를 때 이런 문제가 발생할 수 있습니다(AWS PrivateLink의 Endpoint Service를 사용하는 경우에 흔합니다). &quot;TLS Host (optional)&quot;를 인증서의 Common Name(CN) 또는 Subject Alternative Name(SAN)과 일치하도록 설정하십시오.
+
+2. **Root CA 업로드** - 내부 인증 기관(Certificate Authority)을 사용하는 MySQL 서버나 기본 인스턴스별 CA 구성을 사용하는 Google Cloud SQL에 해당합니다. Google Cloud SQL 인증서에 액세스하는 방법에 대한 자세한 내용은 [이 섹션](/ko/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql)을 참조하십시오.
+
+3. **서버 인증서 구성** - 서버의 SSL 인증서를 업데이트하여 모든 연결 호스트명이 포함되도록 하고, 신뢰할 수 있는 인증 기관(Certificate Authority)을 사용하십시오.
+
+4. **인증서 검증 건너뛰기** - 기본 구성에서 검증할 수 없는 자체 서명 인증서를 프로비저닝하는 자체 호스팅 MySQL 또는 MariaDB에 유용합니다([MySQL](https://dev.mysql.com/doc/refman/8.4/en/creating-ssl-rsa-files-using-mysql.html#creating-ssl-rsa-files-using-mysql-automatic), [MariaDB](https://mariadb.com/kb/en/securing-connections-for-client-and-server/#enabling-tls-for-mariadb-server)). 이 인증서를 사용하면 전송 중 데이터는 암호화되지만 서버 가장 위험이 있습니다. 운영 환경에서는 올바르게 서명된 인증서를 권장하지만, 이 옵션은 단발성 인스턴스에서 테스트하거나 레거시 인프라에 연결할 때 유용합니다.
+
+<div id="do-you-support-schema-changes">
+  ### 스키마 변경도 지원합니까?
+</div>
+
+자세한 내용은 [MySQL용 ClickPipes: 스키마 변경 전파 지원](/ko/integrations/clickpipes/mysql/schema-changes) 페이지를 참조하십시오.
+
+<div id="support-on-delete-cascade">
+  ### MySQL 외래 키의 캐스케이딩 삭제 `ON DELETE CASCADE` 복제를 지원합니까?
+</div>
+
+MySQL에서 [캐스케이딩 삭제를 처리하는 방식](https://dev.mysql.com/doc/refman/8.0/en/innodb-and-mysql-replication.html)상 이러한 삭제는 binlog에 기록되지 않습니다. 따라서 ClickPipes(또는 다른 CDC 도구)로는 이를 복제할 수 없습니다. 이로 인해 데이터 불일치가 발생할 수 있습니다. 캐스케이딩 삭제를 지원하려면 대신 트리거를 사용하는 것이 좋습니다.
+
+<div id="replicate-table-dot">
+  ### 점이 포함된 테이블은 왜 복제할 수 없습니까?
+</div>
+
+현재 PeerDB에는 제약이 있어 원본 테이블 식별자, 즉 스키마 이름이나 테이블 이름에 점이 포함된 경우 복제를 지원하지 않습니다. PeerDB가 점을 기준으로 분리하기 때문에, 이 경우 어느 부분이 스키마이고 어느 부분이 테이블인지 구분할 수 없습니다.
+이 제약을 우회할 수 있도록 스키마와 테이블을 별도로 입력할 수 있게 지원하는 작업이 진행 중입니다.
+
+<div id="include-excluded-columns">
+  ### 처음에 복제 대상에서 제외한 컬럼을 나중에 포함할 수 있나요?
+</div>
+
+아직은 지원되지 않습니다. 대신 포함하려는 컬럼이 있는 [테이블을 resync](/ko/integrations/clickpipes/mysql/table-resync)할 수 있습니다.
