@@ -63,6 +63,10 @@ public:
     static Range createWholeUniverseTypeAware(const DataTypePtr & type);
     static Range createRightBounded(const FieldRef & right_point, bool right_included, bool with_null = false);
     static Range createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null = false);
+    /// Same, but bounded within the given universe instead of (-inf, +inf): the unconstrained side takes
+    /// arbitrary universe's bound (e.g. a column's partition minmax) rather than -/+ infinity.
+    static Range createRightBounded(const FieldRef & right_point, bool right_included, const Range & universe);
+    static Range createLeftBounded(const FieldRef & left_point, bool left_included, const Range & universe);
 
     static bool equals(const Field & lhs, const Field & rhs);
     static bool less(const Field & lhs, const Field & rhs);

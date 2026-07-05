@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: 'Источники словаря'
+sidebarTitle: 'Обзор'
+doc_type: 'справочник'
+description: 'Типы источников словаря'
+---
+
+import CloudDetails from '/snippets/ru/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="dictionary-sources">
+  ## Синтаксис
+</div>
+
+<CloudDetails />
+
+Словарь можно подключить к ClickHouse из самых разных источников.
+Источник задаётся в разделе `source` файла конфигурации и с помощью предложения `SOURCE` в DDL-операторе.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (...)
+    ...
+    SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Конфигурация источника
+    ...
+    ```
+  </Tab>
+
+  <Tab title="файл конфигурации">
+    ```xml
+    <clickhouse>
+      <dictionary>
+        ...
+        <source>
+          <source_type>
+            <!-- Конфигурация источника -->
+          </source_type>
+        </source>
+        ...
+      </dictionary>
+      ...
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="supported-dictionary-sources">
+  ## Поддерживаемые источники словаря
+</div>
+
+Доступны следующие типы источников (`SOURCE_TYPE`/`source_type`):
+
+* [Локальный файл](/ru/reference/statements/create/dictionary/sources/local-file)
+* [Исполняемый файл](/ru/reference/statements/create/dictionary/sources/executable-file)
+* [Executable Pool](/ru/reference/statements/create/dictionary/sources/executable-pool)
+* [HTTP(S)](/ru/reference/statements/create/dictionary/sources/http)
+* СУБД
+  * [ODBC](/ru/reference/statements/create/dictionary/sources/odbc)
+  * [MySQL](/ru/reference/statements/create/dictionary/sources/mysql)
+  * [ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse)
+  * [MongoDB](/ru/reference/statements/create/dictionary/sources/mongodb)
+  * [Redis](/ru/reference/statements/create/dictionary/sources/redis)
+  * [Cassandra](/ru/reference/statements/create/dictionary/sources/cassandra)
+  * [PostgreSQL](/ru/reference/statements/create/dictionary/sources/postgresql)
+  * [YTsaurus](/ru/reference/statements/create/dictionary/sources/ytsaurus)
+* [YAMLRegExpTree](/ru/reference/statements/create/dictionary/sources/yamlregexptree)
+* [Null](/ru/reference/statements/create/dictionary/sources/null)
+
+Для типов источников [Локальный файл](/ru/reference/statements/create/dictionary/sources/local-file), [Исполняемый файл](/ru/reference/statements/create/dictionary/sources/executable-file), [HTTP(s)](/ru/reference/statements/create/dictionary/sources/http), [ClickHouse](/ru/reference/statements/create/dictionary/sources/clickhouse)
+можно использовать дополнительные настройки:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql highlight={2}
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    SETTINGS(format_csv_allow_single_quotes = 0)
+    ```
+  </Tab>
+
+  <Tab title="Файл конфигурации">
+    ```xml highlight={7}
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+      <settings>
+          <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+      </settings>
+    </source>
+    ```
+  </Tab>
+</Tabs>
