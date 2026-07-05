@@ -6,7 +6,9 @@ SET max_rows_to_group_by = 0;
 SET distributed_plan_optimize_exchanges = 1;
 
 DROP TABLE IF EXISTS test;
-CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();
+-- No materialized statistics: the asserted plans depend on the unstatted row estimates.
+CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple()
+  SETTINGS auto_statistics_types = '';
 
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
@@ -15,6 +17,7 @@ INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
 
 SET query_plan_join_swap_table = 0;
+SET query_plan_optimize_join_order_randomize = 0;
 
 SET
     optimize_move_to_prewhere = 1,
