@@ -22,7 +22,7 @@ INSERT INTO tab_spann_l2_3 VALUES
     (5, [0.0, 2.0]), (6, [0.0, 2.1]), (7, [0.0, 2.2]), (8, [0.0, 2.3]), (9, [0.0, 2.4]);
 
 SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
+    EXPLAIN indexes = 1, pretty = 0
     WITH [0.0, 2.0] AS reference_vec
     SELECT id
     FROM tab_spann_l2_3
@@ -340,7 +340,7 @@ INSERT INTO tab_spann_centroid_k VALUES
     (3, [0.0, 0.03]), (4, [0.0, 0.04]), (5, [0.0, 0.05]);
 
 SELECT trimLeft(explain) FROM (
-    EXPLAIN indexes = 1
+    EXPLAIN indexes = 1, pretty = 0
     WITH [0.0, 0.0] AS reference_vec
     SELECT id
     FROM tab_spann_centroid_k
