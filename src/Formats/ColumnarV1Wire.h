@@ -73,6 +73,7 @@
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -119,8 +120,8 @@ static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
 // Recursively check that `type` can round-trip through the COLUMNAR_V1 wire format,
 // throwing INCORRECT_DATA immediately with the exact reason otherwise. Without this,
 // callers only discover an unsupported signature (nested Nullable/Variant inside
-// Array/Tuple, Map, or a fixed-width type wider than 8 bytes such as UUID/IPv6/
-// Int128/UInt128/Decimal128/256) when the first block is actually serialized.
+// Array/Tuple, Map, LowCardinality, or a fixed-width type wider than 8 bytes such as
+// UUID/IPv6/Int128/UInt128/Decimal128/256) when the first block is actually serialized.
 // is_nested is false only for the outermost call; Nullable/Variant are only
 // disallowed once already inside an Array/Tuple (COL_COMPLEX), where there is no
 // wire slot for a nested null map or discriminator.
@@ -146,6 +147,9 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
     if (typeid_cast<const DataTypeMap *>(type.get()))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1/ColumnBinary: Map is not supported: {}", type->getName());
+    if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1/ColumnBinary: LowCardinality is not supported: {}", type->getName());
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
         validateColumnarV1SupportedType(array_type->getNestedType(), /* is_nested */ true);

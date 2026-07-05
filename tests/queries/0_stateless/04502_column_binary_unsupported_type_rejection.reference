@@ -3,4 +3,6 @@ fixed-width type wider than 8 bytes
 fixed-width type wider than 8 bytes
 nested Nullable inside Array/Tuple
 nested Nullable inside Array/Tuple
+LowCardinality is not supported
+LowCardinality is not supported
 66
