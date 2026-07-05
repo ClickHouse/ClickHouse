@@ -243,6 +243,11 @@ void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_
 /// Regression test for STID 1499-2393: a dense sort-key column in the stored chunk and the same
 /// key as `ColumnSparse` in the next chunk made the cross-chunk `less()` in consume() bad-cast
 /// (`Bad cast from type DB::ColumnSparse to DB::ColumnVector<unsigned short>`).
+///
+/// Originally captured by the AST fuzzer on 02149_read_in_order_fixed_prefix over amd_msan: the
+/// read-in-order sort prefix `toStartOfMonth(date)` (a Date == UInt16) reached the compare dense in
+/// one chunk and ColumnSparse in the next. That state is not reliably reachable from SQL (the
+/// standard pipeline densifies both chunks symmetrically), so the deterministic proof lives here.
 TEST(FinishSortingTransform, SparseSortKeyDoesNotBadCast)
 {
     constexpr size_t n = 8;
