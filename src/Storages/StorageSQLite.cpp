@@ -89,6 +89,21 @@ bool markRemoteGeneratedColumns(sqlite3 * sqlite_db, const String & table_name, 
     return true;
 }
 
+String quoteSQLiteIdentifier(std::string_view identifier)
+{
+    WriteBufferFromOwnString quoted;
+    writeChar('"', quoted);
+    for (char c : identifier)
+    {
+        if (c == '"')
+            writeCString("\"\"", quoted);
+        else
+            writeChar(c, quoted);
+    }
+    writeChar('"', quoted);
+    return quoted.str();
+}
+
 }
 
 
@@ -326,14 +341,14 @@ public:
         WriteBufferFromOwnString sqlbuf;
 
         sqlbuf << "INSERT INTO ";
-        sqlbuf << doubleQuoteString(remote_table_name);
+        sqlbuf << quoteSQLiteIdentifier(remote_table_name);
         sqlbuf << " (";
 
         for (auto it = insertable_block.begin(); it != insertable_block.end(); ++it)
         {
             if (it != insertable_block.begin())
                 sqlbuf << ", ";
-            sqlbuf << quoteString(it->name);
+            sqlbuf << quoteSQLiteIdentifier(it->name);
         }
 
         sqlbuf << ") VALUES ";

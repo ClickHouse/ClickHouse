@@ -1,0 +1,3 @@
+Rows after INSERT into SQLite columns requiring identifier quoting:
+a'b	a\b
+1	2
