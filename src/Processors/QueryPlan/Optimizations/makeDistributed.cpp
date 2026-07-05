@@ -1016,19 +1016,33 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// other has N, replicate the single-shard task to all N shards.
                     /// This handles ReplicatedRead (data available on every node) and
                     /// single-node subplans feeding into multi-node broadcast joins.
+                    /// A single-shard leaf task (it carries `bucket_description`) reads the same data
+                    /// on every node, so drop its routing parameters: the read ignores them, and they
+                    /// would collide with the per-shard values of the other child in the merge below.
+                    /// A single-destination exchange task keeps its parameters because its receive
+                    /// step reads `bucket_id`.
+                    auto replicate_single_task = [](DistributedQueryTask single_task, const auto & shards)
+                    {
+                        if (single_task.parameters.parameters.contains("bucket_description"))
+                        {
+                            single_task.parameters.parameters.erase("bucket_id");
+                            single_task.parameters.parameters.erase("total_buckets");
+                            single_task.parameters.parameters.erase("bucket_description");
+                        }
+                        std::unordered_map<String, DistributedQueryTask> replicated;
+                        for (const auto & [shard_id, _] : shards)
+                            replicated[shard_id] = single_task;
+                        return replicated;
+                    };
                     if (frame.list_of_shards.size() == 1 && current_list_of_shards.size() > 1)
                     {
-                        auto single_task = std::move(frame.list_of_shards.begin()->second);
-                        frame.list_of_shards.clear();
-                        for (const auto & [shard_id, _] : current_list_of_shards)
-                            frame.list_of_shards[shard_id] = single_task;
+                        frame.list_of_shards = replicate_single_task(
+                            std::move(frame.list_of_shards.begin()->second), current_list_of_shards);
                     }
                     else if (current_list_of_shards.size() == 1 && frame.list_of_shards.size() > 1)
                     {
-                        auto single_task = std::move(current_list_of_shards.begin()->second);
-                        current_list_of_shards.clear();
-                        for (const auto & [shard_id, _] : frame.list_of_shards)
-                            current_list_of_shards[shard_id] = single_task;
+                        current_list_of_shards = replicate_single_task(
+                            std::move(current_list_of_shards.begin()->second), frame.list_of_shards);
                     }
                     else if (frame.list_of_shards.size() != current_list_of_shards.size())
                     {
@@ -1043,6 +1057,19 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         auto it = frame.list_of_shards.find(shard);
                         if (it == frame.list_of_shards.end())
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Shard {} is missing in the list of shards", shard);
+
+                        /// The task parameters are one flat map shared by all steps of the fragment,
+                        /// so silently keeping one of two different values could make a step read
+                        /// another step's routing values. No supported plan shape produces a
+                        /// conflict; throw if one ever does.
+                        for (const auto & [key, value] : task.parameters.parameters)
+                        {
+                            auto existing = it->second.parameters.parameters.find(key);
+                            if (existing != it->second.parameters.parameters.end() && existing->second != value)
+                                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                    "Conflicting task parameter '{}' for shard {} when combining child plans: '{}' vs '{}'",
+                                    key, shard, existing->second.dump(), value.dump());
+                        }
 
                         it->second.parameters.parameters.insert(task.parameters.parameters.begin(), task.parameters.parameters.end());
                         it->second.input_exchange_streams.insert(it->second.input_exchange_streams.end(),
