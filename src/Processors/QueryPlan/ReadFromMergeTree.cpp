@@ -2715,9 +2715,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
         if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
-                && !vector_search_parameters.has_value())
+                && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                                                         /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -3567,6 +3568,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
     if (!allow_query_condition_cache || !has_where_or_prewhere)
+        reader_settings.use_query_condition_cache = false;
+
+    /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+    /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+    if (result.sampling.use_sampling)
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of
