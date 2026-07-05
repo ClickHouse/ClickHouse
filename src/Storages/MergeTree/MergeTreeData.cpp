@@ -9,6 +9,8 @@
 #include <Common/threadPoolCallbackRunner.h>
 
 #include <Access/AccessControl.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <AggregateFunctions/AggregateFunctionCount.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/Utils.h>
@@ -11495,6 +11497,23 @@ std::shared_ptr<const IKeyValueEntity> MergeTreeData::tryGetLookupJoin(const Nam
     const auto cache_key = serializeLookupKey("table_join", key_names);
     auto storage_snapshot = getStorageSnapshot(metadata_snapshot, query_context);
     auto lookup_columns = getAllPhysicalColumnsForLookupJoin(storage_snapshot);
+
+    /// The lookup join reads and caches *every* physical column of the table (`lookup_columns`),
+    /// a superset of the columns the query requests. Verify the user is granted `SELECT` on that
+    /// exact set before any read (and before returning a cached entity), computed from the same
+    /// `storage_snapshot` the entity is built from. Doing the check here - rather than only in the
+    /// planner, which resolves a different snapshot - closes the window where a concurrent
+    /// `ALTER ... ADD COLUMN` could widen the physical column set after the planner-side check and
+    /// let the fast path read a column the user was never checked for. Fall back to the regular
+    /// join path (which reads and access-checks only the requested columns) when the grant is
+    /// missing, so legitimate queries that touch only accessible columns keep working.
+    if (const auto storage_id = getStorageID(); storage_id.hasDatabase())
+    {
+        if (!query_context->getAccess()->isGranted(
+                AccessType::SELECT, storage_id.database_name, storage_id.table_name, lookup_columns))
+            return {};
+    }
+
     auto lookup_table_state = getLookupTableState(storage_snapshot, query_context, lookup_columns);
 
     if (lookup_table_state.cacheable)

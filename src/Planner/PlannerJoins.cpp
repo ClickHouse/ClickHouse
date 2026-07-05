@@ -1,8 +1,5 @@
 #include <Planner/PlannerJoins.h>
 
-#include <Access/Common/AccessFlags.h>
-#include <Access/ContextAccess.h>
-
 #include <Columns/ColumnConst.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
@@ -1140,24 +1137,12 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     }
 
     /// `tryGetLookupJoin` reads and caches *every* physical column of the right table
-    /// (`getAllPhysicalColumnsForLookupJoin`), while the regular join plan reads only the columns
-    /// this query requests and access-checks exactly those (`checkAccessRights` in `PlannerJoinTree`).
-    /// A user granted `SELECT` only on the join key and the requested payload columns could otherwise
-    /// force a read and cache build of physical columns they cannot access. Fall back to the regular
-    /// join path unless the user is granted `SELECT` on the full set of physical columns the lookup
-    /// entity reads, so the lookup fast path never reads or caches a column outside the user's grants.
-    const auto & storage_id = table_node->getStorageID();
-    if (storage_id.hasDatabase())
-    {
-        Names lookup_columns;
-        for (const auto & column : table_node->getStorageSnapshot()->getColumns(GetColumnsOptions(GetColumnsOptions::AllPhysical)))
-            lookup_columns.push_back(column.name);
-
-        if (!planner_context->getQueryContext()->getAccess()->isGranted(
-                AccessType::SELECT, storage_id.database_name, storage_id.table_name, lookup_columns))
-            return {};
-    }
-
+    /// (`getAllPhysicalColumnsForLookupJoin`), a superset of the columns this query requests. It
+    /// verifies `SELECT` access on that full physical column set - computed from the same snapshot
+    /// it reads - and falls back (returns an empty entity) when the grant is missing, so the lookup
+    /// fast path never reads or caches a column outside the user's grants. The check lives there,
+    /// not here, to avoid a window where a concurrent `ALTER ... ADD COLUMN` widens the column set
+    /// between a planner-side check and the actual read.
     result.storage_key_value = storage->tryGetLookupJoin(storage_key_names, planner_context->getQueryContext());
     if (!result.storage_key_value)
         return {};
