@@ -1,0 +1,271 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nodejs-traces
+title: 'مراقبة تتبعات Node.js باستخدام ClickStack'
+sidebarTitle: 'تتبعات Node.js'
+description: 'مراقبة تتبعات تطبيقات Node.js باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['Node.js', 'تتبعات', 'OTEL', 'ClickStack', 'التتبّع الموزع']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  التقط التتبعات الموزعة من تطبيقات Node.js في ClickStack باستخدام الرصد التلقائي من OpenTelemetry. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-nodejs">
+  ## التكامل مع تطبيق Node.js الحالي
+</div>
+
+يتناول هذا القسم كيفية إضافة التتبّع الموزّع إلى تطبيق Node.js الحالي لديك باستخدام الرصد التلقائي في OpenTelemetry.
+
+إذا كنت ترغب في اختبار هذا التكامل قبل تهيئة بيئتك الحالية، يمكنك تجربة الإعداد المُعَدّ مسبقًا والبيانات النموذجية في [قسم مجموعة البيانات التجريبية](#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل مع إتاحة الوصول إلى نقاط نهاية OTLP (المنافذ 4317/4318)
+* تطبيق Node.js حالي (Node.js 14 أو أحدث)
+* مدير حزم npm أو yarn
+* اسم المضيف أو عنوان IP الخاص بـ ClickStack
+
+<Steps>
+  <Step>
+    #### تثبيت OpenTelemetry وتهيئته
+
+    ثبّت الحزمة `@hyperdx/node-opentelemetry` وقم بتهيئتها عند بدء تطبيقك. راجع [دليل Node.js SDK](/ar/clickstack/ingesting-data/sdks/nodejs#getting-started) للاطلاع على خطوات التثبيت التفصيلية.
+  </Step>
+
+  <Step>
+    #### الحصول على مفتاح واجهة برمجة تطبيقات لـ ClickStack
+
+    ستحتاج إلى مفتاح واجهة برمجة تطبيقات لإرسال التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack (على سبيل المثال: http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول عند الحاجة
+    3. انتقل إلى **Team Settings → API Keys**
+    4. انسخ **Ingestion API Key** الخاص بك
+
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات لـ ClickStack" />
+  </Step>
+
+  <Step>
+    #### شغّل تطبيقك
+
+    ابدأ تشغيل تطبيق Node.js بعد تعيين متغيرات البيئة:
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+  </Step>
+
+  <Step>
+    #### ولّد بعض الحركة
+
+    أرسل طلبات إلى تطبيقك لإنشاء تتبعات:
+
+    ```bash
+    # طلبات بسيطة
+    curl http://localhost:3000/
+    curl http://localhost:3000/api/users
+    curl http://localhost:3000/api/products
+
+    # محاكاة حمل
+    for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من التتبعات في HyperDX
+
+    بعد اكتمال التهيئة، سجّل الدخول إلى HyperDX وتحقّق من وصول التتبعات. ينبغي أن ترى شيئًا مشابهًا لما يلي. إذا لم تظهر لك التتبعات، فجرّب تعديل النطاق الزمني:
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="واجهة البحث عن التتبعات" />
+
+    انقر على أي تتبع لعرض التفاصيل، بما في ذلك spans والتوقيت والسمات:
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="عرض تتبع فردي" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار التتبّع في Node.js باستخدام ClickStack قبل إضافة أدوات الرصد إلى تطبيقاتهم في بيئة الإنتاج، نوفر مجموعة بيانات نموذجية تحتوي على تتبعات مُولَّدة مسبقًا لتطبيق Node.js بأنماط حركة مرور واقعية.
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة البيانات النموذجية
+
+    نزّل ملف التتبعات النموذجي:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+    ```
+  </Step>
+
+  <Step>
+    #### بدء ClickStack
+
+    إذا لم يكن ClickStack قيد التشغيل لديك بعد، فابدأه باستخدام:
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CLICKHOUSE_USER=default \
+      -e CLICKHOUSE_PASSWORD= \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### الحصول على مفتاح واجهة برمجة تطبيقات الخاص بـ ClickStack
+
+    ستحتاج إلى مفتاح واجهة برمجة تطبيقات لإرسال التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack لديك (على سبيل المثال، http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
+    3. انتقل إلى **Team Settings → API Keys**
+    4. انسخ **Ingestion API Key** الخاص بك
+
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات الخاص بـ ClickStack" />
+
+    عيّن مفتاح واجهة برمجة تطبيقات الخاص بك كمتغير بيئة:
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### إرسال التتبعات إلى ClickStack
+
+    ```bash
+    curl -X POST http://localhost:4318/v1/traces \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $CLICKSTACK_API_KEY" \
+      -d @nodejs-traces-sample.json
+    ```
+
+    ينبغي أن ترى استجابة مثل `{"partialSuccess":{}}`، ما يشير إلى أنه تم إرسال التتبعات بنجاح.
+  </Step>
+
+  <Step>
+    #### التحقق من التتبعات في HyperDX
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    2. انتقل إلى عرض **Search** وعيّن المصدر إلى **Traces**
+    3. عيّن النطاق الزمني إلى **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="عرض البحث للتتبعات" />
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="عرض تتبع فردي" />
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية لمتصفحك. تمتد البيانات التجريبية عبر **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور التتبعات التجريبية بغض النظر عن موقعك. وبعد ظهور التتبعات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك على بدء مراقبة أداء تطبيقات Node.js، نوفر لوحة معلومات مُعدّة مسبقًا تتضمن تصورات أساسية للتتبعات.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">نزّل</TrackedLink> إعدادات لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استورد لوحة المعلومات المُعدّة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم **لوحات المعلومات**
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى (ضمن قائمة النقاط الثلاث)
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+
+    3. ارفع ملف `nodejs-traces-dashboard.json` وانقر على **إنهاء الاستيراد**
+
+    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
+
+    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="لوحة معلومات نموذجية" />
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن يكون للنطاق الزمني في لوحة المعلومات المستوردة أي قيمة محددة افتراضيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="demo-traces-not-appearing">
+  ### عدم ظهور تتبعات العرض التوضيحي عند الإرسال عبر curl
+</div>
+
+إذا كنت قد أرسلت التتبعات عبر curl ولكنك لا تراها في HyperDX، فجرّب إرسالها مرةً أخرى:
+
+```bash
+curl -X POST http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $CLICKSTACK_API_KEY" \
+  -d @nodejs-traces-sample.json
+```
+
+هذه مشكلة معروفة تحدث عند استخدام نهج العرض التوضيحي عبر curl، ولا تؤثر في تطبيقات الإنتاج المزوّدة بأدوات الرصد.
+
+<div id="no-traces">
+  ### عدم ظهور التتبعات في HyperDX
+</div>
+
+**تحقق من ضبط متغيرات البيئة:**
+
+```bash
+echo $CLICKSTACK_API_KEY
+# Should output your API key
+
+echo $OTEL_EXPORTER_OTLP_ENDPOINT
+# Should output http://localhost:4318 or your ClickStack host
+```
+
+**تحقّق من الاتصال بالشبكة:**
+
+```bash
+curl -v http://localhost:4318/v1/traces
+```
+
+يجب أن يتصل بنجاح بـ OTLP endpoint.
+
+**تحقق من سجلات التطبيق:**
+ابحث عن رسائل تهيئة OpenTelemetry عند بدء تشغيل تطبيقك. يجب أن تعرض حزمة SDK الخاصة بـ HyperDX تأكيدًا على اكتمال التهيئة.
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) للمقاييس المهمة (معدلات الأخطاء، حدود زمن الاستجابة)
+* أنشئ لوحات معلومات إضافية لحالات استخدام محددة (مراقبة واجهة برمجة التطبيقات، الأحداث الأمنية)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يستخدم هذا الدليل حزمة HyperDX SDK، التي ترسل التتبعات مباشرةً إلى نقطة نهاية OTLP الخاصة بـ ClickStack. ويعمل هذا النهج جيدًا في بيئات التطوير والاختبار وعمليات النشر الإنتاجية الصغيرة إلى المتوسطة.
+أما في بيئات الإنتاج الأكبر، أو إذا كنت بحاجة إلى تحكم إضافي في بيانات القياس عن بُعد، ففكّر في نشر OpenTelemetry Collector الخاص بك كوكيل.
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئات الإنتاج وأمثلة على تهيئة OpenTelemetry Collector.

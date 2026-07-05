@@ -1,0 +1,42 @@
+---
+slug: /cloud/managed-postgres/settings
+sidebarTitle: 'Paramètres'
+title: 'Paramètres'
+description: 'Configurez les paramètres de PostgreSQL et de PgBouncer et gérez les paramètres d’instance de Managed Postgres'
+keywords: ['configuration de Postgres', 'paramètres PostgreSQL', 'pgbouncer']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.settings-beta" />
+
+Vous pouvez modifier les paramètres de configuration et gérer les paramètres de votre instance Managed Postgres depuis l’onglet **Paramètres** dans la barre latérale.
+
+<div id="service-actions">
+  ## Service actions et mise à l’échelle
+</div>
+
+<Image img="/images/managed-postgres/service-actions.webp" alt="Service actions et mise à l’échelle" size="md" border />
+
+La barre d’outils **Service actions** permet de gérer votre instance Managed Postgres :
+
+* **Reset password** : mettre à jour le mot de passe du superutilisateur (uniquement lorsque l’instance est `Running`)
+* **Restart** : redémarrer l’instance de base de données (uniquement lorsque l’instance est `Running`)
+* **Delete** : supprimer l’instance
+
+La section **Scaling** vous permet de modifier les types d’instance de votre primaire et de vos instances de secours afin d’augmenter ou de réduire les ressources de calcul et la capacité de stockage.
+Consultez la [page de mise à l’échelle](/fr/products/managed-postgres/scaling) pour en savoir plus.
+
+<div id="changing-configuration">
+  ## Modification des paramètres de configuration
+</div>
+
+<Image img="/images/managed-postgres/postgres-parameters.webp" alt="Configuration des paramètres Postgres" size="md" border />
+
+Pour modifier un paramètre, cliquez sur le bouton **Modifier les paramètres**. Sélectionnez les paramètres à modifier, puis ajustez leurs valeurs en conséquence. Une fois les modifications effectuées, cliquez sur le bouton **Enregistrer les modifications**.
+
+Toutes les modifications apportées aux paramètres de configuration sont généralement enregistrées sur l’instance en moins d’une minute. Certains paramètres nécessitent un redémarrage de la base de données pour être pris en compte. Ces modifications seront appliquées au prochain redémarrage, que vous pouvez déclencher manuellement depuis la barre d’outils **Service actions**.
+
+Consultez la [documentation](https://www.postgresql.org/docs/current/runtime-config.html) officielle sur les paramètres de configuration. La liste des paramètres pouvant être définis sera bientôt élargie. En attendant, contactez le [support](https://clickhouse.com/support/program) pour demander la prise en charge d’un paramètre qui ne l’est pas encore.

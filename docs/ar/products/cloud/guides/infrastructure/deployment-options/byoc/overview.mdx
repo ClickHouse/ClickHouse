@@ -1,0 +1,73 @@
+---
+title: 'نظرة عامة'
+slug: /cloud/reference/byoc/overview
+sidebarTitle: 'نظرة عامة'
+keywords: ['BYOC', 'السحابة', 'استخدم سحابتك الخاصة']
+description: 'انشر ClickHouse على البنية التحتية السحابية الخاصة بك'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يُمكِّنك Bring Your Own Cloud (BYOC) من نشر خدمات ClickHouse وتخزين بياناتك مباشرةً داخل حساباتك السحابية الخاصة، بدلًا من الاعتماد على البنية التحتية الافتراضية لـ ClickHouse Cloud. ويُعد هذا النهج مناسبًا بشكل خاص للمؤسسات التي لديها سياسات أمنية صارمة أو متطلبات امتثال تنظيمية تتطلب تحكمًا كاملًا وسيادة تامة على بياناتها.
+
+بصورة عامة، يفصل BYOC بين مستوى التحكم، الذي يعمل داخل ClickHouse VPC وتديره ClickHouse Cloud، ومستوى البيانات، الذي يعمل بالكامل داخل حسابك السحابي ويحتوي على مجموعات ClickHouse وبياناتك ونسخك الاحتياطية. وللاطلاع على عرض تفصيلي للمكونات المعنية وكيفية تدفق الحركة بينها، راجع صفحة [البنية المعمارية](/ar/products/bring-your-own-cloud/overview/architecture).
+
+> **إذا كنت ترغب في الحصول على حق الوصول، فيُرجى [التواصل معنا](https://clickhouse.com/cloud/bring-your-own-cloud).** راجع [شروط الخدمة](https://clickhouse.com/legal/agreements/terms-of-service) الخاصة بنا للحصول على مزيد من المعلومات.
+
+<Note>
+  صُمم BYOC خصيصًا لعمليات النشر واسعة النطاق، ويتطلب من العملاء توقيع عقد التزام.
+</Note>
+
+**موفرو الخدمات السحابية المدعومون:**
+
+* AWS (GA)
+* GCP (GA)
+* Azure (معاينة خاصة). يُرجى الانضمام إلى قائمة الانتظار [هنا](https://clickhouse.com/cloud/bring-your-own-cloud) إذا كنت مهتمًا.
+
+**المناطق السحابية المدعومة:**
+جميع **المناطق العامة** المدرجة في وثائق [المناطق المدعومة](/ar/products/cloud/reference/supported-regions) الخاصة بنا متاحة لعمليات نشر BYOC. المناطق الخاصة غير مدعومة حاليًا.
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="supported-features">
+  ### الميزات المدعومة
+</div>
+
+* **SharedMergeTree**: يستخدم ClickHouse Cloud وBYOC الملف التنفيذي نفسه والتكوين نفسه. لذلك، تكون جميع ميزات ClickHouse الأساسية مدعومة في BYOC، مثل SharedMergeTree.
+* **Shared Catalog**
+* **إمكانية الوصول إلى Console لإدارة حالة الخدمة**:
+  * يدعم عمليات مثل البدء والإيقاف والإنهاء.
+  * عرض الخدمات والحالة.
+* **النسخ الاحتياطي والاستعادة المُداران**
+* **التوسّع الرأسي والأفقي اليدوي.**
+* **الخمول/التنبيه التلقائي**
+* **Warehouses**: Compute-Compute Separation
+* **شبكة Zero Trust عبر Tailscale.**
+* **Monitoring**:
+  * يدعم Prometheus scraping للمراقبة المركزية باستخدام Prometheus وGrafana وDatadog. راجع [BYOC Observability](/ar/products/bring-your-own-cloud/reference/observability-aws) للحصول على تعليمات الإعداد.
+* **VPC Peering**
+* **S3 الآمن**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
+* **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
+* **تكامل**: راجع القائمة الكاملة في [هذه الصفحة](/ar/integrations/home).
+
+<div id="planned-features-currently-unsupported">
+  ### الميزات المخطط لها (غير المدعومة حاليًا)
+</div>
+
+تتضمن الميزات التالية قيودًا أو أنها غير مدعومة بالكامل في عمليات نشر Bring Your Own Cloud (BYOC).
+
+* SQL Console: لا تتوفر SQL Console القياسية لعمليات نشر BYOC حاليًا، لكنها مدرجة على خارطة الطريق لدينا.
+* دعم ClickPipes: متاح حاليًا ضمن معاينة خاصة مع تكاملات البث مثل Kafka وKinesis. أما التكاملات الإضافية (CDC، وتخزين الكائنات، وما إلى ذلك) فهي مدرجة على خارطة الطريق.
+* التحجيم التلقائي: مُدرج على خارطة الطريق لإضافته في الإصدارات المستقبلية.
+* واجهة MySQL
+* AWS KMS المعروف أيضًا باسم CMEK (مفاتيح التشفير المُدارة من العميل)
+* Advanced Dashboard: واجهة مستخدم تعمل على جهة العميل فقط، وتتطلب أن يكون لدى متصفحك وصول مباشر وأن يتمكن من الاتصال مباشرةً بخادم ClickHouse لديك عبر نقطة النهاية الخاصة به. إذا كانت سياسات شبكة VPC لديك تقيّد وصول المتصفح الوارد إلى نقطة نهاية ClickHouse، فلن تعمل لوحة Advanced Dashboard.
+* لوحات معلومات Monitoring: لا تتوفر حاليًا في لوحة معلومات Monitoring سوى مقاييس تخصيص الذاكرة. ويجري العمل على دعم مقاييس إضافية، ومن المتوقع إتاحتها في إصدار مستقبلي.

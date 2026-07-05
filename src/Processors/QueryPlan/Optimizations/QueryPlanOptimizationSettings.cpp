@@ -19,6 +19,7 @@ namespace Setting
     extern const SettingsBool allow_limit_by_partitions_independently;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
+    extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool distributed_plan_force_shuffle_aggregation;
@@ -59,6 +60,7 @@ namespace Setting
     extern const SettingsBool query_plan_push_limit_by_into_sort;
     extern const SettingsBool query_plan_top_k_through_join;
     extern const SettingsBool query_plan_read_in_order_through_join;
+    extern const SettingsBool optimize_aggregation_in_order_limit;
     extern const SettingsBool query_plan_read_in_order;
     extern const SettingsBool query_plan_remove_redundant_distinct;
     extern const SettingsBool query_plan_remove_redundant_sorting;
@@ -195,6 +197,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     limit_by_partitions_independently = from[Setting::query_plan_enable_optimizations] && from[Setting::allow_limit_by_partitions_independently];
     optimize_sorting_by_input_stream_properties = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_sorting_by_input_stream_properties];
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
+    optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
@@ -269,6 +272,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     max_size_to_preallocate_for_joins = from[Setting::max_size_to_preallocate_for_joins];
     collect_hash_table_stats_during_joins = from[Setting::collect_hash_table_stats_during_joins];
+    collect_hash_table_stats_during_aggregation = from[Setting::collect_hash_table_stats_during_aggregation];
     initial_query_id = initial_query_id_;
     lock_acquire_timeout = std::chrono::milliseconds(from[Setting::lock_acquire_timeout].totalMilliseconds());
     actions_settings = std::move(actions_settings_);

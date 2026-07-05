@@ -1,0 +1,41 @@
+---
+title: Exception lors de la modification des paramètres utilisateur
+description: Gestion d'une exception levée lors de la modification des paramètres utilisateur
+date: 2023-08-26
+tags: ['Paramètres', 'Erreurs et exceptions']
+keywords: ['Exception', 'Paramètres utilisateur']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-cannot-update-user-default-in-usersxml-because-this-storage-is-readonly-access_storage_readonly">
+  ## DB::Exception : impossible de mettre à jour l’utilisateur `default` dans users.xml, car ce stockage est en lecture seule. (ACCESS_STORAGE_READONLY)
+</div>
+
+Lorsque vous essayez de modifier les paramètres d’un utilisateur, vous pouvez rencontrer l’exception ci-dessus.
+
+Voici quelques pistes pour résoudre cette erreur :
+
+<div id="edit-usersxml-directly">
+  ## Modifier users.xml directement
+</div>
+
+Vous pouvez modifier ou ajouter directement dans `users.xml` les paramètres souhaités pour un utilisateur spécifique, dans le répertoire `/etc/clickhouse-server/users.d`.
+
+Pour en savoir plus sur `users.xml`, consultez [cette page](/fr/concepts/features/configuration/settings/settings-profiles).
+
+<div id="create-another-user">
+  ## Créer un autre utilisateur
+</div>
+
+Vous pouvez créer un autre utilisateur avec les paramètres indiqués, puis vous connecter à ClickHouse avec ce nouvel utilisateur.
+
+Consultez [cette page](/fr/reference/statements/create/user) pour savoir comment créer des utilisateurs.
+
+<div id="enable-sql-driven-access-control">
+  ## Activer le contrôle d’accès et la gestion des comptes pilotés par SQL
+</div>
+
+Vous pouvez activer le contrôle d’accès et la gestion des comptes pilotés par SQL pour l’utilisateur `default`. Les étapes à suivre sont décrites sur cette [page](/fr/concepts/features/security/access-rights#enabling-access-control).

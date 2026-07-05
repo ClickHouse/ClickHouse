@@ -1,0 +1,190 @@
+---
+slug: /cloud/managed-postgres/monitoring/prometheus
+sidebarTitle: 'Point de terminaison Prometheus'
+title: 'Intégration Prometheus pour Managed Postgres'
+description: 'Collectez les métriques de Managed Postgres dans Prometheus, Grafana, Datadog ou tout collector compatible OpenMetrics'
+keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', 'métriques', 'openmetrics', 'observability']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
+
+Managed Postgres expose deux points de terminaison de métriques compatibles Prometheus
+sur la [ClickHouse Cloud API][cloud-api] :
+
+| Endpoint | Path                                                   | Renvoie                                                          |
+| -------- | ------------------------------------------------------ | ---------------------------------------------------------------- |
+| Org      | `/v1/organizations/{orgId}/postgres/prometheus`        | Les métriques de tous les services Managed Postgres de l&#39;org |
+| Instance | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | Les métriques d&#39;un seul service                              |
+
+<Note>
+  Le point de terminaison au niveau de l&#39;org renvoie les métriques d&#39;un maximum de 100 services. Si votre
+  organisation compte plus de 100 services Managed Postgres, [contactez le
+  support](https://clickhouse.com/support/program).
+</Note>
+
+<div id="authentication">
+  ## Authentification
+</div>
+
+L’point de terminaison utilise les mêmes [clés API] que le reste de l’OpenAPI ; consultez
+le [guide OpenAPI](/fr/products/managed-postgres/openapi) pour savoir comment les créer
+et retrouver les identifiants de votre organisation et de votre service.
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+ORG_ID=myorgid
+PG_ID=mypgid
+```
+
+<div id="scrape-org">
+  ## Collecte des métriques de tous les services d’une organisation
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/prometheus"
+```
+
+<div id="scrape-instance">
+  ## Collecte des métriques d’un seul service
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
+```
+
+<div id="sample-response">
+  ## Exemple de réponse
+</div>
+
+```response
+# HELP PostgresServiceInfo Information about PostgreSQL service, including status and version.
+# TYPE PostgresServiceInfo gauge
+PostgresServiceInfo{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",postgres_status="running",postgres_version="18"} 1
+
+# HELP PostgresServer_ActiveConnections Number of active connections by state.
+# TYPE PostgresServer_ActiveConnections gauge
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="active"} 1
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="idle"} 4
+
+# HELP PostgresServer_CacheHitRatio Buffer cache hit ratio: blocks served from cache vs. total blocks accessed (%).
+# TYPE PostgresServer_CacheHitRatio gauge
+PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres"} 100
+```
+
+Pour la liste complète des métriques et de leur signification, consultez la
+[référence des métriques](/fr/products/managed-postgres/monitoring/metrics).
+
+<div id="configuring-prometheus">
+  ## Configuration de Prometheus
+</div>
+
+Cette configuration interroge le point de terminaison de l’org toutes les 60 secondes :
+
+```yaml
+scrape_configs:
+  - job_name: "managed-postgres"
+    scheme: https
+    metrics_path: "/v1/organizations/<ORG_ID>/postgres/prometheus"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+    scrape_interval: 60s
+```
+
+Le point de terminaison actualise les métriques une fois par minute. Une collecte plus fréquente que
+`60s` duplique les échantillons et produit un effet en escalier sur les
+panneaux de jauge.
+
+Définissez `honor_labels: true` afin que les labels `postgres_service` et
+`postgres_service_name` du point de terminaison soient préservés au lieu
+d’être écrasés par Prometheus.
+
+Pour collecter un seul service, ajoutez `/<PG_ID>` à `metrics_path`.
+
+<div id="grafana-dashboard">
+  ## Tableau de bord Grafana prêt à l’emploi
+</div>
+
+Un tableau de bord Grafana prêt à l’emploi visualise toutes les métriques exposées par le point de terminaison
+— un tableau triable des services, l’utilisation du CPU et de la mémoire, l’utilisation du disque
+avec des alertes sur seuil, les connexions par état, les transactions et le
+taux de rollback, l’activité des tuples, les E/S, le stockage par
+base de données et les interblocages.
+
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Tableau de bord Grafana des services Managed Postgres" size="md" border />
+
+<div id="import-dashboard">
+  ### Importation du tableau de bord
+</div>
+
+<Steps>
+  <Step>
+    #### Téléchargez le JSON du tableau de bord
+
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">Télécharger le JSON du tableau de bord</TrackedLink>.
+  </Step>
+
+  <Step>
+    #### Ouvrez l’écran d’importation dans Grafana
+
+    Accédez à **Tableaux de bord → Nouveau → Importer**. Téléversez le fichier JSON ou collez son contenu.
+  </Step>
+
+  <Step>
+    #### Choisissez votre source de données Prometheus
+
+    Lorsque l’entrée `DS_PROMETHEUS` vous est demandée, sélectionnez la source de données Prometheus qui interroge le point de terminaison configuré dans la [section précédente](#configuring-prometheus).
+  </Step>
+</Steps>
+
+Pour les déploiements Grafana provisionnés, placez le fichier JSON dans votre
+répertoire de provisionnement des tableaux de bord. Grafana associe la référence `${DS_PROMETHEUS}`
+à une source de données Prometheus disponible dans l’instance.
+
+<div id="template-variables">
+  ### Variables de modèle
+</div>
+
+Le tableau de bord expose trois variables :
+
+* **Source de données** — la source de données Prometheus sur laquelle repose le tableau de bord.
+* **Service** — filtre à sélection multiple sur `postgres_service_name`.
+  Par défaut, la valeur est *All* ; choisissez un ou plusieurs services pour limiter la portée de chaque panneau.
+* **Intervalle de collecte** — constante masquée, définie par défaut sur `60s`. Elle détermine
+  le calcul de `$__rate_interval` par Grafana. Modifiez cette valeur dans le
+  JSON si votre intervalle de collecte est différent.
+
+<div id="drill-in">
+  ### Filtrer sur un seul service pour une analyse approfondie
+</div>
+
+Plusieurs panneaux sont conçus pour permettre une analyse approfondie une fois que
+vous avez filtré sur un seul service via la variable **Service**. Le panneau CPU par mode, par
+exemple, empile `user`, `system`, `iowait`, `steal` et d’autres modes
+CPU afin de vous permettre de déterminer si un pic est dû au code de l’application, à une activité du noyau,
+à des attentes liées au disque ou à une contention de l’hyperviseur.
+
+<div id="third-party-integrations">
+  ## Intégration avec Grafana et Datadog
+</div>
+
+Le point de terminaison suit la même structure que le [point de terminaison Prometheus
+de ClickHouse](/fr/products/cloud/features/monitoring/prometheus), donc les configurations de Grafana Cloud, Grafana
+Alloy et de l’agent OpenMetrics de Datadog qui y sont décrites
+s’appliquent aussi ici. Faites pointer `metrics_path` vers le chemin de l’org ou de l’instance Managed Postgres plutôt que vers celui de ClickHouse.
+
+[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "Gestion des clés API"
