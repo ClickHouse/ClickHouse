@@ -120,6 +120,13 @@ public:
         return sink_stream_size;
     }
 
+    /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. its sink
+    /// consults the deduplication block ids. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink`
+    /// compute their own `deduplicate` flag (only MergeTree-family engines with an enabled deduplication
+    /// window). It is used to decide whether the parallel write fan-out is safe: a per-branch block-number
+    /// collision only drops rows when some sink actually deduplicates.
+    static bool storageDeduplicatesBlocksOnInsert(const StoragePtr & storage);
+
 protected:
     InsertDependenciesBuilder(
         StoragePtr table,

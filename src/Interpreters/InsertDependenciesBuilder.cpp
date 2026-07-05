@@ -136,6 +136,8 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool add_implicit_sign_column_constraint_for_collapsing_engine;
     extern const MergeTreeSettingsBool share_nested_offsets;
+    extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+    extern const MergeTreeSettingsUInt64 replicated_deduplication_window;
 }
 
 namespace ErrorCodes
@@ -775,6 +777,24 @@ private:
 };
 
 
+bool InsertDependenciesBuilder::storageDeduplicatesBlocksOnInsert(const StoragePtr & storage)
+{
+    /// Only MergeTree-family engines deduplicate inserted blocks, and only when their (synchronous)
+    /// deduplication window is enabled. This mirrors how `MergeTreeSink` / `ReplicatedMergeTreeSink`
+    /// compute their own `deduplicate` flag. Other engines (`Memory`, `Null`, `Distributed`, ...)
+    /// never consult the deduplication block ids, so a per-branch block-number collision introduced by
+    /// the parallel write fan-out is harmless for them.
+    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get());
+    if (!merge_tree)
+        return false;
+
+    const auto merge_tree_settings = merge_tree->getSettings();
+    if (storage->supportsReplication())
+        return (*merge_tree_settings)[MergeTreeSetting::replicated_deduplication_window] != 0;
+    return (*merge_tree_settings)[MergeTreeSetting::non_replicated_deduplication_window] > 0;
+}
+
+
 InsertDependenciesBuilder::InsertDependenciesBuilder(
     StoragePtr table, ASTPtr query, SharedHeader insert_header,
     bool async_insert_, bool skip_destination_table_, size_t max_insert_threads,
@@ -819,10 +839,18 @@ InsertDependenciesBuilder::InsertDependenciesBuilder(
     /// Keep the dependent-MV deduplication path single-stream in that case (as it was before parallelization).
     /// Under `new_unified_hash` the VIEW id also folds in the global source block number, so identical blocks
     /// on different branches stay distinct and the fan-out is safe.
+    ///
+    /// The collision only drops rows when some dependent-MV target sink actually deduplicates. If every
+    /// dependent target has its deduplication window disabled (e.g. a plain `MergeTree` target with
+    /// `non_replicated_deduplication_window = 0`, or a non-deduplicating engine), the per-branch view block
+    /// number is never consulted, so the fan-out stays safe and `max_insert_threads` should keep applying.
     const auto dedup_version = init_context->getServerSettings()[ServerSetting::insert_deduplication_version].value;
+    const bool any_dependent_target_deduplicates = std::ranges::any_of(storages, [&] (const auto & entry)
+        { return !isView(entry.first) && entry.first != init_table_id && storageDeduplicatesBlocksOnInsert(entry.second); });
     const bool legacy_mv_dedup_single_stream = isViewsInvolved()
         && deduplicate_blocks_in_dependent_materialized_views
-        && dedup_version != InsertDeduplicationVersions::NEW_UNIFIED_HASHES;
+        && dedup_version != InsertDeduplicationVersions::NEW_UNIFIED_HASHES
+        && any_dependent_target_deduplicates;
 
     if (all_sinks_support_parallel_insert
         && (settings[Setting::parallel_view_processing] || !isViewsInvolved())

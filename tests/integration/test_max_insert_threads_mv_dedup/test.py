@@ -11,6 +11,11 @@
 # silently dropping rows of a single INSERT. Such inserts must therefore keep the dependent-MV
 # deduplication path single-stream. Under new_unified_hash the VIEW id also folds in the global source
 # block number, so the branches stay distinct and the fan-out is safe.
+#
+# The legacy single-stream fallback is narrow: it only fires when a dependent-MV target actually
+# deduplicates. If every dependent target has its deduplication window disabled (a plain MergeTree
+# target with non_replicated_deduplication_window = 0), the per-branch view block number is never
+# consulted, so even the legacy hash modes may fan out to max_insert_threads streams.
 # See https://github.com/ClickHouse/ClickHouse/pull/109000
 
 # pylint: disable=redefined-outer-name
@@ -60,36 +65,43 @@ def start_cluster():
         cluster.shutdown()
 
 
-def setup_tables(node):
+def setup_tables(node, dst_dedup_window):
     node.query("DROP TABLE IF EXISTS mv SYNC")
     node.query("DROP TABLE IF EXISTS dst SYNC")
     node.query("DROP TABLE IF EXISTS src SYNC")
     # `src` has no deduplication window, so it keeps every inserted block; only the
-    # materialized-view target `dst` performs (view-level) deduplication. This isolates the
-    # dependent-MV deduplication path from any source-table deduplication.
+    # materialized-view target `dst` may perform (view-level) deduplication. This isolates the
+    # dependent-MV deduplication path from any source-table deduplication. `dst_dedup_window` toggles
+    # whether the MV target actually deduplicates.
     node.query("CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY tuple()")
     node.query(
         "CREATE TABLE dst (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
-        "SETTINGS non_replicated_deduplication_window = 100000"
+        f"SETTINGS non_replicated_deduplication_window = {dst_dedup_window}"
     )
     node.query("CREATE MATERIALIZED VIEW mv TO dst AS SELECT x FROM src")
 
 
 @pytest.mark.parametrize(
-    "node_name, expected_sinks",
+    "node_name, dst_dedup_window, expected_sinks",
     [
-        # Legacy hash modes must keep the dependent-MV deduplication path single-stream:
-        # one MergeTreeSink for `src` plus one for the MV target `dst`.
-        ("node_old", 2),
-        ("node_compatible", 2),
+        # Deduplicating MV target: legacy hash modes must keep the dependent-MV deduplication path
+        # single-stream - one MergeTreeSink for `src` plus one for the MV target `dst`.
+        ("node_old", 100000, 2),
+        ("node_compatible", 100000, 2),
         # new_unified_hash is safe to fan out to `max_insert_threads` streams: a MergeTreeSink
         # for `src` and one for `dst` in each of the parallel branches.
-        ("node_new", 2 * THREADS),
+        ("node_new", 100000, 2 * THREADS),
+        # MV target with deduplication disabled (non_replicated_deduplication_window = 0): the per-branch
+        # view block number is never consulted, so even the legacy hash modes fan out. This is the case
+        # that used to regress - the fallback fired on hash mode alone and forced a single stream.
+        ("node_old", 0, 2 * THREADS),
+        ("node_compatible", 0, 2 * THREADS),
+        ("node_new", 0, 2 * THREADS),
     ],
 )
-def test_plain_insert_mv_dedup(start_cluster, node_name, expected_sinks):
+def test_plain_insert_mv_dedup(start_cluster, node_name, dst_dedup_window, expected_sinks):
     node = NODES[node_name]
-    setup_tables(node)
+    setup_tables(node, dst_dedup_window)
 
     # Topology: EXPLAIN PIPELINE shows how many parallel insert streams (sinks) the writing side uses.
     pipeline = node.query(
