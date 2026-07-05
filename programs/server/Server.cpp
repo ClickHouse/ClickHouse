@@ -860,9 +860,11 @@ void sanityChecks(Server & server, const ServerSettings & server_settings)
                 "per-CPU performance counters (used for internal profiling and statistics) fast to update. "
                 "Without it, a slower fallback is used (a real system call on some platforms, such as AArch64), "
                 "making these counters more expensive and slightly degrading performance. "
-                "rseq requires glibc 2.35 or newer, where it is enabled automatically. "
-                "If the runtime glibc is older, this feature is simply unavailable (upgrade glibc to benefit from it); "
-                "otherwise, check that it has not been disabled via the 'glibc.pthread.rseq' tunable."));
+                "This means the runtime C library or the kernel did not register a usable rseq area for this process. "
+                "Possible causes: the kernel does not support rseq (it was introduced in Linux 4.18); "
+                "the C library does not register it (glibc does so automatically since version 2.35, so upgrading glibc may help; "
+                "other libraries, such as musl, do not register it); "
+                "or registration was disabled or failed at startup (with glibc, see the 'glibc.pthread.rseq' tunable)."));
 
     try
     {
