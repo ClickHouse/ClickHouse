@@ -877,15 +877,16 @@ private:
         for (const auto & arg : arguments)
         {
             const IColumn * col = arg.column.get();
+            size_t row_index = row;
             if (typeid_cast<const ColumnConst *>(col))
             {
                 if (preserve_const)
                     continue; // fixed per-batch cost, not per-row
                 col = &typeid_cast<const ColumnConst &>(*col).getDataColumn();
-                row = 0; // materialized const columns only ever have row 0
+                row_index = 0; // materialized const columns only ever have row 0
             }
             if (const auto * s = typeid_cast<const ColumnString *>(col))
-                total += s->getOffsets()[row] - (row > 0 ? s->getOffsets()[row - 1] : 0);
+                total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0);
             else if (arg.type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += arg.type->getSizeOfValueInMemory();
             else
