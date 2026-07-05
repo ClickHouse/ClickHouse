@@ -187,6 +187,11 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
+    {
+        getNested()->checkTableSizeBelowDropLimit(query_context);
+    }
+
     /// Must materialize the nested storage: the default `Atomic` database renames a table
     /// via `checkTableCanBeRenamed` + `renameInMemory` and never calls `rename`, so a no-op
     /// here would let a rename bypass nested-storage guards (e.g. the `leader_election`

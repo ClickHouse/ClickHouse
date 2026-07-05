@@ -1,0 +1,398 @@
+---
+title: 'pandas 사용자를 위한 SQL'
+sidebarTitle: 'SQL 매핑'
+slug: /chdb/guides/pandas-to-sql
+description: 'DataStore에서 pandas 연산이 SQL에 어떻게 매핑되는지 이해합니다'
+keywords: ['chdb', 'datastore', 'pandas', 'sql', '매핑', '쿼리']
+doc_type: 'guide'
+---
+
+DataStore는 pandas 스타일의 연산을 최적화된 SQL로 컴파일합니다. 이 가이드는 pandas 사용자가 자신이 수행한 연산의 기반이 되는 SQL을 이해하는 데 도움이 됩니다.
+
+<div id="viewing-sql">
+  ## 생성된 SQL 확인
+</div>
+
+```python title="Query"
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+    .sort('sum', ascending=False)
+    .head(10)
+)
+
+# SQL 확인
+print(query.to_sql())
+```
+
+```sql title="Response"
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('sales.csv', 'CSVWithNames')
+WHERE amount > 1000
+GROUP BY region
+ORDER BY sum DESC
+LIMIT 10
+```
+
+***
+
+<div id="basic">
+  ## 기본 작업 대응표
+</div>
+
+<div id="filtering-where">
+  ### 필터링 (WHERE)
+</div>
+
+| pandas                                 | SQL                                  |
+| -------------------------------------- | ------------------------------------ |
+| `df[df['age'] > 25]`                   | `WHERE age > 25`                     |
+| `df[df['city'] == 'NYC']`              | `WHERE city = 'NYC'`                 |
+| `df[(df['x'] > 10) & (df['y'] < 20)]`  | `WHERE x > 10 AND y < 20`            |
+| `df[(df['a'] == 1) \| (df['b'] == 2)]` | `WHERE a = 1 OR b = 2`               |
+| `df[~(df['status'] == 'inactive')]`    | `WHERE NOT status = 'inactive'`      |
+| `df[df['col'].isin([1, 2, 3])]`        | `WHERE col IN (1, 2, 3)`             |
+| `df[df['val'].between(10, 20)]`        | `WHERE val BETWEEN 10 AND 20`        |
+| `df[df['name'].str.contains('John')]`  | `WHERE position('John' IN name) > 0` |
+
+<div id="selection-select">
+  ### 선택 (SELECT)
+</div>
+
+| pandas                 | SQL                                |
+| ---------------------- | ---------------------------------- |
+| `df['col']`            | `SELECT col`                       |
+| `df[['a', 'b', 'c']]`  | `SELECT a, b, c`                   |
+| `df.head(10)`          | `LIMIT 10`                         |
+| `df.tail(10)`          | 복잡함 (`ORDER BY ... DESC LIMIT 10`) |
+| `df.drop_duplicates()` | `SELECT DISTINCT *`                |
+
+<div id="sorting-order-by">
+  ### 정렬 (ORDER BY)
+</div>
+
+| pandas                                                | SQL                          |
+| ----------------------------------------------------- | ---------------------------- |
+| `df.sort_values('col')`                               | `ORDER BY col ASC`           |
+| `df.sort_values('col', ascending=False)`              | `ORDER BY col DESC`          |
+| `df.sort_values(['a', 'b'])`                          | `ORDER BY a ASC, b ASC`      |
+| `df.sort_values(['a', 'b'], ascending=[True, False])` | `ORDER BY a ASC, b DESC`     |
+| `df.nlargest(10, 'col')`                              | `ORDER BY col DESC LIMIT 10` |
+| `df.nsmallest(5, 'col')`                              | `ORDER BY col ASC LIMIT 5`   |
+
+***
+
+<div id="groupby">
+  ## GroupBy와 집계
+</div>
+
+<div id="basic-groupby">
+  ### 기본적인 GroupBy
+</div>
+
+| pandas                               | SQL                                              |
+| ------------------------------------ | ------------------------------------------------ |
+| `df.groupby('city')['sales'].sum()`  | `SELECT city, SUM(sales) FROM ... GROUP BY city` |
+| `df.groupby('city')['sales'].mean()` | `SELECT city, AVG(sales) FROM ... GROUP BY city` |
+| `df.groupby('city').size()`          | `SELECT city, COUNT(*) FROM ... GROUP BY city`   |
+| `df.groupby(['a', 'b'])['c'].sum()`  | `SELECT a, b, SUM(c) FROM ... GROUP BY a, b`     |
+
+<div id="aggregation-functions">
+  ### 집계 함수
+</div>
+
+| pandas      | SQL                   |
+| ----------- | --------------------- |
+| `sum()`     | `SUM()`               |
+| `mean()`    | `AVG()`               |
+| `count()`   | `COUNT()`             |
+| `min()`     | `MIN()`               |
+| `max()`     | `MAX()`               |
+| `std()`     | `stddevPop()`         |
+| `var()`     | `varPop()`            |
+| `median()`  | `MEDIAN()`            |
+| `nunique()` | `COUNT(DISTINCT col)` |
+| `first()`   | `any()`               |
+| `last()`    | `anyLast()`           |
+
+<div id="multiple-aggregations">
+  ### 다중 집계
+</div>
+
+```python
+# pandas
+df.groupby('city').agg({
+    'sales': ['sum', 'mean'],
+    'quantity': 'sum'
+})
+
+# SQL
+SELECT city, 
+       SUM(sales) AS sales_sum, 
+       AVG(sales) AS sales_mean,
+       SUM(quantity) AS quantity_sum
+FROM data
+GROUP BY city
+```
+
+<div id="having-clause">
+  ### HAVING 절
+</div>
+
+```python
+# pandas 스타일
+df.groupby('city')['sales'].sum().query('sales > 10000')
+
+# DataStore 스타일
+ds.groupby('city').agg({'sales': 'sum'}).having(ds['sum'] > 10000)
+
+# SQL
+SELECT city, SUM(sales) AS sum
+FROM data
+GROUP BY city
+HAVING sum > 10000
+```
+
+***
+
+<div id="joins">
+  ## 조인
+</div>
+
+| pandas                                          | SQL                           |
+| ----------------------------------------------- | ----------------------------- |
+| `pd.merge(df1, df2, on='id')`                   | `JOIN df2 ON df1.id = df2.id` |
+| `pd.merge(df1, df2, on='id', how='left')`       | `LEFT JOIN df2 ON ...`        |
+| `pd.merge(df1, df2, on='id', how='right')`      | `RIGHT JOIN df2 ON ...`       |
+| `pd.merge(df1, df2, on='id', how='outer')`      | `FULL OUTER JOIN df2 ON ...`  |
+| `pd.merge(df1, df2, left_on='a', right_on='b')` | `JOIN df2 ON df1.a = df2.b`   |
+
+<div id="join-example">
+  ### 조인 예시
+</div>
+
+```python
+# pandas
+result = pd.merge(employees, departments, on='dept_id', how='left')
+
+# SQL에 해당하는 표현
+SELECT *
+FROM employees e
+LEFT JOIN departments d ON e.dept_id = d.dept_id
+```
+
+***
+
+<div id="string">
+  ## 문자열 연산
+</div>
+
+| pandas                            | SQL                        |
+| --------------------------------- | -------------------------- |
+| `df['col'].str.upper()`           | `upper(col)`               |
+| `df['col'].str.lower()`           | `lower(col)`               |
+| `df['col'].str.len()`             | `length(col)`              |
+| `df['col'].str.strip()`           | `trim(col)`                |
+| `df['col'].str.contains('x')`     | `position('x' IN col) > 0` |
+| `df['col'].str.startswith('x')`   | `startsWith(col, 'x')`     |
+| `df['col'].str.endswith('x')`     | `endsWith(col, 'x')`       |
+| `df['col'].str.replace('a', 'b')` | `replace(col, 'a', 'b')`   |
+| `df['col'].str[:5]`               | `substring(col, 1, 5)`     |
+
+***
+
+<div id="datetime">
+  ## DateTime 연산
+</div>
+
+| pandas                    | SQL                  |
+| ------------------------- | -------------------- |
+| `df['date'].dt.year`      | `toYear(date)`       |
+| `df['date'].dt.month`     | `toMonth(date)`      |
+| `df['date'].dt.day`       | `toDayOfMonth(date)` |
+| `df['date'].dt.hour`      | `toHour(date)`       |
+| `df['date'].dt.dayofweek` | `toDayOfWeek(date)`  |
+| `df['date'].dt.quarter`   | `toQuarter(date)`    |
+
+***
+
+<div id="arithmetic">
+  ## 산술 연산
+</div>
+
+| pandas               | SQL            |
+| -------------------- | -------------- |
+| `df['a'] + df['b']`  | `a + b`        |
+| `df['a'] - df['b']`  | `a - b`        |
+| `df['a'] * df['b']`  | `a * b`        |
+| `df['a'] / df['b']`  | `a / b`        |
+| `df['a'] // df['b']` | `intDiv(a, b)` |
+| `df['a'] % df['b']`  | `a % b`        |
+| `df['a'] ** 2`       | `pow(a, 2)`    |
+| `df['a'].abs()`      | `abs(a)`       |
+| `df['a'].round(2)`   | `round(a, 2)`  |
+
+***
+
+<div id="null">
+  ## NULL 처리
+</div>
+
+| pandas                          | SQL                               |
+| ------------------------------- | --------------------------------- |
+| `df['col'].isna()`              | `isNull(col)`                     |
+| `df['col'].notna()`             | `isNotNull(col)`                  |
+| `df.dropna()`                   | `WHERE col IS NOT NULL` (각 열에 대해) |
+| `df.fillna(0)`                  | `ifNull(col, 0)`                  |
+| `df.fillna({'a': 0, 'b': 'x'})` | `ifNull(a, 0), ifNull(b, 'x')`    |
+
+***
+
+<div id="example">
+  ## 전체 예시
+</div>
+
+<div id="pandas-code">
+  ### pandas 코드
+</div>
+
+```python
+import pandas as pd
+
+df = pd.read_csv("sales.csv")
+
+result = (df
+    [df['date'] >= '2024-01-01']              # 필터
+    [df['amount'] > 100]                      # 필터
+    [['region', 'category', 'amount']]        # 컬럼 선택
+    .groupby(['region', 'category'])          # 그룹
+    .agg({
+        'amount': ['sum', 'mean', 'count']
+    })
+    .reset_index()                            # 평탄화
+    .query('amount_sum > 10000')              # Having
+    .sort_values('amount_sum', ascending=False)  # 정렬
+    .head(20)                                 # 제한
+)
+```
+
+<div id="equivalent-sql">
+  ### 이에 해당하는 SQL
+</div>
+
+```sql
+SELECT 
+    region,
+    category,
+    SUM(amount) AS amount_sum,
+    AVG(amount) AS amount_mean,
+    COUNT(amount) AS amount_count
+FROM file('sales.csv', 'CSVWithNames')
+WHERE date >= '2024-01-01'
+  AND amount > 100
+GROUP BY region, category
+HAVING amount_sum > 10000
+ORDER BY amount_sum DESC
+LIMIT 20
+```
+
+<div id="datastore-code">
+  ### DataStore 코드
+</div>
+
+```python
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .select('region', 'category', 'amount')
+    .groupby('region', 'category')
+    .agg({'amount': ['sum', 'mean', 'count']})
+    .having(ds['sum'] > 10000)
+    .sort('sum', ascending=False)
+    .head(20)
+)
+
+# 생성된 SQL 확인
+print(result.to_sql())
+```
+
+***
+
+<div id="summary">
+  ## SQL 키워드 요약
+</div>
+
+| pandas 연산              | SQL 절         |
+| ---------------------- | ------------- |
+| `df[condition]`        | `WHERE`       |
+| `df[['a', 'b']]`       | `SELECT a, b` |
+| `df.groupby('x')`      | `GROUP BY x`  |
+| `.agg({'col': 'sum'})` | `SUM(col)`    |
+| `.sort_values('x')`    | `ORDER BY x`  |
+| `.head(n)`             | `LIMIT n`     |
+| `pd.merge()`           | `JOIN`        |
+| `.drop_duplicates()`   | `DISTINCT`    |
+| `.having()`            | `HAVING`      |
+
+***
+
+<div id="tips">
+  ## pandas 사용자를 위한 팁
+</div>
+
+<div id="think-in-sql">
+  ### 1. SQL 연산 단위로 생각하기
+</div>
+
+DataStore 코드를 작성할 때는 어떤 SQL을 작성하면 될지 생각해 보세요:
+
+```python
+# 원하는 쿼리: SELECT ... WHERE ... GROUP BY ... ORDER BY ... LIMIT
+# 작성 방법:
+ds.filter(...).groupby(...).agg(...).sort(...).head(...)
+```
+
+<div id="use-to-sql">
+  ### 2. to_sql()로 익히기
+</div>
+
+```python
+# pandas 코드가 SQL로 어떻게 변환되는지 확인하세요
+query = ds.filter(ds['x'] > 10).groupby('y').sum()
+print(query.to_sql())
+```
+
+<div id="leverage-sql-features">
+  ### 3. SQL 기능 활용하기
+</div>
+
+DataStore를 사용하면 pandas 구문으로 SQL의 강력한 기능을 활용할 수 있습니다:
+
+```python
+# 윈도우 함수
+ds['rank'] = F.row_number().over(partition_by='category', order_by='score')
+
+# 조건부 집계
+ds.groupby('region').agg({
+    'high_value': ('amount', F.sum_if(Field('amount') > 1000))
+})
+```

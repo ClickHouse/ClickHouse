@@ -1,0 +1,138 @@
+---
+sidebarTitle: '亚马逊 RDS Postgres'
+description: '将亚马逊 RDS Postgres 设置为 ClickPipes 的源'
+slug: /integrations/clickpipes/postgres/source/rds
+title: 'RDS Postgres 源设置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'postgresql', 'CDC', '数据摄取', '实时同步']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="supported-postgres-versions">
+  ## 支持的 Postgres 版本
+</div>
+
+ClickPipes 支持 Postgres 12 及以上版本。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+如果您的 RDS 实例已经配置了以下设置，则可以跳过本节：
+
+* `rds.logical_replication = 1`
+
+如果您之前使用过其他数据复制工具，通常会已预先配置好此设置。
+
+```text
+postgres=> SHOW rds.logical_replication ;
+ rds.logical_replication
+-------------------------
+ on
+(1 row)
+```
+
+如果尚未配置，请按以下步骤操作：
+
+1. 为你的 Postgres 版本创建一个包含所需设置的新参数组：
+   * 将 `rds.logical_replication` 设置为 1
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="在 RDS 中哪里可以找到参数组？" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="更改 rds.logical_replication" size="lg" border />
+
+2. 将新参数组应用到你的 RDS Postgres 数据库
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="使用新参数组修改 RDS Postgres" size="lg" border />
+
+3. 重启你的 RDS 实例以使更改生效
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="重启 RDS Postgres" size="lg" border />
+
+<div id="configure-database-user">
+  ## 配置数据库用户
+</div>
+
+使用管理员用户连接到你的 RDS Postgres 实例，并执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为上一步创建的用户授予 schema 级只读权限。以下示例展示了 `public` schema 的权限。对于每个包含你要复制的表的 schema，都需要重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制特权：
+
+   ```sql
+   GRANT rds_replication TO clickpipes_user;
+   ```
+
+4. 使用你要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只在 publication 中包含实际需要的表，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须**定义主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制 stream。
+
+<div id="configure-network-access">
+  ## 配置网络访问
+</div>
+
+<div id="ip-based-access-control">
+  ### 基于 IP 的访问控制
+</div>
+
+如果您想限制对 RDS 实例的访问流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)添加到 RDS 安全组的 `Inbound rules` 中。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="在 RDS Postgres 中在哪里可以找到安全组？" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="编辑上述安全组的入站规则" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### 通过 AWS PrivateLink 进行私有访问
+</div>
+
+如需通过私有网络连接到您的 RDS 实例，可以使用 AWS PrivateLink。请参考我们的 [ClickPipes AWS PrivateLink 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 来完成连接设置。
+
+<div id="workarounds-for-rds-proxy">
+  ### RDS Proxy 的替代方案
+</div>
+
+RDS Proxy 不支持逻辑复制连接。如果你的 RDS 使用动态 IP 地址，且无法使用 DNS 名称或 Lambda，以下是一些可选方案：
+
+1. 使用 cron 作业定期解析 RDS 端点的 IP，并在 IP 发生变化时更新 NLB。
+2. 使用结合 EventBridge/SNS 的 RDS 事件通知：通过 AWS RDS 事件通知自动触发更新。
+3. 使用稳定的 EC2：部署一个 EC2 实例，充当轮询服务或基于 IP 的代理。
+4. 使用 Terraform 或 CloudFormation 等工具自动管理 IP 地址。
+
+<div id="whats-next">
+  ## 接下来呢？
+</div>
+
+你现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下设置 Postgres 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

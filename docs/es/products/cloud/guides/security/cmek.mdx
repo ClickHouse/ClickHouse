@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'Cifrado de datos'
+slug: /cloud/security/cmek
+title: 'Cifrado de datos'
+description: 'Más información sobre el cifrado de datos en ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'cifrado', 'CMEK', 'Verificación periódica de la clave de KMS']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="storage-encryption">
+  ## Cifrado a nivel de almacenamiento
+</div>
+
+ClickHouse Cloud está configurado con cifrado en reposo de forma predeterminada, mediante claves AES-256 administradas por el proveedor de servicios en la nube. Para obtener más información, consulte:
+
+* [Cifrado del lado del servidor de AWS para S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingServerSideEncryption.html)
+* [Cifrado en reposo predeterminado de GCP](https://cloud.google.com/docs/security/encryption/default-encryption)
+* [Cifrado de Azure Storage para datos en reposo](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
+
+<div id="database-encryption">
+  ## Cifrado a nivel de base de datos
+</div>
+
+<EnterprisePlanFeatureBadge feature="Cifrado mejorado" />
+
+Los datos en reposo se cifran de forma predeterminada mediante claves AES-256 administradas por el proveedor de servicios en la nube. Los clientes pueden habilitar Cifrado transparente de datos (TDE) para añadir una capa adicional de protección a los datos del servicio, o proporcionar su propia clave para usar Claves de cifrado gestionadas por el cliente (CMEK) en su servicio.
+
+El cifrado mejorado está disponible actualmente en servicios de AWS y GCP. Azure estará disponible próximamente.
+
+<div id="transparent-data-encryption-tde">
+  ### Cifrado transparente de datos (TDE)
+</div>
+
+TDE debe habilitarse al crear el servicio. Los servicios existentes no pueden cifrarse después de su creación. Una vez habilitado TDE, no puede deshabilitarse. Todos los datos del servicio permanecerán cifrados. Si desea deshabilitar TDE después de haberlo habilitado, debe crear un nuevo servicio y migrar sus datos allí.
+
+1. Seleccione `Create new service`
+2. Asigne un nombre al servicio
+3. Seleccione AWS o GCP como proveedor de servicios en la nube y la región deseada en el menú desplegable
+4. Haga clic en el menú desplegable de las características de Enterprise y active Enable Transparent Data Encryption (TDE)
+5. Haga clic en Create service
+
+<div id="customer-managed-encryption-keys-cmek">
+  ### Claves de cifrado gestionadas por el cliente (CMEK)
+</div>
+
+<Warning>
+  Eliminar una clave de KMS utilizada para cifrar un servicio de ClickHouse Cloud hará que el servicio de ClickHouse se detenga y que sus datos, junto con los backups existentes, no se puedan recuperar. Para evitar la pérdida accidental de datos al rotar claves, puede ser conveniente conservar las claves de KMS antiguas durante un tiempo antes de eliminarlas.
+</Warning>
+
+Una vez que un servicio está cifrado con TDE, los clientes pueden actualizar la clave para habilitar CMEK. El servicio se reiniciará automáticamente después de actualizar la configuración de TDE. Durante este proceso, la clave de KMS anterior descifra la clave de cifrado de datos (DEK), y la nueva clave de KMS vuelve a cifrar la DEK. Esto garantiza que, tras reiniciarse, el servicio use la nueva clave de KMS para las operaciones de cifrado a partir de ese momento. Este proceso puede tardar varios minutos.
+
+<Accordion title="Habilitar CMEK con AWS KMS">
+  1. En ClickHouse Cloud, seleccione el servicio cifrado
+
+  2. Haga clic en Settings en el panel izquierdo
+
+  3. En la parte inferior de la pantalla, expanda Network security information
+
+  4. Copie el Encryption role ID (AWS) o la Encryption Service Account (GCP); lo necesitará en un paso posterior
+
+  5. [Cree una clave de KMS para AWS](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+
+  6. Haga clic en la clave
+
+  7. Actualice la Key Policy de AWS de la siguiente manera:
+
+     ```json
+     {
+         "Sid": "Allow ClickHouse Access",
+         "Effect": "Allow",
+         "Principal": {
+             "AWS": [ "Encryption role ID " ]
+         },
+         "Action": [
+             "kms:Encrypt",
+             "kms:Decrypt",
+             "kms:ReEncrypt*",
+             "kms:DescribeKey"
+         ],
+         "Resource": "*"
+     }
+     ```
+
+  8. Guarde la Key Policy
+
+  9. Copie el ARN de la clave
+
+  10. Vuelva a ClickHouse Cloud y pegue el ARN de la clave en la sección Cifrado transparente de datos de Service Settings
+
+  11. Guarde el cambio
+</Accordion>
+
+<Accordion title="Habilitar CMEK con GCP KMS">
+  1. En ClickHouse Cloud, seleccione el servicio cifrado
+  2. Haga clic en Settings en el panel izquierdo
+  3. En la parte inferior de la pantalla, expanda Network security information
+  4. Copie la Encryption Service Account (GCP); la necesitará en un paso posterior
+  5. [Cree una clave de KMS para GCP](https://cloud.google.com/kms/docs/create-key)
+  6. Haga clic en la clave
+  7. Conceda los siguientes permisos a la Encryption Service Account de GCP que copió en el paso 4.
+     * Cloud KMS CryptoKey Encrypter/Decrypter
+     * Cloud KMS Viewer
+  8. Guarde el permiso de la clave
+  9. Copie la ruta del recurso de la clave
+  10. Vuelva a ClickHouse Cloud y pegue la ruta del recurso de la clave en la sección Cifrado transparente de datos de Service Settings
+  11. Guarde el cambio
+</Accordion>
+
+<Accordion title="Habilitar CMEK con Azure KMS">
+  1. En ClickHouse Cloud, selecciona el servicio cifrado
+  2. Haz clic en `Settings` en el lado izquierdo
+  3. En la parte inferior de la pantalla, despliega `Network security information`
+  4. Copia el `Cross Tenant App Client ID`; lo necesitarás en el siguiente paso
+  5. Inicia sesión en Azure y usa el siguiente comando desde la CLI de Azure para crear un nuevo principal de servicio; sustituye `{azure_cross_tenant_app_client_id}` por el valor que copiaste en el paso anterior
+     `az ad sp create --id {azure_cross_tenant_app_client_id}`
+  6. Copia el `Name` del nuevo principal de servicio creado; lo necesitarás en un paso posterior
+  7. [Crea un Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+  8. [Crea una clave de Key Vault en Azure](https://learn.microsoft.com/en-us/azure/key-vault/keys/quick-create-portal)
+  9. En la clave de Key Vault, selecciona `Access control (IAM)` en el lado izquierdo
+  10. Selecciona `Role assignments` en el menú superior
+  11. Haz clic en `Add` y luego en `Add role assignment` en el menú superior
+  12. Selecciona el rol `Key Vault Crypto User` y luego haz clic en `Next`
+  13. Deja las selecciones predeterminadas en la pantalla `Add role assignment` y haz clic en `+Select members`
+  14. Pega el nombre del principal de servicio que copiaste en el paso 6 (empieza por CH-TDE), selecciona el principal de servicio y haz clic en `Select`
+  15. Haz clic en `Next` y luego en `Review + assign`
+  16. Vuelve a tu Azure Key Vault y copia los siguientes valores:
+      * En la página Overview, copia tu Vault URI
+      * En la página Overview, copia tu Directory ID
+      * En la página Keys, copia el Name de tu clave
+  17. Vuelve a la configuración de tu servicio en ClickHouse Cloud y pega los valores del paso 16 en los siguientes campos:
+      * Key ID &gt; pega el Name de tu clave
+      * Key Vault URI &gt; pega tu Vault URI
+      * Key Tenant ID &gt; pega tu Directory ID
+  18. Haz clic en Rotate KMS, espera unos minutos, ya que esto provocará un reinicio gradual, y verifica que tu servicio esté en ejecución
+</Accordion>
+
+<div id="key-rotation">
+  #### Rotación de claves
+</div>
+
+Una vez configurado CMEK, rote la clave siguiendo los procedimientos anteriores para crear una nueva clave de KMS y conceder permisos. Vuelva a la configuración del servicio para pegar el nuevo ARN (AWS), la ruta del recurso de la clave (GCP) o el nombre de la clave (Azure), y guarde la configuración. El servicio se reiniciará para aplicar la nueva clave.
+
+<div id="kms-key-poller">
+  #### Verificación periódica de la clave de KMS
+</div>
+
+Al usar CMEK, la validez de la clave de KMS proporcionada se comprueba cada 10 minutos. Si el acceso a la clave de KMS deja de ser válido, el servicio de ClickHouse se detendrá. Para reanudar el servicio, restaure el acceso a la clave de KMS siguiendo los pasos de esta guía y, a continuación, reinicie el servicio.
+
+<div id="backup-and-restore">
+  ### Copia de seguridad y restauración
+</div>
+
+Las copias de seguridad se cifran con la misma clave que el servicio asociado. Cuando se restaura una copia de seguridad cifrada, se crea una instancia cifrada que utiliza la misma clave de KMS que la instancia original. Si es necesario, puede realizar la rotación de la clave de KMS después de la restauración; consulte [Rotación de claves](#key-rotation) para obtener más información.
+
+<div id="performance">
+  ## Rendimiento
+</div>
+
+El cifrado de la base de datos aprovecha la [funcionalidad integrada de sistema de archivos virtual para el cifrado de datos de ClickHouse](/es/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) para cifrar y proteger sus datos. El algoritmo utilizado en esta funcionalidad es `AES_256_CTR` y se prevé que tenga una penalización de rendimiento del 5-15 % según la carga de trabajo:
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Penalización de rendimiento de CMEK" />

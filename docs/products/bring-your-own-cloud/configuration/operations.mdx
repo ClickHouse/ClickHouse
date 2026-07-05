@@ -1,0 +1,53 @@
+---
+title: 'BYOC operations and maintenance'
+slug: /cloud/reference/byoc/operations
+sidebarTitle: 'Operations and maintenance'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'operations', 'maintenance']
+description: 'Deploy ClickHouse on your own cloud infrastructure'
+doc_type: 'reference'
+---
+
+## Overview {#overview}
+
+ClickHouse Cloud manages upgrades and maintenance for your BYOC deployment to ensure your services remain secure, performant, and up-to-date. This page describes the upgrade processes for different components of your BYOC infrastructure and how maintenance windows work.
+
+## ClickHouse Service Upgrade Process {#clickhouse-upgrade-process}
+
+We regularly upgrade the ClickHouse database, including version upgrades, bug fixes, and performance improvements. ClickHouse Cloud uses a ["make before break" (MBB)](/products/cloud/features/autoscaling/make-before-break) approach for upgrades, which adds updated replicas before removing old ones, resulting in more seamless upgrades that are less disruptive to running workloads.
+
+ClickHouse service upgrades in BYOC follow the same process and patterns as standard ClickHouse Cloud services, including support for release channels (Fast, Regular, and Slow) and scheduled maintenance windows. All Scale and Enterprise tier features are available in BYOC deployments. For detailed information about upgrade schedules, release channels, and maintenance windows, see the [Upgrades documentation](/products/cloud/features/admin-features/upgrades).
+
+## Cloud Services and Resources Upgrade Process {#cloud-upgrade-process}
+
+ClickHouse Cloud regularly upgrades supporting services running on Kubernetes and infrastructure components within your BYOC deployment to ensure security, reliability, and access to new features. These cloud service upgrades are performed in the background and aligned with our standard Cloud release schedules. All supporting services are managed via ArgoCD, and upgrades are designed to be non-disruptive. No service interruptions are expected during these updates.
+
+Examples of cloud services that are upgraded include:
+- **ClickHouse Operator**: The Kubernetes operator that manages ClickHouse clusters
+- **Istio Services**: Ingress ingress and agent components
+- **Monitoring Stack**: Prometheus, Grafana, AlertManager, and Thanos components
+
+## Kubernetes Cluster Upgrade Process {#k8s-upgrade-process}
+
+The Kubernetes cluster (EKS for AWS, GKE for GCP) that hosts your ClickHouse services requires periodic upgrades to maintain security, compatibility, and access to new features. ClickHouse Cloud manages all Kubernetes cluster upgrades for your BYOC deployment, ensuring your cluster stays current with the supported versions.
+
+### Cluster Upgrade Types {#cluster-upgrade-types}
+
+**Control Plane Upgrades**: The Kubernetes control plane components (API server, etcd, controller manager) are upgraded by ClickHouse Cloud. These upgrades are typically transparent to your workloads and don't require pod restarts.
+
+**Node Group Upgrades**: Worker node upgrades require node replacement, which may impact running pods. ClickHouse Cloud coordinates these upgrades using a make-before-break approach to minimize disruption:
+
+- New nodes are provisioned with the updated Kubernetes version before old nodes are removed
+- Pods are gracefully drained and migrated to the new nodes
+- Old nodes are terminated only after pods have been successfully migrated
+
+<Note>
+Kubernetes node upgrades may cause brief pod restarts during the migration process. ClickHouse Cloud uses pod disruption budgets and graceful shutdowns to minimize impact on your workloads.
+</Note>
+
+### Upgrade Schedule {#upgrade-schedule}
+
+Kubernetes cluster upgrades are scheduled in coordination with you through ClickHouse Support. We will communicate upgrade plans in advance and work with you to identify an appropriate maintenance window that minimizes operational impact.
+
+### Version Support {#version-support}
+
+ClickHouse Cloud maintains Kubernetes clusters within the supported version ranges defined by your cloud service provider (AWS EKS or Google GKE). We ensure your cluster remains compatible with provider requirements while staying current with security patches and feature updates.
