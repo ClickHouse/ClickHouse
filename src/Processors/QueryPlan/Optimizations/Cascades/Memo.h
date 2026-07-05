@@ -7,6 +7,23 @@
 namespace DB
 {
 
+/// Per-query environment the optimizer runs in: the cluster size, the cost model configuration
+/// and the query settings the rules honor. Field defaults match the settings' defaults. Set once
+/// before optimization starts; only the sort settings are captured later, while the memo is
+/// built from the query plan.
+struct OptimizationEnvironment
+{
+    size_t cluster_node_count = 1;
+    CostConfig cost_config;
+    bool distributed_aggregation_memory_efficient = true;
+    bool distributed_plan_force_shuffle_aggregation = false;
+    bool exact_rows_before_limit = false;
+    /// Sort settings from the query's own SortingStep (they carry the query's size limits and
+    /// spill thresholds), used when SortingEnforcer builds a new sort. All sorts of one query
+    /// share these settings, so keeping the first is enough.
+    std::optional<SortingStep::Settings> sort_settings;
+};
+
 class Memo
 {
 public:
@@ -19,33 +36,16 @@ public:
     GroupPtr getGroup(GroupId group_id);
     GroupConstPtr getGroup(GroupId group_id) const;
 
-    size_t getClusterNodeCount() const { return cluster_node_count; }
-    void setClusterNodeCount(size_t count) { cluster_node_count = count; }
-
     size_t getGroupCount() const { return groups_by_id.size(); }
 
-    const CostConfig & getCostConfig() const { return cost_config; }
-    void setCostConfig(CostConfig config) { cost_config = config; }
+    const OptimizationEnvironment & getEnvironment() const { return environment; }
+    void setEnvironment(OptimizationEnvironment environment_) { environment = std::move(environment_); }
 
-    /// Sort settings from the query's own SortingStep (they carry the query's size limits and
-    /// spill thresholds), used when SortingEnforcer builds a new sort. All sorts of one query
-    /// share these settings, so keeping the first is enough.
-    const std::optional<SortingStep::Settings> & getSortSettings() const { return sort_settings; }
     void setSortSettings(const SortingStep::Settings & settings)
     {
-        if (!sort_settings)
-            sort_settings = settings;
+        if (!environment.sort_settings)
+            environment.sort_settings = settings;
     }
-
-    /// Query settings the aggregation and top-N rules honor. Defaults match the settings' defaults.
-    bool isDistributedAggregationMemoryEfficient() const { return distributed_aggregation_memory_efficient; }
-    void setDistributedAggregationMemoryEfficient(bool value) { distributed_aggregation_memory_efficient = value; }
-
-    bool isShuffleAggregationForced() const { return force_shuffle_aggregation; }
-    void setShuffleAggregationForced(bool value) { force_shuffle_aggregation = value; }
-
-    bool isExactRowsBeforeLimit() const { return exact_rows_before_limit; }
-    void setExactRowsBeforeLimit(bool value) { exact_rows_before_limit = value; }
 
     void dump(WriteBuffer & out) const;
     String dump() const;
@@ -53,12 +53,7 @@ public:
 private:
     LoggerPtr log;
     std::vector<GroupPtr> groups_by_id;
-    size_t cluster_node_count = 1;
-    CostConfig cost_config;
-    std::optional<SortingStep::Settings> sort_settings;
-    bool distributed_aggregation_memory_efficient = true;
-    bool force_shuffle_aggregation = false;
-    bool exact_rows_before_limit = false;
+    OptimizationEnvironment environment;
 };
 
 }

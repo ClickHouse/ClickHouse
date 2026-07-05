@@ -45,7 +45,7 @@ std::vector<GroupExpressionPtr> SortingEnforcer::applyImpl(GroupExpressionPtr ex
     /// sort keeps the query's size limits and spill thresholds.
     SortingStep::Settings sort_settings = [&]
     {
-        if (const auto & captured_settings = memo.getSortSettings())
+        if (const auto & captured_settings = memo.getEnvironment().sort_settings)
             return *captured_settings;
         SortingStep::Settings fallback_settings(65000);
         fallback_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;

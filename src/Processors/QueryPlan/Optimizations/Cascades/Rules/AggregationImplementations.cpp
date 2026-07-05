@@ -80,7 +80,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             "AggregationImplementation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    const size_t cluster_node_count = memo.getClusterNodeCount();
+    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
@@ -134,7 +134,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
     /// on a multi-node cluster whenever it is applicable.
-    const bool only_shuffle = memo.isShuffleAggregationForced() && shuffle_applicable && !candidate_node_counts.empty();
+    const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation && shuffle_applicable && !candidate_node_counts.empty();
 
     /// Strategy A: Local — gather all input to one node, aggregate there.
     /// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
@@ -243,7 +243,7 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
         /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
         /// whenever the shuffle strategy is available (the aggregation has group keys).
-        !(memo.isShuffleAggregationForced() && !agg_step->getParams().keys.empty());
+        !(memo.getEnvironment().distributed_plan_force_shuffle_aggregation && !agg_step->getParams().keys.empty());
 }
 
 std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -281,7 +281,7 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
         /*final_=*/true,
-        memo.isDistributedAggregationMemoryEfficient(),
+        memo.getEnvironment().distributed_aggregation_memory_efficient,
         agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),

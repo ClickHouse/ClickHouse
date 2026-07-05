@@ -57,25 +57,28 @@ void CascadesOptimizer::optimize()
     else
         statistics = createEmptyStatistics();
 
+    OptimizationEnvironment environment;
+
     /// Parameter takes priority (for testing or to limit parallelism).
     /// Otherwise use the actual cluster size from config.
-    size_t cluster_node_count = getCascadesClusterNodeCountParam(query_context);
-    if (cluster_node_count == 0)
-        cluster_node_count = std::max<size_t>(1, getDistributedWorkerCount(query_context));
+    environment.cluster_node_count = getCascadesClusterNodeCountParam(query_context);
+    if (environment.cluster_node_count == 0)
+        environment.cluster_node_count = std::max<size_t>(1, getDistributedWorkerCount(query_context));
 
     /// If the cost-config override is set but invalid, let the error propagate instead of silently
     /// using the defaults, so a query that set it does not get a different cost model than it asked for.
-    CostConfig cost_config;
     constexpr auto cost_config_param_name = "_internal_cascades_cost_config";
     if (query_context->getQueryParameters().contains(cost_config_param_name))
-        cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
+        environment.cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
 
-    OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
-    optimizer_context.memo.setDistributedAggregationMemoryEfficient(optimization_settings.distributed_aggregation_memory_efficient);
-    optimizer_context.memo.setShuffleAggregationForced(optimization_settings.distributed_plan_force_shuffle_aggregation);
-    optimizer_context.memo.setExactRowsBeforeLimit(optimization_settings.exact_rows_before_limit);
+    environment.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
+    environment.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    environment.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
-    LOG_TRACE(optimizer_context.log, "Cost config: {}, cluster node count: {}", cost_config.dump(), cluster_node_count);
+    LOG_TRACE(getLogger("CascadesOptimizer"), "Cost config: {}, cluster node count: {}",
+        environment.cost_config.dump(), environment.cluster_node_count);
+
+    OptimizerContext optimizer_context(*statistics, std::move(environment));
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
 
     auto [root_group_id, root_required_properties] = optimizer_context.addGroup(*query_plan.getRootNode());
@@ -158,7 +161,7 @@ static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
 
 QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo)
 {
-    const auto & cost_config = memo.getCostConfig();
+    const auto & cost_config = memo.getEnvironment().cost_config;
 
     /// Single-input expressions on the current DFS path, used to break enforcer self-reference
     /// cycles. Path-local: added when a frame is pushed, removed when popped, so the same expression

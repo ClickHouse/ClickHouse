@@ -23,7 +23,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     /// the budget is an upper bound, not a lower bound, so such pruning is unsound for
     /// optimality, and it can return before stage-3 enforcers add the distributed alternatives.
     {
-        const auto & cost_config = optimizer_context.getMemo().getCostConfig();
+        const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;
         bool group_fully_processed = group->isExplored()
             && group->isOptimizedFor(required_properties)
             && group->isEnforcedFor(required_properties);
@@ -244,12 +244,12 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
 void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
 {
     LOG_TEST(optimizer_context.log, "OptimizeInputsTask group #{} expression {}",
-        expression->group_id, expression->dump(optimizer_context.getMemo().getCostConfig()));
+        expression->group_id, expression->dump(optimizer_context.getMemo().getEnvironment().cost_config));
 
     /// All inputs were processed?
     if (input_index_to_optimize == expression->inputs.size())
     {
-        const auto & cost_config = optimizer_context.getMemo().getCostConfig();
+        const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;
 
         /// If any input has no satisfying implementation, this expression is
         /// unsatisfiable — skip cost estimation.

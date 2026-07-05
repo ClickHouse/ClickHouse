@@ -74,7 +74,7 @@ std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr
     if (is_partial)
     {
         /// Bounded sort on each shard; a sorted gather merges and a coordinator limit re-bounds.
-        for (size_t candidate : getCandidateNodeCounts(memo.getClusterNodeCount()))
+        for (size_t candidate : getCandidateNodeCounts(memo.getEnvironment().cluster_node_count))
             make_variant(candidate);
     }
     else
@@ -100,7 +100,7 @@ public:
         /// With `exact_rows_before_limit` the per-shard sorts must feed the full row count
         /// into `rows_before_limit_at_least`, but the internal cap below cuts the pipeline
         /// walk that collects those counters, so the query would report fewer rows.
-        if (memo.isExactRowsBeforeLimit())
+        if (memo.getEnvironment().exact_rows_before_limit)
             return false;
         const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
         /// Only a Full sort treats its input as raw and unsorted (see SortImplementation).

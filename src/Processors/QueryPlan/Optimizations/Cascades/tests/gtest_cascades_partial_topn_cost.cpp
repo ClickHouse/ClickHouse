@@ -65,7 +65,7 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     auto leaf_group_id = memo.addGroup(leaf);
     auto leaf_group = memo.getGroup(leaf_group_id);
     leaf_group->statistics = makeStats(input_rows, bytes_per_row);
-    leaf_group->updateBestImplementation(leaf, memo.getCostConfig());
+    leaf_group->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
 
     /// Partial top-N: bounded sort with limit L on each of the 4 nodes.
     auto partial = std::make_shared<GroupExpression>(
@@ -83,7 +83,7 @@ TEST(CascadesPartialTopNCost, GatherPricedOnPhysicalRowsOfSelectedChild)
     /// Costing the partial records its physical output: min(10000, 100 * 4) = 400.
     ASSERT_TRUE(partial->physical_output_rows.has_value());
     EXPECT_DOUBLE_EQ(*partial->physical_output_rows, limit * node_count);
-    partial_group->updateBestImplementation(partial, memo.getCostConfig());
+    partial_group->updateBestImplementation(partial, memo.getEnvironment().cost_config);
 
     /// Sorted gather over the partial: its group statistics also say L, but the transfer
     /// must be priced on the 400 physical rows of the selected child.
@@ -117,7 +117,7 @@ TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
     leaf->cost = ExpressionCost{};
     auto leaf_group_id = memo.addGroup(leaf);
     memo.getGroup(leaf_group_id)->statistics = makeStats(input_rows, 10);
-    memo.getGroup(leaf_group_id)->updateBestImplementation(leaf, memo.getCostConfig());
+    memo.getGroup(leaf_group_id)->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
 
     auto partial = std::make_shared<GroupExpression>(
         std::make_unique<SortingStep>(header, makeSortDescription(), limit, SortingStep::Settings(65000)));

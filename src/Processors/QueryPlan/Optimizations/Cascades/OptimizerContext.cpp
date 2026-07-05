@@ -35,12 +35,11 @@ OptimizationRulePtr createDistributionPassthrough();
 OptimizationRulePtr createDistributionEnforcer();
 OptimizationRulePtr createSortingEnforcer();
 
-OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, size_t cluster_node_count, CostConfig cost_config)
+OptimizerContext::OptimizerContext(IOptimizerStatistics & statistics, OptimizationEnvironment environment)
     : cost_estimator(memo)
     , statistics_derivation(memo, statistics)
 {
-    memo.setClusterNodeCount(cluster_node_count);
-    memo.setCostConfig(cost_config);
+    memo.setEnvironment(std::move(environment));
 
     addRule(createJoinCommutativity());
     addRule(createHashJoinImplementation());
@@ -131,7 +130,7 @@ void OptimizerContext::updateBestPlan(GroupExpressionPtr expression)
 
 bool OptimizerContext::costAndUpdateBest(GroupExpressionPtr expression, bool prune_against_best)
 {
-    const auto & cost_config = memo.getCostConfig();
+    const auto & cost_config = memo.getEnvironment().cost_config;
     auto group = memo.getGroup(expression->group_id);
     auto cost = cost_estimator.estimateCost(expression);
 
@@ -163,7 +162,7 @@ void OptimizerContext::deriveStatistics(GroupId group_id)
 
 bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
 {
-    const auto & cost_config = memo.getCostConfig();
+    const auto & cost_config = memo.getEnvironment().cost_config;
 
     /// Check if all inputs are fully optimized (all stages complete) and have
     /// a satisfying implementation.  A group can be fully done with no best if

@@ -46,7 +46,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     chassert(join_step);
     chassert(expression->inputs.size() == 2);
 
-    const size_t cluster_node_count = memo.getClusterNodeCount();
+    const size_t cluster_node_count = memo.getEnvironment().cluster_node_count;
     const auto candidate_node_counts = getCandidateNodeCounts(cluster_node_count);
 
     std::vector<GroupExpressionPtr> result;

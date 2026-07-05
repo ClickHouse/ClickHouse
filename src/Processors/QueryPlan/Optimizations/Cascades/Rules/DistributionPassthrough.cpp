@@ -156,7 +156,7 @@ protected:
         }
 
         /// Speculative implementations at each candidate node count.
-        auto candidates = getCandidateNodeCounts(memo.getClusterNodeCount());
+        auto candidates = getCandidateNodeCounts(memo.getEnvironment().cluster_node_count);
         for (size_t candidate : candidates)
         {
             if (candidate == required_properties.distribution.node_count)
