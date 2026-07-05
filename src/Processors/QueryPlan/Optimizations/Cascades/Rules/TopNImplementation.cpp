@@ -95,8 +95,13 @@ class TwoStageTopN : public IOptimizationRule
 {
 public:
     String getName() const override { return "TwoStageTopN"; }
-    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
+    bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const override
     {
+        /// With `exact_rows_before_limit` the per-shard sorts must feed the full row count
+        /// into `rows_before_limit_at_least`, but the internal cap below cuts the pipeline
+        /// walk that collects those counters, so the query would report fewer rows.
+        if (memo.isExactRowsBeforeLimit())
+            return false;
         const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
         /// Only a Full sort treats its input as raw and unsorted (see SortImplementation).
         /// Skip the partial we create ourselves (it carries PartialTopNStrategy).

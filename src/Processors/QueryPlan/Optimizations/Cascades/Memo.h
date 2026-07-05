@@ -44,6 +44,9 @@ public:
     bool isShuffleAggregationForced() const { return force_shuffle_aggregation; }
     void setShuffleAggregationForced(bool value) { force_shuffle_aggregation = value; }
 
+    bool isExactRowsBeforeLimit() const { return exact_rows_before_limit; }
+    void setExactRowsBeforeLimit(bool value) { exact_rows_before_limit = value; }
+
     void dump(WriteBuffer & out) const;
     String dump() const;
 
@@ -55,6 +58,7 @@ private:
     std::optional<SortingStep::Settings> sort_settings;
     bool distributed_aggregation_memory_efficient = true;
     bool force_shuffle_aggregation = false;
+    bool exact_rows_before_limit = false;
 };
 
 }

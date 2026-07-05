@@ -73,6 +73,7 @@ void CascadesOptimizer::optimize()
     OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
     optimizer_context.memo.setDistributedAggregationMemoryEfficient(optimization_settings.distributed_aggregation_memory_efficient);
     optimizer_context.memo.setShuffleAggregationForced(optimization_settings.distributed_plan_force_shuffle_aggregation);
+    optimizer_context.memo.setExactRowsBeforeLimit(optimization_settings.exact_rows_before_limit);
 
     LOG_TRACE(optimizer_context.log, "Cost config: {}, cluster node count: {}", cost_config.dump(), cluster_node_count);
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));
