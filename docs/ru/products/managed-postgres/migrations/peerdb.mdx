@@ -1,0 +1,319 @@
+---
+slug: /cloud/managed-postgres/migrations/peerdb
+sidebarTitle: 'PeerDB'
+title: 'Перенос в Managed Postgres с помощью PeerDB'
+description: 'Узнайте, как перенести данные PostgreSQL в ClickHouse Managed Postgres с помощью PeerDB'
+keywords: ['postgres', 'postgresql', 'logical replication', 'миграция', 'перенос данных', 'managed postgres', 'peerdb']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В этом руководстве приведены пошаговые инструкции по переносу базы данных PostgreSQL в ClickHouse Managed Postgres с помощью PeerDB.
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
+
+<div id="migration-peerdb-prerequisites">
+  ## Предварительные требования
+</div>
+
+* Доступ к исходной базе данных PostgreSQL.
+* Экземпляр ClickHouse Managed Postgres, в который вы хотите перенести данные.
+* PeerDB, установленный на компьютере. Вы можете воспользоваться инструкциями по установке в [репозитории PeerDB на GitHub](https://github.com/PeerDB-io/peerdb?tab=readme-ov-file#get-started). Достаточно клонировать репозиторий и выполнить `docker-compose up`. В этом руководстве мы будем использовать **интерфейс PeerDB**, который после запуска PeerDB будет доступен по адресу `http://localhost:3000`.
+
+<div id="migration-peerdb-considerations-before">
+  ## Что учитывать перед миграцией
+</div>
+
+Прежде чем начинать миграцию, имейте в виду следующее:
+
+* **Объекты базы данных**: PeerDB автоматически создаст таблицы в целевой базе данных на основе исходной схемы. Однако некоторые объекты базы данных, такие как индексы, ограничения и триггеры, не переносятся автоматически. После миграции вам потребуется вручную заново создать эти объекты в целевой базе данных.
+* **Изменения DDL**: Если вы включите непрерывную репликацию, PeerDB будет поддерживать синхронизацию целевой базы данных с исходной для операций DML (INSERT, UPDATE, DELETE) и передавать операции ADD COLUMN. Однако другие изменения DDL (например, DROP COLUMN, ALTER COLUMN) автоматически не передаются. Подробнее о поддержке изменений схемы [здесь](/ru/integrations/clickpipes/postgres/schema-changes)
+* **Сетевое подключение**: Убедитесь, что и исходная, и целевая базы данных доступны с машины, на которой запущен PeerDB. Возможно, потребуется настроить правила межсетевого экрана или параметры Security Group, чтобы разрешить подключение.
+
+<div id="migration-peerdb-create-peers">
+  ## Создание peer
+</div>
+
+Сначала нужно создать peer как для исходной, так и для целевой базы данных. Peer — это подключение к базе данных. В интерфейсе PeerDB перейдите в раздел &quot;Peers&quot;, выбрав &quot;Peers&quot; на боковой панели. Чтобы создать новый peer, нажмите кнопку `+ New peer`.
+
+<div id="migration-peerdb-source-peer">
+  ### Создание peer для источника
+</div>
+
+Создайте peer для исходной базы данных PostgreSQL, указав сведения о подключении: хост, порт, имя базы данных, имя пользователя и пароль. После этого нажмите кнопку `Create peer`, чтобы сохранить peer.
+
+<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="Создание peer для источника" size="md" border />
+
+<div id="migration-peerdb-target-peer">
+  ### Создание целевого peer
+</div>
+
+Аналогичным образом создайте peer для своего экземпляра ClickHouse Managed Postgres, указав необходимые сведения о подключении. [Сведения о подключении](/ru/products/managed-postgres/connection) для вашего экземпляра можно получить в консоли ClickHouse Cloud. После заполнения данных нажмите кнопку `Create peer`, чтобы сохранить целевой peer.
+
+<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="Создание целевого peer" size="md" border />
+
+Теперь в разделе &quot;Peers&quot; должны отображаться оба peer — исходный и целевой.
+
+<Image img="/images/managed-postgres/peerdb/peers.webp" alt="Список peer" size="md" border />
+
+<div id="migration-peerdb-source-schema-dump">
+  ### Получение дампа схемы исходной базы данных
+</div>
+
+Чтобы воссоздать структуру исходной базы данных в целевой базе данных, нужно получить дамп схемы исходной базы данных. Для создания дампа только схемы исходной базы данных PostgreSQL можно использовать `pg_dump`:
+
+<Accordion title="Установка pg_dump">
+  **Ubuntu:**
+
+  Обновите списки пакетов:
+
+  ```shell
+  sudo apt update
+  ```
+
+  Установите клиент PostgreSQL:
+
+  ```shell
+  sudo apt install postgresql-client
+  ```
+
+  **macOS:**
+
+  Способ 1: с помощью Homebrew (рекомендуется)
+
+  Установите Homebrew, если он у вас ещё не установлен:
+
+  ```shell
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ```
+
+  Установите PostgreSQL:
+
+  ```shell
+  brew install postgresql
+  ```
+
+  Проверьте установку:
+
+  ```shell
+  pg_dump --version
+  ```
+</Accordion>
+
+```shell
+pg_dump -d 'postgresql://<user>:<password>@<host>:<port>/<database>'  -s > source_schema.sql
+```
+
+<div id="migration-peerdb-remove-constraints-indexes">
+  #### Удалите уникальные ограничения и индексы из дампа схемы
+</div>
+
+Перед применением дампа к целевой базе данных нужно удалить из файла дампа ограничения UNIQUE и индексы, чтобы эти ограничения не блокировали ингестию PeerDB в целевые таблицы. Это можно сделать с помощью:
+
+```shell
+# Предварительный просмотр
+grep -n "CONSTRAINT.*UNIQUE" <dump_file_path>
+grep -n "CREATE UNIQUE INDEX" <dump_file_path>
+grep -n -E "(CONSTRAINT.*UNIQUE|CREATE UNIQUE INDEX)" <dump_file_path>
+
+# Удаление
+sed -i.bak -E '/CREATE UNIQUE INDEX/,/;/d; /(CONSTRAINT.*UNIQUE|ADD CONSTRAINT.*UNIQUE)/d' <dump_file_path>
+```
+
+<div id="migration-peerdb-apply-schema-dump">
+  ### Примените дамп схемы к целевой базе данных
+</div>
+
+После очистки файла дампа схемы его можно применить к целевой базе данных ClickHouse Managed Postgres, [подключившись](/ru/products/managed-postgres/connection) через `psql` и выполнив файл дампа схемы:
+
+```shell
+psql -h <target_host> -p <target_port> -U <target_username> -d <target_database> -f source_schema.sql
+```
+
+Здесь, на стороне целевой базы, важно, чтобы ингестия через PeerDB не блокировалась ограничениями по внешним ключам. Для этого можно изменить целевую роль (используемую выше в target peer), задав для `session_replication_role` значение `replica`:
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = replica;
+```
+
+<div id="migration-peerdb-create-mirror">
+  ## Создайте mirror
+</div>
+
+Далее нужно создать mirror, чтобы определить процесс переноса данных между исходным и целевым peer. В интерфейсе PeerDB перейдите в раздел &quot;Mirrors&quot;, щелкнув &quot;Mirrors&quot; на боковой панели. Чтобы создать новый mirror, нажмите кнопку `+ New mirror`.
+
+<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="Создание mirror" size="md" border />
+
+1. Задайте mirror имя, описывающее перенос.
+2. Выберите исходный и целевой peer, которые вы создали ранее, в раскрывающихся списках.
+3. Убедитесь, что:
+
+* Soft delete выключен.
+* Разверните `Advanced settings`. Убедитесь, что **система типов Postgres включена**, а **столбцы PeerDB отключены**.
+
+<Image img="/images/managed-postgres/peerdb/settings.webp" alt="Настройки mirror" size="md" border />
+
+4. Выберите таблицы, которые хотите перенести. Можно выбрать конкретные таблицы или все таблицы из исходной базы данных.
+
+<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="Выбор таблиц" size="md" border />
+
+<Info>
+  **Выбор таблиц**
+
+  Убедитесь, что имена целевых таблиц в целевой базе данных совпадают с именами исходных таблиц, так как на предыдущем шаге мы перенесли схему как есть.
+</Info>
+
+5. После настройки параметров mirror нажмите кнопку `Create mirror`.
+
+После этого новый mirror должен появиться в разделе &quot;Mirrors&quot;.
+
+<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="Список mirrors" size="md" border />
+
+<div id="migration-peerdb-initial-load">
+  ## Дождитесь завершения Initial load
+</div>
+
+После создания mirror PeerDB начнет Initial load данных из исходной базы данных в целевую. Чтобы отслеживать ход Initial load данных, нажмите mirror и перейдите на вкладку **Initial load**.
+
+<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="Прогресс Initial load" size="md" border />
+
+Когда Initial load завершится, вы увидите статус, указывающий, что миграция завершена.
+
+<div id="migration-peerdb-monitoring">
+  ## Мониторинг initial load и репликации
+</div>
+
+Если щёлкнуть по исходному peer, можно увидеть список выполняемых команд PeerDB. Например:
+
+1. Сначала выполняется запрос COUNT, чтобы оценить количество строк в каждой таблице.
+2. Затем выполняется запрос на партиционирование с использованием NTILE, чтобы разбить большие таблицы на более мелкие фрагменты для эффективной передачи данных.
+3. После этого выполняются команды FETCH, чтобы получить данные из исходной базы данных, а затем PeerDB синхронизирует их с целевой базой данных.
+
+<div id="migration-peerdb-considerations">
+  ## Действия после миграции
+</div>
+
+<Note>
+  Эти шаги могут различаться в зависимости от вашего сценария использования и требований приложения. Главное — обеспечить согласованность данных, свести к минимуму время простоя и проверить целостность перенесённых данных, прежде чем полностью переключаться на новую систему.
+</Note>
+
+После завершения миграции:
+
+* **Выполните проверки перед переключением**
+
+Перед переключением трафика сравните ключевые таблицы в исходной и целевой системах:
+
+```sql
+-- Сравнение количества строк в критически важных таблицах
+SELECT 'public.orders' AS table_name, COUNT(*) AS row_count FROM public.orders;
+SELECT 'public.customers' AS table_name, COUNT(*) AS row_count FROM public.customers;
+
+-- Выборочная проверка последних записей в таблицах с высокой активностью
+SELECT MAX(updated_at) FROM public.orders;
+SELECT MAX(id) FROM public.orders;
+```
+
+* **Остановите запись в исходной системе**
+
+Сначала приостановите запись приложения. В качестве дополнительной меры предосторожности переведите исходную базу данных в режим только для чтения на время переключения:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+Если потребуется откат, вы можете снова разрешить запись:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = off;
+```
+
+* **Убедитесь, что репликация полностью синхронизирована**
+
+Проверьте, что последняя строка в одной или нескольких таблицах с высокой интенсивностью записи совпадает в исходной и целевой системах:
+
+```sql
+-- Выполните на источнике и целевой базе данных и сравните результаты
+SELECT MAX(id) AS latest_id, MAX(updated_at) AS latest_ts FROM public.orders;
+```
+
+* **Заново создайте и включите ограничения, индексы и триггеры**
+
+Если вы удалили ограничения/индексы для ингестии или отложили их создание, примените их снова. Также сбросьте роль репликации на целевом экземпляре, если ранее вы установили для неё значение `replica`:
+
+```sql
+ALTER ROLE <target_role> SET session_replication_role = origin;
+```
+
+```shell
+# Пример: применение SQL-файла, содержащего ограничения/индексы/триггеры
+psql -h <target_host> -p <target_port> -U <target_user> -d <target_db> -f post_migration_objects.sql
+```
+
+* **Сброс последовательностей в целевых таблицах**
+
+После загрузки данных приведите последовательности в соответствие с текущими значениями в таблицах:
+
+```sql
+-- Универсальный сброс последовательностей для всех столбцов с serial/identity в несистемных схемах
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+* **Переключите трафик приложения**
+
+После успешной проверки и настройки последовательностей и ограничений:
+
+1. Переведите трафик чтения на ClickHouse Managed Postgres.
+2. Переведите трафик записи на ClickHouse Managed Postgres.
+3. Отслеживайте ошибки приложения, нарушения ограничений и состояние базы данных.
+
+* **Очистите ресурсы**
+
+Когда вы убедитесь, что миграция прошла успешно, и переключите приложение на использование ClickHouse Managed Postgres, можно удалить mirror и peers в PeerDB.
+
+<Info>
+  **Слоты репликации**
+
+  Если вы включили непрерывную репликацию, PeerDB создаст **слот репликации** в исходной базе данных PostgreSQL. После завершения миграции обязательно удалите слот репликации вручную из исходной базы данных, чтобы избежать лишнего расхода ресурсов.
+</Info>
+
+<div id="migration-peerdb-references">
+  ## Справочные материалы
+</div>
+
+* [Документация по ClickHouse Managed Postgres](/ru/products/managed-postgres/overview)
+* [Руководство PeerDB по созданию CDC](https://docs.peerdb.io/mirror/cdc-pg-pg)
+* [FAQ по Postgres ClickPipe (также актуально для PeerDB)](/ru/integrations/clickpipes/postgres/faq)
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## Следующие шаги
+</div>
+
+Поздравляем! Вы успешно перенесли базу данных PostgreSQL в ClickHouse Managed Postgres с помощью `pg_dump` и `pg_restore`. Теперь вы готовы изучить возможности Managed Postgres и его интеграцию с ClickHouse. Ниже — 10-минутное краткое руководство для быстрого старта:
+
+* [Краткое руководство по Managed Postgres](/ru/products/managed-postgres/quickstart)

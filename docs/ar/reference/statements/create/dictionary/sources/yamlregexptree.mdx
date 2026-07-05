@@ -1,0 +1,81 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/yamlregexptree
+title: 'مصدر القاموس YAMLRegExpTree'
+sidebarTitle: 'YAMLRegExpTree'
+description: 'تهيئة ملف YAML كمصدر لقواميس أشجار التعبيرات النمطية.'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+يقوم المصدر `YAMLRegExpTree` بتحميل شجرة التعبيرات النمطية من ملف YAML على نظام الملفات المحلي.
+وقد صُمم حصريًا للاستخدام مع [تخطيط القاموس `regexp_tree`](/ar/reference/statements/create/dictionary/layouts/regexp-tree)
+ويوفّر تعيينات هرمية من التعبيرات النمطية إلى السمات لعمليات البحث المستندة إلى الأنماط، مثل تحليل user agent.
+
+<Note>
+  المصدر `YAMLRegExpTree` متاح فقط في ClickHouse Open Source.
+  بالنسبة إلى ClickHouse Cloud، صدّر القاموس إلى CSV ثم حمّله عبر [مصدر ClickHouse table](/ar/reference/statements/create/dictionary/sources/clickhouse) بدلًا من ذلك.
+  راجع [استخدام قواميس regexp&#95;tree في ClickHouse Cloud](/ar/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) لمزيد من التفاصيل.
+</Note>
+
+<div id="configuration">
+  ## الإعداد
+</div>
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0);
+```
+
+حقول الإعدادات:
+
+| الإعداد | الوصف                                                                                                                                    |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `PATH`  | المسار المطلق إلى ملف YAML الذي يحتوي على شجرة التعبيرات النمطية. وعند إنشائه عبر DDL، يجب أن يكون الملف موجودًا في الدليل `user_files`. |
+
+<div id="yaml-file-structure">
+  ## بنية ملف YAML
+</div>
+
+يحتوي ملف YAML على قائمة بعُقَد شجرة التعبيرات النمطية. ويمكن أن تتضمن كل عقدة سمات وعُقَد فرعية، بما يشكّل بنية هرمية:
+
+```yaml
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Android'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+```
+
+لكل عقدة البنية التالية:
+
+* **`regexp`**: التعبير النمطي لهذه العقدة.
+* **attributes**: سمات القاموس التي يعرّفها المستخدم (مثل `name` و`version`). قد تحتوي قيم السمات على **مراجع خلفية** إلى مجموعات الالتقاط في التعبير النمطي، وتُكتب بالشكل `\1` أو `$1` (الأرقام من 1 إلى 9). وتُستبدل هذه المراجع بمجموعة الالتقاط المطابِقة وقت تنفيذ الاستعلام.
+* **child nodes**: قائمة بالعقد الفرعية، لكل منها سماتها الخاصة، وقد تحتوي أيضًا على مزيد من العقد الفرعية. اسم قائمة العقد الفرعية اختياري (مثل `versions` أعلاه). تجري مطابقة السلاسل النصية بأسلوب العمق أولًا: إذا طابقت سلسلة نصية عقدةً ما، فسيجري أيضًا التحقق من عقدها الفرعية. وتكون لسمات أعمق عقدة مطابِقة الأسبقية، فتتجاوز سمات العقدة الأصل ذات الاسم نفسه.
+
+<div id="related-pages">
+  ## الصفحات ذات الصلة
+</div>
+
+* [تخطيط القاموس regexp&#95;tree](/ar/reference/statements/create/dictionary/layouts/regexp-tree) — إعدادات البنية، وأمثلة على الاستعلامات، وأوضاع المطابقة
+* [dictGet](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — دوال للاستعلام عن قواميس regexp tree

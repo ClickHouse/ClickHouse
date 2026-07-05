@@ -92,6 +92,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;
+    bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
 
@@ -168,6 +169,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_entries_for_hash_table_stats;
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
+    bool collect_hash_table_stats_during_aggregation;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;

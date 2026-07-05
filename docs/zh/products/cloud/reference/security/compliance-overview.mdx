@@ -1,0 +1,62 @@
+---
+title: 安全与合规报告
+slug: /cloud/security/compliance-overview
+description: 'ClickHouse Cloud 的安全与合规认证概览，包括 SOC 2、ISO 27001、美国 DPF 和 HIPAA'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'SOC 2 Type II', 'ISO 27001', 'HIPAA', '美国 DPF', 'PCI']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+ClickHouse 会评估客户的安全与合规需求，并在客户提出更多报告请求时持续扩展该计划。若需了解更多信息或下载相关报告，请访问我们的 [Trust Center](https://trust.clickhouse.com)。
+
+<div id="soc-2-type-ii-since-2022">
+  ## SOC 2 Type II (自 2022 年起)
+</div>
+
+System and Organization Controls (SOC) 2 是一类报告，重点评估信任服务标准 (TSC) 中的安全性、可用性、保密性、处理完整性和隐私等准则在组织系统中的落实情况，旨在向依赖这些控制措施的相关方 (即我们的客户) 提供保证。ClickHouse 与独立的外部审计机构合作，至少每年接受一次审计，覆盖我们系统的安全性、可用性和处理完整性，以及我们系统所处理数据的保密性和隐私性。该报告同时涵盖我们的 ClickHouse Cloud 和自备 Cloud (BYOC) 产品。
+
+<div id="iso-27001-since-2023">
+  ## ISO 27001 (自 2023 年起)
+</div>
+
+国际标准化组织 (ISO) 27001 是一项国际信息安全标准。它要求企业实施信息安全管理体系 (ISMS) ，其中包括用于风险管理、制定和传达政策、落实安全控制措施以及开展监控的流程，以确保各项组成部分始终保持相关性和有效性。ClickHouse 会开展内部审计，并与独立的外部审计机构合作，在证书签发后的两年内接受审计和中期检查。
+
+<div id="us-dpf-since-2024">
+  ## 美国 DPF (自 2024 年起)
+</div>
+
+美国数据隐私框架旨在为美国组织提供可靠机制，以便将个人数据从欧盟/欧洲经济区、英国和瑞士传输到美国，并确保此类传输符合欧盟、英国和瑞士的法律 (https://dataprivacyframework.gov/Program-Overview) 。ClickHouse 已通过该框架的自我认证，并被列入 [Data Privacy Framework List](https://dataprivacyframework.gov/list)。
+
+<div id="hipaa-since-2024">
+  ## HIPAA (自 2024 年起)
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+1996 年《健康保险流通与责任法案》 (HIPAA) 是美国的一项隐私法律，重点规范受保护健康信息 (PHI) 的管理。HIPAA 包含多项要求，其中包括[安全规则](https://www.hhs.gov/hipaa/for-professionals/security/index.html)，其重点是保护电子个人健康信息 (ePHI) 。ClickHouse 已实施管理、物理和技术保障措施，以确保存储在指定服务中的 ePHI 的机密性、完整性和安全性。相关控制措施已纳入我们的 SOC 2 Type II 报告，您可在 [Trust Center](https://trust.clickhouse.com) 下载该报告。
+
+请参阅 [HIPAA onboarding](/zh/products/cloud/guides/security/compliance/hipaa-onboarding)，了解如何完成商业伙伴协议 (BAA) 并部署符合 HIPAA 要求的服务。
+
+<div id="pci-service-provider-since-2025">
+  ## PCI 服务提供商 (自 2025 年起)
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI compliance" />
+
+[支付卡行业数据安全标准 (PCI DSS) ](https://www.pcisecuritystandards.org/standards/pci-dss/)是由 PCI Security Standards Council 制定的一套规则，用于保护信用卡支付数据。ClickHouse 已通过由合格安全评估师 (QSA) 执行的外部审计，并获得了针对与信用卡数据存储相关 PCI 标准的合规报告 (ROC) 通过结果。要下载我们的合规证明 (AOC) 和 PCI 责任概览副本，请访问我们的 [Trust Center](https://trust.clickhouse.com)。
+
+有关部署符合 PCI 要求服务的步骤，请参阅 [PCI onboarding](/zh/products/cloud/guides/security/compliance/pci-onboarding)。
+
+<div id="privacy-compliance">
+  ## 隐私合规
+</div>
+
+除上述内容外，ClickHouse 还建立了内部合规计划，以满足《通用数据保护条例》(GDPR)、《加州消费者隐私法案》(CCPA) 及其他相关隐私框架的要求。
+
+<div id="payment-compliance">
+  ## 支付合规
+</div>
+
+ClickHouse 提供安全的信用卡支付方式，并符合 [PCI SAQ A v4.0](https://www.pcisecuritystandards.org/document_library/) 标准。

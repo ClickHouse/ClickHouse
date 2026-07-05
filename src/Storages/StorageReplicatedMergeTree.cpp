@@ -135,10 +135,12 @@
 
 #include <algorithm>
 #include <ctime>
+#include <deque>
 #include <filesystem>
 #include <iterator>
 #include <numeric>
 #include <future>
+#include <span>
 #include <vector>
 
 
@@ -8988,20 +8990,58 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 {
     Coordination::Requests delete_requests;
     getClearBlocksInPartitionOps(delete_requests, zookeeper, partition_id, min_block_num, max_block_num);
-    Coordination::Responses delete_responses;
-    auto code = zookeeper.tryMulti(delete_requests, delete_responses);
-    if (code != Coordination::Error::ZOK)
+
+    /// Send removals in batches to avoid exceeding ZooKeeper's maximum message size.
+    static constexpr size_t max_batches_in_flight = 16;
+
+    struct BatchInFlight
     {
-        for (size_t i = 0; i < delete_requests.size(); ++i)
-            if (delete_responses[i]->error != Coordination::Error::ZOK)
-                LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", delete_requests[i]->getPath(), delete_responses[i]->error);
+        std::span<const Coordination::RequestPtr> ops;
+        std::future<Coordination::MultiResponse> future;
+    };
+
+    std::deque<BatchInFlight> in_flight;
+    size_t num_deleted = 0;
+    size_t num_failed = 0;
+
+    auto wait_oldest = [&]
+    {
+        auto batch = std::move(in_flight.front());
+        auto response = batch.future.get();
+        in_flight.pop_front();
+
+        if (response.error == Coordination::Error::ZOK)
+        {
+            num_deleted += batch.ops.size();
+            return;
+        }
+
+        if (!Coordination::isUserError(response.error))
+            throw zkutil::KeeperException(response.error);
+
+        size_t failed_op_index = zkutil::getFailedOpIndex(response.error, response.responses);
+        LOG_WARNING(log, "Error while deleting ZooKeeper path `{}`: {}, ignoring.", batch.ops[failed_op_index]->getPath(), response.error);
+        num_failed += batch.ops.size();
+    };
+
+    for (size_t batch_start = 0; batch_start < delete_requests.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
+    {
+        if (in_flight.size() >= max_batches_in_flight)
+            wait_oldest();
+
+        size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, delete_requests.size());
+        std::span batch_ops(delete_requests.begin() + batch_start, delete_requests.begin() + batch_end);
+        in_flight.push_back({batch_ops, zookeeper.asyncTryMultiNoThrow(batch_ops)});
     }
+
+    while (!in_flight.empty())
+        wait_oldest();
 
     async_block_ids_cache.truncate();
     deduplication_hashes_cache.truncate();
 
-    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}]",
-              delete_requests.size(), partition_id, min_block_num, max_block_num);
+    LOG_TRACE(log, "Deleted {} deduplication block IDs in partition ID {} in range [{}, {}], {} deletions failed",
+              num_deleted, partition_id, min_block_num, max_block_num, num_failed);
 }
 
 void StorageReplicatedMergeTree::replacePartitionFrom(

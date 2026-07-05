@@ -1,0 +1,2542 @@
+---
+title: إعدادات الخادم خارج Source
+---
+
+<div id="asynchronous_metric_log">
+  ## asynchronous_metric_log
+</div>
+
+يكون مفعّلًا افتراضيًا في عمليات النشر على ClickHouse Cloud.
+
+إذا لم يكن هذا الإعداد مفعّلًا افتراضيًا في بيئتك، فاعتمادًا على كيفية تثبيت ClickHouse، يمكنك اتباع التعليمات أدناه لتمكينه أو تعطيله.
+
+**التمكين**
+
+لتمكين جمع سجل محفوظات المقاييس غير المتزامنة [`system.asynchronous_metric_log`](/ar/reference/system-tables/asynchronous_metric_log) يدويًا، أنشئ الملف `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+     <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </asynchronous_metric_log>
+</clickhouse>
+```
+
+**تعطيل**
+
+لتعطيل الإعداد `asynchronous_metric_log`، يجب إنشاء الملف التالي `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse><asynchronous_metric_log remove="1" /></clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="auth_use_forwarded_address">
+  ## auth_use_forwarded_address
+</div>
+
+استخدم عنوان المصدر في المصادقة للعملاء المتصلين عبر وكيل.
+
+<Note>
+  يجب استخدام هذا الإعداد بحذر شديد، لأن العناوين المُمرَّرة يمكن انتحالها بسهولة. ولا ينبغي الوصول مباشرةً إلى الخوادم التي تقبل هذا النوع من المصادقة، بل يجب أن يتم ذلك حصراً عبر وكيل موثوق.
+</Note>
+
+<div id="backups">
+  ## النسخ الاحتياطية
+</div>
+
+إعدادات النسخ الاحتياطية، تُستخدم عند تنفيذ عبارتي [`BACKUP` و `RESTORE`](/ar/concepts/features/backup-restore/overview).
+
+يمكن تهيئة الإعدادات التالية عبر العلامات الفرعية:
+
+{/* SQL
+  WITH settings AS (
+  SELECT arrayJoin([
+    ('allow_concurrent_backups', 'Bool','يحدد ما إذا كان يمكن تشغيل عمليات النسخ الاحتياطي المتعددة بالتزامن على المضيف نفسه.', 'true'),
+    ('allow_concurrent_restores', 'Bool', 'يحدد ما إذا كان يمكن تشغيل عمليات الاستعادة المتعددة بالتزامن على المضيف نفسه.', 'true'),
+    ('allowed_disk', 'String', 'القرص الذي يُنسخ إليه احتياطيًا عند استخدام `File()`. يجب تعيين هذا الإعداد لاستخدام `File`.', ''),
+    ('allowed_path', 'String', 'المسار الذي يُنسخ إليه احتياطيًا عند استخدام `File()`. يجب تعيين هذا الإعداد لاستخدام `File`.', ''),
+    ('attempts_to_collect_metadata_before_sleep', 'UInt', 'عدد محاولات جمع البيانات الوصفية قبل الانتظار في حال وجود عدم اتساق بعد مقارنة البيانات الوصفية المجمعة.', '2'),
+    ('collect_metadata_timeout', 'UInt64', 'المهلة بالمللي ثانية لجمع البيانات الوصفية أثناء النسخ الاحتياطي.', '600000'),
+    ('compare_collected_metadata', 'Bool', 'إذا كانت القيمة true، فتُقارَن البيانات الوصفية المجمعة بالبيانات الوصفية الحالية للتأكد من عدم تغيرها أثناء النسخ الاحتياطي.', 'true'),
+    ('create_table_timeout', 'UInt64', 'المهلة بالمللي ثانية لإنشاء الجداول أثناء الاستعادة.', '300000'),
+    ('max_attempts_after_bad_version', 'UInt64', 'الحد الأقصى لعدد محاولات إعادة المحاولة بعد مواجهة خطأ إصدار غير صحيح أثناء النسخ الاحتياطي/الاستعادة المنسقَين.', '3'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'الحد الأقصى لمدة الانتظار بالمللي ثانية قبل المحاولة التالية لجمع البيانات الوصفية.', '100'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'الحد الأدنى لمدة الانتظار بالمللي ثانية قبل المحاولة التالية لجمع البيانات الوصفية.', '5000'),
+    ('remove_backup_files_after_failure', 'Bool', 'إذا فشل الأمر `BACKUP`، فسيحاول ClickHouse إزالة الملفات التي نُسخت بالفعل إلى النسخة الاحتياطية قبل حدوث الفشل، وإلا فسيترك الملفات المنسوخة كما هي.', 'true'),
+    ('sync_period_ms', 'UInt64', 'فترة المزامنة بالمللي ثانية للنسخ الاحتياطي/الاستعادة المنسقَين.', '5000'),
+    ('test_inject_sleep', 'Bool', 'فترة انتظار لأغراض الاختبار', 'false'),
+    ('test_randomize_order', 'Bool', 'إذا كانت القيمة true، فسيُرتَّب بعض العمليات ترتيبًا عشوائيًا لأغراض الاختبار.', 'false'),
+    ('zookeeper_path', 'String', 'المسار في ZooKeeper حيث تُخزَّن البيانات الوصفية للنسخ الاحتياطي والاستعادة عند استخدام عبارة `ON CLUSTER`.', '/clickhouse/backups')
+  ]) AS t )
+  SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
+  */}
+
+| الإعداد                                             | النوع  | الوصف                                                                                                                                                 | الافتراضي             |
+| :-------------------------------------------------- | :----- | :---------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------- |
+| `allow_concurrent_backups`                          | Bool   | يحدد ما إذا كان يمكن تشغيل عدة عمليات نسخ احتياطي بالتزامن على المضيف نفسه.                                                                           | `true`                |
+| `allow_concurrent_restores`                         | Bool   | يحدد ما إذا كان يمكن تشغيل عدة عمليات استعادة بالتزامن على المضيف نفسه.                                                                               | `true`                |
+| `allowed_disk`                                      | String | القرص الذي سيتم إجراء النسخ الاحتياطي إليه عند استخدام `File()`. يجب تعيين هذا الإعداد لاستخدام `File`.                                               | &#96;&#96;            |
+| `allowed_path`                                      | String | المسار الذي سيتم إجراء النسخ الاحتياطي إليه عند استخدام `File()`. يجب تعيين هذا الإعداد لاستخدام `File`.                                              | &#96;&#96;            |
+| `attempts_to_collect_metadata_before_sleep`         | UInt   | عدد محاولات جمع البيانات الوصفية قبل الانتظار في حال وجود عدم اتساق بعد مقارنة البيانات الوصفية المجمعة.                                              | `2`                   |
+| `collect_metadata_timeout`                          | UInt64 | المهلة الزمنية بالمللي ثانية لجمع البيانات الوصفية أثناء النسخ الاحتياطي.                                                                             | `600000`              |
+| `compare_collected_metadata`                        | Bool   | إذا كانت القيمة `true`، فستُقارَن البيانات الوصفية المجمعة بالبيانات الوصفية الحالية لضمان عدم تغيرها أثناء النسخ الاحتياطي.                          | `true`                |
+| `create_table_timeout`                              | UInt64 | المهلة الزمنية بالمللي ثانية لإنشاء الجداول أثناء الاستعادة.                                                                                          | `300000`              |
+| `max_attempts_after_bad_version`                    | UInt64 | الحد الأقصى لعدد محاولات إعادة المحاولة بعد مواجهة خطأ إصدار غير صالح أثناء النسخ الاحتياطي/الاستعادة المنسقين.                                       | `3`                   |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | الحد الأقصى لمدة الانتظار بالمللي ثانية قبل المحاولة التالية لجمع البيانات الوصفية.                                                                   | `100`                 |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | الحد الأدنى لمدة الانتظار بالمللي ثانية قبل المحاولة التالية لجمع البيانات الوصفية.                                                                   | `5000`                |
+| `remove_backup_files_after_failure`                 | Bool   | إذا فشل الأمر `BACKUP`، فسيحاول ClickHouse إزالة الملفات التي نُسخت بالفعل إلى النسخة الاحتياطية قبل حدوث الفشل، وإلا فسيترك الملفات المنسوخة كما هي. | `true`                |
+| `sync_period_ms`                                    | UInt64 | فترة المزامنة بالمللي ثانية للنسخ الاحتياطي/الاستعادة المنسقين.                                                                                       | `5000`                |
+| `test_inject_sleep`                                 | Bool   | مدة انتظار مخصصة للاختبار.                                                                                                                            | `false`               |
+| `test_randomize_order`                              | Bool   | إذا كانت القيمة `true`، فسيُرتَّب تنفيذ بعض العمليات عشوائيًا لأغراض الاختبار.                                                                        | `false`               |
+| `zookeeper_path`                                    | String | المسار في ZooKeeper حيث تُخزَّن البيانات الوصفية للنسخ الاحتياطي والاستعادة عند استخدام عبارة `ON CLUSTER`.                                           | `/clickhouse/backups` |
+
+يُضبط هذا الإعداد افتراضيًا كما يلي:
+
+```xml
+<backups>
+    ....
+</backups>
+```
+
+<div id="background_schedule_pool_log">
+  ## background_schedule_pool_log
+</div>
+
+يحتوي على معلومات حول جميع المهام الخلفية التي تُنفَّذ عبر مختلف مجمّعات المعالجة الخلفية.
+
+```xml
+<background_schedule_pool_log>
+    <database>system</database>
+    <table>background_schedule_pool_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+    <!-- Only tasks longer than duration_threshold_milliseconds will be logged. Zero means log everything -->
+    <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+</background_schedule_pool_log>
+```
+
+<div id="bcrypt_workfactor">
+  ## bcrypt_workfactor
+</div>
+
+عامل العمل لنوع المصادقة `bcrypt_password` الذي يستخدم [خوارزمية Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
+ويحدّد عامل العمل مقدار العمليات الحسابية والوقت اللازمين لحساب قيمة التجزئة والتحقق من كلمة المرور.
+
+```xml
+<bcrypt_workfactor>12</bcrypt_workfactor>
+```
+
+<Warning>
+  بالنسبة إلى التطبيقات التي تُجري عمليات مصادقة بمعدل مرتفع،
+  فكِّر في استخدام أساليب مصادقة بديلة بسبب
+  العبء الحوسبي لـ bcrypt عند استخدام قيم مرتفعة لعامل الكلفة.
+</Warning>
+
+<div id="table_engines_require_grant">
+  ## table_engines_require_grant
+</div>
+
+إذا ضُبطت هذه القيمة على true، فسيحتاج المستخدمون إلى grant لإنشاء جدول باستخدام engine محدد، مثل `GRANT TABLE ENGINE ON TinyLog to user`.
+
+<Note>
+  افتراضيًا، وللحفاظ على backward compatibility، يتجاهل إنشاء جدول باستخدام table engine محدد متطلبات grant، ولكن يمكنك تغيير هذا السلوك بضبط هذه القيمة على true.
+</Note>
+
+<div id="builtin_dictionaries_reload_interval">
+  ## builtin_dictionaries_reload_interval
+</div>
+
+الفاصل الزمني بالثواني قبل إعادة تحميل القواميس المضمّنة.
+
+يعيد ClickHouse تحميل القواميس المضمّنة كل x ثانية. ويتيح ذلك تعديل القواميس &quot;أثناء التشغيل&quot; من دون إعادة تشغيل الخادم.
+
+**مثال**
+
+```xml
+<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+```
+
+<div id="compression">
+  ## الضغط
+</div>
+
+إعدادات ضغط البيانات للجداول التي تستخدم محرك [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+<Note>
+  نوصي بعدم تغيير هذا إذا كنت قد بدأت للتو في استخدام ClickHouse.
+</Note>
+
+**قالب التكوين**:
+
+```xml
+<compression>
+    <case>
+      <min_part_size>...</min_part_size>
+      <min_part_size_ratio>...</min_part_size_ratio>
+      <method>...</method>
+      <level>...</level>
+    </case>
+    ...
+</compression>
+```
+
+**حقول `<case>`**:
+
+* `min_part_size` – الحد الأدنى لحجم جزء البيانات.
+* `min_part_size_ratio` – نسبة حجم جزء البيانات إلى حجم الجدول.
+* `method` – طريقة الضغط. القيم المقبولة: `lz4`، `lz4hc`، `zstd`,`deflate_qpl`.
+* `level` – مستوى الضغط. راجع [Codecs](/ar/reference/statements/create/table#general-purpose-codecs).
+
+<Note>
+  يمكنك تهيئة عدة أقسام `<case>`.
+</Note>
+
+**الإجراءات عند استيفاء الشروط**:
+
+* إذا طابق جزء بيانات مجموعة شروط، يستخدم ClickHouse طريقة الضغط المحددة.
+* إذا طابق جزء بيانات عدة مجموعات شروط، يستخدم ClickHouse أول مجموعة شروط تمت مطابقتها.
+
+<Note>
+  إذا لم يستوفِ جزء بيانات أيًّا من الشروط، يستخدم ClickHouse ضغط `lz4`.
+</Note>
+
+**مثال**
+
+```xml
+<compression incl="clickhouse_compression">
+    <case>
+        <min_part_size>10000000000</min_part_size>
+        <min_part_size_ratio>0.01</min_part_size_ratio>
+        <method>zstd</method>
+        <level>1</level>
+    </case>
+</compression>
+```
+
+<div id="encryption">
+  ## التشفير
+</div>
+
+يحدِّد أمرًا للحصول على مفتاح لاستخدامه مع [مرمِّزات التشفير](/ar/reference/statements/create/table#encryption-codecs). يجب كتابة المفتاح (أو المفاتيح) في متغيرات البيئة أو تعيينه في ملف الإعدادات.
+
+يمكن أن تكون المفاتيح بتنسيق hex أو string بطول 16 بايت.
+
+**مثال**
+
+التحميل من الإعدادات:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key>1234567812345678</key>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+<Note>
+  لا يُنصح بتخزين المفاتيح في ملف الإعدادات، لأن ذلك غير آمن. يمكنك نقل المفاتيح إلى ملف إعدادات منفصل على قرص آمن، ثم وضع رابط رمزي لهذا الملف داخل المجلد `config.d/`.
+</Note>
+
+التحميل من الإعدادات عندما يكون المفتاح بصيغة ست عشرية:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex>00112233445566778899aabbccddeeff</key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+جارٍ تحميل المفتاح من متغير البيئة:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex from_env="ENVVAR"></key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+هنا يحدِّد `current_key_id` المفتاح الحالي للتشفير، ويمكن استخدام جميع المفاتيح المحددة لفك التشفير.
+
+يمكن تطبيق كلٍّ من هذه الأساليب على عدة مفاتيح:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+        <key_hex id="1" from_env="ENVVAR"></key_hex>
+        <current_key_id>1</current_key_id>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+هنا يشير `current_key_id` إلى المفتاح الحالي المستخدم للتشفير.
+
+يمكن للمستخدمين أيضًا إضافة `nonce`، على أن يكون طوله 12 بايتًا (تستخدم عمليتا التشفير وفك التشفير افتراضيًا قيمة `nonce` مكوّنة من بايتات صفرية):
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce>012345678910</nonce>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+أو يمكن تعيينه بصيغة سداسية عشرية:
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce_hex>abcdefabcdef</nonce_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+<Note>
+  يمكن أيضًا تطبيق كل ما ورد أعلاه على `aes_256_gcm_siv` (لكن يجب أن يكون طول المفتاح 32 بايت).
+</Note>
+
+<div id="error_log">
+  ## error_log
+</div>
+
+يكون معطّلًا افتراضيًا.
+
+**التمكين**
+
+لتفعيل جمع سجلّ الأخطاء [`system.error_log`](/ar/reference/system-tables/error_log) يدويًا، أنشئ الملف `/etc/clickhouse-server/config.d/error_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+</clickhouse>
+```
+
+**التعطيل**
+
+لتعطيل الإعداد `error_log`، أنشئ الملف التالي `/etc/clickhouse-server/config.d/disable_error_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <error_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="custom_settings_prefixes">
+  ## custom_settings_prefixes
+</div>
+
+قائمة بالبادئات المستخدمة في [الإعدادات المخصّصة](/ar/concepts/features/configuration/settings/settings-query-level#custom_settings).
+تُفصل البادئات المتعددة بفواصل.
+
+**مثال**
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+**راجع أيضًا**
+
+* [الإعدادات المخصّصة](/ar/concepts/features/configuration/settings/settings-query-level#custom_settings)
+
+<div id="core_dump">
+  ## core_dump
+</div>
+
+يضبط الحد المرن لحجم ملف تفريغ الذاكرة.
+
+<Note>
+  يُضبط الحد الصلب عبر أدوات النظام
+</Note>
+
+**مثال**
+
+```xml
+<core_dump>
+     <size_limit>1073741824</size_limit>
+</core_dump>
+```
+
+<div id="default_profile">
+  ## default_profile
+</div>
+
+ملف تعريف الإعدادات الافتراضي. توجد ملفات تعريف الإعدادات في الملف المحدد في الإعداد `user_config`.
+
+**مثال**
+
+```xml
+<default_profile>default</default_profile>
+```
+
+<div id="dictionaries_config">
+  ## dictionaries_config
+</div>
+
+المسار إلى ملف إعدادات القواميس.
+
+المسار:
+
+* حدِّد المسار المطلق أو المسار النسبي بالنسبة إلى ملف إعدادات الخادم.
+* يمكن أن يحتوي المسار على رموز البدل * و ?.
+
+راجع أيضًا:
+
+* &quot;[القواميس](/ar/reference/statements/create/dictionary)&quot;.
+
+**مثال**
+
+```xml
+<dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+<div id="user_defined_executable_functions_config">
+  ## user_defined_executable_functions_config
+</div>
+
+مسار ملف الإعدادات الخاص بالدوال التنفيذية المعرّفة من قبل المستخدم.
+
+المسار:
+
+* حدِّد المسار المطلق أو مسارًا نسبيًا إلى ملف إعدادات الخادم.
+* يمكن أن يحتوي المسار على محارف البدل * و ?.
+
+انظر أيضًا:
+
+* &quot;[Executable User Defined Functions](/ar/reference/functions/regular-functions/udf#executable-user-defined-functions).&quot;.
+
+**مثال**
+
+```xml
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+```
+
+<div id="graphite">
+  ## graphite
+</div>
+
+إرسال البيانات إلى [Graphite](https://github.com/graphite-project).
+
+الإعدادات:
+
+* `host` – خادم Graphite.
+* `port` – المنفذ على خادم Graphite.
+* `interval` – الفاصل الزمني للإرسال، بالثواني.
+* `timeout` – مهلة إرسال البيانات، بالثواني.
+* `root_path` – بادئة للمفاتيح.
+* `metrics` – إرسال البيانات من جدول [system.metrics](/ar/reference/system-tables/metrics).
+* `events` – إرسال بيانات الفروق المتراكمة خلال الفترة الزمنية من جدول [system.events](/ar/reference/system-tables/events).
+* `events_cumulative` – إرسال البيانات التراكمية من جدول [system.events](/ar/reference/system-tables/events).
+* `asynchronous_metrics` – إرسال البيانات من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
+
+يمكنك تهيئة عدة عناصر `<graphite>`. على سبيل المثال، يمكنك استخدام ذلك لإرسال بيانات مختلفة على فواصل زمنية مختلفة.
+
+**مثال**
+
+```xml
+<graphite>
+    <host>localhost</host>
+    <port>42000</port>
+    <timeout>0.1</timeout>
+    <interval>60</interval>
+    <root_path>one_min</root_path>
+    <metrics>true</metrics>
+    <events>true</events>
+    <events_cumulative>false</events_cumulative>
+    <asynchronous_metrics>true</asynchronous_metrics>
+</graphite>
+```
+
+<div id="graphite_rollup">
+  ## graphite_rollup
+</div>
+
+إعدادات لتقليل حجم بيانات Graphite.
+
+لمزيد من التفاصيل، راجع [GraphiteMergeTree](/ar/reference/engines/table-engines/mergetree-family/graphitemergetree).
+
+**مثال**
+
+```xml
+<graphite_rollup_example>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup_example>
+```
+
+<div id="http_handlers">
+  ## http_handlers
+</div>
+
+يسمح باستخدام معالِجات HTTP مخصّصة.
+لإضافة معالِج HTTP جديد، ما عليك سوى إضافة `<rule>` جديدة.
+تُفحَص القواعد من الأعلى إلى الأسفل وفقًا لترتيب تعريفها،
+ويُشغِّل أول تطابق المعالِج.
+
+يمكن تهيئة الإعدادات التالية باستخدام العلامات الفرعية:
+
+| Sub-tags             | Definition                                                                                                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                | لمطابقة URL الطلب، يمكنك استخدام البادئة &#39;regex:&#39; للاستفادة من مطابقة التعبيرات النمطية (اختياري)                                                              |
+| `methods`            | لمطابقة methods الطلب، يمكنك استخدام الفواصل للفصل بين عدة methods (اختياري)                                                                                           |
+| `headers`            | لمطابقة ترويسات الطلب، طابِق كل عنصر فرعي (اسم العنصر الفرعي هو اسم الترويسة)، ويمكنك استخدام البادئة &#39;regex:&#39; للاستفادة من مطابقة التعبيرات النمطية (اختياري) |
+| `handler`            | معالِج الطلب                                                                                                                                                           |
+| `empty_query_string` | التحقّق من عدم وجود query string في URL                                                                                                                                |
+
+يحتوي `handler` على الإعدادات التالية، والتي يمكن تهيئتها باستخدام العلامات الفرعية:
+
+| Sub-tags           | Definition                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`              | موقع لإعادة التوجيه                                                                                                                                                                   |
+| `type`             | الأنواع المدعومة: static, dynamic&#95;query&#95;handler, predefined&#95;query&#95;handler, redirect                                                                                   |
+| `status`           | يُستخدم مع النوع static، وهو رمز حالة الاستجابة                                                                                                                                       |
+| `query_param_name` | يُستخدم مع النوع dynamic&#95;query&#95;handler، ويستخرج وينفّذ القيمة المقابلة لقيمة `<query_param_name>` في معلمات طلب HTTP                                                          |
+| `query`            | يُستخدم مع النوع predefined&#95;query&#95;handler، وينفّذ query عند استدعاء المعالِج                                                                                                  |
+| `content_type`     | يُستخدم مع النوع static، وهو نوع محتوى الاستجابة                                                                                                                                      |
+| `response_content` | يُستخدم مع النوع static، وهو محتوى الاستجابة المُرسَل إلى العميل. وعند استخدام البادئة &#39;file://&#39; أو &#39;config://&#39;، يُؤخذ المحتوى من الملف أو التهيئة ويُرسَل إلى العميل |
+
+إلى جانب قائمة القواعد، يمكنك تحديد `<defaults/>` لتمكين جميع المعالِجات الافتراضية.
+
+مثال:
+
+```xml
+<http_handlers>
+    <rule>
+        <url>/</url>
+        <methods>POST,GET</methods>
+        <headers><pragma>no-cache</pragma></headers>
+        <handler>
+            <type>dynamic_query_handler</type>
+            <query_param_name>query</query_param_name>
+        </handler>
+    </rule>
+
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.settings</query>
+        </handler>
+    </rule>
+
+    <rule>
+        <handler>
+            <type>static</type>
+            <status>200</status>
+            <content_type>text/plain; charset=UTF-8</content_type>
+            <response_content>config://http_server_default_response</response_content>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+<div id="http_server_default_response">
+  ## http_server_default_response
+</div>
+
+الصفحة التي تُعرض تلقائيًا عند الوصول إلى خادم ClickHouse عبر HTTP(s).
+القيمة الافتراضية هي &quot;Ok.&quot; (مع محرف سطر جديد في النهاية)
+
+**مثال**
+
+يفتح `https://tabix.io/` عند الوصول إلى `http://localhost: http_port`.
+
+```xml
+<http_server_default_response>
+  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+</http_server_default_response>
+```
+
+<div id="http_options_response">
+  ## http_options_response
+</div>
+
+يُستخدم لإضافة ترويسات إلى الاستجابة لطلب HTTP من نوع `OPTIONS`.
+تُستخدم الطريقة `OPTIONS` عند إرسال طلبات CORS المسبقة.
+
+لمزيد من المعلومات، راجع [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
+
+مثال:
+
+```xml
+<http_options_response>
+     <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Headers</name>
+          <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Methods</name>
+          <value>POST, GET, OPTIONS</value>
+     </header>
+     <header>
+          <name>Access-Control-Max-Age</name>
+          <value>86400</value>
+     </header>
+</http_options_response>
+```
+
+<div id="hsts_max_age">
+  ## hsts_max_age
+</div>
+
+مدة صلاحية HSTS بالثواني.
+
+<Note>
+  تعني القيمة `0` أن ClickHouse يعطّل HSTS. وإذا عيّنت قيمة موجبة، فسيتم تفعيل HSTS وستكون قيمة `max-age` هي الرقم الذي عيّنته.
+</Note>
+
+**مثال**
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
+```
+
+<div id="interserver_listen_host">
+  ## interserver_listen_host
+</div>
+
+قيد على المضيفات المسموح لها بتبادل البيانات بين خوادم ClickHouse.
+إذا كان Keeper مستخدمًا، فسيُطبَّق القيد نفسه على الاتصال بين مثيلات Keeper المختلفة.
+
+<Note>
+  تكون القيمة افتراضيًا مساوية لإعداد [`listen_host`](#listen_host).
+</Note>
+
+**مثال**
+
+```xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
+```
+
+النوع:
+
+القيمة الافتراضية:
+
+<div id="interserver_http_credentials">
+  ## interserver_http_credentials
+</div>
+
+اسم مستخدم وكلمة مرور يُستخدمان للاتصال بالخوادم الأخرى أثناء [النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication). بالإضافة إلى ذلك، يصادق الخادم النسخ المتماثلة الأخرى باستخدام بيانات الاعتماد هذه.
+لذلك يجب أن تكون `interserver_http_credentials` نفسها في جميع النسخ المتماثلة ضمن عنقود.
+
+<Note>
+  * افتراضيًا، إذا لم يتم تضمين قسم `interserver_http_credentials`، فلن تُستخدم المصادقة أثناء النسخ المتماثل.
+  * لا ترتبط إعدادات `interserver_http_credentials` بتهيئة بيانات اعتماد عميل ClickHouse [إعداد](/ar/concepts/features/interfaces/client#configuration_files).
+  * بيانات الاعتماد هذه مشتركة للنسخ المتماثل عبر `HTTP` و`HTTPS`.
+</Note>
+
+يمكن تهيئة الإعدادات التالية باستخدام الوسوم الفرعية:
+
+* `user` — اسم المستخدم.
+* `password` — كلمة المرور.
+* `allow_empty` — إذا كانت `true`، فيُسمح للنسخ المتماثلة الأخرى بالاتصال دون مصادقة حتى إذا تم تعيين بيانات الاعتماد. أما إذا كانت `false`، فستُرفض الاتصالات غير الموثقة. القيمة الافتراضية: `false`.
+* `old` — يحتوي على `user` و`password` القديمين المستخدمين أثناء تدوير بيانات الاعتماد. ويمكن تحديد عدة أقسام `old`.
+
+**تدوير بيانات الاعتماد**
+
+يدعم ClickHouse التدوير الديناميكي لبيانات الاعتماد بين الخوادم دون الحاجة إلى إيقاف جميع النسخ المتماثلة في الوقت نفسه لتحديث تهيئتها. ويمكن تغيير بيانات الاعتماد على عدة مراحل.
+
+لتمكين المصادقة، اضبط `interserver_http_credentials.allow_empty` على `true` وأضف بيانات الاعتماد. يتيح ذلك الاتصالات مع المصادقة وبدونها.
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+بعد تهيئة جميع النسخ المتماثلة، اضبط `allow_empty` على `false` أو احذف هذا الإعداد. فهذا يفرض المصادقة باستخدام بيانات اعتماد جديدة.
+
+لتغيير بيانات الاعتماد الحالية، انقل اسم المستخدم وكلمة المرور إلى القسم `interserver_http_credentials.old`، ثم حدّث `user` و`password` بقيم جديدة. عند هذه المرحلة، يستخدم الخادم بيانات الاعتماد الجديدة للاتصال بالنسخ المتماثلة الأخرى، ويقبل الاتصالات باستخدام بيانات الاعتماد الجديدة أو القديمة.
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
+</interserver_http_credentials>
+```
+
+بعد تطبيق بيانات اعتماد جديدة على جميع النسخ المتماثلة، يمكن إزالة بيانات الاعتماد القديمة.
+
+<div id="ldap_servers">
+  ## ldap_servers
+</div>
+
+أدرِج هنا خوادم LDAP مع معلمات الاتصال الخاصة بها من أجل:
+
+* استخدامها كجهات مصادقة لمستخدمين محليين مخصّصين، لديهم آلية مصادقة `ldap` محددة بدلًا من `password`
+* استخدامها كدلائل مستخدمين بعيدة.
+
+يمكن تهيئة الإعدادات التالية باستخدام الوسوم الفرعية:
+
+| Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind_dn`                      | قالب يُستخدم لإنشاء DN المُستخدَم لتنفيذ `bind`. سيتم إنشاء DN الناتج عبر استبدال جميع المقاطع الفرعية `\{user_name\}` في القالب باسم المستخدم الفعلي أثناء كل محاولة مصادقة.                                                                                                                                                                                                                           |
+| `enable_tls`                   | راية لتفعيل استخدام اتصال آمن بخادم LDAP. حدّد `no` لبروتوكول النص الصريح (`ldap://`) (غير موصى به). وحدّد `yes` لبروتوكول LDAP عبر SSL/TLS (`ldaps://`) (موصى به، وهو الإعداد الافتراضي). وحدّد `starttls` لبروتوكول StartTLS القديم (بروتوكول نص صريح (`ldap://`) تتم ترقيته إلى TLS).                                                                                                                |
+| `host`                         | اسم المضيف لخادم LDAP أو عنوان IP؛ هذه المعلمة إلزامية ولا يمكن أن تكون فارغة.                                                                                                                                                                                                                                                                                                                          |
+| `port`                         | منفذ خادم LDAP، والقيمة الافتراضية هي 636 إذا كان `enable_tls` مضبوطًا على true، وإلا `389`.                                                                                                                                                                                                                                                                                                            |
+| `tls_ca_cert_dir`              | المسار إلى الدليل الذي يحتوي على شهادات CA.                                                                                                                                                                                                                                                                                                                                                             |
+| `tls_ca_cert_file`             | المسار إلى ملف شهادة CA.                                                                                                                                                                                                                                                                                                                                                                                |
+| `tls_cert_file`                | المسار إلى ملف الشهادة.                                                                                                                                                                                                                                                                                                                                                                                 |
+| `tls_cipher_suite`             | مجموعة التعمية المسموح بها (وفق ترميز OpenSSL).                                                                                                                                                                                                                                                                                                                                                         |
+| `tls_key_file`                 | المسار إلى ملف مفتاح الشهادة.                                                                                                                                                                                                                                                                                                                                                                           |
+| `tls_minimum_protocol_version` | الحد الأدنى لإصدار بروتوكول SSL/TLS. القيم المقبولة هي: `ssl2` و`ssl3` و`tls1.0` و`tls1.1` و`tls1.2` (الافتراضي).                                                                                                                                                                                                                                                                                       |
+| `tls_require_cert`             | سلوك التحقق من شهادة النظير في SSL/TLS. القيم المقبولة هي: `never` و`allow` و`try` و`demand` (الافتراضي).                                                                                                                                                                                                                                                                                               |
+| `user_dn_detection`            | قسم يحتوي على معلمات LDAP search لاكتشاف user DN الفعلي للمستخدم الذي تم تنفيذ `bind` له. يُستخدم هذا أساسًا في مرشحات البحث لمزيد من تعيين الأدوار عندما يكون الخادم Active Directory. سيُستخدم user DN الناتج عند استبدال المقاطع الفرعية `\{user_dn\}` حيثما كان ذلك مسموحًا. افتراضيًا، يُضبط user DN ليكون مساويًا لـ bind DN، ولكن بمجرد تنفيذ البحث، سيُحدَّث إلى قيمة user DN الفعلية المكتشفة. |
+| `verification_cooldown`        | فترة زمنية، بالثواني، بعد محاولة `bind` ناجحة، يُفترض خلالها أن المستخدم قد تمت مصادقته بنجاح في جميع الطلبات المتتالية من دون الاتصال بخادم LDAP. حدّد `0` (الافتراضي) لتعطيل التخزين المؤقت وفرض الاتصال بخادم LDAP لكل طلب مصادقة.                                                                                                                                                                   |
+
+يمكن تهيئة الإعداد `user_dn_detection` باستخدام الوسوم الفرعية:
+
+| Setting         | Description                                                                                                                                                                                                                                                                       |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `base_dn`       | قالب يُستخدم لإنشاء base DN لعملية LDAP search. سيتم إنشاء DN الناتج عبر استبدال جميع المقاطع الفرعية `\{user_name\}` و`\{bind_dn\}` في القالب باسم المستخدم الفعلي وbind DN أثناء LDAP search.                                                                                   |
+| `scope`         | نطاق LDAP search. القيم المقبولة هي: `base` و`one_level` و`children` و`subtree` (الافتراضي).                                                                                                                                                                                      |
+| `search_filter` | قالب يُستخدم لإنشاء search filter لعملية LDAP search. سيُنشأ المرشح الناتج عبر استبدال جميع المقاطع الفرعية `\{user_name\}` و`\{bind_dn\}` و`\{base_dn\}` في القالب باسم المستخدم الفعلي وbind DN وbase DN أثناء LDAP search. لاحظ أنه يجب تهريب المحارف الخاصة بشكل صحيح في XML. |
+
+مثال:
+
+```xml
+<my_ldap_server>
+    <host>localhost</host>
+    <port>636</port>
+    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+    <verification_cooldown>300</verification_cooldown>
+    <enable_tls>yes</enable_tls>
+    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+</my_ldap_server>
+```
+
+مثال (بيئة Active Directory اعتيادية مع تهيئة اكتشاف user DN لإجراء تعيين الأدوار لاحقًا):
+
+```xml
+<my_ad_server>
+    <host>localhost</host>
+    <port>389</port>
+    <bind_dn>EXAMPLE\{user_name}</bind_dn>
+    <user_dn_detection>
+        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <enable_tls>no</enable_tls>
+</my_ad_server>
+```
+
+<div id="listen_host">
+  ## listen_host
+</div>
+
+قيد على المضيفات التي يمكن أن تَرِد منها الطلبات. إذا كنت تريد أن يستجيب الخادم لها جميعًا، فحدِّد `::`.
+
+أمثلة:
+
+```xml
+<listen_host>::1</listen_host>
+<listen_host>127.0.0.1</listen_host>
+```
+
+<div id="logger">
+  ## logger
+</div>
+
+موقع رسائل السجل وتنسيقها.
+
+**المفاتيح**:
+
+| Key                          | Description                                                                                                                                                                                                                                                        |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `async`                      | عند ضبطها على `true` (الافتراضي)، سيتم التسجيل بشكل غير متزامن (خيط خلفي واحد لكل قناة إخراج). وإلا فسيتم التسجيل داخل الخيط الذي يستدعي LOG                                                                                                                       |
+| `async_queue_max_size`       | عند استخدام التسجيل غير المتزامن، فهذا هو الحد الأقصى لعدد الرسائل التي سيُحتفَظ بها في قائمة الانتظار بانتظار التفريغ. سيتم تجاهل الرسائل الإضافية                                                                                                                |
+| `console`                    | يفعّل التسجيل إلى وحدة التحكم. اضبطه على `1` أو `true` للتفعيل. القيمة الافتراضية هي `1` إذا لم يكن ClickHouse يعمل في وضع daemon، وإلا فهي `0`.                                                                                                                   |
+| `console_log_level`          | مستوى السجل لإخراج وحدة التحكم. القيمة الافتراضية هي `level`.                                                                                                                                                                                                      |
+| `console_shutdown_log_level` | يُستخدم Shutdown level لتعيين مستوى سجل وحدة التحكم عند إيقاف تشغيل الخادم.                                                                                                                                                                                        |
+| `console_startup_log_level`  | يُستخدم Startup level لتعيين مستوى سجل وحدة التحكم عند بدء تشغيل الخادم. بعد بدء التشغيل، يُعاد مستوى السجل إلى الإعداد `console_log_level`                                                                                                                        |
+| `count`                      | Rotation policy: الحد الأقصى لعدد ملفات السجل القديمة التي يحتفظ بها ClickHouse.                                                                                                                                                                                   |
+| `errorlog`                   | المسار إلى ملف سجل الأخطاء.                                                                                                                                                                                                                                        |
+| `formatting.type`            | تنسيق السجل لإخراج وحدة التحكم. حاليًا، لا يتم دعم سوى `json`                                                                                                                                                                                                      |
+| `level`                      | مستوى السجل. القيم المقبولة: `none` (إيقاف التسجيل)، `fatal`، `critical`، `error`، `warning`، `notice`، `information`,`debug`، `trace`، `test`                                                                                                                     |
+| `log`                        | المسار إلى ملف السجل.                                                                                                                                                                                                                                              |
+| `rotation`                   | Rotation policy: تتحكم في توقيت تدوير ملفات السجل. يمكن أن يستند التدوير إلى الحجم أو الوقت أو مزيج منهما. أمثلة: 100M، daily، 100M,daily. بمجرد أن يتجاوز ملف السجل الحجم المحدد أو عند بلوغ الفاصل الزمني المحدد، تتم إعادة تسميته وأرشفته، ويُنشأ ملف سجل جديد. |
+| `shutdown_level`             | يُستخدم Shutdown level لتعيين مستوى root logger عند إيقاف تشغيل الخادم.                                                                                                                                                                                            |
+| `size`                       | Rotation policy: الحد الأقصى لحجم ملفات السجل بالبايت. بمجرد أن يتجاوز حجم ملف السجل هذه العتبة، تتم إعادة تسميته وأرشفته، ويُنشأ ملف سجل جديد.                                                                                                                    |
+| `startup_level`              | يُستخدم Startup level لتعيين مستوى root logger عند بدء تشغيل الخادم. بعد بدء التشغيل، يُعاد مستوى السجل إلى الإعداد `level`                                                                                                                                        |
+| `stream_compress`            | ضغط رسائل السجل باستخدام LZ4. اضبطه على `1` أو `true` للتفعيل.                                                                                                                                                                                                     |
+| `syslog_level`               | مستوى السجل للتسجيل إلى syslog.                                                                                                                                                                                                                                    |
+| `use_syslog`                 | يمرّر أيضًا مخرجات السجل إلى syslog.                                                                                                                                                                                                                               |
+
+**محددات تنسيق السجل**
+
+تدعم أسماء الملفات في المسارين `log` و `errorLog` محددات التنسيق التالية في اسم الملف الناتج (أما جزء الدليل فلا يدعمها).
+
+يعرض العمود &quot;Example&quot; الناتج عند `2023-07-06 18:32:07`.
+
+| المُحدِّد | الوصف                                                                                                                                                                                          | مثال                       |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `%%`      | قيمة حرفية %                                                                                                                                                                                   | `%`                        |
+| `%n`      | محرف سطر جديد                                                                                                                                                                                  |                            |
+| `%t`      | محرف جدولة أفقي                                                                                                                                                                                |                            |
+| `%Y`      | السنة كعدد عشري، مثل 2017                                                                                                                                                                      | `2023`                     |
+| `%y`      | آخر رقمين من السنة كعدد عشري (النطاق [00,99])                                                                                                                                                  | `23`                       |
+| `%C`      | أول رقمين من السنة كعدد عشري (النطاق [00,99])                                                                                                                                                  | `20`                       |
+| `%G`      | [السنة المعتمدة على الأسابيع وفق ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) مكوّنة من أربعة أرقام، أي السنة التي يقع فيها الأسبوع المحدد. ويكون ذلك مفيدًا عادةً فقط مع `%V` | `2023`                     |
+| `%g`      | آخر رقمين من [السنة المعتمدة على الأسابيع وفق ISO 8601](https://en.wikipedia.org/wiki/ISO_8601#Week_dates)، أي السنة التي يقع فيها الأسبوع المحدد.                                             | `23`                       |
+| `%b`      | الاسم المختصر للشهر، مثل Oct (يعتمد على الإعدادات المحلية)                                                                                                                                     | `Jul`                      |
+| `%h`      | مرادف لـ %b                                                                                                                                                                                    | `Jul`                      |
+| `%B`      | الاسم الكامل للشهر، مثل October (يعتمد على الإعدادات المحلية)                                                                                                                                  | `July`                     |
+| `%m`      | الشهر كعدد عشري (النطاق [01,12])                                                                                                                                                               | `07`                       |
+| `%U`      | رقم الأسبوع في السنة كعدد عشري (الأحد هو أول يوم في الأسبوع) (النطاق [00,53])                                                                                                                  | `27`                       |
+| `%W`      | رقم الأسبوع في السنة كعدد عشري (الاثنين هو أول يوم في الأسبوع) (النطاق [00,53])                                                                                                                | `27`                       |
+| `%V`      | رقم الأسبوع وفق ISO 8601 (النطاق [01,53])                                                                                                                                                      | `27`                       |
+| `%j`      | يوم السنة كعدد عشري (النطاق [001,366])                                                                                                                                                         | `187`                      |
+| `%d`      | يوم الشهر كعدد عشري مع حشو صفري (النطاق [01,31]). يُسبق الرقم الأحادي بصفر.                                                                                                                    | `06`                       |
+| `%e`      | يوم الشهر كعدد عشري مع حشو بمسافة (النطاق [1,31]). يُسبق الرقم الأحادي بمسافة.                                                                                                                 | `&nbsp; 6`                 |
+| `%a`      | الاسم المختصر ليوم الأسبوع، مثل Fri (يعتمد على الإعدادات المحلية)                                                                                                                              | `Thu`                      |
+| `%A`      | الاسم الكامل ليوم الأسبوع، مثل Friday (يعتمد على الإعدادات المحلية)                                                                                                                            | `Thursday`                 |
+| `%w`      | يوم الأسبوع كعدد صحيح، حيث يكون الأحد هو 0 (النطاق [0-6])                                                                                                                                      | `4`                        |
+| `%u`      | يوم الأسبوع كعدد عشري، حيث يكون الاثنين هو 1 (تنسيق ISO 8601) (النطاق [1-7])                                                                                                                   | `4`                        |
+| `%H`      | الساعة كعدد عشري بنظام 24 ساعة (النطاق [00-23])                                                                                                                                                | `18`                       |
+| `%I`      | الساعة كعدد عشري بنظام 12 ساعة (النطاق [01,12])                                                                                                                                                | `06`                       |
+| `%M`      | الدقيقة كعدد عشري (النطاق [00,59])                                                                                                                                                             | `32`                       |
+| `%S`      | الثانية كعدد عشري (النطاق [00,60])                                                                                                                                                             | `07`                       |
+| `%c`      | سلسلة التاريخ والوقت القياسية، مثل Sun Oct 17 04:41:13 2010 (يعتمد على الإعدادات المحلية)                                                                                                      | `Thu Jul  6 18:32:07 2023` |
+| `%x`      | التمثيل المحلي للتاريخ (يعتمد على الإعدادات المحلية)                                                                                                                                           | `07/06/23`                 |
+| `%X`      | التمثيل المحلي للوقت، مثل 18:40:20 أو 6:40:20 PM (يعتمد على الإعدادات المحلية)                                                                                                                 | `18:32:07`                 |
+| `%D`      | تاريخ قصير بالتنسيق MM/DD/YY، وهو مكافئ لـ %m/%d/%y                                                                                                                                            | `07/06/23`                 |
+| `%F`      | تاريخ مختصر بصيغة YYYY-MM-DD، ويكافئ %Y-%m-%d                                                                                                                                                  | `2023-07-06`               |
+| `%r`      | الوقت المحلي بنظام 12 ساعة (بحسب الإعدادات المحلية)                                                                                                                                            | `06:32:07 PM`              |
+| `%R`      | مكافئ لـ &quot;%H:%M&quot;                                                                                                                                                                     | `18:32`                    |
+| `%T`      | مكافئ لـ &quot;%H:%M:%S&quot; (تنسيق الوقت وفق ISO 8601)                                                                                                                                       | `18:32:07`                 |
+| `%p`      | مؤشر a.m. أو p.m. المحلي (بحسب الإعدادات المحلية)                                                                                                                                              | `PM`                       |
+| `%z`      | الإزاحة بالنسبة إلى UTC بتنسيق ISO 8601 (مثل -0430)، أو لا تظهر أي أحرف إذا لم تتوفر معلومات المنطقة الزمنية                                                                                   | `+0800`                    |
+| `%Z`      | اسم المنطقة الزمنية أو اختصارها وفق الإعدادات المحلية، أو لا تظهر أي أحرف إذا لم تتوفر معلومات المنطقة الزمنية                                                                                 | `Z AWST `                  |
+
+**مثال**
+
+```xml
+<logger>
+    <level>trace</level>
+    <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
+    <errorlog>/var/log/clickhouse-server/clickhouse-server-%F-%T.err.log</errorlog>
+    <size>1000M</size>
+    <count>10</count>
+    <stream_compress>true</stream_compress>
+</logger>
+```
+
+لطباعة رسائل السجل في الطرفية فقط:
+
+```xml
+<logger>
+    <level>information</level>
+    <console>true</console>
+</logger>
+```
+
+**تجاوزات حسب المستوى**
+
+يمكن تجاوز مستوى السجل لكل اسم مُسجِّل على حدة. على سبيل المثال، لكتم جميع رسائل المُسجِّلَين &quot;Backup&quot; و&quot;RBAC&quot;.
+
+```xml
+<logger>
+    <levels>
+        <logger>
+            <name>Backup</name>
+            <level>none</level>
+        </logger>
+        <logger>
+            <name>RBAC</name>
+            <level>none</level>
+        </logger>
+    </levels>
+</logger>
+```
+
+**syslog**
+
+لكتابة رسائل السجل إلى syslog أيضًا:
+
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname>
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+المفاتيح الخاصة بـ `<syslog>`:
+
+| المفتاح    | الوصف                                                                                                                                                                                                                                                                              |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`  | عنوان syslog بالتنسيق `host\[:port\]`. إذا لم يتم تحديده، فستُستخدم الخدمة المحلية.                                                                                                                                                                                                |
+| `hostname` | اسم المضيف الذي تُرسَل منه السجلات (اختياري).                                                                                                                                                                                                                                      |
+| `facility` | [الكلمة المفتاحية لـ facility](https://en.wikipedia.org/wiki/Syslog#Facility) في syslog. يجب تحديدها بأحرف كبيرة مع البادئة &quot;LOG&#95;&quot;، مثل `LOG_USER` و`LOG_DAEMON` و`LOG_LOCAL3` وما إلى ذلك. القيمة الافتراضية: `LOG_USER` إذا تم تحديد `address`، وإلا `LOG_DAEMON`. |
+| `format`   | تنسيق رسالة السجل. القيم الممكنة: `bsd` و`syslog.`                                                                                                                                                                                                                                 |
+
+**تنسيقات السجل**
+
+يمكنك تحديد تنسيق السجل الذي سيُخرَج في سجل وحدة التحكم. حاليًا، لا يُدعَم إلا JSON.
+
+**مثال**
+
+فيما يلي مثال على سجل JSON ناتج:
+
+```json
+{
+  "date_time_utc": "2024-11-06T09:06:09Z",
+  "date_time": "1650918987.180175",
+  "thread_name": "#1",
+  "thread_id": "254545",
+  "level": "Trace",
+  "query_id": "",
+  "logger_name": "BaseDaemon",
+  "message": "Received signal 2",
+  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
+  "source_line": "192"
+}
+```
+
+لتمكين دعم التسجيل بصيغة JSON، استخدم المقتطف التالي:
+
+```xml
+<logger>
+    <formatting>
+        <type>json</type>
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
+        <!-- <channel></channel> -->
+        <names>
+            <date_time>date_time</date_time>
+            <thread_name>thread_name</thread_name>
+            <thread_id>thread_id</thread_id>
+            <level>level</level>
+            <query_id>query_id</query_id>
+            <logger_name>logger_name</logger_name>
+            <message>message</message>
+            <source_file>source_file</source_file>
+            <source_line>source_line</source_line>
+        </names>
+    </formatting>
+</logger>
+```
+
+**إعادة تسمية المفاتيح في سجلات JSON**
+
+يمكن تعديل أسماء المفاتيح بتغيير قيم الوسوم داخل الوسم `<names>`. على سبيل المثال، لتغيير `DATE_TIME` إلى `MY_DATE_TIME`، يمكنك استخدام `<date_time>MY_DATE_TIME</date_time>`.
+
+**حذف المفاتيح من سجلات JSON**
+
+يمكن حذف خصائص السجل بالتعليق على الخاصية. على سبيل المثال، إذا كنت لا تريد أن يطبع السجل `query_id`، فيمكنك التعليق على الوسم `<query_id>`.
+
+<div id="send_crash_reports">
+  ## send_crash_reports
+</div>
+
+إعدادات خاصة بإرسال تقارير التعطل إلى فريق المطورين الأساسيين في ClickHouse.
+
+نقدّر كثيرًا تفعيل هذا الخيار، خصوصًا في بيئات ما قبل الإنتاج.
+
+المفاتيح:
+
+| Key                   | Description                                                                                                                             |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`             | علامة منطقية لتمكين الميزة، وتكون `true` افتراضيًا. اضبطها على `false` لتجنّب إرسال تقارير التعطل.                                      |
+| `endpoint`            | يمكنك تجاوز عنوان URL لنقطة النهاية المستخدم لإرسال تقارير التعطل.                                                                      |
+| `send_logical_errors` | يشبه `LOGICAL_ERROR` تعليمة `assert`، وهو خلل برمجي في ClickHouse. تتيح هذه العلامة المنطقية إرسال هذه الاستثناءات (الافتراضي: `true`). |
+
+**الاستخدام الموصى به**
+
+```xml
+<send_crash_reports>
+    <enabled>true</enabled>
+</send_crash_reports>
+```
+
+<div id="ssh_server">
+  ## ssh_server
+</div>
+
+سيُكتب الجزء العام من مفتاح المضيف في ملف known&#95;hosts
+على جانب عميل SSH عند أول اتصال.
+
+تكون إعدادات مفتاح المضيف غير مفعّلة افتراضيًا.
+أزِل علامة التعليق عن إعدادات مفتاح المضيف، وحدِّد مسار مفتاح SSH المناسب لتفعيلها:
+
+مثال:
+
+```xml
+<ssh_server>
+    <host_rsa_key>path_to_the_ssh_key</host_rsa_key>
+    <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key>
+    <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key>
+</ssh_server>
+```
+
+<div id="tcp_ssh_port">
+  ## tcp_ssh_port
+</div>
+
+المنفذ الخاص بخادم SSH الذي يتيح للمستخدم الاتصال وتنفيذ الاستعلامات بشكل تفاعلي باستخدام العميل المضمّن عبر PTY.
+
+مثال:
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+```
+
+<div id="storage_configuration">
+  ## storage_configuration
+</div>
+
+يتيح إعداد التخزين باستخدام عدة أقراص.
+
+يتبع إعداد التخزين البنية التالية:
+
+```xml
+<storage_configuration>
+    <disks>
+        <!-- configuration -->
+    </disks>
+    <policies>
+        <!-- configuration -->
+    </policies>
+</storage_configuration>
+```
+
+<div id="configuration-of-disks">
+  ### إعداد `disks`
+</div>
+
+يأتي إعداد `disks` وفق البنية الموضحة أدناه:
+
+```xml
+<storage_configuration>
+    <disks>
+        <disk_name_1>
+            <path>/mnt/fast_ssd/clickhouse/</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
+        ...
+    </disks>
+</storage_configuration>
+```
+
+تُحدِّد العلامات الفرعية أعلاه الإعدادات التالية لـ `disks`:
+
+| Setting                 | Description                                                                              |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
+| `<disk_name_N>`         | اسم القرص، ويجب أن يكون فريدًا.                                                          |
+| `path`                  | المسار الذي ستُخزَّن فيه بيانات الخادم (المجلدان `data` و`shadow`). ويجب أن ينتهي بـ `/` |
+| `keep_free_space_bytes` | حجم المساحة الحرة المحجوزة على القرص.                                                    |
+
+<Note>
+  لا يهم ترتيب الأقراص.
+</Note>
+
+<div id="configuration-of-policies">
+  ### تهيئة السياسات
+</div>
+
+تُعرِّف العلامات الفرعية أعلاه الإعدادات التالية لـ `policies`:
+
+| الإعداد                      | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_name_N`              | اسم السياسة. يجب أن تكون أسماء السياسات فريدة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `volume_name_N`              | اسم وحدة التخزين. يجب أن تكون أسماء وحدات التخزين فريدة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `disk`                       | القرص الموجود داخل وحدة التخزين.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `max_data_part_size_bytes`   | الحد الأقصى لحجم جزء البيانات الذي يمكن أن يوجد على أي قرص ضمن وحدة التخزين هذه. إذا أسفرت عملية الدمج عن جزء يُتوقع أن يتجاوز حجمه `max_data_part_size_bytes`، فسيُكتب هذا الجزء إلى وحدة التخزين التالية. تتيح لك هذه الميزة أساسًا تخزين الأجزاء الجديدة أو الصغيرة على وحدة تخزين سريعة (SSD) ونقلها إلى وحدة تخزين أبطأ (HDD) عندما يصبح حجمها كبيرًا. لا تستخدم هذا الخيار إذا كانت السياسة تحتوي على وحدة تخزين واحدة فقط.                                                                                             |
+| `move_factor`                | نسبة المساحة الحرة المتاحة على وحدة التخزين. إذا انخفضت المساحة عن هذا الحد، فستبدأ البيانات بالانتقال إلى وحدة التخزين التالية، إن وُجدت. ولأغراض النقل، تُرتَّب الأجزاء حسب الحجم من الأكبر إلى الأصغر (ترتيبًا تنازليًا)، وتُختار الأجزاء التي يكفي مجموع أحجامها لتحقيق شرط `move_factor`. وإذا لم يكن الحجم الإجمالي لجميع الأجزاء كافيًا، فستنقل جميع الأجزاء.                                                                                                                                                          |
+| `perform_ttl_move_on_insert` | يعطّل نقل البيانات ذات TTL المنتهي عند الإدراج. افتراضيًا (إذا كان مُمكّنًا)، إذا أدرجنا جزءًا من البيانات انتهت صلاحيته بالفعل وفقًا لقاعدة النقل المعتمدة على مدة البقاء، فسيُنقل فورًا إلى وحدة التخزين أو القرص المحددَين في قاعدة النقل. وقد يؤدي ذلك إلى إبطاء الإدراج بشكل ملحوظ إذا كانت وحدة التخزين أو القرص الهدف بطيئًا (مثل S3). وإذا كان هذا الإعداد معطّلًا، فسيُكتب الجزء المنتهي الصلاحية من البيانات إلى وحدة التخزين الافتراضية، ثم يُنقل فورًا إلى وحدة التخزين المحددة في القاعدة الخاصة بـ TTL المنتهي. |
+| `load_balancing`             | سياسة موازنة الأقراص: `round_robin` أو `least_used`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `least_used_ttl_ms`          | يضبط مهلة التحديث (بالملي ثانية) للمساحة المتاحة على جميع الأقراص (`0` - تحديث دائمًا، `-1` - عدم التحديث أبدًا، والقيمة الافتراضية هي `60000`). لاحظ أنه إذا كان القرص مستخدمًا فقط بواسطة ClickHouse ولن يخضع لتغيير حجم نظام الملفات أثناء التشغيل، فيمكنك استخدام القيمة `-1`. في جميع الحالات الأخرى، لا يُنصح بذلك لأنه سيؤدي في النهاية إلى تخصيص غير صحيح للمساحة.                                                                                                                                                    |
+| `prefer_not_to_merge`        | يعطّل دمج أجزاء البيانات على وحدة التخزين هذه. ملاحظة: قد يكون هذا ضارًا وقد يسبب بطئًا. عند تمكين هذا الإعداد (لا تفعل ذلك)، يُمنع دمج البيانات على وحدة التخزين هذه (وهذا أمر سيئ). يتيح ذلك التحكم في كيفية تعامل ClickHouse مع الأقراص البطيئة. نوصي بعدم استخدامه مطلقًا.                                                                                                                                                                                                                                                |
+| `volume_priority`            | يحدد أولوية (ترتيب) ملء وحدات التخزين. كلما صغرت القيمة، ارتفعت الأولوية. يجب أن تكون قيم هذا المعامل أعدادًا طبيعية وتغطي النطاق من 1 إلى N (حيث N هي أكبر قيمة محددة للمعامل) من دون فجوات.                                                                                                                                                                                                                                                                                                                                 |
+
+بالنسبة إلى `volume_priority`:
+
+* إذا كانت جميع وحدات التخزين تحتوي على هذا المعامل، فستُرتَّب أولوياتها وفق الترتيب المحدد.
+* إذا كانت *بعض* وحدات التخزين فقط تحتوي عليه، فإن وحدات التخزين التي لا تحتوي عليه تكون ذات أدنى أولوية. أما الوحدات التي تحتوي عليه فتُعطى الأولوية وفقًا لقيمة الوسم، بينما تُحدَّد أولوية البقية بالنسبة إلى بعضها بعضًا بحسب ترتيب الوصف في ملف الإعدادات.
+* إذا لم يُحدَّد هذا المعامل لأيٍّ من وحدات التخزين، فيُحدَّد ترتيبها بحسب ترتيب الوصف في ملف الإعدادات.
+* لا يجوز أن تكون أولويات وحدات التخزين متطابقة.
+
+<div id="macros">
+  ## macros
+</div>
+
+استبدالات المعلمات الخاصة بالجداول المتماثلة.
+
+يمكن الاستغناء عنها إذا لم تكن الجداول المتماثلة مستخدمة.
+
+لمزيد من المعلومات، راجع قسم [إنشاء الجداول المتماثلة](/ar/reference/engines/table-engines/mergetree-family/replication#creating-replicated-tables).
+
+**مثال**
+
+```xml
+<macros incl="macros" optional="true" />
+```
+
+<div id="replica_group_name">
+  ## replica_group_name
+</div>
+
+اسم مجموعة النسخ المتماثلة لقاعدة البيانات Replicated.
+
+سيتكوّن العنقود الذي تُنشِئه قاعدة البيانات Replicated من النسخ المتماثلة ضمن المجموعة نفسها.
+لن تنتظر استعلامات DDL إلا النسخ المتماثلة ضمن المجموعة نفسها.
+
+تكون فارغة افتراضيًا.
+
+**مثال**
+
+```xml
+<replica_group_name>backups</replica_group_name>
+```
+
+<div id="max_session_timeout">
+  ## max_session_timeout
+</div>
+
+الحد الأقصى لمهلة الجلسة، بالثواني.
+
+مثال:
+
+```xml
+<max_session_timeout>3600</max_session_timeout>
+```
+
+<div id="merge_tree">
+  ## merge_tree
+</div>
+
+إعدادات الضبط الدقيق للجداول في [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+لمزيد من المعلومات، راجع ملف الترويسة MergeTreeSettings.h.
+
+**مثال**
+
+```xml
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+<div id="metric_log">
+  ## metric_log
+</div>
+
+هو معطّل افتراضيًا.
+
+**التفعيل**
+
+لتمكين جمع محفوظات المقاييس يدويًا [`system.metric_log`](/ar/reference/system-tables/metric_log)، أنشئ الملف `/etc/clickhouse-server/config.d/metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </metric_log>
+</clickhouse>
+```
+
+**تعطيل**
+
+لتعطيل الإعداد `metric_log`، يجب إنشاء الملف التالي `/etc/clickhouse-server/config.d/disable_metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <metric_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="replicated_merge_tree">
+  ## replicated_merge_tree
+</div>
+
+الضبط الدقيق للجداول في [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). يتمتع هذا الإعداد بأولوية أعلى.
+
+لمزيد من المعلومات، راجع ملف الترويسة MergeTreeSettings.h.
+
+**مثال**
+
+```xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
+```
+
+<div id="opentelemetry_span_log">
+  ## opentelemetry_span_log
+</div>
+
+إعدادات جدول النظام [`opentelemetry_span_log`](/ar/reference/system-tables/opentelemetry_span_log).
+
+<SystemLogParameters />
+
+مثال:
+
+```xml
+<opentelemetry_span_log>
+    <engine>
+        engine MergeTree
+        partition by toYYYYMM(finish_date)
+        order by (finish_date, finish_time_us, trace_id)
+    </engine>
+    <database>system</database>
+    <table>opentelemetry_span_log</table>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</opentelemetry_span_log>
+```
+
+<div id="openSSL">
+  ## openSSL
+</div>
+
+إعدادات SSL للعميل والخادم.
+
+يُوفَّر دعم SSL عبر مكتبة `libpoco`. وترد خيارات الإعداد المتاحة في [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). ويمكن العثور على القيم الافتراضية في [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
+
+مفاتيح إعدادات الخادم/العميل:
+
+| الخيار                        | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | القيمة الافتراضية                                                                          |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | يُفعّل أو يعطّل التخزين المؤقت للجلسات. يجب استخدامه مع `sessionIdContext`. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                           | `false`                                                                                    |
+| `caConfig`                    | المسار إلى الملف أو الدليل الذي يحتوي على شهادات CA الموثوقة. إذا كان هذا المسار يشير إلى ملف، فيجب أن يكون بتنسيق PEM، ويمكن أن يحتوي على عدة شهادات CA. وإذا كان يشير إلى دليل، فيجب أن يحتوي على ملف ‎.pem واحد لكل شهادة CA. ويُبحث عن أسماء الملفات باستخدام قيمة hash لاسم subject الخاص بـ CA. ويمكن العثور على التفاصيل في صفحة الدليل الخاصة بـ [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                                                                            |
+| `certificateFile`             | مسار ملف شهادة العميل/الخادم بتنسيق PEM. يمكنك إغفاله إذا كان `privateKeyFile` يحتوي على الشهادة.                                                                                                                                                                                                                                                                                                                                                                                      |                                                                                            |
+| `cipherList`                  | خوارزميات التشفير المدعومة في OpenSSL.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | البروتوكولات غير المسموح باستخدامها.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |                                                                                            |
+| `extendedVerification`        | إذا كان مُمكّنًا، فتحقّق من تطابق CN أو SAN في الشهادة مع اسم مضيف النظير.                                                                                                                                                                                                                                                                                                                                                                                                             | `false`                                                                                    |
+| `fips`                        | يُفعّل وضع FIPS في OpenSSL. ويكون مدعومًا إذا كان إصدار OpenSSL المستخدم في المكتبة يدعم FIPS.                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
+| `invalidCertificateHandler`   | فئة (فئة فرعية من CertificateHandler) مخصّصة للتحقق من الشهادات غير الصالحة. على سبيل المثال: `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                       | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | ما إذا كان سيتم استخدام شهادات CA المضمّنة في OpenSSL. يفترض ClickHouse أن شهادات CA المضمّنة موجودة في الملف `/etc/ssl/cert.pem` (أو الدليل `/etc/ssl/certs`) أو في الملف (أو الدليل) المحدد بواسطة متغير البيئة `SSL_CERT_FILE` (أو `SSL_CERT_DIR`).                                                                                                                                                                                                                                 | `true`                                                                                     |
+| `preferServerCiphers`         | مجموعات التشفير في الخادم التي يفضّلها العميل.                                                                                                                                                                                                                                                                                                                                                                                                                                         | `false`                                                                                    |
+| `privateKeyFile`              | المسار إلى الملف الذي يحتوي على المفتاح الخاص السري لشهادة PEM. وقد يحتوي الملف على المفتاح والشهادة في الوقت نفسه.                                                                                                                                                                                                                                                                                                                                                                    |                                                                                            |
+| `privateKeyPassphraseHandler` | فئة (فئة فرعية من PrivateKeyPassphraseHandler) تطلب عبارة المرور للوصول إلى المفتاح الخاص. على سبيل المثال: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                          | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | يتطلب اتصالًا عبر TLSv1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
+| `requireTLSv1_1`              | يتطلب اتصالًا عبر TLSv1.1. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `requireTLSv1_2`              | يتطلب اتصالًا عبر TLSv1.2. القيم المقبولة: `true`، `false`.                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `sessionCacheSize`            | الحد الأقصى لعدد الجلسات التي يحتفظ بها الخادوم في الذاكرة المؤقتة. وتعني القيمة `0` عددًا غير محدود من الجلسات.                                                                                                                                                                                                                                                                                                                                                                       | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | سلسلة فريدة من المحارف العشوائية يُلحقها الخادوم بكل مُعرّف يتم إنشاؤه. يجب ألا يتجاوز طول السلسلة `SSL_MAX_SSL_SESSION_ID_LENGTH`. يُوصى دائمًا بهذه المعلَمة لأنها تساعد على تجنّب المشكلات، سواء كان الخادوم يخزّن الجلسة مؤقتًا أم كان العميل قد طلب التخزين المؤقت.                                                                                                                                                                                                               | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | مدة تخزين الجلسة مؤقتًا على الخادم، بالساعات.                                                                                                                                                                                                                                                                                                                                                                                                                                          | `2`                                                                                        |
+| `verificationDepth`           | الحد الأقصى لطول سلسلة التحقق. سيفشل التحقق إذا تجاوز طول سلسلة الشهادات القيمة المحددة.                                                                                                                                                                                                                                                                                                                                                                                               | `9`                                                                                        |
+| `verificationMode`            | الأسلوب المستخدم للتحقق من شهادات العقدة. ترد التفاصيل في وصف الفئة [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). القيم الممكنة: `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                    | `relaxed`                                                                                  |
+
+**مثال على الإعدادات:**
+
+```xml
+<openSSL>
+    <server>
+        <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+        <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+        <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+        <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
+        <verificationMode>none</verificationMode>
+        <loadDefaultCAFile>true</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>true</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+        <invalidCertificateHandler>
+            <!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="part_log">
+  ## part_log
+</div>
+
+أحداث السجل المرتبطة بـ [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree). على سبيل المثال، إضافة البيانات أو دمجها. يمكنك استخدام هذا السجل لمحاكاة خوارزميات الدمج ومقارنة خصائصها. كما يمكنك تصوّر عملية الدمج.
+
+تُسجَّل الاستعلامات في جدول [system.part&#95;log](/ar/reference/system-tables/part_log)، وليس في ملف منفصل. يمكنك ضبط اسم هذا الجدول في المعلمة `table` (انظر أدناه).
+
+<SystemLogParameters />
+
+**مثال**
+
+```xml
+<part_log>
+    <database>system</database>
+    <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</part_log>
+```
+
+<div id="processors_profile_log">
+  ## processors_profile_log
+</div>
+
+إعدادات جدول النظام [`processors_profile_log`](/ar/reference/system-tables/processors_profile_log).
+
+<SystemLogParameters />
+
+الإعدادات الافتراضية هي:
+
+```xml
+<processors_profile_log>
+    <database>system</database>
+    <table>processors_profile_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</processors_profile_log>
+```
+
+<div id="prometheus">
+  ## prometheus
+</div>
+
+إتاحة بيانات المقاييس ليقوم [Prometheus](https://prometheus.io) بكشطها.
+
+الإعدادات:
+
+* `endpoint` – نقطة نهاية HTTP لكشط المقاييس بواسطة خادم Prometheus. يجب أن تبدأ بـ &#39;/&#39;.
+* `port` – المنفذ الخاص بـ `endpoint`.
+* `metrics` – إتاحة المقاييس من جدول [system.metrics](/ar/reference/system-tables/metrics).
+* `events` – إتاحة المقاييس من جدول [system.events](/ar/reference/system-tables/events).
+* `asynchronous_metrics` – إتاحة قيم المقاييس الحالية من جدول [system.asynchronous&#95;metrics](/ar/reference/system-tables/asynchronous_metrics).
+* `errors` - إتاحة عدد الأخطاء بحسب رموز الخطأ التي حدثت منذ آخر إعادة تشغيل للخادم. ويمكن أيضًا الحصول على هذه المعلومات من [system.errors](/ar/reference/system-tables/errors).
+
+**مثال**
+
+```xml highlight={5-12}
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+    </prometheus>
+</clickhouse>
+```
+
+تحقّق (استبدل `127.0.0.1` بعنوان IP أو باسم المضيف الخاص بخادم ClickHouse لديك):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+<div id="query_log">
+  ## query_log
+</div>
+
+إعداد لتسجيل الاستعلامات الواردة عند استخدام الإعداد [log&#95;queries=1](/ar/reference/settings/session-settings).
+
+تُسجَّل الاستعلامات في جدول [system.query&#95;log](/ar/reference/system-tables/query_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول من خلال المعامل `table` (انظر أدناه).
+
+<SystemLogParameters />
+
+إذا لم يكن الجدول موجودًا، فسينشئه ClickHouse. وإذا تغيّرت بنية سجل الاستعلامات عند تحديث خادم ClickHouse، فستُعاد تسمية الجدول ذي البنية القديمة، ويُنشأ جدول جديد تلقائيًا.
+
+**مثال**
+
+```xml
+<query_log>
+    <database>system</database>
+    <table>query_log</table>
+    <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_log>
+```
+
+<div id="query_metric_log">
+  ## query_metric_log
+</div>
+
+يكون معطّلًا بشكل افتراضي.
+
+**التفعيل**
+
+لتفعيل جمع محفوظات المقاييس يدويًا لـ [`system.query_metric_log`](/ar/reference/system-tables/query_metric_log)، أنشئ `/etc/clickhouse-server/config.d/query_metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+</clickhouse>
+```
+
+**تعطيل**
+
+لتعطيل الإعداد `query_metric_log`، أنشئ الملف التالي `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` بالمحتوى التالي:
+
+```xml
+<clickhouse>
+    <query_metric_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="query_cache">
+  ## query_cache
+</div>
+
+تهيئة [ذاكرة التخزين المؤقت للاستعلامات](/ar/concepts/features/performance/caches/query-cache).
+
+الإعدادات التالية متاحة:
+
+| الإعداد                   | الوصف                                                                                                        | القيمة الافتراضية |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------- |
+| `max_entries`             | الحد الأقصى لعدد نتائج استعلامات `SELECT` المخزَّنة في ذاكرة التخزين المؤقت.                                 | `1024`            |
+| `max_entry_size_in_bytes` | الحد الأقصى للحجم بالبايت الذي يمكن أن تبلغه نتائج استعلامات `SELECT` ليتم حفظها في ذاكرة التخزين المؤقت.    | `1048576`         |
+| `max_entry_size_in_rows`  | الحد الأقصى لعدد الصفوف التي يمكن أن تتضمنها نتائج استعلامات `SELECT` ليتم حفظها في ذاكرة التخزين المؤقت.    | `30000000`        |
+| `max_size_in_bytes`       | الحد الأقصى لحجم ذاكرة التخزين المؤقت بالبايت. وتعني القيمة `0` أن ذاكرة التخزين المؤقت للاستعلامات معطَّلة. | `1073741824`      |
+
+<Note>
+  * تسري الإعدادات المعدَّلة فورًا.
+  * تُخصَّص بيانات ذاكرة التخزين المؤقت للاستعلامات في DRAM. إذا كانت الذاكرة محدودة، فتأكَّد من تعيين قيمة صغيرة لـ `max_size_in_bytes` أو تعطيل ذاكرة التخزين المؤقت للاستعلامات بالكامل.
+</Note>
+
+**مثال**
+
+```xml
+<query_cache>
+    <max_size_in_bytes>1073741824</max_size_in_bytes>
+    <max_entries>1024</max_entries>
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+</query_cache>
+```
+
+<div id="query_thread_log">
+  ## query_thread_log
+</div>
+
+إعداد لتسجيل خيوط الاستعلامات المستلمة باستخدام الإعداد [log&#95;query&#95;threads=1](/ar/reference/settings/session-settings#log_query_threads).
+
+تُسجَّل الاستعلامات في جدول [system.query&#95;thread&#95;log](/ar/reference/system-tables/query_thread_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول عبر المعلَمة `table` (انظر أدناه).
+
+<SystemLogParameters />
+
+إذا لم يكن الجدول موجودًا، فسيُنشئه ClickHouse. وإذا تغيّرت بنية سجل خيوط الاستعلامات عند تحديث خادم ClickHouse، فستُعاد تسمية الجدول ذي البنية القديمة، ويُنشأ جدول جديد تلقائيًا.
+
+**مثال**
+
+```xml
+<query_thread_log>
+    <database>system</database>
+    <table>query_thread_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_thread_log>
+```
+
+<div id="query_views_log">
+  ## query_views_log
+</div>
+
+إعداد لتسجيل العروض (الحيّة، والمادية، وغيرها) استنادًا إلى الاستعلامات المستلمة مع الإعداد [log&#95;query&#95;views=1](/ar/reference/settings/session-settings#log_query_views).
+
+تُسجَّل الاستعلامات في الجدول [system.query&#95;views&#95;log](/ar/reference/system-tables/query_views_log)، وليس في ملف منفصل. يمكنك تغيير اسم الجدول في المعلمة `table` (انظر أدناه).
+
+<SystemLogParameters />
+
+إذا لم يكن الجدول موجودًا، فسينشئه ClickHouse. وإذا تغيّرت بنية سجل عروض الاستعلامات عند تحديث خادم ClickHouse، فستُعاد تسمية الجدول ذي البنية القديمة، ويُنشأ جدول جديد تلقائيًا.
+
+**مثال**
+
+```xml
+<query_views_log>
+    <database>system</database>
+    <table>query_views_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_views_log>
+```
+
+<div id="text_log">
+  ## text_log
+</div>
+
+إعدادات جدول النظام [text&#95;log](/ar/reference/system-tables/text_log) لتسجيل الرسائل النصية.
+
+<SystemLogParameters />
+
+بالإضافة إلى ذلك:
+
+| الإعداد | الوصف                                                            | القيمة الافتراضية |
+| ------- | ---------------------------------------------------------------- | ----------------- |
+| `level` | أعلى مستوى للرسائل (ويكون `Trace` افتراضيًا) سيُخزَّن في الجدول. | `Trace`           |
+
+**مثال**
+
+```xml
+<clickhouse>
+    <text_log>
+        <level>notice</level>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>event_date</partition_by> -->
+        <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    </text_log>
+</clickhouse>
+```
+
+<div id="trace_log">
+  ## trace_log
+</div>
+
+إعدادات تشغيل جدول النظام [trace&#95;log](/ar/reference/system-tables/trace_log).
+
+<SystemLogParameters />
+
+يحتوي ملف إعدادات الخادم الافتراضي `config.xml` على قسم الإعدادات التالي:
+
+```xml
+<trace_log>
+    <database>system</database>
+    <table>trace_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+    <symbolize>false</symbolize>
+</trace_log>
+```
+
+<div id="asynchronous_insert_log">
+  ## asynchronous_insert_log
+</div>
+
+إعدادات [جدول النظام asynchronous&#95;insert&#95;log](/ar/reference/system-tables/asynchronous_insert_log) الخاصة بتسجيل عمليات الإدراج غير المتزامنة.
+
+<SystemLogParameters />
+
+**مثال**
+
+```xml
+<clickhouse>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </asynchronous_insert_log>
+</clickhouse>
+```
+
+<div id="crash_log">
+  ## crash_log
+</div>
+
+إعدادات تشغيل جدول النظام [crash&#95;log](/ar/reference/system-tables/crash_log).
+
+يمكن تهيئة الإعدادات التالية عبر الوسوم الفرعية:
+
+| Setting                            | Description                                                                                                                                   | Default             | Note                                                                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `buffer_size_rows_flush_threshold` | القيمة الحدّية لعدد الأسطر. إذا تم بلوغ هذه القيمة، يبدأ تفريغ السجلات إلى القرص في الخلفية.                                                  | `max_size_rows / 2` |                                                                                                                       |
+| `database`                         | اسم قاعدة البيانات.                                                                                                                           |                     |                                                                                                                       |
+| `engine`                           | [تعريف محرك MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) لجدول نظام.       |                     | لا يمكن استخدامه إذا كان `partition_by` أو `order_by` معرّفًا. وإذا لم يتم تحديده، فسيتم اختيار `MergeTree` افتراضيًا |
+| `flush_interval_milliseconds`      | الفاصل الزمني لتفريغ البيانات من المخزن المؤقت في الذاكرة إلى الجدول.                                                                         | `7500`              |                                                                                                                       |
+| `flush_on_crash`                   | يحدّد ما إذا كان ينبغي تفريغ السجلات إلى القرص في حال حدوث تعطل.                                                                              | `false`             |                                                                                                                       |
+| `max_size_rows`                    | الحجم الأقصى للسجلات، محسوبًا بعدد الأسطر. عندما يصل عدد السجلات غير المفرّغة إلى max&#95;size، تُفرَّغ السجلات إلى القرص.                    | `1024`              |                                                                                                                       |
+| `order_by`                         | [مفتاح فرز مخصص](/ar/reference/engines/table-engines/mergetree-family/mergetree#order_by) لجدول نظام. لا يمكن استخدامه إذا كان `engine` معرّفًا. |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المعلَمة `order_by` مباشرةً داخل &#39;engine&#39;                      |
+| `partition_by`                     | [مفتاح تقسيم مخصص](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key) لجدول نظام.                                     |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المعلَمة `partition_by` مباشرةً داخل &#39;engine&#39;                  |
+| `reserved_size_rows`               | حجم الذاكرة المحجوز مسبقًا للسجلات، محسوبًا بعدد الأسطر.                                                                                      | `1024`              |                                                                                                                       |
+| `settings`                         | [معلَمات إضافية](/ar/reference/engines/table-engines/mergetree-family/mergetree#settings) تتحكم في سلوك MergeTree (اختياري).                     |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المعلَمة `settings` مباشرةً داخل &#39;engine&#39;                      |
+| `storage_policy`                   | اسم سياسة التخزين المراد استخدامها للجدول (اختياري).                                                                                          |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المعلَمة `storage_policy` مباشرةً داخل &#39;engine&#39;                |
+| `table`                            | اسم جدول النظام.                                                                                                                              |                     |                                                                                                                       |
+| `ttl`                              | يحدّد [TTL](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) للجدول.                                   |                     | إذا تم تحديد `engine` لجدول النظام، فيجب تحديد المعلَمة `ttl` مباشرةً داخل &#39;engine&#39;                           |
+
+يحتوي ملف تهيئة الخادم الافتراضي `config.xml` على قسم الإعدادات التالي:
+
+```xml
+<crash_log>
+    <database>system</database>
+    <table>crash_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1024</max_size_rows>
+    <reserved_size_rows>1024</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</crash_log>
+```
+
+<div id="custom_cached_disks_base_directory">
+  ## custom_cached_disks_base_directory
+</div>
+
+يحدّد هذا الإعداد مسار ذاكرة التخزين المؤقت للأقراص المخصّصة ذات التخزين المؤقت (المنشأة من SQL).
+تكون لـ `custom_cached_disks_base_directory` أولوية أعلى للأقراص المخصّصة من `filesystem_caches_path` (الموجود في `filesystem_caches_path.xml`)،
+والذي يُستخدم إذا لم يكن الأول موجودًا.
+يجب أن يقع مسار إعداد ذاكرة التخزين المؤقت لنظام الملفات داخل ذلك الدليل،
+وإلا فسيُطلق استثناء يمنع إنشاء القرص.
+
+<Note>
+  لن يؤثر هذا في الأقراص التي أُنشئت في إصدار أقدم ثم رُقّي الخادم بعدها.
+  في هذه الحالة، لن يُطلق استثناء، للسماح للخادم ببدء التشغيل بنجاح.
+</Note>
+
+مثال:
+
+```xml
+<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+```
+
+<div id="backup_log">
+  ## backup_log
+</div>
+
+إعدادات جدول النظام [backup&#95;log](/ar/reference/system-tables/backup_log) لتسجيل عمليات `BACKUP` و`RESTORE`.
+
+<SystemLogParameters />
+
+**مثال**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
+```
+
+<div id="blob_storage_log">
+  ## blob_storage_log
+</div>
+
+إعدادات لجدول النظام [`blob_storage_log`](/ar/reference/system-tables/blob_storage_log).
+
+<SystemLogParameters />
+
+مثال:
+
+```xml
+<blob_storage_log>
+    <database>system</database
+    <table>blob_storage_log</table
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds
+    <ttl>event_date + INTERVAL 30 DAY</ttl>
+</blob_storage_log>
+```
+
+<div id="query_masking_rules">
+  ## query_masking_rules
+</div>
+
+قواعد قائمة على التعبيرات النمطية، تُطبَّق على الاستعلامات وكذلك على جميع رسائل السجل قبل تخزينها في سجلات الخادم،
+وفي جداول [`system.query_log`](/ar/reference/system-tables/query_log)، [`system.text_log`](/ar/reference/system-tables/text_log)، [`system.processes`](/ar/reference/system-tables/processes)، وكذلك في السجلات المرسلة إلى العميل. يساعد ذلك على منع
+تسرّب البيانات الحساسة من استعلامات SQL، مثل الأسماء وعناوين البريد الإلكتروني والمعرّفات الشخصية أو أرقام بطاقات الائتمان، إلى السجلات.
+
+**مثال**
+
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+**حقول الإعداد**:
+
+| Setting   | Description                                                                  |
+| --------- | ---------------------------------------------------------------------------- |
+| `name`    | اسم القاعدة (اختياري)                                                        |
+| `regexp`  | تعبير نمطي متوافق مع RE2 (إلزامي)                                            |
+| `replace` | سلسلة استبدال للبيانات الحساسة (اختياري، والقيمة الافتراضية ست علامات نجمية) |
+
+تُطبَّق قواعد الإخفاء على الاستعلام بالكامل (لمنع تسرّب البيانات الحساسة من الاستعلامات غير الصحيحة / غير القابلة للتحليل).
+
+يحتوي جدول [`system.events`](/ar/reference/system-tables/events) على العدّاد `QueryMaskingRulesMatch`، الذي يبيّن العدد الإجمالي لمرات تطابق قواعد إخفاء الاستعلامات.
+
+بالنسبة إلى الاستعلامات الموزعة، يجب تهيئة كل خادم على حدة، وإلا فستُخزَّن الاستعلامات الفرعية المُمرَّرة إلى
+العُقد الأخرى من دون إخفاء.
+
+<div id="remote_servers">
+  ## remote_servers
+</div>
+
+إعدادات العناقيد المستخدمة في محرك الجدول [Distributed](/ar/reference/engines/table-engines/special/distributed) وفي وظيفة الجدول `cluster`.
+
+**مثال**
+
+```xml
+<remote_servers incl="clickhouse_remote_servers" />
+```
+
+لقيمة السمة `incl`، راجع قسم &quot;[ملفات التهيئة](/ar/concepts/features/configuration/server-config/configuration-files)&quot;.
+
+**راجع أيضًا**
+
+* [skip&#95;unavailable&#95;shards](/ar/reference/settings/session-settings#skip_unavailable_shards)
+* [اكتشاف الكتلة](/ar/guides/oss/deployment-and-scaling/cluster-discovery)
+* [محرك قاعدة البيانات Replicated](/ar/reference/engines/database-engines/replicated)
+
+<div id="remote_url_allow_hosts">
+  ## remote_url_allow_hosts
+</div>
+
+قائمة بالمضيفين المسموح باستخدامهم في محركات التخزين المرتبطة بـ URL ودوال الجداول.
+
+عند إضافة مضيف باستخدام وسم xml ‏`\<host\>`:
+
+* يجب تحديده تمامًا كما يظهر في URL، إذ يُتحقق من الاسم قبل إجراء DNS resolution. على سبيل المثال: `<host>clickhouse.com</host>`
+* إذا حُدِّد المنفذ صراحةً في URL، فسيُتحقق من host:port كوحدة واحدة. على سبيل المثال: `<host>clickhouse.com:80</host>`
+* إذا حُدِّد المضيف من دون منفذ، فسيُسمح بأي منفذ لهذا المضيف. على سبيل المثال: إذا كان `<host>clickhouse.com</host>` محددًا، فسيُسمح بـ `clickhouse.com:20` ‏(FTP) و`clickhouse.com:80` ‏(HTTP) و`clickhouse.com:443` ‏(HTTPS) وما إلى ذلك.
+* إذا حُدِّد المضيف على شكل عنوان IP، فسيُتحقق منه كما هو محدد في URL. على سبيل المثال: `[2a02:6b8:a::a]`.
+* إذا كانت هناك عمليات إعادة توجيه وكان دعم إعادة التوجيه مفعّلًا، فسيُتحقق من كل عملية إعادة توجيه (حقل location).
+
+على سبيل المثال:
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
+
+<div id="timezone">
+  ## timezone
+</div>
+
+المنطقة الزمنية للخادم.
+
+تُحدَّد باعتبارها معرّف IANA للمنطقة الزمنية UTC أو لموقع جغرافي (على سبيل المثال، Africa/Abidjan).
+
+تكون المنطقة الزمنية ضرورية للتحويل بين تنسيقات String وDateTime عند إخراج حقول DateTime بتنسيق نصي (على الشاشة أو في ملف)، وعند الحصول على قيمة DateTime من سلسلة نصية. بالإضافة إلى ذلك، تُستخدَم المنطقة الزمنية في الدوال التي تعمل مع الوقت والتاريخ إذا لم تتلقَّ المنطقة الزمنية ضمن معلمات الإدخال.
+
+**مثال**
+
+```xml
+<timezone>Asia/Istanbul</timezone>
+```
+
+**انظر أيضًا**
+
+* [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone)
+
+<div id="tcp_port">
+  ## tcp_port
+</div>
+
+المنفذ المستخدَم للتواصل مع العملاء عبر بروتوكول TCP.
+
+**مثال**
+
+```xml
+<tcp_port>9000</tcp_port>
+```
+
+<div id="tcp_port_secure">
+  ## tcp_port_secure
+</div>
+
+منفذ TCP للاتصال الآمن ببرامج العميل. استخدمه مع إعدادات [OpenSSL](#openssl).
+
+**القيمة الافتراضية**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
+
+<div id="mysql_port">
+  ## mysql_port
+</div>
+
+المنفذ المخصّص للتواصل مع العملاء عبر بروتوكول MySQL.
+
+<Note>
+  * تحدد الأعداد الصحيحة الموجبة رقم المنفذ الذي سيجري الاستماع إليه
+  * تُستخدم القيم الفارغة لتعطيل التواصل مع العملاء عبر بروتوكول MySQL.
+</Note>
+
+**مثال**
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
+<div id="postgresql_port">
+  ## postgresql_port
+</div>
+
+المنفذ المستخدم للتواصل مع العملاء عبر بروتوكول PostgreSQL.
+
+<Note>
+  * تحدد الأعداد الصحيحة الموجبة رقم المنفذ الذي سيتم الاستماع عليه
+  * تُستخدم القيم الفارغة لتعطيل التواصل مع العملاء عبر بروتوكول PostgreSQL.
+</Note>
+
+**مثال**
+
+```xml
+<postgresql_port>9005</postgresql_port>
+```
+
+<div id="url_scheme_mappers">
+  ## url_scheme_mappers
+</div>
+
+إعداد لتحويل بادئات URL المختصرة أو الرمزية إلى عناوين URL كاملة.
+
+مثال:
+
+```xml
+<url_scheme_mappers>
+    <s3>
+        <to>https://{bucket}.s3.amazonaws.com</to>
+    </s3>
+    <gs>
+        <to>https://storage.googleapis.com/{bucket}</to>
+    </gs>
+    <oss>
+        <to>https://{bucket}.oss.aliyuncs.com</to>
+    </oss>
+</url_scheme_mappers>
+```
+
+<div id="user_defined_path">
+  ## user_defined_path
+</div>
+
+المجلد الذي يحتوي على الملفات التي يعرّفها المستخدم. يُستخدم مع دوال SQL المعرّفة من قِبل المستخدم [دوال SQL المعرّفة من قِبل المستخدم](/ar/reference/functions/regular-functions/udf).
+
+**مثال**
+
+```xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+```
+
+<div id="users_config">
+  ## users_config
+</div>
+
+مسار الملف الذي يحتوي على:
+
+* إعدادات المستخدمين.
+* صلاحيات الوصول.
+* ملفات تعريف الإعدادات.
+* إعدادات الحصص.
+
+**مثال**
+
+```xml
+<users_config>users.xml</users_config>
+```
+
+<div id="access_control_improvements">
+  ## access_control_improvements
+</div>
+
+إعدادات التحسينات الاختيارية في نظام التحكم في الوصول.
+
+| الإعداد                                         | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | الافتراضي |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `on_cluster_queries_require_cluster_grant`      | يحدد ما إذا كانت استعلامات `ON CLUSTER` تتطلب امتياز `CLUSTER`.                                                                                                                                                                                                                                                                                                                                                                                                                              | `true`    |
+| `role_cache_expiration_time_seconds`            | يحدد عدد الثواني منذ آخر وصول التي يُخزَّن خلالها الدور في ذاكرة التخزين المؤقت للأدوار.                                                                                                                                                                                                                                                                                                                                                                                                     | `600`     |
+| `select_from_information_schema_requires_grant` | يحدد ما إذا كان `SELECT * FROM information_schema.<table>` يتطلب أي امتيازات، أو ما إذا كان يمكن لأي مستخدم تنفيذه. إذا ضُبط على true، فسيتطلب هذا الاستعلام `GRANT SELECT ON information_schema.<table>`، تمامًا كما هو الحال مع الجداول العادية.                                                                                                                                                                                                                                           | `true`    |
+| `select_from_system_db_requires_grant`          | يحدد ما إذا كان `SELECT * FROM system.<table>` يتطلب أي امتيازات، أو ما إذا كان يمكن لأي مستخدم تنفيذه. إذا ضُبط على true، فسيتطلب هذا الاستعلام `GRANT SELECT ON system.<table>` تمامًا كما هو الحال مع الجداول غير التابعة لـ system. الاستثناءات: يظل عدد قليل من جداول النظام (`tables` و`columns` و`databases` وبعض الجداول الثابتة مثل `one` و`contributors`) متاحًا للجميع؛ وإذا كان امتياز `SHOW` (مثل `SHOW USERS`) ممنوحًا، فسيكون جدول النظام المقابل (أي `system.users`) متاحًا. | `true`    |
+| `settings_constraints_replace_previous`         | يحدد ما إذا كان القيد في ملف تعريف الإعدادات لإعداد معيّن سيُلغي تأثير القيد السابق (المعرّف في ملفات تعريف أخرى) لذلك الإعداد، بما في ذلك الحقول التي لم يضبطها القيد الجديد. كما يفعّل نوع القيد `changeable_in_readonly`.                                                                                                                                                                                                                                                                      | `true`    |
+| `table_engines_require_grant`                   | يحدد ما إذا كان إنشاء جدول باستخدام table engine معيّن يتطلب امتيازًا.                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`   |
+| `throw_on_unmatched_row_policies`               | يحدد ما إذا كانت القراءة من جدول يجب أن تؤدي إلى طرح استثناء إذا كانت للجدول سياسات الصفوف، لكن لا تنطبق أيٌّ منها على المستخدم الحالي                                                                                                                                                                                                                                                                                                                                                        | `false`   |
+| `users_without_row_policies_can_read_rows`      | يحدد ما إذا كان المستخدمون الذين ليست لديهم سياسات صفوف سماحية لا يزال بإمكانهم قراءة الصفوف باستخدام استعلام `SELECT`. على سبيل المثال، إذا كان هناك مستخدمان A وB وكانت سياسة صفوف معرّفة فقط للمستخدم A، فعندئذٍ إذا كان هذا الإعداد true فسيرى المستخدم B جميع الصفوف. وإذا كان هذا الإعداد false فلن يرى المستخدم B أي صفوف.                                                                                                                                                           | `true`    |
+
+مثال:
+
+```xml
+<access_control_improvements>
+    <throw_on_unmatched_row_policies>true</throw_on_unmatched_row_policies>
+    <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+    <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+    <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+    <table_engines_require_grant>false</table_engines_require_grant>
+    <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+</access_control_improvements>
+```
+
+<div id="s3queue_log">
+  ## s3queue_log
+</div>
+
+إعدادات جدول النظام `s3queue_log`.
+
+<SystemLogParameters />
+
+الإعدادات الافتراضية هي:
+
+```xml
+<s3queue_log>
+    <database>system</database>
+    <table>s3queue_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</s3queue_log>
+```
+
+<div id="dead_letter_queue">
+  ## dead_letter_queue
+</div>
+
+إعداد خاص بجدول النظام &#39;dead&#95;letter&#95;queue&#39;.
+
+<SystemLogParameters />
+
+الإعدادات الافتراضية هي:
+
+```xml
+<dead_letter_queue>
+    <database>system</database>
+    <table>dead_letter</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</dead_letter_queue>
+```
+
+<div id="zookeeper">
+  ## zookeeper
+</div>
+
+يحتوي هذا القسم على إعدادات تتيح لـ ClickHouse التفاعل مع عنقود [ZooKeeper](http://zookeeper.apache.org/). يستخدم ClickHouse ‏ZooKeeper لتخزين البيانات الوصفية الخاصة بالنسخ المتماثلة عند استخدام الجداول المتماثلة. وإذا لم تكن الجداول المتماثلة مستخدمة، فيمكن حذف هذا القسم من المَعلمات.
+
+يمكن تهيئة الإعدادات التالية باستخدام وسوم فرعية:
+
+| Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node`                                          | نقطة نهاية ZooKeeper. يمكنك تعيين عدة نقاط نهاية. مثال: `<node index="1"><host>example_host</host><port>2181</port></node>`. تحدد السمة `index` ترتيب العقد عند محاولة الاتصال بعنقود ZooKeeper.                                                                                                                                                                                    |
+| `operation_timeout_ms`                          | الحد الأقصى لمهلة عملية واحدة، بالمللي ثانية.                                                                                                                                                                                                                                                                                                                                       |
+| `session_timeout_ms`                            | الحد الأقصى لمهلة جلسة العميل، بالمللي ثانية.                                                                                                                                                                                                                                                                                                                                       |
+| `root` (optional)                               | الـ znode الذي يُستخدم كجذر للـ znodes التي يستخدمها ClickHouse server.                                                                                                                                                                                                                                                                                                             |
+| `fallback_session_lifetime.min` (optional)      | الحد الأدنى لعمر جلسة zookeeper مع العقدة البديلة عندما تكون العقدة الأساسية غير متاحة (موازنة الحمل). يُضبط بالثواني. القيمة الافتراضية: 3 ساعات.                                                                                                                                                                                                                                  |
+| `fallback_session_lifetime.max` (optional)      | الحد الأقصى لعمر جلسة zookeeper مع العقدة البديلة عندما تكون العقدة الأساسية غير متاحة (موازنة الحمل). يُضبط بالثواني. القيمة الافتراضية: 6 ساعات.                                                                                                                                                                                                                                  |
+| `identity` (optional)                           | اسم المستخدم وكلمة المرور اللذان يتطلبهما ZooKeeper للوصول إلى الـ znodes المطلوبة.                                                                                                                                                                                                                                                                                                 |
+| `use_compression` (optional)                    | يفعّل Compression في بروتوكول Keeper إذا ضُبطت قيمته على `true`.                                                                                                                                                                                                                                                                                                                    |
+| `use_xid_64` (optional)                         | يفعّل معرّفات transaction ذات 64 بت. اضبطه على `true` لتمكين تنسيق معرّف transaction الموسّع. القيمة الافتراضية: `false`.                                                                                                                                                                                                                                                           |
+| `pass_opentelemetry_tracing_context` (optional) | يفعّل تمرير tracing context الخاص بـ OpenTelemetry إلى requests الخاصة بـ Keeper. عند التمكين، سيتم إنشاء spans تتبّع لعمليات Keeper، مما يتيح distributed tracing عبر ClickHouse وKeeper. راجع [Tracing ClickHouse Keeper Requests](/ar/guides/oss/deployment-and-scaling/monitoring/opentelemetry#tracing-clickhouse-keeper-requests) لمزيد من التفاصيل. القيمة الافتراضية: `false`. |
+
+يوجد أيضًا الإعداد `zookeeper_load_balancing` (اختياري)، الذي يتيح لك اختيار الخوارزمية المستخدمة لتحديد عقدة ZooKeeper:
+
+| Algorithm Name                  | Description                                                                                                                            |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `random`                        | يختار عشوائيًا إحدى عقد ZooKeeper.                                                                                                     |
+| `in_order`                      | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة فالثانية، وهكذا.                                                                           |
+| `nearest_hostname`              | يختار عقدة ZooKeeper التي يكون hostname الخاص بها الأكثر تشابهًا مع hostname الخاص بالخادم، وتتم مقارنة hostname باستخدام بادئة الاسم. |
+| `hostname_levenshtein_distance` | يشبه nearest&#95;hostname، لكنه يقارن hostname باستخدام أسلوب Levenshtein distance.                                                    |
+| `first_or_random`               | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة يختار عشوائيًا إحدى عقد ZooKeeper المتبقية.                                                |
+| `round_robin`                   | يختار أول عقدة ZooKeeper، وإذا حدثت إعادة اتصال يختار العقدة التالية.                                                                  |
+
+**مثال على التهيئة**
+
+```xml
+<zookeeper>
+    <node>
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <zookeeper_load_balancing>random</zookeeper_load_balancing>
+    <!-- Optional. Enable 64-bit transaction IDs. -->
+    <use_xid_64>false</use_xid_64>
+    <!-- Optional. Enable OpenTelemetry tracing context propagation. -->
+    <pass_opentelemetry_tracing_context>false</pass_opentelemetry_tracing_context>
+</zookeeper>
+```
+
+**راجع أيضًا**
+
+* [النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication)
+* [دليل المبرمج لـ ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+* [اتصال آمن اختياري بين ClickHouse وZooKeeper](/ar/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
+
+<div id="use_minimalistic_part_header_in_zookeeper">
+  ## use_minimalistic_part_header_in_zookeeper
+</div>
+
+طريقة تخزين رؤوس أجزاء البيانات في ZooKeeper. لا ينطبق هذا الإعداد إلا على عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/index). ويمكن تحديده كما يلي:
+
+**عموميًا في قسم [merge&#95;tree](#merge_tree) ضمن ملف `config.xml`**
+
+يستخدم ClickHouse هذا الإعداد لجميع الجداول على الخادم. ويمكنك تغيير الإعداد في أي وقت. وتتغير سلوكيات الجداول الحالية عند تغيير الإعداد.
+
+**لكل جدول**
+
+عند إنشاء جدول، حدِّد [إعداد المحرك](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) المقابل. ولا يتغير سلوك جدول موجود يستخدم هذا الإعداد، حتى إذا تغيّر الإعداد العام.
+
+**القيم الممكنة**
+
+* `0` — تكون الوظيفة معطّلة.
+* `1` — تكون الوظيفة مفعّلة.
+
+إذا كانت قيمة [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper)، فإن الجداول [المكررة](/ar/reference/engines/table-engines/mergetree-family/replication) تخزّن رؤوس أجزاء البيانات بشكل مضغوط باستخدام `znode` واحد. وإذا كان الجدول يحتوي على عدد كبير من الأعمدة، فإن طريقة التخزين هذه تقلّل بدرجة كبيرة حجم البيانات المخزّنة في ZooKeeper.
+
+<Note>
+  بعد تطبيق `use_minimalistic_part_header_in_zookeeper = 1`، لا يمكنك خفض إصدار ClickHouse server إلى إصدار لا يدعم هذا الإعداد. توخَّ الحذر عند ترقية ClickHouse على خوادم ضمن cluster. لا تُرقِّ جميع الخوادم دفعة واحدة. ومن الأكثر أمانًا اختبار الإصدارات الجديدة من ClickHouse في بيئة اختبار، أو على عدد قليل فقط من خوادم cluster.
+
+  كما لا يمكن استعادة رؤوس أجزاء البيانات المخزّنة مسبقًا باستخدام هذا الإعداد إلى تمثيلها السابق (غير المضغوط).
+</Note>
+
+<div id="distributed_ddl">
+  ## distributed_ddl
+</div>
+
+إدارة تنفيذ [استعلامات DDL الموزعة](/ar/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) على مستوى العنقود.
+يعمل فقط إذا كان [ZooKeeper](/ar/reference/settings/server-settings/settings#zookeeper) مفعّلًا.
+
+تتضمن الإعدادات القابلة للتهيئة ضمن `<distributed_ddl>` ما يلي:
+
+| الإعداد                | الوصف                                                                                                                | القيمة الافتراضية                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `cleanup_delay_period` | يبدأ التنظيف بعد استلام حدث عقدة جديدة إذا لم تكن آخر عملية تنظيف قد أُجريت قبل أقل من `cleanup_delay_period` ثانية. | `60` ثانية                          |
+| `max_tasks_in_queue`   | الحد الأقصى لعدد المهام التي يمكن أن تكون في قائمة الانتظار.                                                         | `1,000`                             |
+| `path`                 | المسار في Keeper الخاص بـ `task_queue` لاستعلامات DDL                                                                |                                     |
+| `pool_size`            | عدد استعلامات `ON CLUSTER` التي يمكن تشغيلها بالتزامن                                                                |                                     |
+| `profile`              | ملف التعريف المستخدم لتنفيذ استعلامات DDL                                                                            |                                     |
+| `task_max_lifetime`    | احذف العقدة إذا كان عمرها أكبر من هذه القيمة.                                                                        | `7 * 24 * 60 * 60` (أسبوع بالثواني) |
+
+**مثال**
+
+```xml
+<distributed_ddl>
+    <!-- Path in ZooKeeper to queue with DDL queries -->
+    <path>/clickhouse/task_queue/ddl</path>
+
+    <!-- Settings from this profile will be used to execute DDL queries -->
+    <profile>default</profile>
+
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+    <pool_size>1</pool_size>
+
+    <!--
+         Cleanup settings (active tasks will not be removed)
+    -->
+
+    <!-- Controls task TTL (default 1 week) -->
+    <task_max_lifetime>604800</task_max_lifetime>
+
+    <!-- Controls how often cleanup should be performed (in seconds) -->
+    <cleanup_delay_period>60</cleanup_delay_period>
+
+    <!-- Controls how many tasks could be in the queue -->
+    <max_tasks_in_queue>1000</max_tasks_in_queue>
+</distributed_ddl>
+```
+
+<div id="access_control_path">
+  ## access_control_path
+</div>
+
+مسار المجلد الذي يخزّن فيه ClickHouse server إعدادات المستخدمين والأدوار المُنشأة بواسطة أوامر SQL.
+
+**راجع أيضًا**
+
+* [Access Control and Account Management](/ar/concepts/features/security/access-rights#access-control-usage)
+
+<div id="allow_plaintext_password">
+  ## allow_plaintext_password
+</div>
+
+يحدّد ما إذا كان يُسمح بأنواع كلمات المرور ذات النص الواضح (غير الآمنة) أم لا.
+
+```xml
+<allow_plaintext_password>1</allow_plaintext_password>
+```
+
+<div id="allow_no_password">
+  ## allow_no_password
+</div>
+
+يحدِّد ما إذا كان يُسمح بنوع كلمة المرور غير الآمن `no_password` أم لا.
+
+```xml
+<allow_no_password>1</allow_no_password>
+```
+
+<div id="allow_implicit_no_password">
+  ## allow_implicit_no_password
+</div>
+
+يمنع إنشاء مستخدم من دون كلمة مرور ما لم يُحدَّد &#39;IDENTIFIED WITH no&#95;password&#39; صراحةً.
+
+```xml
+<allow_implicit_no_password>1</allow_implicit_no_password>
+```
+
+<div id="default_session_timeout">
+  ## default_session_timeout
+</div>
+
+المهلة الافتراضية لانتهاء الجلسة، بالثواني.
+
+```xml
+<default_session_timeout>60</default_session_timeout>
+```
+
+<div id="default_password_type">
+  ## default_password_type
+</div>
+
+يحدّد نوع كلمة المرور الذي يُضبط تلقائيًا في استعلامات مثل `CREATE USER u IDENTIFIED BY 'p'`.
+
+القيم المقبولة هي:
+
+* `plaintext_password`
+* `sha256_password`
+* `double_sha1_password`
+* `bcrypt_password`
+
+```xml
+<default_password_type>sha256_password</default_password_type>
+```
+
+<div id="user_directories">
+  ## user_directories
+</div>
+
+قسم في ملف التكوين يحتوي على الإعدادات التالية:
+
+* مسار ملف التكوين الذي يحتوي على المستخدمين المعرّفين مسبقًا.
+* مسار المجلد الذي تُخزَّن فيه حسابات المستخدمين التي أُنشِئت بأوامر SQL.
+* مسار عقدة ZooKeeper التي تُخزَّن فيها حسابات المستخدمين التي أُنشِئت بأوامر SQL ويجري نسخها متماثلًا.
+
+إذا جرى تحديد هذا القسم، فلن يُستخدَم المسار من [users&#95;config](/ar/reference/settings/server-settings/settings#users_config) و[access&#95;control&#95;path](/ar/reference/settings/server-settings/settings#access_control_path).
+
+يمكن أن يحتوي قسم `user_directories` على أي عدد من العناصر، ويعكس ترتيب العناصر أسبقيتها (كلما ارتفع العنصر، ارتفعت أسبقيته).
+
+**أمثلة**
+
+```xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
+يمكن أيضًا تخزين المستخدمين والأدوار وسياسات الصفوف والحصص وملفات التعريف في ZooKeeper:
+
+```xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <replicated>
+        <zookeeper_path>/clickhouse/access/</zookeeper_path>
+    </replicated>
+</user_directories>
+```
+
+يمكنك أيضًا تعريف القسمين `memory` — أي تخزين المعلومات في الذاكرة فقط من دون الكتابة على القرص — و`ldap` — أي تخزين المعلومات على خادم LDAP.
+
+لإضافة خادم LDAP كدليل مستخدمين بعيد للمستخدمين غير المعرّفين محليًا، عرّف قسم `ldap` واحدًا بالإعدادات التالية:
+
+| Setting  | Description                                                                                                                                                                                                                                                                                                      |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `roles`  | قسم يحتوي على قائمة بالأدوار المعرّفة محليًا التي ستُسنَد إلى كل مستخدم يُسترجَع من خادم LDAP. إذا لم تُحدَّد أي أدوار، فلن يتمكن المستخدم من تنفيذ أي عمليات بعد المصادقة. وإذا لم يكن أي دور من الأدوار المدرجة معرّفًا محليًا وقت المصادقة، فستفشل محاولة المصادقة كما لو أن كلمة المرور المقدَّمة غير صحيحة. |
+| `server` | أحد أسماء خوادم LDAP المعرّفة في قسم الإعداد `ldap_servers`. هذه المعلَمة إلزامية ولا يمكن أن تكون فارغة.                                                                                                                                                                                                        |
+
+**مثال**
+
+```xml
+<ldap>
+    <server>my_ldap_server</server>
+        <roles>
+            <my_local_role1 />
+            <my_local_role2 />
+        </roles>
+</ldap>
+```
+
+<div id="top_level_domains_list">
+  ## top_level_domains_list
+</div>
+
+يحدّد قائمة بنطاقات المستوى الأعلى المخصّصة المطلوب إضافتها، بحيث يكون كل إدخال بالتنسيق `<name>/path/to/file</name>`.
+
+على سبيل المثال:
+
+```xml
+<top_level_domains_lists>
+    <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+</top_level_domains_lists>
+```
+
+انظر أيضًا:
+
+* الدالة [`cutToFirstSignificantSubdomainCustom`](/ar/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) وأشكالها المختلفة،
+  التي تقبل اسم قائمة TLD مخصّصة، وتُرجع الجزء من النطاق الذي يشمل النطاقات الفرعية العليا حتى أول نطاق فرعي رئيسي.
+
+<div id="proxy">
+  ## الوكيل
+</div>
+
+حدِّد خوادم وكيلة لطلبات HTTP وHTTPS، وهي مدعومة حاليًا في تخزين S3، ودوال الجداول S3، ودوال URL.
+
+هناك ثلاث طرق لتعريف الخوادم الوكيلة:
+
+* متغيرات البيئة
+* قوائم الوكيل
+* محلِّلات الوكيل البعيدة.
+
+يُدعم أيضًا تجاوز الخوادم الوكيلة لمضيفين محددين باستخدام `no_proxy`.
+
+**متغيرات البيئة**
+
+تتيح لك متغيرات البيئة `http_proxy` و`https_proxy` تحديد
+خادم وكيل لبروتوكول معيّن. إذا كان مضبوطًا في نظامك، فمن المفترض أن يعمل بسلاسة.
+
+هذا هو النهج الأبسط إذا كان لبروتوكول معيّن
+خادم وكيل واحد فقط، وكان هذا الخادم الوكيل لا يتغير.
+
+**قوائم الوكيل**
+
+يتيح لك هذا النهج تحديد خادم وكيل واحد أو أكثر
+لبروتوكول معيّن. إذا تم تعريف أكثر من خادم وكيل،
+يستخدم ClickHouse الخوادم الوكيلة المختلفة بأسلوب round-robin، مع توزيع
+الحمل على الخوادم. وهذا هو النهج الأبسط إذا كان هناك أكثر من
+خادم وكيل واحد لبروتوكول معيّن وكانت قائمة الخوادم الوكيلة لا تتغير.
+
+**قالب التهيئة**
+
+```xml
+<proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+حدِّد حقلاً رئيسيًا في علامات التبويب أدناه لعرض حقوله التابعة:
+
+<Tabs>
+  <Tab title="<proxy>">
+    | الحقل     | الوصف                                    |
+    | --------- | ---------------------------------------- |
+    | `<http>`  | قائمة تضم وكيلاً واحدًا أو أكثر لـ HTTP  |
+    | `<https>` | قائمة تضم وكيلاً واحدًا أو أكثر لـ HTTPS |
+  </Tab>
+
+  <Tab title="<http> و <https>">
+    | الحقل   | الوصف             |
+    | ------- | ----------------- |
+    | `<uri>` | URI الخاص بالوكيل |
+  </Tab>
+</Tabs>
+
+**محلِّلات الوكيل البعيدة**
+
+قد تتغير خوادم الوكيل بشكل ديناميكي. في هذه الحالة، يمكنك تحديد endpoint لمحلِّل. يرسل ClickHouse طلب GET فارغًا إلى ذلك الـ endpoint، ويجب أن يعيد المحلِّل البعيد مضيف الوكيل.
+وسيستخدمه ClickHouse لتشكيل URI الوكيل باستخدام القالب التالي: `\{proxy_scheme\}://\{proxy_host\}:{proxy_port}`
+
+**قالب التهيئة**
+
+```xml
+<proxy>
+    <http>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>80</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </http>
+
+    <https>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>3128</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </https>
+
+</proxy>
+```
+
+اختر حقلًا أبًا في علامات التبويب أدناه لعرض حقوله الفرعية:
+
+<Tabs>
+  <Tab title="<proxy>">
+    | الحقل     | الوصف                                  |
+    | --------- | -------------------------------------- |
+    | `<http>`  | قائمة تضم محلِّلًا واحدًا أو أكثر* |
+    | `<https>` | قائمة تضم محلِّلًا واحدًا أو أكثر* |
+  </Tab>
+
+  <Tab title="<http> و <https>">
+    | الحقل        | الوصف                             |
+    | ------------ | --------------------------------- |
+    | `<resolver>` | نقطة النهاية وتفاصيل أخرى لمحلِّل |
+
+    <Note>
+      يمكنك أن يكون لديك عدة عناصر `<resolver>`، لكن لا يُستخدم إلا أول
+      عنصر `<resolver>` لبروتوكول معيّن. ويتم تجاهل أي عناصر `<resolver>`
+      أخرى لهذا البروتوكول. وهذا يعني أن موازنة التحميل
+      (عند الحاجة) يجب أن ينفذها المحلِّل البعيد.
+    </Note>
+  </Tab>
+
+  <Tab title="<resolver>">
+    | الحقل                | الوصف                                                                                                                                                                              |
+    | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `<endpoint>`         | معرّف URI الخاص بمحلِّل الوكيل                                                                                                                                                    |
+    | `<proxy_scheme>`     | بروتوكول معرّف URI النهائي للوكيل. يمكن أن يكون هذا إما `http` أو `https`.                                                                                                         |
+    | `<proxy_port>`       | رقم منفذ محلِّل الوكيل                                                                                                                                                            |
+    | `<proxy_cache_time>` | المدة، بالثواني، التي يجب أن تُخزَّن خلالها القيم الواردة من المحلِّل مؤقتًا في ClickHouse. يؤدي ضبط هذه القيمة على `0` إلى جعل ClickHouse يتصل بالمحلِّل لكل طلب HTTP أو HTTPS. |
+  </Tab>
+</Tabs>
+
+**الأسبقية**
+
+تُحدَّد إعدادات الوكيل بالترتيب التالي:
+
+| الترتيب | الإعداد                  |
+| ------- | ------------------------ |
+| 1.      | محلِّلات الوكيل البعيدة |
+| 2.      | قوائم الوكيل             |
+| 3.      | متغيرات البيئة           |
+
+سيتحقق ClickHouse من نوع المحلِّل ذي الأولوية الأعلى لبروتوكول الطلب. وإذا لم يكن مُعرّفًا،
+فسيتحقق من نوع المحلِّل التالي في ترتيب الأولوية، إلى أن يصل إلى محلِّل البيئة.
+ويتيح هذا أيضًا استخدام مزيج من أنواع المحلِّلات.
+
+<div id="disable_tunneling_for_https_requests_over_http_proxy">
+  ## disable_tunneling_for_https_requests_over_http_proxy
+</div>
+
+افتراضيًا، يُستخدَم النفق (أي `HTTP CONNECT`) لإرسال طلبات `HTTPS` عبر وكيل `HTTP`. يمكن استخدام هذا الإعداد لتعطيل ذلك.
+
+**no&#95;proxy**
+
+افتراضيًا، تمرّ جميع الطلبات عبر الوكيل. ولتعطيل ذلك لمضيفين محددين، يجب ضبط المتغير `no_proxy`.
+يمكن ضبطه داخل عبارة `<proxy>` لمحلِّلات القوائم والمحلِّلات البعيدة، أو كمتغير بيئة لمحلِّل البيئة.
+وهو يدعم عناوين IP، والنطاقات، والنطاقات الفرعية، ومحرف البدل `'*'` لتجاوز الوكيل بالكامل. كما تُزال النقاط البادئة تمامًا كما يفعل curl.
+
+**Example**
+
+يتجاوز الإعداد أدناه الوكيل عند إرسال الطلبات إلى `clickhouse.cloud` وجميع نطاقاته الفرعية (مثل `auth.clickhouse.cloud`).
+وينطبق الأمر نفسه على GitLab رغم وجود نقطة بادئة. إذ سيتجاوز كلٌّ من `gitlab.com` و`about.gitlab.com` الوكيل.
+
+```xml
+<proxy>
+    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+<div id="workload_path">
+  ## workload_path
+</div>
+
+الدليل المُستخدَم لتخزين جميع استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`. يُستخدَم افتراضيًا المجلد `/workload/` ضمن دليل عمل الخادم.
+
+**مثال**
+
+```xml
+<workload_path>/var/lib/clickhouse/workload/</workload_path>
+```
+
+**انظر أيضًا**
+
+* [التسلسل الهرمي لأعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling#workloads)
+* [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
+
+<div id="workload_zookeeper_path">
+  ## workload_zookeeper_path
+</div>
+
+المسار إلى عقدة في ZooKeeper، تُستخدم كمخزن لجميع استعلامات `CREATE WORKLOAD` و`CREATE RESOURCE`. ولضمان الاتساق، تُخزَّن جميع تعريفات SQL كقيمة لهذه العقدة الوحيدة من نوع znode. بشكل افتراضي، لا يُستخدم ZooKeeper، وتُخزَّن التعريفات على [disk](#workload_path).
+
+**مثال**
+
+```xml
+<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
+```
+
+**انظر أيضًا**
+
+* [التسلسل الهرمي لأعباء العمل](/ar/concepts/features/configuration/server-config/workload-scheduling#workloads)
+* [workload&#95;path](#workload_path)
+
+<div id="zookeeper_log">
+  ## zookeeper_log
+</div>
+
+إعدادات جدول النظام [`zookeeper_log`](/ar/reference/system-tables/zookeeper_log).
+
+يمكن ضبط الإعدادات التالية باستخدام الوسوم الفرعية:
+
+<SystemLogParameters />
+
+**مثال**
+
+```xml
+<clickhouse>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>
+```

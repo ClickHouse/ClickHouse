@@ -2136,6 +2136,12 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
+            /// aggregate them and there is nothing to hardlink.
+            if (index_ptr->isInert())
+                continue;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
@@ -2725,6 +2731,22 @@ private:
                     projection_part->checksums.getTotalChecksumUInt128());
             }
 
+            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
+            /// Such an entry points at a directory missing from the new part, so the projection
+            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
+            /// An inherited entry is an orphan when both hold:
+            ///   1. the directory was not hardlinked into the new part, and
+            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
+            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
+            /// one above operate on disjoint sets and never fight over the same checksum entry.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                const auto projection_file = projection.getDirectoryName();
+                if (ctx->files_to_skip.contains(projection_file)
+                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
+
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
             {
@@ -3066,6 +3088,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         {
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
+            /// otherwise the mutation loops forever failing to build the index.
+            if (index_ptr->isInert())
+                continue;
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
