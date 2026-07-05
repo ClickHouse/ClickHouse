@@ -3577,7 +3577,12 @@ async function ping(url) {
 }
 
 let ping_request_num = 0;
-function checkURL() {
+/// `probe_credentials` additionally checks the credentials against the server once the ping succeeds.
+/// It is set for the initial load and for the connection-block commit (see `onConnectionFocusOut`),
+/// but NOT for intermediate `url` keystrokes: `getServerStatus` puts the password in the request, so
+/// probing on every edit would send it to a half-typed or still-old endpoint before the connection
+/// tuple is committed.
+function checkURL(probe_credentials) {
     ++ping_request_num;
     const current_ping_request_num = ping_request_num;
     let elem = document.getElementById('url_status');
@@ -3586,15 +3591,15 @@ function checkURL() {
     ping(url_elem.value).then(status => {
         if (current_ping_request_num == ping_request_num) {
             elem.className = status ? 'ok' : 'fail';
-            if (status) {
+            if (status && probe_credentials) {
                 checkCredentials();
             }
         }
     });
 };
 
-url_elem.addEventListener('input', checkURL);
-checkURL();
+url_elem.addEventListener('input', () => checkURL(false));
+checkURL(true);
 
 /// The `/docs` page lives on the ClickHouse server addressed by `url_elem.value`, which may differ from
 /// the page's own origin when `/play` is opened locally (`file://`) or pointed at a remote server.
@@ -4350,53 +4355,52 @@ function resetCredentialsStatus() {
     [user_elem, password_elem].forEach(e => { e.classList.remove('ok'); e.classList.remove('fail'); });
 }
 
-/// While a credential field is being edited, clear any stale indication and invalidate any
-/// in-flight check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
+/// While a connection field is being edited, clear any stale indication and invalidate any in-flight
+/// check (via `resetCredentialsStatus`), but do NOT probe the server on every keystroke.
 /// `getServerStatus` puts the credentials into the request, so probing incomplete input would emit
 /// login attempts with partial — and, for the password, secret — values (`?password=s`,
 /// `?password=se`, ...), polluting access logs and possibly tripping auth rate limits.
 ///
-/// Instead the check runs once editing is finished, so a correct value is confirmed with green and a
-/// wrong one with red without any explicit action, using only the final, complete connection tuple.
-/// "Finished" means focus has left the whole connection block `#inputs` (url + user + password), not
-/// merely the credential pair. Probing as soon as focus leaves `user`/`password` would misfire while
-/// the user is still assembling the connection: moving between `user` and `password` sends a
-/// mismatched half-typed pair, and — worse — moving on to change `url` (a natural order: type the
-/// credentials for a new server, then point `url` at it) would send the full final password to the
-/// *previous* server via `getServerStatus(old_url, ...)`, disclosing it there and logging a spurious
-/// failed login. `focusout` bubbles and carries `relatedTarget` (the element gaining focus), so a
-/// move that keeps focus anywhere inside `#inputs` is distinguishable from leaving the block, and is
-/// skipped; a genuine `url` edit is re-checked by `checkURL`'s success path instead. The
-/// `credentials_edited` guard means merely tabbing through the fields, without changing anything,
-/// emits no login attempt. This subsumes the old paste handlers: a pasted value is committed by the
-/// following focus change just like typed input.
-let credentials_edited = false;
+/// Instead the whole connection block `#inputs` (url + user + password) is treated as one edit
+/// session and the check runs once, when focus leaves the block, using only the final, complete
+/// tuple. This is the single commit point, so it fires no matter which field was edited or focused
+/// last — including `url` (a natural order is to type the credentials for a new server, then point
+/// `url` at it). Probing earlier would misfire while the connection is still being assembled: moving
+/// between `user` and `password` sends a mismatched half-typed pair; moving on to `url` would send
+/// the full final password to the *previous* server via `getServerStatus(old_url, ...)`, disclosing
+/// it there and logging a spurious failed login; and a `url` keystroke that happens to hit a
+/// reachable intermediate endpoint would send the credentials there. `focusout` bubbles, so one
+/// listener on `#inputs` catches focus leaving any field, and `relatedTarget` (the element gaining
+/// focus) tells a move within the block from a move out of it — `Node.contains(null)` is false, so
+/// leaving to nothing (or off the page) counts as finished. The commit runs `checkURL(true)`, which
+/// pings the url and only then probes the credentials, so an unreachable server leaves the fields
+/// neutral rather than blaming them. The `connection_edited` guard means merely tabbing through the
+/// fields, without changing anything, emits no request. This subsumes the old paste handlers: a
+/// pasted value is committed by the following focus change just like typed input.
+let connection_edited = false;
 function onCredentialInput() {
-    credentials_edited = true;
+    connection_edited = true;
     resetCredentialsStatus();
 }
-function onCredentialFocusOut(event) {
-    /// Focus is still inside the connection block (moved to `url` or the sibling credential field):
-    /// the connection is not finished being edited yet, so do not probe. `Node.contains(null)` is
-    /// false, so focus leaving to nothing (or outside the page) correctly counts as finished.
+function onConnectionFocusOut(event) {
     if (document.getElementById('inputs').contains(event.relatedTarget)) { return; }
-    if (!credentials_edited) { return; }
-    credentials_edited = false;
-    checkCredentials();
+    if (!connection_edited) { return; }
+    connection_edited = false;
+    checkURL(true);
 }
 user_elem.addEventListener('input', onCredentialInput);
 password_elem.addEventListener('input', onCredentialInput);
-user_elem.addEventListener('focusout', onCredentialFocusOut);
-password_elem.addEventListener('focusout', onCredentialFocusOut);
+document.getElementById('inputs').addEventListener('focusout', onConnectionFocusOut);
 
 /// A `url` edit may point at a different server, so an in-flight `checkCredentials` against the
-/// previous URL must not paint the fields. `checkURL` is registered on `url` `input` earlier and
-/// runs first: it re-checks the credentials once its ping to the new URL succeeds. Here we
-/// additionally invalidate the stale check and clear the old indication, so that — if that ping
-/// fails, and no replacement check ever runs — the fields stay neutral instead of keeping the
-/// previous server's colour. (Registered after `check_credentials_request_num` is declared, so the
-/// initial synchronous `checkURL()` call above never reaches this before the counter exists.)
-url_elem.addEventListener('input', resetCredentialsStatus);
+/// previous URL must not paint the fields. `checkURL` (registered on `url` `input` earlier) clears
+/// the connection dot while it re-pings, but the credential colour is independent, so also invalidate
+/// the stale check and clear the old indication here — otherwise the fields would keep the previous
+/// server's colour until the block is committed. Marking the connection edited makes that commit
+/// re-check the credentials against the new server even when only the `url` changed. (Registered
+/// after `check_credentials_request_num` is declared, so the initial synchronous `checkURL(true)`
+/// call above never reaches this before the counter exists.)
+url_elem.addEventListener('input', () => { connection_edited = true; resetCredentialsStatus(); });
 
 
 function queryToColor(str) {
