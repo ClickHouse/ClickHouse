@@ -168,7 +168,8 @@ StoragePtr DatabaseSQLite::fetchTable(const String & table_name, ContextPtr loca
         std::move(*columns),
         ConstraintsDescription{},
         /* comment = */ "",
-        local_context);
+        local_context,
+        /* generated_columns_reclassification_pending_ = */ false);
 
     return storage;
 }

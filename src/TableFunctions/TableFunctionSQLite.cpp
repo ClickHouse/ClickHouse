@@ -69,7 +69,8 @@ StoragePtr TableFunctionSQLite::executeImpl(const ASTPtr & /*ast_function*/,
                                          sqlite_db,
                                          database_path,
                                          remote_table_or_query,
-                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context);
+                                         cached_columns, ConstraintsDescription{}, /* comment = */ "", context,
+                                         /* generated_columns_reclassification_pending_ = */ false);
 
     storage->startup();
     return storage;

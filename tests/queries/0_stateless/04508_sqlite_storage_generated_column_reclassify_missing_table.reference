@@ -1,0 +1,9 @@
+After the remote table appears the generated column classification is repaired:
+a
+10
+Insert without a column list targets only the base column; SQLite computes the generated column:
+a	b
+5	6
+10	11
+Explicitly writing into the generated column is rejected:
+Cannot insert column b, because it is MATERIALIZED column

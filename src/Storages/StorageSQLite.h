@@ -32,7 +32,8 @@ public:
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         const String & comment,
-        ContextPtr context_);
+        ContextPtr context_,
+        bool generated_columns_reclassification_pending_);
 
     std::string getName() const override { return "SQLite"; }
 
@@ -75,10 +76,10 @@ private:
     ContextPtr write_context;
 
     /// True while the generated-column classification of an explicitly declared column list still has to be
-    /// re-derived from the remote schema because the database file was unavailable when the storage was
-    /// constructed (e.g. a persisted `SQLite` table attached on startup while the file is temporarily
-    /// missing). It is repaired lazily on the first successful open, from `updateExternalDynamicMetadataIfExists`
-    /// (before the query's metadata snapshot is taken) and, as a fallback, from `read`/`write`.
+    /// re-derived from the remote schema because the database file or table schema was unavailable when the
+    /// storage was constructed. It is repaired lazily once the remote schema is observed, from
+    /// `updateExternalDynamicMetadataIfExists` (before the query's metadata snapshot is taken) and, as a fallback,
+    /// from `read`/`write`.
     std::atomic<bool> generated_columns_reclassification_pending{false};
     std::mutex reclassify_mutex;
 };

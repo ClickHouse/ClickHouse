@@ -131,7 +131,8 @@ StorageSQLite::StorageSQLite(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & comment,
-    ContextPtr context_)
+    ContextPtr context_,
+    bool generated_columns_reclassification_pending_)
     : StorageWithCommonVirtualColumns(table_id_)
     , WithContext(context_->getGlobalContext())
     , remote_table_or_query(remote_table_or_query_)
@@ -156,14 +157,14 @@ StorageSQLite::StorageSQLite(
     setInMemoryMetadata(storage_metadata);
 
     /// The explicit-column path (`registerStorageSQLite`) re-derives the generated-column classification from
-    /// the remote schema, but only when the database file could be opened at construction time. If it was
-    /// unavailable (`sqlite_db_` is null - a persisted table attached while the file is temporarily missing),
-    /// the classification is still pending: `updateExternalDynamicMetadataIfExists` reopens the database and
-    /// repairs it before the query's metadata snapshot is taken (with `read`/`write` as a fallback), so a
-    /// generated column does not stay insertable for the rest of the table's lifetime. The auto-inferred case
-    /// (empty column list) gets the classification straight from `getTableStructureFromData` above, and a
-    /// query-backed source is read-only, so neither needs the lazy repair.
-    generated_columns_reclassification_pending = !sqlite_db_ && !columns_.empty() && !remote_table_or_query.isQuery();
+    /// the remote schema when the schema is observable at construction time. If the database file is unavailable,
+    /// or it opens successfully but the remote table/schema is still unavailable, the classification is still
+    /// pending: `updateExternalDynamicMetadataIfExists` reopens/rechecks the database and repairs it before the
+    /// query's metadata snapshot is taken (with `read`/`write` as a fallback), so a generated column does not stay
+    /// insertable for the rest of the table's lifetime. The auto-inferred case (empty column list) gets the
+    /// classification straight from `getTableStructureFromData` above, and a query-backed source is read-only, so
+    /// neither needs the lazy repair.
+    generated_columns_reclassification_pending = generated_columns_reclassification_pending_;
 }
 
 void StorageSQLite::reclassifyGeneratedColumnsFromRemote(ContextPtr query_context)
@@ -431,11 +432,14 @@ void registerStorageSQLite(StorageFactory & factory)
         /// round-trip). The auto-inferred case (empty column list) already gets the classification straight
         /// from `fetchSQLiteTableStructure` in the storage constructor, and a query-backed source is
         /// read-only, so it needs no insertability classification.
-        if (sqlite_db && !columns.empty() && !table_or_query.isQuery())
-            markRemoteGeneratedColumns(sqlite_db.get(), table_or_query.getTableName(), columns, getLogger("StorageSQLite"));
+        bool generated_columns_reclassification_pending = !columns.empty() && !table_or_query.isQuery();
+        if (generated_columns_reclassification_pending && sqlite_db)
+            generated_columns_reclassification_pending =
+                !markRemoteGeneratedColumns(sqlite_db.get(), table_or_query.getTableName(), columns, getLogger("StorageSQLite"));
 
         return std::make_shared<StorageSQLite>(args.table_id, sqlite_db, database_path,
-                                     table_or_query, columns, args.constraints, args.comment, args.getContext());
+                                     table_or_query, columns, args.constraints, args.comment, args.getContext(),
+                                     generated_columns_reclassification_pending);
     },
     {
         .supports_schema_inference = true,
