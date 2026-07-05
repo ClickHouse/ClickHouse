@@ -1,0 +1,1785 @@
+{
+  "components": {
+    "schemas": {
+      "Alert": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "createdAt": {
+            "example": "2023-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          },
+          "dashboard": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "groupBy": {
+            "nullable": true,
+            "type": "string"
+          },
+          "id": {
+            "example": "65f5e4a3b9e77c001a123456",
+            "type": "string"
+          },
+          "interval": {
+            "example": "15m",
+            "type": "string"
+          },
+          "message": {
+            "example": "Error rate exceeds threshold",
+            "type": "string"
+          },
+          "name": {
+            "example": "High Error Rate",
+            "type": "string"
+          },
+          "savedSearch": {
+            "nullable": true,
+            "type": "string"
+          },
+          "silenced": {
+            "nullable": true,
+            "type": "boolean"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "state": {
+            "example": "inactive",
+            "type": "string"
+          },
+          "team": {
+            "example": "65f5e4a3b9e77c001a345678",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 100,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          },
+          "updatedAt": {
+            "example": "2023-01-01T00:00:00.000Z",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "AlertResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Alert"
+          }
+        },
+        "type": "object"
+      },
+      "AlertsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Alert"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ChartSeries": {
+        "properties": {
+          "aggFn": {
+            "description": "Função de agregação a ser usada nos dados",
+            "enum": [
+              "avg",
+              "count",
+              "count_distinct",
+              "last_value",
+              "max",
+              "min",
+              "quantile",
+              "sum"
+            ],
+            "example": "count",
+            "type": "string"
+          },
+          "dataSource": {
+            "enum": [
+              "events",
+              "metrics"
+            ],
+            "example": "events",
+            "type": "string"
+          },
+          "field": {
+            "description": "Campo a ser agregado",
+            "example": "duration",
+            "type": "string"
+          },
+          "groupBy": {
+            "description": "Campos pelos quais os resultados serão agrupados",
+            "example": [
+              "service",
+              "host"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "metricDataType": {
+            "description": "Tipo de dado da métrica",
+            "enum": [
+              "sum",
+              "gauge",
+              "histogram"
+            ],
+            "example": "gauge",
+            "type": "string"
+          },
+          "metricName": {
+            "description": "Nome da métrica (para fontes de dados de métricas)",
+            "example": "http_requests_total",
+            "type": "string"
+          },
+          "sourceId": {
+            "description": "ID da fonte de dados desta série",
+            "example": "65f5e4a3b9e77c001a123456",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "time",
+              "table",
+              "number",
+              "histogram",
+              "search",
+              "markdown"
+            ],
+            "example": "time",
+            "type": "string"
+          },
+          "where": {
+            "description": "Condição de filtro na sintaxe de consulta do Lucene",
+            "example": "level:error",
+            "type": "string"
+          },
+          "whereLanguage": {
+            "description": "Linguagem de consulta usada na cláusula WHERE",
+            "enum": [
+              "lucene",
+              "sql"
+            ],
+            "example": "lucene",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sourceId",
+          "aggFn",
+          "where",
+          "groupBy"
+        ],
+        "type": "object"
+      },
+      "CreateAlertRequest": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dashboardId": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "interval": {
+            "example": "1h",
+            "type": "string"
+          },
+          "message": {
+            "example": "Test Alert Message",
+            "type": "string"
+          },
+          "name": {
+            "example": "Test Alert",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 100,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          }
+        },
+        "required": [
+          "threshold",
+          "interval",
+          "source",
+          "thresholdType",
+          "channel"
+        ],
+        "type": "object"
+      },
+      "CreateDashboardRequest": {
+        "properties": {
+          "name": {
+            "example": "New Dashboard",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "development"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Dashboard": {
+        "properties": {
+          "id": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "name": {
+            "example": "Service Overview",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "production",
+              "monitoring"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/Dashboard"
+          }
+        },
+        "type": "object"
+      },
+      "DashboardsListResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/Dashboard"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "EmptyResponse": {
+        "properties": {},
+        "type": "object"
+      },
+      "Error": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SeriesDataPoint": {
+        "properties": {
+          "group": {
+            "description": "Valores de agrupamento, se groupBy tiver sido especificado",
+            "example": [
+              "api",
+              "prod-host-1"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "series_0.data": {
+            "description": "Valor da primeira série",
+            "example": 42,
+            "type": "number"
+          },
+          "series_1.data": {
+            "description": "Valor da segunda série",
+            "example": 18,
+            "type": "number"
+          },
+          "ts_bucket": {
+            "description": "Timestamp do ponto de dados (horário de início do bucket)",
+            "example": 1647014400000,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "SeriesQueryRequest": {
+        "properties": {
+          "endTime": {
+            "description": "Timestamp final em milissegundos",
+            "example": 1647100800000,
+            "type": "number"
+          },
+          "granularity": {
+            "description": "Tamanho do bucket de tempo para agregações",
+            "enum": [
+              "30s",
+              "1m",
+              "5m",
+              "10m",
+              "15m",
+              "30m",
+              "1h",
+              "2h",
+              "6h",
+              "12h",
+              "1d",
+              "2d",
+              "7d",
+              "30d",
+              "auto"
+            ],
+            "example": "1h",
+            "type": "string"
+          },
+          "series": {
+            "description": "Array de configurações de séries",
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "seriesReturnType": {
+            "description": "Formato dos dados retornados",
+            "enum": [
+              "ratio",
+              "column"
+            ],
+            "example": "column",
+            "type": "string"
+          },
+          "startTime": {
+            "description": "Timestamp inicial em milissegundos",
+            "example": 1647014400000,
+            "type": "number"
+          }
+        },
+        "required": [
+          "series",
+          "startTime",
+          "endTime"
+        ],
+        "type": "object"
+      },
+      "SeriesResponse": {
+        "properties": {
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/SeriesDataPoint"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Tile": {
+        "properties": {
+          "asRatio": {
+            "example": false,
+            "type": "boolean"
+          },
+          "h": {
+            "example": 3,
+            "type": "integer"
+          },
+          "id": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          },
+          "name": {
+            "example": "Error Rate",
+            "type": "string"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/ChartSeries"
+            },
+            "type": "array"
+          },
+          "w": {
+            "example": 6,
+            "type": "integer"
+          },
+          "x": {
+            "example": 0,
+            "type": "integer"
+          },
+          "y": {
+            "example": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateAlertRequest": {
+        "properties": {
+          "channel": {
+            "properties": {
+              "type": {
+                "example": "webhook",
+                "type": "string"
+              },
+              "webhookId": {
+                "example": "65f5e4a3b9e77c001a789012",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "dashboardId": {
+            "example": "65f5e4a3b9e77c001a567890",
+            "type": "string"
+          },
+          "interval": {
+            "example": "1h",
+            "type": "string"
+          },
+          "message": {
+            "example": "Updated message",
+            "type": "string"
+          },
+          "name": {
+            "example": "Updated Alert Name",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "tile",
+              "search"
+            ],
+            "example": "tile",
+            "type": "string"
+          },
+          "threshold": {
+            "example": 500,
+            "type": "number"
+          },
+          "thresholdType": {
+            "enum": [
+              "above",
+              "below"
+            ],
+            "example": "above",
+            "type": "string"
+          },
+          "tileId": {
+            "example": "65f5e4a3b9e77c001a901234",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateDashboardRequest": {
+        "properties": {
+          "name": {
+            "example": "Updated Dashboard Name",
+            "type": "string"
+          },
+          "tags": {
+            "example": [
+              "production",
+              "updated"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tiles": {
+            "items": {
+              "$ref": "#/components/schemas/Tile"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "bearerFormat": "API Key",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "API para gerenciar alertas e dashboards do HyperDX",
+    "title": "HyperDX External API",
+    "version": "2.0.0"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v2/alerts": {
+      "get": {
+        "description": "Retorna uma lista de todos os alertas da equipe autenticada",
+        "operationId": "listAlerts",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "alertsList": {
+                    "summary": "Lista de alertas",
+                    "value": {
+                      "data": [
+                        {
+                          "channel": {
+                            "type": "webhook",
+                            "webhookId": "65f5e4a3b9e77c001a789012"
+                          },
+                          "createdAt": "2023-01-01T00:00:00.000Z",
+                          "dashboard": "65f5e4a3b9e77c001a567890",
+                          "id": "65f5e4a3b9e77c001a123456",
+                          "interval": "15m",
+                          "message": "Error rate exceeds threshold",
+                          "name": "High Error Rate",
+                          "source": "tile",
+                          "state": "inactive",
+                          "team": "65f5e4a3b9e77c001a345678",
+                          "threshold": 100,
+                          "thresholdType": "above",
+                          "tileId": "65f5e4a3b9e77c001a901234",
+                          "updatedAt": "2023-01-01T00:00:00.000Z"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AlertsListResponse"
+                }
+              }
+            },
+            "description": "Alertas recuperados com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          }
+        },
+        "summary": "Listar alertas",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "post": {
+        "description": "Cria um novo alerta",
+        "operationId": "createAlert",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "tileAlert": {
+                  "summary": "Criar um alerta baseado em tile",
+                  "value": {
+                    "channel": {
+                      "type": "webhook",
+                      "webhookId": "65f5e4a3b9e77c001a789012"
+                    },
+                    "dashboardId": "65f5e4a3b9e77c001a567890",
+                    "interval": "1h",
+                    "message": "Error rate has exceeded 100 in the last hour",
+                    "name": "Error Spike Alert",
+                    "source": "tile",
+                    "threshold": 100,
+                    "thresholdType": "above",
+                    "tileId": "65f5e4a3b9e77c001a901234"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "Alerta criado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Erro do servidor ou falha na validação"
+          }
+        },
+        "summary": "Criar alerta",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v2/alerts/{id}": {
+      "delete": {
+        "description": "Exclui um alerta",
+        "operationId": "deleteAlert",
+        "parameters": [
+          {
+            "description": "ID do alerta",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {},
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyResponse"
+                }
+              }
+            },
+            "description": "Alerta excluído com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alerta não encontrado"
+          }
+        },
+        "summary": "Excluir alerta",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "get": {
+        "description": "Recupera um alerta específico pelo ID",
+        "operationId": "getAlert",
+        "parameters": [
+          {
+            "description": "ID do alerta",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "alertResponse": {
+                    "summary": "Resposta de um único alerta",
+                    "value": {
+                      "data": {
+                        "channel": {
+                          "type": "webhook",
+                          "webhookId": "65f5e4a3b9e77c001a789012"
+                        },
+                        "createdAt": "2023-03-15T10:20:30.000Z",
+                        "dashboard": "65f5e4a3b9e77c001a567890",
+                        "id": "65f5e4a3b9e77c001a123456",
+                        "interval": "5m",
+                        "message": "CPU usage is above 80%",
+                        "name": "CPU Usage Alert",
+                        "source": "tile",
+                        "state": "active",
+                        "team": "65f5e4a3b9e77c001a345678",
+                        "threshold": 80,
+                        "thresholdType": "above",
+                        "tileId": "65f5e4a3b9e77c001a901234",
+                        "updatedAt": "2023-03-15T14:25:10.000Z"
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "Alerta recuperado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alerta não encontrado"
+          }
+        },
+        "summary": "Obter alerta",
+        "tags": [
+          "Alerts"
+        ]
+      },
+      "put": {
+        "description": "Atualiza um alerta existente",
+        "operationId": "updateAlert",
+        "parameters": [
+          {
+            "description": "ID do alerta",
+            "example": "65f5e4a3b9e77c001a123456",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "updateAlert": {
+                  "summary": "Atualizar propriedades do alerta",
+                  "value": {
+                    "channel": {
+                      "type": "webhook",
+                      "webhookId": "65f5e4a3b9e77c001a789012"
+                    },
+                    "dashboardId": "65f5e4a3b9e77c001a567890",
+                    "interval": "1h",
+                    "message": "Updated threshold and interval",
+                    "name": "Updated Alert Name",
+                    "source": "tile",
+                    "threshold": 500,
+                    "thresholdType": "above",
+                    "tileId": "65f5e4a3b9e77c001a901234"
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertResponse"
+                }
+              }
+            },
+            "description": "Alerta atualizado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Alerta não encontrado"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Erro no servidor ou falha de validação"
+          }
+        },
+        "summary": "Atualizar alerta",
+        "tags": [
+          "Alerts"
+        ]
+      }
+    },
+    "/api/v2/charts/series": {
+      "post": {
+        "description": "Retorna dados de séries temporais com base nos parâmetros de série configurados",
+        "operationId": "queryChartSeries",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "basicTimeSeries": {
+                  "summary": "Consulta básica de séries temporais",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "1h",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "metricSeries": {
+                  "summary": "Série de dados de métricas",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "5m",
+                    "series": [
+                      {
+                        "aggFn": "avg",
+                        "groupBy": [],
+                        "metricDataType": "gauge",
+                        "metricName": "http_requests_total",
+                        "sourceId": "65f5e4a3b9e77c001a789012",
+                        "where": "service:api"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "multiSeriesWithGroupBy": {
+                  "summary": "Múltiplas séries com group by",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "15m",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [
+                          "service"
+                        ],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      },
+                      {
+                        "aggFn": "avg",
+                        "field": "duration",
+                        "groupBy": [
+                          "service"
+                        ],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                },
+                "multiSourceSeries": {
+                  "summary": "Séries de múltiplas fontes de dados",
+                  "value": {
+                    "endTime": 1647100800000,
+                    "granularity": "5m",
+                    "series": [
+                      {
+                        "aggFn": "count",
+                        "groupBy": [],
+                        "sourceId": "65f5e4a3b9e77c001a123456",
+                        "where": "SeverityText:error"
+                      },
+                      {
+                        "aggFn": "avg",
+                        "groupBy": [],
+                        "metricDataType": "gauge",
+                        "metricName": "http_requests_total",
+                        "sourceId": "65f5e4a3b9e77c001a789012",
+                        "where": "service:api"
+                      }
+                    ],
+                    "startTime": 1647014400000
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/SeriesQueryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "groupedTimeSeriesData": {
+                    "summary": "Dados de séries temporais agrupados",
+                    "value": {
+                      "data": [
+                        {
+                          "group": [
+                            "api"
+                          ],
+                          "series_0.data": 15,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "group": [
+                            "frontend"
+                          ],
+                          "series_0.data": 8,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "group": [
+                            "api"
+                          ],
+                          "series_0.data": 22,
+                          "ts_bucket": 1647018000000
+                        }
+                      ]
+                    }
+                  },
+                  "timeSeriesData": {
+                    "summary": "Pontos de dados de séries temporais",
+                    "value": {
+                      "data": [
+                        {
+                          "series_0.data": 42,
+                          "ts_bucket": 1647014400000
+                        },
+                        {
+                          "series_0.data": 37,
+                          "ts_bucket": 1647018000000
+                        },
+                        {
+                          "series_0.data": 53,
+                          "ts_bucket": 1647021600000
+                        }
+                      ]
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/SeriesResponse"
+                }
+              }
+            },
+            "description": "Dados de séries temporais recuperados com sucesso"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "invalidParams": {
+                    "value": {
+                      "error": "All series must have the same groupBy fields"
+                    }
+                  },
+                  "invalidTimestamp": {
+                    "value": {
+                      "error": "Timestamp must be in milliseconds"
+                    }
+                  }
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Parâmetros da solicitação inválidos"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Team context missing"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Source not found"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Fonte de dados não encontrada"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "error": "Internal server error"
+                },
+                "schema": {
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Erro do servidor"
+          }
+        },
+        "summary": "Consultar dados de séries do gráfico",
+        "tags": [
+          "Charts"
+        ]
+      }
+    },
+    "/api/v2/dashboards": {
+      "get": {
+        "description": "Retorna uma lista de todos os dashboards da equipe autenticada",
+        "operationId": "listDashboards",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardsListResponse"
+                }
+              }
+            },
+            "description": "Dashboards recuperados com sucesso"
+          },
+          "401": {
+            "description": "Não autorizado"
+          }
+        },
+        "summary": "Listar dashboards",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "post": {
+        "description": "Cria um novo dashboard",
+        "operationId": "createDashboard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "complexDashboard": {
+                  "summary": "Dashboard com múltiplos tipos de gráfico",
+                  "value": {
+                    "name": "Service Health Overview",
+                    "tags": [
+                      "service-health",
+                      "production"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "Request Count",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "service:backend"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      },
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "Error Distribution",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [
+                              "errorType"
+                            ],
+                            "sortOrder": "desc",
+                            "type": "table",
+                            "where": "level:error"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 6,
+                        "y": 0
+                      }
+                    ]
+                  }
+                },
+                "simpleTimeSeriesDashboard": {
+                  "summary": "Dashboard com gráfico de séries temporais",
+                  "value": {
+                    "name": "API Monitoring Dashboard",
+                    "tags": [
+                      "api",
+                      "monitoring"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "API Request Volume",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "service:api"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      }
+                    ]
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/CreateDashboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "createdDashboard": {
+                    "summary": "Resposta do dashboard criado",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "API Monitoring Dashboard",
+                        "tags": [
+                          "api",
+                          "monitoring"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "API Request Volume",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "service:api"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Dashboard criado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard validation failed: name is required"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Erro do servidor ou falha na validação"
+          }
+        },
+        "summary": "Criar dashboard",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    },
+    "/api/v2/dashboards/{id}": {
+      "delete": {
+        "description": "Exclui um dashboard",
+        "operationId": "deleteDashboard",
+        "parameters": [
+          {
+            "description": "ID do dashboard",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "example": {},
+                "schema": {
+                  "$ref": "#/components/schemas/EmptyResponse"
+                }
+              }
+            },
+            "description": "Dashboard excluído com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Dashboard não encontrado"
+          }
+        },
+        "summary": "Excluir dashboard",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "get": {
+        "description": "Retorna um dashboard específico por ID",
+        "operationId": "getDashboard",
+        "parameters": [
+          {
+            "description": "ID do dashboard",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "dashboard": {
+                    "summary": "Resposta de um único dashboard",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "Infrastructure Monitoring",
+                        "tags": [
+                          "infrastructure",
+                          "monitoring"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "Server CPU",
+                            "series": [
+                              {
+                                "aggFn": "avg",
+                                "dataSource": "metrics",
+                                "field": "cpu.usage",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "host:server-01"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          },
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901235",
+                            "name": "Memory Usage",
+                            "series": [
+                              {
+                                "aggFn": "avg",
+                                "dataSource": "metrics",
+                                "field": "memory.usage",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "host:server-01"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 6,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Dashboard recuperado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Dashboard não encontrado"
+          }
+        },
+        "summary": "Obter dashboard",
+        "tags": [
+          "Dashboards"
+        ]
+      },
+      "put": {
+        "description": "Atualiza um dashboard existente",
+        "operationId": "updateDashboard",
+        "parameters": [
+          {
+            "description": "ID do dashboard",
+            "example": "65f5e4a3b9e77c001a567890",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "examples": {
+                "updateDashboard": {
+                  "summary": "Atualizar propriedades e tiles do dashboard",
+                  "value": {
+                    "name": "Updated Dashboard Name",
+                    "tags": [
+                      "production",
+                      "updated"
+                    ],
+                    "tiles": [
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "id": "65f5e4a3b9e77c001a901234",
+                        "name": "Updated Time Series Chart",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "groupBy": [],
+                            "type": "time",
+                            "where": "level:error"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 0,
+                        "y": 0
+                      },
+                      {
+                        "asRatio": false,
+                        "h": 3,
+                        "name": "New Number Chart",
+                        "series": [
+                          {
+                            "aggFn": "count",
+                            "dataSource": "events",
+                            "type": "number",
+                            "where": "level:info"
+                          }
+                        ],
+                        "w": 6,
+                        "x": 6,
+                        "y": 0
+                      }
+                    ]
+                  }
+                }
+              },
+              "schema": {
+                "$ref": "#/components/schemas/UpdateDashboardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "examples": {
+                  "updatedDashboard": {
+                    "summary": "Resposta do dashboard atualizado",
+                    "value": {
+                      "data": {
+                        "id": "65f5e4a3b9e77c001a567890",
+                        "name": "Updated Dashboard Name",
+                        "tags": [
+                          "production",
+                          "updated"
+                        ],
+                        "tiles": [
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901234",
+                            "name": "Updated Time Series Chart",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "groupBy": [],
+                                "type": "time",
+                                "where": "level:error"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 0,
+                            "y": 0
+                          },
+                          {
+                            "asRatio": false,
+                            "h": 3,
+                            "id": "65f5e4a3b9e77c001a901236",
+                            "name": "New Number Chart",
+                            "series": [
+                              {
+                                "aggFn": "count",
+                                "dataSource": "events",
+                                "type": "number",
+                                "where": "level:info"
+                              }
+                            ],
+                            "w": 6,
+                            "x": 6,
+                            "y": 0
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            },
+            "description": "Dashboard atualizado com sucesso"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Unauthorized access. API key is missing or invalid."
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Não autorizado"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Dashboard not found"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Dashboard não encontrado"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "Invalid dashboard configuration"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            },
+            "description": "Erro do servidor ou falha na validação"
+          }
+        },
+        "summary": "Atualizar dashboard",
+        "tags": [
+          "Dashboards"
+        ]
+      }
+    }
+  },
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "servers": [
+    {
+      "description": "Servidor de API de produção",
+      "url": "https://api.hyperdx.io"
+    },
+    {
+      "description": "Servidor atual",
+      "url": "/"
+    }
+  ],
+  "tags": [
+    {
+      "description": "Endpoints para gerenciar dashboards e suas visualizações",
+      "name": "Dashboards"
+    },
+    {
+      "description": "Endpoints para gerenciar alertas de monitoramento",
+      "name": "Alerts"
+    }
+  ]
+}

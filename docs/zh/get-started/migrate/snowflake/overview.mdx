@@ -1,0 +1,141 @@
+---
+sidebarTitle: '概述'
+slug: /migrations/snowflake-overview
+description: '从 Snowflake 迁移到 ClickHouse'
+keywords: ['Snowflake']
+title: Snowflake 到 ClickHouse 的迁移
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+> 本文档简要介绍如何将数据从 Snowflake 迁移到 ClickHouse。
+
+Snowflake 是一个云数据仓库，主要面向将传统本地部署的数据仓库工作负载迁移到云端的场景。它经过了良好优化，适合大规模运行耗时较长的报表查询。随着数据集迁移到云端，数据所有者开始思考还能如何进一步挖掘这些数据的价值，包括利用这些数据集为内部和外部用例中的实时应用提供支持。到了这一步，他们往往会意识到，自己需要一个针对实时分析优化的数据库，例如 ClickHouse。
+
+<div id="comparison">
+  ## 对比
+</div>
+
+本节将比较 ClickHouse 和 Snowflake 的主要特性。
+
+<div id="similarities">
+  ### 相似之处
+</div>
+
+Snowflake 是一个基于云的数据仓库平台，为存储、处理和分析海量
+数据提供了一种高效且可扩展的解决方案。
+与 ClickHouse 一样，Snowflake 并非构建在现有技术之上，而是依赖
+其自有的 SQL 查询引擎和定制架构。
+
+Snowflake 的架构通常被描述为共享存储 (shared-disk)
+架构与 shared-nothing 架构之间的一种混合体。共享存储架构
+是指所有计算节点都可以通过 S3 等对象
+存储访问数据的架构。shared-nothing 架构则是指每个计算节点
+在本地存储整个数据集的一部分来响应查询。从理论上讲，这
+兼具了两种模型的优势：共享磁盘架构的简洁性
+以及 shared-nothing 架构的可扩展性。
+
+这种设计从根本上依赖对象存储作为主要存储介质，
+它在并发访问下几乎可以无限扩展，同时还能提供高
+韧性和可扩展的吞吐量保障。
+
+下面这张来自 [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
+的图片展示了这种架构：
+
+<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake 架构" />
+
+相比之下，作为一个开源且提供云托管的产品，ClickHouse 可以部署
+为共享磁盘和 shared-nothing 两种架构。后者通常见于
+自管理部署。尽管这种方式便于扩展 CPU 和内存，
+但 shared-nothing 配置也会带来经典的数据管理挑战以及
+数据复制开销，尤其是在成员变更期间。
+
+因此，ClickHouse Cloud 采用了一种
+在理念上与 Snowflake 相似的共享存储架构。数据仅在对象存储中保存一次
+(单副本) ，例如 S3 或 GCS，从而提供几乎无限的存储能力，并具备
+很强的冗余保障。每个节点都可以访问这唯一的一份
+数据副本，同时拥有各自用于缓存的 Local SSD。节点则可以
+按需扩展，以提供额外的 CPU 和内存资源。与 Snowflake 一样，
+S3 的可扩展性解决了共享磁盘
+架构的经典局限 (磁盘 I/O 和网络瓶颈) ，具体方式是确保
+cluster 中当前节点可用的 I/O 吞吐量不会因新增节点而
+受到影响。
+
+<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud 架构" />
+
+<div id="differences">
+  ### 差异
+</div>
+
+除了底层存储格式和查询引擎外，这些架构
+还有一些细微差别：
+
+* Snowflake 通过 [仓库](https://docs.snowflake.com/en/user-guide/warehouses) 这一概念提供计算资源。
+  这些仓库由若干节点组成，每个节点都有固定规格。虽然 Snowflake
+  没有公开其仓库的具体架构，但
+  [普遍认为](https://select.dev/posts/snowflake-warehouse-sizing)
+  每个节点由 8 个 vCPU、16 GiB 内存以及 200 GB 本地存储 (用于缓存) 组成。
+  节点数量取决于规格档位，例如 x-small 有 1 个节点，
+  small 有 2 个，medium 有 4 个，large 有 8 个，等等。这些仓库与数据
+  相互独立，可用于查询驻留在对象存储上的任何数据库。在空闲且
+  没有查询负载时，仓库会暂停——收到查询后再恢复。
+  虽然存储成本始终会反映在计费中，但仓库
+  只会在处于活动状态时收费。
+
+* ClickHouse Cloud 也采用了类似的节点加本地缓存
+  存储模式。不同于这种规格档位，用户部署的是一个具有总
+  算力和可用 RAM 的服务。随后，它会
+  根据查询负载在设定的限制范围内透明地自动扩缩容——
+  要么通过增加 (或减少) 每个节点的资源进行纵向扩缩容，要么
+  通过增加/减少节点总数进行横向扩缩容。ClickHouse
+  Cloud 节点采用 1:1 的 CPU 与内存配比，而 Snowflake 并非如此。
+  虽然也可以实现更松耦合的方式，但服务与
+  数据是绑定的，这一点不同于 Snowflake 仓库。节点在空闲时同样会暂停，
+  有查询时再恢复。你也可以在需要时手动调整服务规模。
+
+* ClickHouse Cloud 的查询缓存是节点级的，这与
+  Snowflake 不同，后者是在独立于
+  仓库的服务层提供的。根据基准测试，ClickHouse Cloud 的节点缓存性能优于
+  Snowflake。
+
+* Snowflake 和 ClickHouse Cloud 在通过扩缩容来提升
+  查询并发性方面采用了不同的方法。Snowflake 通过一项
+  名为 [multi-cluster warehouses](https://docs.snowflake.com/en/user-guide/warehouses-multicluster#benefits-of-multi-cluster-warehouses) 的功能来实现这一点。
+  该功能允许你向一个仓库添加集群。虽然这对查询延迟
+  没有改善，但它确实提供了额外的并行能力，
+  并支持更高的查询并发。ClickHouse 则通过纵向或横向扩缩容，为一个服务增加更多内存
+  和 CPU 来实现这一点。在这篇博客中，我们不会深入探讨
+  这些服务扩展到更高并发时的能力，
+  而是重点关注延迟，但我们也承认，要做出完整的比较，
+  这项工作仍然有必要。不过，我们预计 ClickHouse
+  在任何并发测试中都会表现良好，而 Snowflake 明确将
+  [仓库默认允许的并发查询数限制为 8](https://docs.snowflake.com/en/sql-reference/parameters#max-concurrency-level)。
+  相比之下，ClickHouse Cloud 允许每个
+  节点最多执行 1000 个查询。
+
+* Snowflake 能够针对数据集切换计算规模，再加上仓库
+  恢复速度很快，使其在临时即席查询场景中的体验非常出色。对于数据仓库和数据湖
+  使用场景，这一点相比其他系统具有
+  一定优势。
+
+<div id="real-time-analytics">
+  ### 实时分析
+</div>
+
+基于公开的[基准测试](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)数据，
+ClickHouse 在以下方面的实时分析应用表现优于 Snowflake：
+
+* **查询延迟**：即使通过对表进行聚簇来优化性能，Snowflake 的查询延迟仍然更高。在我们的测试中，对于过滤条件属于 Snowflake 聚簇键或 ClickHouse 主键组成部分的查询，Snowflake 需要超过两倍的计算资源，才能达到与 ClickHouse 相当的性能。虽然 Snowflake 的[持久化查询缓存](https://docs.snowflake.com/en/user-guide/querying-persisted-results)
+  在一定程度上缓解了这些延迟问题，但当过滤条件更加多样时，这种方式就不再有效。此外，底层数据发生变化时，查询缓存的效果还会进一步受影响，因为表一旦变更，缓存条目就会失效。虽然我们应用的基准测试不涉及这种情况，但在真实部署中，通常需要写入更新、更近的数据。需要注意的是，ClickHouse 的查询缓存是节点级的，并且不具备[事务一致性](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)，因此[更适合](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)
+  实时分析。用户还可以对其进行细粒度控制，包括按[单条查询](/zh/reference/settings/session-settings#use_query_cache)
+  控制是否使用、控制其[精确大小](/zh/reference/settings/session-settings#query_cache_max_size_in_bytes)、控制[查询是否写入缓存](/zh/reference/settings/session-settings#enable_writes_to_query_cache)
+  (例如基于耗时限制或要求达到一定执行次数) ，以及是否仅[被动使用](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)。
+
+* **成本更低**：Snowflake 仓库可以配置为在查询不活跃一段时间后自动暂停。暂停后将不再产生费用。实际上，这个空闲检查时间[最低只能设置为 60 秒](https://docs.snowflake.com/en/sql-reference/sql/alter-warehouse)。一旦收到查询，仓库会在数秒内自动恢复。由于 Snowflake 仅在仓库实际使用时对资源收费，这种机制更适合经常处于空闲状态的 workload，例如临时查询。
+
+  然而，许多实时分析 workload 需要持续进行实时数据摄取和频繁查询，无法从空闲机制中获益 (例如面向客户的仪表盘) 。这意味着仓库通常必须始终保持活跃并持续产生费用。这不仅抵消了空闲带来的成本优势，也削弱了 Snowflake 相比其他方案能够更快恢复到可响应状态所带来的性能优势。当这种必须保持活跃状态的要求，再结合 ClickHouse Cloud 在活跃状态下更低的按秒成本时，ClickHouse Cloud 在这类 workload 上可显著降低总体成本。
+
+* **功能定价更可预测：**materialized views
+  和聚簇 (相当于 ClickHouse 的 `ORDER BY`) 等功能，是在实时分析场景中达到最高性能所必需的。这些功能在 Snowflake 中会产生额外费用，不仅需要更高层级 (使每 credit 的成本提高 1.5 倍) ，还会带来难以预测的后台成本。例如，materialized views 会产生后台维护成本，聚簇也是如此，而这些成本在实际使用前很难预估。相比之下，这些功能在 ClickHouse Cloud 中不会带来额外费用，除了写入时额外消耗一些 CPU 和内存；除高写入 workload 场景外，这些开销通常可以忽略不计。我们在基准测试中观察到，这些差异，加上更低的查询延迟和更高的压缩率，使 ClickHouse 的成本显著更低。

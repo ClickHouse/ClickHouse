@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'المصادقة باستخدام شهادات مستخدم SSL'
+slug: /guides/sre/ssl-user-auth
+title: 'تهيئة شهادة مستخدم SSL للمصادقة'
+description: 'يوفّر هذا الدليل إعدادات بسيطة وبالحد الأدنى لتهيئة المصادقة باستخدام شهادات مستخدم SSL.'
+doc_type: 'guide'
+keywords: ['ssl', 'المصادقة', 'الأمان', 'الشهادات', 'إدارة المستخدمين']
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+يوفّر هذا الدليل إعدادات بسيطة وبالحد الأدنى لتهيئة المصادقة باستخدام شهادات مستخدم SSL. ويستند هذا الدليل العملي إلى [دليل المستخدم لإعداد TLS](/ar/concepts/features/security/tls/configuring-tls).
+
+<Note>
+  تكون مصادقة المستخدم عبر SSL مدعومة عند استخدام واجهات `https` و`native` و`mysql` و`postgresql`.
+
+  يجب ضبط `<verificationMode>strict</verificationMode>` على عُقد ClickHouse لضمان مصادقة آمنة (مع أن `relaxed` يعمل لأغراض الاختبار).
+
+  إذا كنت تستخدم AWS NLB مع واجهة MySQL، فيتعين عليك أن تطلب من دعم AWS تمكين الخيار غير الموثّق التالي:
+
+  > أود أن أتمكن من تهيئة بروتوكول الوكيل v2 لـ NLB لدينا على النحو التالي: `proxy_protocol_v2.client_to_server.header_placement,Value=on_first_ack`.
+</Note>
+
+<div id="1-create-ssl-user-certificates">
+  ## 1. إنشاء شهادات مستخدم SSL
+</div>
+
+<Note>
+  يستخدم هذا المثال شهادات موقَّعة ذاتيًا مع CA موقَّعة ذاتيًا. في بيئات production، أنشئ CSR وقدّمه إلى فريق PKI لديك أو إلى موفّر الشهادات للحصول على شهادة معتمدة.
+</Note>
+
+1. أنشئ طلب توقيع شهادة (CSR) ومفتاحًا. يكون التنسيق الأساسي كما يلي:
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=<my_host>:<my_user>"  -keyout <my_cert_name>.key -out <my_cert_name>.csr
+   ```
+   في هذا المثال، سنستخدم ما يلي للنطاق والمستخدم اللذين سيُستخدمان في بيئة العينة هذه:
+   ```bash
+   openssl req -newkey rsa:2048 -nodes -subj "/CN=chnode1.marsnet.local:cert_user"  -keyout chnode1_cert_user.key -out chnode1_cert_user.csr
+   ```
+
+<Note>
+  قيمة CN اختيارية، ويمكن استخدام أي سلسلة نصية كمعرّف للشهادة. وتُستخدم عند إنشاء المستخدم في الخطوات التالية.
+</Note>
+
+2. أنشئ شهادة المستخدم الجديدة ووقّعها لاستخدامها في المصادقة. يكون التنسيق الأساسي كما يلي:
+   ```bash
+   openssl x509 -req -in <my_cert_name>.csr -out <my_cert_name>.crt -CA <my_ca_cert>.crt -CAkey <my_ca_cert>.key -days 365
+   ```
+   في هذا المثال، سنستخدم ما يلي للنطاق والمستخدم اللذين سيُستخدمان في بيئة العينة هذه:
+   ```bash
+   openssl x509 -req -in chnode1_cert_user.csr -out chnode1_cert_user.crt -CA marsnet_ca.crt -CAkey marsnet_ca.key -days 365
+   ```
+
+<div id="2-create-a-sql-user-and-grant-permissions">
+  ## 2. أنشئ مستخدم SQL وامنحه الصلاحيات
+</div>
+
+<Note>
+  للاطلاع على تفاصيل كيفية تمكين مستخدمي SQL وتعيين الأدوار، راجع دليل المستخدم [Defining SQL Users and Roles](/ar/concepts/features/security/access-rights).
+</Note>
+
+1. أنشئ مستخدم SQL مُعدًّا لاستخدام authentication بالشهادة:
+   ```sql
+   CREATE USER cert_user IDENTIFIED WITH ssl_certificate CN 'chnode1.marsnet.local:cert_user';
+   ```
+
+2. امنح المستخدم الجديد المعتمد على الشهادة الامتيازات:
+   ```sql
+   GRANT ALL ON *.* TO cert_user WITH GRANT OPTION;
+   ```
+
+<Note>
+  يُمنح هذا المستخدم امتيازات المسؤول الكاملة في هذا التمرين لأغراض توضيحية. راجع [وثائق RBAC](/ar/concepts/features/security/access-rights) في ClickHouse للاطلاع على إعدادات الصلاحيات.
+</Note>
+
+<Note>
+  نوصي باستخدام SQL لتعريف المستخدمين والأدوار. ومع ذلك، إذا كنت تُعرّف المستخدمين والأدوار حاليًا في ملفات configuration، فسيكون تعريف المستخدم على النحو التالي:
+
+  ```xml
+  <users>
+      <cert_user>
+          <ssl_certificates>
+              <common_name>chnode1.marsnet.local:cert_user</common_name>
+          </ssl_certificates>
+          <networks>
+              <ip>::/0</ip>
+          </networks>
+          <profile>default</profile>
+          <access_management>1</access_management>
+          {/* خيارات إضافية*/}
+      </cert_user>
+  </users>
+  ```
+</Note>
+
+<div id="3-testing">
+  ## 3. الاختبار
+</div>
+
+1. انسخ شهادة المستخدم والمفتاح الخاص بالمستخدم وشهادة المرجع المصدق (CA) إلى عقدة بعيدة.
+
+2. هيّئ OpenSSL في [ملف إعدادات عميل ClickHouse](/ar/concepts/features/interfaces/client#configuration_files) وحدد الشهادة والمسارات.
+
+   ```xml
+   <openSSL>
+       <client>
+           <certificateFile>my_cert_name.crt</certificateFile>
+           <privateKeyFile>my_cert_name.key</privateKeyFile>
+           <caConfig>my_ca_cert.crt</caConfig>
+       </client>
+   </openSSL>
+   ```
+
+3. شغّل `clickhouse-client`.
+   ```bash
+   clickhouse-client --user <my_user> --query 'SHOW TABLES'
+   ```
+
+<Note>
+  لاحظ أن كلمة المرور التي تُمرَّر إلى clickhouse-client يتم تجاهلها عند تحديد شهادة في ملف الإعدادات.
+</Note>
+
+<div id="4-testing-http">
+  ## 4. اختبار HTTP
+</div>
+
+1. انسخ شهادة المستخدم ومفتاحه وشهادة المرجع المصدق (CA) إلى عقدة بعيدة.
+
+2. استخدم `curl` لاختبار أمر SQL نموذجي. الصيغة الأساسية هي:
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://<clickhouse_node>:8443' --cert <my_cert_name>.crt --key <my_cert_name>.key --cacert <my_ca_cert>.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: <my_user>" --data-binary @-
+   ```
+   على سبيل المثال:
+   ```bash
+   echo 'SHOW TABLES' | curl 'https://chnode1:8443' --cert chnode1_cert_user.crt --key chnode1_cert_user.key --cacert marsnet_ca.crt -H "X-ClickHouse-SSL-Certificate-Auth: on" -H "X-ClickHouse-User: cert_user" --data-binary @-
+   ```
+   سيكون الناتج مشابهًا لما يلي:
+   ```response
+   INFORMATION_SCHEMA
+   default
+   information_schema
+   system
+   ```
+
+<Note>
+  لاحظ أنه لم يتم تحديد كلمة مرور؛ إذ تُستخدم الشهادة بدلًا منها، وبهذه الطريقة يُجري ClickHouse مصادقة المستخدم.
+</Note>
+
+<div id="summary">
+  ## الملخص
+</div>
+
+استعرضت هذه المقالة أساسيات إنشاء مستخدم وتهيئته لمصادقة شهادة SSL. ويمكن استخدام هذه الطريقة مع `clickhouse-client` أو أي عميل يدعم واجهة `https` ويمكن تعيين رؤوس HTTP فيه. يجب الحفاظ على خصوصية الشهادة والمفتاح اللذين جرى إنشاؤهما مع تقييد الوصول إليهما، لأن الشهادة تُستخدم لمصادقة المستخدم وتخويله لإجراء عمليات على قاعدة بيانات ClickHouse. تعامل مع الشهادة والمفتاح كما لو كانا كلمتي مرور.

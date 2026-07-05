@@ -1,0 +1,135 @@
+---
+slug: /guides/sre/configuring-tls-acme-client
+sidebarTitle: 'Configurando o Provisioning automático de TLS via ACME'
+title: 'Configurando o Provisioning automático de TLS via ACME'
+description: 'Este guia fornece configurações simples e mínimas para configurar o ClickHouse para usar certificados OpenSSL na validação de conexões.'
+keywords: ['configuração de ACME', 'configuração de TLS', 'certificados OpenSSL', 'conexões seguras', 'guia de SRE', 'Let`s Encrypt']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/pt-BR/_self_managed_only_automated.mdx';
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<SelfManaged />
+
+Este guia descreve como configurar o ClickHouse para usar o protocolo [ACME](https://en.wikipedia.org/wiki/Automatic_Certificate_Management_Environment) (descrito na [RFC8555](https://www.rfc-editor.org/rfc/rfc8555)).
+Com suporte a ACME, o ClickHouse pode obter e renovar automaticamente certificados de provedores como [Let&#39;s Encrypt](https://letsencrypt.org/) ou [ZeroSSL](https://zerossl.com/).
+A criptografia TLS protege os dados em trânsito entre clientes e servidores ClickHouse, impedindo a interceptação de consultas e resultados sensíveis.
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+O protocolo ACME define um processo automático de atualização de certificados com serviços como [Let&#39;s Encrypt](https://letsencrypt.org/) ou [ZeroSSL](https://zerossl.com/). Em resumo, o ClickHouse, como solicitante do certificado, precisa comprovar o controle do domínio por meio de tipos de desafio predefinidos para obter um certificado.
+
+Para habilitar o ACME, configure as portas HTTP e HTTPS junto com o bloco `acme`:
+
+```xml
+<http_port>80</http_port>
+<https_port>443</https_port>
+
+<acme>
+    <email>valid_email@example.com</email>
+    <terms_of_service_agreed>true</terms_of_service_agreed>
+    <domains>
+        <domain>example.com</domain>
+    </domains>
+</acme>
+```
+
+A porta HTTP é usada para atender às solicitações do desafio ACME `HTTP-01` (saiba mais sobre tipos de desafio [aqui](https://letsencrypt.org/docs/challenge-types/)) durante a validação do domínio. Quando a validação é concluída e o certificado é emitido, a porta HTTPS passa a atender o tráfego criptografado usando o certificado obtido.
+
+A porta HTTP não precisa ser 80 no próprio servidor; ela pode ser remapeada usando `nftables` ou ferramentas semelhantes. Consulte a documentação do seu provedor ACME para verificar quais portas são aceitas para desafios `HTTP-01`.
+
+No bloco `acme`, definimos `email` para a criação da conta e aceitamos os termos de serviço do ACME.
+Depois disso, a única coisa de que precisamos é uma lista de domínios.
+
+<div id="current-limitations">
+  ### Limitações atuais
+</div>
+
+* Somente o tipo de desafio `HTTP-01` é compatível.
+* Somente chaves `RSA 2048` são compatíveis.
+* O rate limiting não é tratado.
+
+<div id="configuration-parameters">
+  ## Parâmetros de configuração
+</div>
+
+Opções de configuração disponíveis na seção `acme`:
+
+| Parâmetro                            | Valor padrão                                     | Descrição                                                                                                                                                 |
+| ------------------------------------ | ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zookeeper_path`                     | `/clickhouse/acme`                               | Caminho do ZooKeeper usado para armazenar os dados da conta ACME, os certificados e o estado de coordenação entre os nós do ClickHouse.                   |
+| `directory_url`                      | `https://acme-v02.api.letsencrypt.org/directory` | Endpoint do diretório ACME usado para emissão de certificados. Por padrão, aponta para o servidor de produção do Let’s Encrypt.                           |
+| `email`                              |                                                  | Endereço de e-mail usado para criar e gerenciar a conta ACME. Os provedores ACME podem usá-lo para enviar avisos de expiração e atualizações importantes. |
+| `terms_of_service_agreed`            | `false`                                          | Indica se os Termos de Serviço do provedor ACME foram aceitos. Deve ser definido como `true` para habilitar o ACME.                                       |
+| `domains`                            |                                                  | Lista de nomes de domínio para os quais os certificados TLS devem ser emitidos. Cada domínio é especificado como uma entrada `<domain>`.                  |
+| `refresh_certificates_before`        | `2592000` (um mês, em segundos)                  | Tempo antes da expiração do certificado em que o ClickHouse tentará renová-lo.                                                                            |
+| `refresh_certificates_task_interval` | `3600` (uma hora, em segundos)                   | Intervalo em que o ClickHouse verifica se os certificados precisam ser renovados.                                                                         |
+
+Observe que, por padrão, a configuração usa o diretório de produção do Let&#39;s Encrypt. Para evitar atingir o limite de solicitações devido a uma provável configuração incorreta, recomenda-se primeiro testar o processo de emissão de certificados com o [diretório de staging](https://letsencrypt.org/docs/staging-environment/).
+
+<div id="administration">
+  # Administração
+</div>
+
+<div id="initial-deployment">
+  ## Implantação inicial
+</div>
+
+Ao habilitar o cliente ACME em um cluster com várias réplicas, é necessário ter cuidado redobrado durante a emissão inicial do certificado.
+
+A primeira réplica iniciada com o ACME habilitado tentará imediatamente criar uma ordem ACME e realizar a validação do desafio HTTP-01. Se apenas um subconjunto das réplicas estiver recebendo tráfego naquele momento, é provável que o desafio falhe, pois as outras réplicas não conseguirão responder às solicitações de validação.
+
+Se possível, recomenda-se rotear temporariamente o tráfego para uma única réplica (por exemplo, ajustando os registros DNS) e permitir que ela conclua a emissão inicial do certificado. Depois que o certificado for emitido com sucesso e armazenado no Keeper, o ACME poderá ser habilitado nas réplicas restantes. Elas reutilizarão automaticamente o certificado existente e participarão das próximas renovações.
+
+Se não for viável rotear o tráfego para uma única réplica, uma abordagem alternativa é fazer o upload manual do certificado existente e da chave privada para o Keeper antes de habilitar o cliente ACME. Isso evita a etapa inicial de validação e permite que todas as réplicas sejam iniciadas com um certificado válido já disponível.
+
+Depois que o certificado inicial tiver sido emitido ou importado, a renovação do certificado não exigirá tratamento especial, pois todas as réplicas já estarão executando o cliente ACME e compartilhando estado por meio do Keeper.
+
+<div id="keeper-data-structure">
+  ## Estrutura de dados do Keeper
+</div>
+
+```text
+/clickhouse/acme
+└── <acme-directory-host>
+    ├── account_private_key          # Chave privada da conta ACME (PEM)
+    ├── challenges                   # Estado ativo do desafio HTTP-01
+    └── domains
+        └── <domain-name>
+            ├── certificate          # Certificado TLS emitido (PEM)
+            └── private_key          # Chave privada do domínio (PEM)
+```
+
+<div id="migrating-from-other-acme-clients">
+  ## Migrando de outros clientes ACME
+</div>
+
+É possível migrar o certificado TLS e a chave atuais para o Keeper, facilitando a migração.
+No momento, o servidor oferece suporte apenas a chaves `RSA 2048`.
+
+Partindo do pressuposto de que estamos migrando do `certbot` e usando o diretório `/etc/letsencrypt/live`, é possível usar o seguinte conjunto de comandos:
+
+```bash
+DOMAIN=example.com
+CERT_DIR=/etc/letsencrypt/live/$DOMAIN
+ZK_BASE=/clickhouse/acme/acme-v02.api.letsencrypt.org/domains/$DOMAIN
+
+clickhouse keeper-client -q "create '/clickhouse' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org' ''"
+clickhouse keeper-client -q "create '/clickhouse/acme/acme-v02.api.letsencrypt.org/domains' ''"
+clickhouse keeper-client -q "create '$ZK_BASE' ''"
+
+clickhouse keeper-client -q "create '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/certificate' \"$(cat $CERT_DIR/fullchain.pem)\""
+
+clickhouse keeper-client -q "create '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+clickhouse keeper-client -q "set '$ZK_BASE/private_key' \"$(cat $CERT_DIR/privkey.pem)\""
+```
