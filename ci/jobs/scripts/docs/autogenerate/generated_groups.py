@@ -80,8 +80,7 @@ def _item_page(domain, row, names):
         "doc_type: 'reference'",
         "---",
     ])
-    parts = [fm, "", catalog.badge("system.documentation"), "",
-             _header_comment(row.get("source")), "", row["body"].strip()]
+    parts = [fm, "", _header_comment(row.get("source")), "", row["body"].strip()]
     if row.get("syntax"):
         parts += ["", "## Syntax {#syntax}", "", "```sql",
                   row["syntax"].strip(), "```"]
@@ -98,6 +97,7 @@ def _item_page(domain, row, names):
                 parts.append(f"- [`{rel}`]({domain['dir'].replace('reference', '/reference', 1)}/{rel})")
             else:
                 parts.append(f"- `{rel}`")
+    parts += ["", catalog.badge("system.documentation")]
     return "\n".join(parts) + "\n"
 
 
@@ -111,13 +111,13 @@ def _index_page(domain, rows):
         "doc_type: 'reference'",
         "---",
     ])
-    lines = [fm, "", catalog.badge("system.documentation"), "",
-             _header_comment(), "", domain["index_intro"], "",
+    lines = [fm, "", _header_comment(), "", domain["index_intro"], "",
              "| Type | Description |", "|-----|-----|"]
     base = domain["dir"].replace("reference", "/reference", 1)
     for row in rows:
         description = " ".join(row["body"].split()).replace("|", "\\|")
         lines.append(f"| [`{row['name']}`]({base}/{row['name']}) | {description} |")
+    lines += ["", catalog.badge("system.documentation")]
     return "\n".join(lines) + "\n"
 
 

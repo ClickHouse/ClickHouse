@@ -1426,9 +1426,9 @@ Introduced in: v24.1.0
 Returns the ASCII representation (ToASCII algorithm) of a domain name according to the [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) mechanism.
 The input string must be UTF-encoded and translatable to an ASCII string, otherwise an exception is thrown.
 
-:::note
+<Note>
 No percent decoding or trimming of tabs, spaces or control characters is performed.
-:::
+</Note>
 
 **Syntax**
 
@@ -1465,10 +1465,10 @@ Introduced in: v23.7.0
 Converts the first letter of each word to upper case and the rest to lower case.
 Words are sequences of alphanumeric characters separated by non-alphanumeric characters.
 
-:::note
+<Note>
 Because `initcap` converts only the first letter of each word to upper case you may observe unexpected behaviour for words containing apostrophes or capital letters.
 This is a known behaviour and there are no plans to fix it currently.
-:::
+</Note>
 
 **Syntax**
 
@@ -1518,10 +1518,10 @@ Like [`initcap`](#initcap), `initcapUTF8` converts the first letter of each word
 Assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
-:::note
+<Note>
 This function does not detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
-:::
+</Note>
 
 **Syntax**
 
@@ -3262,10 +3262,10 @@ Code point counting starts from `1` with the following logic:
 
 An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
-:::note
+<Note>
 This function assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
-:::
+</Note>
 
 **Syntax**
 
@@ -3694,10 +3694,10 @@ Introduced in: v1.1.0
 Converts a string to uppercase, assuming that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
-:::note
+<Note>
 This function doesn't detect the language, e.g. for Turkish the result might not be exactly correct (i/İ vs. i/I).
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point (such as `ẞ` and `ß`), the result may be incorrect for that code point.
-:::
+</Note>
 
 **Syntax**
 

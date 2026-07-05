@@ -322,9 +322,9 @@ Introduced in: v18.16.0
 
 Retrieves values from a dictionary.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -393,9 +393,9 @@ Retrieves the attribute values of all the nodes that matched each key in a [regu
 
 Besides returning values of type `Array(T)` instead of `T`, this function behaves similarly to [`dictGet`](#dictGet).
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -415,9 +415,9 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 Returns an array of the dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
 If there is no key corresponding to `id_expr` in the dictionary, an empty array is returned.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
  [`Array(T)`](/reference/data-types/array)
 
 **Examples**
@@ -454,9 +454,9 @@ Introduced in: v21.4.0
 
 Returns first-level children as an array of indexes. It is the inverse transformation for [dictGetHierarchy](#dictGetHierarchy).
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -496,9 +496,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Date` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -517,9 +517,9 @@ dictGetDate(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -544,9 +544,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Date` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -566,9 +566,9 @@ dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -600,9 +600,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `DateTime` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -621,9 +621,9 @@ dictGetDateTime(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -648,9 +648,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `DateTime` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -670,9 +670,9 @@ dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -704,9 +704,9 @@ Introduced in: v21.4.0
 
 Returns all descendants as if the [`dictGetChildren`](#dictGetChildren) function were applied `level` times recursively.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -756,9 +756,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Float32` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -777,9 +777,9 @@ dictGetFloat32(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -804,9 +804,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Float32` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -826,9 +826,9 @@ dictGetFloat32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -860,9 +860,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Float64` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -881,9 +881,9 @@ dictGetFloat64(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -908,9 +908,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Float64` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -930,9 +930,9 @@ dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -964,9 +964,9 @@ Introduced in: v1.1.0
 
 Creates an array, containing all the parents of a key in the [hierarchical dictionary](/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1006,9 +1006,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `IPv4` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1027,9 +1027,9 @@ dictGetIPv4(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1054,9 +1054,9 @@ Introduced in: v23.1.0
 
 Converts a dictionary attribute value to `IPv4` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1076,9 +1076,9 @@ dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1110,9 +1110,9 @@ Introduced in: v23.1.0
 
 Converts a dictionary attribute value to `IPv6` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1131,9 +1131,9 @@ dictGetIPv6(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1158,9 +1158,9 @@ Introduced in: v23.1.0
 
 Converts a dictionary attribute value to `IPv6` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1180,9 +1180,9 @@ dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1214,9 +1214,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int16` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1235,9 +1235,9 @@ dictGetInt16(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1262,9 +1262,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int16` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1284,9 +1284,9 @@ dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1318,9 +1318,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int32` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1339,9 +1339,9 @@ dictGetInt32(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1366,9 +1366,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int32` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1388,9 +1388,9 @@ dictGetInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1422,9 +1422,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int64` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1443,9 +1443,9 @@ dictGetInt64(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1470,9 +1470,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int64` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1492,9 +1492,9 @@ dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1526,9 +1526,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int8` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1547,9 +1547,9 @@ dictGetInt8(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1574,9 +1574,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `Int8` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1596,9 +1596,9 @@ dictGetInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1636,9 +1636,9 @@ The cache is not persistent across queries. When the limit is reached, entries a
 This is most effective with large dictionaries when the input has low cardinality and the working set fits in the cache. Set to `0` to disable caching.
     
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1679,9 +1679,9 @@ Introduced in: v18.16.0
 
 Retrieves values from a dictionary, with a default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1722,9 +1722,9 @@ Introduced in: v21.4.0
 
 Retrieves values from a dictionary, returning NULL if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1771,9 +1771,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `String` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1792,9 +1792,9 @@ dictGetString(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1819,9 +1819,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `String` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1841,9 +1841,9 @@ dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1875,9 +1875,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt16` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1896,9 +1896,9 @@ dictGetUInt16(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1923,9 +1923,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt16` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -1945,9 +1945,9 @@ dictGetUInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -1979,9 +1979,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt32` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2000,9 +2000,9 @@ dictGetUInt32(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2027,9 +2027,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt32` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2049,9 +2049,9 @@ dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2083,9 +2083,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt64` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2104,9 +2104,9 @@ dictGetUInt64(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2131,9 +2131,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt64` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2153,9 +2153,9 @@ dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2187,9 +2187,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt8` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2208,9 +2208,9 @@ dictGetUInt8(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2235,9 +2235,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UInt8` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2257,9 +2257,9 @@ dictGetUInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2291,9 +2291,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UUID` data type regardless of the dictionary configuration.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2312,9 +2312,9 @@ dictGetUUID(dict_name, attr_name, id_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2339,9 +2339,9 @@ Introduced in: v1.1.0
 
 Converts a dictionary attribute value to `UUID` data type regardless of the dictionary configuration, or returns the provided default value if the key is not found.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2361,9 +2361,9 @@ dictGetUUIDOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 
 **Examples**
 
@@ -2395,9 +2395,9 @@ Introduced in: v1.1.0
 
 Checks whether a key is present in a dictionary.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 
@@ -2450,9 +2450,9 @@ Introduced in: v1.1.0
 
 Checks the ancestor of a key through the whole hierarchical chain in the dictionary.
 
-:::note
+<Note>
 This function is non-deterministic: it can return different results for the same arguments.
-:::
+</Note>
 
 **Syntax**
 

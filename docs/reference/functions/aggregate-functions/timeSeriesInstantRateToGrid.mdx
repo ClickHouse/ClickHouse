@@ -12,9 +12,9 @@ Introduced in: v25.6.0
 
 Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like irate](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `irate` are considered within the specified time window.
 
-:::warning
+<Warning>
 This function is experimental, enable it by setting `allow_experimental_ts_to_grid_aggregate_function=true`.
-:::
+</Warning>
     
 
 **Syntax**
