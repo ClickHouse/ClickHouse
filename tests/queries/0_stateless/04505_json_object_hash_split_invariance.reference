@@ -6,5 +6,5 @@ grace_hash	4
 group_by	1
 distinct	1
 uniqExact	1
-spill_join_grace	8000000
-spill_join_hash	8000000
+spill_join_grace	20000
+spill_join_hash	20000
