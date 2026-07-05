@@ -11,10 +11,12 @@ namespace DB
 
 class OptimizerContext;
 
+struct QueryPlanOptimizationSettings;
+
 class CascadesOptimizer
 {
 public:
-    explicit CascadesOptimizer(QueryPlan & query_plan_);
+    CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_);
 
     void optimize();
 
@@ -22,6 +24,7 @@ private:
     QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties, const Memo & memo);
 
     QueryPlan & query_plan;
+    const QueryPlanOptimizationSettings & optimization_settings;
 };
 
 }

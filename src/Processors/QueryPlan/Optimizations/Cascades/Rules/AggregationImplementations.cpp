@@ -126,8 +126,19 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
 
     std::vector<GroupExpressionPtr> result;
 
+    /// See Strategy B below for when the shuffle strategy applies.
+    const bool shuffle_applicable = !agg_step->getParams().keys.empty()
+        && !agg_step->isGroupingSets()
+        && !agg_step->getParams().overflow_row
+        && agg_step->getParams().max_rows_to_group_by == 0;
+
+    /// `distributed_plan_force_shuffle_aggregation` leaves shuffle as the only strategy
+    /// on a multi-node cluster whenever it is applicable.
+    const bool only_shuffle = memo.isShuffleAggregationForced() && shuffle_applicable && !candidate_node_counts.empty();
+
     /// Strategy A: Local — gather all input to one node, aggregate there.
     /// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
+    if (!only_shuffle)
     {
         auto new_step = agg_step->clone();
         new_step->setStepDescription(fmt::format("Local {}", agg_step->getStepDescription()), 200);
@@ -158,10 +169,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// Not applicable with `max_rows_to_group_by`: the limit is a global contract, but each
     /// node would enforce it independently, so the result could exceed it (or skip the
     /// expected exception). Keep such aggregations local.
-    if (!agg_step->getParams().keys.empty()
-        && !agg_step->isGroupingSets()
-        && !agg_step->getParams().overflow_row
-        && agg_step->getParams().max_rows_to_group_by == 0)
+    if (shuffle_applicable)
     {
         for (size_t candidate_node_count : candidate_node_counts)
         {
@@ -223,7 +231,7 @@ OptimizationRulePtr createAggregationImplementation();
 OptimizationRulePtr createAggregationImplementation() { return std::make_shared<AggregationImplementation>(); }
 
 
-bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const
+bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & memo) const
 {
     const auto * agg_step = typeid_cast<const AggregatingStep *>(expression->getQueryPlanStep());
     return agg_step != nullptr &&
@@ -232,7 +240,10 @@ bool TwoPhaseAggregationTransformation::checkPattern(GroupExpressionPtr expressi
         !agg_step->isGroupingSets() &&           /// distributed merging of grouping-set states is not supported
         !agg_step->getParams().overflow_row &&
         agg_step->getParams().max_rows_to_group_by == 0 &&  /// global row limit must be enforced by one aggregator
-        !agg_step->getParams().only_merge;       /// don't split a merge step that's already from a prior split
+        !agg_step->getParams().only_merge &&     /// don't split a merge step that's already from a prior split
+        /// `distributed_plan_force_shuffle_aggregation` forbids the partial + merge split
+        /// whenever the shuffle strategy is available (the aggregation has group keys).
+        !(memo.isShuffleAggregationForced() && !agg_step->getParams().keys.empty());
 }
 
 std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, Memo & memo) const
@@ -263,13 +274,15 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
     /// requestOnlyMergeForAggregateProjection which adapts them to finalized types.
     auto merge_params = agg_step->getParams();
     merge_params.only_merge = true;
+    /// Grouping sets never reach this rule (see checkPattern), so the memory-efficient
+    /// mode needs no grouping-sets guard here, unlike the rule-based planner.
     auto merge_step_ptr = std::make_unique<MergingAggregatedStep>(
         partial_step->getOutputHeader(),
         std::move(merge_params),
         agg_step->getGroupingSetsParamsList(),
         /*final_=*/true,
-        /*memory_efficient_aggregation_=*/false,
-        /*memory_efficient_merge_threads_=*/0,
+        memo.isDistributedAggregationMemoryEfficient(),
+        agg_step->getTemporaryDataMergeThreads(),
         agg_step->shouldProduceResultsInBucketOrder(),
         agg_step->getMaxBlockSize(),
         agg_step->getMaxBlockSizeForAggregationInOrder(),

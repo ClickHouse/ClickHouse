@@ -37,6 +37,13 @@ public:
             sort_settings = settings;
     }
 
+    /// Query settings the aggregation and top-N rules honor. Defaults match the settings' defaults.
+    bool isDistributedAggregationMemoryEfficient() const { return distributed_aggregation_memory_efficient; }
+    void setDistributedAggregationMemoryEfficient(bool value) { distributed_aggregation_memory_efficient = value; }
+
+    bool isShuffleAggregationForced() const { return force_shuffle_aggregation; }
+    void setShuffleAggregationForced(bool value) { force_shuffle_aggregation = value; }
+
     void dump(WriteBuffer & out) const;
     String dump() const;
 
@@ -46,6 +53,8 @@ private:
     size_t cluster_node_count = 1;
     CostConfig cost_config;
     std::optional<SortingStep::Settings> sort_settings;
+    bool distributed_aggregation_memory_efficient = true;
+    bool force_shuffle_aggregation = false;
 };
 
 }

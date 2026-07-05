@@ -1,6 +1,7 @@
 #include <Common/ThreadStatus.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Task.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
@@ -37,8 +38,9 @@ static String dumpQueryPlanShort(const QueryPlan & query_plan)
     return out.str();
 }
 
-CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_)
+CascadesOptimizer::CascadesOptimizer(QueryPlan & query_plan_, const QueryPlanOptimizationSettings & optimization_settings_)
     : query_plan(query_plan_)
+    , optimization_settings(optimization_settings_)
 {}
 
 void CascadesOptimizer::optimize()
@@ -69,6 +71,8 @@ void CascadesOptimizer::optimize()
         cost_config = parseCostConfig(query_context->getQueryParameters().at(cost_config_param_name));
 
     OptimizerContext optimizer_context(*statistics, cluster_node_count, cost_config);
+    optimizer_context.memo.setDistributedAggregationMemoryEfficient(optimization_settings.distributed_aggregation_memory_efficient);
+    optimizer_context.memo.setShuffleAggregationForced(optimization_settings.distributed_plan_force_shuffle_aggregation);
 
     LOG_TRACE(optimizer_context.log, "Cost config: {}, cluster node count: {}", cost_config.dump(), cluster_node_count);
     LOG_TEST(optimizer_context.log, "Initial query plan:\n{}", dumpQueryPlanShort(query_plan));

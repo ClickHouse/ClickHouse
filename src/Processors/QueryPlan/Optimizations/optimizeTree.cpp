@@ -356,7 +356,7 @@ void optimizeTreeSecondPass(
     if (make_distributed_plan && optimization_settings.enable_cascades_optimizer)
     {
         checkCascadesSupported(root);
-        CascadesOptimizer cascades_optimizer(query_plan);
+        CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);
         cascades_optimizer.optimize();
     }
 
