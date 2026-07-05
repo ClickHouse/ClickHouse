@@ -9,6 +9,9 @@ CREATE TABLE t_one_bucket_r (k UInt64, w UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_one_bucket_l SELECT number, number * 10 FROM numbers(1000);
 INSERT INTO t_one_bucket_r SELECT number, number * 100 FROM numbers(500);
 
+-- make_distributed_plan rejects aggregation with a group-by row limit
+SET max_rows_to_group_by = 0;
+
 -- One-bucket shuffle join, multi-bucket readers
 SELECT sum(l.v + r.w) FROM t_one_bucket_l AS l JOIN t_one_bucket_r AS r ON l.k = r.k
 SETTINGS make_distributed_plan = 1, distributed_plan_execute_locally = 1, enable_parallel_replicas = 0,
