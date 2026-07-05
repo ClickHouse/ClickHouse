@@ -19,6 +19,15 @@ node_bad_path = cluster.add_instance(
     stay_alive=True,
 )
 
+# A node whose `query_cache.max_entry_size_in_rows` is configured below the test query's row count, used to
+# verify that the configured limit survives a `SYSTEM RELOAD CONFIG` (the reload path must read the same
+# registered config key as startup).
+node_row_limit = cluster.add_instance(
+    "node_row_limit",
+    main_configs=["configs/query_cache_row_limit.xml"],
+    stay_alive=True,
+)
+
 QUERY = "SELECT id, c FROM t ORDER BY id"
 
 
@@ -486,6 +495,31 @@ def _assert_unsafe_path_disables_disk_cache(cache_root):
         ).strip()
         == "keep"
     )
+
+
+def test_max_entry_size_in_rows_reload(start_cluster):
+    # `query_cache.max_entry_size_in_rows` is documented as taking effect immediately on configuration reload.
+    # The reload path (`Context::updateQueryResultCacheConfiguration`) must read the same config key that is
+    # registered and read at startup (`query_cache.max_entry_size_in_rows`). A typo there
+    # (`query_cache.max_entry_rows_in_rows`) meant the key was never found on reload, so the limit silently
+    # reset to its 30M default on every `SYSTEM RELOAD CONFIG` - a limit configured below the query's row count
+    # was honored at startup but lost after reload, letting oversized results be cached.
+    node_row_limit.query("SYSTEM DROP QUERY CACHE")
+    node_row_limit.query("DROP TABLE IF EXISTS t SYNC")
+    node_row_limit.query("CREATE TABLE t (id Int64, c String) ENGINE = MergeTree ORDER BY id")
+    node_row_limit.query("INSERT INTO t SELECT number, concat('abc_', number) FROM numbers(10)")
+
+    # The configured limit (5) is below the query's 10 rows, so at startup the result is not cached.
+    node_row_limit.query(QUERY, settings={"use_query_cache": 1})
+    assert node_row_limit.query("SELECT count() FROM system.query_cache").strip() == "0"
+
+    # A reload must preserve the configured limit; before the fix it silently reset to the 30M default here.
+    node_row_limit.query("SYSTEM RELOAD CONFIG")
+
+    node_row_limit.query("SYSTEM DROP QUERY CACHE")
+    node_row_limit.query(QUERY, settings={"use_query_cache": 1})
+    # Still not cached: the reloaded limit is the configured 5, not the default 30M.
+    assert node_row_limit.query("SELECT count() FROM system.query_cache").strip() == "0"
 
 
 def test_unsafe_disk_path_disables_cache_and_preserves_data(start_cluster):

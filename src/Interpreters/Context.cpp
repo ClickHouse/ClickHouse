@@ -4837,7 +4837,7 @@ void Context::updateQueryResultCacheConfiguration(const Poco::Util::AbstractConf
     size_t size = config.getUInt64("query_cache.max_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_SIZE);
     size_t max_entries = config.getUInt64("query_cache.max_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRIES);
     size_t max_entry_size_in_bytes = config.getUInt64("query_cache.max_entry_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_BYTES);
-    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_rows_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
+    size_t max_entry_size_in_rows = config.getUInt64("query_cache.max_entry_size_in_rows", DEFAULT_QUERY_RESULT_CACHE_MAX_ENTRY_SIZE_IN_ROWS);
     size_t max_disk_size_in_bytes = config.getUInt64("query_cache.max_disk_size_in_bytes", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_SIZE);
     size_t max_disk_entries = config.getUInt64("query_cache.max_disk_entries", DEFAULT_QUERY_RESULT_CACHE_MAX_DISK_ENTRIES);
     if (size > max_cache_size)

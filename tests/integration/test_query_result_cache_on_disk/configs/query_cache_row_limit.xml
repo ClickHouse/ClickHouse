@@ -1,0 +1,10 @@
+<clickhouse>
+    <!-- A small `query_cache.max_entry_size_in_rows` (below the test query's 10 rows) so
+         `test_max_entry_size_in_rows_reload` can observe whether the configured limit survives a
+         `SYSTEM RELOAD CONFIG`. The reload path (`Context::updateQueryResultCacheConfiguration`) must read the
+         same registered config key that is read at startup; a typo there silently reset the limit to its
+         default on every reload, so the configured limit was honored at startup but lost after any reload. -->
+    <query_cache>
+        <max_entry_size_in_rows>5</max_entry_size_in_rows>
+    </query_cache>
+</clickhouse>
