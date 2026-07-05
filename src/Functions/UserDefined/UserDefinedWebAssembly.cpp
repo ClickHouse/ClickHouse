@@ -884,12 +884,23 @@ public:
                     return result_column;
                 }
 
+                // Preserved ColumnConst arguments are charged once per batch; every batch
+                // this loop produces still has to pay that fixed cost, so seed running_bytes
+                // with it and fail up front if it alone can never fit. See the matching
+                // comment in execute() below.
+                size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, /* preserve_const */ true);
+                if (const_reserved_bytes > input_budget)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
+                        "exceeding the {} byte input budget derived from the module's linear memory",
+                        const_reserved_bytes, input_budget);
+
                 size_t batch_start = 0;
-                size_t running_bytes = 0;
+                size_t running_bytes = const_reserved_bytes;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     size_t row_bytes = estimateRowSerializedSize(arguments, row, /* preserve_const */ true);
-                    if (row_bytes > input_budget)
+                    if (const_reserved_bytes + row_bytes > input_budget)
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
                             "{} byte input budget derived from the module's linear memory; it cannot be "
@@ -899,7 +910,7 @@ public:
                     {
                         flush_columnar_batch(batch_start, row);
                         batch_start = row;
-                        running_bytes = 0;
+                        running_bytes = const_reserved_bytes;
                     }
                     running_bytes += row_bytes;
                 }
@@ -1149,15 +1160,28 @@ private:
             size_t total_bytes = estimateTotalSerializedSize(arguments, input_rows_count, preserve_const);
             if (total_bytes > input_budget)
             {
+                // Preserved ColumnConst arguments are charged once per batch (not per
+                // row) by estimateTotalSerializedSize; calling it with row_count=0 zeroes
+                // out every per-row-scaled term and leaves just that fixed reserved cost.
+                // Every batch this loop produces still has to pay it, so seed running_bytes
+                // with it (and fail up front if it alone can never fit), or a batch of many
+                // tiny rows could still exceed input_budget by the preserved const's size.
+                size_t const_reserved_bytes = estimateTotalSerializedSize(arguments, 0, preserve_const);
+                if (const_reserved_bytes > input_budget)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "WASM UDF preserved constant arguments alone require an estimated {} bytes, "
+                        "exceeding the {} byte input budget derived from the module's linear memory",
+                        const_reserved_bytes, input_budget);
+
                 // Cumulative per-row pass: flush before the next row would cross the
                 // budget. A fixed stride derived from the average row size cannot bound
                 // a skewed block (e.g. one huge string among many tiny ones) — the
                 // oversized row would still land in a batch together with its neighbors.
-                size_t running_bytes = 0;
+                size_t running_bytes = const_reserved_bytes;
                 for (size_t row = 0; row < input_rows_count; ++row)
                 {
                     size_t row_bytes = estimateRowSerializedSize(arguments, row, preserve_const);
-                    if (row_bytes > input_budget)
+                    if (const_reserved_bytes + row_bytes > input_budget)
                         throw Exception(ErrorCodes::WASM_ERROR,
                             "WASM UDF input row {} alone requires an estimated {} bytes, exceeding the "
                             "{} byte input budget derived from the module's linear memory; it cannot be "
@@ -1166,7 +1190,7 @@ private:
                     if (row > batch_start && running_bytes + row_bytes > input_budget)
                     {
                         flush_batch(row);
-                        running_bytes = 0;
+                        running_bytes = const_reserved_bytes;
                     }
                     running_bytes += row_bytes;
                 }
