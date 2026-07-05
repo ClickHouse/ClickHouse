@@ -35,4 +35,4 @@ Test 11 verification: persistent CREATE TABLE contains ON CLUSTER
 1
 Test 11 verification: persistent CREATE VIEW contains ON CLUSTER
 1
-Test 11 verification: both persistent objects exist in the current database	2
+Test 11 verification: both persistent objects exist in the current database	1
