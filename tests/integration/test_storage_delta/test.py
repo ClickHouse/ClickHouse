@@ -2870,7 +2870,7 @@ def test_join_with_distributed(started_cluster):
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    # All cases which were reproted as faulty
+    # All cases which were reported as faulty
     assert (
         int(
             instance.query(

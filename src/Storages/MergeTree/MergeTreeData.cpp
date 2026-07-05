@@ -105,6 +105,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Common/Config/ConfigHelper.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/Increment.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -361,6 +362,7 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_SPACE;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_INDEX;
     extern const int TOO_MANY_SIMULTANEOUS_QUERIES;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
@@ -373,6 +375,16 @@ namespace ErrorCodes
     extern const int CANNOT_FORGET_PARTITION;
     extern const int DATA_TYPE_CANNOT_BE_USED_IN_KEY;
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
+    extern const int FAULT_INJECTED;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
+}
+
+namespace FailPoints
+{
+    /// Throws once from the background data-parts refresh of a read-only table to emulate a
+    /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
+    /// reschedules itself after such an error instead of stopping permanently.
+    extern const char merge_tree_refresh_parts_throw_once[];
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -1218,6 +1230,20 @@ void MergeTreeData::checkProperties(
     }
 
     checkKeyExpression(*new_sorting_key.expression, new_sorting_key.sample_block, "Sorting", allow_nullable_key_);
+}
+
+void MergeTreeData::checkMetadataProperties(
+    const StorageInMemoryMetadata & new_metadata,
+    const StorageInMemoryMetadata & old_metadata,
+    ContextPtr local_context) const
+{
+    checkProperties(
+        new_metadata,
+        old_metadata,
+        /*attach=*/false,
+        /*allow_empty_sorting_key=*/false,
+        allow_nullable_key,
+        local_context);
 }
 
 void MergeTreeData::setProperties(
@@ -2716,6 +2742,10 @@ try
 catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
+    /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
+    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
+    /// reschedule that refreshStatistics performs in its own catch block.
+    refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
 /// Re-scan the data directory once: reload disk metadata and add parts that appeared since the
@@ -2726,6 +2756,11 @@ catch (...)
 void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 {
     std::lock_guard refresh_lock(refresh_parts_mutex);
+
+    fiu_do_on(FailPoints::merge_tree_refresh_parts_throw_once,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injected transient failure into MergeTreeData::refreshDataPartsOnce");
+    });
 
     for (auto & disk : getStoragePolicy()->getDisks())
         disk->refresh(interval_milliseconds);
@@ -5140,6 +5175,30 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
             }
         }
     }
+
+    /// An explicit MATERIALIZE INDEX of an inert index (a removed index type, e.g. legacy
+    /// `hypothesis`, kept only for attach compatibility) cannot be honored: the index has no data
+    /// and cannot be recomputed. Background merge/delete/insert paths carry it forward untouched,
+    /// but a user asking to rebuild it must be told it is impossible rather than get a silent no-op.
+    /// Reject it here, synchronously, before the mutation is queued -- throwing inside the
+    /// background mutation instead would leave the mutation retrying forever and wedge the table.
+    {
+        const auto index_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        const auto & indices = index_metadata_snapshot->getSecondaryIndices();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::MATERIALIZE_INDEX)
+                continue;
+            if (!indices.has(command.index_name))
+                continue;
+            auto index_ptr = MergeTreeIndexFactory::instance().get(
+                index_metadata_snapshot, indices.getByName(command.index_name), *getSettings());
+            if (index_ptr->isInert())
+                throw Exception(ErrorCodes::ILLEGAL_INDEX,
+                    "Index of type '{}' is no longer supported. Please drop the index",
+                    indices.getByName(command.index_name).type);
+        }
+    }
 }
 
 MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
@@ -5957,8 +6016,47 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
         removePartContributionToUncompressedBytesInPatches(part);
     }
 
+    /// A PreActive part can be discarded here by the failed-quorum cleanup while an INSERT is still
+    /// committing it (it has a ZooKeeper node but is not Active locally yet). `waitForPreActivePartsInRange`
+    /// blocks on `preactive_parts_cv` until no such part remains in range, so we must wake it up.
+    const bool was_preactive = part->getState() == DataPartState::PreActive;
+
     modifyPartState(it_part, DataPartState::Deleting, lock);
+
+    /// Leaving PreActive can flip the `waitForPreActivePartsInRange` predicate (it only counts PreActive
+    /// parts), so any waiter must be woken to re-check. Guarantee the notification on every exit path
+    /// below: both `commitTransaction` and `renameToDetached` can throw, and skipping the wake-up would
+    /// leave a waiter sleeping forever on a lost notification even though the part is already out of
+    /// PreActive. On the `commitTransaction` failure path the part is restored to PreActive, so nothing
+    /// changed for waiters and no notification is owed.
+    SCOPE_EXIT({
+        if (was_preactive && part->getState() != DataPartState::PreActive)
+            preactive_parts_cv.notify_all();
+    });
+
+    /// A PreActive part discarded mid-insert still owns an uncommitted part storage transaction: on
+    /// object-storage disks its writes and renames are only buffered and are normally materialized by
+    /// `MergeTreeData::Transaction::commit` via `commitTransaction`. Here the part leaves the working set
+    /// without that commit ever happening, so commit the part storage transaction now; otherwise the
+    /// detached part is never materialized and its blobs are orphaned. The commit is done before
+    /// `renameToDetached` (so the rename below executes directly instead of being buffered), and if it
+    /// throws, the part state is restored: the part stays PreActive, indexed and with its storage
+    /// transaction still active, so the recovering INSERT can commit or roll it back normally.
+    if (was_preactive && part->getDataPartStorage().hasActiveTransaction())
+    {
+        try
+        {
+            asMutableDeletingPart(part)->getDataPartStorage().commitTransaction();
+        }
+        catch (...)
+        {
+            modifyPartState(it_part, DataPartState::PreActive, lock);
+            throw;
+        }
+    }
+
     asMutableDeletingPart(part)->renameToDetached(prefix, /*ignore_error=*/ replicated);
+
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
 }
@@ -6693,6 +6791,7 @@ void MergeTreeData::checkAlterPartitionIsPossible(
                     break;
                 }
                 case MetadataStorageType::StaticWeb:
+                case MetadataStorageType::WebIndex:
                 {
                     can_execute_alter_on_disk = false;
                     break;
@@ -7000,6 +7099,32 @@ Pipe MergeTreeData::alterPartition(
     if (metadata_snapshot && metadata_snapshot->hasUniqueKey() && !commands.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
+
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
+    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
+    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
+    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
+    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
+    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    {
+        for (const PartitionCommand & command : commands)
+        {
+            switch (command.type)
+            {
+                case PartitionCommand::ATTACH_PARTITION:
+                case PartitionCommand::MOVE_PARTITION:
+                case PartitionCommand::DROP_PARTITION:
+                case PartitionCommand::DROP_DETACHED_PARTITION:
+                case PartitionCommand::FETCH_PARTITION:
+                case PartitionCommand::REPLACE_PARTITION:
+                    throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
+                default:
+                    break;
+            }
+        }
+    }
 
     /// Wait for loading of outdated parts
     /// because partition commands (DROP, MOVE, etc.)
@@ -9473,8 +9598,10 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
     if (format_version != src_data->format_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different format_version");
 
-    if (query_to_string(my_snapshot->getPrimaryKeyAST()) != query_to_string(src_snapshot->getPrimaryKeyAST()))
+    if (query_to_string(my_snapshot->getPrimaryKey().expression_list_ast)
+        != query_to_string(src_snapshot->getPrimaryKey().expression_list_ast))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different primary key");
+
     const auto check_definitions = [this](const auto & my_descriptions, const auto & src_descriptions)
     {
         bool strict_match = (*getSettings())[MergeTreeSetting::enforce_index_structure_match_on_partition_manipulation];
@@ -10078,6 +10205,17 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
+    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
+    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
+    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
+    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
+    /// the automatic background moves. The setting is sampled here, immediately before move selection and
+    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
+    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
+    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
+    if ((*getSettings())[MergeTreeSetting::table_readonly])
+        return false;
+
     if (parts_mover.moves_blocker.isCancelled())
         return false;
 
@@ -11153,12 +11291,17 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     auto compression_codec = getCompressionCodecForPart(0, {}, time(nullptr));
 
     const auto & index_factory = MergeTreeIndexFactory::instance();
+    auto skip_indices = index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings());
+    /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+    /// cannot be materialized. Skip them so building an empty part (delete-to-empty, TTL-to-empty,
+    /// lost-part replacement) does not throw creating their aggregator.
+    std::erase_if(skip_indices, [](const auto & index) { return index->isInert(); });
     MergedBlockOutputStream out(
         new_data_part,
         getSettings(),
         metadata_snapshot,
         columns,
-        index_factory.getMany(metadata_snapshot, metadata_snapshot->getSecondaryIndices(), *getSettings()),
+        skip_indices,
         compression_codec,
         std::make_shared<MergeTreeIndexGranularityAdaptive>(),
         txn ? txn->tid : Tx::NonTransactionalTID,
