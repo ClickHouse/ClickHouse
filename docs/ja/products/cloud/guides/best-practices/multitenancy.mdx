@@ -1,0 +1,405 @@
+---
+slug: /cloud/bestpractices/multi-tenancy
+sidebarTitle: 'マルチテナンシー'
+title: 'マルチテナンシー'
+description: 'マルチテナンシーを実装するためのベストプラクティス'
+doc_type: 'guide'
+keywords: ['multitenancy', 'isolation', 'best practices', 'architecture', 'multi-tenant']
+---
+
+SaaS のデータ分析プラットフォームでは、組織、顧客、事業部門などの複数のテナントが、それぞれのデータを論理的に分離したまま、同じデータベースインフラストラクチャを共有することが一般的です。これにより、異なるユーザーが同一プラットフォーム内で自分のデータに安全にアクセスできます。
+
+要件に応じて、マルチテナンシーを実装する方法はいくつかあります。以下では、ClickHouse Cloud を使用してこれらを実装する方法を紹介します。
+
+<div id="shared-table">
+  ## 共有テーブル
+</div>
+
+このアプローチでは、すべてのテナントのデータを 1 つの共有テーブルに保存し、各テナントのデータを識別するためのフィールド (または複数フィールドの組み合わせ) を使用します。パフォーマンスを最大化するには、このフィールドを [主キー](/ja/reference/statements/create/table#primary-key) に含める必要があります。各テナントが自分に属するデータにのみアクセスできるようにするために、[ロールベースのアクセス制御](/ja/concepts/features/security/access-rights) を使用し、これを [行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) で実装します。
+
+> **このアプローチは、特にすべてのテナントで同じデータスキーマが使われ、データ量が中程度 (数 TB 未満) である場合に、最も管理しやすいため推奨します**
+
+すべてのテナントデータを 1 つのテーブルに集約することで、データ圧縮の最適化とメタデータのオーバーヘッド削減により、ストレージ効率が向上します。さらに、すべてのデータを一元管理できるため、スキーマの更新も簡単になります。
+
+この方法は、非常に多くのテナント (場合によっては数百万) を扱う場合に特に効果的です。
+
+ただし、テナントごとにデータスキーマが異なる場合や、時間の経過とともに差異が大きくなることが見込まれる場合は、別のアプローチの方が適していることがあります。
+
+テナント間でデータ量に大きな差がある場合、小規模なテナントのクエリ性能に不要な影響が生じる可能性があります。なお、この問題はテナント識別用フィールドを主キーに含めることで大幅に軽減されます。
+
+<div id="shared-table-example">
+  ### 例
+</div>
+
+これは、共有テーブルを用いたマルチテナンシーモデルの実装例です。
+
+まず、`tenant_id` フィールドを主キーに含む共有テーブルを作成します。
+
+```sql
+--- テーブル events を作成する。tenant_id を主キーの一部として使用する
+CREATE TABLE events
+(
+    tenant_id UInt32,                 -- テナント識別子
+    id UUID,                    -- 一意のイベントID
+    type LowCardinality(String), -- イベントの種別
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (tenant_id, timestamp)
+```
+
+ダミーデータを挿入してみましょう。
+
+```sql
+-- ダミーの行をいくつか挿入する
+INSERT INTO events (tenant_id, id, type, timestamp, user_id, data)
+VALUES
+(1, '7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(1, '846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+(1, '6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+(2, '7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(2, '6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+(2, '43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+(1, '83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+(1, '975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}'),
+(2, 'f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+(2, '5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}'),
+```
+
+それでは、`user_1` と `user_2` の2人のユーザーを作成しましょう。
+
+```sql
+-- ユーザーを作成する 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+`user_1` と `user_2` がそれぞれ自分のテナントのデータにのみアクセスできるようにする[行ポリシーを作成します](/ja/reference/statements/create/row-policy)。
+
+```sql
+-- 行ポリシーを作成する
+CREATE ROW POLICY user_filter_1 ON default.events USING tenant_id=1 TO user_1
+CREATE ROW POLICY user_filter_2 ON default.events USING tenant_id=2 TO user_2
+```
+
+次に、共通ロールを使用して、共有テーブルに対して[`GRANT SELECT`](/ja/reference/statements/grant#usage)権限を付与します。
+
+```sql
+-- ロールを作成する
+CREATE ROLE user_role
+
+-- eventsテーブルへの読み取り専用権限を付与する。
+GRANT SELECT ON default.events TO user_role
+GRANT user_role TO user_1
+GRANT user_role TO user_2
+```
+
+これで `user_1` として接続し、簡単な SELECT を実行できます。返されるのは最初のテナントの行のみです。
+
+```sql
+-- user_1 としてログ記録済み
+SELECT *
+FROM events
+```
+
+```response
+   ┌─tenant_id─┬─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │         1 │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │         1 │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │         1 │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │         1 │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │         1 │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-tables">
+  ## テーブルを分ける
+</div>
+
+このアプローチでは、各テナントのデータを同じデータベース内の別々のテーブルに格納するため、テナントを識別するための特定のフィールドは不要です。ユーザーアクセスは [GRANT ステートメント](/ja/reference/statements/grant) によって制御されるため、各ユーザーは自分のテナントのデータを含むテーブルにのみアクセスできます。
+
+> **テナントごとにデータスキーマが異なる場合は、テーブルを分けるのが適しています。**
+
+少数のテナントが非常に大規模なデータセットを持ち、クエリ性能が重要なシナリオでは、このアプローチは共有テーブルモデルより高い性能を発揮する可能性があります。他のテナントのデータを除外するためのフィルタが不要なため、クエリをより効率的に実行できます。さらに、主キーに追加のフィールド (テナント ID など) を含める必要がないため、主キーをさらに最適化できます。
+
+このアプローチは数千ものテナントにはスケールしない点に注意してください。[使用制限](/ja/products/cloud/guides/best-practices/usagelimits) を参照してください。
+
+<div id="shared-table-example">
+  ### 例
+</div>
+
+これは、テーブル分離マルチテナンシーモデルの実装例です。
+
+まず、`tenant_1` からのイベント用と `tenant_2` からのイベント用に、2つのテーブルを作成しましょう。
+
+```sql
+-- テナント1のテーブルを作成 
+CREATE TABLE events_tenant_1
+(
+    id UUID,                    -- イベントの一意なID
+    type LowCardinality(String), -- イベントの種別
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (timestamp, user_id) -- 主キーは他の属性に集中させることができる
+
+-- テナント2のテーブルを作成 
+CREATE TABLE events_tenant_2
+(
+    id UUID,                    -- イベントの一意なID
+    type LowCardinality(String), -- イベントの種別
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (timestamp, user_id) -- 主キーは他の属性に集中させることができる
+```
+
+ダミーデータを挿入しましょう。
+
+```sql
+INSERT INTO events_tenant_1 (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO events_tenant_2 (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+次に、`user_1` と `user_2` という2つのユーザーを作成します。
+
+```sql
+-- ユーザーを作成する 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+次に、対応するテーブルに `GRANT SELECT` 権限を付与します。
+
+```sql
+-- eventsテーブルに読み取り専用権限を付与する。
+GRANT SELECT ON default.events_tenant_1 TO user_1
+GRANT SELECT ON default.events_tenant_2 TO user_2
+```
+
+これで `user_1` として接続し、このユーザーに対応するテーブルに対して簡単なSELECTを実行できます。最初のテナントの行のみが返されます。
+
+```sql
+-- user_1 としてログ記録済み
+SELECT *
+FROM default.events_tenant_1
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="separate-databases">
+  ## データベースの分離
+</div>
+
+各テナントのデータは、同じ ClickHouse サービス 内の個別のデータベースに保存されます。
+
+> **このアプローチは、各テナントで多数のテーブルや、場合によっては materialized view が必要で、データスキーマもそれぞれ異なる場合に有効です。ただし、テナント数が多いと管理が難しくなる可能性があります。**
+
+実装はテーブルを分離するアプローチと似ていますが、テーブルレベルではなく、データベースレベルで権限を付与します。
+
+このアプローチは数千規模のテナントにはスケールしない点に注意してください。[使用制限](/ja/products/cloud/guides/best-practices/usagelimits)を参照してください。
+
+<div id="shared-table-example">
+  ### 例
+</div>
+
+これは、データベースを分離するマルチテナンシーモデルの実装例です。
+
+まず、`tenant_1` 用と `tenant_2` 用に、2つのデータベースを作成します。
+
+```sql
+-- tenant_1 のデータベースを作成する
+CREATE DATABASE tenant_1;
+
+-- tenant_2 のデータベースを作成する
+CREATE DATABASE tenant_2;
+```
+
+```sql
+-- tenant_1 のテーブルを作成
+CREATE TABLE tenant_1.events
+(
+    id UUID,                    -- 一意のイベントID
+    type LowCardinality(String), -- イベントの種類
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (timestamp, user_id);
+
+-- tenant_2 のテーブルを作成
+CREATE TABLE tenant_2.events
+(
+    id UUID,                    -- 一意のイベントID
+    type LowCardinality(String), -- イベントの種類
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (timestamp, user_id);
+```
+
+ダミーデータを挿入しましょう。
+
+```sql
+INSERT INTO tenant_1.events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+
+INSERT INTO tenant_2.events (id, type, timestamp, user_id, data)
+VALUES
+('7162f8ea-8bfd-486a-a45e-edfc3398ca93', 'user_login', '2025-03-19 08:12:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('6b5f3e55-5add-479e-b89d-762aa017f067', 'purchase', '2025-03-19 08:15:00', 2002, '{"item": "headphones", "amount": 199}'),
+('43ad35a1-926c-4543-a133-8672ddd504bf', 'user_logout', '2025-03-19 08:20:00', 2001, '{"device": "mobile", "location": "SF"}'),
+('f50aa430-4898-43d0-9d82-41e7397ba9b8', 'purchase', '2025-03-19 08:55:00', 2003, '{"item": "laptop", "amount": 1200}'),
+('5c150ceb-b869-4ebb-843d-ab42d3cb5410', 'user_login', '2025-03-19 09:00:00', 2004, '{"device": "mobile", "location": "SF"}')
+```
+
+次に、`user_1` と `user_2` の2人のユーザーを作成します。
+
+```sql
+-- ユーザーを作成する 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+CREATE USER user_2 IDENTIFIED BY '<password>'
+```
+
+次に、対応するテーブルに対して `GRANT SELECT` 権限を付与します。
+
+```sql
+-- eventsテーブルに読み取り専用権限を付与する。
+GRANT SELECT ON tenant_1.events TO user_1
+GRANT SELECT ON tenant_2.events TO user_2
+```
+
+これで `user_1` として接続し、該当するデータベースの `events` テーブルに対して簡単な SELECT クエリを実行できます。返されるのは、最初のテナントの行のみです。
+
+```sql
+-- user_1 としてログ記録済み
+SELECT *
+FROM tenant_1.events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```
+
+<div id="compute-compute-separation">
+  ## コンピュート-コンピュート分離
+</div>
+
+前述の 3 つのアプローチは、[Warehouse](/ja/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse) を使用することで、さらに分離できます。データは共通のオブジェクトストレージを通じて共有されますが、[コンピュート-コンピュート分離](/ja/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation) により、各テナントは CPU/メモリ比の異なる独自のコンピュートサービスを持つことができます。
+
+ユーザー管理は、前述のアプローチと同様です。これは、Warehouse 内のすべてのサービスが[同じアクセス制御を共有する](/ja/products/cloud/features/infrastructure/warehouses#database-credentials)ためです。
+
+Warehouse 内の子サービス数は少数に制限されている点に注意してください。[Warehouse の制限事項](/ja/products/cloud/features/infrastructure/warehouses#limitations)を参照してください。
+
+<div id="separate-service">
+  ## 個別のクラウドサービス
+</div>
+
+最も極端なアプローチは、テナントごとに別々の ClickHouse サービスを使用することです。
+
+> **この方法はあまり一般的ではありませんが、法的要件、セキュリティ上の理由、または地理的な近接性の観点から、テナントデータを異なるリージョンに保存する必要がある場合には有効な選択肢となります。**
+
+各ユーザーがそれぞれのテナントのデータにアクセスできるようにするには、各サービス上にユーザーアカウントを作成する必要があります。
+
+このアプローチは管理が難しく、各サービスの実行にそれぞれ独自のインフラストラクチャが必要になるため、サービスごとに運用負荷も増えます。サービスは [ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を介して管理でき、[公式 Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) を使ったオーケストレーションも可能です。
+
+<div id="shared-table-example">
+  ### 例
+</div>
+
+これは、サービスを分離したマルチテナンシーモデルの実装例です。この例では、1 つの ClickHouse サービス上でテーブルとユーザーを作成していますが、同じ内容をすべてのサービスにも反映する必要があります。
+
+まず、テーブル `events` を作成します
+
+```sql
+-- tenant_1 のテーブルを作成する
+CREATE TABLE events
+(
+    id UUID,                    -- 一意のイベントID
+    type LowCardinality(String), -- イベントの種類
+    timestamp DateTime,          -- イベントのタイムスタンプ
+    user_id UInt32,               -- イベントをトリガーしたユーザーのID
+    data String,                 -- イベントデータ
+)
+ORDER BY (timestamp, user_id);
+```
+
+ダミーデータを挿入してみましょう。
+
+```sql
+INSERT INTO events (id, type, timestamp, user_id, data)
+VALUES
+('7b7e0439-99d0-4590-a4f7-1cfea1e192d1', 'user_login', '2025-03-19 08:00:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('846aa71f-f631-47b4-8429-ee8af87b4182', 'purchase', '2025-03-19 08:05:00', 1002, '{"item": "phone", "amount": 799}'),
+('6b4d12e4-447d-4398-b3fa-1c1e94d71a2f', 'user_logout', '2025-03-19 08:10:00', 1001, '{"device": "desktop", "location": "LA"}'),
+('83b5eb72-aba3-4038-bc52-6c08b6423615', 'purchase', '2025-03-19 08:45:00', 1003, '{"item": "monitor", "amount": 450}'),
+('975fb0c8-55bd-4df4-843b-34f5cfeed0a9', 'user_login', '2025-03-19 08:50:00', 1004, '{"device": "desktop", "location": "LA"}')
+```
+
+では、2人のユーザー `user_1` を作成しましょう
+
+```sql
+-- ユーザーを作成する 
+CREATE USER user_1 IDENTIFIED BY '<password>'
+```
+
+次に、該当するテーブルに `GRANT SELECT` 権限を付与します。
+
+```sql
+-- eventsテーブルに読み取り専用権限を付与する。
+GRANT SELECT ON events TO user_1
+```
+
+これで、テナント 1 のサービスに `user_1` として接続し、簡単なselectを実行できます。返されるのは、最初のテナントの行だけです。
+
+```sql
+-- user_1 としてログ記録済み
+SELECT *
+FROM events
+```
+
+```response
+   ┌─id───────────────────────────────────┬─type────────┬───────────timestamp─┬─user_id─┬─data────────────────────────────────────┐
+1. │ 7b7e0439-99d0-4590-a4f7-1cfea1e192d1 │ user_login  │ 2025-03-19 08:00:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+2. │ 846aa71f-f631-47b4-8429-ee8af87b4182 │ purchase    │ 2025-03-19 08:05:00 │    1002 │ {"item": "phone", "amount": 799}        │
+3. │ 6b4d12e4-447d-4398-b3fa-1c1e94d71a2f │ user_logout │ 2025-03-19 08:10:00 │    1001 │ {"device": "desktop", "location": "LA"} │
+4. │ 83b5eb72-aba3-4038-bc52-6c08b6423615 │ purchase    │ 2025-03-19 08:45:00 │    1003 │ {"item": "monitor", "amount": 450}      │
+5. │ 975fb0c8-55bd-4df4-843b-34f5cfeed0a9 │ user_login  │ 2025-03-19 08:50:00 │    1004 │ {"device": "desktop", "location": "LA"} │
+   └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
+```

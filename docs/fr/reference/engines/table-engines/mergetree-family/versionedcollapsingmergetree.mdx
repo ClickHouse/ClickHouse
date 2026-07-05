@@ -1,0 +1,248 @@
+---
+description: 'Permet d’écrire rapidement des états d’objets qui changent en permanence,
+  et de supprimer en arrière-plan les anciens états d’objet.'
+sidebarTitle: 'VersionedCollapsingMergeTree'
+slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+title: 'Moteur de table VersionedCollapsingMergeTree'
+doc_type: 'reference'
+---
+
+Ce moteur :
+
+* Permet d’écrire rapidement des états d’objets qui changent en permanence.
+* Supprime les anciens états d’objet en arrière-plan. Cela réduit considérablement le volume de stockage.
+
+Voir la section [Collapsing](#table_engines_versionedcollapsingmergetree) pour plus de détails.
+
+Le moteur hérite de [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) et ajoute à l’algorithme de fusion des parties de données une logique de consolidation des lignes. `VersionedCollapsingMergeTree` remplit le même rôle que [CollapsingMergeTree](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree), mais utilise un algorithme de consolidation différent qui permet d’insérer les données dans n’importe quel ordre avec plusieurs threads. En particulier, la colonne `Version` aide à consolider correctement les lignes, même si elles sont insérées dans le mauvais ordre. À l’inverse, `CollapsingMergeTree` n’autorise qu’une insertion strictement consécutive.
+
+<div id="creating-a-table">
+  ## Création d’une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = VersionedCollapsingMergeTree(sign, version)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Pour une description des paramètres de requête, voir la [description de la requête](/fr/reference/statements/create/table).
+
+<div id="engine-parameters">
+  ### Paramètres du moteur
+</div>
+
+```sql
+VersionedCollapsingMergeTree(sign, version)
+```
+
+| Paramètre | Description                                                                                                              | Type                                                                                                                                                                                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign`    | Nom de la colonne contenant le type de ligne : `1` correspond à une ligne d’« état », `-1` à une ligne d’« annulation ». | [`Int8`](/fr/reference/data-types/int-uint)                                                                                                                                                                                                                              |
+| `version` | Nom de la colonne contenant la version de l’état de l’objet.                                                             | [`Int*`](/fr/reference/data-types/int-uint), [`UInt*`](/fr/reference/data-types/int-uint), [`Date`](/fr/reference/data-types/date), [`Date32`](/fr/reference/data-types/date32), [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) |
+
+<div id="query-clauses">
+  ### Clauses de requête
+</div>
+
+Lors de la création d&#39;une table `VersionedCollapsingMergeTree`, les mêmes [clauses](/fr/reference/engines/table-engines/mergetree-family/mergetree) sont requises que pour la création d&#39;une table `MergeTree`.
+
+<details markdown="1">
+  <summary>Méthode déconseillée pour créer une table</summary>
+
+  <Note>
+    N&#39;utilisez pas cette méthode dans de nouveaux projets. Si possible, migrez les anciens projets vers la méthode décrite ci-dessus.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+  ```
+
+  Tous les paramètres sauf `sign` et `version` ont la même signification que dans `MergeTree`.
+
+  * `sign` — Nom de la colonne contenant le type de ligne : `1` est une ligne « état », `-1` une ligne « annulation ».
+
+    Type de données de la colonne — `Int8`.
+
+  * `version` — Nom de la colonne contenant la version de l&#39;état de l&#39;objet.
+
+    Le type de données de la colonne doit être `UInt*`.
+</details>
+
+<div id="table_engines_versionedcollapsingmergetree">
+  ## Collapsing
+</div>
+
+<div id="data">
+  ### Données
+</div>
+
+Supposons que vous deviez enregistrer des données qui évoluent en permanence pour un objet. Il est logique d’avoir une ligne par objet et de mettre cette ligne à jour à chaque changement. Cependant, l’opération de mise à jour est coûteuse et lente pour un SGBD, car elle oblige à réécrire les données dans le stockage. La mise à jour n’est pas adaptée si vous devez écrire les données rapidement, mais vous pouvez écrire les modifications d’un objet de façon séquentielle, comme suit.
+
+Utilisez la colonne `Sign` lors de l’écriture de la ligne. Si `Sign = 1`, cela signifie que la ligne représente l’état d’un objet (appelons-la la ligne d’« état »). Si `Sign = -1`, cela indique l’annulation de l’état d’un objet ayant les mêmes attributs (appelons-la la ligne d’« annulation »). Utilisez également la colonne `Version`, qui doit identifier chaque état d’un objet par un numéro distinct.
+
+Par exemple, nous voulons calculer combien de pages les utilisateurs ont consultées sur un site donné et combien de temps ils y sont restés. À un moment donné, nous écrivons la ligne suivante avec l’état de l’activité de l’utilisateur :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+À un stade ultérieur, nous enregistrons le changement d’activité de l’utilisateur et l’écrivons dans les deux lignes suivantes.
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+La première ligne annule l’état précédent de l’objet (user). Elle doit recopier tous les champs de l’état annulé, sauf `Sign`.
+
+La deuxième ligne contient l’état actuel.
+
+Comme nous n’avons besoin que du dernier état de l’activité de l’utilisateur, les lignes
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+peut être supprimé, ce qui élimine l’état invalide (ancien) de l’objet. `VersionedCollapsingMergeTree` le fait lors de la fusion des parties de données.
+
+Pour comprendre pourquoi nous avons besoin de deux lignes pour chaque modification, consultez [Algorithm](#table_engines-versionedcollapsingmergetree-algorithm).
+
+**Remarques sur l’utilisation**
+
+1. Le programme qui écrit les données doit mémoriser l’état d’un objet pour pouvoir l’annuler. La chaîne &quot;Annulation&quot; doit contenir des copies des champs de la clé primaire, de la version de la chaîne &quot;état&quot; et du `Sign` opposé. Cela augmente la taille initiale du stockage, mais permet d’écrire les données rapidement.
+2. Les tableaux qui s’allongent dans les colonnes réduisent l’efficacité du moteur en raison de la charge d’écriture. Plus les données sont simples, meilleure est l’efficacité.
+3. Les résultats de `SELECT` dépendent fortement de la cohérence de l’historique des modifications de l’objet. Soyez précis lors de la préparation des données à insérer. Des données incohérentes peuvent produire des résultats imprévisibles, comme des valeurs négatives pour des métriques non négatives telles que la profondeur de session.
+
+<div id="table_engines-versionedcollapsingmergetree-algorithm">
+  ### Algorithme
+</div>
+
+Lorsque ClickHouse fusionne des parties de données, il supprime chaque paire de lignes ayant la même clé primaire, la même version et un `Sign` différent. L&#39;ordre des lignes n&#39;a pas d&#39;importance.
+
+Lorsque ClickHouse insère des données, il trie les lignes selon la clé primaire. Si la colonne `Version` ne fait pas partie de la clé primaire, ClickHouse l&#39;y ajoute implicitement comme dernier champ et l&#39;utilise pour le tri.
+
+<div id="selecting-data">
+  ## Sélection des données
+</div>
+
+ClickHouse ne garantit pas que toutes les lignes ayant la même clé primaire se retrouveront dans la même part de données résultante, ni même sur le même serveur physique. Cela vaut aussi bien pour l’écriture des données que pour la fusion ultérieure des parts de données. De plus, ClickHouse traite les requêtes `SELECT` avec plusieurs threads et ne peut pas prédire l’ordre des lignes dans le résultat. Cela signifie qu’une agrégation est nécessaire si vous devez obtenir des données entièrement « collapsées » à partir d’une table `VersionedCollapsingMergeTree`.
+
+Pour finaliser le collapsing, écrivez une requête avec une clause `GROUP BY` et des fonctions d’agrégation qui tiennent compte du signe. Par exemple, pour calculer une quantité, utilisez `sum(Sign)` au lieu de `count()`. Pour calculer une somme, utilisez `sum(Sign * x)` au lieu de `sum(x)`, et ajoutez `HAVING sum(Sign) > 0`.
+
+Les agrégats `count`, `sum` et `avg` peuvent être calculés de cette manière. L’agrégat `uniq` peut être calculé si un objet possède au moins un état non collapsé. Les agrégats `min` et `max` ne peuvent pas être calculés, car `VersionedCollapsingMergeTree` n’enregistre pas l’historique des valeurs des états collapsés.
+
+Si vous devez extraire les données avec « collapsing », mais sans agrégation (par exemple, pour vérifier si des lignes sont présentes dont les valeurs les plus récentes correspondent à certaines conditions), vous pouvez utiliser le modificateur `FINAL` dans la clause `FROM`. Cette approche est inefficace et ne doit pas être utilisée avec de grandes tables.
+
+<div id="example-of-use">
+  ## Exemple d’utilisation
+</div>
+
+Données d’exemple :
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Création de la table :
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8,
+    Version UInt8
+)
+ENGINE = VersionedCollapsingMergeTree(Sign, Version)
+ORDER BY UserID
+```
+
+Insertion des données :
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
+```
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
+```
+
+Nous utilisons deux requêtes `INSERT` pour créer deux parties de données différentes. Si nous insérons les données avec une seule requête, ClickHouse crée une seule partie de données et n’effectuera jamais de merge.
+
+Récupération des données :
+
+```sql
+SELECT * FROM UAct
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 │
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Que voyons-nous ici, et où sont les parties collapsées ?
+Nous avons créé deux parties de données à l’aide de deux requêtes `INSERT`. La requête `SELECT` a été exécutée dans deux threads, et le résultat est un ordre aléatoire des lignes.
+Le collapsing ne s’est pas produit, car les parties de données n’ont pas encore été fusionnées. ClickHouse fusionne les parties de données à un moment que nous ne pouvons pas prévoir.
+
+C’est pourquoi nous avons besoin d’une agrégation :
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration,
+    Version
+FROM UAct
+GROUP BY UserID, Version
+HAVING sum(Sign) > 0
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │       2 │
+└─────────────────────┴───────────┴──────────┴─────────┘
+```
+
+Si nous n’avons pas besoin d’agrégation et que nous voulons forcer le collapsing, nous pouvons utiliser le modificateur `FINAL` dans la clause `FROM`.
+
+```sql
+SELECT * FROM UAct FINAL
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+Il s&#39;agit d&#39;une méthode très inefficace pour extraire des données. Ne l&#39;utilisez pas avec des tables volumineuses.

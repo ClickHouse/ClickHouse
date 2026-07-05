@@ -1604,7 +1604,10 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    grid-template-columns: auto 1fr auto;
+                    /* Progress and stats share the available width equally, and both can
+                       shrink below their content size (the zero minimum), so they resize
+                       uniformly when the row is narrow instead of one hogging the space. */
+                    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1644,7 +1647,6 @@ class QueryProgressElement extends HTMLElement
                 #stats
                 {
                     color: var(--misc-text-color);
-                    white-space: nowrap;
                 }
 
                 #stats b
@@ -1755,6 +1757,9 @@ class QueryResultElement extends HTMLElement
     static _loadVizPromise = null;
     static _vizInstance = null;
     static _loadUplotPromise = null;
+
+    /// The glyph used to render SQL NULL values (superscript "NULL").
+    static _NULL_TEXT = 'ᴺᵁᴸᴸ';
 
     constructor()
     {
@@ -2315,10 +2320,14 @@ class QueryResultElement extends HTMLElement
         let is_null = (value === null);
         let is_link = false;
 
+        /// Mark the cell from the original value, so categorical coloring can skip real NULLs
+        /// without relying on the rendered glyph (a string value equal to `_NULL_TEXT` is data).
+        if (is_null) { td.dataset.isNull = ''; }
+
         let text;
         if (is_null)
         {
-            text = '\u1D3A\u1D41\u1D38\u1D38';
+            text = QueryResultElement._NULL_TEXT;
         }
         else if (typeof(value) === 'object')
         {
@@ -2709,7 +2718,13 @@ class QueryResultElement extends HTMLElement
             {
                 const cell = row.cells[col_idx];
                 if (!cell) { continue; }
-                const hue = this._hashHue((cell.querySelector('.cell-content') || cell).innerText);
+                /// Empty strings and NULLs carry no category, so leave them uncolored. NULL is
+                /// detected from the original value (marked in `_renderCell`), not the rendered
+                /// glyph, so a real string value equal to the NULL glyph still gets a color.
+                if (cell.dataset.isNull !== undefined) { continue; }
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (text === '') { continue; }
+                const hue = this._hashHue(text);
                 cell.style.background = `oklch(var(--viz-cell-lightness) var(--viz-cell-chroma) ${hue})`;
             }
             return;
@@ -2886,8 +2901,16 @@ class QueryResultElement extends HTMLElement
             const name = this._header[idx - 1]?.name;
             if (name !== undefined && this._effectiveColorMode(name) === 'categorical')
             {
-                col_idx = idx;
-                active_text = (cell.querySelector('.cell-content') || cell).innerText;
+                /// Empty strings and NULLs carry no category (mirroring `_applyColumnColor`), so
+                /// selecting one emphasizes nothing. NULL is detected from the original value marked
+                /// in `_renderCell`, not the rendered glyph, so a real string value equal to the NULL
+                /// glyph is still a category.
+                const text = (cell.querySelector('.cell-content') || cell).innerText;
+                if (cell.dataset.isNull === undefined && text !== '')
+                {
+                    col_idx = idx;
+                    active_text = text;
+                }
             }
         }
 
@@ -2914,8 +2937,11 @@ class QueryResultElement extends HTMLElement
         {
             const c = row.cells[col_idx];
             if (!c) { continue; }
+            /// A real NULL peer must not match a real string equal to the NULL glyph, so exclude
+            /// NULL cells from grouping just like `_applyColumnColor` does. Empty cells never match
+            /// here because `active_text` is guaranteed non-empty above.
             const target = c.querySelector('.cell-content') || c;
-            this._setCellEmphasis(c, c !== cell && target.innerText === active_text);
+            this._setCellEmphasis(c, c !== cell && c.dataset.isNull === undefined && target.innerText === active_text);
         }
         this._emphasized_col_idx = col_idx;
         this._emphasized_value = active_text;
@@ -7461,8 +7487,25 @@ query_area.addEventListener('keydown', (e) => {
         }
         return;
     }
+    /// The selected candidate whose full text equals the already-typed word (an "empty
+    /// completion" — same length as the prefix, since every candidate starts with it) would
+    /// accept to a no-op. In that case Right / Enter must keep their native meaning — move the
+    /// caret one character, or insert a newline — instead of being swallowed by a completion
+    /// that changes nothing. This matters e.g. after typing `f()` with the caret between `f`
+    /// and `(`: Right should step into the parens, not "accept" the already-complete `f`.
+    const selectedIsNoop = completionCandidates[completionSelected].length === completionPrefix.length;
+
     /// Plain Enter accepts the completion; Ctrl/Cmd+Enter is left alone so it still runs the query.
-    if (e.key === 'Tab' || e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+    if (e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+        if (selectedIsNoop) {
+            /// Nothing to accept — dismiss the list and let the key act natively.
+            closeCompletions();
+            return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        acceptCompletion(completionSelected);
+    } else if (e.key === 'Tab') {
         e.preventDefault();
         e.stopImmediatePropagation();
         acceptCompletion(completionSelected);

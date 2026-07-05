@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'Fivetran を使用すると、あらゆるソースから ClickHouse Cloud にデータを移動し、スキーマの自動作成、重複排除、History Mode（SCD Type 2）を利用できます。'
+title: 'Fivetran and ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', 'データ移動', 'etl', 'ClickHouse 宛先', '自動化データプラットフォーム', 'History Mode', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## 概要
+</div>
+
+[Fivetran](https://www.fivetran.com) は、クラウドデータプラットフォーム間、およびそれらへの／それらからのデータ移動を自動化するプラットフォームです。
+
+[ClickHouse Cloud](https://clickhouse.com/cloud) は [Fivetran の宛先](https://fivetran.com/docs/destinations/clickhouse) としてサポートされており、さまざまなデータソースから ClickHouse にデータを取り込めます。オープンソース版 ClickHouse は宛先としてサポートされていません。
+
+この宛先コネクタは、ClickHouse と Fivetran が共同で開発・保守しています。ソースコードは [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination) で公開されています。
+
+<Note>
+  [ClickHouse Cloud 宛先](https://fivetran.com/docs/destinations/clickhouse) は現在 **ベータ** ですが、近日中の一般提供に向けて取り組んでいます。
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## 主な特長
+</div>
+
+* **ClickHouse Cloud 対応**: ClickHouse Cloud のデータベースを Fivetran の宛先として使用できます。
+* **SaaS デプロイメントモデル**: Fivetran が完全マネージド型で提供するため、自前でインフラストラクチャを管理する必要はありません。
+* **History Mode (SCD Type 2)**: すべてのレコードバージョンの完全な履歴を保持し、特定時点の分析や監査証跡に対応します。
+* **設定可能なバッチサイズ**: JSON 設定ファイルで write、select、mutation、hard delete のバッチサイズを調整することで、Fivetran を個々のユースケースに合わせて最適化できます。
+
+<div id="limitations">
+  ## 制限事項
+</div>
+
+* スキーマの移行はまだサポートされていませんが、現在対応を進めています。
+* 主キーカラムの追加、削除、変更はサポートされていません。
+* `CREATE TABLE` ステートメントでのカスタムの ClickHouse 設定はサポートされていません。
+* ロールベースの権限付与は完全にはサポートされていません。コネクタの権限チェックでは、ユーザーに直接付与された権限しか確認できません。代わりに[直接付与](/ja/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants)を使用してください。
+
+<div id="related-pages">
+  ## 関連ページ
+</div>
+
+* [技術リファレンス](/ja/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): 型マッピング、テーブルエンジン、メタデータカラム、高度な設定
+* [トラブルシューティングとベストプラクティス](/ja/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): 一般的なエラー、最適化のヒント、クエリのデバッグ
+* [GitHub 上の ClickHouse Fivetran destination](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## セットアップガイド
+</div>
+
+* 設定や一般的な技術情報をお探しの場合は、[技術リファレンス](/ja/integrations/connectors/data-ingestion/etl-tools/fivetran/reference)を参照してください。
+* より詳しい手順については、Fivetran のドキュメントにある[セットアップガイド](https://fivetran.com/docs/destinations/clickhouse/setup-guide)を確認してください。
+
+<div id="contact-us">
+  ## お問い合わせとサポート
+</div>
+
+ClickHouse Fivetran destination は、責任が分担される体制で運用されています。
+
+* **ClickHouse** は、宛先コネクタのコードの開発と保守を担当しています。
+* **Fivetran** は、コネクタのホスティングに加え、データ移動、パイプラインのスケジューリング、ソースコネクタを担当しています。
+
+Fivetran の ClickHouse 宛先については、Fivetran と ClickHouse の両方がサポートを提供しています。一般的なお問い合わせは、Fivetran プラットフォームに最も精通している Fivetran にご連絡いただくことをお勧めします。ClickHouse 固有の質問や問題については、弊社のサポートチームが対応します。質問や問題の報告には、[サポートチケット](/ja/resources/about/support) を作成してください。

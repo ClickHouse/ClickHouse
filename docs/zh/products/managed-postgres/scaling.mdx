@@ -1,0 +1,170 @@
+---
+slug: /cloud/managed-postgres/scaling
+sidebarTitle: '扩缩容'
+title: '扩缩容'
+description: '借助灵活的 VM 类型和独立资源扩缩容能力，对由 ClickHouse 托管的 Postgres 实例进行垂直扩缩容'
+keywords: ['Postgres 扩缩容', '垂直扩缩容', 'VM 类型', 'NVMe 扩缩容', '实例类型', '性能扩缩容']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
+
+Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
+
+<div id="instance-types">
+  ## 实例类型与灵活性
+</div>
+
+Managed Postgres 提供丰富的实例类型，可针对不同的工作负载特征进行优化：
+
+* **提供 50 多种实例类型**，涵盖计算优化、内存优化和存储优化等配置
+* 所有实例类型均配备 **基于 NVMe 的存储**，可提供稳定、高性能的磁盘 I/O
+* **独立资源扩缩容**：可根据工作负载选择合适的 CPU、内存和存储组合
+
+<Image img="/images/managed-postgres/instance-types.webp" alt="实例类型" size="md" border />
+
+<div id="choosing-instance">
+  ### 选择合适的实例类型
+</div>
+
+不同的工作负载适合不同的资源配置：
+
+| 工作负载类型                   | CPU | 内存 | 存储 | 推荐实例类型            |
+| ------------------------ | --- | -- | -- | ----------------- |
+| **计算优化型**                | 高   | 中  | 中  | 计算优化型 (vCPU 数量高)  |
+| **内存优化型** (工作集较大)        | 中   | 高  | 中  | 内存优化型 (内存/CPU 比高) |
+| **存储优化型** (数据集较大、I/O 密集) | 中   | 中  | 高  | 存储优化型 (NVMe 容量高)  |
+
+<Tip>
+  出于安全考虑，如果实例类型的存储容量与当前已用存储容量过于接近，你可能无法切换到该实例类型。请始终选择相较当前已用容量留有余量的实例类型，以避免出现问题。
+</Tip>
+
+<div id="how-scaling-works">
+  ## 扩缩容的工作原理
+</div>
+
+当您更改实例类型时，Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
+
+<Image img="/images/managed-postgres/scaling-settings.webp" alt="扩缩容设置" size="md" border />
+
+<div id="scaling-process">
+  ### 扩缩容流程
+</div>
+
+扩缩容工作流会基于备份创建一个新的备用实例，并执行受控故障转移：
+
+1. **备用实例预配**：创建一个采用目标实例类型 (CPU、内存和存储配置) 的新备用实例
+
+2. **从 S3 备份恢复**：通过恢复存储在 S3 中的最新备份来初始化该备用实例
+
+3. **并行 WAL 回放**：备用实例使用由 [WAL-G](https://github.com/wal-g/wal-g) 提供支持的并行恢复机制，应用自备份以来的所有预写日志 (WAL) 变更
+   * WAL-G 可实现快速的并行恢复操作
+   * WAL-G 的创建者所在的 Ubicloud 团队也是我们的合作伙伴，这确保了深厚的专业能力和优化支持
+
+4. **复制追平**：备用实例通过流式传输并应用持续产生的 WAL 变更来追上主节点
+
+5. **故障转移**：备用实例完全同步后，系统会执行受控故障转移，将其提升为新的主节点
+   * **这是唯一会导致停机的步骤** (约 30 秒)
+   * 所有活动连接都会在故障转移期间中断
+   * 故障转移完成后，客户端必须重新建立连接
+
+6. **旧实例退役**：原始实例会在故障转移完成后退役
+
+<div id="scaling-duration">
+  ### 扩缩容耗时
+</div>
+
+扩缩容所需的总时间主要取决于数据库的大小，以及需要从备份中重放的 WAL 数据量：
+
+* **备份恢复**：将最新的全量备份从 S3 恢复到新实例所需的时间
+* **WAL 回放**：自上次全量备份以来，回放增量 WAL 变更所需的时间
+* **并行恢复**：WAL-G 的并行恢复机制可显著加快这一过程
+
+恢复时间可能从几分钟到几小时不等，但维护/停机时间非常短 (仅约 30 秒) 。
+
+<Warning>
+  **停机时间极短**
+
+  无论整个扩缩容过程耗时多久，你的应用在故障转移期间都只会有约 30 秒的停机。所有恢复和追赶工作都会在备用实例后台完成。
+</Warning>
+
+<div id="parallel-restore">
+  ### 使用 WAL-G 并行恢复
+</div>
+
+Managed Postgres 使用 [WAL-G](https://github.com/wal-g/wal-g) 在扩缩容期间加速备份恢复。值得一提的是，WAL-G 的创建者是我们合作伙伴 Ubicloud 团队的成员，这也为恢复过程带来了深厚的专业经验。
+
+WAL-G 提供：
+
+* **并行下载和解压**：从 S3 同时拉取多个备份分段并解压
+* **高效的 WAL 回放**：在条件允许时并行应用增量 WAL 变更
+* **优化的流式传输**：直接从 S3 存储流式读取，无需中间副本
+* **快速恢复**：虽然总耗时取决于数据量，但并行化方式可显著加快整个过程
+
+这些优化显著缩短了拉起新备用实例所需的时间。更重要的是，整个恢复过程都在后台进行——你的应用只会在大约 30 秒的短暂故障转移窗口内出现停机。
+
+<div id="initiating-scaling">
+  ### 发起扩缩容操作
+</div>
+
+如需扩缩容您的 Managed Postgres 实例：
+
+1. 前往实例的 **Settings** 选项卡
+2. 在 **Scaling** 部分中，向下滚动到 **Service size**
+3. 选择目标实例类型
+4. 确认更改后，点击“Apply changes”
+
+<div id="scaling-strategies">
+  ## 扩缩容策略
+</div>
+
+<div id="vertical-scaling">
+  ### 垂直扩缩容
+</div>
+
+垂直扩缩容 (更改实例类型) 是 Managed Postgres 中调整资源的主要方式。这种方式可提供：
+
+* **精细控制**：可从 50 多种实例类型中选择，精细调整 CPU、内存和存储
+* **工作负载优化**：可选择针对特定工作负载优化的配置 (计算密集型、内存密集型或存储密集型)
+* **成本效率**：只为所需资源付费，避免资源过度配置
+
+<div id="read-replicas">
+  ### 通过只读副本进行横向扩缩容
+</div>
+
+对于读密集型工作负载，可考虑使用[只读副本](/zh/products/managed-postgres/read-replicas)来横向扩展读取能力：
+
+* 将读查询分流到专用的只读副本实例
+* 每个只读副本都是一个完全独立的 Postgres 实例，拥有各自的计算资源和内存
+* 只读副本通过流式读取对象存储中的 WAL 变更来实现高效复制
+
+这种方式非常适合读写比高的应用，例如报表仪表盘、分析查询或读密集型 API 端点。
+
+<div id="cdc-scaling">
+  ### ClickHouse 集成的 CDC 扩缩容
+</div>
+
+如果你使用 [ClickPipes](/zh/products/managed-postgres/clickhouse-integration) 将数据复制到 ClickHouse，则可以独立调整 CDC (变更数据捕获) 管道的扩缩容：
+
+* 将 CDC 工作线程的规模调整为 1 到 24 个 CPU 核心
+* 内存会按 CPU 核心数的 4 倍自动扩缩
+* 通过 [ClickPipes OpenAPI](/zh/integrations/clickpipes/postgres/scaling) 调整扩缩容
+
+这样，你就可以在不受 Postgres 实例资源影响的情况下，单独优化复制吞吐量。
+
+<div id="autoscaling">
+  ## 自动扩缩容
+</div>
+
+当磁盘使用率达到 90% 时，实例类型将自动调整为更大的实例类型。
+
+<div id="resources">
+  ## 更多资源
+</div>
+
+* [设置和配置](/zh/products/managed-postgres/settings)
+* [只读副本](/zh/products/managed-postgres/read-replicas)
+* [高可用性](/zh/products/managed-postgres/high-availability)

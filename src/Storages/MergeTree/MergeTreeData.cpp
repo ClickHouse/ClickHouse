@@ -4515,6 +4515,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
+        /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
+        /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
@@ -4541,7 +4544,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (new_metadata.settings_changes)
         {
-            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+
             for (const auto & changed : new_changes)
             {
                 StoragePolicyPtr new_policy;
@@ -4963,8 +4968,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (old_metadata.hasSettingsChanges())
     {
-        const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+        MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
+        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
@@ -4986,7 +4995,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (!current_value && MergeTreeSettings::isPartFormatSetting(setting_name))
             {
                 MergeTreeSettings copy = *getSettings();
-                copy.applyChange(changed_setting);
+                copy.applyChange(changed_setting, local_context, /*is_loading_from_existing_metadata=*/true);
                 String reason;
                 if (!canUsePolymorphicParts(copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -5024,7 +5033,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             {
                 /// Use default settings + new and check if doesn't affect part format settings
                 auto copy = getDefaultSettings();
-                copy->applyChanges(new_changes);
+                copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
                 String reason;
                 if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -5239,7 +5248,9 @@ void MergeTreeData::changeSettings(
     {
         bool has_storage_policy_changed = false;
 
-        const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
         StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -5285,7 +5296,7 @@ void MergeTreeData::changeSettings(
 
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes);
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
             const auto & ac = getContext()->getAccessControl();
@@ -9511,7 +9522,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     if (metadata.settings_changes)
     {
         const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        settings->applyChanges(changes);
+        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
     }
 
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
@@ -11079,7 +11090,7 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     if (settings_changes && !settings_changes->empty())
     {
         auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
-        new_data_settings->applyChanges(*settings_changes);
+        new_data_settings->applyChanges(*settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         return new_data_settings;
     }
 

@@ -1,0 +1,134 @@
+---
+slug: /use-cases/observability/clickstack/sdks/nestjs
+description: 'NestJS SDK для ClickStack — стека обсервабилити ClickHouse'
+title: 'NestJS'
+doc_type: 'guide'
+keywords: ['clickstack', 'sdk', 'логирование', 'интеграция', 'мониторинг приложений']
+---
+
+Интеграция ClickStack для NestJS позволяет создать логгер или использовать логгер по умолчанию
+для отправки журналов в ClickStack (на основе [nest-winston](https://www.npmjs.com/package/nest-winston?activeTab=readme)).
+
+**Это руководство охватывает интеграцию:**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ Журналы</td>
+      <td className="pe-2">✖️ Метрики</td>
+      <td className="pe-2">✖️ Трейсы</td>
+    </tr>
+  </tbody>
+</table>
+
+*Чтобы также отправлять метрики или APM/трейсы, вам нужно дополнительно подключить
+к приложению соответствующую языковую интеграцию.*
+
+<div id="getting-started">
+  ## Начало работы
+</div>
+
+Импортируйте `HyperDXNestLoggerModule` в корневой `AppModule` и используйте
+метод `forRoot()` для его конфигурации.
+
+```javascript
+import { Module } from '@nestjs/common';
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+@Module({
+  imports: [
+    HyperDXNestLoggerModule.forRoot({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Не нужен для Управляемого ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+После этого экземпляр winston будет доступен для внедрения во всём
+проекте с использованием токена внедрения `HDX_LOGGER_MODULE_PROVIDER`:
+
+```javascript
+import { Controller, Inject } from '@nestjs/common';
+import { HyperDXNestLoggerModule, HyperDXNestLogger } from '@hyperdx/node-logger';
+
+@Controller('cats')
+export class CatsController {
+  constructor(
+    @Inject(HyperDXNestLoggerModule.HDX_LOGGER_MODULE_PROVIDER)
+    private readonly logger: HyperDXNestLogger,
+  ) { }
+
+  meow() {
+    this.logger.info({ message: '🐱' });
+  }
+}
+```
+
+<div id="replacing-the-nest-logger">
+  ### Замена логгера Nest (в том числе для бутстрапинга)
+</div>
+
+<Info>
+  **Важно**
+
+  В этом случае вы отказываетесь от внедрения зависимостей, а значит, `forRoot` и `forRootAsync` не нужны и использовать их не следует. Удалите их из основного модуля.
+</Info>
+
+У использования внедрения зависимостей есть один небольшой недостаток. Сначала Nest
+должен выполнить начальную инициализацию приложения (создать экземпляры модулей и провайдеров, внедрить зависимости
+и т. д.), и в процессе этого экземпляр `HyperDXNestLogger` ещё
+недоступен. Это означает, что Nest использует внутренний логгер.
+
+Один из вариантов решения — создать логгер вне жизненного цикла приложения с помощью
+функции `createLogger` и передать его в `NestFactory.create`. Затем Nest
+обернёт наш пользовательский логгер (тот же экземпляр, который возвращает метод `createLogger`)
+в класс Logger и будет перенаправлять ему все вызовы:
+
+Создайте логгер в файле `main.ts`
+
+```javascript
+import { HyperDXNestLoggerModule } from '@hyperdx/node-logger';
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, {
+    logger: HyperDXNestLoggerModule.createLogger({
+      url: 'http://your-otel-collector:4318',
+      apiKey: ***YOUR_INGESTION_API_KEY***, // Не требуется для Управляемого ClickStack
+      maxLevel: 'info',
+      service: 'my-app',
+    })
+  });
+  await app.listen(3000);
+}
+bootstrap();
+```
+
+Измените основной модуль так, чтобы он предоставлял сервис Logger:
+
+```javascript
+import { Logger, Module } from '@nestjs/common';
+
+@Module({
+  providers: [Logger],
+})
+export class AppModule {}
+```
+
+Затем просто внедрите логгер, указав в подсказке типа Logger из `@nestjs/common`:
+
+```javascript
+import { Controller, Logger } from '@nestjs/common';
+
+@Controller('cats')
+export class CatsController {
+  constructor(private readonly logger: Logger) {}
+
+  meow() {
+    this.logger.log({ message: '🐱' });
+  }
+}
+```
