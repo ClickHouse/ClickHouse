@@ -877,6 +877,8 @@ private:
                         total += const_s->getChars().size();
                     else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                         total += declared_type->getSizeOfValueInMemory();
+                    else if (typeid_cast<const ColumnArray *>(&data_col) || typeid_cast<const ColumnTuple *>(&data_col))
+                        total += ColumnarV1::complexDataSize(data_col, 1);
                     else
                         total += 256;
                     continue;
@@ -894,10 +896,49 @@ private:
             }
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory() * row_count;
+            else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
+                // complexDataSize matches the exact COL_COMPLEX byte layout (uint64 offsets +
+                // nested payload); a flat 256-byte guess badly undercounts e.g. an Array(UInt64)
+                // row with thousands of elements, letting the splitter miss a needed split.
+                total += materialized_const
+                    ? ColumnarV1::complexDataSize(*col, 1) * row_count
+                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count));
             else
-                total += 256 * row_count; // conservative fallback
+                total += 256 * row_count; // conservative fallback (e.g. Variant, LowCardinality)
         }
         return total;
+    }
+
+    /// Recursively estimate the serialized byte size of a single row of a COL_COMPLEX-shaped
+    /// column (Array/Tuple, possibly nested). Mirrors ColumnarV1::complexDataSize's byte
+    /// layout (uint64 offset entry per Array level, nested payload) but for one row instead
+    /// of the whole column, so a single oversized row (e.g. one 10k-element Array(UInt64))
+    /// is priced precisely instead of falling back to a flat 256-byte guess.
+    static size_t estimateComplexRowBytes(const IColumn & col, size_t row_index)
+    {
+        if (const auto * s = typeid_cast<const ColumnString *>(&col))
+            return s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t);
+        if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
+        {
+            const auto & offs = arr->getOffsets();
+            size_t start = row_index > 0 ? offs[row_index - 1] : 0;
+            size_t end = offs[row_index];
+            size_t total = sizeof(uint64_t); // this row's own offset entry
+            const IColumn & nested = arr->getData();
+            for (size_t j = start; j < end; ++j)
+                total += estimateComplexRowBytes(nested, j);
+            return total;
+        }
+        if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
+        {
+            size_t total = 0;
+            for (const auto & field : tup->getColumns())
+                total += estimateComplexRowBytes(*field, row_index);
+            return total;
+        }
+        if (col.valuesHaveFixedSize())
+            return col.sizeOfValueIfFixed();
+        return 256; // conservative fallback (e.g. Variant, LowCardinality)
     }
 
     /// Estimate the serialized byte size of a single row across all argument columns.
@@ -929,6 +970,8 @@ private:
                 total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t);
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory();
+            else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
+                total += estimateComplexRowBytes(*col, row_index);
             else
                 total += 256; // conservative fallback
         }
