@@ -57,7 +57,12 @@
     <query>SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; a)</query>
     <query>SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; a)</query>
 
-    <!-- ORDER BY : ColumnFixedString::compareAt and its sort comparator on equal-prefix data. -->
+    <!-- ORDER BY : ColumnFixedString::compareAt and its sort comparator on equal-prefix data.
+         `FixedString(16)` is included here specifically: it is the only surface that reaches the
+         new `n == 16 -> memcmp16` branch of `ColumnFixedString::compare`, since the `<` / `>`
+         queries above go through `StringComparisonImpl`, which dispatches `N == 16` to
+         `memcmpSmallMultipleOf16` rather than to `ColumnFixedString::compare`. -->
+    <query>SELECT a FROM fixstr_cmp_16 ORDER BY a FORMAT Null</query>
     <query>SELECT a FROM fixstr_cmp_32 ORDER BY a FORMAT Null</query>
     <query>SELECT a FROM fixstr_cmp_64 ORDER BY a FORMAT Null</query>
     <query>SELECT a FROM fixstr_cmp_128 ORDER BY a FORMAT Null</query>
