@@ -1,0 +1,178 @@
+---
+description: 'ClickHouse の MySQL プロトコル インターフェイスに関するドキュメント。MySQL クライアントから ClickHouse への接続を可能にします'
+sidebarTitle: 'MySQL インターフェイス'
+slug: /interfaces/mysql
+title: 'MySQL インターフェイス'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse は MySQL wire protocol をサポートしています。これにより、ネイティブな ClickHouse コネクタを持たない一部のクライアントでも、代わりに MySQL プロトコルを利用できます。以下の BI ツールで動作確認されています。
+
+* [Looker Studio](/ja/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
+* [Tableau Online](/ja/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)
+* [QuickSight](/ja/integrations/connectors/data-visualization/quicksight-and-clickhouse)
+
+そのほかの未検証のクライアントやインテグレーションを試す場合は、次のような制限がある可能性があることに留意してください。
+
+* SSL 実装に完全な互換性がない可能性があり、[TLS SNI](https://www.cloudflare.com/learning/ssl/what-is-sni/) に関する問題が発生することがあります。
+* 特定のツールで、まだ実装されていない dialect の機能 (例: MySQL 固有の関数や設定) が必要になる場合があります。
+
+ネイティブなドライバーが利用可能な場合 (例: [DBeaver](/ja/integrations/connectors/sql-clients/dbeaver)) 、MySQL インターフェイスではなく、常にそちらを使用することを推奨します。また、MySQL 用の各種言語クライアントの多くは問題なく動作するはずですが、MySQL インターフェイスは、既存の MySQL クエリを使用するコードベースにそのまま置き換えられることを保証するものではありません。
+
+ネイティブな ClickHouse ドライバーを持たない特定のツールを MySQL インターフェイス経由で利用したいものの、何らかの非互換性が見つかった場合は、ClickHouse repository に [issue を作成](https://github.com/ClickHouse/ClickHouse/issues)してください。
+
+::::note
+上記の BI ツールの SQL dialect をより適切にサポートするため、ClickHouse の MySQL インターフェイスでは、暗黙的に [prefer&#95;column&#95;name&#95;to&#95;alias = 1](/ja/reference/settings/session-settings#prefer_column_name_to_alias) を設定して SELECT クエリを実行します。
+この設定は無効にできず、まれなエッジケースでは、ClickHouse の通常のクエリ インターフェイスと MySQL クエリ インターフェイスに送られるクエリとで動作が異なる場合があります。
+::::
+
+<div id="enabling-the-mysql-interface-on-clickhouse-cloud">
+  ## ClickHouse Cloud で MySQL インターフェイスを有効にする
+</div>
+
+1. ClickHouse Cloud サービスを作成したら、`Connect` ボタンをクリックします。
+
+<br />
+
+<Image img="/images/interfaces/mysql0.webp" alt="認証情報画面 - Prompt" size="md" />
+
+2. `Connect with` ドロップダウンを `MySQL` に変更します。
+
+<br />
+
+<Image img="/images/interfaces/mysql1.webp" alt="認証情報画面 - MySQL を選択" size="md" />
+
+3. このサービスで MySQL インターフェイスを有効にするには、スイッチをオンにします。これにより、このサービスでポート `3306` が開放され、専用の MySQL ユーザー名が表示された MySQL 接続画面が表示されます。パスワードは、このサービスのデフォルトユーザーのパスワードと同じです。
+
+<br />
+
+<Image img="/images/interfaces/mysql2.webp" alt="認証情報画面 - MySQL が有効" size="md" />
+
+表示されている MySQL 接続文字列をコピーします。
+
+<Image img="/images/interfaces/mysql3.webp" alt="認証情報画面 - 接続文字列" size="md" />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## ClickHouse Cloud で複数の MySQL ユーザーを作成する
+</div>
+
+デフォルトでは、組み込みの `mysql4<subdomain>` ユーザーがあり、`default` ユーザーと同じパスワードを使用します。`<subdomain>` の部分は、ClickHouse Cloud ホスト名の最初のセグメントです。この形式は、安全な接続を実装していても [TLS ハンドシェイクで SNI 情報を提供しない](https://www.cloudflare.com/learning/ssl/what-is-sni) ツールで利用するために必要です。こうしたツールでは、ユーザー名に追加のヒントがないと内部ルーティングを行えません (MySQL コンソールクライアントはそのようなツールの 1 つです) 。
+
+このため、MySQL インターフェイスで使用する新しいユーザーを作成する際は、`mysql4<subdomain>_<username>` 形式に従うことを *強く推奨* します。ここで、`<subdomain>` は Cloud サービスを識別するためのヒントであり、`<username>` は任意の接尾辞です。
+
+<Tip>
+  ClickHouse Cloud のホスト名が `foobar.us-east1.aws.clickhouse.cloud` の場合、`<subdomain>` の部分は `foobar` であり、カスタム MySQL ユーザー名は `mysql4foobar_team1` のようになります。
+</Tip>
+
+たとえば追加の設定を適用する必要がある場合は、MySQL インターフェイスで使用する追加ユーザーを作成できます。
+
+1. 任意 - カスタムユーザーに適用する [設定プロファイル](/ja/reference/statements/create/settings-profile) を作成します。たとえば、追加設定を含む `my_custom_profile` を作成しておくと、後で作成するユーザーで接続したときにデフォルトで適用されます。
+
+   ```sql
+   CREATE SETTINGS PROFILE my_custom_profile SETTINGS prefer_column_name_to_alias=1;
+   ```
+
+   `prefer_column_name_to_alias` はあくまで例です。ここには他の設定を使用することもできます。
+
+2. 次の形式で [ユーザーを作成](/ja/reference/statements/create/user) します: `mysql4<subdomain>_<username>` ([上記を参照](#creating-multiple-mysql-users-in-clickhouse-cloud)) 。パスワードはダブル SHA1 形式でなければなりません。たとえば次のとおりです。
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$';
+   ```
+
+   または、このユーザーにカスタムプロファイルを使用する場合:
+
+   ```sql
+   CREATE USER mysql4foobar_team1 IDENTIFIED WITH double_sha1_password BY 'YourPassword42$' SETTINGS PROFILE 'my_custom_profile';
+   ```
+
+   ここで、`my_custom_profile` は先ほど作成したプロファイル名です。
+
+3. 新しいユーザーに、目的のテーブルまたはデータベースを操作するために必要な権限を [付与](/ja/reference/statements/grant) します。たとえば、`system.query_log` のみにアクセスを許可したい場合は次のとおりです。
+
+   ```sql
+   GRANT SELECT ON system.query_log TO mysql4foobar_team1;
+   ```
+
+4. 作成したユーザーを使用して、MySQL インターフェイス経由で ClickHouse Cloud サービスに接続します。
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### ClickHouse Cloud で複数の MySQL ユーザーを使用する場合のトラブルシューティング
+</div>
+
+新しい MySQL ユーザーを作成し、MySQL CLI クライアント経由で接続した際に次のエラーが表示される場合:
+
+```sql
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+この場合、ユーザー名が [上記](#creating-multiple-mysql-users-in-clickhouse-cloud) で説明した `mysql4<subdomain>_<username>` 形式に従っていることを確認してください。
+
+<div id="enabling-the-mysql-interface-on-self-managed-clickhouse">
+  ## セルフマネージド ClickHouse で MySQL インターフェイスを有効にする
+</div>
+
+サーバーの設定ファイルに [mysql&#95;port](/ja/reference/settings/server-settings/settings#mysql_port) 設定を追加します。たとえば、`config.d/` [フォルダ](/ja/concepts/features/configuration/server-config/configuration-files) に新しい XML ファイルを作成し、そこでポートを定義できます。
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+ClickHouse server を起動し、MySQL 互換プロトコルを待ち受けていることを示す、次のようなログメッセージを探します。
+
+```bash
+{} <Information> Application: Listening for MySQL compatibility protocol: 127.0.0.1:9004
+```
+
+<div id="connect-mysql-to-clickhouse">
+  ## MySQL を ClickHouse に接続する
+</div>
+
+次のコマンドは、MySQL クライアント `mysql` を ClickHouse に接続する方法を示しています。
+
+```bash
+mysql --protocol tcp -h [hostname] -u [username] -P [port_number] [database_name]
+```
+
+例:
+
+```bash
+$ mysql --protocol tcp -h 127.0.0.1 -u default -P 9004 default
+```
+
+接続に成功した場合の出力:
+
+```text
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 4
+Server version: 20.2.1.1-ClickHouse
+
+Copyright (c) 2000, 2019, Oracle and/or its affiliates. All rights reserved.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql>
+```
+
+すべての MySQL クライアントとの互換性を確保するため、ユーザーパスワードは設定ファイルで [ダブル SHA1](/ja/concepts/features/configuration/settings/settings-users#user-namepassword) を使用して指定することを推奨します。
+ユーザーパスワードを [SHA256](/ja/reference/functions/regular-functions/hash-functions#SHA256) で指定すると、一部のクライアントでは認証できません (mysqljs、およびコマンドラインツール MySQL と MariaDB の古いバージョン) 。
+
+制限事項:
+
+* プリペアドクエリはサポートされていません
+
+* 一部のデータ型は文字列として送信されます
+
+長時間実行されるクエリをキャンセルするには、`KILL QUERY connection_id` ステートメントを使用します (処理時に `KILL QUERY WHERE query_id = connection_id` に置き換えられます) 。例:
+
+```bash
+$ mysql --protocol tcp -h mysql_server -P 9004 default -u default --password=123 -e "KILL QUERY 123456;"
+```

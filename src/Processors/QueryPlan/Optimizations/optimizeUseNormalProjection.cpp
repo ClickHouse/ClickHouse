@@ -1,4 +1,6 @@
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FieldAccurateComparison.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -18,6 +20,13 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
+#include <Functions/FunctionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST.h>
+
 
 namespace DB
 {
@@ -33,6 +42,244 @@ namespace Setting
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// Extract AND-connected conjuncts from an AST expression tree.
+/// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
+static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+{
+    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
+    {
+        for (const auto & child : func->arguments->children)
+            extractConjunctsFromAST(child, result);
+    }
+    else
+    {
+        result.push_back(expr);
+    }
+}
+
+/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
+/// The analyzer decorates input column names with a per-table-expression qualifier that is
+/// absent from the projection's WHERE AST, so it must be ignored when comparing identifiers.
+static std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.
+///
+/// Textual comparison of names is unreliable here: the analyzer decorates query-filter DAG
+/// `result_name`s with table qualifiers (`__table1.event_type`) and literal type suffixes
+/// (`'pageview'_String`), none of which appear in the projection's WHERE AST. So we compare
+/// the structure instead, conservatively:
+///   - FUNCTION    vs ASTFunction:   same function name and positionally matching arguments;
+///   - INPUT       vs ASTIdentifier: same column name, ignoring a leading `__tableN.` qualifier;
+///   - COLUMN const vs ASTLiteral:   equal constant value (accurate, type-aware comparison).
+/// ALIAS nodes are unwrapped first. Any other node kind, or a mismatch, yields false.
+///
+/// This may reject some valid equivalences (e.g. reordered commutative arguments, or a predicate
+/// rewritten by the analyzer), but it never accepts a predicate that is not literally present in
+/// the query filter — preserving the conservative containment guarantee.
+static bool matchDAGNodeToAST(const ActionsDAG::Node * node, const ASTPtr & ast)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return false;
+        if (node->function_base->getName() != func->name)
+            return false;
+
+        const auto & ast_args = func->arguments ? func->arguments->children : ASTs{};
+        if (node->children.size() != ast_args.size())
+            return false;
+
+        for (size_t i = 0; i < ast_args.size(); ++i)
+            if (!matchDAGNodeToAST(node->children[i], ast_args[i]))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        return stripTableQualifier(node->result_name) == ident->name();
+    }
+
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            return false;
+        const auto * const_col = typeid_cast<const ColumnConst *>(node->column.get());
+        if (!const_col)
+            return false;
+        return accurateEquals(const_col->getField(), literal->value);
+    }
+
+    return false;
+}
+
+/// Recursively check if an AST tree contains any aliases.
+/// If the projection WHERE uses aliases, textual conjunct matching becomes unsafe
+/// because the same expression may have different canonical representations when aliased.
+static bool containsAliases(const ASTPtr & expr)
+{
+    if (!expr)
+        return false;
+
+    if (!expr->tryGetAlias().empty())
+        return true;
+
+    for (const auto & child : expr->children)
+    {
+        if (containsAliases(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// Recursively check if an AST tree contains calls to non-deterministic functions
+/// by querying function metadata via FunctionFactory.
+/// Non-deterministic predicates (rand(), now(), nowInBlock(), etc.) evaluate differently
+/// at materialization time vs query time, so textual conjunct matching is unsound for them.
+static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr context)
+{
+    if (!expr)
+        return false;
+
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        /// Use FunctionFactory metadata instead of a hardcoded blacklist.
+        /// This automatically covers all current and future non-deterministic functions.
+        /// IFunctionOverloadResolver provides isDeterministic() and isDeterministicInScopeOfQuery()
+        /// without needing to resolve argument types.
+        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        if (resolver)
+        {
+            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+                return true;
+        }
+        else
+        {
+            /// Unknown function — conservatively treat as non-deterministic.
+            return true;
+        }
+    }
+
+    for (const auto & child : expr->children)
+    {
+        if (containsNonDeterministicFunctions(child, context))
+            return true;
+    }
+
+    return false;
+}
+
+/// Check whether a query's WHERE condition logically implies a projection's WHERE condition.
+/// Uses CNF conjunct containment: every conjunct of the projection's WHERE must appear
+/// (as a textually identical sub-expression) among the conjuncts of the query's WHERE.
+///
+/// Both sides are compared using canonical column-name representations:
+/// - Projection WHERE conjuncts use ASTPtr::getColumnName() (canonical AST serialization)
+/// - Query filter conjuncts use ActionsDAG::Node::result_name (set by the analyzer)
+/// These produce identical strings for semantically equivalent expressions.
+///
+/// Safety guards:
+/// 1. Reject if projection WHERE contains aliases (may differ from analyzer representation)
+/// 2. Reject if projection WHERE contains non-deterministic functions (unsafe for implication)
+/// 3. Reject if projection has a non-empty WITH clause (aliases referenced by identifier in WHERE
+///    won't be detected by `containsAliases` and could cause false-positive matches)
+///
+/// This is a conservative check — it may reject some valid cases (e.g., range implications),
+/// but it is safe: it will never incorrectly accept a query that doesn't match the projection.
+static bool doesQueryFilterImplyProjectionWhere(
+    const ActionsDAG::Node * query_filter_node,
+    const ASTPtr & projection_where,
+    const ASTPtr & projection_query_ast,
+    ContextPtr context)
+{
+    if (!projection_where)
+        return true; /// No projection filter = always applicable
+
+    if (!query_filter_node)
+        return false; /// Projection has filter but query doesn't
+
+    /// Safety guard 1: reject if projection WHERE contains any aliases.
+    /// Aliases could cause the canonical column-name to differ from the analyzer's
+    /// result_name, leading to false positive implication matches.
+    if (containsAliases(projection_where))
+        return false;
+
+    /// Safety guard 2: reject if projection WHERE contains non-deterministic functions.
+    /// Such expressions evaluate differently at materialization time vs query time,
+    /// so textual equality does not imply semantic equivalence.
+    if (containsNonDeterministicFunctions(projection_where, context))
+        return false;
+
+    /// Safety guard 3: reject if the projection has a non-empty WITH clause,
+    /// or if its SELECT list defines aliases. An identifier in projection WHERE
+    /// could resolve to an alias rather than a table column, in which case textual
+    /// conjunct matching against the query's WHERE (where the same identifier refers
+    /// to a table column) would produce false-positive implications.
+    if (projection_query_ast)
+    {
+        if (const auto * projection_select = projection_query_ast->as<ASTSelectQuery>())
+        {
+            if (projection_select->with())
+                return false;
+
+            if (projection_select->select() && containsAliases(projection_select->select()))
+                return false;
+        }
+    }
+
+    /// Extract projection's WHERE conjuncts from the AST.
+    std::vector<ASTPtr> proj_conjuncts;
+    extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
+    /// query filter in an ALIAS named `_projection_filter`, and `extractConjunctionAtoms` only
+    /// descends into `and` functions, not aliases. Without unwrapping, a top-level `and` stays
+    /// hidden behind the alias, so the stricter-`AND` case would yield a single `and(...)` atom
+    /// instead of its individual conjuncts.
+    const auto * filter_root = query_filter_node;
+    while (filter_root->type == ActionsDAG::ActionType::ALIAS && !filter_root->children.empty())
+        filter_root = filter_root->children.front();
+
+    /// Extract query's filter conjuncts using ClickHouse's built-in DAG utility.
+    /// This is the same function used by the filter pushdown optimizer.
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+
+    /// Every projection conjunct must structurally match at least one query conjunct.
+    for (const auto & proj_conj : proj_conjuncts)
+    {
+        bool found = std::any_of(
+            query_atoms.begin(),
+            query_atoms.end(),
+            [&](const auto * atom) { return matchDAGNodeToAST(atom, proj_conj); });
+
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
 
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
@@ -276,6 +523,20 @@ std::optional<String> optimizeUseNormalProjections(
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
+        /// Skip projections whose WHERE condition is not implied by the query's filter (Issue #74234).
+        /// A projection with WHERE stores only a subset of rows, so we can only use it
+        /// if the query's filter guarantees it won't need rows outside that subset.
+        if (projection->where_clause_ast)
+        {
+            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, projection->query_ast, context))
+            {
+                LOG_DEBUG(logger,
+                    "Projection {} skipped: query WHERE does not imply projection WHERE",
+                    projection->name);
+                continue;
+            }
+        }
+
         if (!has_all_required_columns(projection))
         {
             /// Check if projection can be used to filter parts or building projection index filters

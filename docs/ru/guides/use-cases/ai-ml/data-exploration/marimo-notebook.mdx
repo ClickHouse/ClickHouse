@@ -1,0 +1,354 @@
+---
+slug: /use-cases/AI/marimo-notebook
+sidebarTitle: 'Анализ данных с помощью ноутбуков Marimo и chDB'
+title: 'Анализ данных с помощью ноутбуков Marimo и chDB'
+description: 'В этом руководстве объясняется, как настроить и использовать chDB для анализа данных из ClickHouse Cloud или локальных файлов в ноутбуках Marimo'
+keywords: ['ML', 'Marimo', 'chDB', 'pandas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В этом руководстве вы узнаете, как анализировать набор данных из ClickHouse Cloud в ноутбуке Marimo с помощью [chDB](/ru/products/chdb/index) — быстрого встраиваемого SQL OLAP-движка на базе ClickHouse.
+
+**Требования:**
+
+* Python 3.8 или выше
+* виртуальное окружение
+* рабочий сервис ClickHouse Cloud и ваши [сведения о подключении](/ru/products/cloud/guides/sql-console/connection-details)
+
+<Tip>
+  Если у вас еще нет учетной записи ClickHouse Cloud, вы можете [зарегистрироваться](https://console.clickhouse.cloud/signUp?loc=docs-marimo-chdb), чтобы
+  получить пробный доступ и $300 в виде бесплатных кредитов для начала работы.
+</Tip>
+
+**Чему вы научитесь:**
+
+* Подключаться к ClickHouse Cloud из ноутбуков Marimo с помощью chDB
+* Выполнять запросы к удаленным наборам данных и преобразовывать результаты в Pandas DataFrames
+* Визуализировать данные с помощью Plotly в Marimo
+* Использовать реактивную модель выполнения Marimo для интерактивного анализа данных
+
+Мы будем использовать набор данных UK Property Price, доступный в ClickHouse Cloud в числе стартовых наборов данных.
+Он содержит сведения о ценах, по которым продавались дома в Соединенном Королевстве с 1995 по 2024 год.
+
+<div id="setup">
+  ## Подготовка
+</div>
+
+<div id="loading-the-dataset">
+  ### Загрузка набора данных
+</div>
+
+Чтобы добавить этот набор данных в существующий сервис ClickHouse Cloud, войдите в [console.clickhouse.cloud](https://console.clickhouse.cloud/) под своей учетной записью.
+
+В меню слева нажмите `Data sources`, затем — `Predefined sample data`:
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Добавить пример набора данных" />
+
+На карточке данных о ценах продажи недвижимости в Великобритании (4 GB) выберите `Get started`:
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Выбрать набор данных о ценах в Великобритании" />
+
+Затем нажмите `Import dataset`:
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Импортировать набор данных о ценах в Великобритании" />
+
+ClickHouse автоматически создаст таблицу `pp_complete` в базе данных `default` и заполнит её 28,92 млн строк с данными о ценах.
+
+Чтобы снизить риск раскрытия учетных данных, рекомендуем сохранить имя пользователя и пароль Cloud в переменных окружения на локальной машине.
+Чтобы добавить имя пользователя и пароль в переменные окружения, выполните в терминале следующую команду:
+
+<div id="setting-up-credentials">
+  ### Настройка учетных данных
+</div>
+
+```bash
+export CLICKHOUSE_CLOUD_HOSTNAME=<HOSTNAME>
+export CLICKHOUSE_CLOUD_USER=default
+export CLICKHOUSE_CLOUD_PASSWORD=your_actual_password
+```
+
+<Note>
+  Указанные выше переменные окружения действуют только в рамках текущего сеанса терминала.
+  Чтобы сохранить их постоянно, добавьте их в файл конфигурации оболочки.
+</Note>
+
+<div id="installing-marimo">
+  ### Установка Marimo
+</div>
+
+Теперь активируйте виртуальное окружение.
+В активированном виртуальном окружении установите следующие пакеты, которые будут использоваться в этом руководстве:
+
+```python
+pip install chdb pandas plotly marimo
+```
+
+Создайте новый ноутбук Marimo с помощью следующей команды:
+
+```bash
+marimo edit clickhouse_exploration.py
+```
+
+Должно открыться новое окно браузера с интерфейсом Marimo на localhost:2718:
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Интерфейс Marimo" />
+
+Ноутбуки Marimo хранятся как обычные Python-файлы, поэтому их легко хранить в системе контроля версий и делиться ими с другими.
+
+<div id="installing-dependencies">
+  ## Установка зависимостей
+</div>
+
+В новой ячейке импортируйте необходимые пакеты:
+
+```python
+import marimo as mo
+import chdb
+import pandas as pd
+import os
+import plotly.express as px
+import plotly.graph_objects as go
+```
+
+Если навести курсор на ячейку, появятся два кружка со знаком &quot;+&quot;.
+Нажмите на них, чтобы добавить новые ячейки.
+
+Добавьте новую ячейку и выполните простой запрос, чтобы проверить, что всё настроено правильно:
+
+```python
+result = chdb.query("SELECT 'Hello ClickHouse from Marimo!'", "DataFrame")
+result
+```
+
+Вы увидите результат под ячейкой, которую только что запустили:
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+
+<div id="exploring-the-data">
+  ## Изучение данных
+</div>
+
+Теперь, когда набор данных UK price paid настроен, а chDB запущен в ноутбуке Marimo, можно приступить к изучению данных.
+Представим, что мы хотим проверить, как со временем менялись цены в определённом регионе Великобритании, например в столице — Лондоне.
+Функция ClickHouse [`remoteSecure`](/ru/reference/functions/table-functions/remote) позволяет легко получать данные из ClickHouse Cloud.
+Вы можете указать chDB вернуть эти данные в виде DataFrame Pandas в процессе выполнения — это удобный и привычный способ работы с данными.
+
+<div id="querying-clickhouse-cloud-data">
+  ### Выполнение запросов к данным ClickHouse Cloud
+</div>
+
+Создайте новую ячейку со следующим запросом, чтобы получить данные о ценах сделок с недвижимостью в Великобритании из вашего сервиса ClickHouse Cloud и преобразовать их в `pandas.DataFrame`:
+
+```python
+query = f"""
+SELECT
+    toYear(date) AS year,
+    round(avg(price)) AS price,
+    bar(price, 0, 1000000, 80)
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = 'LONDON'
+GROUP BY year
+ORDER BY year
+"""
+
+df = chdb.query(query, "DataFrame")
+df.head()
+```
+
+В приведённом выше фрагменте `chdb.query(query, "DataFrame")` выполняет указанный запрос и возвращает результат в виде Pandas DataFrame.
+
+В этом запросе мы используем функцию [`remoteSecure`](/ru/reference/functions/table-functions/remote) для подключения к ClickHouse Cloud.
+
+Функция `remoteSecure` принимает следующие параметры:
+
+* строку подключения
+* имя базы данных и таблицы, которые будут использоваться
+* ваше имя пользователя
+* ваш пароль
+
+В целях безопасности рекомендуется использовать для имени пользователя и пароля переменные окружения, а не указывать их напрямую в функции, хотя при желании это тоже возможно.
+
+Функция `remoteSecure` подключается к удалённому сервису ClickHouse Cloud, выполняет запрос и возвращает результат.
+В зависимости от объёма данных это может занять несколько секунд.
+
+В данном случае мы получаем среднюю цену за год и применяем фильтр `town='LONDON'`.
+Затем результат сохраняется в переменной `df` как DataFrame.
+
+<div id="visualizing-the-data">
+  ### Визуализация данных
+</div>
+
+Теперь, когда данные представлены в привычном виде, давайте посмотрим, как со временем менялись цены на недвижимость в Лондоне.
+
+Marimo особенно хорошо работает с интерактивными библиотеками визуализации, такими как Plotly.
+В новой ячейке создайте интерактивный график:
+
+```python
+fig = px.line(
+    df, 
+    x='year', 
+    y='price',
+    title='Average Property Prices in London Over Time',
+    labels={'price': 'Average Price (£)', 'year': 'Year'}
+)
+
+fig.update_traces(mode='lines+markers')
+fig.update_layout(hovermode='x unified')
+fig
+```
+
+Неудивительно, что цены на недвижимость в Лондоне со временем значительно выросли.
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Визуализация данных Marimo" />
+
+Одна из сильных сторон Marimo — реактивная модель выполнения. Давайте создадим интерактивный виджет для динамического выбора разных городов.
+
+<div id="interactive-town-selection">
+  ### Интерактивный выбор города
+</div>
+
+В новой ячейке создайте выпадающий список для выбора города:
+
+```python
+town_selector = mo.ui.dropdown(
+    options=['LONDON', 'MANCHESTER', 'BIRMINGHAM', 'LEEDS', 'LIVERPOOL'],
+    value='LONDON',
+    label='Select a town:'
+)
+town_selector
+```
+
+В другой ячейке создайте запрос, который будет реагировать на выбор города. При изменении значения в выпадающем списке эта ячейка будет автоматически выполняться заново:
+
+```python
+query_reactive = f"""
+SELECT
+    toYear(date) AS year,
+    round(avg(price)) AS price
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = '{town_selector.value}'
+GROUP BY year
+ORDER BY year
+"""
+
+df_reactive = chdb.query(query_reactive, "DataFrame")
+df_reactive
+```
+
+Теперь создайте диаграмму, которая будет автоматически обновляться при смене города.
+Вы можете переместить диаграмму над динамическим DataFrame, чтобы она отображалась
+под ячейкой с выпадающим списком.
+
+```python
+fig_reactive = px.line(
+    df_reactive,
+    x='year',
+    y='price',
+    title=f'Average Property Prices in {town_selector.value} Over Time',
+    labels={'price': 'Average Price (£)', 'year': 'Year'}
+)
+
+fig_reactive.update_traces(mode='lines+markers')
+fig_reactive.update_layout(hovermode='x unified')
+fig_reactive
+```
+
+Теперь при выборе города в раскрывающемся списке график будет обновляться автоматически:
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Динамически обновляемый график Marimo" />
+
+<div id="exploring-price-distributions">
+  ### Изучение распределения цен с помощью интерактивных диаграмм размаха
+</div>
+
+Давайте глубже изучим данные, рассмотрев распределение цен на недвижимость в Лондоне по разным годам.
+Диаграмма размаха покажет медиану, квартили и выбросы, что даст нам гораздо более полное представление, чем просто средняя цена.
+Сначала создадим ползунок выбора года, который позволит нам интерактивно изучать разные годы:
+
+В новой ячейке добавьте следующее:
+
+```python
+year_slider = mo.ui.slider(
+    start=1995,
+    stop=2024,
+    value=2020,
+    step=1,
+    label='Select Year:',
+    show_value=True
+)
+year_slider
+```
+
+Теперь давайте запросим цены на отдельные объекты недвижимости за выбранный год.
+Обратите внимание, что здесь мы не выполняем агрегацию — нам нужны все сделки по отдельности, чтобы построить наше распределение:
+
+```python
+query_distribution = f"""
+SELECT
+    price,
+    toYear(date) AS year
+FROM remoteSecure(
+    '{os.environ.get("CLICKHOUSE_CLOUD_HOSTNAME")}',
+    'default.pp_complete',
+    '{os.environ.get("CLICKHOUSE_CLOUD_USER")}',
+    '{os.environ.get("CLICKHOUSE_CLOUD_PASSWORD")}'
+)
+WHERE town = 'LONDON'
+  AND toYear(date) = {year_slider.value}
+  AND price > 0
+  AND price < 5000000
+"""
+
+df_distribution = chdb.query(query_distribution, "DataFrame")
+
+# создаём интерактивный ящик с усами.
+fig_box = go.Figure()
+
+fig_box.add_trace(
+    go.Box(
+        y=df_distribution['price'],
+        name=f'London {year_slider.value}',
+        boxmean='sd',  # Показать среднее и стандартное отклонение
+        marker_color='lightblue',
+        boxpoints='outliers'  # Показать выбросы
+    )
+)
+
+fig_box.update_layout(
+    title=f'Distribution of Property Prices in London ({year_slider.value})',
+    yaxis=dict(
+        title='Price (£)',
+        tickformat=',.0f'
+    ),
+    showlegend=False,
+    height=600
+)
+
+fig_box
+```
+
+Если нажать кнопку параметров в правом верхнем углу ячейки, можно скрыть
+код.
+При перемещении ползунка график будет автоматически обновляться благодаря реактивному выполнению в Marimo:
+
+<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Динамический график Marimo" />
+
+<div id="summary">
+  ## Итоги
+</div>
+
+В этом руководстве мы показали, как использовать chDB для исследования данных в ClickHouse Cloud с помощью ноутбуков Marimo.
+На примере набора данных UK Property Price мы показали, как выполнять запросы к удалённым данным ClickHouse Cloud с помощью функции `remoteSecure()` и напрямую преобразовывать результаты в DataFrame Pandas для анализа и визуализации.
+Благодаря chDB и реактивной модели выполнения Marimo специалисты по анализу данных могут использовать мощные возможности SQL ClickHouse вместе с привычными инструментами Python, такими как Pandas и Plotly, а также интерактивные виджеты и автоматическое отслеживание зависимостей, что делает исследовательский анализ более эффективным и воспроизводимым.

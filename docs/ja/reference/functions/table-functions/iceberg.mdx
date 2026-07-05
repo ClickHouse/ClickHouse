@@ -1,0 +1,800 @@
+---
+description: 'Amazon S3、Azure、HDFS、またはローカルに保存された Apache Iceberg テーブルに対する読み取り専用のテーブル形式インターフェイスを提供します。'
+sidebarTitle: 'iceberg'
+slug: /sql-reference/table-functions/iceberg
+title: 'iceberg'
+doc_type: 'reference'
+---
+
+Amazon S3、Azure、HDFS、またはローカルに保存された Apache [Iceberg](https://iceberg.apache.org/) テーブルに対する読み取り専用のテーブル形式インターフェイスを提供します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method] [,extra_credentials])
+icebergS3(named_collection[, option=value [,..]])
+
+icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+icebergAzure(named_collection[, option=value [,..]])
+
+icebergHDFS(path_to_table, [,format] [,compression_method])
+icebergHDFS(named_collection[, option=value [,..]])
+
+icebergLocal(path_to_table, [,format] [,compression_method])
+icebergLocal(named_collection[, option=value [,..]])
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+引数の説明は、それぞれテーブル関数 `s3`、`azureBlobStorage`、`HDFS`、`file` の引数の説明と同様です。
+`format` は Iceberg テーブル内のデータファイルのフォーマットを表します。
+
+`icebergS3` では、ClickHouse Cloud でロールベースのアクセスを行うための `role_arn` を渡すために、オプションの `extra_credentials` パラメータを使用できます。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+<div id="returned-value">
+  ### 戻り値
+</div>
+
+指定した Iceberg テーブル内のデータを読み取るための、指定した構造のテーブル。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+SELECT * FROM icebergS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+<Warning>
+  ClickHouse は現在、`icebergS3`、`icebergAzure`、`icebergHDFS`、`icebergLocal` の各テーブル関数、および `IcebergS3`、`icebergAzure`、`IcebergHDFS`、`IcebergLocal` の各テーブルエンジンを通じて、Iceberg フォーマットの v1 と v2 の読み取りに対応しています。
+</Warning>
+
+<div id="defining-a-named-collection">
+  ## named collection を定義する
+</div>
+
+URL と認証情報を保存するための named collection を設定する例を以下に示します。
+
+```xml
+<clickhouse>
+    <named_collections>
+        <iceberg_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+            <format>auto</format>
+            <structure>auto</structure>
+        </iceberg_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+SELECT * FROM icebergS3(iceberg_conf, filename = 'test_table')
+DESCRIBE icebergS3(iceberg_conf, filename = 'test_table')
+```
+
+<div id="iceberg-writes-catalogs">
+  ## データカタログの使用
+</div>
+
+Iceberg テーブルは、[REST Catalog](https://iceberg.apache.org/rest-catalog-spec/)、[AWS Glue Data Catalog](https://docs.aws.amazon.com/prescriptive-guidance/latest/serverless-etl-aws-glue/aws-glue-data-catalog.html)、[Unity Catalog](https://www.unitycatalog.io/) など、さまざまなデータカタログと組み合わせて使用することもできます。
+
+<Warning>
+  カタログを使用する場合、多くのユーザーは `DataLakeCatalog` データベースエンジンを使うことになるでしょう。これは、ClickHouse をカタログに接続し、テーブルを検出するためのものです。`IcebergS3` テーブルエンジンを使って個々のテーブルを手動で作成する代わりに、このデータベースエンジンを使用できます。
+</Warning>
+
+これらを使用するには、`IcebergS3` エンジンでテーブルを作成し、必要な設定を指定します。
+
+たとえば、MinIO ストレージで REST Catalog を使用する場合は次のとおりです。
+
+```sql
+CREATE TABLE `database_name.table_name`
+ENGINE = IcebergS3(
+  'http://minio:9000/warehouse-rest/table_name/',
+  'minio_access_key',
+  'minio_secret_key'
+)
+```
+
+または、S3 と AWS Glue Data Catalog を併用する場合:
+
+```sql
+CREATE TABLE `my_database.my_table`  
+ENGINE = IcebergS3(
+  's3://my-data-bucket/warehouse/my_database/my_table/',
+  'aws_access_key',
+  'aws_secret_key'
+)
+```
+
+<div id="schema-evolution">
+  ## スキーマ進化
+</div>
+
+現時点では、CH を使用して、時間の経過とともにスキーマが変更された Iceberg テーブルを読み取ることができます。現在は、カラムの追加や削除、カラム順の変更が行われたテーブルの読み取りをサポートしています。また、値が必須のカラムを、NULL を許可するカラムに変更することもできます。さらに、単純型については、許可された型キャストとして次の変換をサポートしています。  
+
+* int -&gt; long
+* float -&gt; double
+* decimal(P, S) -&gt; decimal(P&#39;, S) where P&#39; &gt; P.
+
+現在のところ、ネストされた構造や、Array および Map 内の要素の型を変更することはできません。
+
+<div id="partition-pruning">
+  ## パーティションプルーニング
+</div>
+
+ClickHouse は、Iceberg テーブルに対する SELECT クエリでパーティションプルーニングをサポートしており、無関係なデータファイルをスキップすることでクエリ性能を最適化できます。パーティションプルーニングを有効にするには、`use_iceberg_partition_pruning = 1` を設定します。Iceberg のパーティションプルーニングの詳細については、https://iceberg.apache.org/spec/#partitioning を参照してください
+
+<div id="time-travel">
+  ## タイムトラベル
+</div>
+
+ClickHouse は Iceberg テーブルでのタイムトラベルをサポートしており、特定のタイムスタンプまたはスナップショット ID を指定して過去のデータをクエリできます。
+
+<div id="deleted-rows">
+  ## 削除された行を含むテーブルの処理
+</div>
+
+現在サポートされているのは、[position deletes](https://iceberg.apache.org/spec/#position-delete-files) を持つ Iceberg テーブルのみです。
+
+以下の削除方式は **サポートされていません**：
+
+* [Equality deletes](https://iceberg.apache.org/spec/#equality-delete-files)
+* [Deletion vectors](https://iceberg.apache.org/spec/#deletion-vectors) (v3 で導入)
+
+<div id="basic-usage">
+  ### 基本的な使い方
+</div>
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_timestamp_ms = 1714636800000
+```
+
+```sql
+ SELECT * FROM example_table ORDER BY 1 
+ SETTINGS iceberg_snapshot_id = 3547395809148285433
+```
+
+注: 同じクエリ内で `iceberg_timestamp_ms` と `iceberg_snapshot_id` の両方のパラメータを指定することはできません。
+
+<div id="important-considerations">
+  ### 重要な考慮事項
+</div>
+
+* **スナップショット** は通常、次のタイミングで作成されます:
+
+* 新しいデータがテーブルに書き込まれたとき
+
+* 何らかのデータ コンパクション が実行されたとき
+
+* **スキーマの変更では通常、スナップショットは作成されません** - このため、スキーマ進化を経たテーブルで タイムトラベル を使用する際には、重要な挙動が生じます。
+
+<div id="example-scenarios">
+  ### シナリオ例
+</div>
+
+CH はまだ Iceberg テーブルへの書き込みをサポートしていないため、すべてのシナリオは Spark を使って記述しています。
+
+<div id="scenario-1">
+  #### シナリオ 1: 新しいスナップショットがない場合のスキーマ変更
+</div>
+
+次の一連の操作を考えてみましょう。
+
+```sql
+ -- 2つのカラムを持つテーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+- - テーブルにデータを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example VALUES 
+    (1, 'Mars')
+
+  ts1 = now() // 擬似コードの一例
+
+- - テーブルに新しいカラムを追加する
+  ALTER TABLE spark_catalog.db.time_travel_example ADD COLUMN (price double)
+ 
+  ts2 = now()
+
+- - テーブルにデータを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example VALUES (2, 'Venus', 100)
+
+   ts3 = now()
+
+- - 各タイムスタンプ時点のテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts1;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts2;
+
++------------+------------+
+|order_number|product_code|
++------------+------------+
+|           1|        Mars|
++------------+------------+
+
+  SELECT * FROM spark_catalog.db.time_travel_example TIMESTAMP AS OF ts3;
+
++------------+------------+-----+
+|order_number|product_code|price|
++------------+------------+-----+
+|           1|        Mars| NULL|
+|           2|       Venus|100.0|
++------------+------------+-----+
+```
+
+異なるタイムスタンプでのクエリ結果:
+
+* ts1 &amp; ts2: 元の 2 つのカラムのみが表示される
+* ts3: 3 つのカラムがすべて表示され、1 行目の `price` は NULL になる
+
+<div id="scenario-2">
+  #### シナリオ 2: 履歴と現在のスキーマの違い
+</div>
+
+現時点でタイムトラベルクエリを実行すると、現在のテーブルとは異なるスキーマが表示されることがあります：
+
+```sql
+-- テーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_2 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2')
+
+-- テーブルに初期データを挿入する
+  INSERT INTO spark_catalog.db.time_travel_example_2 VALUES (2, 'Venus');
+
+-- テーブルを変更して新しいカラムを追加する
+  ALTER TABLE spark_catalog.db.time_travel_example_2 ADD COLUMN (price double);
+
+  ts = now();
+
+-- タイムスタンプ構文を使用して現時点のテーブルをクエリする
+
+  SELECT * FROM spark_catalog.db.time_travel_example_2 TIMESTAMP AS OF ts;
+
+    +------------+------------+
+    |order_number|product_code|
+    +------------+------------+
+    |           2|       Venus|
+    +------------+------------+
+
+-- 現時点のテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example_2;
+    +------------+------------+-----+
+    |order_number|product_code|price|
+    +------------+------------+-----+
+    |           2|       Venus| NULL|
+    +------------+------------+-----+
+```
+
+これは、`ALTER TABLE` では新しい スナップショット は作成されず、現在のテーブルでは Spark が スナップショット ではなく最新のメタデータファイルから `schema_id` の値を取得するために発生します。
+
+<div id="scenario-3">
+  #### シナリオ3: 過去と現在のスキーマの違い
+</div>
+
+2つ目は、タイムトラベルを使っても、そのテーブルにまだデータが一度も書き込まれていなかった時点の状態は取得できないことです:
+
+```sql
+-- テーブルを作成する
+  CREATE TABLE IF NOT EXISTS spark_catalog.db.time_travel_example_3 (
+  order_number bigint, 
+  product_code string
+  ) 
+  USING iceberg 
+  OPTIONS ('format-version'='2');
+
+  ts = now();
+
+-- 特定のタイムスタンプでテーブルをクエリする
+  SELECT * FROM spark_catalog.db.time_travel_example_3 TIMESTAMP AS OF ts; -- エラーで終了: ts より古いスナップショットが見つかりません。
+```
+
+ClickHouse では、この挙動は Spark と同様です。Spark の Select クエリを ClickHouse の Select クエリに読み替えれば、同じように機能します。
+
+<div id="metadata-file-resolution">
+  ## メタデータファイルの特定
+</div>
+
+ClickHouseで`iceberg`テーブル関数を使用する場合、システムはIcebergテーブルの構造を記述した適切なmetadata.jsonファイルを特定する必要があります。この特定プロセスは次のように機能します。
+
+<div id="candidate-search">
+  ### 候補検索 (優先順)
+</div>
+
+1. **直接パス指定**:
+   *`iceberg_metadata_file_path` を設定すると、システムはこの正確なパスを Iceberg テーブルのディレクトリパスと組み合わせて使用します。
+
+* この設定が指定されている場合、ほかのすべての解決用設定は無視されます。
+
+2. **テーブル UUID の照合**:
+   *`iceberg_metadata_table_uuid` が指定されている場合、システムは次のように動作します:
+   * `metadata` ディレクトリ内の `.metadata.json` ファイルのみを対象にします
+   * 指定した UUID と一致する `table-uuid` フィールドを含むファイルに絞り込みます (大文字と小文字は区別されません)
+
+3. **デフォルト検索**:
+   *上記のいずれの設定も指定されていない場合、`metadata` ディレクトリ内のすべての `.metadata.json` ファイルが候補になります
+
+<div id="most-recent-file">
+  ### 最新のファイルを選択する
+</div>
+
+上記のルールを使用して候補ファイルを特定した後、システムはその中から最新のものを判定します。
+
+* `iceberg_recent_metadata_file_by_last_updated_ms_field` が有効な場合:
+
+* `last-updated-ms` の値が最も大きいファイルが選択されます
+
+* それ以外の場合:
+
+* バージョン番号が最も大きいファイルが選択されます
+
+* (バージョンは、`V.metadata.json` または `V-uuid.metadata.json` 形式のファイル名では `V` として表されます)
+
+**注**: ここで言及している設定はすべてテーブル関数の設定 (グローバル設定やクエリレベルの設定ではありません) であり、以下に示すとおりに指定する必要があります。
+
+```sql
+SELECT * FROM iceberg('s3://bucket/path/to/iceberg_table', 
+    SETTINGS iceberg_metadata_table_uuid = 'a90eed4c-f74b-4e5b-b630-096fb9d09021');
+```
+
+**注記**: 通常、メタデータの解決は Iceberg カタログが行いますが、ClickHouse の `iceberg` テーブル関数 は S3 に保存されたファイルを Iceberg テーブルとして直接解釈するため、これらの解決ルールを理解しておくことが重要です。
+
+<div id="metadata-cache">
+  ## メタデータキャッシュ
+</div>
+
+`Iceberg` テーブルエンジン と テーブル関数 は、マニフェストファイル、マニフェストリスト、metadata json の情報を保持するメタデータキャッシュをサポートしています。このキャッシュはメモリに保存されます。この機能は設定 `use_iceberg_metadata_files_cache` で制御されており、デフォルトで有効になっています。
+
+<div id="aliases">
+  ## 別名
+</div>
+
+テーブル関数 `iceberg` は現在、`icebergS3` の別名です。
+
+<div id="virtual-columns">
+  ## 仮想カラム
+</div>
+
+* `_path` — ファイルのパス。型: `LowCardinality(String)`.
+* `_file` — ファイル名。型: `LowCardinality(String)`.
+* `_size` — ファイルサイズ (バイト単位) 。型: `Nullable(UInt64)`. ファイルサイズが不明な場合、値は `NULL` です。
+* `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`. 時刻が不明な場合、値は `NULL` です。
+* `_etag` — ファイルの etag。型: `LowCardinality(String)`. etag が不明な場合、値は `NULL` です。
+
+<div id="writes-into-iceberg-table">
+  ## Icebergテーブルへの書き込み
+</div>
+
+バージョン25.7以降、ClickHouse ではユーザーの Iceberg テーブルを変更できるようになりました。
+
+現在、これは実験的機能であるため、まず有効にする必要があります。
+
+```sql
+SET allow_insert_into_iceberg = 1;
+```
+
+<div id="create-iceberg-table">
+  ### Icebergテーブルの作成
+</div>
+
+独自の空のIcebergテーブルを作成するには、読み取り時と同じコマンドを使用し、スキーマを明示的に指定します。
+書き込みでは、Parquet、Avro、ORC など、Iceberg仕様で定義されているすべてのデータフォーマットをサポートしています。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+CREATE TABLE iceberg_writes_example
+(
+    x Nullable(String),
+    y Nullable(Int32)
+)
+ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/')
+```
+
+注記: バージョンヒントファイルを作成するには、`iceberg_use_version_hint` 設定を有効にします。
+`metadata.json` ファイルを圧縮する場合は、`iceberg_metadata_compression_method` 設定でcodec名を指定します。
+
+<div id="writes-inserts">
+  ### INSERT
+</div>
+
+新しいテーブルを作成したら、通常の ClickHouse 構文を使用してデータを挿入できます。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+INSERT INTO iceberg_writes_example VALUES ('Pavel', 777), ('Ivanov', 993);
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Pavel
+y: 777
+
+Row 2:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-delete">
+  ### DELETE
+</div>
+
+ClickHouse は、merge-on-read フォーマットで余分な行を削除することにも対応しています。
+このクエリは、position delete ファイル を含む新しいスナップショットを作成します。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example DELETE WHERE x != 'Ivanov';
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-writes-schema-evolution">
+  ### スキーマ進化
+</div>
+
+ClickHouse では、単純型 (Tuple、Array、Map 以外) のカラムを簡単に追加、削除、変更、または名前変更できます。
+
+<div id="example">
+  ### 例
+</div>
+
+```sql
+ALTER TABLE iceberg_writes_example MODIFY COLUMN y Nullable(Int64);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+ALTER TABLE iceberg_writes_example ADD COLUMN z Nullable(Int32);
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64),                                 ↴│
+   │↳    `z` Nullable(Int32)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+z: ᴺᵁᴸᴸ
+
+ALTER TABLE iceberg_writes_example DROP COLUMN z;
+SHOW CREATE TABLE iceberg_writes_example;
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `y` Nullable(Int64)                                  ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+
+ALTER TABLE iceberg_writes_example RENAME COLUMN y TO value;
+SHOW CREATE TABLE iceberg_writes_example;
+
+   ┌─statement─────────────────────────────────────────────────┐
+1. │ CREATE TABLE default.iceberg_writes_example              ↴│
+   │↳(                                                        ↴│
+   │↳    `x` Nullable(String),                                ↴│
+   │↳    `value` Nullable(Int64)                              ↴│
+   │↳)                                                        ↴│
+   │↳ENGINE = IcebergLocal('/home/scanhex12/iceberg_example/') │
+   └───────────────────────────────────────────────────────────┘
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+value: 993
+```
+
+<div id="iceberg-writes-compaction">
+  ### コンパクション
+</div>
+
+ClickHouse は Iceberg テーブルのコンパクションをサポートしています。現在は、メタデータを更新しながら、position delete ファイル を data files にマージできます。以前のスナップショット ID とタイムスタンプは変更されないため、タイムトラベル機能も引き続き同じ値で利用できます。
+
+使用方法:
+
+```sql
+SET allow_experimental_iceberg_compaction = 1
+
+OPTIMIZE TABLE iceberg_writes_example;
+
+SELECT *
+FROM iceberg_writes_example
+FORMAT VERTICAL;
+
+Row 1:
+──────
+x: Ivanov
+y: 993
+```
+
+<div id="iceberg-expire-snapshots">
+  ### スナップショットの期限切れ処理
+</div>
+
+Iceberg テーブルでは、INSERT、DELETE、または UPDATE を実行するたびにスナップショットが蓄積されます。時間の経過とともに、これにより大量のスナップショットと、それに関連するデータファイルが生じる可能性があります。`expire_snapshots` コマンドは、古いスナップショットを削除し、保持されているどのスナップショットからも参照されなくなったデータファイルをクリーンアップします。
+
+**構文:**
+
+```sql
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(
+    ['timestamp']
+    [, expire_before = 'timestamp']
+    [, retention_period = '3d']
+    [, retain_last = 100]
+    [, snapshot_ids = [1, 2, 3, 4]]
+    [, dry_run = 1]
+);
+```
+
+デフォルトでは、どのスナップショットを保持するかは [保持ポリシー](#iceberg-snapshot-retention-policy) (テーブルプロパティ `min-snapshots-to-keep`、`max-snapshot-age-ms`、および ref ごとのオーバーライド) によって決まります。`snapshot_ids` を指定すると、保持ポリシーは適用されず、リストされたスナップショットだけが削除対象として扱われます。
+
+**引数:**
+
+* `'timestamp'`  (位置引数) または `expire_before = 'timestamp'` — **サーバーのタイムゾーン**で解釈される日時文字列 (例: `'2024-06-01 00:00:00'`) 。安全弁として機能し、`timestamp-ms` がこの値以上のスナップショットは、保持ポリシーでは削除対象になる場合でも保護されます。`snapshot_ids` と組み合わせることもでき、その場合はリストされたスナップショットのうち、指定した timestamp と同時刻以降のものは削除されません。
+* `retention_period = '<duration>'` — この呼び出しに限り、テーブルレベルの `history.expire.max-snapshot-age-ms` を上書きします。この期間より古いスナップショット (現在時刻を基準に判定) が、削除候補になります。値は、1 つ以上の `{number}{unit}` の組を連結した期間文字列です。サポートされる単位: `y`  (365 日) 、`w`  (7 日) 、`d`  (24 時間) 、`h`  (60 分) 、`m`  (60 秒) 、`s`  (1 秒) 、`ms`  (1 ミリ秒) 。単位は組み合わせ可能で、例: `'3d'`、`'12h'`、`'1d12h30m'`、`'500ms'`。
+* `retain_last = N` — この呼び出しに限り、テーブルレベルの `history.expire.min-snapshots-to-keep` を上書きします。少なくとも `N` 個のスナップショットは、古さに関係なく常に保持されます。
+* `snapshot_ids = [id1, id2, ...]` — リストされたスナップショット ID のみを削除対象にします (現在のスナップショット、ブランチ、またはタグから参照されているスナップショットを除く) 。このモードでは保持ポリシーは完全に無視され、`retention_period` または `retain_last` とは組み合わせられません。
+* `dry_run = 1` — 何が削除対象になるかを計算し、新しいメタデータの書き込みやファイル削除を行わずにメトリクスを返します。
+
+<Note>
+  `retention_period` と `retain_last` が上書きするのは、**テーブルレベル**の保持のデフォルト値だけです。Iceberg テーブルプロパティで設定された ref ごとの保持オーバーライド (例: `refs.<branch>.min-snapshots-to-keep`) は上書きされず、常にテーブルメタデータで指定されたとおりに適用されます。
+</Note>
+
+**例:**
+
+```sql
+SET allow_insert_into_iceberg = 1;
+
+-- データを挿入してスナップショットを作成する
+INSERT INTO iceberg_table VALUES (1);
+INSERT INTO iceberg_table VALUES (2);
+INSERT INTO iceberg_table VALUES (3);
+
+-- 保持ポリシーのみを使用してスナップショットを期限切れにする
+ALTER TABLE iceberg_table EXECUTE expire_snapshots();
+
+-- 安全ヒューズを使用して期限切れにする: タイムスタンプより新しいスナップショットを保護する（位置引数構文）
+ALTER TABLE iceberg_table EXECUTE expire_snapshots('2025-01-01 00:00:00');
+
+-- 名前付き引数形式を使用した場合も同様
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(expire_before = '2025-01-01 00:00:00');
+
+-- 1回の実行に限り保持パラメータを上書きする
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '3d', retain_last = 10);
+
+-- 特定のスナップショットを明示的に期限切れにする
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(snapshot_ids = [101, 102, 103]);
+
+-- ドライランプレビュー（メタデータの更新なし、ファイルの削除なし）
+ALTER TABLE iceberg_table EXECUTE expire_snapshots(retention_period = '1d', dry_run = 1);
+```
+
+**出力:**
+
+このコマンドは、2 つのカラム (`metric_name String`、`metric_value Int64`) を持つテーブルを返します。このテーブルには、メトリクスごとに 1 行が含まれます。メトリクス名は [Iceberg spec](https://iceberg.apache.org/docs/latest/spark-procedures/#output) に従います。
+
+| metric&#95;name                       | 説明                           |
+| ------------------------------------- | ---------------------------- |
+| `deleted_data_files_count`            | 削除されたデータファイルの数               |
+| `deleted_position_delete_files_count` | 削除された position delete ファイルの数 |
+| `deleted_equality_delete_files_count` | 削除された equality delete ファイルの数 |
+| `deleted_manifest_files_count`        | 削除されたマニフェストファイルの数            |
+| `deleted_manifest_lists_count`        | 削除されたマニフェストリストファイルの数         |
+| `deleted_statistics_files_count`      | 削除された統計ファイルの数 (現時点では常に 0)    |
+| `dry_run`                             | ドライランモードでは `1`、通常実行では `0`    |
+
+このコマンドは次の手順を実行します。
+
+1. 保持ポリシー (以下を参照) を評価し、保持する必要があるスナップショットを特定します
+2. タイムスタンプ引数が指定されている場合は、そのタイムスタンプ以降のすべてのスナップショットも追加で保護します
+3. ポリシーによって保持されず、タイムスタンプによる保護も受けていないスナップショットを期限切れにします
+4. 期限切れになったスナップショットにのみ関連付けられているファイルを特定します
+5. 通常モード: 期限切れになったスナップショットを除外した新しいメタデータを生成します
+6. 通常モード: 到達不能になったマニフェストリスト、マニフェストファイル、データファイルを物理的に削除します
+7. `dry_run = 1` モード: 手順 5 と 6 をスキップし、計算されたメトリクスのみを返します
+
+<div id="iceberg-snapshot-retention-policy">
+  #### スナップショット保持ポリシー
+</div>
+
+`expire_snapshots` コマンドは、[Iceberg snapshot retention policy](https://iceberg.apache.org/spec/#snapshot-retention-policy) に従います。保持設定は、Iceberg テーブルのプロパティと参照ごとのオーバーライドで構成します。
+
+| プロパティ                                  | 範囲   | デフォルト                                                                | 説明                                              |
+| -------------------------------------- | ---- | -------------------------------------------------------------------- | ----------------------------------------------- |
+| `history.expire.min-snapshots-to-keep` | テーブル | `iceberg_expire_default_min_snapshots_to_keep` (デフォルト `1`)           | 各ブランチの祖先チェーンで保持するスナップショットの最小数                   |
+| `history.expire.max-snapshot-age-ms`   | テーブル | `iceberg_expire_default_max_snapshot_age_ms` (デフォルト `432000000`、5 日) | ブランチで保持するスナップショットの最大保持期間 (ミリ秒)                  |
+| `history.expire.max-ref-age-ms`        | テーブル | `iceberg_expire_default_max_ref_age_ms` (デフォルト `∞`)                  | スナップショット参照 (ブランチまたはタグ) 自体が削除されるまでの最大経過時間 (ミリ秒)  |
+
+各スナップショット参照 (Iceberg メタデータ内の `refs`) では、参照ごとのフィールド `min-snapshots-to-keep`、`max-snapshot-age-ms`、`max-ref-age-ms` を使ってこれらの値を上書きできます。
+
+**保持の評価:**
+
+* **各ブランチ** (`main` を含む) について: ブランチの先頭から祖先チェーンをたどります。次のいずれかの条件を満たす間、スナップショットは保持されます。
+  * そのスナップショットが、チェーン内の先頭 `min-snapshots-to-keep` 個に含まれている
+  * そのスナップショットの経過時間が `max-snapshot-age-ms` 以内である (つまり `now - timestamp-ms <= max-snapshot-age-ms`)
+* **タグ**について: タグ付けされたスナップショットは、タグが `max-ref-age-ms` を超過しない限り保持されます。超過した場合は、タグ参照が削除されます
+* **`main` 以外の参照**で、経過時間が `max-ref-age-ms` を超えるものは完全に削除されます (`main` ブランチは削除されません)
+* 存在しないスナップショットを指す**孤立した参照**は、警告を出して削除されます
+* **現在のスナップショットは常に保持されます**。保持設定に関係なく保持されます
+
+**必要な権限:**
+
+`ALTER TABLE EXECUTE` 権限が必要です。これは ClickHouse のアクセス制御階層では `ALTER TABLE` の子権限です。個別に付与することも、親権限を通じて付与することもできます。
+
+```sql
+-- EXECUTE権限のみを付与する
+GRANT ALTER TABLE EXECUTE ON my_iceberg_table TO my_user;
+
+-- またはすべてのALTER TABLE権限を付与する（ALTER TABLE EXECUTEを含む）
+GRANT ALTER TABLE ON my_iceberg_table TO my_user;
+```
+
+<Note>
+  * サポートされるのは Iceberg format version 2 のテーブルのみです (v1 の snapshot では `manifest-list` が保証されず、クリーンアップ対象のファイルを安全に特定するためにこれが必要です)
+  * 指定した timestamp より古い場合でも、現在の snapshot は常に保持されます
+  * `allow_insert_into_iceberg` 設定を有効にする必要があります
+  * `allow_experimental_expire_snapshots` 設定を有効にする必要があります
+  * ClickHouse がメタデータを更新する際は、カタログ自体の認可 (REST カタログ認証、AWS Glue IAM など) が別途適用されます
+</Note>
+
+<div id="iceberg-remove-orphan-files">
+  ### 孤立ファイルの削除
+</div>
+
+孤立ファイルとは、ストレージ上に存在するものの、Iceberg テーブルのメタデータ内にあるどのスナップショットからも参照されていないファイルのことです。これらは、書き込みの失敗、コンパクション 後の不完全なクリーンアップ、操作の中断などによって蓄積し、ストレージ使用量が際限なく増加する原因になります。`remove_orphan_files` コマンドは、こうした孤立ファイルを特定して削除します。
+
+**構文:**
+
+```sql
+-- 位置指定形式: 名前なしの older_than 引数を1つ指定
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('timestamp')
+
+-- 名前付き形式
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = 'timestamp',
+    location = 'path',
+    dry_run = 0|1
+)
+
+-- 引数なし: すべてデフォルト値を使用 (older_than = 3日前)
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files()
+```
+
+**パラメータ:**
+
+| パラメータ        | 型                    | デフォルト                                                  | 説明                                                                            |
+| ------------ | -------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| `older_than` | `String` (timestamp) | 3日前 (`iceberg_orphan_files_older_than_seconds` で設定可能)  | 最終更新時刻がこのタイムスタンプより古いファイルのみを、孤立ファイル候補として扱います。処理中の書き込みで作成されたファイルを削除しないための安全策です。 |
+| `location`   | `String`             | テーブルの格納場所                                              | スキャン対象を、テーブルの格納場所配下の特定のサブディレクトリ (例: `'data/'` または `'metadata/'`) に限定します。      |
+| `dry_run`    | `UInt64`             | `0`                                                    | `1` の場合、孤立ファイルを特定して結果のサマリーを返しますが、実際には何も削除しません。                                |
+
+**例:**
+
+```sql
+-- 特定のタイムスタンプより古い孤立ファイルを削除する
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files('2026-03-01 00:00:00');
+
+-- ドライラン: 削除対象のファイルをプレビューする
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(dry_run = 1);
+
+-- データディレクトリのみをスキャンする
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    older_than = '2026-03-01 00:00:00',
+    location = 'data/'
+);
+
+-- 位置引数の older_than と名前付き引数を組み合わせる
+ALTER TABLE iceberg_table EXECUTE remove_orphan_files(
+    '2026-03-01 00:00:00',
+    dry_run = 1
+);
+```
+
+**出力:**
+
+このコマンドは、カテゴリ別の削除済みファイル数 (dry&#95;run モードでは削除対象となるファイル数) を示す `metric_name` と `metric_value` のカラムを持つテーブルを返します。ファイルカテゴリは、ファイル名の命名規則に基づくベストエフォートのヒューリスティクスで分類されます。特定のパターンに一致しないファイルは、デフォルトで `deleted_data_files_count` に分類されます。
+
+| metric&#95;name                                     | metric&#95;value |
+| --------------------------------------------------- | ---------------- |
+| deleted&#95;data&#95;files&#95;count                | 5                |
+| deleted&#95;position&#95;delete&#95;files&#95;count | 2                |
+| deleted&#95;equality&#95;delete&#95;files&#95;count | 0                |
+| deleted&#95;manifest&#95;files&#95;count            | 3                |
+| deleted&#95;manifest&#95;lists&#95;count            | 1                |
+| deleted&#95;metadata&#95;files&#95;count            | 0                |
+| deleted&#95;statistics&#95;files&#95;count          | 0                |
+| skipped&#95;missing&#95;metadata&#95;count          | 0                |
+| failed&#95;deletions&#95;count                      | 0                |
+
+**設定:**
+
+| 設定                                        | 型        | デフォルト             | 説明                                         |
+| ----------------------------------------- | -------- | ----------------- | ------------------------------------------ |
+| `allow_iceberg_remove_orphan_files`       | `Bool`   | `false`           | この機能を有効にするためのゲート設定 (Experimental) 。        |
+| `iceberg_orphan_files_older_than_seconds` | `UInt64` | `259200` (3 days) | 引数を省略した場合の `older_than` のデフォルトしきい値 (秒単位) 。 |
+
+<Note>
+  * **Iceberg format version 2 (またはそれ以上) が必要です。** version 1 のテーブルは、到達可能なファイル集合を安全に判定するために必要な、snapshot 内の `manifest-list` ポインタを持たないため拒否されます。v1 テーブルでこのコマンドを実行すると、`BAD_ARGUMENTS` エラーが返されます。
+  * `allow_insert_into_iceberg` と `allow_iceberg_remove_orphan_files` の両方の設定を有効にする必要があります
+  * 期限切れの snapshot だけが参照しているファイルを先にクリーンアップできるよう、`remove_orphan_files` の前に `expire_snapshots` を実行することを推奨します
+  * 削除前に孤立ファイルを確認するには、`dry_run = 1` を使用します
+  * `older_than` のしきい値は、進行中の書き込みに由来するファイルが削除されるのを防ぎます。デフォルトの 3 日というしきい値には、十分な安全マージンがあります
+</Note>
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [Icebergエンジン](/ja/reference/engines/table-engines/integrations/iceberg)
+* [Icebergクラスターテーブル関数](/ja/reference/functions/table-functions/icebergCluster)

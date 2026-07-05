@@ -1,0 +1,121 @@
+---
+alias: []
+description: 'PNG 이미지 출력 형식 문서'
+input_format: false
+keywords: ['PNG']
+output_format: true
+slug: /interfaces/formats/PNG
+title: 'PNG'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✗  | ✔  | ✗  |
+
+<div id="description">
+  ## 설명
+</div>
+
+쿼리 결과를 PNG 이미지로 렌더링합니다. 기본 제공 시각화 도구로 유용합니다.
+
+출력 이미지의 크기는 설정
+[`output_format_image_width`](/ko/reference/settings/formats#output_format_image_width) 및
+[`output_format_image_height`](/ko/reference/settings/formats#output_format_image_height)
+(둘 다 기본값은 1024)로 고정됩니다. 결과가 덮지 않는 픽셀은 검은색으로 채워지며
+(`RGB` 및 그레이스케일 모드), `RGBA` 모드에서는 투명한 검은색으로 채워집니다.
+
+색상 모드는 결과의 컬럼 이름과 타입에 따라 자동으로 결정됩니다:
+
+| 컬럼                 | 모드                                   |
+| ------------------ | ------------------------------------ |
+| `r`, `g`, `b`      | 8비트 RGB                              |
+| `r`, `g`, `b`, `a` | 8비트 RGBA                             |
+| 정수 타입의 `v`         | 8비트 그레이스케일                           |
+| `Float*` 타입의 `v`   | 8비트 그레이스케일 (`[0, 1]` 값 → `[0, 255]`) |
+| `Bool` 타입의 `v`     | 바이너리(8비트 그레이스케일 `0` 또는 `255`로 렌더링)   |
+
+컬럼 이름은 대소문자를 구분하지 않고 매칭됩니다. 색상 모드를 명확하게
+판별할 수 없는 경우(예: 알 수 없는 컬럼 이름, `v`와 `r`/`g`/`b`/`a`가 혼합된 경우, 또는 `r`/`g`/`b` 중 하나가 없는 경우)
+쿼리에서 예외가 발생합니다.
+
+픽셀 채널의 경우, 정수 값은 `[0, 255]` 범위로 제한되며 부동소수점 값은
+`[0, 1]` 범위로 제한된 다음 `[0, 255]`로 스케일됩니다.
+
+이미지에서 각 레코드의 위치는 다음 두 가지 모드 중 하나로 결정됩니다:
+
+* **암시적**(기본값 — `x`와 `y`가 모두 없을 때). 각 레코드는
+  단일 픽셀에 대응하며, 픽셀은 스캔라인 순서대로, 즉 왼쪽에서 오른쪽으로, 위에서 아래로 채워집니다.
+* **명시적**(`x`와 `y` 컬럼이 모두 존재하고 둘 다 정수 타입일 때).
+  `x`와 `y` 컬럼은 픽셀 좌표를 나타냅니다. 이미지 범위를 벗어나는 좌표를 가진 레코드는
+  별도 알림 없이 무시됩니다. 동일한 좌표를 가진 레코드가 여러 개 있으면
+  마지막 레코드가 적용됩니다(painter&#39;s algorithm).
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="implicit-rgb">
+  ### 암시적 좌표 (픽셀당 1행), RGB
+</div>
+
+```sql
+SELECT
+    toUInt8(x * 25) AS r,
+    toUInt8(y * 25) AS g,
+    toUInt8((x + y) * 12) AS b
+FROM
+(
+    SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100)
+)
+INTO OUTFILE 'gradient.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10;
+```
+
+<div id="explicit-grayscale">
+  ### 명시적 좌표, 그레이스케일
+</div>
+
+```sql
+SELECT
+    toInt32(x) AS x,
+    toInt32(y) AS y,
+    toUInt8(intensity) AS v
+FROM points
+INTO OUTFILE 'points.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 512, output_format_image_height = 512;
+```
+
+<div id="terminal-mode">
+  ## 터미널에서 이미지 표시하기
+</div>
+
+기본적으로 `PNG` 포맷은 원시 이미지 바이트를 출력합니다. 설정
+[`output_format_image_terminal_mode`](/ko/reference/settings/formats#output_format_image_terminal_mode)를 사용하면, 대신 인라인 이미지 프로토콜을 통해 이미지를 터미널에 직접 렌더링합니다:
+
+| 값                  | 동작                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------ |
+| &#96;&#96; (비어 있음) | 원시 이미지 바이트를 출력합니다(기본값).                                                                                      |
+| `iterm`            | iTerm2 인라인 이미지 프로토콜을 사용합니다.                                                                                  |
+| `kitty`            | Kitty 그래픽 프로토콜을 사용합니다.                                                                                       |
+| `sixel`            | Sixel 프로토콜을 사용합니다. 이미지는 고정된 6×6×6 팔레트로 줄어들며, 알파 채널이 있으면 검은 배경에 합성됩니다.                                        |
+| `auto`             | 출력 대상이 터미널이면 지원 capability를 감지해 `iterm`, `kitty`, `sixel` 중 하나를 사용합니다(이 순서대로 시도). 그렇지 않으면 원시 이미지 바이트를 출력합니다. |
+
+```sql
+SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b
+FROM (SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100))
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10, output_format_image_terminal_mode = 'auto';
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+| 설정                                  | 설명                         | 기본값                |
+| ----------------------------------- | -------------------------- | ------------------ |
+| `output_format_image_width`         | 출력 이미지의 너비(픽셀)입니다.         | `1024`             |
+| `output_format_image_height`        | 출력 이미지의 높이(픽셀)입니다.         | `1024`             |
+| `output_format_image_terminal_mode` | 인라인 터미널 이미지 프로토콜(위 참고)입니다. | &#96;&#96; (비어 있음) |

@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'YTsaurus 字典源'
+sidebarTitle: 'YTsaurus'
+description: '将 YTsaurus 配置为 ClickHouse 中的字典源。'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  这是一个 Experimental 功能，未来版本中可能会发生不向后兼容的更改。
+  可通过设置 [`allow_experimental_ytsaurus_dictionary_source`](/zh/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source)
+  启用 YTsaurus 字典源。
+</Info>
+
+设置示例：
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="配置文件">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+设置字段：
+
+| 设置                | 描述                     |
+| ----------------- | ---------------------- |
+| `http_proxy_urls` | YTsaurus HTTP 代理的 URL。 |
+| `cypress_path`    | 表源对应的 Cypress 路径。      |
+| `oauth_token`     | OAuth 令牌。              |

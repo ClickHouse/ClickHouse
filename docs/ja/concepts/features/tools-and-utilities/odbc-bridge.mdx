@@ -1,0 +1,49 @@
+---
+description: 'Odbc Bridge のドキュメント'
+slug: /operations/utilities/odbc-bridge
+title: 'clickhouse-odbc-bridge'
+doc_type: 'reference'
+---
+
+ODBC ドライバのプロキシとして動作するシンプルな HTTP サーバーです。主な目的は、
+ODBC 実装でセグメンテーション違反などの障害が発生した場合に、
+clickhouse-server プロセス全体がクラッシュするのを防ぐことでした。
+
+このツールがパイプ、共有メモリ、TCP ではなく HTTP 経由で動作する理由は、次のとおりです。
+
+* 実装が簡単
+* デバッグが簡単
+* jdbc-bridge も同じ方法で実装できる
+
+<div id="usage">
+  ## 使用方法
+</div>
+
+`clickhouse-server` は、このツールを odbc table function および StorageODBC 内で使用します。
+ただし、以下の
+パラメータを POST リクエスト URL に指定すれば、コマンドラインからスタンドアロンツールとして使用することもできます。
+
+* `connection_string` -- ODBC 接続文字列。
+* `sample_block` -- ClickHouse NamesAndTypesList フォーマットでのカラム定義。名前はバッククォートで囲み、
+  型は文字列で指定します。名前と型はスペース区切り、行は
+  改行区切りです。
+* `max_block_size` -- オプションのパラメータで、単一ブロックの最大サイズを設定します。
+  クエリは POST ボディで送信されます。レスポンスは RowBinary フォーマットで返されます。
+
+<div id="example">
+  ## 例:
+</div>
+
+```bash
+$ clickhouse-odbc-bridge --http-port 9018 --daemon
+
+$ curl -d "query=SELECT PageID, ImpID, AdType FROM Keys ORDER BY PageID, ImpID" --data-urlencode "connection_string=DSN=ClickHouse;DATABASE=stat" --data-urlencode "sample_block=columns format version: 1
+3 columns:
+\`PageID\` String
+\`ImpID\` String
+\`AdType\` String
+"  "http://localhost:9018/" > result.txt
+
+$ cat result.txt
+12246623837185725195925621517
+```
