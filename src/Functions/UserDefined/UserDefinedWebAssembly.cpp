@@ -856,14 +856,30 @@ private:
             if (const auto * const_col = typeid_cast<const ColumnConst *>(col))
             {
                 if (preserve_const)
-                    continue; // fixed per-batch cost, not per-row
+                {
+                    // COL_IS_CONST still serializes one full value onto the wire (just not
+                    // once per row): a huge constant string/geometry contributes that value's
+                    // actual size here, not 0, or a large-const-plus-tiny-varying-args call
+                    // could skip the split path and still build an oversized guest buffer.
+                    const IColumn & data_col = const_col->getDataColumn();
+                    if (const auto * const_s = typeid_cast<const ColumnString *>(&data_col))
+                        total += const_s->getChars().size();
+                    else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+                        total += declared_type->getSizeOfValueInMemory();
+                    else
+                        total += 256;
+                    continue;
+                }
                 col = &const_col->getDataColumn();
                 materialized_const = true;
             }
             if (const auto * s = typeid_cast<const ColumnString *>(col))
             {
                 size_t bytes = s->getChars().size(); // raw bytes including null terminators
-                total += materialized_const ? bytes * row_count : bytes;
+                // Wire offsets[row_count+1] (uint64) accompany every non-const String column,
+                // whether it started that way or was just materialized from a ColumnConst.
+                size_t offset_bytes = (row_count + 1) * sizeof(uint64_t);
+                total += (materialized_const ? bytes * row_count : bytes) + offset_bytes;
             }
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory() * row_count;
@@ -896,7 +912,10 @@ private:
                 row_index = 0; // materialized const columns only ever have row 0
             }
             if (const auto * s = typeid_cast<const ColumnString *>(col))
-                total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0);
+                // + sizeof(uint64_t): amortized per-row share of the wire offsets[row_count+1]
+                // array that accompanies every non-const String column; see the matching
+                // comment in estimateTotalSerializedSize above.
+                total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t);
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory();
             else
