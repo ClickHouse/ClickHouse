@@ -28,6 +28,25 @@ The GCS Table Function integrates with Google Cloud Storage by using the GCS XML
 See the [Google interoperability docs](https://cloud.google.com/storage/docs/interoperability) for more details about the endpoint and HMAC.
 </Tip>
 
+## Native GCS integration {#native-gcs}
+
+By default `gcs` talks to Google Cloud Storage through its S3-compatible XML API (using the AWS SDK and HMAC keys). Enable the [`use_native_gcs`](/operations/settings/settings#use_native_gcs) setting to instead use the native Google Cloud SDK (`google-cloud-cpp`, the GCS JSON API):
+
+```sql
+SELECT * FROM gcs('https://storage.googleapis.com/my-bucket/data.parquet')
+SETTINGS use_native_gcs = 1;
+```
+
+In native mode credentials are resolved via the Google-native mechanisms rather than S3 HMAC keys:
+
+- **Application Default Credentials** (the default when no credentials are given): `GOOGLE_APPLICATION_CREDENTIALS`, the GCE/GKE metadata server, or the `gcloud` SDK configuration.
+- **`NOSIGN`** — anonymous access (public buckets and the GCS emulator).
+- **Service-account key** or the `google_adc_*` OAuth refresh-token flow, supplied via a [named collection](/concepts/features/configuration/server-config/named-collections).
+
+Positional HMAC `access_key_id`/`secret_access_key` arguments only apply to the default S3-compatibility path; leave `use_native_gcs` unset (the default) to keep using them.
+
+The same setting switches the [`GCS` table engine](/engines/table-engines/integrations/gcs) between the two backends. Native GCS is also available as a MergeTree storage disk via `object_storage_type: gcs` (or `type: gcs`).
+
 ## Arguments {#arguments}
 
 | Argument                     | Description                                                                                                                                                                              |
