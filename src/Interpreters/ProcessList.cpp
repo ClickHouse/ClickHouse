@@ -686,11 +686,23 @@ ProcessList::EntryPtr ProcessList::insert(
         /// Until the owning `ProcessListEntry` is constructed below, nothing rolls back this `processes`
         /// entry or the counters just incremented for it. A throwing allocation in `appendTask` or in the
         /// `Entry` construction would otherwise leave `system.processes` and the secondary concurrency
-        /// counters inflated for a query that has no `ProcessListEntry` to clean it up. Guard that window;
-        /// the increments above are allocation-free (keys pre-seeded), so the rollback undoes them exactly
-        /// once. Dismissed as soon as the `Entry` takes ownership of the cleanup.
+        /// counters inflated for a query that has no `ProcessListEntry` to clean it up. Guard that window.
+        ///
+        /// The per-user registration below (the `user_process_list.queries` / `queries_to_user` maps and the
+        /// per-user counter) allocates and can throw `bad_alloc`. It is done *before* constructing the owning
+        /// `ProcessListEntry`, inside this same guard, so that registration is complete and self-consistent
+        /// by the time the `Entry` takes over cleanup. Otherwise a throw there would leave `~ProcessListEntry`
+        /// unable to find the query (it would `std::terminate`), or decrementing `non_internal_queries` that
+        /// was never incremented. The map erases here are idempotent (no-ops when the key was never inserted,
+        /// so a partial registration rolls back exactly), and `non_internal_queries` is only undone once it
+        /// was actually incremented. The guard is dismissed as soon as the `Entry` takes ownership.
+        bool non_internal_queries_incremented = false;
         scope_guard registration_rollback([&]
         {
+            user_process_list.queries.erase(client_info.current_query_id);
+            queries_to_user.erase(client_info.current_query_id);
+            if (non_internal_queries_incremented)
+                --user_process_list.non_internal_queries;
             if (!is_internal)
             {
                 decreaseQueryKindAmount(query_kind);
@@ -699,20 +711,22 @@ ProcessList::EntryPtr ProcessList::insert(
             processes.erase(process_it);
         });
 
+        (*process_it)->setUserProcessList(&user_process_list);
+
+        user_process_list.queries.emplace(client_info.current_query_id, query);
+        queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
+        if (!is_internal)
+        {
+            ++user_process_list.non_internal_queries;
+            non_internal_queries_incremented = true;
+        }
+
         bool registered_in_cancellation_checker = CancellationChecker::getInstance().appendTask(query, query_context->getSettingsRef()[Setting::max_execution_time].totalMilliseconds(), query_context->getSettingsRef()[Setting::timeout_overflow_mode]);
 
         res = std::make_shared<Entry>(*this, process_it, registered_in_cancellation_checker);
         registration_rollback.release();
 
-        (*process_it)->setUserProcessList(&user_process_list);
         (*process_it)->setProcessListEntry(res);
-
-        user_process_list.queries.emplace(client_info.current_query_id, res->getQueryStatus());
-        queries_to_user.emplace(client_info.current_query_id, client_info.current_user);
-        if (!is_internal)
-        {
-            ++user_process_list.non_internal_queries;
-        }
 
         /// Track memory usage for all simultaneously running queries from single user.
         user_process_list.user_memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage_for_user]);
