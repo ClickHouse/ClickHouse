@@ -1,5 +1,7 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 
+#include <Columns/ColumnSparse.h>
+
 namespace DB
 {
 
@@ -69,12 +71,14 @@ void FinishSortingTransform::consume(Chunk chunk)
 
     removeConstColumns(chunk);
 
-    /// We don't support sorting by replicated columns because `compareAt` over a full column
-    /// does not accept a `ColumnReplicated`.
+    /// Materialize sort-key columns before the cross-chunk `less()` below: it uses a raw
+    /// `IColumn::compareAt` that handles neither sparse nor replicated columns.
+    /// `removeSpecialRepresentations` also strips `Replicated(Sparse)` and tuple-wrapped sparse,
+    /// which a plain `convertToFullColumnIfSparse()->convertToFullColumnIfReplicated()` chain leaves sparse.
     size_t num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
     for (const auto & desc : description_with_positions)
-        columns[desc.column_number] = columns[desc.column_number]->convertToFullColumnIfReplicated();
+        columns[desc.column_number] = removeSpecialRepresentations(columns[desc.column_number]);
     chunk.setColumns(std::move(columns), num_rows);
 
     /// Compact the remaining duplicated columns.
