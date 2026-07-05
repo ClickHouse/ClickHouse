@@ -1,0 +1,95 @@
+---
+sidebarTitle: '개요'
+title: 'ClickHouse Cloud API'
+slug: /cloud/manage/api/api-overview
+description: 'ClickHouse Cloud API에 대해 알아보십시오'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'API 개요', '클라우드 API', 'REST API', '프로그래밍 방식 접근']
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+ClickHouse Cloud API는 개발자가 ClickHouse Cloud에서 조직과 서비스를 손쉽게 관리할 수 있도록 설계된 REST API입니다. Cloud API를 사용하면 서비스를 생성 및 관리하고, API Key를 발급하고, 조직의 구성원을 추가하거나 제거하는 등 다양한 작업을 수행할 수 있습니다.
+
+[첫 번째 API Key를 생성하고 ClickHouse Cloud API 사용을 시작하는 방법을 알아보세요.](/ko/products/cloud/features/admin-features/api/openapi)
+
+<div id="swagger-openapi-endpoint-and-ui">
+  ## Swagger (OpenAPI) 엔드포인트 및 UI
+</div>
+
+ClickHouse Cloud API는 클라이언트 측에서 예측 가능하게 활용할 수 있도록 오픈소스 [OpenAPI specification](https://www.openapis.org/)을 기반으로 구축되었습니다.
+ClickHouse Cloud API 문서를 프로그래밍 방식으로 활용해야 하는 경우,
+https://api.clickhouse.cloud/v1에서 JSON 기반 Swagger 엔드포인트를 제공합니다.
+또한 [Swagger UI](/ko/api-reference/organization/get-list-of-available-organizations)에서도 API 문서를 확인할 수 있습니다.
+
+<Note>
+  조직이 [새로운 요금제](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) 중 하나로 마이그레이션되었고 OpenAPI를 사용하는 경우, 서비스 생성 `POST` 요청에서 `tier` 필드를 제거해야 합니다.
+
+  더 이상 서비스 티어가 없으므로 서비스 객체에서 `tier` 필드가 제거되었습니다.
+  이 변경은 `POST`, `GET`, `PATCH` 서비스 요청에서 반환되는 객체에 영향을 줍니다. 따라서 이러한 API를 활용하는 코드는 이 변경 사항을 처리할 수 있도록 조정해야 할 수 있습니다.
+</Note>
+
+<div id="rate-limits">
+  ## 요청 제한
+</div>
+
+조직당 API Key는 최대 100개까지 생성할 수 있습니다. 각 API Key는
+10초 동안 최대 10개의 요청으로 제한됩니다. 조직의 API Key 수 또는 10초당 요청 수를
+늘리려면 support@clickhouse.com으로 문의하십시오.
+
+<div id="terraform-provider">
+  ## Terraform 프로바이더
+</div>
+
+공식 ClickHouse Terraform 프로바이더를 사용하면 [Infrastructure as Code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)를 통해 예측 가능하고 버전 관리되는 구성을 생성하여 배포 시 오류 발생 가능성을 크게 줄일 수 있습니다.
+
+[Terraform registry](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)에서 Terraform 프로바이더 문서를 확인할 수 있습니다.
+
+ClickHouse Terraform Provider에 기여하려면 [GitHub repo](https://github.com/ClickHouse/terraform-provider-clickhouse)에서
+소스 코드를 확인할 수 있습니다.
+
+<Note>
+  조직이 [새 요금제](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) 중 하나로 이전된 경우, [ClickHouse Terraform 프로바이더](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) 버전 2.0.0 이상을 사용해야 합니다. 이 업그레이드는 서비스의 `tier` 속성 변경을 처리하기 위해 필요합니다. 요금제 이전 이후에는 `tier` 필드가 더 이상 허용되지 않으므로 관련 참조를 제거해야 합니다.
+
+  이제 서비스 리소스의 속성으로 `num_replicas` 필드도 지정할 수 있습니다.
+</Note>
+
+<div id="terraform-provider-releases">
+  ## Terraform 프로바이더 릴리스
+</div>
+
+ClickHouse는 2개의 공식 Terraform 프로바이더를 제공합니다. 하나는 클라우드 인프라용 ClickHouse Cloud 프로바이더이고, 다른 하나는 데이터베이스 수준의 객체용 DBops 프로바이더입니다. 두 프로바이더 모두 동일한 릴리스 모델을 따릅니다.
+
+<div id="stable-vs-alpha">
+  ### 안정 버전과 alpha 버전
+</div>
+
+안정 버전(예: 3.11.1, 1.9.0)에는 일반 제공 기능에 대한 리소스만 포함됩니다. alpha 버전(예: 3.12.0-alpha2, 1.10.0-alpha1)에는 안정 버전에 포함된 모든 항목에 더해 아직 베타 또는 비공개 프리뷰 상태인 기능에 대한 리소스도 포함되며, 이를 사용하려면 해당 버전을 명시적으로 고정해야 합니다.
+
+<div id="versioning">
+  ### 버전 관리
+</div>
+
+두 프로바이더 모두 시맨틱 버전 관리(MAJOR.MINOR.PATCH)를 사용합니다. 메이저 버전은 호환성이 깨지는 변경이 있을 때 증가하고, 마이너 버전은 새로운 기능이나 리소스가 추가될 때 증가하며, 패치 버전은 버그를 수정할 때 증가합니다. alpha 릴리스는 다음 마이너 버전에 사전 릴리스 접미사를 붙입니다(예: 3.12.0-alpha1). 또한 승격 전에 수정이나 변경이 추가되면 alpha 번호가 증가합니다(예: alpha1 → alpha2 → alpha3). 릴리스는 고정된 일정이 아니라 필요에 따라 생성됩니다. 아직 일반 제공되지 않은 기능을 위한 리소스가 추가되거나, 수정 사항을 조기에 검증해야 할 때 새로운 alpha가 생성됩니다. 이후 일반 제공에 도달한 기능을 포함해 누적된 변경 사항이 프로덕션에 배포할 준비가 되면, 일반적으로 고객 피드백 기간을 거친 뒤 새로운 안정 릴리스가 생성됩니다. 여러 alpha 마이너 버전이 누적된 후 하나의 안정 릴리스로 통합될 수 있습니다.
+
+<div id="promotion">
+  ### alpha에서 안정으로 승격
+</div>
+
+Terraform 기능이 일반 제공 단계에 도달하면 해당 Terraform 리소스는 다음 안정 릴리스에서 alpha에서 안정으로 승격됩니다. 그전까지는 해당 리소스를 alpha 빌드에서만 사용할 수 있습니다.
+
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Terraform 및 OpenAPI 새 요금제: 레플리카 설정 설명
+</div>
+
+각 서비스가 생성될 때 기본 레플리카 수는 Scale 및 Enterprise 티어에서는 3개이고, Basic 티어에서는 1개입니다.
+Scale 및 Enterprise 티어에서는 서비스 생성 요청에 `numReplicas` 필드를 전달하여 이 값을 조정할 수 있습니다.
+`numReplicas` 필드 값은 warehouse의 첫 번째 서비스에서는 2 이상 20 이하여야 합니다. 기존 warehouse에서 생성되는 서비스는 레플리카 수를 최소 1개까지 설정할 수 있습니다.
+
+<div id="support">
+  ## 지원
+</div>
+
+빠른 지원이 필요하면 먼저 [Slack 채널](https://clickhouse.com/slack)을 방문하는 것이 좋습니다. 추가 지원이 필요하거나 API 및 해당 기능에 대한 자세한 정보가 필요하면 https://console.clickhouse.cloud/support에서 ClickHouse 지원팀에 문의하십시오.

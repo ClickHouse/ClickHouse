@@ -128,7 +128,7 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             .syntax = "numbers_mt() | numbers_mt(N) | numbers_mt(N, M) | numbers_mt(N, M, S)",
             .arguments = {
                 {"N", "When used as `numbers_mt(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers_mt(N, M[, S])`: the starting value (offset).", {"UInt64"}},
-                {"M", "The number of integers to return, starting from `N` (only for `numbers_mt(N, M)` and `numbers_mt(N, M, S)`).", {"UInt64"}},
+                {"M", "The width of the value range `[N, N + M)`. Values are emitted from this range starting at `N` and stepping by `S`, so `numbers_mt(N, M)` returns `N` to `N + M - 1` and `numbers_mt(N, M, S)` returns fewer values when `S > 1` (only for `numbers_mt(N, M)` and `numbers_mt(N, M, S)`).", {"UInt64"}},
                 {"S", "The step between successive values (`S >= 1`), only for `numbers_mt(N, M, S)`.", {"UInt64"}},
             },
             .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
@@ -148,14 +148,14 @@ void registerTableFunctionNumbers(TableFunctionFactory & factory)
             .syntax = "numbers() | numbers(N) | numbers(N, M) | numbers(N, M, S)",
             .arguments = {
                 {"N", "When used as `numbers(N)`: the number of integers to return (`0` to `N - 1`). When used as `numbers(N, M[, S])`: the starting value (offset).", {"UInt64"}},
-                {"M", "The number of integers to return, starting from `N` (only for `numbers(N, M)` and `numbers(N, M, S)`).", {"UInt64"}},
+                {"M", "The width of the value range `[N, N + M)`. Values are emitted from this range starting at `N` and stepping by `S`, so `numbers(N, M)` returns `N` to `N + M - 1` and `numbers(N, M, S)` returns fewer values when `S > 1` (only for `numbers(N, M)` and `numbers(N, M, S)`).", {"UInt64"}},
                 {"S", "The step between successive values (`S >= 1`), only for `numbers(N, M, S)`.", {"UInt64"}},
             },
             .returned_value = {"A table with a single `number` column of type `UInt64`.", {"UInt64"}},
             .examples = {
                 {"The integers from 0 to 9", "SELECT * FROM numbers(10);", ""},
                 {"The integers from 10 to 19", "SELECT * FROM numbers(10, 10);", ""},
-                {"Even numbers from 0 to 18", "SELECT * FROM numbers(0, 10, 2);", ""},
+                {"Even numbers from 0 to 18", "SELECT * FROM numbers(0, 20, 2);", ""},
                 {"Limit an infinite stream", "SELECT * FROM numbers() LIMIT 10;", ""},
             },
             .introduced_in = {1, 1},

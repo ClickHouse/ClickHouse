@@ -12,6 +12,7 @@ CREATE TABLE t_nsjk_1 (lk Nullable(Int32), a Int32) ENGINE = Memory;
 CREATE TABLE t_nsjk_2 (rk Nullable(Int32)) ENGINE = Memory;
 
 SET enable_analyzer = 0;
+SET explain_query_plan_default = 'legacy';
 
 -- The exact shape found by the AST fuzzer (EXPLAIN SYNTAX) must not crash.
 -- Wrapped in count() so the volatile auto-generated subquery alias is not printed.

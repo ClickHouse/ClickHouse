@@ -1,0 +1,248 @@
+---
+title: Cómo configurar ClickHouse en Docker con ODBC para conectarse a una base de datos de Microsoft SQL Server (MSSQL)
+description: "Cómo configurar ClickHouse en Docker con ODBC para conectarse a una base de datos de Microsoft SQL Server (MSSQL)"
+date: 2024-05-29
+tags: ['Clientes e interfaces nativos']
+keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo configuro ClickHouse con una imagen de Docker para conectarlo a Microsoft SQL Server?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+***Notas sobre este ejemplo***
+
+* Usa la imagen de Ubuntu de ClickHouse para Docker
+* Usa el controlador FreeTDS
+* Usa MSSQL Server 2012R2
+* El `hostname` de Windows para este ejemplo es `MARSDB2.marsnet2.local` con la IP `192.168.1.133` (actualízalo con tu `hostname` y/o IP)
+* El nombre de la instancia de MSSQL es `MARSDB2`
+* El usuario de inicio de sesión y el usuario de la base de datos de MSSQL son `sql_user`
+
+<div id="example-setup-in-mssql-for-testing-">
+  ### Configuración de ejemplo en MSSQL para pruebas
+</div>
+
+Base de datos y tabla creadas en MSSQL:
+
+<Image img="/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp" size="md" alt="Estructura de la base de datos y la tabla en MSSQL" border />
+
+Usuario de inicio de sesión en MSSQL, `sql_user`:
+
+<Image img="/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp" size="md" alt="Configuración del usuario de inicio de sesión en MSSQL" border />
+
+Roles de pertenencia a la base de datos para `sql_user`:
+
+<Image img="/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp" size="md" alt="Roles de pertenencia a la base de datos en MSSQL" border />
+
+Usuario de base de datos con inicio de sesión:
+
+<Image img="/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp" size="md" alt="Usuario de base de datos en MSSQL con inicio de sesión" border />
+
+<div id="configuring-clickhouse-with-odbc">
+  ### Configuración de ClickHouse con ODBC
+</div>
+
+Cree un directorio de trabajo:
+
+```sh
+mkdir ch-odbc-mssql
+cd ch-odbc-mssql
+```
+
+Cree un archivo `odbc.ini`:
+
+```sh
+vim odbc.ini
+```
+
+Agregue las siguientes entradas para actualizar el nombre del DSN y la IP:
+
+```sh
+[marsdb2_mssql]
+Driver = FreeTDS
+Server = 192.168.1.133
+```
+
+Crea un archivo `odbcinst.ini`:
+
+```sh
+vim odbcinst.ini
+```
+
+Añade las siguientes entradas (la traza es opcional, pero ayuda con la depuración):
+
+```sh
+[ODBC]
+Trace = Yes
+TraceFile = /tmp/odbc.log
+
+[FreeTDS]
+Description = FreeTDS
+Driver = /usr/lib/aarch64-linux-gnu/odbc/libtdsodbc.so
+Setup = /usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
+UsageCount = 1
+```
+
+<div id="configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries">
+  ### Configurar un Dockerfile para descargar la imagen y agregar las bibliotecas TDS y ODBC necesarias
+</div>
+
+Cree el Dockerfile:
+
+```sh
+vim Dockerfile
+```
+
+Añade el contenido del Dockerfile:
+
+```sh
+FROM clickhouse/clickhouse-server:23.10
+
+# Instalar el controlador ODBC
+
+RUN apt-get update && apt-get install -y --no-install-recommends unixodbc \
+    && apt-get install -y freetds-bin freetds-common freetds-dev libct4 libsybdb5 \
+	&& apt-get install tdsodbc
+```
+
+Cree la nueva imagen de Docker:
+
+```sh
+docker build . -t marsnet/clickhouse-odbc:23.10
+```
+
+Cree un archivo `docker-compose.yml`:
+
+```sh
+vim docker-compose.yml
+```
+
+Añade el siguiente contenido al archivo YAML:
+
+```sh
+version: '3.7'
+services:
+  clickhouse:
+    image: marsnet/clickhouse-odbc:23.10
+    container_name: clickhouse-odbc
+    hostname: clickhouse-host
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+      - "9009:9009"
+    volumes:
+      - ./odbc.ini:/etc/odbc.ini
+      - ./odbcinst.ini:/etc/odbcinst.ini
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+```
+
+Inicie el contenedor:
+
+```sh
+docker compose up --detach
+```
+
+Una vez iniciado el contenedor, deberías ver algo como esto:
+
+```sh
+ch-odbc-mssql % docker compose up --detach
+[+] Running 1/1
+ ✔ Container clickhouse-odbc  Started
+```
+
+Compruebe que el contenedor esté en ejecución:
+
+```sh
+ch-odbc-mssql % docker ps
+CONTAINER ID   IMAGE                           COMMAND            CREATED          STATUS              PORTS                                                                    NAMES
+87a400b803ce   marsnet/clickhouse-odbc:23.10   "/entrypoint.sh"   57 minutes ago   Up About a minute   0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 0.0.0.0:9009->9009/tcp   clickhouse-odbc
+```
+
+<div id="test-odbc-connection">
+  ### Probar la conexión ODBC
+</div>
+
+Inicie sesión con el cliente de ClickHouse:
+
+```sh
+./clickhouse client
+```
+
+Pruebe la consulta `SELECT` con la función de tabla `odbc` contra la tabla remota de la base de datos MSSQL:
+
+```
+clickhouse-host :) SELECT * from odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1');
+
+SELECT *
+FROM odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1')
+
+Query id: 23494da2-6e12-4ade-95fa-372a0420cac1
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.188 sec. 
+```
+
+También puede crear una tabla remota con el motor de tablas `odbc`:
+
+```sql
+CREATE TABLE table1_odbc_mssql
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = ODBC('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'dbo', 'table1')
+```
+
+Usa una consulta `SELECT` para probar la nueva tabla remota:
+
+```
+clickhouse-host :) select * from table1_odbc_mssql;
+
+SELECT *
+FROM table1_odbc_mssql
+
+Query id: 94724368-485d-4364-ae58-a435a225c37d
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.218 sec. 
+```
+
+Para más información, consulte:
+
+* [https://hub.docker.com/&#95;/clickhouse](https://hub.docker.com/_/clickhouse)
+* [https://clickhouse.com/docs/engines/table-engines/integrations/odbc](/es/reference/engines/table-engines/integrations/odbc)
+* [https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc)

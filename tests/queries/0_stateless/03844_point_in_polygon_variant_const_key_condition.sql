@@ -3,7 +3,7 @@
 -- has a non-Array const type, which tripped `chassert(WhichDataType(const_type).isArray())`
 -- during primary-key analysis and aborted the server. The skip-index atom is now skipped for
 -- such constants.
-
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_pip_variant;
 CREATE TABLE t_pip_variant (x Float64, y Float64) ENGINE = MergeTree ORDER BY (x, y);
 INSERT INTO t_pip_variant VALUES (1, 1) (2, 2) (3, 3) (6, 4) (0, 0);
