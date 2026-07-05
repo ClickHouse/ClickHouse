@@ -15,6 +15,7 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
+#include <Processors/Transforms/SortingTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 
 using namespace DB;
@@ -191,6 +192,49 @@ void runFinishSortingUInt16(ColumnPtr second_prefix, size_t n)
     runFinishSorting(std::make_shared<DataTypeUInt16>(), denseUInt16(0, n), std::move(second_prefix), n);
 }
 
+/// Drive `MergeSorter` (the ordinary merge-sort path used by `MergeSortingTransform`) directly with
+/// two already-sorted chunks whose sort key `x` holds the SAME value, so building and draining the
+/// merging queue exercises the cross-cursor `compareAt`. `first_key`/`second_key` are the `x` column
+/// of each chunk; before the fix a `second_key` carrying a replicated column nested in a tuple made
+/// `ColumnTuple::compareAt` delegate to `ColumnVector::compareAt(..., ColumnReplicated)` and bad-cast.
+void runMergeSorter(DataTypePtr key_type, ColumnPtr first_key, ColumnPtr second_key, size_t n)
+{
+    auto type_u64 = std::make_shared<DataTypeUInt64>();
+
+    Block header({
+        ColumnWithTypeAndName(key_type->createColumn(), key_type, "x"),
+        ColumnWithTypeAndName(type_u64->createColumn(), type_u64, "y"),
+    });
+    auto shared_header = std::make_shared<const Block>(header);
+
+    Chunk chunk_first;
+    {
+        Columns cols;
+        cols.push_back(std::move(first_key));
+        cols.push_back(denseUInt64Iota(n));
+        chunk_first.setColumns(std::move(cols), n);
+    }
+    Chunk chunk_second;
+    {
+        Columns cols;
+        cols.push_back(std::move(second_key));
+        cols.push_back(denseUInt64Iota(n));
+        chunk_second.setColumns(std::move(cols), n);
+    }
+
+    Chunks chunks;
+    chunks.emplace_back(std::move(chunk_first));
+    chunks.emplace_back(std::move(chunk_second));
+
+    SortDescription description;
+    description.emplace_back("x");
+    description.emplace_back("y");
+
+    MergeSorter merge_sorter(shared_header, std::move(chunks), description, /*max_merged_block_size=*/8192, /*limit=*/0);
+    while (merge_sorter.read())
+        ;
+}
+
 }
 
 /// Regression test for STID 1499-2393: a dense sort-key column in the stored chunk and the same
@@ -282,4 +326,19 @@ TEST(FinishSortingTransform, NullableTupleReplicatedChildSortKeyDoesNotBadCast)
     /// Before the fix this aborts with `Bad cast ... ColumnReplicated to ColumnVector<unsigned short>`.
     EXPECT_NO_THROW(runFinishSorting(
         key_type, nullableTupleOf(denseUInt16(0, n), n), nullableTupleOf(replicatedUInt16(0, n), n), n));
+}
+
+/// The same nested-replicated hazard on the ordinary merge-sort path (`MergeSortingTransform` ->
+/// `MergeSorter`), not just the read-in-order `FinishSortingTransform` (raised in review). Before
+/// the fix `MergeSorter` peeled only a top-level `ColumnReplicated`, so a `Tuple(Replicated(UInt16))`
+/// sort key reached the merging cursors and `ColumnTuple::compareAt` delegated to
+/// `ColumnVector::compareAt(..., ColumnReplicated)` -- the same bad cast one level deeper. Both sort
+/// sites now share `materializeSortKeyColumn`, which recurses through composite children.
+TEST(MergeSorter, TupleReplicatedChildSortKeyDoesNotBadCast)
+{
+    constexpr size_t n = 8;
+    auto key_type = std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeUInt16>()});
+    /// Two sorted chunks with the SAME tuple key: one dense, one carrying a replicated tuple child.
+    EXPECT_NO_THROW(runMergeSorter(
+        key_type, tupleOf(denseUInt16(0, n)), tupleOf(replicatedUInt16(0, n)), n));
 }

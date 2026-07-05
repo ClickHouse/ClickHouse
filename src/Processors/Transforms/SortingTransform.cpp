@@ -23,6 +23,46 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Expand replicated and sparse wrappers, recursing through every composite child, so the raw
+/// `IColumn::compareAt` used by the sort cursors (and by `FinishSortingTransform`'s cross-chunk
+/// `less()`) never receives a sparse or replicated column (it handles neither). A single top-level
+/// strip is not enough: `compareAt` of `ColumnTuple`, `ColumnNullable`, `ColumnArray` and
+/// `ColumnMap` all delegate to their children, so a sparse or replicated column nested at any depth
+/// (e.g. `Tuple(Replicated)` or `Nullable(Tuple(Sparse))`) still reaches the same bad cast one
+/// level deeper. This mirrors `IColumn::convertToFullIfNeeded` but keeps LowCardinality (a distinct
+/// data type, part of the block header) intact; const columns are already removed before sorting.
+ColumnPtr materializeSortKeyColumn(const ColumnPtr & column)
+{
+    /// `Replicated(Sparse)` is possible (but not `Sparse(Replicated)`), so expand replicated first,
+    /// then strip the sparse wrapper it may reveal.
+    ColumnPtr full = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
+
+    /// LowCardinality is preserved as-is; its dictionary and indexes are always dense.
+    if (full->lowCardinality())
+        return full;
+
+    Columns materialized_subcolumns;
+    bool any_changed = false;
+    full->forEachSubcolumn([&](const auto & subcolumn)
+    {
+        auto materialized = materializeSortKeyColumn(subcolumn);
+        any_changed |= (materialized.get() != subcolumn.get());
+        materialized_subcolumns.push_back(std::move(materialized));
+    });
+
+    if (!any_changed)
+        return full;
+
+    auto mutable_column = IColumn::mutate(std::move(full));
+    size_t i = 0;
+    mutable_column->forEachMutableSubcolumn([&](auto & subcolumn)
+    {
+        subcolumn = std::move(materialized_subcolumns[i++]);
+    });
+
+    return std::move(mutable_column);
+}
+
 MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_), queue_variants(*header, description)
 {
@@ -45,12 +85,14 @@ MergeSorter::MergeSorter(SharedHeader header, Chunks chunks_, SortDescription & 
 
         size_t num_rows = chunk.getNumRows();
         auto columns = chunk.detachColumns();
-        /// We don't support sorting by replicated columns for now,
-        /// because it requires special code for them in the cursors.
+        /// The cursors compare sort keys with a raw `IColumn::compareAt` that handles neither
+        /// replicated nor sparse columns, including when they are nested inside a composite sort
+        /// key (a tuple/nullable child). Materialize each sort-key column recursively so a
+        /// replicated or sparse column can never reach the comparison.
         for (const auto & column_desc : description)
         {
             size_t column_number = header->getPositionByName(column_desc.column_name);
-            columns[column_number] = columns[column_number]->convertToFullColumnIfReplicated();
+            columns[column_number] = materializeSortKeyColumn(columns[column_number]);
         }
         chunk.setColumns(std::move(columns), num_rows);
 

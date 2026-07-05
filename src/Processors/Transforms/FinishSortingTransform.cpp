@@ -1,53 +1,11 @@
 #include <Processors/Transforms/FinishSortingTransform.h>
 
-#include <Columns/IColumn.h>
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-/// Expand replicated and sparse wrappers, recursing through every composite child, so the raw
-/// `IColumn::compareAt` used by `less()` below never receives a sparse or replicated column (it
-/// handles neither). A single wrapper strip is not enough: `compareAt` of `ColumnTuple`,
-/// `ColumnNullable`, `ColumnArray` and `ColumnMap` all delegate to their children, so a sparse or
-/// replicated column nested at any depth (e.g. `Nullable(Tuple(Sparse))`) still reaches the same
-/// bad cast one level deeper. This mirrors `IColumn::convertToFullIfNeeded` but keeps
-/// LowCardinality (a distinct data type, part of the block header) intact, matching the base
-/// `SortingTransform` cursor preparation; const columns are already removed by `removeConstColumns`.
-static ColumnPtr materializeSortKeyColumn(const ColumnPtr & column)
-{
-    /// `Replicated(Sparse)` is possible (but not `Sparse(Replicated)`), so expand replicated first,
-    /// then strip the sparse wrapper it may reveal.
-    ColumnPtr full = column->convertToFullColumnIfReplicated()->convertToFullColumnIfSparse();
-
-    /// LowCardinality is preserved as-is; its dictionary and indexes are always dense.
-    if (full->lowCardinality())
-        return full;
-
-    Columns materialized_subcolumns;
-    bool any_changed = false;
-    full->forEachSubcolumn([&](const auto & subcolumn)
-    {
-        auto materialized = materializeSortKeyColumn(subcolumn);
-        any_changed |= (materialized.get() != subcolumn.get());
-        materialized_subcolumns.push_back(std::move(materialized));
-    });
-
-    if (!any_changed)
-        return full;
-
-    auto mutable_column = IColumn::mutate(std::move(full));
-    size_t i = 0;
-    mutable_column->forEachMutableSubcolumn([&](auto & subcolumn)
-    {
-        subcolumn = std::move(materialized_subcolumns[i++]);
-    });
-
-    return std::move(mutable_column);
 }
 
 static bool isPrefix(const SortDescription & pref_descr, const SortDescription & descr)
