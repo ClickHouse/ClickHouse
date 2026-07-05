@@ -1,0 +1,4 @@
+default value:	1
+auto == explicit:	1
+auto reorders (!= insertion order):	1
+disabled keeps insertion order:	1

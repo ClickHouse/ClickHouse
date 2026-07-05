@@ -1279,6 +1279,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"optimize_row_order_if_no_order_by", false, true, "New setting to automatically apply the row order optimization (see optimize_row_order) to ordinary MergeTree tables that have no ORDER BY key. Enabled by default; previous_value=false reproduces the pre-26.7 behavior where such tables were not row-order-optimized unless optimize_row_order was set explicitly."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

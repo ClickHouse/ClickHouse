@@ -95,6 +95,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_free_disk_bytes_to_perform_insert;
     extern const MergeTreeSettingsFloat min_free_disk_ratio_to_perform_insert;
     extern const MergeTreeSettingsBool optimize_row_order;
+    extern const MergeTreeSettingsBool optimize_row_order_if_no_order_by;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
@@ -776,7 +777,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    /// The row order optimization is applied if it is explicitly enabled via optimize_row_order, or if the
+    /// table has no ORDER BY key (empty sort_description) and optimize_row_order_if_no_order_by is enabled.
+    /// A table without an ORDER BY key imposes no ordering on its rows, so they can be freely re-shuffled
+    /// to improve compressability at no cost, hence the optimization is on by default in that case.
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order]
+            || (sort_description.empty() && (*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {
@@ -1123,7 +1129,12 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
             ProfileEvents::increment(ProfileEvents::MergeTreeDataProjectionWriterBlocksAlreadySorted);
     }
 
-    if ((*data_settings)[MergeTreeSetting::optimize_row_order]
+    /// The row order optimization is applied if it is explicitly enabled via optimize_row_order, or if the
+    /// table has no ORDER BY key (empty sort_description) and optimize_row_order_if_no_order_by is enabled.
+    /// A table without an ORDER BY key imposes no ordering on its rows, so they can be freely re-shuffled
+    /// to improve compressability at no cost, hence the optimization is on by default in that case.
+    if (((*data_settings)[MergeTreeSetting::optimize_row_order]
+            || (sort_description.empty() && (*data_settings)[MergeTreeSetting::optimize_row_order_if_no_order_by]))
         && data.merging_params.mode
             == MergeTreeData::MergingParams::Mode::Ordinary) /// Nobody knows if this optimization messes up specialized MergeTree engines.
     {

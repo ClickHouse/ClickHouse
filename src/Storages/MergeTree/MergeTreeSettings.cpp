@@ -1066,6 +1066,18 @@ primary key, i.e. a table with only few distinct primary key values.
 High-cardinality primary keys, e.g. involving timestamp columns of type
 `DateTime64`, are not expected to benefit from this setting.
 )", 0) \
+    DECLARE(Bool, optimize_row_order_if_no_order_by, true, R"(
+Enables the row order optimization (see setting `optimize_row_order`) automatically
+for ordinary MergeTree-engine tables which have no ORDER BY key (i.e. `ORDER BY tuple()`).
+
+Such tables impose no ordering constraint on their rows, so rows can be freely
+re-shuffled to minimize the number of equal-value runs and maximize the
+compressability of newly inserted parts. As there is no ordering to preserve,
+there is no downside to the optimization, hence it is enabled by default.
+
+The row order optimization is applied if `optimize_row_order` is enabled, or if the
+table has no ORDER BY key and this setting is enabled.
+)", 0) \
     DECLARE(Bool, use_adaptive_write_buffer_for_dynamic_subcolumns, true, R"(
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
