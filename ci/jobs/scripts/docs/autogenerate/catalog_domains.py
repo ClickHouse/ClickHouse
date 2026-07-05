@@ -131,6 +131,7 @@ def _item_generators(domain, rows, docs_dir, migrate):
                 "dest": f"docs/{domain['legacy_prefix']}/{os.path.basename(page_rel)[:-len('.mdx')]}.md",
                 "dest_rel": page_rel,
                 "create_frontmatter": fm_text,
+                "badge": catalog.badge(domain["source_table"]),
                 "title": title,
                 "full_transform": True,
                 "nav": (nav_group, page_rel[: -len(".mdx")]),
@@ -165,6 +166,7 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "table-engines",
+            "source_table": "system.table_engines",
             "dirs": TABLE_ENGINE_DIRS,
             "overrides": TABLE_ENGINE_PAGE_OVERRIDES,
             "legacy_prefix": "engines/table-engines",
@@ -194,6 +196,7 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "database-engines",
+            "source_table": "system.database_engines",
             "dirs": ["reference/engines/database-engines"],
             "legacy_prefix": "engines/database-engines",
             "new_item": db_engine_new_item,
@@ -224,6 +227,7 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "data-types",
+            "source_table": "system.data_type_families",
             "dirs": ["reference/data-types"],
             "overrides": DATA_TYPE_PAGE_OVERRIDES,
             "legacy_prefix": "sql-reference/data-types",
@@ -273,6 +277,7 @@ def build_generators(binary, docs_dir, migrate):
     gens += _item_generators(
         {
             "family": "formats",
+            "source_table": "system.formats",
             "dirs": ["reference/formats"],
             "legacy_prefix": "interfaces/formats",
             "new_item": format_new_item,

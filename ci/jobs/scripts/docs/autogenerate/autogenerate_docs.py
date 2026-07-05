@@ -297,9 +297,10 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
 
     if not os.path.isfile(dest):
         if gen.get("create_frontmatter") is not None:
-            # A newly documented catalog item: synthesized frontmatter plus
-            # the transformed embedded page body.
-            new = gen["create_frontmatter"] + "\n" + content.strip("\n") + "\n"
+            # A newly documented catalog item: synthesized frontmatter, the
+            # provenance badge, then the transformed embedded page body.
+            badge = (gen["badge"] + "\n\n") if gen.get("badge") else ""
+            new = gen["create_frontmatter"] + "\n" + badge + content.strip("\n") + "\n"
             return dest, new, "create"
         if gen.get("create_page") is not None:
             # A newly documented item: emit the whole page.
@@ -436,6 +437,12 @@ def main(argv=None):
         if new is None:  # skipped (e.g. a non-aggregate page)
             continue
         rel = os.path.relpath(dest, docs_dir)
+
+        if kind == "update" and os.path.isfile(dest):
+            # The provenance badge's date only advances when the generated
+            # content actually changed.
+            with open(dest, encoding="utf-8") as f:
+                new = catalog.reconcile_badge_date(f.read(), new)
 
         if kind == "content-drift":
             # Pre-cutover: the page wins; never written, only compared.

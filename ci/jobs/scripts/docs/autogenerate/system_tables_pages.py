@@ -24,6 +24,8 @@ import re
 import subprocess
 import sys
 
+import catalog
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_CONFIG = os.path.join(SCRIPT_DIR, "config", "system_tables_config.xml")
 
@@ -231,6 +233,8 @@ slug: /operations/system-tables/{table_name}
 title: 'system.{table_name}'
 doc_type: 'reference'
 ---
+
+{catalog.badge("system.tables")}
 
 import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
 

@@ -25,6 +25,7 @@ COLUMNS = "name, description, syntax, examples, introduced_in, related"
 DOMAINS = [
     {
         "family": "skipping-indexes",
+        "source_table": "system.data_skipping_index_types",
         "query": f"SELECT {COLUMNS} FROM system.data_skipping_index_types ORDER BY name",
         "dir": "reference/engines/table-engines/mergetree-family/skipping-indexes",
         "slug_prefix": "/engines/table-engines/mergetree-family/skipping-indexes",
@@ -45,6 +46,7 @@ DOMAINS = [
     },
     {
         "family": "disk-types",
+        "source_table": "system.disk_types",
         "query": f"SELECT {COLUMNS} FROM system.disk_types ORDER BY name",
         "dir": "reference/disks",
         "slug_prefix": "/operations/disk-types",
@@ -78,7 +80,8 @@ def _item_page(domain, row, names):
         "doc_type: 'reference'",
         "---",
     ])
-    parts = [fm, "", HEADER_COMMENT, "", row["description"].strip()]
+    parts = [fm, "", catalog.badge(domain["source_table"]), "",
+             HEADER_COMMENT, "", row["description"].strip()]
     if row.get("syntax"):
         parts += ["", "## Syntax {#syntax}", "", "```sql",
                   row["syntax"].strip(), "```"]
@@ -108,7 +111,8 @@ def _index_page(domain, rows):
         "doc_type: 'reference'",
         "---",
     ])
-    lines = [fm, "", HEADER_COMMENT, "", domain["index_intro"], "",
+    lines = [fm, "", catalog.badge(domain["source_table"]), "",
+             HEADER_COMMENT, "", domain["index_intro"], "",
              "| Type | Description |", "|-----|-----|"]
     base = domain["dir"].replace("reference", "/reference", 1)
     for row in rows:
