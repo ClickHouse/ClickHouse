@@ -1819,6 +1819,82 @@ def _inject_import(text: str, import_line: str) -> str:
     return text[:insert_at] + "\n" + import_line + "\n" + text[insert_at:]
 
 
+def transform_body(
+    text: str,
+    lk: Lookups,
+    issues: list[str],
+    *,
+    title: str | None = None,
+    source_docu_path: Path | None = None,
+    source_docu_file: str | None = None,
+    dest_path: Path | None = None,
+    inject_imports: bool = True,
+    override_key: str | None = None,
+) -> str:
+    """The Docusaurus->Mintlify body transform sequence, applied after the
+    frontmatter has been separated off.
+
+    This is the single source of truth for the body transforms: the migrator
+    runs it on whole pages (`inject_imports=True`, per-file `override_key`),
+    and the docs autogenerator runs it -- via `catalog.full_transform` and the
+    marker-fragment path -- on documentation embedded in the C++ source, so
+    generated pages are transformed identically to migrated ones (e.g.
+    `:::warning` admonitions become `<Warning>`, `<Tabs>`, `<Accordion>`,
+    etc.). Callers that transform a fragment or embed the body into
+    synthesized frontmatter pass `inject_imports=False` (imports must live at
+    the page top, not inside a fragment) and no `override_key`.
+
+    `title` is only used by `drop_redundant_h1`; pass None when there is no
+    page title (a marker fragment) to leave headings untouched."""
+    text = drop_redundant_h1(text, title)
+    text = transform_heading_anchors(text)
+    json_vars: dict[str, str] = {}
+    text, image_vars = transform_imports(
+        text, lk, issues, source_docu_path=source_docu_path,
+        json_vars=json_vars, dest_path=dest_path,
+    )
+    text = transform_use_base_url(text)
+    text = transform_tocinline(text)
+    text = transform_iframes(text)
+    text = transform_admonitions(text)
+    text = transform_details(text)
+    text = transform_tabs(text)
+    text = transform_image_components(text, image_vars)
+    text = transform_svg_components(text, image_vars)
+    text = transform_image_logo_to_img(text)
+    text = transform_static_image_paths(text)
+    text = transform_inline_anchor(text)
+    text = transform_vertical_stepper(text)
+    text = transform_card_primary(text)
+    text = transform_horizontal_divide(text)
+    text = transform_two_column_list(text, json_vars)
+    text, used_runnable = transform_runnable(text)
+    text = transform_highlight_comments(text)
+
+    text = rewrite_links(text, source_docu_file, lk, issues, dest_path=dest_path)
+
+    if inject_imports:
+        if used_runnable and "RunnableCode/RunnableCode.jsx" not in text:
+            text = _inject_import(text, RUNNABLE_IMPORT)
+        if image_vars and "/snippets/components/Image.jsx" not in text:
+            text = _inject_import(text, IMAGE_IMPORT)
+
+    # Dedupe imports to avoid `Identifier 'X' has already been declared`
+    # bundle errors that would render the page blank. See the two helpers
+    # for the underlying Mintlify hoisting behaviour.
+    text = prune_unused_mdx_imports(text)
+    text = strip_snippet_component_imports(text, dest_path)
+
+    # Apply any per-file override (rare; for upstream patterns that don't map
+    # cleanly to a generic transform, e.g. <Link><CardSecondary/></Link>).
+    if override_key and override_key in POST_TRANSFORM_OVERRIDES:
+        text = POST_TRANSFORM_OVERRIDES[override_key](text)
+
+    text = transform_html_comments(text)
+    text = ensure_blank_after_imports(text)
+    return text
+
+
 @dataclass
 class FileResult:
     src_path: Path
@@ -1941,49 +2017,16 @@ def migrate_file(path: Path, lk: Lookups, force: bool, dry_run: bool, docusaurus
                 }
     original = source_path.read_text(encoding="utf-8")
     text, slug, title = transform_frontmatter(original)
-    text = drop_redundant_h1(text, title)
-    text = transform_heading_anchors(text)
-    json_vars: dict[str, str] = {}
-    text, image_vars = transform_imports(text, lk, issues, source_docu_path=source_path, json_vars=json_vars, dest_path=path)
-    text = transform_use_base_url(text)
-    text = transform_tocinline(text)
-    text = transform_iframes(text)
-    text = transform_admonitions(text)
-    text = transform_details(text)
-    text = transform_tabs(text)
-    text = transform_image_components(text, image_vars)
-    text = transform_svg_components(text, image_vars)
-    text = transform_image_logo_to_img(text)
-    text = transform_static_image_paths(text)
-    text = transform_inline_anchor(text)
-    text = transform_vertical_stepper(text)
-    text = transform_card_primary(text)
-    text = transform_horizontal_divide(text)
-    text = transform_two_column_list(text, json_vars)
-    text, used_runnable = transform_runnable(text)
-    text = transform_highlight_comments(text)
-
     source_docu_file = row["docusaurus_file"] if row else None
-    text = rewrite_links(text, source_docu_file, lk, issues, dest_path=path)
-
-    if used_runnable and "RunnableCode/RunnableCode.jsx" not in text:
-        text = _inject_import(text, RUNNABLE_IMPORT)
-    if image_vars and "/snippets/components/Image.jsx" not in text:
-        text = _inject_import(text, IMAGE_IMPORT)
-
-    # Dedupe imports to avoid `Identifier 'X' has already been declared`
-    # bundle errors that would render the page blank. See the two helpers
-    # for the underlying Mintlify hoisting behaviour.
-    text = prune_unused_mdx_imports(text)
-    text = strip_snippet_component_imports(text, path)
-
-    # Apply any per-file override (rare; for upstream patterns that don't map
-    # cleanly to a generic transform, e.g. <Link><CardSecondary/></Link>).
-    if row and row.get("docusaurus_file") in POST_TRANSFORM_OVERRIDES:
-        text = POST_TRANSFORM_OVERRIDES[row["docusaurus_file"]](text)
-
-    text = transform_html_comments(text)
-    text = ensure_blank_after_imports(text)
+    text = transform_body(
+        text, lk, issues,
+        title=title,
+        source_docu_path=source_path,
+        source_docu_file=source_docu_file,
+        dest_path=path,
+        inject_imports=True,
+        override_key=source_docu_file,
+    )
 
     # Standardize on `.mdx` for every page so contributors don't have to
     # think about which extension to use. Mintlify renders both, but a single
