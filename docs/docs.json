@@ -3877,6 +3877,9 @@
     },
     {
       "src": "/_site/customizations/clickhouse-sql-highlight.js"
+    },
+    {
+      "src": "/_site/customizations/raise-issue-link.js"
     }
   ],
   "styling": {
