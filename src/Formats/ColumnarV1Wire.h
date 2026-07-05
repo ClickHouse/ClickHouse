@@ -351,7 +351,7 @@ inline uint64_t buildColDescriptor(
         write_cursor += (num_rows + 1u) * sizeof(uint64_t);
 
         desc.data_offset = write_cursor;
-        uint32_t total_chars = static_cast<uint32_t>(str_col->getChars().size());
+        uint64_t total_chars = str_col->getChars().size();
         desc.data_size = total_chars;
         write_cursor += total_chars;
         return write_cursor;
@@ -385,8 +385,8 @@ inline uint64_t buildColDescriptor(
     }
     desc.offsets_offset = 0;
     desc.data_offset    = write_cursor;
-    desc.data_size      = num_rows * wire_elem_size;
-    write_cursor       += num_rows * wire_elem_size;
+    desc.data_size      = static_cast<uint64_t>(num_rows) * wire_elem_size;
+    write_cursor       += desc.data_size;
     return write_cursor;
 }
 
