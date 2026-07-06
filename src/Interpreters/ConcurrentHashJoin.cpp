@@ -425,6 +425,44 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
     }
 }
 
+/// Materialize a kept per-slot block down to its insertable rows (see `selectDispatchBlock`), releasing
+/// its COW share of the scattered source block. Used when a sibling per-slot block of the same source
+/// block is dropped: dropping alone frees nothing while the kept shards still share the whole source
+/// block, and the row-proportional `ScatteredBlock::allocatedBytes` shares of the kept shards would sum
+/// to less than the resident bytes. After compaction the block owns exactly its rows, so the charge is
+/// the retained bytes. Zeroes the block when no row is insertable (kept only by NULL-key rows, which the
+/// replay never inserts and - not being RIGHT/FULL here - never emits as non-joined), so the caller
+/// drops it like the streaming pop of a zero-insert block.
+static void compactToInsertableRows(ScatteredBlock & dispatched_block, const std::vector<UInt8> & insertable_row)
+{
+    chassert(!insertable_row.empty());
+    const auto & selector = dispatched_block.getSelector();
+    auto insertable_indexes = ScatteredBlock::Indexes::create();
+    insertable_indexes->reserve(selector.size());
+    for (const size_t row : selector)
+        if (insertable_row[row])
+            insertable_indexes->getData().push_back(row);
+    if (insertable_indexes->empty())
+    {
+        dispatched_block = ScatteredBlock{};
+        return;
+    }
+    ScatteredBlock compacted{dispatched_block.getSourceBlock(), ScatteredBlock::Selector(std::move(insertable_indexes))};
+    compacted.filterBySelector();
+    /// `filterBySelector` compacts a `ColumnReplicated` by indexing only its index column and keeps the
+    /// full nested column shared - which would both pin the source rows this compaction exists to
+    /// release and charge the whole nested allocation to every kept sibling (`allocatedBytes` of a
+    /// `ColumnReplicated` counts the nested column in full). Materialize such columns so the block
+    /// really owns exactly its rows; for anything else this is a no-op.
+    Block & block = compacted.getSourceBlock();
+    for (size_t i = 0; i < block.columns(); ++i)
+    {
+        auto & column = block.getByPosition(i).column;
+        column = column->convertToFullColumnIfReplicated();
+    }
+    dispatched_block = std::move(compacted);
+}
+
 bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_limits)
 {
     /// We materialize columns here to avoid materializing them multiple times on different threads
@@ -440,12 +478,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     const bool skip_zero_insert_blocks = deferred_build && hash_joins[0]->data->buildPopsZeroInsertBlocks();
 
     /// See `getProjectedTotalByteCount`: the replay copies these key bytes into the arena. Capture the
-    /// whole-block key bytes (and source row count) before `right_block` is moved into `dispatchBlock`.
-    /// With no block skipped, publish the whole-block total immediately, exactly as before. With
-    /// `skip_zero_insert_blocks`, defer publication to after the buffering loop so a slot whose block is
-    /// dropped (never replayed, so its keys are never arena-copied) contributes nothing.
+    /// whole-block key bytes before `right_block` is moved into `dispatchBlock`. With no block skipped,
+    /// publish the whole-block total immediately, exactly as before. With `skip_zero_insert_blocks`,
+    /// defer publication to after the buffering loop: when nothing is dropped every shard is buffered,
+    /// the whole block is retained and the whole-block total is published unchanged; when some shard is
+    /// dropped the kept shards are compacted to their insertable rows and the exact key bytes of the
+    /// blocks actually buffered are published instead.
     size_t whole_block_key_bytes = 0;
-    const size_t source_block_rows = right_block.rows();
     if (track_buffered_key_bytes)
     {
         for (const auto & name : table_join->getOnlyClause().key_names_right)
@@ -457,14 +496,17 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     /// For the deferred build, gather the scatter hashes of the rows this block will actually insert
     /// (non-NULL key, passing the right-side ON condition - see `selectDispatchBlock`) so they can be
     /// fed - once, off the per-slot buffering mutex - into a round-robin distinct-key shard. When the
-    /// gate holds, also gather the per-slot keep flags so a block with no kept row can be dropped. For
-    /// the streaming build both stay empty and dispatch does no extra work.
+    /// gate holds, also gather the per-slot keep flags so a block with no kept row can be dropped, and
+    /// the per-row insertable flags so the kept siblings of a dropped block can be compacted. For the
+    /// streaming build all three stay empty and dispatch does no extra work.
     std::vector<UInt64> block_key_hashes;
     std::vector<UInt8> has_kept_row;
+    std::vector<UInt8> insertable_row;
     auto dispatched_blocks = dispatchBlock(
         table_join->getOnlyClause().key_names_right, std::move(right_block),
         deferred_build ? &block_key_hashes : nullptr,
-        skip_zero_insert_blocks ? &has_kept_row : nullptr);
+        skip_zero_insert_blocks ? &has_kept_row : nullptr,
+        skip_zero_insert_blocks ? &insertable_row : nullptr);
 
     if (deferred_build)
     {
@@ -477,6 +519,19 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         /// `buffered_rows`/`buffered_bytes` keep the totals accurate, and the spill checks of the
         /// wrapping `SpillingHashJoin` use `getProjectedTotalByteCount` on top of them to account
         /// for the maps the replay would build.
+        ///
+        /// Whether some non-empty per-slot block of this source block is about to be dropped. Its kept
+        /// siblings must then be compacted before buffering: under the zero-copy scatter all the shards
+        /// COW-share the one source block, so dropping a sibling frees nothing while the kept shards'
+        /// row-proportional `ScatteredBlock::allocatedBytes` shares stop summing to the resident whole -
+        /// `buffered_bytes` (and with it the early `max_bytes_in_join` guard and the spill checks) would
+        /// under-count. Compaction restores `counted == retained` by construction: everything buffered
+        /// owns exactly its rows and the shared source block is released once the loop finishes.
+        bool any_shard_dropped = false;
+        if (skip_zero_insert_blocks && !has_kept_row.empty())
+            for (size_t i = 0; i < dispatched_blocks.size(); ++i)
+                any_shard_dropped |= dispatched_blocks[i].rows() > 0 && !has_kept_row[i];
+
         size_t buffered_key_bytes_delta = 0;
         for (size_t i = 0; i < dispatched_blocks.size(); ++i)
         {
@@ -489,6 +544,25 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
             /// holds; an empty `has_kept_row` is the all-kept fast path (nothing to skip).
             if (skip_zero_insert_blocks && !has_kept_row.empty() && !has_kept_row[i])
                 continue;
+            /// Compact off the slot mutex; blocks scattered by copying already own their rows (their
+            /// dropped siblings genuinely free theirs), so only the shared-selector shards need it.
+            if (any_shard_dropped && dispatched_block.wasScattered())
+            {
+                compactToInsertableRows(dispatched_block, insertable_row);
+                if (!dispatched_block.rows())
+                    continue;
+            }
+            /// Everything buffered past a drop owns its memory, so the `allocatedBytes` charge below is
+            /// exactly the retained bytes - the invariant `ScatteredBlock::allocatedBytes` documents.
+            chassert(!any_shard_dropped || !dispatched_block.wasScattered());
+            /// Exact arena key-byte upper bound for the rows actually buffered (the whole-block total is
+            /// published after the loop instead when nothing is dropped). `byteSize` of the buffered
+            /// blocks' key columns can only over-estimate the arena copies (only distinct keys are
+            /// copied), never under-estimate them - unlike the previous row-proportional share of the
+            /// source block, which under-counted kept rows with longer-than-average keys.
+            if (track_buffered_key_bytes && any_shard_dropped)
+                for (const auto & name : table_join->getOnlyClause().key_names_right)
+                    buffered_key_bytes_delta += dispatched_block.getByName(name).column->byteSize();
             auto & hash_join = hash_joins[i];
             std::lock_guard lock(hash_join->mutex);
             /// The shrink heuristic of `shrinkStoredBlocksToFit` measures query memory growth from a
@@ -499,17 +573,14 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 hash_join->data->captureMemoryUsageBaseline();
             hash_join->buffered_rows += dispatched_block.rows();
             hash_join->buffered_bytes += dispatched_block.allocatedBytes();
-            /// Arena key-byte share for the rows actually buffered, apportioned the same way
-            /// `ScatteredBlock::allocatedBytes` apportions the shared source block. A dropped slot adds
-            /// nothing. Accumulated only on the skip path; the no-skip path published the whole-block
-            /// total up front (byte-identical to before).
-            if (track_buffered_key_bytes && skip_zero_insert_blocks)
-                buffered_key_bytes_delta
-                    += source_block_rows ? whole_block_key_bytes * dispatched_block.rows() / source_block_rows : 0;
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
+        /// Deferred key-byte publication for the skip path (see the comment above the dispatch): the
+        /// whole-block total when every shard was buffered, the exact per-block sum when some were
+        /// dropped. A source block dropped in full contributes nothing either way.
         if (track_buffered_key_bytes && skip_zero_insert_blocks)
-            buffered_key_bytes.fetch_add(buffered_key_bytes_delta, std::memory_order_relaxed);
+            buffered_key_bytes.fetch_add(
+                any_shard_dropped ? buffered_key_bytes_delta : whole_block_key_bytes, std::memory_order_relaxed);
 
         /// Size limits cannot be enforced *exactly* here the way the streaming build does:
         /// `getTotalRowCount` would count the buffered *source* rows (the streaming build checks
@@ -980,6 +1051,11 @@ struct DispatchSelectorAndHashes
     /// caller asks (`compute_has_kept_row`) and the block is not the all-kept fast path. An EMPTY vector
     /// means "every shard keeps a row" (nothing to skip), so the common build allocates nothing extra.
     std::vector<UInt8> has_kept_row;
+    /// Per source-block row: whether the replay would insert it (non-NULL key AND passing the right-side
+    /// ON mask - the same test that admits a hash into `hashes`). Filled together with `has_kept_row`
+    /// (and empty in the same fast path); the deferred build uses it to compact the kept shards when a
+    /// sibling shard is dropped.
+    std::vector<UInt8> insertable_row;
 };
 
 static DispatchSelectorAndHashes
@@ -1027,13 +1103,18 @@ selectDispatchBlock(
 
     /// Filter `hash` down to the inserted rows' hashes (for the distinct-key estimate) and, when the
     /// caller asks (`compute_has_kept_row`), report per shard whether any row routed to that shard would
-    /// be kept by the streaming build. A row is KEPT iff its key is NULL (kept for the seeding rule -
-    /// `is_inserted` is set true before the ON-mask check) or it passes the right-side ON mask; this is
-    /// exactly the streaming build's `is_inserted`-becomes-true condition. A row is INSERTED (and so
-    /// contributes a distinct-key hash) iff its key is non-NULL AND it passes the mask. The two differ
-    /// only on NULL-key rows, which are kept but not inserted, so the per-shard flags must use the
-    /// keep test, not `hash.empty()`.
-    auto keep_insertable_hashes = [&](BlockHashes & hash, const IColumn::Selector & selector) -> std::vector<UInt8>
+    /// be kept by the streaming build, plus per row whether the replay would insert it. A row is KEPT
+    /// iff its key is NULL (kept for the seeding rule - `is_inserted` is set true before the ON-mask
+    /// check) or it passes the right-side ON mask; this is exactly the streaming build's
+    /// `is_inserted`-becomes-true condition. A row is INSERTED (and so contributes a distinct-key hash)
+    /// iff its key is non-NULL AND it passes the mask. The two differ only on NULL-key rows, which are
+    /// kept but not inserted, so the per-shard flags must use the keep test, not `hash.empty()`.
+    struct KeepFlags
+    {
+        std::vector<UInt8> has_kept_row;
+        std::vector<UInt8> insertable_row;
+    };
+    auto keep_insertable_hashes = [&](BlockHashes & hash, const IColumn::Selector & selector) -> KeepFlags
     {
         if (!filter_to_insertable_rows)
             return {};
@@ -1044,23 +1125,33 @@ selectDispatchBlock(
         /// the fast path stays allocation-free.
         if (!null_map && insert_mask.getKind() == JoinCommon::JoinMask::Kind::AllTrue)
             return {};
-        std::vector<UInt8> has_kept_row;
+        KeepFlags flags;
         if (compute_has_kept_row)
-            has_kept_row.assign(num_shards, 0);
+        {
+            flags.has_kept_row.assign(num_shards, 0);
+            flags.insertable_row.assign(hash.size(), 0);
+        }
         BlockHashes kept;
         kept.reserve(hash.size());
         for (size_t i = 0; i < hash.size(); ++i)
         {
             const bool null_key = null_map && (*null_map)[i];
             const bool filtered = insert_mask.isRowFiltered(i);
-            if (compute_has_kept_row && (null_key || !filtered))
-                has_kept_row[selector[i]] = 1;
             if (null_key || filtered)
+            {
+                if (compute_has_kept_row && null_key)
+                    flags.has_kept_row[selector[i]] = 1;
                 continue;
+            }
+            if (compute_has_kept_row)
+            {
+                flags.has_kept_row[selector[i]] = 1;
+                flags.insertable_row[i] = 1;
+            }
             kept.push_back(hash[i]);
         }
         hash = std::move(kept);
-        return has_kept_row;
+        return flags;
     };
 
     auto calculate_selector = [&](auto & maps) -> DispatchSelectorAndHashes
@@ -1073,8 +1164,8 @@ selectDispatchBlock(
                 BlockHashes hash = calculateHashes<typename KeyGetterForType<HashJoin::Type::TYPE, std::remove_reference_t<decltype(*maps.TYPE)>>::Type>( \
                     *maps.TYPE, key_columns, shape.key_sizes);                                                                                \
                 auto selector = hashToSelector(*maps.TYPE, hash, num_shards);                                                                 \
-                auto has_kept_row = keep_insertable_hashes(hash, selector);                                                                   \
-                return {std::move(selector), std::move(hash), std::move(has_kept_row)};                                                       \
+                auto keep_flags = keep_insertable_hashes(hash, selector);                                                                     \
+                return {std::move(selector), std::move(hash), std::move(keep_flags.has_kept_row), std::move(keep_flags.insertable_row)};      \
             }
 
             APPLY_FOR_JOIN_VARIANTS(M)
@@ -1136,13 +1227,15 @@ static ScatteredBlocks scatterBlocksWithSelector(size_t num_shards, const IColum
 
 ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
     const Strings & key_columns_names, Block && from_block, std::vector<UInt64> * out_block_key_hashes,
-    std::vector<UInt8> * out_has_kept_row)
+    std::vector<UInt8> * out_has_kept_row, std::vector<UInt8> * out_insertable_row)
 {
     const size_t num_shards = hash_joins.size();
     /// Both the distinct-key estimate (`out_block_key_hashes`) and the per-shard keep flags
     /// (`out_has_kept_row`, used by the deferred build to skip blocks the streaming build would pop) need
     /// the rows filtered to the ones the replay would insert/keep, which needs the right-side ON column.
-    /// It is empty when the ON clause has no such condition.
+    /// It is empty when the ON clause has no such condition. The per-row insertable flags
+    /// (`out_insertable_row`, used to compact the kept shards when a sibling shard is dropped) are a
+    /// by-product of the same filtering and are only computed together with the keep flags.
     const bool want_insertable_filter = out_block_key_hashes != nullptr || out_has_kept_row != nullptr;
     const String right_filter_condition_column
         = want_insertable_filter ? table_join->getOnlyClause().condColumnNames().second : String{};
@@ -1160,13 +1253,15 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
                 *out_block_key_hashes = std::move(result.hashes);
             if (out_has_kept_row)
                 *out_has_kept_row = std::move(result.has_kept_row);
+            if (out_insertable_row)
+                *out_insertable_row = std::move(result.insertable_row);
         }
         ScatteredBlocks res;
         res.emplace_back(std::move(from_block));
         return res;
     }
 
-    auto [selector, hashes, has_kept_row] = selectDispatchBlock(
+    auto [selector, hashes, has_kept_row, insertable_row] = selectDispatchBlock(
         *hash_joins[0]->data, num_shards, key_columns_names, from_block, right_filter_condition_column,
         /*filter_to_insertable_rows=*/want_insertable_filter, /*compute_has_kept_row=*/out_has_kept_row != nullptr);
 
@@ -1177,6 +1272,8 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
         *out_block_key_hashes = std::move(hashes);
     if (out_has_kept_row)
         *out_has_kept_row = std::move(has_kept_row);
+    if (out_insertable_row)
+        *out_insertable_row = std::move(insertable_row);
 
     /// With zero-copy approach we won't copy the source columns, but will create a new one with indices.
     /// This is not beneficial when the whole set of columns is e.g. a single small column.

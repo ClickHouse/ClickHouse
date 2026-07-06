@@ -233,11 +233,17 @@ private:
     /// slot would be kept by the streaming build (NULL key or passing the right-side ON mask). The
     /// deferred build uses it to skip buffering a per-slot block the streaming build would pop. An empty
     /// returned vector means "every slot keeps a row" (skip nothing) - see `selectDispatchBlock`.
+    /// `out_insertable_row`, when non-null, is filled together with `out_has_kept_row` with one flag per
+    /// source-block row: whether the replay would insert it (non-NULL key AND passing the right-side ON
+    /// mask). The deferred build uses it to compact the kept per-slot blocks when a sibling block is
+    /// dropped, so the buffered bytes it charges stay equal to the bytes actually retained. Empty in the
+    /// same all-kept fast path as `out_has_kept_row`.
     ScatteredBlocks dispatchBlock(
         const Strings & key_columns_names,
         Block && from_block,
         std::vector<UInt64> * out_block_key_hashes = nullptr,
-        std::vector<UInt8> * out_has_kept_row = nullptr);
+        std::vector<UInt8> * out_has_kept_row = nullptr,
+        std::vector<UInt8> * out_insertable_row = nullptr);
 };
 
 }
