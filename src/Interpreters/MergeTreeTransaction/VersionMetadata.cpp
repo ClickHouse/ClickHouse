@@ -505,14 +505,22 @@ void VersionMetadata::validateInfo(const String & object_name, const VersionInfo
 
     if (!info.creation_csn)
     {
-        if (info.removal_csn)
+        /// A non-transactional operation (e.g. `TRUNCATE`) removes all active parts, including
+        /// parts whose creating transaction is not committed yet (or is being rolled back
+        /// concurrently). Such removal immediately sets `removal_tid` to `NonTransactionalTID`
+        /// and `removal_csn` to `NonTransactionalCSN` while `creation_csn` is still unknown.
+        /// This mirrors the `NonTransactionalCSN` exemption for the `creation_csn > removal_csn`
+        /// check below.
+        bool non_transactional_removal = info.removal_tid.isNonTransactional();
+
+        if (info.removal_csn && !(non_transactional_removal && info.removal_csn == Tx::NonTransactionalCSN))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Object {}, creation_csn is not set while removal_csn is set to {}",
                 object_name,
                 info.removal_csn);
 
-        if (info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty())
+        if (!non_transactional_removal && info.creation_tid != info.removal_tid && !info.removal_tid.isEmpty())
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Object {}, creation_csn is not set while removal_tid is not {}", object_name, info.removal_tid);
     }
