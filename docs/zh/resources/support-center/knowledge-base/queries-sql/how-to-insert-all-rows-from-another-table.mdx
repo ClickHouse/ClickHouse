@@ -1,0 +1,134 @@
+---
+title: 如何将一个表中的所有行插入另一个表？
+description: "关于如何将一个表中的所有行插入另一个表的知识库文章。"
+date: 2024-12-17
+tags: ['数据摄取']
+keywords: ['从一个表插入']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 简介
+</div>
+
+有时，你需要将一个表中的所有数据重新导入到另一个表中。
+
+例如，你可能希望将暂存表中的数据重新导入到生产环境表中。本文将介绍如何使用 `INSERT INTO` 语句来实现这一点。
+
+<div id="example">
+  ## 示例
+</div>
+
+下面通过一个简单示例说明其工作方式以及如何进行测试：
+
+* 创建一个示例数据库
+
+```sql
+CREATE DATABASE db1;
+```
+
+* 创建样本表
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* 向源表中插入一些数据
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* 检查源表中的行数
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* 创建一个与源表结构相同的新表。
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* 将源表中的所有行插入目标表。
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* 查看目标表中的行数
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+如果你想修改新表的结构，可以先查看源表的结构。
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+然后使用修改后的结构创建新表。在本例中，我们需要向目标表添加一个新列 `population`。
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* 将源表中的所有行插入目标表，包括新增的列。所有行的 population 字段均设为 0。
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* 查看目标表中的数据
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

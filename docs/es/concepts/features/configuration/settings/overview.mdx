@@ -1,0 +1,65 @@
+---
+description: 'Página de resumen de la configuración.'
+slug: /operations/settings/overview
+title: 'Resumen de la configuración'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+<Note>
+  Los perfiles de configuración basados en XML y los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files) actualmente no
+  son compatibles con ClickHouse Cloud. Para especificar la configuración de su servicio en ClickHouse Cloud, debe usar [perfiles de configuración gestionados mediante SQL](/es/concepts/features/security/access-rights#settings-profiles-management).
+</Note>
+
+Existen los siguientes grupos principales de configuración de ClickHouse:
+
+* Configuración global del servidor
+* Configuración de sesión
+* Configuración de consulta
+* Configuración de operaciones en segundo plano
+
+La configuración global se aplica de forma predeterminada, salvo que se sobrescriba en niveles más específicos. La configuración de sesión puede especificarse mediante perfiles, la configuración del usuario y comandos SET. La configuración de consulta puede proporcionarse mediante la cláusula SETTINGS y se aplica a consultas individuales. La configuración de operaciones en segundo plano se aplica a Mutations, Merges y, posiblemente, a otras operaciones que se ejecutan de forma asíncrona en segundo plano.
+
+<div id="see-non-default-settings">
+  ## Ver ajustes no predeterminados
+</div>
+
+Para ver qué ajustes se han modificado con respecto a su valor predeterminado, puede consultar la
+tabla `system.settings`:
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+Si no se ha modificado ningún ajuste con respecto a su valor predeterminado, ClickHouse
+no devolverá nada.
+
+Para comprobar el valor de un ajuste concreto, puede especificar el `name` del
+ajuste en la consulta:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+Esto devolverá algo como esto:
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## Lecturas adicionales
+</div>
+
+* Consulte la [configuración global del servidor](/es/reference/settings/server-settings/settings) para obtener más información sobre cómo configurar su
+  servidor ClickHouse a nivel global.
+* Consulte la [configuración de la sesión](/es/concepts/features/configuration/settings/settings-query-level) para obtener más información sobre cómo configurar su servidor ClickHouse
+  a nivel de sesión.
+* Consulte la [jerarquía de Context](/es/resources/develop-contribute/introduction/architecture#context) para obtener más información sobre el procesamiento de la configuración en ClickHouse.

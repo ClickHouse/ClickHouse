@@ -1,0 +1,172 @@
+---
+slug: /use-cases/observability/clickstack/event_deltas
+title: 'Event deltas no ClickStack'
+sidebarTitle: 'Event deltas'
+description: 'Analise distribuições de atributos em traces e compare spans atípicos com Event deltas no ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'event deltas', 'heatmap', 'distribuição de atributos', 'análise de traces', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Event deltas combina um heatmap de latência com análise automática de atributos para que você possa visualizar o perfil dos seus dados de trace e descobrir o que diferencia os spans lentos, sem precisar escrever consultas. Há três formas de usá-lo:
+
+* **Modo de distribuição (sempre ativo)**: quando não há nenhuma seleção no heatmap, a distribuição de valores de cada atributo é exibida para a população atual de spans. Útil para identificar valores dominantes ou incomumente raros (outliers de cardinalidade).
+* **Modo de comparação**: arraste um retângulo no heatmap para comparar os spans dentro da seleção (Selection) com tudo o que está fora dela (Background). Útil para isolar desvios.
+* **Drill-down iterativo**: clique em qualquer barra para filtrar (ou excluir) esse valor. O heatmap é renderizado novamente com base na população filtrada, para que você possa continuar refinando até que a causa fique óbvia.
+
+<Image img="/images/clickstack/event-deltas/overview.webp" alt="Visão geral de Event deltas no serviço de pagamento, com a faixa brilhante subindo no meio da janela e sem recuperação visível" size="lg" />
+
+Na captura de tela acima, a borda direita do heatmap está em cerca de 10 ms, e não de volta à linha de base de 1 ms que se manteve ao longo da manhã. A degradação ainda está em andamento, então estamos vendo isso no meio do incidente.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+Event deltas exigem uma fonte de dados de **Trace** com uma expressão de duração. Qualquer serviço instrumentado com OpenTelemetry que gere dados de span funciona. Disponível em todas as implantações do ClickStack (Gerenciado, código aberto, ClickHouse Cloud).
+
+<div id="getting-started">
+  ## Primeiros passos
+</div>
+
+1. No menu suspenso **Fonte de dados**, selecione uma fonte que contenha traces. Os nomes das fontes são arbitrários; o que importa é que a fonte esteja configurada como do tipo Trace. A aba **Event deltas** só fica habilitada para essas fontes.
+2. Na seção **Modo de análise**, clique na aba **Event deltas**.
+
+**Event deltas** é um modo de análise separado, ao lado de **Tabela de resultados** e **Padrões de eventos**. Ao alternar para ele, a visualização muda para um mapa de calor e uma grade de análise de atributos, mas seus filtros de pesquisa e intervalo de tempo são preservados, e você pode voltar a qualquer momento.
+
+<div id="the-heatmap">
+  ## O heatmap
+</div>
+
+O heatmap exibe spans em duas dimensões:
+
+* **Eixo X**: tempo
+* **Eixo Y**: um valor numérico, que por padrão é a duração do span em milissegundos (escala logarítmica)
+
+A intensidade da cor indica a contagem de eventos por bucket; quanto mais intensa, mais spans.
+
+Você pode identificar padrões diretamente no heatmap: latência bimodal, picos de latência em horários específicos, uma faixa de spans consistentemente lentos ou uma faixa lenta que sobe ao longo do tempo (uma regressão gradual). Para investigar uma região, clique e arraste um retângulo sobre ela. Isso se torna sua **Selection** e coloca a análise abaixo no modo de comparação.
+
+<div id="distribution-mode">
+  ## Modo de distribuição: valores atípicos de cardinalidade
+</div>
+
+Sem nenhuma seleção no heatmap, o painel de análise mostra um gráfico de barras por atributo, calculado com base em todos os spans correspondentes. A legenda mostra **Todos os spans** (visível na captura de tela da Visão geral acima).
+
+Os atributos são classificados pelo grau de concentração dos seus valores: os dominados por poucos valores aparecem primeiro; atributos uniformes, de alta entropia, ficam em segundo plano.
+
+Use o modo de distribuição quando quiser entender o **perfil de cardinalidade** dos seus dados:
+
+* **Altas**: quais serviços, endpoints, códigos de status ou hosts dominam sua população de spans? Muitas vezes, isso revela um único tenant, versão ou rota concentrando a maior parte do tráfego.
+* **Baixas**: valores que ocorrem, mas raramente. Um código de status que aparece em apenas `0.5%` dos spans, ou um host que mal aparece, pode ser o sinal mais interessante. É na cauda longa que regressões e agentes maliciosos se escondem.
+
+Combine com a barra de Busca para primeiro restringir a população (por exemplo, apenas spans de erro, apenas spans de cliente, apenas um endpoint) e, em seguida, analisar as distribuições desse subconjunto.
+
+<div id="comparison-mode">
+  ## Modo de comparação: desvios em relação ao normal
+</div>
+
+Clique e arraste um retângulo no heatmap para entrar no modo de comparação. Os spans selecionados passam a ser a **Selection** (barras laranja); tudo o que fica fora passa a ser o **Background** (barras verdes). Cada gráfico de atributos então mostra as duas populações lado a lado, ordenadas de modo que os atributos com maior divergência apareçam primeiro. Um valor presente quase exclusivamente em um dos lados, ou ausente em um deles, é o indício mais forte do que está diferente.
+
+O formato do retângulo que você desenha muda a pergunta que está sendo feita. As duas formas mais comuns são descritas abaixo.
+
+<div id="before-vs-after">
+  ### Caso de uso 1: antes vs. depois de uma regressão
+</div>
+
+Quando o heatmap mostra a latência aumentando ao longo do tempo (a faixa lenta engrossa, a faixa brilhante sobe, ou um ponto de inflexão nítido separa um período saudável de outro degradado), arraste um retângulo do ponto de inflexão da subida até a borda direita da janela. Para refinar a comparação, posicione a base do retângulo na linha de base saudável, em vez de no fundo do eixo: isso isola os spans que estão realmente mais lentos do que o normal na janela degradada, em vez de incluir spans rápidos ainda saudáveis que, por acaso, caem no mesmo intervalo de tempo.
+
+<Image img="/images/clickstack/event-deltas/before-after.webp" alt="Modo de comparação no serviço de pagamento, com o retângulo desenhado do ponto de inflexão da subida até a borda direita, com a base apoiada na linha de base de 1 ms" size="lg" />
+
+As barras de atributo abaixo do heatmap são ordenadas com as maiores divergências primeiro. Neste exemplo, os gráficos da linha superior destacam os sinais mais fortes: `SpanKind`, `SpanName` e `ScopeName` mostram, cada um, uma divisão nítida em laranja vs. verde entre a Selection lenta e o Background saudável. Em conjunto, eles mostram a assinatura do que mudou no ponto de inflexão.
+
+Esse é o formato certo quando você quer perguntar &quot;o que mudou?&quot;. Uma variante mais específica usa o mesmo fluxo de trabalho: quando um pequeno grupo de spans lentos aparece em uma faixa que, fora isso, está estável (um breve surto na borda direita, um agrupamento no meio de um período estável), desenhe uma pequena caixa apenas ao redor desse agrupamento. O formato muda a pergunta: uma faixa vertical pergunta *o que mudou ao longo do tempo*; uma pequena caixa focada pergunta *o que há de especial neste agrupamento*.
+
+<div id="slow-vs-fast">
+  ### Caso de uso 2: Lento versus rápido
+</div>
+
+Quando o heatmap mostrar duas populações de latência claramente separadas no eixo de duração, arraste um retângulo amplo que abranja todo o intervalo de tempo, mas cubra apenas a faixa superior, bem separada. A população lenta se torna a Selection; a massa de spans rápidos se torna o Background.
+
+<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="Comparação entre lento e rápido no frontend-proxy, com o retângulo cobrindo apenas a faixa superior claramente separada, bem distante da massa densa" size="lg" />
+
+Desenhe o retângulo bem ajustado em torno da faixa superior, com um espaço horizontal visível entre ela e a massa densa. Um retângulo frouxo que invade a população rápida dilui a divergência.
+
+A linha de limite de 100 s já é informativa por si só: uma linha horizontal constante em um número redondo é a assinatura de um timeout fixo. Se nenhum atributo de span diferenciar claramente as duas populações, isso também é um resultado útil: aponta para métricas no nível do host e do runtime (pausas de GC, contenção de E/S, latência do escalonador, efeitos de cache frio, vizinhos ruidosos), e não para atributos de span.
+
+Esse é o padrão certo quando você quer perguntar &quot;o que torna os spans lentos diferentes dos rápidos?&quot; em vez de buscar uma anomalia específica. Um atributo divergente aponta para uma causa no caminho do código ou na entrada; uma comparação sem diferença aponta para uma causa sistêmica.
+
+<div id="drill-down">
+  ## Drill-down iterativo
+</div>
+
+Os modos de comparação e distribuição ficam mais poderosos quando usados em sequência. Clique em qualquer barra para abrir um popover com três ações:
+
+* **Filter**: manter apenas spans com este valor
+* **Exclude**: remover spans com este valor
+* **Copy**: copiar o valor para a área de transferência
+
+<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="Popover aberto ao clicar em uma barra de ScopeVersion, mostrando percentuais de Selection vs Background e ações de filtrar, excluir e copiar" size="lg" />
+
+Depois de aplicar um filtro ou uma exclusão, a seleção do heatmap é limpa, o heatmap é redesenhado com base na nova população, e o modo de distribuição é retomado nesse conjunto filtrado. Observe como o heatmap muda de forma; um filtro bem-sucedido remove visivelmente a faixa lenta, elimina a divisão bimodal ou achata a tendência ascendente. Repita: identifique o próximo valor suspeito, filtre, observe o novo heatmap, observe as novas distribuições. Algumas iterações geralmente bastam para restringir uma regressão a um ou dois atributos.
+
+<Note>
+  Buckets agregados **Other (N)** que agrupam valores de baixa frequência não são clicáveis. Para filtrar um valor específico dentro desse bucket, use a [barra de busca](/pt-BR/clickstack/features/search) diretamente.
+</Note>
+
+Quando a população estiver pequena o suficiente, mude para a aba **Tabela de resultados** para inspecionar traces individuais; seus filtros serão mantidos.
+
+<div id="customize">
+  ## Personalize o heatmap
+</div>
+
+O ícone de engrenagem no canto superior direito do heatmap abre o painel lateral **Display Settings**.
+
+<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Painel lateral Display Settings com os campos Scale, Value e Count" size="lg" />
+
+| Parâmetro | Padrão           | Descrição                                                                                                     |
+| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Scale** | Log              | Log lida bem com faixas amplas de latência; Linear é melhor para distribuições estreitas e uniformes.         |
+| **Value** | `(Duration)/1e6` | Qualquer expression numérica: tamanho da resposta, taxa de erro ou um attribute personalizado do span.        |
+| **Count** | `count()`        | aggregation usada para a cor. Mude para `avg()`, `sum()`, `p95()` ou expressions como `countDistinct(field)`. |
+
+Clique em **Apply** para atualizar o heatmap; a análise de atributos abaixo acompanha a mudança.
+
+<Tip>
+  **Heatmap em dashboards**
+
+  O mesmo heatmap também está disponível como um [tile de dashboard](/pt-BR/clickstack/features/dashboards/overview#create-a-tile-heatmap), o que é útil quando você quer monitorar o formato da distribuição ao longo do tempo fora do fluxo de drill-down do Event Deltas.
+</Tip>
+
+Cenários comuns em que você pode querer alterar esses padrões:
+
+* **Mude Scale para Linear** quando a faixa de latência for estreita (por exemplo, um service cujos spans ficam todos entre 5 e 50 ms). A escala Log desperdiça espaço vertical na parte superior, onde não há dados.
+* **Plote algo diferente de Duration no eixo Y.** Definir **Value** como `SpanAttributes.http.response.size` permite investigar respostas *grandes* lentas; uma expression como `if(StatusCode = 'Error', 1, 0)` plota a frequência de erro ao longo do tempo entre services.
+* **Use cor com base em algo diferente de count.** Definir **Count** como `p95(Duration)` colore cada bucket pela tail latency em vez do volume, destacando bolsões raros, mas lentos, que uma visualização baseada em contagem acaba ocultando. `countDistinct(TraceId)` distingue o volume de traces do volume de spans quando um trace produz muitos spans.
+
+<div id="tips">
+  ## Dicas para uso eficaz
+</div>
+
+Algumas práticas tornam o Event deltas muito mais útil:
+
+* **Primeiro, filtre para um único serviço.** A latência varia bastante entre serviços, e misturá-los acaba mascarando o sinal. Use a barra de busca para restringir a um `ServiceName` (ou a um endpoint) antes de começar, para que o heatmap e as distribuições reflitam uma população comparável.
+* **Escolha seleções com contraste visual nítido.** O modo de comparação funciona melhor quando a faixa de Selection é visivelmente distinta do Background, por exemplo, um período degradado que começa em um momento facilmente reconhecível ou uma cauda lenta claramente separada da maior parte dos dados. Seleções que se sobrepõem demais ao restante dos dados tendem a destacar ruído, e não o desvio real.
+* **Repita: filtro, heatmap, filtro.** Uma única seleção raramente identifica a causa. Trate a primeira comparação como uma hipótese, aplique um filtro ao valor mais divergente e reavalie o novo heatmap e as distribuições. Duas ou três iterações normalmente reduzem uma regressão a um ou dois atributos.
+* **Use o modo de distribuição sem uma seleção** quando ainda não houver contraste visível (você sabe que há um problema, mas o heatmap parece uniforme). Aplique um filtro baseado em uma hipótese, como apenas spans com erro, apenas spans de cliente ou apenas um endpoint, e deixe que as distribuições de atributos indiquem os valores de maior impacto antes de desenhar qualquer retângulo.
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="tab-not-visible">
+  ### A aba Event Deltas não está visível
+</div>
+
+A aba **Event Deltas** em **Analysis Mode** só aparece quando uma fonte **Trace** com uma expressão de duração está selecionada. Verifique se sua fonte de dados está configurada como do tipo **Trace** e se contém dados de **span** com informações de duração.
+
+<div id="few-results">
+  ### Gráficos de atributos mostram poucos resultados ou nenhum
+</div>
+
+Se a amostra for muito pequena (menos de algumas dezenas de spans), as distribuições podem não ser estatisticamente significativas. Amplie o intervalo de tempo ou torne os filtros de busca menos restritivos.

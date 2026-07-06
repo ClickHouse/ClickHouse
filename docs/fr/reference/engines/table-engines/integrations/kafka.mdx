@@ -1,0 +1,374 @@
+---
+description: "Le moteur de table Kafka peut être utilisé avec Apache Kafka et vous permet de publier ou de vous abonner à des flux de données, de mettre en place un stockage tolérant aux pannes et de traiter des flux à mesure qu'ils deviennent disponibles."
+sidebarTitle: 'Kafka'
+slug: /engines/table-engines/integrations/kafka
+title: 'Moteur de table Kafka'
+keywords: ['Kafka', 'moteur de table']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<Tip>
+  Si vous utilisez ClickHouse Cloud, nous vous recommandons plutôt d&#39;utiliser [ClickPipes](/fr/integrations/clickpipes/home). ClickPipes prend en charge nativement les connexions via réseau privé, la mise à l&#39;échelle indépendante de l&#39;ingestion et des ressources du cluster, ainsi qu&#39;une supervision complète du streaming de données Kafka vers ClickHouse.
+</Tip>
+
+* Publier ou s&#39;abonner à des flux de données.
+* Mettre en place un stockage tolérant aux pannes.
+* Traiter les flux dès qu&#39;ils sont disponibles.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [ALIAS expr1],
+    name2 [type2] [ALIAS expr2],
+    ...
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'host:port',
+    kafka_topic_list = 'topic1,topic2,...',
+    kafka_group_name = 'group_name',
+    kafka_format = 'data_format'[,]
+    [kafka_security_protocol = '',]
+    [kafka_sasl_mechanism = '',]
+    [kafka_sasl_username = '',]
+    [kafka_sasl_password = '',]
+    [kafka_autodetect_client_rack = '',]
+    [kafka_schema = '',]
+    [kafka_num_consumers = N,]
+    [kafka_max_block_size = 0,]
+    [kafka_skip_broken_messages = N,]
+    [kafka_commit_every_batch = 0,]
+    [kafka_client_id = '',]
+    [kafka_poll_timeout_ms = 0,]
+    [kafka_poll_max_batch_size = 0,]
+    [kafka_flush_interval_ms = 0,]
+    [kafka_consumer_reschedule_ms = 0,]
+    [kafka_thread_per_consumer = 0,]
+    [kafka_handle_error_mode = 'default',]
+    [kafka_commit_on_select = false,]
+    [kafka_consumer_acquire_timeout_ms = 30000,]
+    [kafka_max_rows_per_message = 1,]
+    [kafka_compression_codec = '',]
+    [kafka_compression_level = -1];
+```
+
+Paramètres requis :
+
+* `kafka_broker_list` — Une liste de brokers séparés par des virgules (par exemple, `localhost:9092`).
+* `kafka_topic_list` — Une liste de topics Kafka.
+* `kafka_group_name` — Un groupe de consommateurs Kafka. Les offsets de lecture sont suivis séparément pour chaque groupe. Si vous ne souhaitez pas que les messages soient dupliqués dans le cluster, utilisez partout le même nom de groupe.
+* `kafka_format` — Format des messages. Utilise la même notation que la fonction SQL `FORMAT`, par exemple `JSONEachRow`. Pour plus d&#39;informations, consultez la section [Formats](/fr/reference/formats/index).
+
+Paramètres facultatifs :
+
+* `kafka_security_protocol` - Protocole utilisé pour communiquer avec les brokers. Valeurs possibles : `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
+* `kafka_sasl_mechanism` - Mécanisme SASL à utiliser pour l’authentification. Valeurs possibles : `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_username` - Nom d’utilisateur SASL à utiliser avec les mécanismes `PLAIN` et `SASL-SCRAM-..`.
+* `kafka_sasl_password` - Mot de passe SASL à utiliser avec les mécanismes `PLAIN` et `SASL-SCRAM-..`.
+* `kafka_schema` — Paramètre à utiliser si le format nécessite une définition de schéma. Par exemple, [Cap&#39;n Proto](https://capnproto.org/) requiert le chemin vers le fichier de schéma ainsi que le nom de l’objet racine `schema.capnp:Message`.
+* `kafka_schema_registry_skip_bytes` — Nombre d’octets à ignorer au début de chaque message lors de l’utilisation du registre de schémas avec des en-têtes d’enveloppe (par ex., AWS Glue Schema Registry, qui inclut une enveloppe de 19 octets). Plage : `[0, 255]`. Valeur par défaut : `0`.
+* `kafka_num_consumers` — Nombre de consumers par table. Indiquez-en davantage si le throughput d’un consumer est insuffisant. Le nombre total de consumers ne doit pas dépasser le nombre de partitions du topic, puisqu’un seul consumer peut être attribué par partition, et ne doit pas non plus être supérieur au nombre de cœurs physiques du server sur lequel ClickHouse est déployé. Valeur par défaut : `1`.
+* `kafka_max_block_size` — Taille maximale du batch (en messages) pour le poll. Valeur par défaut : [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size).
+* `kafka_skip_broken_messages` — Tolérance de l’analyseur de messages Kafka aux messages incompatibles avec le schéma par block. Si `kafka_skip_broken_messages = N`, le moteur ignore *N* messages Kafka qui ne peuvent pas être analysés (un message équivaut à une ligne de données). Valeur par défaut : `0`.
+* `kafka_commit_every_batch` — Effectue un commit pour chaque batch consommé et traité, au lieu d’un seul commit après l’écriture d’un block entier. Valeur par défaut : `0`.
+* `kafka_client_id` — Identifiant du client. Vide par défaut.
+* `kafka_poll_timeout_ms` — Timeout pour un poll Kafka unique. Valeur par défaut : [stream&#95;poll&#95;timeout&#95;ms](/fr/reference/settings/session-settings#stream_poll_timeout_ms).
+* `kafka_poll_max_batch_size` — Nombre maximal de messages pouvant être récupérés en un seul poll Kafka. Valeur par défaut : [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+* `kafka_flush_interval_ms` — Timeout pour le flush des données depuis Kafka. Valeur par défaut : [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms).
+* `kafka_consumer_reschedule_ms` — Intervalle de replanification lorsque le stream processing Kafka est bloqué (par ex., lorsqu’aucun message n’est disponible à la consommation). Ce paramètre contrôle le délai avant que le consumer ne réessaie de poll. Ne doit pas dépasser `kafka_consumers_pool_ttl_ms`. Valeur par défaut : `500` millisecondes.
+* `kafka_thread_per_consumer` — Fournit un thread indépendant pour chaque consumer. Lorsqu’elle est activée, chaque consumer flush les données indépendamment, en parallèle (sinon, les rows de plusieurs consumers sont squashed pour former un block). Valeur par défaut : `0`.
+* `kafka_handle_error_mode` — Gestion des errors pour le Kafka engine. Valeurs possibles : default (une exception est levée si l’analyse d’un message échoue), stream (le message d’exception et le message brut sont enregistrés dans les virtual columns `_error` et `_raw_message`), dead&#95;letter&#95;queue (les données liées à l’error sont enregistrées dans system.dead&#95;letter&#95;queue).
+* `kafka_commit_on_select` —  Effectue un commit des messages lorsqu’une requête `SELECT` est exécutée. Valeur par défaut : `false`.
+* `kafka_consumer_acquire_timeout_ms` — Timeout en millisecondes pour l’acquisition d’un consumer Kafka lors de requêtes `SELECT` directes sur une table `Kafka2` (avec stockage des offsets basé sur Keeper). Lorsque plusieurs requêtes `SELECT` directes concurrentes s’exécutent sur la même table, chacune doit attendre que des consumers deviennent disponibles. Ce timeout évite les deadlocks lorsque des requêtes détiennent différents sous-ensembles de consumers. Valeur par défaut : `30000`.
+* `kafka_max_rows_per_message` — Nombre maximal de rows écrites dans un message Kafka pour les formats basés sur les lignes. Valeur par défaut : `1`.
+* `kafka_autodetect_client_rack` — Définit automatiquement le paramètre `client.rack` pour `librdkafka` afin de privilégier les répliques Kafka les plus proches.
+  Sources prises en charge :
+  `AWS_ZONE_ID` pour l’ID de zone de disponibilité AWS IMDSv2, par exemple `euc1-az1` ;
+  `AWS_ZONE_NAME` pour le nom de zone de disponibilité AWS IMDSv2, par exemple `eu-central-1a` ;
+  `GCP_ZONE` pour la zone du service de métadonnées GCP, par exemple `europe-central2-a` ;
+  `CLICKHOUSE` pour utiliser la détection interne de ClickHouse, qui peut s’appuyer sur les métadonnées du cloud ou sur la configuration ;
+  `AWS_ZONE_NAME_THEN_GCP_ZONE` pour essayer `AWS_ZONE_NAME`, puis `GCP_ZONE`.
+  Par défaut : chaîne vide, désactivé.
+  Conseil : les formats de zone de disponibilité varient selon les environnements. Amazon MSK utilise généralement des ID de zone, privilégiez donc `AWS_ZONE_ID`. Confluent Cloud utilise généralement des noms de zone, privilégiez donc `AWS_ZONE_NAME`. En cas de doute, utilisez `AWS_ZONE_NAME_THEN_GCP_ZONE` ou vérifiez la valeur `broker.rack` sur votre cluster.
+  Remarque : les brokers Kafka doivent être configurés avec `broker.rack` et `replica.selector.class=org.apache.kafka.common.replica.RackAwareReplicaSelector`.
+* `kafka_compression_codec` — Codec de compression utilisé pour produire les messages. Valeurs prises en charge : chaîne vide, `none`, `gzip`, `snappy`, `lz4`, `zstd`. Si la chaîne est vide, le codec de compression n’est pas défini par la table ; les valeurs des fichiers de configuration ou la valeur par défaut de `librdkafka` seront alors utilisées. Par défaut : chaîne vide.
+* `kafka_compression_level` — Paramètre de niveau de compression pour l’algorithme sélectionné par kafka&#95;compression&#95;codec. Des valeurs plus élevées offrent une meilleure compression, au prix d’une utilisation du CPU plus importante. La plage de valeurs utilisables dépend de l’algorithme : `[0-9]` pour `gzip` ; `[0-12]` pour `lz4` ; uniquement `0` pour `snappy` ; `[0-12]` pour `zstd` ; `-1` = niveau de compression par défaut dépendant du codec. Par défaut : `-1`.
+* `kafka_map_virtual_columns_on_write` — Si cette option est activée, les colonnes portant les noms spéciaux `_key`, `_timestamp`, `_headers.name` et `_headers.value` dans le schéma de la table sont associées aux métadonnées correspondantes du message Kafka lors de `INSERT` et sont exclues du corps du message. Voir [Correspondance entre les colonnes et les métadonnées des messages Kafka](#mapping-columns-to-kafka-message-metadata). Par défaut : `false`.
+
+Exemples :
+
+```sql
+  CREATE TABLE queue (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+
+  SELECT * FROM queue LIMIT 5;
+
+  CREATE TABLE queue2 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka SETTINGS kafka_broker_list = 'localhost:9092',
+                            kafka_topic_list = 'topic',
+                            kafka_group_name = 'group1',
+                            kafka_format = 'JSONEachRow',
+                            kafka_num_consumers = 4;
+
+  CREATE TABLE queue3 (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1')
+              SETTINGS kafka_format = 'JSONEachRow',
+                       kafka_num_consumers = 4;
+```
+
+<details markdown="1">
+  <summary>Méthode obsolète pour créer une table</summary>
+
+  <Note>
+    N’utilisez pas cette méthode dans les nouveaux projets. Si possible, faites migrer les anciens projets vers la méthode décrite ci-dessus.
+  </Note>
+
+  ```sql
+  Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
+        [, kafka_row_delimiter, kafka_schema, kafka_num_consumers, kafka_max_block_size,  kafka_skip_broken_messages, kafka_commit_every_batch, kafka_client_id, kafka_poll_timeout_ms, kafka_poll_max_batch_size, kafka_flush_interval_ms, kafka_consumer_reschedule_ms, kafka_thread_per_consumer, kafka_handle_error_mode, kafka_commit_on_select, kafka_max_rows_per_message]);
+  ```
+</details>
+
+<Info>
+  Le moteur de table Kafka ne prend pas en charge les colonnes avec une [valeur par défaut](/fr/reference/statements/create/table#default_values). Si vous avez besoin de colonnes avec une valeur par défaut, vous pouvez les ajouter dans une vue matérialisée (voir ci-dessous).
+</Info>
+
+<div id="description">
+  ## Description
+</div>
+
+Les messages livrés sont suivis automatiquement, de sorte que chaque message d’un groupe n’est comptabilisé qu’une seule fois. Si vous souhaitez obtenir les données deux fois, créez une copie de la table avec un autre nom de groupe.
+
+Les groupes sont flexibles et synchronisés sur le cluster. Par exemple, si vous avez 10 topics et 5 copies d’une table dans un cluster, chaque copie reçoit 2 topics. Si le nombre de copies change, les topics sont automatiquement redistribués entre les copies. Pour en savoir plus à ce sujet, consultez http://kafka.apache.org/intro.
+
+Il est recommandé que chaque topic Kafka dispose de son propre consumer group dédié, afin de garantir une association exclusive entre le topic et le groupe, en particulier dans les environnements où les topics peuvent être créés et supprimés dynamiquement (par exemple, en test ou en préproduction).
+
+`SELECT` n’est pas particulièrement utile pour lire les messages (sauf pour le débogage), car chaque message ne peut être lu qu’une seule fois. Il est plus pratique de créer des flux en temps réel à l’aide de vues matérialisées. Pour cela :
+
+1. Utilisez le moteur pour créer un consumer Kafka et considérez-le comme un flux de données.
+2. Créez une table avec la structure souhaitée.
+3. Créez une vue matérialisée qui convertit les données du moteur et les insère dans une table créée précédemment.
+
+Lorsque la `MATERIALIZED VIEW` se connecte au moteur, elle commence à collecter les données en arrière-plan. Cela vous permet de recevoir en continu des messages de Kafka et de les convertir au format requis à l’aide de `SELECT`.
+Une table Kafka peut avoir autant de vues matérialisées que vous le souhaitez : elles ne lisent pas directement les données de la table Kafka, mais reçoivent les nouveaux enregistrements (par blocs). Vous pouvez ainsi écrire dans plusieurs tables avec des niveaux de granularité différents (avec regroupement - agrégation ou sans).
+
+Exemple :
+
+```sql
+  CREATE TABLE queue (
+    timestamp UInt64,
+    level String,
+    message String
+  ) ENGINE = Kafka('localhost:9092', 'topic', 'group1', 'JSONEachRow');
+
+  CREATE TABLE daily (
+    day Date,
+    level String,
+    total UInt64
+  ) ENGINE = SummingMergeTree(day, (day, level), 8192);
+
+  CREATE MATERIALIZED VIEW consumer TO daily
+    AS SELECT toDate(toDateTime(timestamp)) AS day, level, count() AS total
+    FROM queue GROUP BY day, level;
+
+  SELECT level, sum(total) FROM daily GROUP BY level;
+```
+
+Pour améliorer les performances, les messages reçus sont regroupés en blocs de la taille de [max&#95;insert&#95;block&#95;size](/fr/reference/settings/session-settings#max_insert_block_size). Si le bloc n&#39;a pas été constitué dans le délai de [stream&#95;flush&#95;interval&#95;ms](/fr/reference/settings/session-settings#stream_flush_interval_ms) millisecondes, les données seront écrites dans la table, même si le bloc n&#39;est pas complet.
+
+Pour arrêter de recevoir les données du topic ou modifier la logique de conversion, détachez la vue matérialisée :
+
+```sql
+  DETACH TABLE consumer;
+  ATTACH TABLE consumer;
+```
+
+Si vous souhaitez modifier la table cible en utilisant `ALTER`, nous vous recommandons de désactiver la vue matérialisée afin d’éviter tout écart entre la table cible et les données de la vue.
+
+<div id="configuration">
+  ## Configuration
+</div>
+
+Comme pour GraphiteMergeTree, le moteur Kafka prend en charge une configuration étendue via le fichier de configuration de ClickHouse. Vous pouvez utiliser deux clés de configuration : une globale (sous `<kafka>`) et une au niveau du topic (sous `<kafka><kafka_topic>`). La configuration globale est appliquée en premier, puis la configuration au niveau du topic est appliquée (si elle existe).
+
+```xml
+  <kafka>
+    <!-- Global configuration options for all tables of Kafka engine type -->
+    <debug>cgrp</debug>
+    <statistics_interval_ms>3000</statistics_interval_ms>
+
+    <kafka_topic>
+        <name>logs</name>
+        <statistics_interval_ms>4000</statistics_interval_ms>
+    </kafka_topic>
+
+    <!-- Settings for consumer -->
+    <consumer>
+        <auto_offset_reset>smallest</auto_offset_reset>
+        <kafka_topic>
+            <name>logs</name>
+            <fetch_min_bytes>100000</fetch_min_bytes>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <fetch_min_bytes>50000</fetch_min_bytes>
+        </kafka_topic>
+    </consumer>
+
+    <!-- Settings for producer -->
+    <producer>
+        <kafka_topic>
+            <name>logs</name>
+            <retry_backoff_ms>250</retry_backoff_ms>
+        </kafka_topic>
+
+        <kafka_topic>
+            <name>stats</name>
+            <retry_backoff_ms>400</retry_backoff_ms>
+        </kafka_topic>
+    </producer>
+  </kafka>
+```
+
+Pour obtenir la liste des options de configuration possibles, consultez la [référence de configuration de librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Dans la configuration de ClickHouse, utilisez le caractère de soulignement (`_`) à la place d’un point. Par exemple, `check.crcs=true` deviendra `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-kerberos-support">
+  ### Prise en charge de Kerberos
+</div>
+
+Pour utiliser Kafka avec Kerberos, ajoutez l’élément enfant `security_protocol` avec la valeur `sasl_plaintext`. Cela suffit si le ticket d’octroi de tickets Kerberos est obtenu et mis en cache par les mécanismes du système d’exploitation.
+ClickHouse peut gérer les informations d’identification Kerberos à l’aide d’un fichier keytab. Tenez compte des éléments enfants `sasl_kerberos_service_name`, `sasl_kerberos_keytab` et `sasl_kerberos_principal`.
+
+Exemple :
+
+```xml
+<!-- Kerberos-aware Kafka -->
+<kafka>
+  <security_protocol>SASL_PLAINTEXT</security_protocol>
+  <sasl_kerberos_keytab>/home/kafkauser/kafkauser.keytab</sasl_kerberos_keytab>
+  <sasl_kerberos_principal>kafkauser/kafkahost@EXAMPLE.COM</sasl_kerberos_principal>
+</kafka>
+```
+
+<div id="virtual-columns">
+  ## Colonnes virtuelles
+</div>
+
+* `_topic` — Topic Kafka. Type de données : `LowCardinality(String)`.
+* `_key` — Clé du message. Type de données : `String`.
+* `_offset` — Offset du message. Type de données : `UInt64`.
+* `_timestamp` — Horodatage du message. Type de données : `Nullable(DateTime)`.
+* `_timestamp_ms` — Horodatage du message en millisecondes. Type de données : `Nullable(DateTime64(3))`.
+* `_partition` — Partition du topic Kafka. Type de données : `UInt64`.
+* `_headers.name` — Tableau des clés d&#39;en-tête du message. Type de données : `Array(String)`.
+* `_headers.value` — Tableau des valeurs d&#39;en-tête du message. Type de données : `Array(String)`.
+
+Colonnes virtuelles supplémentaires lorsque `kafka_handle_error_mode='stream'` :
+
+* `_raw_message` - Message brut qui n&#39;a pas pu être analysé correctement. Type de données : `String`.
+* `_error` - Message d&#39;exception généré lors d&#39;une erreur d&#39;analyse. Type de données : `String`.
+
+Remarque : les colonnes virtuelles `_raw_message` et `_error` sont renseignées uniquement en cas d&#39;exception pendant l&#39;analyse ; elles sont toujours vides lorsque le message a été analysé correctement.
+
+<div id="mapping-columns-to-kafka-message-metadata">
+  ## Correspondance entre les colonnes et les métadonnées des messages Kafka
+</div>
+
+Lors de la production de messages avec `INSERT INTO`, le moteur Kafka utilise toujours une colonne nommée `_key` (de type `String`) comme clé du message Kafka et une colonne nommée `_timestamp` (de type `DateTime`) comme horodatage du message Kafka — si ces colonnes existent dans la table. Par défaut, ces colonnes apparaissent également dans la charge utile du message produit, aux côtés des autres colonnes.
+
+Avec `kafka_map_virtual_columns_on_write = 1`, le comportement change :
+
+* `_key` (type `String`) — associé à la clé du message Kafka.
+* `_timestamp` (type `DateTime`) — associé à l’horodatage du message Kafka.
+* `_headers.name` (type `Array(String)`) et `_headers.value` (type `Array(String)`) — associés aux en-têtes des messages Kafka. Chaque paire `(_headers.name[i], _headers.value[i])` devient un en-tête Kafka. Comme `_headers.name` et `_headers.value` partagent le préfixe Nested `_headers`, ClickHouse exige que les deux tableaux aient la même taille pour chaque ligne.
+
+Les colonnes portant ces noms sont **exclues de la charge utile du message** uniquement si leurs types correspondent à ceux indiqués ci-dessus ; sinon, elles restent dans la charge utile, de sorte que les schémas qui réutilisent ces noms par hasard pour des données sans rapport continuent de fonctionner.
+
+Exemple :
+
+```sql
+CREATE TABLE kafka_out
+(
+    event_json String,
+    `_key` String,
+    `_timestamp` DateTime,
+    `_headers.name` Array(String),
+    `_headers.value` Array(String)
+)
+ENGINE = Kafka
+SETTINGS
+    kafka_broker_list = 'broker:9092',
+    kafka_topic_list = 'events',
+    kafka_group_name = 'events-producer',
+    kafka_format = 'JSONEachRow',
+    kafka_map_virtual_columns_on_write = 1;
+
+INSERT INTO kafka_out VALUES
+    ('{\"a\":1}', 'session-42', now(), ['source', 'trace_id'], ['api', 'abc-123']);
+```
+
+Le message Kafka produit contient la charge utile `{"event_json":"{\"a\":1}"}`, la clé `session-42`, l’horodatage actuel et deux en-têtes `source=api` et `trace_id=abc-123`.
+
+<div id="data-formats-support">
+  ## Prise en charge des formats de données
+</div>
+
+Le moteur Kafka prend en charge tous les [formats](/fr/reference/formats/index) pris en charge par ClickHouse.
+Le nombre de lignes dans un message Kafka dépend du fait que le format soit basé sur les lignes ou sur les blocs :
+
+* Pour les formats basés sur les lignes, le nombre de lignes dans un message Kafka peut être contrôlé en définissant `kafka_max_rows_per_message`.
+* Pour les formats basés sur les blocs, il n’est pas possible de diviser un bloc en parties plus petites, mais le nombre de lignes dans un bloc peut être contrôlé par le paramètre général [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size).
+
+<div id="engine-to-store-committed-offsets-in-clickhouse-keeper">
+  ## Moteur pour stocker les offsets validés dans ClickHouse Keeper
+</div>
+
+<ExperimentalBadge />
+
+Si `allow_experimental_kafka_offsets_storage_in_keeper` est activé, deux paramètres supplémentaires peuvent être spécifiés pour le moteur de table Kafka :
+
+* `kafka_keeper_path` spécifie le chemin vers la table dans ClickHouse Keeper
+* `kafka_replica_name` spécifie le nom de la réplique dans ClickHouse Keeper
+
+Soit les deux paramètres doivent être spécifiés, soit aucun des deux. Lorsque les deux sont spécifiés, un nouveau moteur Kafka expérimental est utilisé. Ce nouveau moteur ne dépend pas du stockage des offsets validés dans Kafka, mais les stocke dans ClickHouse Keeper. Il essaie toujours de valider les offsets dans Kafka, mais il ne dépend de ces offsets qu’au moment de la création de la table. Dans tous les autres cas (si la table est redémarrée ou restaurée après une erreur), les offsets stockés dans ClickHouse Keeper sont utilisés pour reprendre la consommation des messages. En plus de l’offset validé, il stocke également le nombre de messages consommés dans le dernier lot, de sorte que, si l’insert échoue, le même nombre de messages sera consommé, ce qui permet la déduplication si nécessaire.
+
+Exemple :
+
+```sql
+CREATE TABLE experimental_kafka (key UInt64, value UInt64)
+ENGINE = Kafka('localhost:19092', 'my-topic', 'my-consumer', 'JSONEachRow')
+SETTINGS
+  kafka_keeper_path = '/clickhouse/{database}/{uuid}',
+  kafka_replica_name = '{replica}'
+SETTINGS allow_experimental_kafka_offsets_storage_in_keeper=1;
+```
+
+<div id="known-limitations">
+  ### Limites connues
+</div>
+
+Comme le nouveau moteur est expérimental, il n’est pas encore prêt pour une utilisation en production. L’implémentation présente quelques limites connues :
+
+* Supprimer puis recréer rapidement la table, ou spécifier le même chemin ClickHouse Keeper pour différents moteurs, peut entraîner des problèmes. Comme bonne pratique, vous pouvez utiliser `{uuid}` dans `kafka_keeper_path` pour éviter les conflits de chemins.
+* Pour garantir des lectures répétables, les messages ne peuvent pas être consommés à partir de plusieurs partitions sur un seul thread. En revanche, les consommateurs Kafka doivent être interrogés régulièrement pour être maintenus actifs. En raison de ces deux contraintes, nous avons décidé d’autoriser la création de plusieurs consommateurs uniquement si `kafka_thread_per_consumer` est activé, sinon il est trop compliqué d’éviter les problèmes liés à l’interrogation régulière des consommateurs.
+
+**Voir aussi**
+
+* [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/fr/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size)
+* [system.kafka&#95;consumers](/fr/reference/system-tables/kafka_consumers)
