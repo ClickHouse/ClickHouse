@@ -33,6 +33,15 @@ wait "$client_pid" 2>/dev/null || true
 
 # Verify cancellation via query_log
 $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT --query "SELECT exception FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_id='$query_id' AND current_database = '$CLICKHOUSE_DATABASE'" | grep -qF "QUERY_WAS_CANCELLED" || exit 1
+cancelled=$($CLICKHOUSE_CLIENT --query "
+    SELECT count() FROM system.query_log
+    WHERE event_date >= yesterday()
+        AND event_time >= now() - 600
+        AND query_id = '$query_id'
+        AND current_database = '$CLICKHOUSE_DATABASE'
+        AND exception LIKE '%QUERY_WAS_CANCELLED%'")
+if [[ "$cancelled" == "0" ]]; then
+    exit 1
+fi
 
 echo "OK"
