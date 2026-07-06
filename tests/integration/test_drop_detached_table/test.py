@@ -1,6 +1,8 @@
 # Tag no-fasttest: requires S3
 
 import logging
+import posixpath
+import shlex
 import time
 
 import pytest
@@ -189,61 +191,64 @@ def create_force_drop_flag(node):
     )
 
 
+def metadata_file_exists(node, metadata_path):
+    if not metadata_path.startswith("/"):
+        disk_path = node.query(
+            "SELECT path FROM system.disks WHERE name = 'default'"
+        ).strip()
+        metadata_path = posixpath.join(disk_path, metadata_path)
+
+    return node.exec_in_container(
+        ["bash", "-c", f"test -f {shlex.quote(metadata_path)} && echo 1 || echo 0"]
+    ).strip()
+
+
 def test_drop_detached_table_moves_metadata_to_dropped_queue(start_cluster):
-    table_name = "test_table"
+    table_name = "test_drop_detached_table_moves_metadata_to_dropped_queue"
     create_table(replica1, table_name)
 
-    disk_path = replica1.query(
-        "SELECT path FROM system.disks WHERE name = 'default'"
-    ).strip()
     metadata_path = replica1.query(
         f"SELECT metadata_path FROM system.tables WHERE table='{table_name}'"
     ).split()[0]
 
     replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
 
-    assert (
-        "1"
-        == replica1.exec_in_container(
-            ["bash", "-c", f"ls -1 {disk_path}{metadata_path} | wc -l"]
-        ).strip()
+    assert_eq_with_retry(
+        replica1,
+        "SELECT count(), any(is_permanently) FROM system.detached_tables "
+        f"WHERE table = '{table_name}'",
+        "1\t1",
     )
-    assert (
-        "1"
-        == replica1.exec_in_container(
-            ["bash", "-c", f"ls -1 {disk_path}{metadata_path}.detached | wc -l"]
-        ).strip()
-    )
+    assert metadata_file_exists(replica1, metadata_path) == "1"
+    assert metadata_file_exists(replica1, f"{metadata_path}.detached") == "1"
 
     replica1.query(
         f"SET allow_experimental_drop_detached_table=1; "
         f"DROP DETACHED TABLE {table_name}"
     )
 
-    assert (
-        "0"
-        == replica1.exec_in_container(
-            ["bash", "-c", f"ls -1 {disk_path}{metadata_path} | wc -l"]
-        ).strip()
+    assert_eq_with_retry(
+        replica1,
+        "SELECT count() FROM system.detached_tables "
+        f"WHERE table = '{table_name}'",
+        "0",
     )
-    assert (
-        "0"
-        == replica1.exec_in_container(
-            ["bash", "-c", f"ls -1 {disk_path}{metadata_path}.detached | wc -l"]
-        ).strip()
+    assert metadata_file_exists(replica1, metadata_path) == "0"
+    assert metadata_file_exists(replica1, f"{metadata_path}.detached") == "0"
+
+    assert_eq_with_retry(
+        replica1,
+        "SELECT count() FROM system.dropped_tables "
+        f"WHERE database = currentDatabase() AND table = '{table_name}'",
+        "1",
     )
 
     metadata_dropped_path = replica1.query(
         "SELECT metadata_dropped_path FROM system.dropped_tables "
-        f"WHERE table = '{table_name}'"
+        f"WHERE database = currentDatabase() AND table = '{table_name}'"
     ).strip()
     assert metadata_dropped_path.startswith("metadata_dropped/")
-    assert (
-        "1"
-        == replica1.exec_in_container(
-            ["bash", "-c", f"ls -1 {disk_path}{metadata_dropped_path} | wc -l"]
-        ).strip()
-    )
+    assert metadata_file_exists(replica1, metadata_dropped_path) == "1"
 
 
 def test_force_drop_flag_bypasses_detached_table_size_limit(start_cluster):
