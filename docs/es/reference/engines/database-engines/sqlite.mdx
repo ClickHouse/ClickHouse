@@ -1,0 +1,107 @@
+---
+description: 'Permite conectarse a bases de datos SQLite y ejecutar consultas `INSERT` y `SELECT`
+  para intercambiar datos entre ClickHouse y SQLite.'
+sidebarTitle: 'SQLite'
+slug: /engines/database-engines/sqlite
+title: 'SQLite'
+doc_type: 'reference'
+---
+
+Permite conectarse a una base de datos [SQLite](https://www.sqlite.org/index.html) y ejecutar consultas `INSERT` y `SELECT` para intercambiar datos entre ClickHouse y SQLite.
+
+<div id="creating-a-database">
+  ## Crear una base de datos
+</div>
+
+```sql
+    CREATE DATABASE sqlite_database
+    ENGINE = SQLite('db_path')
+```
+
+**Parámetros del motor**
+
+* `db_path` — Ruta al archivo con la base de datos SQLite.
+
+<div id="data_types-support">
+  ## Compatibilidad con tipos de datos
+</div>
+
+La siguiente tabla muestra la asignación de tipos predeterminada cuando ClickHouse infiere automáticamente el esquema a partir de SQLite:
+
+| SQLite  | ClickHouse                              |
+| ------- | --------------------------------------- |
+| INTEGER | [Int32](/es/reference/data-types/int-uint) |
+| REAL    | [Float32](/es/reference/data-types/float)  |
+| TEXT    | [String](/es/reference/data-types/string)  |
+| TEXT    | [UUID](/es/reference/data-types/uuid)      |
+| BLOB    | [String](/es/reference/data-types/string)  |
+
+Cuando define explícitamente una tabla con tipos específicos de ClickHouse mediante el [motor de tabla SQLite](/es/reference/engines/table-engines/integrations/sqlite), los siguientes tipos de ClickHouse pueden interpretarse a partir de columnas TEXT de SQLite:
+
+* [Date](/es/reference/data-types/date), [Date32](/es/reference/data-types/date32)
+* [DateTime](/es/reference/data-types/datetime), [DateTime64](/es/reference/data-types/datetime64)
+* [UUID](/es/reference/data-types/uuid)
+* [Enum8, Enum16](/es/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/es/reference/data-types/decimal)
+* [FixedString](/es/reference/data-types/fixedstring)
+* Todos los tipos enteros ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/es/reference/data-types/int-uint))
+* [Float32, Float64](/es/reference/data-types/float)
+
+SQLite tiene tipado dinámico, y sus funciones de acceso por tipo realizan conversiones automáticas de tipos. Por ejemplo, al leer una columna TEXT como un entero, devolverá 0 si el texto no puede interpretarse como un número. Esto significa que, si una tabla de ClickHouse se define con un tipo distinto al de la columna subyacente de SQLite, los valores pueden convertirse silenciosamente en lugar de provocar un error.
+
+<div id="specifics-and-recommendations">
+  ## Particularidades y recomendaciones
+</div>
+
+SQLite almacena toda la base de datos (definiciones, tablas, índices y los propios datos) en un único archivo multiplataforma en una máquina host. Durante la escritura, SQLite bloquea todo el archivo de la base de datos; por lo tanto, las operaciones de escritura se realizan de forma secuencial. Las operaciones de lectura pueden realizarse en paralelo.
+SQLite no requiere gestión de servicios (como scripts de arranque) ni control de acceso basado en `GRANT` y contraseñas. El control de acceso se gestiona mediante los permisos del sistema de archivos asignados al propio archivo de la base de datos.
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+Base de datos en ClickHouse conectada a SQLite:
+
+```sql
+CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+SHOW TABLES FROM sqlite_db;
+```
+
+```text
+┌──name───┐
+│ table1  │
+│ table2  │
+└─────────┘
+```
+
+Muestra las tablas:
+
+```sql
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+Inserción de datos en una tabla de SQLite desde una tabla de ClickHouse:
+
+```sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
+```

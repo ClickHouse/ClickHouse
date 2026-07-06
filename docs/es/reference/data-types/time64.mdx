@@ -1,0 +1,155 @@
+---
+description: 'Documentación del tipo de dato Time64 en ClickHouse, que almacena
+  horas con precisión de subsegundos'
+slug: /sql-reference/data-types/time64
+sidebarTitle: 'Time64'
+title: 'Time64'
+doc_type: 'reference'
+---
+
+El tipo de dato `Time64` representa una hora del día con segundos fraccionarios.
+No tiene componentes de fecha del calendario (día, mes, año).
+El parámetro `precision` define la cantidad de dígitos fraccionarios y, por tanto, el tamaño del tick.
+
+Tamaño del tick (precisión): 10<sup>-precision</sup> segundos. Rango válido: 0..9. Las opciones más habituales son 3 (milisegundos), 6 (microsegundos) y 9 (nanosegundos).
+
+**Sintaxis:**
+
+```sql
+Time64(precision)
+```
+
+Internamente, `Time64` almacena como un número decimal con signo de 64 bits (Decimal64) la cantidad de segundos fraccionarios.
+La resolución del tick viene determinada por el parámetro `precision`.
+No se admiten zonas horarias: especificar una zona horaria con `Time64` provocará un error.
+
+A diferencia de `DateTime64`, `Time64` no almacena un componente de fecha.
+Véase también [`Time`](/es/reference/data-types/time).
+
+Rango de representación textual: [-999:59:59.000, 999:59:59.999] para `precision = 3`. En general, el mínimo es `-999:59:59` y el máximo es `999:59:59`, con hasta `precision` dígitos fraccionarios (para `precision = 9`, el mínimo es `-999:59:59.999999999`).
+
+<div id="implementation-details">
+  ## Detalles de implementación
+</div>
+
+**Representación**.
+Valor `Decimal64` con signo que cuenta fracciones de segundo con `precision` dígitos fraccionarios.
+
+**Normalización**.
+Al analizar cadenas como `Time64`, los componentes de tiempo se normalizan y no se validan.
+Por ejemplo, `25:70:70` se interpreta como `26:11:10`.
+
+**Valores negativos**.
+Se admiten y conservan los signos menos iniciales.
+Los valores negativos suelen surgir de operaciones aritméticas sobre valores `Time64`.
+En `Time64`, las entradas negativas se conservan tanto en entradas de texto (p. ej., `'-01:02:03.123'`) como numéricas (p. ej., `-3723.123`).
+
+**Saturación**.
+El componente de hora del día se limita al intervalo [-999:59:59.xxx, 999:59:59.xxx] al convertirlo en componentes o serializarlo a texto.
+El valor numérico almacenado puede superar este intervalo; sin embargo, cualquier extracción de componentes (horas, minutos, segundos) y la representación textual usan el valor saturado.
+
+**Zonas horarias**.
+`Time64` no admite zonas horarias.
+Especificar una zona horaria al crear un tipo o valor `Time64` produce un error.
+Del mismo modo, no se admite aplicar ni cambiar la zona horaria en columnas `Time64`, y esto produce un error.
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+1. Crear una tabla con una columna de tipo `Time64` e insertar datos en ella:
+
+```sql
+CREATE TABLE tab64
+(
+    `event_id` UInt8,
+    `time` Time64(3)
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parsear Time64
+-- - desde una cadena,
+-- - desde un número de segundos desde las 00:00:00 (parte fraccionaria según la precisión).
+INSERT INTO tab64 VALUES (1, '14:30:25'), (2, 52225.123), (3, '14:30:25');
+
+SELECT * FROM tab64 ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        2 │ 14:30:25.123 │
+3. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+2. Filtrado por valores `Time64`
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64('14:30:25', 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        1 │ 14:30:25.000 │
+2. │        3 │ 14:30:25.000 │
+   └──────────┴──────────────┘
+```
+
+```sql
+SELECT * FROM tab64 WHERE time = toTime64(52225.123, 3);
+```
+
+```text
+   ┌─event_id─┬────────time─┐
+1. │        2 │ 14:30:25.123 │
+   └──────────┴──────────────┘
+```
+
+Nota: `toTime64` interpreta los literales numéricos como segundos con una parte fraccionaria según la precisión especificada, así que indique explícitamente los dígitos fraccionarios deseados.
+
+3. Inspeccionar el tipo resultante:
+
+```sql
+SELECT CAST('14:30:25.250' AS Time64(3)) AS column, toTypeName(column) AS type;
+```
+
+```text
+   ┌────────column─┬─type──────┐
+1. │ 14:30:25.250 │ Time64(3) │
+   └───────────────┴───────────┘
+```
+
+<div id="addition-with-date">
+  ## Suma con Date
+</div>
+
+Se puede sumar un valor [Time64](/es/reference/data-types/time64) a un valor [Date](/es/reference/data-types/date) o [Date32](/es/reference/data-types/date32) para obtener un [DateTime64](/es/reference/data-types/datetime64) con la misma escala que `Time64`:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+   ┌─────────────────────────dt─┬─toTypeName(dt)─┐
+1. │ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+   └────────────────────────────┴────────────────┘
+```
+
+Consulte [Adición de fecha y hora](/es/reference/operators/index#date-time-addition) para obtener más información sobre todas las combinaciones admitidas y los tipos de resultado.
+
+**Véase también**
+
+* [Funciones de conversión de tipos](/es/reference/functions/regular-functions/type-conversion-functions)
+* [Funciones para trabajar con fechas y horas](/es/reference/functions/regular-functions/date-time-functions)
+* [La configuración `date_time_input_format`](/es/reference/settings/formats#date_time_input_format)
+* [La configuración `date_time_output_format`](/es/reference/settings/formats#date_time_output_format)
+* [El parámetro de configuración del servidor `timezone`](/es/reference/settings/server-settings/settings#timezone)
+* [La configuración `session_timezone`](/es/reference/settings/session-settings#session_timezone)
+* [Operadores para trabajar con fechas y horas](/es/reference/operators/index#operators-for-working-with-dates-and-times)
+* [Tipo de dato `Date`](/es/reference/data-types/date)
+* [Tipo de dato `Time`](/es/reference/data-types/time)
+* [Tipo de dato `DateTime`](/es/reference/data-types/datetime)

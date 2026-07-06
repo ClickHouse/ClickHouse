@@ -1,0 +1,222 @@
+---
+slug: /cloud/managed-postgres/benchmarks
+sidebarTitle: 'Benchmarks'
+title: 'Benchmarks de desempenho'
+description: 'Benchmarks de desempenho que comparam o Postgres managed by ClickHouse com o AWS Aurora, RDS e outros serviços gerenciados de PostgreSQL'
+keywords: ['benchmarks de Postgres', 'desempenho', 'pgbench', 'aurora', 'rds', 'tps', 'latência', 'desempenho de nvme']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  **TL;DR**
+
+  * **Benchmark** do Postgres managed by ClickHouse em comparação com o AWS RDS (16k IOPS provisionadas) e o Aurora IO Optimized, usando os testes padrão do [`pgbench`](https://www.postgresql.org/docs/current/pgbench.html)
+  * **Desempenho**: o Postgres com suporte a NVMe da ClickHouse oferece **desempenho de 4,3 a 9x superior** para workloads com uso intensivo de E/S e **12% mais desempenho** em cenários limitados por CPU
+  * **Ideal para workloads de IA em rápido crescimento** que exigem altas taxas de transação, acesso a dados de baixa latência e desempenho previsível, sem gargalos de E/S
+</Info>
+
+<div id="overview">
+  ## Visão geral do benchmark
+</div>
+
+Realizamos testes de desempenho abrangentes com o `pgbench`, a ferramenta padrão de benchmarking do PostgreSQL, para avaliar o desempenho da carga de trabalho em cenários de concorrência moderada e alta.
+
+<div id="benchmarks">
+  ## Benchmarks
+</div>
+
+Todos os testes de desempenho foram realizados em uma VM cliente com a mesma capacidade de computação, localizada na mesma região e na mesma zona de disponibilidade do banco de dados PostgreSQL, para garantir uma comparação justa.
+
+<div id="test1">
+  ### Teste 1: Intensivo de E/S - Leitura+Escrita (dataset de 500 GB)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readwrite.webp" alt="Resultados do benchmark de Leitura+Escrita Intensiva de E/S" size="md" border />
+
+**Melhoria de desempenho em relação ao RDS (16 mil IOPS):**
+
+* **TPS 326% maior** (4,3x mais rápido)
+
+**Melhoria de desempenho em relação ao Aurora IO Optimized:**
+
+* **TPS 345% maior** (4,5x mais rápido)
+
+**Análise**: Cargas de trabalho mistas de leitura/escrita evidenciam os ganhos de desempenho mais expressivos do armazenamento NVMe e representam o **cenário mais realista para cargas de trabalho impulsionadas por IA em rápido crescimento** que exigem tanto ingestão de dados com alta taxa de transferência quanto leituras de baixa latência. **Postgres managed by ClickHouse atingiu 19,8 mil TPS com maior concorrência**, demonstrando como o armazenamento NVMe escala de forma eficaz sob carga. Isso é **4,3-4,5x mais rápido que RDS e Aurora**. As soluções de armazenamento conectado à rede tiveram dificuldades com operações com uso intensivo de escrita, com RDS e Aurora atingindo no máximo 4,4 mil-4,6 mil TPS apesar da capacidade provisionada e mesmo com a configuração IO Optimized do Aurora.
+
+<div id="test1-setup">
+  #### Setup
+</div>
+
+Este teste avalia o desempenho misto de leitura/gravação com um grande conjunto de dados de 500 GB, exercendo pressão tanto sobre os caminhos de leitura quanto sobre os de gravação do subsistema de armazenamento.
+
+**Configuração da instância:**
+
+| Configuração         | Postgres managed by ClickHouse | RDS com 16 mil IOPS             | Aurora IO Optimized             |
+| -------------------- | ------------------------------ | ------------------------------ | ------------------------------- |
+| **Versão do PG**     | 17                             | 17                             | 17                              |
+| **vCPUs**            | 16                             | 16                             | 16                              |
+| **RAM**              | 64 GB                          | 64 GB                          | 128 GB                          |
+| **Tamanho do disco** | 1 TB                           | 1 TB                           | 1 TB                            |
+| **Tipo de disco**    | NVMe (IOPS ilimitadas)         | conectado à rede (16.000 IOPS) | conectado à rede (IO Optimized) |
+
+**Configuração do teste:**
+
+```bash
+# Inicializar banco de dados (dataset de 500 GB)
+pgbench -i -s 34247
+
+# Benchmark de leitura+escrita
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30
+```
+
+<div id="test2">
+  ### Teste 2: Intensivo de E/S - Somente leitura (dataset de 500 GB)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/io-intensive-readonly.webp" alt="Resultados do benchmark Intensivo de E/S Somente leitura" size="md" border />
+
+**Melhoria de desempenho em relação ao RDS (16 mil IOPS):**
+
+* **TPS 802% maior** (9,0x mais rápido)
+
+**Análise**: A diferença de desempenho aumenta drasticamente em workloads intensivas em leitura e limitadas por E/S. **Postgres managed by ClickHouse entregou 84,8 mil TPS**, enquanto o RDS com 16.000 IOPS provisionadas alcançou apenas 9,4 mil TPS, apesar de contar com capacidade computacional equivalente. A principal diferença: o armazenamento NVMe do ClickHouse escala com níveis mais altos de concorrência, enquanto o armazenamento em rede continua limitado pelos limites de IOPS provisionadas. Mesmo com IOPS provisionadas, o RDS ainda foi 9x mais lento que o ClickHouse, demonstrando a importância crítica da arquitetura de armazenamento para workloads intensivas em E/S.
+
+<div id="test1-setup">
+  #### Setup
+</div>
+
+Este teste avalia o desempenho de leitura com um grande conjunto de dados de 500 GB que não cabe na memória, exigindo bastante da capacidade de E/S de disco.
+
+**Configuração da instância:**
+
+| Configuração         | Postgres managed by ClickHouse | RDS com 16 mil IOPS              |
+| -------------------- | ------------------------------ | -------------------------------- |
+| **Versão do PG**     | 17                             | 17                               |
+| **vCPUs**            | 16                             | 16                               |
+| **RAM**              | 64 GB                          | 64 GB                            |
+| **Tamanho do disco** | 1 TB                           | 1 TB                             |
+| **Tipo de disco**    | NVMe (IOPS ilimitadas)         | Conectado via rede (16.000 IOPS) |
+
+**Configuração do teste:**
+
+```bash
+# Inicializar banco de dados (dataset de 500 GB)
+pgbench -i -s 34247
+
+# Benchmark somente leitura
+pgbench -c 256 -j 16 -T 600 -M prepared -P 30 -S
+```
+
+<div id="test3">
+  ### Teste 3: Intensivo em CPU (os dados cabem na memória)
+</div>
+
+<Image img="/images/managed-postgres/benchmarks/compute-intensive.webp" alt="Resultados do benchmark intensivo em CPU" size="md" border />
+
+**Melhoria de desempenho:**
+
+* **12,3% mais TPS** do que o RDS PostgreSQL
+
+**Análise**: Mesmo em cenários limitados por CPU, em que a E/S de disco é mínima, **o Postgres managed by ClickHouse liderou com 36,5 mil TPS**. Embora ambos os serviços tenham atingido 100% de utilização de CPU, o armazenamento NVMe do ClickHouse entregou desempenho superior, com taxas de acerto de cache mais altas. A vantagem de 12% sobre o RDS demonstra a eficiência da infraestrutura subjacente, mesmo quando as cargas de trabalho são predominantemente limitadas por CPU.
+
+<div id="test1-setup">
+  #### Setup
+</div>
+
+Este teste avalia o desempenho da CPU quando o conjunto de dados de trabalho cabe inteiramente na memória, minimizando o impacto da E/S de disco.
+
+**Configuração da instância:**
+
+| Configuração      | Postgres managed by ClickHouse | RDS PostgreSQL |
+| ----------------- | ------------------------------ | -------------- |
+| **Versão do PG**  | 17                             | 17             |
+| **vCPUs**         | 2                              | 2              |
+| **RAM**           | 8 GB                           | 8 GB           |
+| **Tipo de disco** | NVMe                           | via rede (gp3) |
+
+**Configuração do teste:**
+
+```bash
+# Inicializar banco de dados (conjunto de dados de 2 GB)
+pgbench -i -s 136
+
+# Execução de aquecimento para carregar o conjunto de dados na memória
+pgbench -c 1 -T 60 -S -M prepared
+
+# Executar benchmark (somente leitura, prepared statements)
+pgbench -c 32 -j 16 -T 300 -S -M prepared -P 30
+```
+
+<div id="summary">
+  ## Resumo de desempenho
+</div>
+
+<div id="key-findings">
+  ### Principais conclusões
+</div>
+
+Nos três cenários de benchmark, o Postgres managed by ClickHouse apresentou desempenho consistentemente superior:
+
+1. **Cargas de trabalho de leitura+gravação intensivas em E/S**: TPS 4,3-4,5x maior em comparação com o RDS (16k IOPS) e o Aurora IO Optimized
+2. **Cargas de trabalho de leitura intensivas em E/S**: TPS 9x maior em comparação com o RDS com 16k IOPS
+3. **Cargas de trabalho limitadas pela CPU**: TPS 12% maior do que o RDS
+
+<div id="when-it-excels">
+  ### Quando o Postgres by ClickHouse se destaca
+</div>
+
+O Postgres by ClickHouse é ideal para aplicações que:
+
+* **Dão suporte a cargas de trabalho de IA em rápido crescimento** que exigem alta taxa de ingestão de dados, com `upserts` frequentes, atualizações de features em tempo real e capacidade analítica pronta para uso por meio de integração perfeita com o ClickHouse para cargas de trabalho OLAP
+* Realizam gravações, atualizações ou operações mistas de leitura/gravação com frequência
+* Precisam de armazenamento previsível e de alto desempenho
+* Atualmente estão limitadas por restrições de IOPS em serviços tradicionais de Postgres gerenciado
+
+**Se você prevê necessidade de análises no futuro** e antecipa uma integração mais profunda com o ClickHouse — algo comum em cargas de trabalho modernas de IA, nas quais dados transacionais alimentam dashboards em tempo real, feature stores e pipelines de ML — **o Postgres by ClickHouse deve ser sua escolha padrão**. A integração nativa elimina pipelines de ETL complexos e permite um fluxo contínuo de dados entre seu banco de dados operacional e consultas analíticas.
+
+<div id="nvme-advantage">
+  ### Vantagem da arquitetura NVMe
+</div>
+
+A vantagem de desempenho vem de uma diferença arquitetural fundamental:
+
+| Aspecto                          | Armazenamento NVMe (Managed Postgres) | Armazenamento conectado via rede (IOPS provisionadas)         |
+| -------------------------------- | ------------------------------------- | ------------------------------------------------------------- |
+| **IOPS**                         | De 100 mil a praticamente ilimitadas  | 16.000 provisionadas                                          |
+| **Saltos de rede**               | Zero (dispositivo local)              | Toda operação de disco exige tráfego de ida e volta pela rede |
+| **Escalabilidade de desempenho** | Escala linearmente com a concorrência | Limitado pelas IOPS provisionadas                             |
+
+Para mais detalhes sobre os benefícios de desempenho do armazenamento NVMe, consulte [desempenho com NVMe](/pt-BR/products/managed-postgres/overview#nvme-performance).
+
+<div id="cost-effectiveness">
+  ## Custo-benefício
+</div>
+
+Além do desempenho bruto, o Postgres managed by ClickHouse oferece uma relação custo-desempenho superior:
+
+* **Maior throughput por dólar**: Obtenha de 4 a 9 vezes mais TPS em comparação com o RDS com 16 mil IOPS provisionadas e o Aurora IO Optimized
+* **Custos previsíveis**: Não é necessário provisionar capacidade adicional de IOPS — IOPS locais ilimitadas incluídas
+* **Menores requisitos de compute**: Alcance o desempenho desejado com instâncias menores graças à E/S eficiente
+* **Menor necessidade de réplicas de leitura**: O maior throughput de uma única instância reduz a necessidade de escalonamento horizontal
+
+Para cargas de trabalho atualmente limitadas por IOPS, migrar para o Managed Postgres pode eliminar a necessidade de IOPS provisionadas caras ou de configurações IO Optimized, ao mesmo tempo em que oferece um desempenho significativamente melhor.
+
+<div id="references">
+  ## Referências
+</div>
+
+Os dados completos do benchmark, as configurações e as métricas detalhadas estão disponíveis em nossa [planilha com os resultados do benchmark](https://docs.google.com/spreadsheets/d/17TLWmwNKZb3Ie1vSQqvjtqByHskvoX6CF2eQ_FRx1cA/edit?gid=845104392#gid=845104392).
+
+<div id="resources">
+  ## Recursos adicionais
+</div>
+
+* [PeerDB: Comparando serviços gerenciados de Postgres](https://blog.peerdb.io/comparing-postgres-managed-services-aws-azure-gcp-and-supabase)
+* [Documentação do pgbench](https://www.postgresql.org/docs/current/pgbench.html)
+* [Visão geral do Managed Postgres](/pt-BR/products/managed-postgres/overview)
+* [Escalando sua instância do Postgres](/pt-BR/products/managed-postgres/scaling)

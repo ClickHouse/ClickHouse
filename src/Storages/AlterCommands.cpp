@@ -384,6 +384,21 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::MODIFY_CONSTRAINT)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.constraint_decl = command_ast->constraint_decl->clone();
+        command.type = AlterCommand::MODIFY_CONSTRAINT;
+
+        const auto & ast_constraint_decl = command_ast->constraint_decl->as<ASTConstraintDeclaration &>();
+
+        command.constraint_name = ast_constraint_decl.name;
+
+        command.if_exists = command_ast->if_exists;
+
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::ADD_PROJECTION)
     {
         AlterCommand command;
@@ -905,6 +920,26 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         constraints.erase(erase_it);
         metadata.constraints = ConstraintsDescription(constraints);
     }
+    else if (type == MODIFY_CONSTRAINT)
+    {
+        auto constraints = metadata.constraints.getConstraints();
+        auto modify_it = std::find_if(
+            constraints.begin(),
+            constraints.end(),
+            [this](const ASTPtr & constraint_ast) { return constraint_ast->as<ASTConstraintDeclaration &>().name == constraint_name; });
+
+        if (modify_it == constraints.end())
+        {
+            if (if_exists)
+                return;
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong constraint name. Cannot find constraint `{}` to modify",
+                    constraint_name);
+        }
+
+        /// Replace the declaration in place so the constraint keeps its position.
+        *modify_it = constraint_decl;
+        metadata.constraints = ConstraintsDescription(constraints);
+    }
     else if (type == ADD_PROJECTION)
     {
         auto projection = ProjectionDescription::getProjectionFromAST(
@@ -986,7 +1021,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata, ContextPtr context)
         {
             if (MergeTreeSettings::hasBuiltin(change.name))
             {
-                effective_settings.applyChange(change);
+                effective_settings.applyChange(change, context, /*is_loading_from_existing_metadata=*/true);
                 any_mt_setting = true;
             }
         }

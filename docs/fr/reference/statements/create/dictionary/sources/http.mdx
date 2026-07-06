@@ -1,0 +1,65 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/http
+title: 'Source de dictionnaire HTTP(S)'
+sidebarTitle: 'HTTP(S)'
+description: "Configurez un endpoint HTTP ou HTTPS comme source de dictionnaire dans ClickHouse."
+doc_type: 'reference'
+---
+
+L&#39;utilisation d&#39;un serveur HTTP(S) dépend de la [manière dont le dictionnaire est stocké en mémoire](/fr/reference/statements/create/dictionary/layouts/overview). Si le dictionnaire est stocké avec `cache` et `complex_key_cache`, ClickHouse demande les clés nécessaires en envoyant une requête via la méthode `POST`.
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(HTTP(
+        url 'http://[::1]/os.tsv'
+        format 'TabSeparated'
+        credentials(user 'user' password 'password')
+        headers(header(name 'API-KEY' value 'key'))
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+        <http>
+            <url>http://[::1]/os.tsv</url>
+            <format>TabSeparated</format>
+            <credentials>
+                <user>user</user>
+                <password>password</password>
+            </credentials>
+            <headers>
+                <header>
+                    <name>API-KEY</name>
+                    <value>key</value>
+                </header>
+            </headers>
+        </http>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Pour que ClickHouse puisse accéder à une ressource HTTPS, vous devez [configurer openSSL](/fr/reference/settings/server-settings/settings#openssl) dans la configuration du serveur.
+
+Champs des paramètres :
+
+| Paramètre     | Description                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `url`         | L&#39;URL de la source.                                                                                      |
+| `format`      | Le format du fichier. Tous les formats décrits dans [Formats](/fr/reference/formats/index) sont pris en charge. |
+| `credentials` | Authentification HTTP Basic. Facultatif.                                                                     |
+| `user`        | Nom d&#39;utilisateur requis pour l&#39;authentification.                                                    |
+| `password`    | Mot de passe requis pour l&#39;authentification.                                                             |
+| `headers`     | Tous les en-têtes HTTP personnalisés utilisés pour la requête HTTP. Facultatif.                              |
+| `header`      | Entrée d&#39;en-tête HTTP individuelle.                                                                      |
+| `name`        | Nom de l&#39;en-tête envoyé dans la requête.                                                                 |
+| `value`       | Valeur définie pour un nom d&#39;en-tête donné.                                                              |
+
+Lors de la création d&#39;un dictionnaire à l&#39;aide de la commande DDL (`CREATE DICTIONARY ...`), les hôtes distants des dictionnaires HTTP sont vérifiés par rapport au contenu de la section `remote_url_allow_hosts` de la config afin d&#39;empêcher les utilisateurs de la base de données d&#39;accéder à un serveur HTTP arbitraire.
