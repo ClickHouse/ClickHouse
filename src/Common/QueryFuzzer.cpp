@@ -138,6 +138,31 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
     matcher.asterisk_like_pattern = pattern;
 }
 
+/// True if a Field holds an integer (any signed/unsigned width). `QueryFuzzer::fuzzSettingValue`
+/// uses this to leave integer setting values untouched: a time-duration setting
+/// (`sleep_in_send_data_ms`, `*_timeout`, `*_interval`, ...) is stored as an integer and, when
+/// `fuzzField` blows it up to a value like 1048576, the server sleeps/waits uninterruptibly for
+/// minutes (ignoring query cancellation and `max_execution_time`), which the stress-test hung-check
+/// reports as a false "possible deadlock". Recognising durations by name is fragile (e.g.
+/// `..._timeout_milliseconds`), but they are all integers, so skipping integer values covers the
+/// whole class. Float/string/enum settings -- the interesting ones for parse/apply coverage -- are
+/// still fuzzed, and a huge float duration only makes a limit more permissive rather than hanging.
+bool isIntegerField(const Field & f)
+{
+    switch (f.getType())
+    {
+        case Field::Types::Int64:
+        case Field::Types::UInt64:
+        case Field::Types::Int128:
+        case Field::Types::UInt128:
+        case Field::Types::Int256:
+        case Field::Types::UInt256:
+            return true;
+        default:
+            return false;
+    }
+}
+
 }
 
 static const Strings insert_formats = {
@@ -637,6 +662,12 @@ Field QueryFuzzer::fuzzField(Field field)
     }
 
     return field;
+}
+
+void QueryFuzzer::fuzzSettingValue(Field & value)
+{
+    if (!isIntegerField(value))
+        value = fuzzField(value);
 }
 
 ASTPtr QueryFuzzer::getRandomColumnLike()
@@ -1345,7 +1376,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         {
             for (auto & change : create.dictionary->dict_settings->changes)
                 if (fuzz_rand() % 5 == 0)
-                    change.value = fuzzField(change.value);
+                    fuzzSettingValue(change.value);
         }
     }
 
@@ -4677,28 +4708,12 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values, but skip time-duration settings (names ending in one of the
-        /// suffixes below): these are timeouts, sleeps and intervals, and fuzzing them to a large
-        /// value can make a query hang for minutes -- e.g. a fault-injection `sleep_in_send_data_ms`
-        /// mutated from 10 to 1048576 sleeps uninterruptibly in `TCPHandler` (ignoring query
-        /// cancellation and `max_execution_time`), which the stress-test hung-check reports as a
-        /// false "possible deadlock". Leave their values as written by the query.
+        /// Fuzz existing setting values. `fuzzSettingValue` leaves integer-valued settings as
+        /// written by the query so time durations (timeouts, sleeps, intervals) are not blown up
+        /// into a multi-minute hang; see `fuzzSettingValue` / `isIntegerField`.
         for (auto & c : set->changes)
-        {
-            if (fuzz_rand() % 50 != 0)
-                continue;
-
-            bool is_duration = false;
-            for (const char * suffix : {"_ms", "_sec", "_seconds", "_timeout", "_time", "_interval", "_duration"})
-                if (endsWith(c.name, suffix))
-                {
-                    is_duration = true;
-                    break;
-                }
-
-            if (!is_duration)
-                c.value = fuzzField(c.value);
-        }
+            if (fuzz_rand() % 50 == 0)
+                fuzzSettingValue(c.value);
     }
     else if (auto * param = typeid_cast<ASTQueryParameter *>(ast.get()))
     {
@@ -4900,7 +4915,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     if (auto * aset = alter_cmd->settings_changes->as<ASTSetQuery>())
                         for (auto & c : aset->changes)
                             if (fuzz_rand() % 50 == 0)
-                                c.value = fuzzField(c.value);
+                                fuzzSettingValue(c.value);
                 break;
             case ASTAlterCommand::RESET_SETTING:
                 /// Occasionally drop a setting name from the reset list
@@ -5620,7 +5635,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             create_nc->if_not_exists = !create_nc->if_not_exists;
         for (auto & change : create_nc->changes)
             if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
+                fuzzSettingValue(change.value);
     }
     else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
     {
@@ -5628,7 +5643,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             alter_nc->if_exists = !alter_nc->if_exists;
         for (auto & change : alter_nc->changes)
             if (fuzz_rand() % 5 == 0)
-                change.value = fuzzField(change.value);
+                fuzzSettingValue(change.value);
     }
     else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
     {
