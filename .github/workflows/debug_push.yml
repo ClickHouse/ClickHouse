@@ -6,8 +6,26 @@ concurrency:
 on:
   workflow_dispatch:
     inputs:
+      repo:
+        description: Target repository for the probe push (default: this repo)
+        required: false
+        default: ''
+      probe-branch:
+        description: Throwaway branch to create and delete for the probe
+        required: false
+        default: robot-clickhouse/debug-push-probe
   workflow_call:
     inputs:
+      repo:
+        description: Target repository for the probe push (default: this repo)
+        required: false
+        type: string
+        default: ''
+      probe-branch:
+        description: Throwaway branch to create and delete for the probe
+        required: false
+        type: string
+        default: robot-clickhouse/debug-push-probe
 
 env:
   PYTHONUNBUFFERED: 1

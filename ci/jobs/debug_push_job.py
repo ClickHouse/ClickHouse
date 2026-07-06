@@ -20,11 +20,20 @@ import os
 import re
 
 from ci.praktika.git import Git
+from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-REPO = os.environ.get("GITHUB_REPOSITORY", "ClickHouse/ClickHouse")
-PROBE_BRANCH = "robot-clickhouse/debug-push-probe"
+DEFAULT_PROBE_BRANCH = "robot-clickhouse/debug-push-probe"
+
+
+def _config():
+    """Resolve the probe target from workflow inputs, with sensible defaults."""
+    repo = Info.get_workflow_input_value("repo") or os.environ.get(
+        "GITHUB_REPOSITORY", "ClickHouse/ClickHouse"
+    )
+    branch = Info.get_workflow_input_value("probe-branch") or DEFAULT_PROBE_BRANCH
+    return repo, branch
 
 
 def _dump_git_auth_state():
@@ -44,11 +53,12 @@ def _dump_git_auth_state():
 
 def probe_push():
     """Push HEAD to a throwaway branch as the App, then delete it; return bool."""
+    repo, branch = _config()
     _dump_git_auth_state()
     sha = Git.get_commit_sha("HEAD")
-    print(f"pushing HEAD [{sha}] to {REPO}@{PROBE_BRANCH}")
-    pushed = Git.push(REPO, f"{sha}:refs/heads/{PROBE_BRANCH}", force=True, retries=3)
-    deleted = Git.push(REPO, f":refs/heads/{PROBE_BRANCH}", retries=3)
+    print(f"pushing HEAD [{sha}] to {repo}@{branch}")
+    pushed = Git.push(repo, f"{sha}:refs/heads/{branch}", force=True, retries=3)
+    deleted = Git.push(repo, f":refs/heads/{branch}", retries=3)
     print(f"pushed={pushed} deleted={deleted}")
     return pushed and deleted
 
