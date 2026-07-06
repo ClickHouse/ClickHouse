@@ -1,11 +1,11 @@
 -- Tags: no-random-settings
 -- Pins the LIMIT copy-down into the per-shard plan of a ReadFromRemotePlanStep
--- placeholder under make_distributed_plan = 1. The outer LimitStep must stay on
+-- placeholder under serialize_query_plan = 1. The outer LimitStep must stay on
 -- the initiator (a per-shard LIMIT is not a global LIMIT) while each shard plan
 -- gets a copy with limit = limit + offset and offset = 0.
 
 SET enable_analyzer = 1;
-SET make_distributed_plan = 1;
+SET serialize_query_plan = 1;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS mdp_lim_local;
@@ -27,11 +27,11 @@ EXPLAIN distributed = 1 SELECT x FROM mdp_lim_dist LIMIT 7 SETTINGS exact_rows_b
 
 SELECT '-- Correctness: LIMIT with OFFSET returns the same number of rows as without the distributed plan';
 SELECT count() FROM (SELECT x FROM mdp_lim_dist LIMIT 7 OFFSET 3);
-SELECT count() FROM (SELECT x FROM mdp_lim_dist LIMIT 7 OFFSET 3) SETTINGS make_distributed_plan = 0;
+SELECT count() FROM (SELECT x FROM mdp_lim_dist LIMIT 7 OFFSET 3) SETTINGS serialize_query_plan = 0;
 
 SELECT '-- Correctness: ORDER BY with LIMIT returns identical rows';
 SELECT groupArray(x) FROM (SELECT x FROM mdp_lim_dist ORDER BY x LIMIT 7);
-SELECT groupArray(x) FROM (SELECT x FROM mdp_lim_dist ORDER BY x LIMIT 7) SETTINGS make_distributed_plan = 0;
+SELECT groupArray(x) FROM (SELECT x FROM mdp_lim_dist ORDER BY x LIMIT 7) SETTINGS serialize_query_plan = 0;
 
 SELECT '-- Correctness: LIMIT larger than the data set';
 SELECT count(), sum(x) FROM (SELECT x FROM mdp_lim_dist LIMIT 1000000);

@@ -16,7 +16,7 @@ using ClusterPtr = std::shared_ptr<Cluster>;
 
 class LimitStep;
 
-/// Placeholder for a distributed read, created by `StorageDistributed::read` when `make_distributed_plan`
+/// Placeholder for a distributed read, created by `StorageDistributed::read` when `serialize_query_plan`
 /// is enabled. Holds the cluster info and an inner *logical* per-shard plan whose leaf is a bare read
 /// from the remote table (`ReadFromTableStep`). Query plan optimizations may push steps of the outer
 /// plan down into the inner plan (`absorbStep` / `absorbLimitCopy`). At the end of the second

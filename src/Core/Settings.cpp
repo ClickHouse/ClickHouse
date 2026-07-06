@@ -6368,7 +6368,7 @@ Used by the aggregate projection matcher (and any future projection matcher that
 Enable use of software prefetch in hash join probe phase to hide memory access latency for large hash tables.
 )", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
-Serialize query plan for distributed processing
+Serialize query plan for distributed processing. Over a `Distributed` table the initiator sends a serialized per-shard query plan instead of a query text (requires the analyzer). Subqueries over `Distributed` tables in `IN`/`JOIN` are evaluated once on the initiator with `GLOBAL IN`-like semantics; `distributed_product_mode = 'local'` falls back to the classic execution path. Under `distributed_product_mode = 'deny'` such subqueries succeed on this path (initiator-side evaluation) where the classic path throws.
 )", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
@@ -8220,7 +8220,7 @@ Write full paths (including s3://) into iceberg metadata files.
 Method to compress `.metadata.json` file.
 )", EXPERIMENTAL) \
     DECLARE(Bool, make_distributed_plan, false, R"(
-Make distributed query plan. Over a `Distributed` table it sends a serialized per-shard query plan instead of a query text (requires the analyzer). Subqueries over `Distributed` tables in `IN`/`JOIN` are evaluated once on the initiator with `GLOBAL IN`-like semantics; `distributed_product_mode = 'local'` falls back to the classic execution path. Under `distributed_product_mode = 'deny'` such subqueries succeed on this path (initiator-side evaluation) where the classic path throws.
+Make distributed query plan.
 )", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_execute_locally, false, R"(
 Run all tasks of a distributed query plan locally. Useful for testing and debugging.

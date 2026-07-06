@@ -142,12 +142,12 @@ private:
     void renameOnDisk(const String & new_path_to_table_data);
 
     /// Whether reading should produce a `ReadFromRemotePlanStep` placeholder over the inner logical
-    /// per-shard plan (plan-level distributed execution, `make_distributed_plan`) instead of the
+    /// per-shard plan (plan-level distributed execution, `serialize_query_plan`) instead of the
     /// AST/query-tree based path.
     bool useDistributedPlanForReading(
         const ContextPtr & local_context, const ClusterPtr & cluster, const SelectQueryInfo & query_info) const;
 
-    /// The `make_distributed_plan` branch of read: adds a single `ReadFromRemotePlanStep`
+    /// The `serialize_query_plan` branch of read: adds a single `ReadFromRemotePlanStep`
     /// holding the cluster and an inner plan seeded with a bare read from the remote table.
     void readWithDistributedPlan(
         QueryPlan & query_plan,

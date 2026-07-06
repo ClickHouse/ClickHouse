@@ -171,7 +171,6 @@ namespace Setting
     extern const SettingsBool insert_distributed_one_random_shard;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsSeconds lock_acquire_timeout;
-    extern const SettingsBool make_distributed_plan;
     extern const SettingsUInt64 max_distributed_depth;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsBool optimize_distributed_group_by_sharding_key;
@@ -181,6 +180,7 @@ namespace Setting
     extern const SettingsBool prefer_localhost_replica;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool prefer_global_in_and_join;
+    extern const SettingsBool serialize_query_plan;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsBool enable_global_with_statement;
 }
@@ -554,7 +554,12 @@ bool StorageDistributed::useDistributedPlanForReading(
 {
     const auto & settings = local_context->getSettingsRef();
 
-    return settings[Setting::make_distributed_plan]
+    /// Where this gate allows, the placeholder path supersedes the eager per-shard plan building in
+    /// `SelectStreamFactory::createForShardImpl` (same `serialize_query_plan` intent, but the plan is
+    /// carved out of the initiator plan instead of being planned again per shard). Where the gate
+    /// falls back, the legacy read path takes over and `serialize_query_plan` re-engages the eager
+    /// plan building there, subject to that path's own guards.
+    return settings[Setting::serialize_query_plan]
         && settings[Setting::allow_experimental_analyzer]
         && !settings[Setting::distributed_group_by_no_merge]
         /// The plan path evaluates IN/JOIN subqueries over Distributed tables once on the initiator

@@ -283,9 +283,9 @@ void tryPushDownToRemotePlan(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// Replace every `ReadFromRemotePlanStep` placeholder with a `ReadFromRemote` step whose shards
 /// carry the (shared) inner query plan. Runs unconditionally at the end of the second optimization
 /// pass, so `EXPLAIN PLAN` already shows the final `ReadFromRemote` step and a placeholder planted
-/// by a subquery/view with its own `make_distributed_plan = 1` never survives into pipeline
+/// by a subquery/view with its own `serialize_query_plan = 1` never survives into pipeline
 /// building even when the outer query has the setting off. `walk_child_plans` (the raw
-/// `make_distributed_plan` setting) additionally descends into `getChildPlans` of steps like
+/// `serialize_query_plan` setting) additionally descends into `getChildPlans` of steps like
 /// `ReadFromMerge`; when it is false the scan touches only `node->children` and has no side effects.
 void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans);
 

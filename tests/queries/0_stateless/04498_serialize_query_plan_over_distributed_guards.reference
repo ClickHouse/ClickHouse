@@ -1,0 +1,55 @@
+-- plain aggregate through the new path
+40	380
+-- WITH TOTALS through the new path (no MPP machinery)
+0	10
+1	10
+2	10
+3	10
+
+0	40
+-- WITH TOTALS with make_distributed_plan = 1 too (initiator MPP guard)
+0	10
+1	10
+2	10
+3	10
+
+0	40
+-- ROLLUP with make_distributed_plan = 1 too (initiator MPP guard)
+0	10
+0	40
+1	10
+2	10
+3	10
+-- shardNum in select list (fallback to the legacy read path)
+1	20
+2	20
+-- shardNum with make_distributed_plan = 1 too (legacy fallback + shard-side settings reset)
+1	20
+2	20
+-- distributed_group_by_no_merge = 1 (legacy path)
+0	5
+0	5
+1	5
+1	5
+2	5
+2	5
+3	5
+3	5
+-- distributed_group_by_no_merge = 1 with make_distributed_plan = 1 too (settings reset)
+0	5
+0	5
+1	5
+1	5
+2	5
+2	5
+3	5
+3	5
+-- distributed-over-distributed
+80	760
+-- distributed-over-distributed with make_distributed_plan = 1 too
+80	760
+-- subquery-level SETTINGS serialize_query_plan = 1 with the outer query at default
+40	380
+41	380
+-- the same through a view
+40	380

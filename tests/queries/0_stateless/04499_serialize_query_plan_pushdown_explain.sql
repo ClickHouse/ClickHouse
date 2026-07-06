@@ -1,12 +1,12 @@
 -- Tags: no-random-settings
 -- Pins the shape of Expression/Filter pushdown into the per-shard plan of a
--- ReadFromRemotePlanStep placeholder under make_distributed_plan = 1.
+-- ReadFromRemotePlanStep placeholder under serialize_query_plan = 1.
 -- EXPLAIN distributed=1 must show the Filter and Expression steps INSIDE the
 -- shard plan (above ReadFromTable); the plain (initiator) plan must keep only
 -- ReadFromRemote, i.e. it does not re-run the filter/projection.
 
 SET enable_analyzer = 1;
-SET make_distributed_plan = 1;
+SET serialize_query_plan = 1;
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS mdp_pd_local;

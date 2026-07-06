@@ -349,9 +349,9 @@ void optimizeTreeSecondPass(
             }
 
             /// Push serializable Expression/Filter steps into the per-shard plan of a
-            /// `ReadFromRemotePlanStep` placeholder. Gated on the raw setting (not `make_distributed_plan`,
-            /// which is false here because the plan already reads from remote) and runs before finalize.
-            if (optimization_settings.make_distributed_plan)
+            /// `ReadFromRemotePlanStep` placeholder. Gated on `serialize_query_plan` — the setting
+            /// that plants the placeholders — and runs before finalize.
+            if (optimization_settings.serialize_query_plan)
                 tryPushDownToRemotePlan(frame_node, nodes, optimization_settings);
         });
 
@@ -614,12 +614,12 @@ void optimizeTreeSecondPass(
     /// the per-shard plans. Done in the optimizer (not in buildQueryPipeline), so that
     /// `EXPLAIN PLAN` shows the final step and `EXPLAIN PLAN distributed=1` prints the inner plan.
     /// Unconditional, like the `ReadFromLocalParallelReplicaStep` replacement above: a subquery or
-    /// a view planned with its own `make_distributed_plan = 1` (subquery-level SETTINGS) plants a
+    /// a view planned with its own `serialize_query_plan = 1` (subquery-level SETTINGS) plants a
     /// placeholder even when this merged plan is optimized with the setting off, and a placeholder
     /// must never reach `initializePipeline` (skipping `tryPushDownToRemotePlan` above is fine —
     /// that only loses pushdown — but finalize is mandatory). When the setting is off, this is a
     /// cheap side-effect-free scan over plan children.
-    finalizeReadFromRemotePlan(root, optimization_settings.make_distributed_plan);
+    finalizeReadFromRemotePlan(root, optimization_settings.serialize_query_plan);
 }
 
 void addStepsToBuildSets(

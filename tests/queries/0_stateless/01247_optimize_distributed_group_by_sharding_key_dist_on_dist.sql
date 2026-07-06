@@ -21,7 +21,9 @@ create table dist_layer_01247 as data_01247 engine=Distributed(test_cluster_two_
 create table dist_01247 as data_01247 engine=Distributed(test_cluster_two_shards, currentDatabase(), dist_layer_01247, number);
 select count(), * from dist_01247 group by number order by number limit 1 settings prefer_localhost_replica=1;
 select '-';
--- Now, sharding key optimization is not supported for distributed over distributed with serialized plan.
+-- With serialize_query_plan the read goes through the plan-level distributed path, which does not
+-- apply the sharding key optimization at all: the GROUP BY is merged exactly on the initiator, so
+-- every duplicate from both layers is counted (2 outer shards x 2 inner shards x 1 row).
 select count(), * from dist_01247 group by number order by number limit 1 settings prefer_localhost_replica=0, serialize_query_plan=1, enable_analyzer=1;
 drop table if exists dist_01247;
 drop table if exists dist_layer_01247;

@@ -279,7 +279,7 @@ void finalizeReadFromRemotePlan(QueryPlan::Node & root, bool walk_child_plans)
         /// Also finalize placeholders nested in child plans of steps like `ReadFromMerge`, mirroring
         /// the `getChildPlans` walk in `planReadsFromRemote`. Invariant: such child plans are
         /// independently optimized when they are created, so their placeholders normally finalize
-        /// there — this walk is defense in depth. It is off when the raw `make_distributed_plan`
+        /// there — this walk is defense in depth. It is off when the raw `serialize_query_plan`
         /// setting is off, because `getChildPlans` may force lazy child-plan creation
         /// (`ReadFromMerge`) and the unconditional call of this scan must then stay a cheap
         /// zero-side-effect walk over `node->children` only.
