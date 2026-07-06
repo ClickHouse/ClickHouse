@@ -137,7 +137,12 @@ void SerializationStringSize::deserializeWithStringData(
         double avg_value_size_hint
             = settings.get_avg_value_size_hint_callback ? settings.get_avg_value_size_hint_callback(settings.path) : 0.0;
 
-        serialization_string->deserializeBinaryBulk(*string_state.column->assumeMutable(), *stream, rows_offset, limit, avg_value_size_hint);
+        /// The column in the state may still be shared with the full column emitted as a result
+        /// of a previous read through the substreams cache. Go through IColumn::mutate so a shared
+        /// column is cloned before we append to it in place.
+        auto mutable_string_column = IColumn::mutate(std::move(string_state.column));
+        serialization_string->deserializeBinaryBulk(*mutable_string_column, *stream, rows_offset, limit, avg_value_size_hint);
+        string_state.column = std::move(mutable_string_column);
 
         num_read_rows = string_state.column->size() - prev_size;
         addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, string_state.column, num_read_rows);

@@ -158,6 +158,11 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
 
         size_t prev_size = variant_element_state->discriminators->size();
 
+        /// The discriminators column in the state may still be shared with the state of another
+        /// subcolumn of the same Variant through the substreams cache. Go through IColumn::mutate
+        /// so a shared column is cloned before both branches below append to it in place.
+        variant_element_state->discriminators = IColumn::mutate(std::move(variant_element_state->discriminators));
+
         /// Deserialize discriminators according to serialization mode.
         /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.
         /// We will apply rows_offset on discriminators later.
