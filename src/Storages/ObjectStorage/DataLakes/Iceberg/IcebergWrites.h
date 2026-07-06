@@ -72,7 +72,8 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true);
+    bool use_previous_snapshots = true,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {

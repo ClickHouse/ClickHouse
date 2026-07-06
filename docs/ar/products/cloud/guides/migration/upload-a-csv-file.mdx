@@ -1,0 +1,110 @@
+---
+title: 'رفع الملفات إلى Cloud'
+slug: /cloud/migrate/upload-a-csv-file
+description: 'تعرّف على كيفية رفع الملفات إلى Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر ClickHouse Cloud طريقة سهلة لاستيراد ملفاتك، ويدعم
+التنسيقات التالية:
+
+| التنسيق                         |
+| ------------------------------- |
+| `CSV`                           |
+| `CSVWithNamesAndTypes`          |
+| `CSVWithNames`                  |
+| `JSONEachRow`                   |
+| `TabSeparated`                  |
+| `TabSeparatedWithNames`         |
+| `TabSeparatedWithNamesAndTypes` |
+
+<Steps>
+  <Step>
+    ## رفع ملف
+
+    من الصفحة الرئيسية لـ Cloud، حدِّد الخدمة الخاصة بك كما هو موضح أدناه:
+
+    <Image img="/images/cloud/migrate/csv_01.webp" alt="upload_file_02" />
+
+    إذا كانت خدمتك خاملة، فستحتاج إلى تنشيطها.
+
+    حدِّد `Data sources` من علامة التبويب الموجودة على اليسار كما هو موضح أدناه:
+
+    <Image img="/images/cloud/migrate/csv_02.webp" alt="upload_file_03" />
+
+    بعد ذلك، حدِّد `Upload a file` من الجهة اليمنى لصفحة مصادر البيانات:
+
+    <Image img="/images/cloud/migrate/csv_03.webp" alt="upload_file_04" />
+
+    سيظهر مربع حوار للملفات يتيح لك تحديد الملف الذي تريد
+    استخدامه لإدراج البيانات في جدول ضمن خدمة Cloud الخاصة بك.
+
+    <Image img="/images/cloud/migrate/csv_04.webp" alt="upload_file_05" />
+  </Step>
+
+  <Step>
+    ## تكوين الجدول
+
+    بعد اكتمال رفع الملف، ستتمكن من تكوين الجدول الذي تريد
+    إدراج البيانات فيه. كما سيظهر لك معاينة للجدول تتضمن الصفوف الثلاثة الأولى.
+
+    <Image img="/images/cloud/migrate/csv_08.webp" alt="upload_file_08" />
+
+    يمكنك الآن تحديد جدول الوجهة. والخيارات هي:
+
+    * جدول جديد
+    * جدول موجود
+
+    <br />
+
+    يمكنك تحديد قاعدة البيانات التي تريد رفع البيانات إليها، وفي حالة
+    الجدول الجديد، اسم الجدول الذي سيتم إنشاؤه. كما ستتمكن أيضًا من تحديد مفتاح الفرز:
+
+    <Image img="/images/cloud/migrate/csv_05.webp" alt="upload_file_05" />
+
+    تظهر الأعمدة المقروءة من الملف على أنها `Source field`، ولكل حقل
+    يمكنك تغيير ما يلي:
+
+    * النوع المستنتَج
+    * القيمة الافتراضية
+    * ما إذا كنت تريد جعل العمود [Nullable](/ar/reference/data-types/nullable) أم لا
+
+    <Image img="/images/cloud/migrate/csv_06.webp" alt="upload_file_06" />
+
+    <Info>
+      **استبعاد الحقول**
+
+      يمكنك أيضًا إزالة حقل إذا كنت لا تريد تضمينه في الاستيراد
+    </Info>
+
+    يمكنك تحديد نوع محرك الجدول الذي تريد استخدامه:
+
+    * `MergeTree`
+    * `ReplacingMergeTree`
+    * `SummingMergeTree`
+    * `Null`
+
+    <br />
+
+    يمكنك تحديد تعبير مفتاح التقسيم وتعبير المفتاح
+    الأساسي.
+
+    <Image img="/images/cloud/migrate/csv_07.webp" alt="upload_file_07" />
+
+    انقر على `Import to ClickHouse` (الموضح أعلاه) لاستيراد البيانات. ستتم إضافة عملية
+    الاستيراد إلى قائمة الانتظار، كما تشير شارة الحالة `queued` في عمود `Status` كما هو موضح أدناه. يمكنك أيضًا النقر على
+    `Open as query` (الموضح أعلاه) لفتح استعلام الإدراج في SQL Console. سيقوم الاستعلام بإدراج
+    الملف الذي تم رفعه إلى حاوية S3 باستخدام الدالة الجدولية `URL`.
+
+    <Image img="/images/cloud/migrate/csv_09.webp" alt="upload_file_09" />
+
+    إذا فشلت المهمة، فسترى شارة الحالة `failed` ضمن عمود `Status` في
+    علامة التبويب `Data upload history`. يمكنك النقر على `View Details` للحصول على مزيد من المعلومات
+    حول سبب فشل الرفع. وقد تحتاج إلى تعديل تكوين الجدول أو تنظيف
+    البيانات استنادًا إلى رسالة الخطأ الخاصة بعملية الإدراج الفاشلة.
+
+    <Image img="/images/cloud/migrate/csv_10.webp" alt="upload_file_11" />
+  </Step>
+</Steps>

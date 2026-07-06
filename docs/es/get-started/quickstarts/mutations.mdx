@@ -1,0 +1,111 @@
+---
+slug: /guides/developer/mutations
+sidebarTitle: 'Actualización y eliminación de datos'
+keywords: ['UPDATE', 'DELETE', 'mutaciones']
+title: 'Actualización y eliminación de datos de ClickHouse'
+description: 'Describe cómo realizar operaciones de actualización y eliminación en ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+Aunque ClickHouse está orientado a cargas de trabajo analíticas de gran volumen, en algunas situaciones es posible modificar o
+eliminar datos existentes. Estas operaciones se denominan &quot;mutaciones&quot; y se ejecutan mediante el comando `ALTER TABLE`.
+
+<Tip>
+  Si necesita realizar actualizaciones frecuentes, considere usar la [deduplicación](/es/concepts/features/operations/insert/deduplication) en ClickHouse, que permite actualizar
+  y/o eliminar filas sin generar un evento de mutación. Como alternativa, use [actualizaciones ligeras](/es/reference/statements/update)
+  o [eliminaciones ligeras](/es/concepts/features/operations/delete/lightweight-delete)
+</Tip>
+
+<div id="updating-data">
+  ## Actualizar datos
+</div>
+
+Utilice el comando `ALTER TABLE...UPDATE` para actualizar filas en una tabla:
+
+```sql
+ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_expr>
+```
+
+`<expression>` es el nuevo valor de la columna para la que se cumple `<filter_expr>`.  `<expression>` debe ser del mismo tipo de dato que la columna, o debe poder convertirse al mismo tipo de dato mediante el operador `CAST`.  `<filter_expr>` debe devolver un valor `UInt8` (cero o distinto de cero) para cada fila de los datos.  Varias Sentencias `UPDATE <column>` pueden combinarse en un único comando `ALTER TABLE`, separadas por comas.
+
+**Ejemplos**:
+
+1. Una mutación como esta permite reemplazar `visitor_ids` por otros nuevos mediante una consulta a un Diccionario:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE visitor_id = getDict('visitors', 'new_visitor_id', visitor_id)
+   WHERE visit_date < '2022-01-01'
+   ```
+
+2. Modificar varios valores en un solo comando puede ser más eficiente que usar varios comandos:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE url = substring(url, position(url, '://') + 3), visitor_id = new_visit_id
+   WHERE visit_date < '2022-01-01'
+   ```
+
+3. Las mutaciones pueden ejecutarse `ON CLUSTER` para tablas segmentadas:
+
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster
+   UPDATE click_count = click_count / 2
+   WHERE visitor_id ILIKE '%robot%'
+   ```
+
+<Note>
+  No es posible actualizar columnas que formen parte de la clave primaria o de la clave de ordenación.
+</Note>
+
+<div id="deleting-data">
+  ## Eliminación de datos
+</div>
+
+Utilice el comando `ALTER TABLE` para eliminar filas:
+
+```sql
+ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
+```
+
+La `<filter_expr>` debe devolver un valor UInt8 para cada fila de datos.
+
+**Ejemplos**
+
+1. Elimine cualquier registro en el que una columna esté dentro de una lista de valores:
+   ```sql
+   ALTER TABLE website.clicks DELETE WHERE visitor_id in (253, 1002, 4277)
+   ```
+
+2. ¿Qué modifica esta consulta?
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster DELETE WHERE visit_date < '2022-01-02 15:00:00' AND page_id = '573'
+   ```
+
+<Note>
+  Para eliminar todos los datos de una tabla, es más eficiente usar el comando `TRUNCATE TABLE [<database].]<table>`. Este comando también puede ejecutarse `ON CLUSTER`.
+</Note>
+
+Consulte la página de documentación de la [sentencia `DELETE`](/es/reference/statements/delete) para obtener más detalles.
+
+<div id="lightweight-deletes">
+  ## Eliminaciones ligeras
+</div>
+
+Otra opción para eliminar filas es usar el comando `DELETE FROM`, lo que se conoce como una **eliminación ligera**. Las filas eliminadas se marcan como eliminadas de inmediato y quedarán excluidas automáticamente de todas las consultas posteriores, por lo que no es necesario esperar a la fusión de partes ni usar la palabra clave `FINAL`. La limpieza de los datos se realiza de forma asíncrona en segundo plano.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
+```
+
+Por ejemplo, la siguiente consulta elimina todas las filas de la tabla `hits` en las que la columna `Title` contiene el texto `hello`:
+
+```sql
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+Algunas notas sobre las eliminaciones ligeras:
+
+* Esta función solo está disponible para la familia de motores de tabla `MergeTree`.
+* Las eliminaciones ligeras son síncronas de forma predeterminada y esperan a que todas las réplicas procesen la eliminación. Este comportamiento se controla mediante la [configuración `lightweight_deletes_sync`](/es/reference/settings/session-settings#lightweight_deletes_sync).

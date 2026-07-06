@@ -1,0 +1,1124 @@
+---
+description: 'highlight-next-line に関するドキュメント'
+sidebarTitle: 'データ保存用の外部ディスク'
+slug: /operations/storing-data
+title: 'データ保存用の外部ディスク'
+doc_type: 'guide'
+---
+
+ClickHouse で処理されるデータは通常、ClickHouse server が稼働している
+マシンのローカルファイルシステムに保存されます。そのため大容量のディスクが必要になり、
+コストが高くなる場合があります。データをローカルに保存しないようにするため、
+以下のようなストレージオプションがサポートされています。
+
+1. [Amazon S3](https://aws.amazon.com/s3/) オブジェクトストレージ
+2. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs)
+3. 非サポート: Hadoop Distributed File System ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+
+<br />
+
+<Note>
+  ClickHouse は external テーブルエンジン もサポートしていますが、これは
+  このページで説明している外部ストレージオプションとは異なります。external テーブルエンジン では、
+  Parquet などの一般的なファイルフォーマットで保存されたデータを読み取れます。このページでは、
+  ClickHouse の `MergeTree` ファミリーまたは `Log` ファミリーのテーブル向けの
+  ストレージ構成について説明します。
+
+  1. `Amazon S3` ディスクに保存されたデータを扱うには、[S3](/ja/reference/engines/table-engines/integrations/s3) テーブルエンジン を使用します。
+  2. Azure Blob Storage に保存されたデータを扱うには、[AzureBlobStorage](/ja/reference/engines/table-engines/integrations/azureBlobStorage) テーブルエンジン を使用します。
+  3. Hadoop Distributed File System (非サポート) 内のデータを扱うには、[HDFS](/ja/reference/engines/table-engines/integrations/hdfs) テーブルエンジン を使用します。
+</Note>
+
+<div id="configuring-external-storage">
+  ## 外部ストレージを構成する
+</div>
+
+[`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/mergetree) および [`Log`](/ja/reference/engines/table-engines/log-family/log)
+ファミリーに属するテーブルエンジンでは、型がそれぞれ `s3`、`azure_blob_storage`、`hdfs` (未サポート) のディスクを使用して、データを `S3`、`AzureBlobStorage`、`HDFS` (未サポート) に保存できます。
+
+ディスクの設定には、次のものが必要です。
+
+1. `type` セクション。値は `s3`、`azure_blob_storage`、`hdfs` (未サポート) 、`local_blob_storage`、`web` のいずれかです。
+2. 対応する外部ストレージタイプの設定。
+
+ClickHouse バージョン 24.1 以降では、新しい設定オプションを使用できます。
+これには、次の指定が必要です。
+
+1. `type` を `object_storage` にする
+2. `object_storage_type` を `s3`、`azure_blob_storage` (`24.3` 以降では単に `azure` も可) 、`hdfs` (未サポート) 、`local_blob_storage` (`24.3` 以降では単に `local` も可) 、`web` のいずれかにする
+
+<br />
+
+必要に応じて `metadata_type` も指定できます (デフォルトは `local`) 。また、`plain`、`web`、および `24.4` 以降では `plain_rewritable` も設定できます。
+`plain` メタデータタイプの使用方法は [plain storage セクション](/ja/concepts/features/configuration/server-config/storing-data#plain-storage) で説明されています。`web` メタデータタイプは、`web` オブジェクトストレージタイプでのみ使用できます。`local` メタデータタイプはメタデータファイルをローカルに保存します (各メタデータファイルには、オブジェクトストレージ内のファイルへの対応関係と、それらに関する追加のメタ情報が含まれます) 。
+
+例:
+
+```xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+は次の設定と同等です (バージョン `24.1` 以降) :
+
+```xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+以下の設定:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+は次と等しくなります：
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+ストレージ構成全体の例は、次のようになります。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+バージョン24.1以降では、次のようになる場合もあります：
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+特定の種類のストレージをすべての`MergeTree`テーブルのデフォルトにするには、
+設定ファイルに次のセクションを追加します。
+
+```xml
+<clickhouse>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>
+```
+
+特定のテーブルに対して特定のストレージポリシーを設定したい場合は、
+テーブルの作成時に設定でそれを定義できます：
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
+
+`storage_policy` の代わりに `disk` を使用することもできます。この場合、
+設定ファイルに `storage_policy` セクションを用意する必要はなく、`disk`
+セクションだけで十分です。
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+<div id="refresh-parts-interval-and-table-disk">
+  ## refresh_parts_interval と table_disk
+</div>
+
+この設定は、パーツが外部から書き込まれる可能性があり、ストレージ上のメタデータを再検出する必要がある、非レプリケートの MergeTree テーブルを対象としています。
+
+MergeTree 設定 `refresh_parts_interval` は、基盤ストレージからデータパーツの一覧を定期的にリフレッシュできるようにします (たとえば、外部から書き込まれたパーツを取り込むため) 。重要なのは、**レプリカ間で共有されるメタデータ** と **レプリカローカルなメタデータ** (たとえば、レプリカごとにローカルメタデータを持つ S3) を区別することです。新しいパーツがすべてのレプリカから見えるのは、メタデータが共有されている場合に限られます。オブジェクトストレージを使っているだけでは、メタデータが共有されていることにはなりません。
+
+* **オブジェクトストレージ (たとえば `disk = 's3'`) は、メタデータ共有を意味しません。** メタデータがレプリカごとにローカルに保存されている場合 (デフォルト) 、各レプリカはオブジェクトストレージ内のブロブへのポインタを独立して管理します。あるレプリカで加えた変更は、ほかのレプリカからは見えません。その場合、各レプリカが読むメタデータはレプリカローカルであるため、`refresh_parts_interval` を使っても新しいパーツはレプリカ間で見えるようになりません。
+
+* **パーツの自動リフレッシュには、ファイルシステムのメタデータが共有されている必要があります** (または、テーブルがテーブル所有の読み取り専用メタデータを使用しており、リフレッシュを適用できる必要があります) 。`table_disk = true` をテーブルローカルディスクと組み合わせて設定すること (たとえば `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) は、正しい動作を実現する方法の 1 つです。この場合、テーブルがメタデータのライフサイクルを管理し、ストレージは読み取り専用として扱われるため、`refresh_parts_interval` が実行され、外部から追加されたパーツを検出できます。
+
+* **グローバルに定義されたディスク** (たとえば `storage_configuration` 内の `disk = 's3'`) とデフォルトのローカルメタデータを使う場合、各レプリカはそれぞれ独自のメタデータ状態を持ちます。ブロブが S3 にあっても、`refresh_parts_interval` の観点ではそのストレージは共有とは見なされず、ClickHouse の外部または別のレプリカで作成された新しいパーツは検出されません。
+
+パーツの自動リフレッシュを行うには、メタデータが共有されていることを確認するか、前述のように `table_disk = true` を指定したテーブルレベルのディスクを使用してください。レプリカローカルなメタデータ環境で `refresh_parts_interval` だけに頼っても、期待どおりにパーツはリフレッシュされません。
+
+<Note>
+  `refresh_parts_interval` は ReplicatedMergeTree テーブルでは使用されません。
+  レプリケートテーブルでは、パーツはすでにレプリケーションの仕組みによって同期されます。
+  この設定が適用されるのは、パーツが外部から書き込まれ、メタデータのリフレッシュが必要な非レプリケートの MergeTree テーブルだけです。
+</Note>
+
+<div id="dynamic-configuration">
+  ## 動的構成
+</div>
+
+構成ファイル内でディスクを事前定義しなくてもストレージ構成を指定できますが、その場合は
+`CREATE`/`ATTACH` クエリの設定で構成します。
+
+次のクエリ例は、上記の動的ディスク構成を基に、
+ローカルディスクを使用して URL に保存されたテーブルのデータを cache する方法を示しています。
+
+```sql highlight={20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=web,
+    endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+  );
+```
+
+以下の例では、外部ストレージにcacheを追加します。
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+以下でハイライトされている設定では、`type=web` のディスクが
+`type=cache` のディスクの内側にネストされていることに注意してください。
+
+<Note>
+  この例では `type=web` を使用していますが、ローカルディスクを含め、どのディスクタイプでも動的に構成できます。
+  ローカルディスクでは、path 引数を
+  server 設定パラメータ `custom_local_disks_base_directory` の配下にする必要があります。これには
+  デフォルト値がないため、ローカルディスクを使用する場合はこれも設定してください。
+</Note>
+
+config ベースの構成と sql で定義した構成を組み合わせることも
+可能です:
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+ここで、`web` はサーバー設定ファイル内の値です:
+
+```xml
+<storage_configuration>
+    <disks>
+        <web>
+            <type>web</type>
+            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+        </web>
+    </disks>
+</storage_configuration>
+```
+
+<div id="s3-storage">
+  ### S3ストレージの利用
+</div>
+
+<div id="required-parameters-s3">
+  #### 必須パラメータ
+</div>
+
+| パラメータ               | 説明                                                                                                                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`          | `path` または `virtual hosted` [styles](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html) 形式の S3 エンドポイント URL。データ保存用のバケットとルートパスを含める必要があります。 |
+| `access_key_id`     | 認証に使用する S3 のアクセスキー ID。                                                                                                                                     |
+| `secret_access_key` | 認証に使用する S3 のシークレットアクセスキー。                                                                                                                                  |
+
+<div id="optional-parameters-s3">
+  #### オプションパラメータ
+</div>
+
+| Parameter                                       | Description                                                                                                                                                                                                            | Default Value                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `region`                                        | S3 のリージョン名。                                                                                                                                                                                                            | -                                        |
+| `support_batch_delete`                          | バッチ削除のサポートを確認するかどうかを制御します。Google Cloud Storage (GCS) を使用する場合、GCS はバッチ削除をサポートしていないため、`false` に設定してください。                                                                                                                 | `true`                                   |
+| `use_environment_credentials`                   | 環境変数 `AWS_ACCESS_KEY_ID`、`AWS_SECRET_ACCESS_KEY`、`AWS_SESSION_TOKEN` が存在する場合、それらから AWS 認証情報を読み取ります。注: 環境認証情報はすべての S3 ディスクで共有されます。ディスクごとに異なる認証情報を使用するには、代わりに各ディスクで `access_key_id` と `secret_access_key` を明示的に指定してください。 | `false`                                  |
+| `use_insecure_imds_request`                     | `true` の場合、Amazon EC2 メタデータから認証情報を取得する際に、安全でない IMDS リクエストを使用します。                                                                                                                                                       | `false`                                  |
+| `expiration_window_seconds`                     | 有効期限ベースの認証情報が期限切れかどうかを確認するための猶予期間 (秒) 。                                                                                                                                                                                | `120`                                    |
+| `proxy`                                         | S3 エンドポイントのプロキシ設定です。`proxy` ブロック内の各 `uri` 要素には、プロキシ URL を含める必要があります。                                                                                                                                                   | -                                        |
+| `connect_timeout_ms`                            | ソケット接続のタイムアウト (ミリ秒) 。                                                                                                                                                                                                  | `10000` (10 秒)                           |
+| `request_timeout_ms`                            | リクエストのタイムアウト (ミリ秒) 。                                                                                                                                                                                                   | `5000` (5 秒)                             |
+| `retry_attempts`                                | 失敗したリクエストの再試行回数。                                                                                                                                                                                                       | `10`                                     |
+| `single_read_retries`                           | 読み取り中に接続が切断された場合の再試行回数。                                                                                                                                                                                                | `4`                                      |
+| `min_bytes_for_seek`                            | シーケンシャル読み取りの代わりに seek 操作を使用する最小バイト数。                                                                                                                                                                                   | `1 MB`                                   |
+| `metadata_path`                                 | S3 メタデータファイルを保存するローカルファイルシステム上のパス。                                                                                                                                                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`                             | `true` の場合、起動時のディスクアクセスチェックをスキップします。                                                                                                                                                                                   | `false`                                  |
+| `header`                                        | 指定した HTTP ヘッダーをリクエストに追加します。複数回指定できます。                                                                                                                                                                                  | -                                        |
+| `server_side_encryption_customer_key_base64`    | SSE-C で暗号化された S3 オブジェクトにアクセスするために必要なヘッダーです。                                                                                                                                                                            | -                                        |
+| `server_side_encryption_kms_key_id`             | [SSE-KMS encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html) を使用する S3 オブジェクトにアクセスするために必要なヘッダーです。空文字列を指定すると、AWS 管理の S3 キーを使用します。                                                 | -                                        |
+| `server_side_encryption_kms_encryption_context` | SSE-KMS の暗号化コンテキストヘッダーです (`server_side_encryption_kms_key_id` と一緒に使用します) 。                                                                                                                                             | -                                        |
+| `server_side_encryption_kms_bucket_key_enabled` | SSE-KMS の S3 バケットキーを有効にします (`server_side_encryption_kms_key_id` と一緒に使用します) 。                                                                                                                                           | バケットレベルの設定に従う                            |
+| `s3_max_put_rps`                                | スロットリングが適用されるまでの 1 秒あたりの最大 PUT リクエスト数。                                                                                                                                                                                 | `0` (無制限)                                |
+| `s3_max_put_burst`                              | RPS 制限に達するまでの最大同時実行 PUT リクエスト数。                                                                                                                                                                                        | `s3_max_put_rps` と同じ                     |
+| `s3_max_get_rps`                                | スロットリングが適用されるまでの 1 秒あたりの最大 GET リクエスト数。                                                                                                                                                                                 | `0` (無制限)                                |
+| `s3_max_get_burst`                              | RPS 制限に達するまでの最大同時実行 GET リクエスト数。                                                                                                                                                                                        | `s3_max_get_rps` と同じ                     |
+| `read_resource`                                 | [scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling) で読み取りリクエストに割り当てるリソース名。                                                                                                                | 空文字列 (無効)                                |
+| `write_resource`                                | [scheduling](/ja/concepts/features/configuration/server-config/workload-scheduling) で書き込みリクエストに割り当てるリソース名。                                                                                                                | 空文字列 (無効)                                |
+| `key_template`                                  | [re2](https://github.com/google/re2/wiki/Syntax) 構文を使用してオブジェクトキー生成フォーマットを定義します。`storage_metadata_write_full_object_key` フラグが必要です。`endpoint` の `root path` とは互換性がありません。`key_compatibility_prefix` が必要です。                | -                                        |
+| `key_compatibility_prefix`                      | `key_template` とともに必要です。古いバージョンのメタデータを読み取るため、`endpoint` の以前の `root path` を指定します。                                                                                                                                       | -                                        |
+| `read_only`                                     | ディスクからの読み取りのみを許可します。                                                                                                                                                                                                   | -                                        |
+
+<Note>
+  Google Cloud Storage (GCS) も、`s3` タイプを使用してサポートされています。詳しくは [GCS バックエンドの MergeTree](/ja/integrations/connectors/data-sources/gcs) を参照してください。
+</Note>
+
+<div id="plain-storage">
+  ### Plain Storage の使用
+</div>
+
+`22.10` では、新しいディスクタイプ `s3_plain` が導入され、追記不可のストレージを提供します。
+この設定パラメータは、`s3` ディスクタイプと同じです。
+`s3` ディスクタイプとは異なり、このタイプはデータをそのまま保存します。つまり、
+ランダムに生成されたブロブ名ではなく通常のファイル名を使用し、
+(ClickHouse がローカルディスクにファイルを保存するのと同じように) 、ローカルには
+メタデータを保存しません。たとえば、これは `s3` 上のデータから導出されます。
+
+このディスクタイプでは、既存データに対するマージを実行できず、新しいデータの挿入も
+できないため、テーブルの静的なバージョンを保持できます。
+このディスクタイプのユースケースの 1 つは、その上にバックアップを作成することです。これは
+`BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')` によって実行できます。その後、
+`RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')` を実行するか、
+`ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'` を使用できます。
+
+設定:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+`24.1`以降では、`plain` メタデータタイプを使用して、任意のオブジェクトストレージディスク (`s3`、`azure`、`hdfs` (未サポート) 、`local`) を設定できるようになりました。
+
+設定:
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+<div id="s3-plain-rewritable-storage">
+  ### S3 Plain Rewritable Storage の使用
+</div>
+
+新しいディスクタイプ `s3_plain_rewritable` は `24.4` で導入されました。
+`s3_plain` ディスクタイプと同様に、メタデータファイル用の追加ストレージは必要ありません。代わりに、メタデータは S3 に保存されます。
+`s3_plain` ディスクタイプとは異なり、`s3_plain_rewritable` ではマージを実行でき、`INSERT` 操作もサポートされます。
+[Mutations](/ja/reference/statements/alter/index#mutations) とテーブルのレプリケーションはサポートされていません。
+
+このディスクタイプのユースケースの 1 つは、非レプリケートの `MergeTree` テーブルです。`s3` ディスクタイプも非レプリケートの `MergeTree` テーブルに適していますが、テーブルのローカルメタデータが不要で、利用できる操作が限られていても問題ない場合は、`s3_plain_rewritable` ディスクタイプを選択できます。たとえば、システムテーブルで有用です。
+
+設定:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+等しい
+
+```xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+`24.5` 以降では、`plain_rewritable` メタデータタイプを使用して任意のオブジェクトストレージディスク
+(`s3`、`azure`、`local`) を設定できます。
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage の使用
+</div>
+
+`MergeTree` ファミリーのテーブルエンジンでは、`azure_blob_storage` タイプのディスクを使用して
+データを [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/) に保存できます。
+
+設定の記述:
+
+```xml
+<storage_configuration>
+    ...
+    <disks>
+        <blob_storage_disk>
+            <type>azure_blob_storage</type>
+            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <container_name>container</container_name>
+            <account_name>account</account_name>
+            <account_key>pass123</account_key>
+            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </blob_storage_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+<div id="azure-blob-storage-connection-parameters">
+  #### 接続パラメーター
+</div>
+
+| パラメーター                     | 説明                                                                                                                          | デフォルト値              |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `storage_account_url` (必須) | Azure Blob Storage アカウントの URL。例: `http://account.blob.core.windows.net` または `http://azurite1:10000/devstoreaccount1`。       | -                   |
+| `container_name`           | 対象のコンテナー名。                                                                                                                  | `default-container` |
+| `container_already_exists` | コンテナー作成時の動作を制御します: <br />- `false`: 新しいコンテナーを作成します <br />- `true`: 既存のコンテナーに直接接続します <br />- 未設定: コンテナーが存在するか確認し、必要に応じて作成します | -                   |
+
+認証パラメーター (ディスクは利用可能なすべての方法 **および** Managed Identity Credential を試行します) :
+
+| パラメーター              | 説明                                         |
+| ------------------- | ------------------------------------------ |
+| `connection_string` | 接続文字列を使用する認証用。                             |
+| `account_name`      | Shared Key を使用する認証用 (`account_key` と併用) 。  |
+| `account_key`       | Shared Key を使用する認証用 (`account_name` と併用) 。 |
+
+<div id="azure-blob-storage-limit-parameters">
+  #### 制限パラメータ
+</div>
+
+| Parameter                            | Description                                       |
+| ------------------------------------ | ------------------------------------------------- |
+| `s3_max_single_part_upload_size`     | Blob Storage への単一ブロックのアップロードの最大サイズ。               |
+| `min_bytes_for_seek`                 | シーク可能な領域の最小サイズ。                                   |
+| `max_single_read_retries`            | Blob Storage からデータの chunk を読み取る際の最大再試行回数。         |
+| `max_single_download_retries`        | Blob Storage から読み取り可能な buffer をダウンロードする際の最大再試行回数。 |
+| `thread_pool_size`                   | `IDiskRemote` のインスタンス化に使用するスレッドの最大数。              |
+| `s3_max_inflight_parts_for_one_file` | 単一オブジェクトに対する put リクエストの最大同時実行数。                   |
+
+<div id="azure-blob-storage-other-parameters">
+  #### その他のパラメータ
+</div>
+
+| パラメータ                            | 説明                                                                                                | デフォルト値                                   |
+| -------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `metadata_path`                  | Blob Storage のメタデータファイルを保存するローカルファイルシステム上のパス。                                                     | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | `true` の場合、起動時のディスクアクセスチェックをスキップします。                                                              | `false`                                  |
+| `read_resource`                  | [スケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)される読み取りリクエストのリソース名。 | 空文字列 (無効)                                |
+| `write_resource`                 | [スケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)される書き込みリクエストのリソース名。 | 空文字列 (無効)                                |
+| `metadata_keep_free_space_bytes` | メタデータ用ディスク上で確保しておく空き容量。                                                                           | -                                        |
+
+動作する構成例は結合テストディレクトリにあります (例: [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) または [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml) を参照してください) 。
+
+<Info>
+  **ゼロコピーレプリケーションは本番環境には未対応です**
+
+  ゼロコピーレプリケーションは、ClickHouse バージョン 22.8 以降ではデフォルトで無効化されています。この機能は本番環境での使用は推奨されません。
+</Info>
+
+<div id="using-hdfs-storage-unsupported">
+  ## HDFS ストレージの使用 (未サポート)
+</div>
+
+この構成例では、次のように設定されています。
+
+* ディスクタイプは `hdfs` です (未サポート)
+* データは `hdfs://hdfs1:9000/clickhouse/` に配置されています
+
+なお、HDFS はサポート対象外のため、使用時に問題が発生する可能性があります。問題が発生した場合は、修正内容を含むプルリクエストをぜひ作成してください。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+HDFS は一部の特殊なケースでは正常に動作しない可能性がある点に留意してください。
+
+<div id="encrypted-virtual-file-system">
+  ### データ暗号化を使用する
+</div>
+
+[S3](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3) や [HDFS](#using-hdfs-storage-unsupported) (未サポート) の外部ディスク、またはローカルディスクに保存されるデータは暗号化できます。暗号化モードを有効にするには、設定ファイルで `encrypted` 型のディスクを定義し、データの保存先となるディスクを指定する必要があります。`encrypted` ディスクは、書き込まれるすべてのファイルをリアルタイムで暗号化し、`encrypted` ディスク上のファイルを読み取る際には自動的に復号します。そのため、`encrypted` ディスクは通常のディスクと同じように扱えます。
+
+ディスク設定の例:
+
+```xml
+<disks>
+  <disk1>
+    <type>local</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted</type>
+    <disk>disk1</disk>
+    <path>path2/</path>
+    <key>_16_ascii_chars_</key>
+  </disk2>
+</disks>
+```
+
+たとえば、ClickHouseがあるtableのデータを `disk1` にあるファイル `store/all_1_1_0/data.bin` に書き込む場合、実際にはこのファイルは物理ディスク上の `/path1/store/all_1_1_0/data.bin` というpathに書き込まれます。
+
+同じファイルを `disk2` に書き込む場合、実際には物理ディスク上の `/path1/path2/store/all_1_1_0/data.bin` というpathに暗号化された状態で書き込まれます。
+
+<div id="required-parameters-encrypted-disk">
+  ### 必須パラメータ
+</div>
+
+| パラメータ  | 型      | 説明                                                                  |
+| ------ | ------ | ------------------------------------------------------------------- |
+| `type` | String | 暗号化ディスクを作成するには、`encrypted` に設定する必要があります。                            |
+| `disk` | String | 下位ストレージに使用するディスクの種類。                                                |
+| `key`  | Uint64 | 暗号化と復号に使用するキーです。`key_hex` を使って16進数で指定できます。複数のキーは `id` 属性を使って指定できます。 |
+
+<div id="optional-parameters-encrypted-disk">
+  ### 任意のパラメータ
+</div>
+
+| パラメータ            | 型      | デフォルト         | 説明                                                                                                                              |
+| ---------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `path`           | String | ルートディレクトリ     | データが保存されるディスク上の場所です。                                                                                                            |
+| `current_key_id` | String | -             | 暗号化に使用するキー ID です。指定したすべてのキーは復号に使用できます。                                                                                          |
+| `algorithm`      | Enum   | `AES_128_CTR` | 使用する暗号化アルゴリズムです。オプション: <br />- `AES_128_CTR` (16 バイトのキー)  <br />- `AES_192_CTR` (24 バイトのキー)  <br />- `AES_256_CTR` (32 バイトのキー)  |
+
+ディスク設定の例:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>...
+            </disk_s3>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
+                <current_key_id>1</current_key_id>
+            </disk_s3_encrypted>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="using-local-cache">
+  ### ローカル cache の使用
+</div>
+
+バージョン 22.3 以降では、ストレージ構成内のディスクに対してローカル cache を設定できます。
+バージョン 22.3 ～ 22.7 では、cache は `s3` ディスク type でのみサポートされます。バージョン &gt;= 22.8 では、cache は S3、Azure、Local、Encrypted など、あらゆるディスク type でサポートされます。
+バージョン &gt;= 23.5 では、cache は S3、Azure、HDFS (非サポート) などのリモートディスク type でのみサポートされます。
+cache には `LRU` cache ポリシーが使用されます。
+
+バージョン 22.8 以降の構成例:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+22.8より前のバージョンの設定例:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>10737418240</data_cache_max_size>
+            </s3>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+File Cache **ディスク設定**:
+
+これらの設定は、ディスク設定セクションで定義する必要があります。
+
+| Parameter                             | Type    | Default    | Description                                                                                                                     |
+| ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `path`                                | String  | -          | **必須**。キャッシュを保存するディレクトリのパス。                                                                                                     |
+| `max_size`                            | Size    | -          | **必須**。キャッシュの最大サイズ (バイト、または人間が読みやすい形式。例: `10Gi`) 。上限に達すると、ファイルは LRU ポリシーに従って追い出されます。`ki`、`Mi`、`Gi` フォーマットをサポートします (v22.10 以降) 。 |
+| `cache_on_write_operations`           | Boolean | `false`    | `INSERT` クエリおよびバックグラウンドマージに対して、ライトスルーキャッシュを有効にします。クエリごとに `enable_filesystem_cache_on_write_operations` で上書きできます。                |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `max_query_cache_size` に基づく、クエリごとのキャッシュサイズ制限を有効にします。                                                                            |
+| `enable_cache_hits_threshold`         | Boolean | `false`    | 有効にすると、データは複数回読み取られた後にのみキャッシュされます。                                                                                              |
+| `cache_hits_threshold`                | Integer | `0`        | データがキャッシュされるまでに必要な読み取り回数 (`enable_cache_hits_threshold` が必要) 。                                                                  |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 読み取り範囲が大きい場合はキャッシュをスキップします。                                                                                                     |
+| `bypass_cache_threshold`              | Size    | `256Mi`    | キャッシュのバイパスをトリガーする読み取り範囲サイズ (`enable_bypass_cache_with_threshold` が必要) 。                                                         |
+| `max_file_segment_size`               | Size    | `8Mi`      | 単一のキャッシュファイルの最大サイズ (バイト、または人間が読みやすい形式) 。                                                                                        |
+| `max_elements`                        | Integer | `10000000` | キャッシュファイルの最大数。                                                                                                                  |
+| `load_metadata_threads`               | Integer | `16`       | 起動時にキャッシュメタデータを読み込むためのスレッド数。                                                                                                    |
+| `use_split_cache`                     | Boolean | `false`    | ファイルをシステム用とデータ用に分離して使用します。                                                                                                      |
+| `split_cache_ratio`                   | Double  | `0.1`      | split&#95;cache における、システムセグメントのキャッシュ総サイズに対する比率。                                                                                 |
+
+> **注**: サイズ値は `ki`、`Mi`、`Gi` などの単位をサポートします (例: `10Gi`) 。
+
+<div id="file-cache-query-profile-settings">
+  ## ファイルcacheのクエリ/プロファイル設定
+</div>
+
+| 設定                                                                      | 型   | デフォルト                   | 説明                                                                                                                         |
+| ----------------------------------------------------------------------- | --- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | 真偽値 | `true`                  | `cache` ディスクタイプを使用している場合でも、クエリごとのcache使用を有効/無効にします。                                                                        |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | 真偽値 | `false`                 | 有効にすると、データが存在する場合にのみcacheを使用し、新しいデータはcacheされません。                                                                           |
+| `enable_filesystem_cache_on_write_operations`                           | 真偽値 | `false` (Cloud: `true`) | ライトスルーcacheを有効にします。cache設定内の `cache_on_write_operations` が必要です。                                                            |
+| `enable_filesystem_cache_log`                                           | 真偽値 | `false`                 | `system.filesystem_cache_log` への詳細なcache使用ログの記録を有効にします。                                                                    |
+| `filesystem_cache_allow_background_download`                            | 真偽値 | `true`                  | 部分的にダウンロードされた segments のダウンロード完了をバックグラウンドで行えるようにします。無効にすると、現在のクエリ/セッションではダウンロードがフォアグラウンドで継続されます。                           |
+| `max_query_cache_size`                                                  | サイズ | `false`                 | クエリごとのcacheの最大サイズです。cache設定内の `enable_filesystem_query_cache_limit` が必要です。                                                 |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | 真偽値 | `true`                  | `max_query_cache_size` に達したときの動作を制御します: <br />- `true`: 新しいデータのダウンロードを停止します <br />- `false`: 新しいデータ用の空きを確保するため、古いデータを削除します |
+
+<Warning>
+  cache設定およびcacheのクエリ設定は、最新バージョンの ClickHouse に対応しています。
+  それ以前のバージョンでは、一部サポートされていない場合があります。
+</Warning>
+
+<div id="cache-system-tables-file-cache">
+  #### cache関連のシステムテーブル
+</div>
+
+| テーブル名                         | 説明                         | 要件                                         |
+| ----------------------------- | -------------------------- | ------------------------------------------ |
+| `system.filesystem_cache`     | ファイルシステムcacheの現在の状態を表示します。 | なし                                         |
+| `system.filesystem_cache_log` | クエリごとの詳細なcache使用統計を提供します。  | `enable_filesystem_cache_log = true` が必要です |
+
+<div id="cache-commands-file-cache">
+  #### cacheコマンド
+</div>
+
+<div id="system-clear-filesystem-cache-on-cluster">
+  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
+</div>
+
+このコマンドは、`<cache_name>` が指定されていない場合にのみ使用できます
+
+<div id="show-filesystem-caches">
+  ##### `SHOW FILESYSTEM CACHES`
+</div>
+
+server に設定されているファイルシステムcacheの一覧を表示します。
+(`22.8` 以下のバージョンでは、このコマンドは `SHOW CACHES` という名前です)
+
+```sql title="Query"
+SHOW FILESYSTEM CACHES
+```
+
+```text title="Response"
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+<div id="describe-filesystem-cache">
+  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+</div>
+
+特定の cache の設定と、いくつかの一般的な統計情報を表示します。
+cache 名は `SHOW FILESYSTEM CACHES` コマンドで確認できます。 (`22.8` 以下のバージョンでは、
+このコマンドは `DESCRIBE CACHE` という名前です)
+
+```sql title="Query"
+DESCRIBE FILESYSTEM CACHE 's3_cache'
+```
+
+```text title="Response"
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
+│ 10000000000 │      1048576 │             104857600 │            4194304 │                         1 │                    0 │         3276 │               54 │ /s3_cache/ │                           2 │                                  0 │
+└─────────────┴──────────────┴───────────────────────┴────────────────────┴───────────────────────────┴──────────────────────┴──────────────┴──────────────────┴────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+| cache の現在のメトリクス           | cache の非同期メトリクス        | cache のプロファイルイベント                                                                         |
+| ------------------------- | ---------------------- | ----------------------------------------------------------------------------------------- |
+| `FilesystemCacheSize`     | `FilesystemCacheBytes` | `CachedReadBufferReadFromSourceBytes`, `CachedReadBufferReadFromCacheBytes`               |
+| `FilesystemCacheElements` | `FilesystemCacheFiles` | `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds` |
+|                           |                        | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
+|                           |                        | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
+
+<div id="web-storage">
+  ### 静的 Web ストレージ (読み取り専用) の使用
+</div>
+
+これは読み取り専用ディスクです。そのデータは読み取られるだけで、変更されることはありません。新しいテーブル
+は `ATTACH TABLE` クエリによってこのディスクに読み込まれます (下の例を参照) 。ローカルディスク
+は実際には使用されず、各 `SELECT` クエリでは必要なデータを
+取得するために `http` リクエストが発生します。テーブルデータへのあらゆる変更操作は
+例外になります。つまり、次の種類のクエリは許可されません: [`CREATE TABLE`](/ja/reference/statements/create/table),
+[`ALTER TABLE`](/ja/reference/statements/alter/index), [`RENAME TABLE`](/ja/reference/statements/rename#rename-table),
+[`DETACH TABLE`](/ja/reference/statements/detach) および [`TRUNCATE TABLE`](/ja/reference/statements/truncate)。
+Web ストレージは読み取り専用の用途に使用できます。たとえば、
+サンプルデータのホスティングや、データの移行に利用できます。`clickhouse-static-files-uploader` というツールがあり、
+これは指定したテーブルのデータディレクトリを準備します (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`) 。
+必要な各テーブルについて、ファイルの入ったディレクトリが得られます。これらのファイルは、たとえば
+静的ファイルを配信する Web サーバーにアップロードできます。この準備の後、
+このテーブルを `DiskWeb` 経由で任意の ClickHouse サーバーに読み込めます。
+
+このサンプル設定では:
+
+* ディスクのタイプは `web` です
+* データは `http://nginx:80/test1/` でホストされています
+* ローカルストレージ上の cache が使用されます
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  ストレージは、クエリ内で一時的に設定することもできます。Web データセットを継続的に使用する予定がない場合は、[動的設定](#dynamic-configuration)を参照し、設定ファイルの編集を省略してください。
+
+  [デモデータセット](https://github.com/ClickHouse/web-tables-demo) は GitHub でホストされています。独自のテーブルを Web
+  ストレージ向けに準備するには、ツール [clickhouse-static-files-uploader](/ja/concepts/features/tools-and-utilities/static-files-disk-uploader)
+  を参照してください。
+</Tip>
+
+この `ATTACH TABLE` クエリでは、指定された `UUID` がデータのディレクトリ名に対応しており、エンドポイントは GitHub の生コンテンツの URL です。
+
+```sql highlight={1,20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+```
+
+すぐに試せるテストケースです。config にこの設定を追加する必要があります。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+次に、このクエリを実行します。
+
+```sql
+ATTACH TABLE test_hits UUID '1ae36516-d62d-4218-9ae3-6516d62da218'
+(
+    WatchID UInt64,
+    JavaEnable UInt8,
+    Title String,
+    GoodEvent Int16,
+    EventTime DateTime,
+    EventDate Date,
+    CounterID UInt32,
+    ClientIP UInt32,
+    ClientIP6 FixedString(16),
+    RegionID UInt32,
+    UserID UInt64,
+    CounterClass Int8,
+    OS UInt8,
+    UserAgent UInt8,
+    URL String,
+    Referer String,
+    URLDomain String,
+    RefererDomain String,
+    Refresh UInt8,
+    IsRobot UInt8,
+    RefererCategories Array(UInt16),
+    URLCategories Array(UInt16),
+    URLRegions Array(UInt32),
+    RefererRegions Array(UInt32),
+    ResolutionWidth UInt16,
+    ResolutionHeight UInt16,
+    ResolutionDepth UInt8,
+    FlashMajor UInt8,
+    FlashMinor UInt8,
+    FlashMinor2 String,
+    NetMajor UInt8,
+    NetMinor UInt8,
+    UserAgentMajor UInt16,
+    UserAgentMinor FixedString(2),
+    CookieEnable UInt8,
+    JavascriptEnable UInt8,
+    IsMobile UInt8,
+    MobilePhone UInt8,
+    MobilePhoneModel String,
+    Params String,
+    IPNetworkID UInt32,
+    TraficSourceID Int8,
+    SearchEngineID UInt16,
+    SearchPhrase String,
+    AdvEngineID UInt8,
+    IsArtifical UInt8,
+    WindowClientWidth UInt16,
+    WindowClientHeight UInt16,
+    ClientTimeZone Int16,
+    ClientEventTime DateTime,
+    SilverlightVersion1 UInt8,
+    SilverlightVersion2 UInt8,
+    SilverlightVersion3 UInt32,
+    SilverlightVersion4 UInt16,
+    PageCharset String,
+    CodeVersion UInt32,
+    IsLink UInt8,
+    IsDownload UInt8,
+    IsNotBounce UInt8,
+    FUniqID UInt64,
+    HID UInt32,
+    IsOldCounter UInt8,
+    IsEvent UInt8,
+    IsParameter UInt8,
+    DontCountHits UInt8,
+    WithHash UInt8,
+    HitColor FixedString(1),
+    UTCEventTime DateTime,
+    Age UInt8,
+    Sex UInt8,
+    Income UInt8,
+    Interests UInt16,
+    Robotness UInt8,
+    GeneralInterests Array(UInt16),
+    RemoteIP UInt32,
+    RemoteIP6 FixedString(16),
+    WindowName Int32,
+    OpenerName Int32,
+    HistoryLength Int16,
+    BrowserLanguage FixedString(2),
+    BrowserCountry FixedString(2),
+    SocialNetwork String,
+    SocialAction String,
+    HTTPError UInt16,
+    SendTiming Int32,
+    DNSTiming Int32,
+    ConnectTiming Int32,
+    ResponseStartTiming Int32,
+    ResponseEndTiming Int32,
+    FetchTiming Int32,
+    RedirectTiming Int32,
+    DOMInteractiveTiming Int32,
+    DOMContentLoadedTiming Int32,
+    DOMCompleteTiming Int32,
+    LoadEventStartTiming Int32,
+    LoadEventEndTiming Int32,
+    NSToDOMContentLoadedTiming Int32,
+    FirstPaintTiming Int32,
+    RedirectCount Int8,
+    SocialSourceNetworkID UInt8,
+    SocialSourcePage String,
+    ParamPrice Int64,
+    ParamOrderID String,
+    ParamCurrency FixedString(3),
+    ParamCurrencyID UInt16,
+    GoalsReached Array(UInt32),
+    OpenstatServiceName String,
+    OpenstatCampaignID String,
+    OpenstatAdID String,
+    OpenstatSourceID String,
+    UTMSource String,
+    UTMMedium String,
+    UTMCampaign String,
+    UTMContent String,
+    UTMTerm String,
+    FromTag String,
+    HasGCLID UInt8,
+    RefererHash UInt64,
+    URLHash UInt64,
+    CLID UInt32,
+    YCLID UInt64,
+    ShareService String,
+    ShareURL String,
+    ShareTitle String,
+    ParsedParams Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    IslandID FixedString(16),
+    RequestNum UInt32,
+    RequestTry UInt8
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS storage_policy='web';
+```
+
+<div id="static-web-storage-required-parameters">
+  #### パラメータ
+</div>
+
+| パラメーター     | 説明                                                                           |
+| ---------- | ---------------------------------------------------------------------------- |
+| `type`     | `web`。それ以外の場合、ディスクは作成されません。                                                  |
+| `endpoint` | `path` 形式のエンドポイント URL。エンドポイント URL には、アップロードされたデータの保存先となるルートパスが含まれている必要があります。 |
+
+<div id="optional-parameters-s3">
+  #### オプションパラメータ
+</div>
+
+| Parameter                           | Description                      | Default Value |
+| ----------------------------------- | -------------------------------- | ------------- |
+| `min_bytes_for_seek`                | 順次読み取りではなく seek 操作を使用するための最小バイト数 | `1` MB        |
+| `remote_fs_read_backoff_threashold` | リモートディスク上のデータ読み取りを試みる際の最大待機時間    | `10000` 秒     |
+| `remote_fs_read_backoff_max_tries`  | バックオフを伴う読み取りの最大試行回数              | `5`           |
+
+クエリが例外 `DB:Exception Unreachable URL` で失敗する場合は、設定 [http&#95;connection&#95;timeout](/ja/reference/settings/session-settings#http_connection_timeout)、[http&#95;receive&#95;timeout](/ja/reference/settings/session-settings#http_receive_timeout)、[keep&#95;alive&#95;timeout](/ja/reference/settings/server-settings/settings#keep_alive_timeout) の調整を試してください。
+
+アップロード用のファイルを取得するには、次を実行します:
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (`--metadata-path` はクエリ `SELECT data_paths FROM system.tables WHERE name = 'table_name'` で確認できます) 。
+
+`endpoint` を使ってファイルを読み込む場合、ファイルは `<endpoint>/store/` パスに配置する必要がありますが、設定には `endpoint` のみを指定する必要があります。
+
+サーバー起動時にテーブルを読み込む際、ディスクのロード中に URL に到達できない場合は、すべてのエラーが捕捉されます。この場合にエラーが発生していても、`DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name` によってテーブルを再読み込みし、再度表示させることができます。サーバー起動時にメタデータの読み込みに成功していれば、テーブルはすぐに利用可能です。
+
+単一の HTTP 読み取り中の最大再試行回数を制限するには、設定 [http&#95;max&#95;single&#95;read&#95;retries](/ja/concepts/features/configuration/server-config/storing-data#web-storage) を使用します。
+
+<div id="zero-copy">
+  ### ゼロコピーレプリケーション (本番環境での利用は非推奨)
+</div>
+
+`S3` および `HDFS` (未サポート) ディスクでは、ゼロコピーレプリケーションを使用できますが、推奨されません。ゼロコピーレプリケーションとは、データが複数のマシン上のリモートストレージに保存されており、それらを同期する必要がある場合に、データ本体ではなくメタデータ (データパーツへのパス) のみをレプリケーションする仕組みを指します。
+
+<Info>
+  **ゼロコピーレプリケーションは本番環境での利用には未対応です**
+
+  ClickHouse バージョン 22.8 以降では、ゼロコピーレプリケーションはデフォルトで無効になっています。 この機能を本番環境で使用することは推奨されません。
+</Info>

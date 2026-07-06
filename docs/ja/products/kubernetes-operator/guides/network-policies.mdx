@@ -1,0 +1,143 @@
+---
+position: 7
+slug: /clickhouse-operator/guides/network-policies
+title: ネットワークポリシー
+keywords: ['kubernetes', 'network policy', 'security', 'メトリクス', 'webhook']
+description: 'operator が Kubernetes の NetworkPolicies を使って controller manager ポッドへのイングレスをメトリクスおよび webhook のエンドポイントに対して制限する方法、それらを有効にする方法、さらにラベル付けが必要なクライアントのネームスペースについて説明します。'
+doc_type: 'guide'
+---
+
+operator には、**controller manager ポッド** に到達できるトラフィックを制限するための、任意で利用できる Kubernetes の `NetworkPolicy` リソースが用意されています。対象は operator プロセス自体であり、ClickHouse server や Keeper のポッドは含まれません。これらはデフォルトでは無効なので、operator へのイングレスを分離したい場合にのみ有効化します。
+
+これらのポリシーは、operator が他のクライアント向けに公開している 2 つのポート、つまりメトリクス
+エンドポイントと admission webhook を対象とします。
+
+<Note>
+  `NetworkPolicy` は、クラスターの CNI プラグインがこれを実装している場合にのみ適用されます
+  (たとえば Calico や Cilium) 。NetworkPolicy を適用しない CNI では、これらの
+  リソースは作成されても実際には効果がなく、Kubernetes も
+  エラーを返しません。これらに依存する前に、使用中の CNI がポリシーを適用することを確認してください。
+</Note>
+
+<div id="what-the-helm-chart-creates">
+  ## Helm チャートで作成されるもの
+</div>
+
+有効にすると、このチャートは最大 2 つのイングレス専用ポリシーを作成します。いずれも
+controller manager ポッドを対象とします。
+
+| ポリシー                    | 許可される送信元                          | 許可されるポート                            |
+| ----------------------- | --------------------------------- | ----------------------------------- |
+| `allow-metrics-traffic` | `metrics: enabled` ラベルが付いたネームスペース | `metrics.port` (デフォルトは `8080`/TCP)  |
+| `allow-webhook-traffic` | `webhook: enabled` ラベルが付いたネームスペース | `webhook.port` (デフォルトは `9443`/TCP)  |
+
+どちらのポリシーも `policyTypes: [Ingress]` のみを指定します。これらは operator からの外向きトラフィックを制限せず、
+ClickHouse server や Keeper のポッドにも影響しません。
+
+<div id="default-deny">
+  ## デフォルト拒否の動作
+</div>
+
+イングレス `NetworkPolicy` でポッドを選択すると、そのポッドは**イングレスに対する
+デフォルト拒否**に切り替わります。いずれかのポリシーが適用されると、明示的に許可されていない
+controller manager ポッドへの受信トラフィックはすべて破棄されます。有効化後、
+operator に到達できるイングレスは次のみです。
+
+* `metrics: enabled` というラベルが付いたネームスペースからのメトリクスのスクレイプ
+* `webhook: enabled` というラベルが付いたネームスペースからの admission webhook 呼び出し
+
+それ以外のそのポッド宛て通信はすべて拒否されます。これは意図したハードニングですが、
+ラベルの付いていない scraper や webhook 呼び出し元は、ポリシーが有効になった時点で
+動作しなくなることを意味します。
+
+<div id="enabling">
+  ## ポリシーを有効にする
+</div>
+
+Helm では、values でゲートを有効にします。
+
+```yaml
+# values.yaml
+networkPolicy:
+  enabled: true
+```
+
+```bash
+helm upgrade --install clickhouse-operator \
+  oci://ghcr.io/clickhouse/clickhouse-operator-helm \
+  -n clickhouse-operator-system --create-namespace \
+  -f values.yaml
+```
+
+`allow-webhook-traffic` では、`webhook.enabled: true` (
+既定値) も追加で必要になるため、webhook を無効にすると、そのポリシーも削除されます。
+
+raw の `kubectl` manifest を使用する場合は、
+[kubectl install guide](/ja/products/kubernetes-operator/install/kubectl) で説明されているとおり、`[NETWORK POLICY]` セクションのコメントを外してください。
+raw の manifest にも、同じ 2 つのポリシーが含まれています。
+
+<div id="labeling-namespaces">
+  ## クライアントのネームスペースへのラベル付け
+</div>
+
+どちらのポリシーも `namespaceSelector` によって送信元のネームスペースを照合するため、operator に到達する必要があるすべてのネームスペースには、対応するラベルが付いている必要があります。ラベルの付いていないネームスペースからの スクレイプ や webhook 呼び出しは破棄されます。
+
+```bash
+# Allow a Prometheus namespace to scrape the metrics endpoint
+kubectl label namespace <prometheus-namespace> metrics=enabled
+
+# Allow webhook callers from a given namespace
+kubectl label namespace <caller-namespace> webhook=enabled
+```
+
+これを
+[監視 → メトリクス エンドポイントの保護](/ja/products/kubernetes-operator/guides/monitoring#securing-the-metrics-endpoint)
+で説明しているメトリクス RBAC と組み合わせてください。
+到達可否は NetworkPolicy が制御し、認可はクラスター ロール バインディングが制御します。
+保護されたスクレイプを成功させるには、この両方が必要です。
+
+<Warning>
+  admission webhook へのリクエストは、通常の
+  ポッドではなく Kubernetes API server から送信されます。そのトラフィックが
+  `NetworkPolicy` の対象になるかどうか、またどの送信元として見えるかは、
+  control plane のトポロジーと CNI に依存します。
+  特にマネージド control plane では、どの `namespaceSelector` にも一致しないアドレスから
+  webhook に到達することがあります。Kubernetes API server のトラフィックが
+  `webhook: enabled` のネームスペースでカバーされていない場合、
+  `allow-webhook-traffic` を有効にすると
+  admission がブロックされ、`ClickHouseCluster`/`KeeperCluster` の作成および更新リクエストが
+  タイムアウトする可能性があります。有効化後は非本番クラスターで admission をテストし、必要に応じて
+  Kubernetes API server に対する明示的な許可ルールを追加してください。
+</Warning>
+
+<div id="verifying">
+  ## 確認
+</div>
+
+```bash
+NS=clickhouse-operator-system
+
+# The policies exist
+kubectl -n $NS get networkpolicy
+
+# Inspect the selectors and allowed sources
+kubectl -n $NS describe networkpolicy
+```
+
+有効化後、次の点を確認してください:
+
+* Prometheus が引き続きメトリクス エンドポイントをスクレイプできること (そのネームスペースに
+  `metrics: enabled` ラベルが付与され、metrics-reader クラスター ロールにバインドされていること) 。
+* `ClickHouseCluster` の作成または更新が引き続き admission を通過すること (webhook
+  に到達できること) 。
+
+スクレイプしてもデータが返らない場合や、CR の適用がハングする場合は、対象ネームスペースにラベルが付いていないこと、または
+上記の API サーバー到達性に関する注意事項が原因である可能性が最も高いです。
+
+<div id="related-guides">
+  ## 関連ガイド
+</div>
+
+* [operator の監視](/ja/products/kubernetes-operator/guides/monitoring) — メトリクス エンドポイント、その RBAC、スクレイプの保護について説明します。
+* [kubectl を使用したインストール](/ja/products/kubernetes-operator/install/kubectl) — ネットワークポリシーのセクションをどこでアンコメントするかを説明します。
+* [Helm を使用したインストール](/ja/products/kubernetes-operator/install/helm) — operator に関連する chart の values。

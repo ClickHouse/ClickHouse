@@ -1,0 +1,76 @@
+---
+alias: []
+description: 'JSONColumnsWithMetadata 格式文档'
+input_format: true
+keywords: ['JSONColumnsWithMetadata']
+output_format: true
+slug: /interfaces/formats/JSONColumnsWithMetadata
+title: 'JSONColumnsWithMetadata'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+与 [`JSONColumns`](/zh/reference/formats/JSON/JSONColumns) 格式的不同之处在于，它还包含一些元数据和统计信息 (类似于 [`JSON`](/zh/reference/formats/JSON/JSON) 格式) 。
+
+<Note>
+  `JSONColumnsWithMetadata` 格式会先将所有数据缓冲在内存中，再以单个块的形式输出，因此可能会导致较高的内存占用。
+</Note>
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+示例：
+
+```json
+{
+        "meta":
+        [
+                {
+                        "name": "num",
+                        "type": "Int32"
+                },
+                {
+                        "name": "str",
+                        "type": "String"
+                },
+
+                {
+                        "name": "arr",
+                        "type": "Array(UInt8)"
+                }
+        ],
+
+        "data":
+        {
+                "num": [42, 43, 44],
+                "str": ["hello", "hello", "hello"],
+                "arr": [[0,1], [0,1,2], [0,1,2,3]]
+        },
+
+        "rows": 3,
+
+        "rows_before_limit_at_least": 3,
+
+        "statistics":
+        {
+                "elapsed": 0.000272376,
+                "rows_read": 3,
+                "bytes_read": 24
+        }
+}
+```
+
+对于 `JSONColumnsWithMetadata` 输入格式，如果将设置 [`input_format_json_validate_types_from_metadata`](/zh/reference/settings/formats#input_format_json_validate_types_from_metadata) 设为 `1`，
+则会比较输入数据元数据中的类型与表中对应列的类型。
+
+<div id="format-settings">
+  ## 格式设置
+</div>
