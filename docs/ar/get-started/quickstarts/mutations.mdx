@@ -1,0 +1,111 @@
+---
+slug: /guides/developer/mutations
+sidebarTitle: 'تحديث البيانات وحذفها'
+keywords: ['UPDATE', 'DELETE', 'mutations']
+title: 'تحديث بيانات ClickHouse وحذفها'
+description: 'يشرح كيفية تنفيذ عمليات التحديث والحذف في ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+على الرغم من أن ClickHouse مُصمَّم لأحمال العمل التحليلية كبيرة الحجم، فمن الممكن في بعض الحالات تعديل البيانات الموجودة أو
+حذفها. تُسمّى هذه العمليات &quot;mutations&quot; وتُنفَّذ باستخدام الأمر `ALTER TABLE`.
+
+<Tip>
+  إذا كنت بحاجة إلى تنفيذ تحديثات متكررة، ففكّر في استخدام [إزالة التكرار](/ar/concepts/features/operations/insert/deduplication) في ClickHouse، إذ يتيح لك ذلك تحديث
+  و/أو حذف الصفوف من دون توليد حدث mutation. وبدلًا من ذلك، استخدم [التحديثات خفيفة الوزن](/ar/reference/statements/update)
+  أو [حذف خفيف](/ar/concepts/features/operations/delete/lightweight-delete)
+</Tip>
+
+<div id="updating-data">
+  ## تحديث البيانات
+</div>
+
+استخدم الأمر `ALTER TABLE...UPDATE` لتحديث الصفوف في أحد الجداول:
+
+```sql
+ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_expr>
+```
+
+`<expression>` هي القيمة الجديدة للعمود في الصفوف التي يتحقق فيها `<filter_expr>`. يجب أن يكون `<expression>` من نوع بيانات العمود نفسه، أو قابلاً للتحويل إلى نوع البيانات نفسه باستخدام المعامل `CAST`. ينبغي أن يُرجع `<filter_expr>` قيمة `UInt8` (صفر أو غير صفر) لكل صف من البيانات. يمكن دمج عدة عبارات `UPDATE <column>` في أمر `ALTER TABLE` واحد، مفصولة بفواصل.
+
+**أمثلة**:
+
+1. تتيح عملية mutation كهذه تحديث `visitor_ids` واستبدالها بقيم جديدة باستخدام lookup في قاموس:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE visitor_id = getDict('visitors', 'new_visitor_id', visitor_id)
+   WHERE visit_date < '2022-01-01'
+   ```
+
+2. قد يكون تعديل عدة قيم في أمر واحد أكثر كفاءة من تنفيذ عدة أوامر:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE url = substring(url, position(url, '://') + 3), visitor_id = new_visit_id
+   WHERE visit_date < '2022-01-01'
+   ```
+
+3. يمكن تنفيذ عمليات mutation باستخدام `ON CLUSTER` للجداول المُقسَّمة إلى shards:
+
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster
+   UPDATE click_count = click_count / 2
+   WHERE visitor_id ILIKE '%robot%'
+   ```
+
+<Note>
+  لا يمكن تحديث الأعمدة التي تكون جزءًا من المفتاح الأساسي أو مفتاح الفرز.
+</Note>
+
+<div id="deleting-data">
+  ## حذف البيانات
+</div>
+
+استخدم الأمر `ALTER TABLE` لحذف الصفوف:
+
+```sql
+ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
+```
+
+يجب أن يعيد `<filter_expr>` قيمة UInt8 لكل صف من البيانات.
+
+**أمثلة**
+
+1. احذف أي سجلات تكون فيها قيمة أحد الأعمدة ضمن مصفوفة من القيم:
+   ```sql
+   ALTER TABLE website.clicks DELETE WHERE visitor_id in (253, 1002, 4277)
+   ```
+
+2. ما الذي يغيّره هذا الاستعلام؟
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster DELETE WHERE visit_date < '2022-01-02 15:00:00' AND page_id = '573'
+   ```
+
+<Note>
+  لحذف جميع البيانات من جدول، من الأكثر كفاءة استخدام الأمر `TRUNCATE TABLE [<database].]<table>`. ويمكن أيضًا تنفيذ هذا الأمر باستخدام `ON CLUSTER`.
+</Note>
+
+راجع صفحة توثيق تعليمة [`DELETE`](/ar/reference/statements/delete) لمزيد من التفاصيل.
+
+<div id="lightweight-deletes">
+  ## عمليات الحذف الخفيفة
+</div>
+
+خيار آخر لحذف الصفوف هو استخدام الأمر `DELETE FROM`، ويُشار إليه باسم **الحذف الخفيف**. تُعلَّم الصفوف المحذوفة فورًا على أنها محذوفة، وتُستبعَد تلقائيًا من جميع الاستعلامات اللاحقة، لذلك لا تحتاج إلى انتظار دمج الأجزاء أو استخدام الكلمة المفتاحية `FINAL`. ويجري تنظيف البيانات بشكل غير متزامن في الخلفية.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
+```
+
+على سبيل المثال، يحذف الاستعلام التالي جميع الصفوف من الجدول `hits` حيث يحتوي العمود `Title` على النص `hello`:
+
+```sql
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+بعض الملاحظات حول الحذف الخفيف:
+
+* هذه الميزة متاحة فقط لعائلة محركات الجداول `MergeTree`.
+* يكون الحذف الخفيف متزامنًا افتراضيًا، إذ ينتظر إلى أن تعالج جميع النسخ المتماثلة عملية الحذف. ويخضع هذا السلوك للتحكم من خلال [الإعداد `lightweight_deletes_sync`](/ar/reference/settings/session-settings#lightweight_deletes_sync).

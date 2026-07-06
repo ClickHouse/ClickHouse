@@ -1,0 +1,97 @@
+---
+description: 'يمثل محتويات ملفات الفهرس والعلامات الخاصة بجداول MergeTree.
+  ويمكن استخدامه للاستبطان.'
+sidebarTitle: 'mergeTreeIndex'
+slug: /sql-reference/table-functions/mergeTreeIndex
+title: 'mergeTreeIndex'
+doc_type: 'reference'
+---
+
+يمثل محتويات ملفات الفهرس والعلامات الخاصة بجداول MergeTree. ويمكن استخدامه للاستبطان.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
+```
+
+<div id="arguments">
+  ## المعاملات
+</div>
+
+| المعامل       | الوصف                                                             |
+| ------------- | ----------------------------------------------------------------- |
+| `database`    | اسم قاعدة البيانات المطلوب قراءة الفهرس والعلامات منها.           |
+| `table`       | اسم الجدول المطلوب قراءة الفهرس والعلامات منه.                    |
+| `with_marks`  | ما إذا كان سيتم تضمين الأعمدة التي تحتوي على العلامات في النتيجة. |
+| `with_minmax` | ما إذا كان سيتم تضمين فهرس الحد الأدنى-الحد الأقصى في النتيجة.    |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+كائن جدول يحتوي على أعمدة تتضمن قيماً لـ primary فهرس وفهرس الحد الأدنى-الحد الأقصى (إذا كانا مُمكّنين) في source table، وأعمدة تتضمن قيماً لـ علامات (إذا كانت مُمكّنة) لجميع الملفات المحتملة في data parts الخاصة بـ source table، بالإضافة إلى virtual columns:
+
+* `part_name` - اسم data part.
+* `mark_number` - رقم علامة الحالية في data part.
+* `rows_in_granule` - عدد rows في granule الحالية.
+
+قد يحتوي عمود علامات على القيمة `(NULL, NULL)` إذا كان العمود غير موجود في data part أو إذا لم تُكتب علامات لأحد substreams الخاصة به (على سبيل المثال، في compact parts).
+
+<div id="usage-example">
+  ## مثال للاستخدام
+</div>
+
+```sql
+CREATE TABLE test_table
+(
+    `id` UInt64,
+    `n` UInt64,
+    `arr` Array(UInt64)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 3, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 8;
+
+INSERT INTO test_table SELECT number, number, range(number % 5) FROM numbers(5);
+
+INSERT INTO test_table SELECT number, number, range(number % 5) FROM numbers(10, 10);
+```
+
+```sql
+SELECT * FROM mergeTreeIndex(currentDatabase(), test_table, with_marks = true);
+```
+
+```text
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─id─┬─id.mark─┬─n.mark──┬─arr.size0.mark─┬─arr.mark─┐
+│ all_1_1_0 │           0 │               3 │  0 │ (0,0)   │ (42,0)  │ (NULL,NULL)    │ (84,0)   │
+│ all_1_1_0 │           1 │               2 │  3 │ (133,0) │ (172,0) │ (NULL,NULL)    │ (211,0)  │
+│ all_1_1_0 │           2 │               0 │  4 │ (271,0) │ (271,0) │ (NULL,NULL)    │ (271,0)  │
+└───────────┴─────────────┴─────────────────┴────┴─────────┴─────────┴────────────────┴──────────┘
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─id─┬─id.mark─┬─n.mark─┬─arr.size0.mark─┬─arr.mark─┐
+│ all_2_2_0 │           0 │               3 │ 10 │ (0,0)   │ (0,0)  │ (0,0)          │ (0,0)    │
+│ all_2_2_0 │           1 │               3 │ 13 │ (0,24)  │ (0,24) │ (0,24)         │ (0,24)   │
+│ all_2_2_0 │           2 │               3 │ 16 │ (0,48)  │ (0,48) │ (0,48)         │ (0,80)   │
+│ all_2_2_0 │           3 │               1 │ 19 │ (0,72)  │ (0,72) │ (0,72)         │ (0,128)  │
+│ all_2_2_0 │           4 │               0 │ 19 │ (0,80)  │ (0,80) │ (0,80)         │ (0,160)  │
+└───────────┴─────────────┴─────────────────┴────┴─────────┴────────┴────────────────┴──────────┘
+```
+
+```sql
+DESCRIBE mergeTreeIndex(currentDatabase(), test_table, with_marks = true) SETTINGS describe_compact_output = 1;
+```
+
+```text
+┌─name────────────┬─type─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ part_name       │ String                                                                                           │
+│ mark_number     │ UInt64                                                                                           │
+│ rows_in_granule │ UInt64                                                                                           │
+│ id              │ UInt64                                                                                           │
+│ id.mark         │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ n.mark          │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ arr.size0.mark  │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ arr.mark        │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+└─────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```

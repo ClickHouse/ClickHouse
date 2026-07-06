@@ -1,0 +1,168 @@
+---
+sidebarTitle: 'Conecte o Streamkap ao ClickHouse'
+keywords: ['clickhouse', 'Streamkap', 'CDC', 'conectar', 'integrar', 'etl', 'integração de dados', 'captura de alterações de dados']
+slug: /integrations/sttreamkap
+description: 'Envie dados para o ClickHouse usando pipelines de dados do Airbyte'
+
+title: 'Conecte o Streamkap ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://www.streamkap.com/'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> é uma plataforma de integração de dados em tempo real especializada em CDC (captura de alterações de dados) em streaming e processamento de fluxos. Ela é baseada em uma stack escalável e de alta taxa de transferência com Apache Kafka, Apache Flink e Debezium, oferecida como um serviço totalmente gerenciado em implantações SaaS ou BYOC (Bring Your Own Cloud).
+
+O Streamkap permite transmitir cada inserção, atualização e exclusão de bancos de dados de origem, como PostgreSQL, MySQL, SQL Server, MongoDB e <a href="https://streamkap.com/connectors" target="_blank">outros</a>, diretamente para o ClickHouse com latência de milissegundos.
+
+Isso o torna ideal para alimentar dashboards analíticos em tempo real, análises operacionais e modelos de machine learning com dados em tempo real.
+
+<div id="key-features">
+  ## Principais recursos
+</div>
+
+* **CDC de streaming em tempo real:** O Streamkap captura alterações diretamente dos logs do seu banco de dados, garantindo que os dados no ClickHouse sejam uma réplica em tempo real da fonte.
+  Processamento de streams simplificado: transforme, enriqueça, roteie, formate e crie embeddings a partir dos dados em tempo real antes de chegarem ao ClickHouse. Com tecnologia Flink, sem nenhuma da complexidade
+
+* **Totalmente gerenciado e escalável:** Ele oferece um pipeline pronto para produção e sem necessidade de manutenção, eliminando a necessidade de gerenciar sua própria infraestrutura de Kafka, Flink, Debezium ou schema registry. A plataforma foi projetada para alto throughput e pode escalar linearmente para lidar com bilhões de eventos.
+
+* **Evolução automática de esquema:** O Streamkap detecta automaticamente alterações de esquema no banco de dados de origem e as propaga para o ClickHouse. Ele consegue adicionar novas colunas ou alterar tipos de coluna sem intervenção manual.
+
+* **Otimizado para ClickHouse:** A integração foi desenvolvida para funcionar com eficiência com os recursos do ClickHouse. Por padrão, ela usa o engine ReplacingMergeTree para lidar perfeitamente com atualizações e exclusões do sistema de origem.
+
+* **Entrega resiliente:** A plataforma oferece garantia de entrega de pelo menos uma vez, assegurando a consistência dos dados entre sua fonte e o ClickHouse. Para operações de upsert, ela realiza desduplicação com base na chave primária.
+
+<div id="started">
+  ## Primeiros passos
+</div>
+
+Este guia oferece uma visão geral de como configurar um pipeline do Streamkap para carregar dados no ClickHouse.
+
+<div id="prerequisites">
+  ### Pré-requisitos
+</div>
+
+* Uma <a href="https://app.streamkap.com/account/sign-up" target="_blank">conta no Streamkap</a>.
+* Os detalhes de conexão do seu cluster do ClickHouse: Hostname, Porta, Nome de usuário e Senha.
+* Um banco de dados de origem (por exemplo, PostgreSQL, SQL Server) configurado para permitir CDC. Você pode encontrar guias detalhados de configuração na documentação do Streamkap.
+
+<div id="configure-clickhouse-source">
+  ### Etapa 1: Configure a origem no Streamkap
+</div>
+
+1. Faça login na sua conta do Streamkap.
+2. Na barra lateral, acesse **Connectors** e selecione a aba **Sources**.
+3. Clique em **+ Add** e selecione o tipo do seu banco de dados de origem (por exemplo, SQL Server RDS).
+4. Preencha os detalhes da conexão, incluindo o endpoint, a porta, o nome do banco de dados e as credenciais do usuário.
+5. Salve o conector.
+
+<div id="configure-clickhouse-dest">
+  ### Etapa 2: Configure o destino do ClickHouse
+</div>
+
+1. Na seção **Connectors**, selecione a guia **Destinations**.
+2. Clique em **+ Add** e escolha **ClickHouse** na lista.
+3. Insira os detalhes da conexão do seu serviço ClickHouse:
+   * **Hostname:** O host da sua instância do ClickHouse (por exemplo, `abc123.us-west-2.aws.clickhouse.cloud`)
+   * **Port:** A porta HTTPS segura, normalmente `8443`
+   * **Username and Password:** As credenciais do seu usuário do ClickHouse
+   * **Database:** O nome do banco de dados de destino no ClickHouse
+4. Salve o destino.
+
+<div id="run-pipeline">
+  ### Etapa 3: Criar e executar o pipeline
+</div>
+
+1. Vá até **Pipelines** na barra lateral e clique em **+ Create**.
+2. Selecione a origem e o destino que você acabou de configurar.
+3. Escolha os schemas e as tabelas que deseja transmitir.
+4. Dê um nome ao seu pipeline e clique em **Save**.
+
+Depois de criado, o pipeline ficará ativo. O Streamkap primeiro fará um snapshot dos dados existentes e, em seguida, começará a transmitir novas alterações conforme elas ocorrerem.
+
+<div id="verify-data-clickhoouse">
+  ### Passo 4: Verifique os dados no ClickHouse
+</div>
+
+Conecte-se ao seu cluster do ClickHouse e execute uma consulta para ver os dados sendo gravados na tabela de destino.
+
+```sql
+SELECT * FROM your_table_name LIMIT 10;
+```
+
+<div id="how-it-works-with-clickhouse">
+  ## Como funciona com o ClickHouse
+</div>
+
+A integração do Streamkap foi desenvolvida para gerenciar com eficiência os dados de CDC no ClickHouse.
+
+<div id="table-engine-data-handling">
+  ### Engine de Tabela e Tratamento de Dados
+</div>
+
+Por padrão, o Streamkap usa o modo de ingestão upsert. Quando cria uma tabela no ClickHouse, ele usa o engine ReplacingMergeTree. Esse engine é ideal para lidar com eventos de CDC:
+
+* A chave primária da tabela de origem é usada como chave ORDER BY na definição da tabela ReplacingMergeTree.
+
+* **Atualizações** na origem são gravadas como novas linhas no ClickHouse. Durante o processo de mesclagem em segundo plano, o ReplacingMergeTree consolida essas linhas, mantendo apenas a versão mais recente com base na chave de ordenação.
+
+* **Exclusões** são tratadas por uma flag de metadados que alimenta o parâmetro `is_deleted` do ReplacingMergeTree. As linhas excluídas na origem não são removidas imediatamente, mas são marcadas como excluídas.
+  * Opcionalmente, os registros excluídos podem ser mantidos no ClickHouse para fins analíticos
+
+<div id="metadata-columns">
+  ### Colunas de metadados
+</div>
+
+O Streamkap adiciona várias colunas de metadados a cada tabela para gerenciar o estado dos dados:
+
+| Nome da coluna            | Descrição                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `_STREAMKAP_SOURCE_TS_MS` | Timestamp (em milissegundos) do evento no banco de dados de origem.                    |
+| `_STREAMKAP_TS_MS`        | Timestamp (em milissegundos) de quando o Streamkap processou o evento.                 |
+| `__DELETED`               | Um sinalizador booleano (`true`/`false`) que indica se a linha foi excluída na origem. |
+| `_STREAMKAP_OFFSET`       | Valor de offset dos logs internos do Streamkap, útil para ordenação e depuração.       |
+
+<div id="query-latest-data">
+  ### Consultando os dados mais recentes
+</div>
+
+Como o ReplacingMergeTree processa atualizações e exclusões em segundo plano, uma consulta `SELECT *` simples pode mostrar linhas históricas ou já excluídas antes que uma mesclagem seja concluída. Para obter o estado mais atual dos seus dados, você deve filtrar os registros excluídos e selecionar apenas a versão mais recente de cada linha.
+
+Você pode fazer isso usando o modificador FINAL, o que é prático, mas pode afetar o desempenho da consulta:
+
+```sql
+-- Usando FINAL para obter o estado atual correto
+SELECT * FROM your_table_name FINAL WHERE __DELETED = 'false';
+SELECT * FROM your_table_name FINAL LIMIT 10;
+SELECT * FROM your_table_name FINAL WHERE <filter by keys in ORDER BY clause>;
+SELECT count(*) FROM your_table_name FINAL;
+```
+
+Para obter melhor desempenho em
+tabelas grandes, especialmente se você não precisar ler todas as colunas e em consultas analíticas pontuais, é possível usar a função argMax para selecionar manualmente o registro mais recente de cada chave primária:
+
+```sql
+SELECT key,
+       argMax(col1, version) AS col1,
+       argMax(col2, version) AS col2
+FROM t
+WHERE <seus predicados>
+GROUP BY key;
+```
+
+Para casos de uso em produção e consultas recorrentes e simultâneas de usuários finais, visões materializadas podem ser usadas para modelar os dados de forma que se adaptem melhor aos padrões de acesso subsequentes.
+
+<div id="further-reading">
+  ## Leitura adicional
+</div>
+
+* <a href="https://streamkap.com/" target="_blank">Site da Streamkap</a>
+* <a href="https://docs.streamkap.com/clickhouse" target="_blank">Documentação da Streamkap para ClickHouse</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">Blog: Streaming com captura de alterações de dados para ClickHouse</a>
+* <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">Documentação do ClickHouse: ReplacingMergeTree</a>
