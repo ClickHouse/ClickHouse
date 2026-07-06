@@ -1560,7 +1560,8 @@ static BlockIO executeQueryImpl(
             {
                 rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_runtime_ast);
                 Settings settings_before_source = context->getSettingsRef();
-                InterpreterSetQuery::applySettingsFromQuery(insert_query->source_select_settings_runtime_ast, context);
+                InterpreterSetQuery(insert_query->source_select_settings_runtime_ast, context)
+                    .executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
                 const auto & settings_after_source = context->getSettingsRef();
                 auto restore_ast = make_intrusive<ASTSetQuery>();

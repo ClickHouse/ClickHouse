@@ -183,7 +183,8 @@ ContextMutablePtr makeReturningSelectContext(
     /// approach as the materialized-view path in `InsertDependenciesBuilder`) so the accesses are recorded.
     returning_context->setQueryAccessInfo(context->getQueryAccessInfoPtr());
     if (source_select_settings_restore_ast)
-        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, returning_context);
+        InterpreterSetQuery(source_select_settings_restore_ast, returning_context)
+            .executeForCurrentContext(/* ignore_setting_constraints= */ false);
     InterpreterSetQuery::applySettingsFromQuery(returning_select, returning_context);
     return returning_context;
 }
@@ -294,7 +295,8 @@ bool replacePipelineWithInsertReturningAfterPush(
     if (auto query_context = context->hasQueryContext() ? context->getQueryContext() : ContextMutablePtr{};
         query_context && insert_query.source_select_settings_restore_ast)
     {
-        InterpreterSetQuery::applySettingsFromQuery(insert_query.source_select_settings_restore_ast, query_context);
+        InterpreterSetQuery(insert_query.source_select_settings_restore_ast, query_context)
+            .executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
 
     io.pipeline.reset();
@@ -334,7 +336,8 @@ QueryPipeline buildInsertReturningPipeline(
     if (auto query_context = context->hasQueryContext() ? context->getQueryContext() : ContextMutablePtr{};
         query_context && source_select_settings_restore_ast)
     {
-        InterpreterSetQuery::applySettingsFromQuery(source_select_settings_restore_ast, query_context);
+        InterpreterSetQuery(source_select_settings_restore_ast, query_context)
+            .executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
 
     return buildReturningSelectPipeline(returning_select, context, out_metadata_cache, source_select_settings_restore_ast);
