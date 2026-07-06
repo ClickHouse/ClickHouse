@@ -1,6 +1,9 @@
 #include <Interpreters/TreeRewriter.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Compression/CompressionFactory.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MutateTask.h>
 
@@ -151,6 +154,37 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
     return false;
 }
 
+/// Whether a column's explicit codec descriptor resolves the table's default codec, i.e. references
+/// `Default` -- either directly (`CODEC(Default)`) or inside a pipeline (`CODEC(Delta, Default)`).
+/// `CompressionCodecFactory::get` substitutes `Default` with the codec passed as `current_default`,
+/// so such a codec's effective compression changes with the table's `default_compression_codec`
+/// setting. The wide-part fast path resolves it against the part's *stored* default codec, so it
+/// cannot honor a change of that setting -- those columns must go through the whole-part rewrite.
+static bool codecDependsOnDefault(const ASTPtr & codec_ast)
+{
+    const auto * func = codec_ast->as<ASTFunction>();
+    if (!func || !func->arguments)
+        return false;
+
+    for (const auto & child : func->arguments->children)
+    {
+        /// `Default` is parsed as a bare identifier (it takes no arguments), but accept the function
+        /// form defensively as well.
+        if (const auto * identifier = child->as<ASTIdentifier>())
+        {
+            if (identifier->name() == DEFAULT_CODEC_NAME)
+                return true;
+        }
+        else if (const auto * child_func = child->as<ASTFunction>())
+        {
+            if (child_func->name == DEFAULT_CODEC_NAME)
+                return true;
+        }
+    }
+
+    return false;
+}
+
 static UInt64 getExistingRowsCount(const Block & block)
 {
     auto column = block.getByName(RowExistsColumn::name).column;
@@ -210,19 +244,21 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    /// The wide-part fast path can only honor a column's *explicit* `CODEC(...)`. A column that
-    /// inherits the table's default codec is recompressed with the part's stored default codec
+    /// The wide-part fast path resolves a column's codec against the part's stored default codec
     /// (`source_part->default_codec`), which is not updated when the table's `default_compression_codec`
-    /// setting changes -- so the fast path would silently do nothing after such a change. Route those
-    /// columns through the whole-part rewrite, which re-serializes every column with the *current*
-    /// effective codec (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
+    /// setting changes -- so it cannot honor such a change and would silently do nothing. This affects
+    /// a column that inherits the table default (no explicit `CODEC`) as well as one whose explicit
+    /// codec references `Default` (`CODEC(Default)`, `CODEC(Delta, Default)`), because `Default`
+    /// resolves through the same stored part default. Route those columns through the whole-part
+    /// rewrite, which re-serializes every column with the *current* effective codec
+    /// (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
     bool recompress_needs_full_rewrite = false;
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN && part_columns.has(command.column_name))
         {
             const auto * column_desc = table_columns.tryGet(command.column_name);
-            if (!column_desc || !column_desc->codec)
+            if (!column_desc || !column_desc->codec || codecDependsOnDefault(column_desc->codec))
             {
                 recompress_needs_full_rewrite = true;
                 break;
@@ -595,8 +631,11 @@ static void splitAndModifyMutationCommands(
             else if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN)
             {
                 /// Recompress the column's data streams in place (no deserialization). Only columns
-                /// physically present in this part are recompressed. Dynamic-subcolumn types are
-                /// already routed to the whole-part rewrite branch above (haveMutationsOfDynamicColumns).
+                /// physically present in this part are recompressed. Dynamic-subcolumn types, columns
+                /// that inherit the table default codec, and columns whose codec references `Default`
+                /// are already routed to the whole-part rewrite branch above (haveMutationsOfDynamicColumns
+                /// / recompress_needs_full_rewrite), so here the column's codec never depends on the
+                /// source part's stored default codec.
                 if (part_columns.has(command.column_name))
                     for_recompression.insert(command.column_name);
             }
