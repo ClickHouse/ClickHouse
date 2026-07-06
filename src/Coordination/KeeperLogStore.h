@@ -45,6 +45,10 @@ public:
     /// Return entry at index
     nuraft::ptr<nuraft::log_entry> entry_at(uint64_t index) override;
 
+    /// for_commit=true routes through the commit read-ahead reader under a SHARED changelog_lock,
+    /// unlike entry_at which requires the exclusive lock.
+    nuraft::ptr<nuraft::log_entry> entry_at_ext(uint64_t index, bool for_commit) override TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     bool is_conf(uint64_t index) override;
 
     /// Term if the index

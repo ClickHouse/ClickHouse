@@ -128,6 +128,27 @@ nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at(uint64_t index)
     return changelog.entryAt(index);
 }
 
+nuraft::ptr<nuraft::log_entry> KeeperLogStore::entry_at_ext(uint64_t index, bool for_commit)
+{
+    if (!for_commit)
+        return entry_at(index);
+
+    LogReadPlan plan;
+    {
+        ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+        /// Cheap hits: in-memory (config/first entry/latest cache), then commit read-ahead front.
+        if (auto entry = changelog.entryFromMemory(index))
+            return entry;
+        if (auto entry = changelog.tryPopCommitReadAhead(index))
+            return entry;
+        /// Miss: build a plan plus read-ahead cursors under the lock; serve outside it.
+        plan = changelog.getCommitReadPlan(index);
+    }
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+    /// Exceptions propagate (like entry_at) — nullptr would turn a transient error into fatal N19 in NuRaft.
+    return changelog.serveCommitEntry(index, plan);
+}
+
 bool KeeperLogStore::is_conf(uint64_t index)
 {
     ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);

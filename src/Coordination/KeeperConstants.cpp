@@ -325,12 +325,11 @@
     M(InterfacePostgreSQLReceiveBytes) \
 \
     M(KeeperLogsEntryReadFromLatestCache) \
-    M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
-    M(KeeperLogsPrefetchedEntries) \
     M(KeeperLogsReadAheadFillReopens) \
     M(KeeperLogsReadAheadFillDecodedEntries) \
     M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \

@@ -3,7 +3,6 @@
 #include <libnuraft/ptr.hxx>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
-#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <chrono>
@@ -105,15 +104,34 @@ struct ChangelogFileDescription
     /// may still be on disk), this means the file is actually gone. Readers re-check this and return nullptr.
     bool removed_from_disk = false;
 
-    /// Set once the file is finalized (not broken at end) and eligible for read-ahead.
-    std::atomic<bool> sealed_for_read_ahead{false};
-
-    /// Mark this file as finalized and eligible for read-ahead (no-op if broken_at_end).
-    void markSealedForReadAhead()
+    /// Maximal index-consecutive, physically contiguous spans of current (non-superseded) records in
+    /// this file. A rewrite leaves the old records on disk and starts a new run at the append
+    /// position. Read-ahead planners use this to bound fill cursors to a single run.
+    /// Mutated only under the exclusive changelog_lock, read under the shared lock. Fill tasks run
+    /// without that lock and must never touch this. Not persisted; rebuilt by the init scan.
+    struct ValidRuns
     {
-        if (!broken_at_end)
-            sealed_for_read_ahead.store(true, std::memory_order_release);
-    }
+        struct Run
+        {
+            size_t start_position = 0;  /// == logs_location[first_index].position
+            uint64_t first_index = 0;
+        };
+
+        /// Sorted by first_index; run i covers [runs[i].first_index, runs[i+1].first_index), the last
+        /// covers [runs.back().first_index, end_index). No index gap between consecutive runs.
+        std::vector<Run> runs;
+        /// One-past the last located index recorded into this file. 0 = no runs.
+        uint64_t end_index = 0;
+        /// Physical one-past-end of the last recorded record (contiguity check for extension).
+        size_t end_position = 0;
+
+        void addLocatedRecord(uint64_t index, size_t position, size_t size_in_file);
+        /// Keep only claims below index (run containing index-1 survives, truncated implicitly).
+        void truncateAt(uint64_t index, size_t new_end_position);
+        void clear();
+    };
+
+    ValidRuns valid_runs;
 
     std::deque<std::weak_ptr<ChangelogFileOperation>> file_operations;
 
@@ -183,8 +201,8 @@ struct LogLocation
 struct LogReadPlan
 {
     /// File position descriptor shared by direct reads and read-ahead fill cursors.
-    /// For direct reads (items): count > 0 is the exact record count.
-    /// For fill cursors (ReadAheadWindow): count = 0 means read to the file's last sealed index (to_log_index).
+    /// count > 0 always: exact record count for direct reads; bounds fill cursors to a single valid
+    /// run's flushed records (safe on the active file).
     struct FileSpan
     {
         ChangelogFileDescriptionPtr file_description;
@@ -204,50 +222,29 @@ struct LogReadPlan
     bool logs_compacted = false;      /// true => log compacted below requested start; caller gets nullptr
 };
 
-struct PrefetchedCacheEntry
-{
-    explicit PrefetchedCacheEntry();
-
-    const LogEntryPtr & getLogEntry() const;
-    void resolve(std::exception_ptr exception);
-    void resolve(LogEntryPtr log_entry_);
-private:
-    std::promise<LogEntryPtr> log_entry_resolver;
-    mutable std::shared_future<LogEntryPtr> log_entry;
-};
-
-using PrefetchedCacheEntryPtr = std::shared_ptr<PrefetchedCacheEntry>;
-using CacheEntry = std::variant<LogEntryPtr, PrefetchedCacheEntryPtr>;
-using IndexToCacheEntry = std::unordered_map<uint64_t, CacheEntry>;
-using IndexToCacheEntryNode = typename IndexToCacheEntry::node_type;
+using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 
 /**
   * Storage for storing and handling deserialized entries from disk.
-  * It consists of 2 in-memory caches that rely heavily on the way
-  * entries are used in Raft.
-  * Random and repeated access to certain entries is almost never done so we can't implement a solution
-  * like LRU/SLRU cache because entries would be cached and never read again.
-  * Entries are often read sequentially for 2 cases:
-  * - for replication
-  * - for committing
+  * It consists of an in-memory cache and two decoded read-ahead subsystems, relying on the fact
+  * that entries are read sequentially in Raft (replication, committing) rather than randomly, so
+  * an LRU/SLRU-style cache would not help.
   *
-  * First cache will store latest logs in memory, limited by the latest_logs_cache_size_threshold coordination setting.
-  * Once the log is persisted to the disk, we store its location in the file and allow the storage
-  * to evict that log from cache if it's needed.
-  * Latest logs cache should have a high hit rate in "normal" operation for both replication and committing.
+  * The latest logs cache holds the most recent logs in memory (unflushed tail plus a flushed
+  * suffix), bounded by latest_logs_cache_size_threshold; once persisted, its location is recorded
+  * (logs_location) and the entry may be evicted.
   *
-  * As we commit (and read) logs sequentially, we will try to read from latest logs cache.
-  * In some cases, latest logs could be ahead from last committed log by more than latest_logs_cache_size_threshold
-  * which means that for each commit we would need to read the log from disk.
-  * In case latest logs cache hits the threshold we have a second cache called commit logs cache limited by commit_logs_cache_size_threshold.
-  * If a log is evicted from the latest logs cache, we check if we can move it to commit logs cache to avoid re-reading the log from disk.
-  * If latest logs cache moves ahead of the commit log by a lot or commit log hits the threshold
-  * we cannot move the entries from latest logs and we will need to refill the commit cache from disk.
-  * To avoid reading entry by entry (which can have really bad effect on performance because we support disks based on S3),
-  * we try to prefetch multiple entries ahead of time because we know that they will be read by commit thread
-  * in the future.
-  * Commit logs cache should have a high hit rate if we start with a lot of unprocessed logs that cannot fit in the
-  * latest logs cache.
+  * Replication is served by per-peer read-ahead readers (per_peer_readers): each follower gets a
+  * dedicated reader decoding entries ahead of the requested range, bounded by keeper_log_readahead_*.
+  *
+  * Committing is served by a single always-on commit read-ahead reader (commit_reader), built on
+  * the same machinery but exempt from peer capacity limits and idle eviction, with its window sized
+  * by commit_logs_cache_size_threshold. Lookup order: in-memory hits -> commit reader fast-path pop
+  * -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as fallback.
+  *
+  * Both planners derive fill cursors from per-file valid-run metadata (ChangelogFileDescription::
+  * valid_runs, appendRunCursors), bounding every cursor to a single run of current records. This
+  * covers the active file's flushed prefix too, so peer read-ahead needs no separate seal bit.
   */
 
 /// Settings for the per-peer decoded changelog read-ahead subsystem.
@@ -298,7 +295,7 @@ struct LogEntryStorage
     /// below start or a file was removed from disk. read_deadline_ms=0 means no deadline; if exceeded,
     /// returns the prefix decoded so far.
     /// TSA: changelog_lock released by caller after plan build; file lifetime held by ChangelogFileDescriptionPtr
-    /// refs in the plan; commit_logs_cache_mutex taken internally for cache reads.
+    /// refs in the plan.
     LogEntriesPtr executeReadPlan(const LogReadPlan & plan, uint64_t read_deadline_ms = 0) const TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     /// Build a read-ahead plan. Must be called under changelog_lock (shared).
@@ -312,6 +309,19 @@ struct LogEntryStorage
 
     bool isReadAheadEnabled() const { return readahead_settings.enabled; }
 
+    /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
+    LogEntryPtr getEntryFromMemory(uint64_t index) const;
+
+    /// Commit read-ahead fast path: pop the commit reader's deque front iff it equals index.
+    LogEntryPtr tryPopCommitReadAhead(uint64_t index);
+
+    /// Build a single-entry commit plan with bounded fill cursors. Under changelog_lock (shared).
+    LogReadPlan getCommitReadPlan(uint64_t index, uint64_t retained_start) const;
+
+    /// Serve a commit read: install cursors, bounded wait, blocking fallback read. Called without
+    /// changelog_lock; returns nullptr only if the entry is genuinely gone.
+    LogEntryPtr serveCommitEntry(uint64_t index, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
     bool isConfigLog(uint64_t index) const;
@@ -321,33 +331,26 @@ struct LogEntryStorage
     size_t getFirstIndex() const;
 
     void shutdown();
+
+    /// Test-only: verify valid-run metadata is consistent with logs_location. Must be called while
+    /// the instance is quiescent.
+    void checkValidRunsConsistency() const;
 private:
-    void prefetchCommitLogs();
-
-    void startCommitLogsPrefetch(uint64_t last_committed_index) const TSA_REQUIRES(commit_logs_cache_mutex);
-
-    bool shouldMoveLogToCommitCache(uint64_t index, size_t log_entry_size) TSA_REQUIRES(commit_logs_cache_mutex);
-
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
     struct InMemoryCache
     {
         explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
 
-        void addEntry(uint64_t index, size_t size, CacheEntry log_entry);
-        void addEntry(IndexToCacheEntryNode && node);
+        void addEntry(uint64_t index, size_t size, LogEntryPtr log_entry);
 
         void updateStatsWithNewEntry(uint64_t index, size_t size);
 
-        IndexToCacheEntryNode popOldestEntry();
+        void popOldestEntry();
 
         bool containsEntry(uint64_t index) const;
 
         LogEntryPtr getEntry(uint64_t index) const;
-
-        CacheEntry * getCacheEntry(uint64_t index);
-        const CacheEntry * getCacheEntry(uint64_t index) const;
-        PrefetchedCacheEntryPtr getPrefetchedCacheEntry(uint64_t index);
 
         void cleanUpTo(uint64_t index);
         void cleanAfter(uint64_t index);
@@ -360,7 +363,7 @@ private:
         bool hasUnlimitedSpace() const;
 
         /// Mapping log_id -> log_entry
-        mutable IndexToCacheEntry cache;
+        IndexToLogEntry cache;
         size_t cache_size = 0;
         size_t min_index_in_cache = 0;
         size_t max_index_in_cache = 0;
@@ -371,42 +374,11 @@ private:
 
     InMemoryCache latest_logs_cache;
 
-    mutable SharedMutex commit_logs_cache_mutex;
-    mutable InMemoryCache commit_logs_cache TSA_GUARDED_BY(commit_logs_cache_mutex);
-
-    /// Cache optimization: stores max(lastCommittedIndex from getEntry, cleanUpTo parameter).
-    /// Invariant: cache is cleaned to at least this index. Used by getEntry to skip
-    /// the exclusive lock on commit_logs_cache_mutex when the committed index has not advanced.
-    /// Both getEntry and cleanUpTo write to this; writes are conditional (only advance, never regress)
-    /// so that an external cleanUpTo with a lower compaction index does not invalidate the optimization.
-    /// Reset to 0 in clear().
-    mutable std::atomic<uint64_t> last_cleaned_committed_index{0};
-
     LogEntryPtr latest_config;
     uint64_t latest_config_index = 0;
 
     mutable LogEntryPtr first_log_entry;
     mutable uint64_t first_log_index = 0;
-
-    std::unique_ptr<ThreadFromGlobalPool> commit_logs_prefetcher;
-
-    struct FileReadInfo
-    {
-        ChangelogFileDescriptionPtr file_description;
-        size_t position{};
-        size_t count{};
-    };
-
-    struct PrefetchInfo
-    {
-        std::vector<FileReadInfo> file_infos;
-        std::pair<uint64_t, uint64_t> commit_prefetch_index_range;
-        std::atomic<bool> cancel;
-        std::atomic<bool> done = false;
-    };
-
-    mutable ConcurrentBoundedQueue<std::shared_ptr<PrefetchInfo>> prefetch_queue;
-    mutable std::shared_ptr<PrefetchInfo> current_prefetch_info;
 
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
@@ -432,6 +404,15 @@ private:
     KeeperContextPtr keeper_context;
     LoggerPtr log;
 
+    /// Append bounded fill cursors covering `file`'s valid runs over [from_index, end_limit).
+    /// PRECONDITION: caller holds changelog_lock (shared); from_index is located and its location is in
+    /// `file`. Returns the exclusive end of the emitted coverage (== from_index when nothing to emit).
+    uint64_t appendRunCursors(
+        LogReadPlan::ReadAheadWindow & window,
+        const ChangelogFileDescriptionPtr & file,
+        uint64_t from_index,
+        uint64_t end_limit) const;
+
     /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
     void retireReaderLocked(int32_t peer_id, const std::shared_ptr<PerPeerReader> & reader) TSA_REQUIRES(per_peer_readers_mutex);
 
@@ -449,6 +430,11 @@ private:
     std::shared_ptr<PerPeerReader> acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
         TSA_REQUIRES(per_peer_readers_mutex);
 
+    /// Create a fresh reader and schedule its fill task. Returns nullptr if the pool is unavailable
+    /// (post-shutdown). Shared by per-peer and commit-reader acquisition; does not touch the maps.
+    std::shared_ptr<PerPeerReader> makeReaderLocked(uint64_t start_index, size_t budget_bytes, std::chrono::steady_clock::time_point now)
+        TSA_REQUIRES(per_peer_readers_mutex);
+
     /// Install the new plan into an existing reader (rewind if non-sequential, push fill cursors).
     /// Caller holds reader.deque_mutex.
     void installPlanLocked(PerPeerReader & reader, const LogReadPlan & plan);
@@ -464,6 +450,20 @@ private:
     std::unordered_map<int32_t, std::shared_ptr<PerPeerReader>> per_peer_readers TSA_GUARDED_BY(per_peer_readers_mutex);
     std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(per_peer_readers_mutex);
     std::chrono::steady_clock::time_point last_eviction_scan TSA_GUARDED_BY(per_peer_readers_mutex);
+
+    /// Sentinel peer id for the commit reader (logging + drainReader retire routing).
+    static constexpr int32_t COMMIT_READER_ID = -2;
+    /// Always-on reader feeding the NuRaft commit loop; owned separately from per_peer_readers,
+    /// exempt from max_peer_readers capacity and idle eviction.
+    std::shared_ptr<PerPeerReader> commit_reader TSA_GUARDED_BY(per_peer_readers_mutex);
+    /// Commit reader window byte budget (LogFileSettings.commit_logs_cache_size_threshold).
+    /// commit_logs_cache_entry_count_threshold has no effect: a sequentially-drained window
+    /// gains nothing from an entry-count bound.
+    size_t commit_readahead_window_bytes = 0;
+
+    std::shared_ptr<PerPeerReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
+        TSA_REQUIRES(per_peer_readers_mutex);
+    void retireCommitReaderLocked() TSA_REQUIRES(per_peer_readers_mutex);
 };
 
 /// Simplest changelog with files rotation.
@@ -515,6 +515,16 @@ public:
     LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
     bool isReadAheadEnabled() const;
 
+    /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
+    LogEntryPtr entryFromMemory(uint64_t index) const;
+    /// Commit read-ahead fast path: pop the commit reader's deque front iff it equals index.
+    LogEntryPtr tryPopCommitReadAhead(uint64_t index);
+    /// Build a single-entry commit plan with bounded fill cursors. Under changelog_lock (shared).
+    LogReadPlan getCommitReadPlan(uint64_t index) const;
+    /// Serve a commit read: install cursors, bounded wait, blocking fallback read. Called without
+    /// changelog_lock; returns nullptr only if the entry is genuinely gone.
+    LogEntryPtr serveCommitEntry(uint64_t index, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
 
@@ -547,6 +557,9 @@ public:
     bool isInitialized() const;
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
+
+    /// Test-only: forwards to LogEntryStorage::checkValidRunsConsistency.
+    void checkValidRunsConsistencyForTests() const { entry_storage.checkValidRunsConsistency(); }
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 
