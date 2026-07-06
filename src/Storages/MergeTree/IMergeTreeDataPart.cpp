@@ -1285,11 +1285,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadIndexGranularity();
 
         /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata depends
-        /// on `source_parts_set.getSortKeyPrefixSize()` (see `MergeTreeData::getPatchPartMetadata`
-        /// and `getPatchPartMetadataV2`) to slice the sort key to the shape the patch was written
-        /// with. Reading `primary.cidx` with a wrong column count (prefix_size=0 → just the two
-        /// identity columns) throws `EXPECTED_END_OF_FILE` because the on-disk file has more data
-        /// than the stale metadata expects.
+        /// on `source_parts_set.getSortKeyPrefixSize()`, and loading the index with a wrong
+        /// sort-key column count would throw.
         loadSourcePartsSet();
 
         /// It's important to load index after index granularity.

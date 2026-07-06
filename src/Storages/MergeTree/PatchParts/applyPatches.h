@@ -76,9 +76,6 @@ PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache:
 /// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns; within
 /// each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which main-side row
 /// matches which patch-side row. Memory bounded by the largest equal-sort-key run (usually 1).
-/// The `sorting_key` argument is the shared semantic-prefix `KeyDescription` pointed to by
-/// `PatchPartInfoForReader::sorting_key` — no trailing `_block_number`/`_block_offset` identity
-/// columns.
 PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key);
 
 /// Updates rows in result_block from patch_block at specified indices.

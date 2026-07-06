@@ -540,11 +540,8 @@ ColumnRawPtrs extractSortingKeyColumns(const Block & block, const Names & sortin
     return out;
 }
 
-/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags. Both
-/// `SortKeyColumns` must have been resolved against the same ordered `sorting_key_column_names`;
-/// indices line up with `reverse_flags`. Returns <0, =0, or >0 using the same convention as
-/// `IColumn::compareAt` (NULL-aware, nan-last). `reverse_flags` is the `std::vector<bool>` carried
-/// directly from the patch's semantic-prefix `KeyDescription::reverse_flags`.
+/// Compares sort-key tuples at two (block, row) positions, honouring DESC flags.
+/// Returns <0, =0, or >0 using the same convention as `IColumn::compareAt`.
 ALWAYS_INLINE int compareSortKeyRows(
     const ColumnRawPtrs & lhs_columns,
     size_t lhs_row,
@@ -582,13 +579,8 @@ ALWAYS_INLINE int compareSortKeyRows(
 /// Galloping (exponential) partition-point search: returns the smallest `i` in `[begin, end)`
 /// such that `compareSortKeyRows(search_key[i], pivot_key[pivot_row])` is `< 0` when
 /// `is_lower_bound == true` (lower bound), or `>= 0` when `is_lower_bound == false` (upper bound).
-/// Used in two directions here: driven from the patch side into main to advance past runs of
-/// equal main keys, and driven from the main side into patch to skip patch rows that fall
-/// before/after the main block's key range when a patch is shared across several main blocks.
-/// When one side is much smaller, this collapses merge complexity from `O(m + p)` to
-/// `O(min(m, p) * log(max(m, p) / min(m, p)))` comparisons, matching the information-theoretic
-/// optimum for merging unbalanced sorted streams. With `gap = 1` (dense patches) it degrades to
-/// 1–2 extra comparisons per step vs. linear scan, so no adaptive fallback is needed.
+/// When one side of the merge is much smaller, this collapses its complexity from `O(m + p)` to
+/// `O(min * log(max / min))` comparisons; with `gap = 1` it costs only 1-2 extra comparisons per step.
 template <bool is_lower_bound>
 ALWAYS_INLINE size_t gallopingBinarySearch(
     const ColumnRawPtrs & search_key,
@@ -677,16 +669,12 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     const auto main_sorting_key = extractSortingKeyColumns(main_block_copy, sorting_key_names);
     const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key_names);
 
-    /// Degenerate sorting key (tuple of no columns): by design the "equal-sort-key run" is the whole
-    /// block on both sides. We fall through to the hash-map branch and build a map over the full
-    /// patch — this mirrors today's Join-mode memory profile exactly, by user-locked decision.
+    /// Degenerate sorting key (tuple of no columns): the "equal-sort-key run" is the whole block
+    /// on both sides; we fall through to the hash-map branch over the full patch (like v1 Join mode).
     size_t main_idx = 0;
 
-    /// A single patch block can be shared across several main blocks, so it often carries a long
-    /// prefix of rows whose sort key is strictly below `main[0]`. Those rows cannot match anything
-    /// in this main block. Without this jump, each one costs a full pass through the merge loop
-    /// (galloping search on main returns 0, we compare, we `++patch_idx`) — `O(prefix)` work. One
-    /// galloping binary search on the patch side finds the first candidate in `O(log prefix)`.
+    /// A patch block shared across several main blocks often carries a long prefix of rows below
+    /// `main[0]` that cannot match anything here; skip it in `O(log prefix)` instead of row by row.
     size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, main_sorting_key, 0, reverse_flags);
 
     /// The patch stream is typically much smaller than the main stream, so we drive the merge
@@ -750,11 +738,8 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         patch_idx = patch_run_end;
     }
 
-    /// Remove all unneeded columns from patch block
-    /// and keep in block only the updated columns. Source columns (physical inputs to
-    /// `sorting_key.expression`) are derived directly from the shared KeyDescription; for a plain
-    /// sort key they equal the result columns, for expression sort keys (e.g. `cityHash64(id)`)
-    /// they are the expression inputs (`id`).
+    /// Remove all unneeded columns from the patch block (sort-key results and their physical
+    /// source columns, identity columns) and keep only the updated columns.
     auto erase_column = [&](const String & column_name)
     {
         if (patch_block_copy.has(column_name))

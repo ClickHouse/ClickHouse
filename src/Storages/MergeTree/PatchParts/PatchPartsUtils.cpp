@@ -127,21 +127,9 @@ StorageMetadataPtr getPatchPartMetadataV2(
 {
     StorageInMemoryMetadata part_metadata;
 
-    /// Keep `_part` on disk — it's the first argument of the partition expression
-    /// `__patchPartitionID(_part, hash(...))` that routes rows to the right
-    /// `patch-<hash>-<original_partition_id>` partition, and dropping it from the stored
-    /// columns breaks the sink's header match against the mutation pipeline (which always
-    /// emits `_part`). In practice `_part` is `LowCardinality(String)` with at most a handful
-    /// of distinct values — a few KB on disk per patch.
-    ///
-    /// Drop `_part_offset` — it was v1's sort-key tie-breaker and is purely dead weight on
-    /// disk for v2 (the apply path keys on sort-key columns + `_block_number`/`_block_offset`,
-    /// never on `_part_offset`). The mutation pipeline still emits the column but the writer
-    /// filters down to the metadata's stored columns (`writeTempPartImpl` filters via
-    /// `metadata_snapshot->getColumns().getAllPhysical().filter(block.getNames())`), so the
-    /// extra block column is silently dropped before anything touches disk.
-    /// Ensure v2 identity + version columns are present (they may be missing when constructing
-    /// an empty coverage part via createEmptyPart).
+    /// Keep `_part` on disk — it's an argument of the partition expression and the sink's header must
+    /// match the mutation pipeline, which always emits it. Drop `_part_offset` — v1's tie-breaker, dead
+    /// weight for v2. Ensure identity + version columns are present (may be missing for `createEmptyPart`).
     auto ensure_column = [&](const String & name, const DataTypePtr & type)
     {
         if (!patch_part_desc.has(name))
@@ -154,12 +142,9 @@ StorageMetadataPtr getPatchPartMetadataV2(
     ensure_column(BlockOffsetColumn::name, BlockOffsetColumn::type);
     ensure_column(PartDataVersionColumn::name, PartDataVersionColumn::type);
 
-    /// Pull the sort-key expression list from the target table's KeyDescription and take only
-    /// the first `sorting_key_prefix_size` children — that's exactly the shape the patch was
-    /// written with (see `SourcePartsSetForPatch::getSortKeyPrefixSize`). Slicing decouples the
-    /// patch's on-disk layout from later additions to the target table's sort key; it also lets
-    /// `ORDER BY tuple()` (or any shorter prefix) produce a sort key with only the two identity
-    /// columns, matching the design's degenerate-sort-key case.
+    /// Take only the first `sorting_key_prefix_size` children of the table's sort-key expression
+    /// list — exactly the shape the patch was written with. Slicing decouples the patch's on-disk
+    /// layout from later additions to the target table's sort key.
     const auto * sorting_key_expr_list = main_sorting_key.expression_list_ast ? main_sorting_key.expression_list_ast->as<ASTExpressionList>() : nullptr;
     const size_t main_sorting_key_children = sorting_key_expr_list ? sorting_key_expr_list->children.size() : 0;
 
@@ -171,17 +156,9 @@ StorageMetadataPtr getPatchPartMetadataV2(
             sorting_key_prefix_size, main_sorting_key_children);
     }
 
-    /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input uses the *stored*
-    /// column names (including `_part`), a serialized form of the target table's sort-key AST,
-    /// and a v2 marker. Serializing the AST (not just the final column names) ensures that two
-    /// tables with sort keys that collide in their *result* names but differ in expression
-    /// structure still land in different partitions. The v2 marker guarantees that v1 and v2
-    /// patches never land in the same partition even if they happen to cover identical columns.
-    /// After `ALTER MODIFY ORDER BY`, the new AST text changes and pre-ALTER patches end up in a
-    /// different partition than post-ALTER patches — they never co-merge. We hash the full
-    /// main-table AST rather than the sliced prefix so the hash is stable against incidental
-    /// reconstruction differences (fresh `ASTExpressionList` vs the parsed one) — any real
-    /// change to the sort-key prefix already shows up in the main AST text.
+    /// Partition id: `__patchPartitionID(_part, hash(...))`. Hash input = stored column names, the
+    /// serialized text of the table's full sort-key AST, and a v2 marker — so patches with different
+    /// columns, pre/post-`ALTER MODIFY ORDER BY` patches, and v1 vs v2 patches never co-merge.
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
 
     Names hash_input = patch_part_desc.getNamesOfPhysical();

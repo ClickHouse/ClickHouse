@@ -30,18 +30,9 @@ public:
 
     SourcePartsSetForPatch() = default;
 
-    /// Explicit constructor that eagerly builds the shared semantic sort-key prefix
-    /// `KeyDescription` from `metadata_snapshot`. For v1 (`format_version_ = V1_FORMAT_VERSION`
-    /// and `sorting_key_prefix_size_ = std::nullopt`), `sorting_key_prefix_description` stays
-    /// null. For v2 (`format_version_ = V2_FORMAT_VERSION` and `sorting_key_prefix_size_ = <n>`),
-    /// the constructor slices `metadata_snapshot->getSortingKey().expression_list_ast` to `n`
-    /// children and re-runs `KeyDescription::getKeyFromAST`, producing a prefix `KeyDescription`
-    /// that every downstream `PatchPartInfo` shares via `std::shared_ptr`. The result is the
-    /// semantic prefix *only* — the two trailing identity columns (`_block_number`,
-    /// `_block_offset`) are NOT included, since the apply path handles them separately.
-    /// Taking `metadata_snapshot` at construction time means every caller that creates a
-    /// `SourcePartsSetForPatch` already has access to the table's metadata; we never have to
-    /// synchronise a lazy build or fall back to the patch-part metadata path at query time.
+    /// For v2 patches eagerly builds `sorting_key_prefix_description` from `metadata_snapshot`
+    /// by slicing the table's ORDER BY expression list to `sorting_key_prefix_size_` children.
+    /// For v1 patches (`sorting_key_prefix_size_ = std::nullopt`) the description stays null.
     SourcePartsSetForPatch(
         const StorageMetadataPtr & metadata_snapshot,
         UInt8 format_version_,
@@ -56,10 +47,8 @@ public:
 
     UInt8 getFormatVersion() const { return format_version; }
 
-    /// Number of semantic sort-key columns in the v2 patch's sort key — i.e. the length of the
-    /// sort-key prefix, excluding the two trailing identity columns `_block_number` and
-    /// `_block_offset`. Captured from the target table's sort key at write time and persisted
-    /// alongside the format-version byte; zero for v1 patches.
+    /// Length of the semantic sort-key prefix of the v2 patch, excluding the trailing
+    /// `_block_number`, `_block_offset` identity columns. Zero for v1 patches.
     UInt64 getSortKeyPrefixSize() const { return sorting_key_prefix_size; }
 
     /// Shared semantic sort-key prefix `KeyDescription`. Built eagerly in the explicit
@@ -101,29 +90,17 @@ private:
     UInt64 min_data_version = 0;
     UInt64 max_data_version = 0;
 
-    /// Format version of the patch part on disk. Populated on read from the version byte;
-    /// set via the explicit constructor before write. See `V1_FORMAT_VERSION` /
-    /// `V2_FORMAT_VERSION`. Only the prefix *length* is persisted (`sorting_key_prefix_size`
-    /// below), not the sort-key AST itself; v2 readers rebuild the AST from the target table's
-    /// current `StorageMetadataPtr` and slice it to that length (see
-    /// `MergeTreeData::getPatchPartMetadata` and `MergeTreeData::getAlterConversionsForPart`).
-    /// The partition-id hash — computed over the sort-key AST-prefix text at write time and
-    /// embedded in the patch's partition name — keeps v1 and v2 patches, and pre/post-`ALTER
-    /// MODIFY ORDER BY` patches, isolated from each other's merges.
+    /// Format version of the patch part on disk (see `V1_FORMAT_VERSION` / `V2_FORMAT_VERSION`).
+    /// Only the prefix *length* is persisted, not the sort-key AST: v2 readers rebuild the AST
+    /// from the table's current metadata and slice it to `sorting_key_prefix_size`.
     UInt8 format_version = V1_FORMAT_VERSION;
 
-    /// Length of the semantic sort-key prefix persisted on the v2 patch. Written to
-    /// `source_parts.dat` right after `format_version`; zero and unused for v1 patches. Stored
-    /// so that readers can directly slice the target table's sort key to the shape the patch was
-    /// written with, instead of deriving `n_semantic = n_full - 2` by subtracting the two
-    /// identity columns after a `getPatchPartMetadataV2` rebuild.
+    /// Length of the semantic sort-key prefix persisted on the v2 patch, written to
+    /// `source_parts.dat` right after `format_version`. Zero and unused for v1 patches.
     UInt64 sorting_key_prefix_size = 0;
 
-    /// Semantic sort-key prefix as a `KeyDescription`, shared across every `PatchPartInfo`
-    /// produced from this set. Built once, eagerly — either in the explicit constructor (sink
-    /// and merge paths) or in `readBinary` (disk-load path) — and then handed out as a
-    /// `std::shared_ptr<const>` copy to each `PatchPartInfo`. Nullptr for v1 patches and for
-    /// default-constructed sets (no metadata supplied).
+    /// Semantic sort-key prefix as a `KeyDescription`, built eagerly in the explicit constructor
+    /// or in `readBinary` and shared across every `PatchPartInfo` produced from this set. Nullptr for v1.
     std::shared_ptr<const KeyDescription> sorting_key_prefix_description;
 };
 
