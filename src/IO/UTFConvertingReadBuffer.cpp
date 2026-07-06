@@ -144,6 +144,7 @@ void UTFConvertingReadBuffer::detectBOM()
 {
     uint8_t bom_buffer[4] = {};
     size_t bytes_read = 0;
+    bool called_next = false;
 
     while (bytes_read < 4)
     {
@@ -161,6 +162,7 @@ void UTFConvertingReadBuffer::detectBOM()
             {
                 break;
             }
+            called_next = true;
         }
 
         size_t available = impl->available();
@@ -197,8 +199,15 @@ void UTFConvertingReadBuffer::detectBOM()
         encoding = Encoding::UTF8;
         if (bytes_read > 3)
         {
-            memcpy(pending_bytes, bom_buffer + 3, bytes_read - 3);
-            pending_bytes_count = bytes_read - 3;
+            if (!called_next)
+            {
+                impl->position() -= (bytes_read - 3);
+            }
+            else
+            {
+                memcpy(pending_bytes, bom_buffer + 3, bytes_read - 3);
+                pending_bytes_count = bytes_read - 3;
+            }
         }
         return;
     }
@@ -229,8 +238,15 @@ void UTFConvertingReadBuffer::detectBOM()
     encoding = Encoding::UTF8;
     if (bytes_read > 0)
     {
-        memcpy(pending_bytes, bom_buffer, bytes_read);
-        pending_bytes_count = bytes_read;
+        if (!called_next)
+        {
+            impl->position() -= bytes_read;
+        }
+        else
+        {
+            memcpy(pending_bytes, bom_buffer, bytes_read);
+            pending_bytes_count = bytes_read;
+        }
     }
 }
 
