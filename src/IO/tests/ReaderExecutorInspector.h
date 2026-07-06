@@ -94,13 +94,13 @@ public:
     }
 
     /// Long-connection probes.
-    bool hasLongConn() const { return ex.long_conn.has_value(); }
-    size_t longConnPosition() const { return ex.long_conn ? ex.long_conn->current_position : 0; }
-    size_t longConnBound() const { return ex.long_conn ? ex.long_conn->read_until : 0; }
-    bool longConnServes(const String & path) const { return ex.long_conn && ex.long_conn->servesObject(path); }
+    bool hasLongConn() const { return ex.fill_lane.conn.has_value(); }
+    size_t longConnPosition() const { return ex.fill_lane.conn ? ex.fill_lane.conn->current_position : 0; }
+    size_t longConnBound() const { return ex.fill_lane.conn ? ex.fill_lane.conn->read_until : 0; }
+    bool longConnServes(const String & path) const { return ex.fill_lane.conn && ex.fill_lane.conn->servesObject(path); }
     bool longConnCanContinue(size_t off, size_t want) const
     {
-        return ex.long_conn && ex.long_conn->canContinue(off, want, ex.min_bytes_for_seek);
+        return ex.fill_lane.conn && ex.fill_lane.conn->canContinue(off, want, ex.min_bytes_for_seek);
     }
 
     /// Wrappers around the private reach / open-decision math.
@@ -128,7 +128,7 @@ public:
         LongConnectionSlot slot = ex.long_connection_limit
             ? ex.long_connection_limit->tryAcquire(ex.long_connection_limit)
             : LongConnectionSlot{};
-        ex.openLong(ex.long_conn, pr.object, pr.object_offset, read_end, std::move(slot), ex.stats);
+        ex.openLong(ex.fill_lane.conn, pr.object, pr.object_offset, read_end, std::move(slot), ex.stats);
     }
 
     ChainedBuffers serveFromLong(size_t phys_offset, size_t want)
@@ -137,10 +137,10 @@ public:
         chassert(!ranges.empty());
         const auto & pr = ranges.front();
         auto blocks = ReaderExecutor::allocateBlocks(want, ex.block_size, {});
-        return ex.serveFromLong(ex.long_conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, ex.stats);
+        return ex.serveFromLong(ex.fill_lane.conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, ex.stats);
     }
 
-    void dropLong() { ex.dropLong(ex.long_conn, ex.stats); }
+    void dropLong() { ex.dropLong(ex.fill_lane.conn, ex.stats); }
 
 private:
     ReaderExecutor & ex;

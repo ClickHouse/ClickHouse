@@ -508,11 +508,6 @@ private:
         /// serve thread never blocks fetching a led run PAST a sibling-led hole (the caller's next
         /// read resolves the boundary). A pool worker keeps the full-window fetch.
         bool inline_serve = false;
-        /// Strategy-A pin taken by the fill step over the partial segment it just
-        /// filled, held until the reap: the foreground finalize runs BEFORE the fill,
-        /// so its `writerPinAt` finds a still-empty segment - without this, an eviction
-        /// sweep between the fill landing and the next read would drop it.
-        CacheWriter::CacheSegmentPin fill_pin;
         /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime.
         CurrentMetrics::Increment inflight_gauge;
     };
@@ -590,7 +585,7 @@ private:
         ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
 
     /// Shared tail of an assembled window: re-point the Strategy-A pin
-    /// (`inflight_segment_pin`) to the partial segment under `pin_frontier`
+    /// (the lane's `pin`) to the partial segment under `pin_frontier`
     /// (cleared at EOF), then slice `result` to `slice_window` and enforce the
     /// single-contiguous-run-from-the-window-start guarantee.
     ChainedBuffers finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, ChainedBuffers & result, bool eof_latch);
@@ -849,6 +844,22 @@ private:
         /// write verbs.
         size_t write(CacheWriter & writer, ChainedBuffers && slice, bool streaming);
 
+        /// Source-side ownership (T2). The lane holds THE long connection and the in-flight
+        /// segment pin. A POOL piece borrows the connection for its flight (`lend`/`reclaim`
+        /// are the only movers); an INLINE piece runs on the serve thread and uses the slot
+        /// directly - no borrow. While the connection is LENT the lane refuses to open
+        /// another (`shouldOpenLong`), so a foreground read during a pool flight degrades to
+        /// a one-shot: "the foreground holds no connection mid-flight" is lane state, not a
+        /// chassert at every collect site.
+        std::optional<LongConnection> conn;
+        /// Pin on the partial segment under the fill frontier (plan-scoped: dropped BEFORE
+        /// the plan's writers tear down - the `[CF-plan-rebuild]` aliasing invariant).
+        CacheWriter::CacheSegmentPin pin;
+        bool conn_lent = false;
+
+        void lend(FetchMachine & m);
+        void reclaim(FetchMachine & m);
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     private:
         /// The exclusion guard: a same-writer concurrent write means the machine slot's
@@ -1084,20 +1095,10 @@ private:
     /// pool. The destructor waits on each; running calls sweep finished ones.
     VectorWithMemoryTracking<std::shared_ptr<FetchMachine>> abandoned_machines;
 
-    /// Connection state. The Strategy-A pin holding the partial cache segment
-    /// under the live fill frontier non-evictable across windows: re-pointed at
-    /// each `finalizeAssembledWindow`, dropped on seek / EOF / plan rebuild.
-    /// Foreground-only (a prefetch worker does a pure source fetch and never
-    /// touches it). NOT long-connection state - a one-shot fill needs it too.
-    CacheWriter::CacheSegmentPin inflight_segment_pin;
     /// Server-wide long-connection limit handle, shared with
     /// `makeTransientForReadAt`. Gates long-connection opens (the
     /// `reader_executor_use_long_connections` setting).
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
-    /// The held long source connection. Foreground hold; it rides the machine
-    /// payload when a prefetch carries it (`takeLong` at launch, reclaimed at
-    /// collect). Empty when no long connection is currently open.
-    std::optional<LongConnection> long_conn;
 
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
     /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a

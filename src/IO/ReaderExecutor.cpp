@@ -290,10 +290,10 @@ ReaderExecutor::~ReaderExecutor()
 
     /// Account and release a still-held long connection abandoned at teardown.
     /// Never drain here - a source read can throw and this destructor is noexcept.
-    if (long_conn)
+    if (fill_lane.conn)
     {
-        accountLongDrop(long_conn, /*at_eof=*/false, stats);
-        long_conn.reset();
+        accountLongDrop(fill_lane.conn, /*at_eof=*/false, stats);
+        fill_lane.conn.reset();
     }
 
     /// Emit the genuine over-read once, now that every serve has run: `overread_pending` holds
@@ -409,7 +409,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         /// Drop the in-flight fill pin at EOF instead of waiting for the caller to drop the
         /// `PipelineReadBuffer`; a subsequent seek-back re-establishes it.
-        inflight_segment_pin.reset();
+        fill_lane.pin.reset();
         return {};
     }
 
@@ -472,7 +472,7 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
     /// stops on the empty chain without a follow-up call - so drop the in-flight fill pin now
     /// rather than leaking it.
     if (reached_eof)
-        inflight_segment_pin.reset();
+        fill_lane.pin.reset();
 
     maybeLaunchAhead();
 
@@ -507,7 +507,7 @@ void ReaderExecutor::seek(size_t new_position)
 
     /// A seek away from the current frontier strands the in-flight fill segment;
     /// drop its pin (the next window re-establishes it).
-    inflight_segment_pin.reset();
+    fill_lane.pin.reset();
 
     position = new_position;
     reached_eof = false;
@@ -742,15 +742,12 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
     auto m = std::move(machine);
-    /// The foreground holds no long connection while a machine is in flight - it was
-    /// moved into the machine at launch; we reclaim it below.
-    chassert(!long_conn);
 
     if (collectRunner().tryCancelQueued(*m))
     {
         /// The worker never ran - the carried long connection is pristine; reclaim it
         /// so the synchronous read can continue it.
-        long_conn = takeLong(m->long_conn);
+        fill_lane.reclaim(*m);
         /// Still queued: revoke and let the caller read synchronously. Stash the
         /// machine - the pool's no-op pickup attaches a `ThreadGroupSwitcher`
         /// before checking cancellation, so ~ReaderExecutor must join it before
@@ -773,17 +770,28 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     collectRunner().waitReleased(*m);
 
     /// The fetch step failed: mandatory work, so the read fails. Keep the machine's
-    /// issued-I/O counters before rethrowing - the bytes crossed the wire.
+    /// issued-I/O counters before rethrowing - the bytes crossed the wire. A POOL machine's
+    /// carried connection dies with it (its mid-read state is not reusable), but it is no
+    /// longer LENT - the lane may open a fresh one. An INLINE step read through the LANE's
+    /// slot: a mid-read throw leaves that connection wire-desynced (`current_position` is
+    /// advanced only after the block loop), and continuing it would serve bytes from the
+    /// wrong offset - destroy it.
     if (m->failure)
     {
         stats += m->stats;
+        if (m->inline_serve && fill_lane.conn)
+        {
+            accountLongDrop(fill_lane.conn, /*at_eof=*/false, stats);
+            fill_lane.conn.reset();
+        }
+        fill_lane.conn_lent = false;
         std::rethrow_exception(m->failure);
     }
 
     /// The worker released the machine - reclaim the carried long connection (now
     /// advanced) so the next launch re-carries it (one GET across the run). Safe: the
     /// release edge has passed, so the worker no longer touches the payload.
-    long_conn = takeLong(m->long_conn);
+    fill_lane.reclaim(*m);
 
     const bool interrupted = m->state.load() == MachineState::Interrupted;
     /// Reconcile the worker's one-way EOF latch - ONLY here (its bytes are kept); the
@@ -1086,7 +1094,8 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         {
             const ByteRange piece{off, std::min(step, run_hi - off)};
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
-                m.extent_snapshot, &m.long_conn, &m, /*may_open_long=*/m.inline_serve, m.stats);
+                m.extent_snapshot, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m,
+                /*may_open_long=*/m.inline_serve, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
             led_bytes.append(std::move(run));
             if (m.interrupt_requested.load(std::memory_order_relaxed))
@@ -1129,22 +1138,11 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         /// an object boundary opens the tail object's connection with ITS own reach. Only in
         /// FOREGROUND context (`may_open_long`: the foreground itself and INLINE machines, which
         /// run on the serve thread) - the foreground stays the sole opener; a pool worker
-        /// carries what its launch gave it. The policy operates on the executor's `long_conn`
-        /// slot, so an inline machine's carried connection is borrowed into it and handed back.
-        if (may_open_long && lc)
-        {
-            const bool borrowed = lc != &long_conn;
-            if (borrowed)
-                long_conn = takeLong(*lc);
-            /// Hand back even when the policy throws (its drop path DRAINS over the network): a
-            /// connection stranded in the executor slot while a machine is in flight would break
-            /// the "foreground holds none mid-flight" invariant at the next collect.
-            SCOPE_EXIT({
-                if (borrowed)
-                    *lc = takeLong(long_conn);
-            });
+        /// carries what its launch gave it. The policy operates on the lane's slot, which for
+        /// every foreground caller IS `lc` - the old borrow/hand-back dance is gone with the
+        /// machine-carried foreground connections.
+        if (may_open_long)
             openLongIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
-        }
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
         /// `getOrSet` that would segment-align a miss runs later, in `assembleAndWriteBack`).
@@ -1250,17 +1248,17 @@ ChainedBuffers ReaderExecutor::finalizeAssembledWindow(ByteRange slice_window, s
     /// otherwise; clear the pin at EOF.
     if (!eof_latch && !is_transient)
     {
-        inflight_segment_pin = writerPinAt(pin_frontier);
+        fill_lane.pin = writerPinAt(pin_frontier);
 
         /// Test hook: pause here while the in-flight segment is pinned, so a test can
         /// drop/evict the cache and observe that the pinned segment survives. No-op
         /// unless enabled.
-        if (inflight_segment_pin)
+        if (fill_lane.pin)
             FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_window);
     }
     else
     {
-        inflight_segment_pin.reset();
+        fill_lane.pin.reset();
     }
 
     auto sliced = result.slice(slice_window);
@@ -1371,6 +1369,24 @@ size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && s
     return streaming ? writer.writeStreaming(std::move(slice)) : writer.write(std::move(slice));
 }
 
+void ReaderExecutor::FillLane::lend(FetchMachine & m)
+{
+    chassert(!m.long_conn);
+    m.long_conn = takeLong(conn);
+    conn_lent = m.long_conn.has_value();
+}
+
+void ReaderExecutor::FillLane::reclaim(FetchMachine & m)
+{
+    /// The worker no longer touches the payload (queued-cancel, or the release edge has
+    /// passed). The lane cannot hold a second connection meanwhile - opens are refused while
+    /// lent (`shouldOpenLong`) - which is what makes this a move, never an overwrite.
+    chassert(!(conn && m.long_conn));
+    if (m.long_conn)
+        conn = takeLong(m.long_conn);
+    conn_lent = false;
+}
+
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
     const ChainedBuffers & chain, Stats & out_stats, bool streaming)
 {
@@ -1449,7 +1465,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
         want += block->size();
 
     /// Drain a held/carried long connection if it can serve this fetch contiguously
-    /// within its bound. `lc` is the foreground's `long_conn` or the worker's machine
+    /// within its bound. `lc` is the lane's `conn` or the worker's machine
     /// payload, never the other's, so each thread drains only its own.
     ChainedBuffers head;  /// the prefix served from a held connection that drains to its bound mid-read
     if (lc && *lc)
@@ -1677,7 +1693,7 @@ bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
     /// the current read window - "a connection whose range exceeds the read window is
     /// long". Gated by the connection limit (the `reader_executor_use_long_connections`
     /// setting); suppressed under High/Critical pressure exactly where prefetch is.
-    if (long_conn || !long_connection_limit)
+    if (fill_lane.conn || fill_lane.conn_lent || !long_connection_limit)
         return false;
     const MemoryPressureLevel level
         = read_plan.geometry() ? read_plan.geometry()->pressure_level : MemoryPressureLevel::Normal;
@@ -1745,9 +1761,9 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
     /// `canStartServing` compares against the connection's OBJECT-LOCAL state, so the check
     /// takes `object_offset` (a physical position here would offset the comparison by the
     /// preceding blobs' size on a multi-blob file and drop a perfectly continuable channel).
-    if (long_conn && !(long_conn->servesObject(object.remote_path)
-            && long_conn->canStartServing(object_offset, min_bytes_for_seek)))
-        dropLong(long_conn, out_stats);
+    if (fill_lane.conn && !(fill_lane.conn->servesObject(object.remote_path)
+            && fill_lane.conn->canStartServing(object_offset, min_bytes_for_seek)))
+        dropLong(fill_lane.conn, out_stats);
     if (!shouldOpenLong(phys_offset))
         return;
     LongConnectionSlot slot = long_connection_limit->tryAcquire(long_connection_limit);
@@ -1757,7 +1773,7 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
         out_stats.add(Stats::LongConnectionFallbacks);
         return;
     }
-    openLong(long_conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
+    openLong(fill_lane.conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
         std::move(slot), out_stats);
 }
 
@@ -1883,7 +1899,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
             ? m->physical_window.offset
             : std::min(m->physical_window.end(), m->fill_chain.range().end());
         pushChainToWriters(m->writer_views, m->physical_window, m->fill_chain, m->stats);
-        /// Pin the partial segment under the just-written frontier until the reap (see `fill_pin`):
+        /// Pin the partial segment under the just-written frontier (the lane's slot):
         /// the foreground's finalize pinned BEFORE this fill landed, so a fresh segment was not
         /// pinnable there. A `readBigAt` transient reads its bounded extent once and is destroyed,
         /// so it pins NOTHING (mirrors `finalizeAssembledWindow`'s `!is_transient` guard) - else its
@@ -1894,7 +1910,9 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
                 if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
                     if (auto pin = view.writer->pin(fill_end))
                     {
-                        m->fill_pin = std::move(pin);
+                        /// The put runs inline at collect on the serve thread, so the pin goes
+                        /// straight to the lane's slot - no staging in the machine.
+                        fill_lane.pin = std::move(pin);
                         break;
                     }
             }
@@ -1911,16 +1929,6 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
 {
     /// The put wrote the shared `read_plan.bufs` writers in place (it held only
     /// non-owning views), so nothing comes home - just fold the pin, stats, and phase.
-
-    /// Hand the put's Strategy-A pin to the foreground slot the pre-machine
-    /// pin lived in: the fill landed, but its segment stays mid-stream until
-    /// the scan passes it. Dropping the pin at reap let an eviction snap the
-    /// next miss head back to the segment start - re-fetching aligned heads
-    /// inflates R/O, worst on small-extent loads. Reaps run oldest-first, so
-    /// the newest frontier wins; `finalizeAssembledWindow` keeps re-pointing /
-    /// clearing it exactly as before.
-    if (m.fill_pin)
-        inflight_segment_pin = std::move(m.fill_pin);
 
     /// A failed put is logged, never thrown - a read must not fail because
     /// cache population failed.
@@ -2090,7 +2098,11 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     if (!prefetch_ranges.empty())
         openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
             window.offset, stats);
-    m->long_conn = takeLong(long_conn);
+    /// A POOL piece borrows the lane's connection for its flight (the worker advances it
+    /// on its thread); an INLINE piece runs on the serve thread and reads through the
+    /// lane's slot directly - nothing to hand over.
+    if (!m->inline_serve)
+        fill_lane.lend(*m);
 
     m->run_step = makeFetchStep(*m);
 
@@ -2098,7 +2110,7 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     {
         /// Queue reject (pool runner only): the machine is parked, payload untouched - reclaim
         /// the pristine connection so the caller reads synchronously.
-        long_conn = takeLong(m->long_conn);
+        fill_lane.reclaim(*m);
         stats.add(Stats::PrefetchPoolFull);
         return false;
     }
@@ -2418,7 +2430,7 @@ bool ReaderExecutor::bankDirectRead(size_t ri, ByteRange window)
     /// a hung sibling leader (the election keeps losing) or a raced shrink/detach that staled
     /// the committed truth at the cursor. Empty = nothing there (EOF for this extent).
     ChainedBuffers direct = fetchGapsFromSource(window, /*from_prefetch=*/false, reached_eof,
-        read_plan.geometry()->pressure_level, read_extent_end, &long_conn, /*stop=*/nullptr,
+        read_plan.geometry()->pressure_level, read_extent_end, &fill_lane.conn, /*stop=*/nullptr,
         /*may_open_long=*/true, stats);
     if (direct.empty())
         return false;
@@ -2433,7 +2445,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     /// ONE window of THIS step, computed once for every serve path below: never past the step's
     /// end (a bridged retrieve spans several steps - an embedded faster-tier hit splits a gap
     /// into gap / hit / gap - and reading past the hit would break the 1:1 serve-to-schedule
-    /// mapping; the long connection still coalesces ACROSS steps via `long_conn`).
+    /// mapping; the long connection still coalesces ACROSS steps via the lane's `conn`).
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
     const size_t want
         = std::min({readCeiling(), step.output.end() - position_phys, boundedReadSize(effectiveWindowSize(level))});
@@ -2764,7 +2776,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// stay un-shrunk and the next `openWriteBuffers` would alias the same segment in two
     /// buffers). The pin is re-established through the NEW buffer on the next
     /// `finalizeAssembledWindow`.
-    inflight_segment_pin.reset();
+    fill_lane.pin.reset();
 
     /// Release the PREVIOUS plan's held buffers FIRST: each held write buffer's
     /// destructor finalizes its segments (`FileSegment::complete`) and each `~CacheView`
@@ -3087,9 +3099,6 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     /// The global `machine` was just moved out above, so `machineFor` reports no machine for
     /// this retrieve from here on; the banked `ready_bytes`/`fetched` stay valid - the cursor
     /// has not moved (`setReadExtent`), or a seek re-plans and rebuilds them (see `seek`).
-    /// The foreground holds no long connection while a machine is in flight (moved in
-    /// at launch); a queued machine's pristine one is reclaimed below.
-    chassert(!long_conn);
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})",
         m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
@@ -3099,7 +3108,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         /// The worker never ran - reclaim the carried connection (pristine). A seek
         /// keeps it (the read funnel decides bridge-or-reopen later); the destructor
         /// accounts it if still held.
-        long_conn = takeLong(m->long_conn);
+        fill_lane.reclaim(*m);
         /// Revoked before the worker ran - count it like the readNextWindow
         /// revoke path (but not destructor cleanup, which passes `cancelled=false`) so
         /// `ReaderExecutorPrefetchCancelled` / `reader_executor_log.prefetch_cancelled`
@@ -3122,6 +3131,11 @@ void ReaderExecutor::cancelMachine(bool cancelled)
         stats.add(Stats::PrefetchDiscardedRunning);
         collectRunner().requestInterrupt(*m);
         collectRunner().waitReleased(*m);
+        /// The carried connection is forfeited: it dies with the machine, UNACCOUNTED - the
+        /// joined handle makes the abandoned-list drain early-erase it before its accounting
+        /// block (a pre-existing gap; the queued-cancel path is the one that reclaims). No
+        /// longer LENT: the lane may open a fresh one.
+        fill_lane.conn_lent = false;
         abandoned_machines.push_back(std::move(m));
     }
 }
