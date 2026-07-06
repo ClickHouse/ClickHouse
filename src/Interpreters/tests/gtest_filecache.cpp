@@ -1601,7 +1601,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -1736,7 +1736,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
@@ -1854,7 +1854,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2242,7 +2242,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2295,7 +2295,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2340,7 +2340,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2413,7 +2413,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2504,7 +2504,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2563,7 +2563,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2609,7 +2609,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
