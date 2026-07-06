@@ -47,7 +47,7 @@ public:
         server_display_name = server.config().getString("display_name", host_name);
     }
 
-    Poco::Net::TCPServerConnection * createConnection(const Poco::Net::StreamSocket & socket, DB::TCPServer & tcp_server) override
+    Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, DB::TCPServer & tcp_server) override
     {
         try
         {

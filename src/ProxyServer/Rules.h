@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+#include <string>
 #include <vector>
 
 #include <ProxyServer/ConnectionsCounter.h>
@@ -36,7 +38,7 @@ struct RuleAction
 struct DefaultRule
 {
     RuleAction action;
-    LoadBalancingPolicy policy;
+    LoadBalancingPolicy policy = defaultLoadBalancingPolicy;
     std::unique_ptr<ILoadBalancer> load_balancer;
     std::shared_ptr<ConnectionsCounter> connections_counter;
 

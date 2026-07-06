@@ -1,4 +1,4 @@
-#include "ServerConfig.h"
+#include <ProxyServer/ServerConfig.h>
 
 #include <boost/functional/hash.hpp>
 

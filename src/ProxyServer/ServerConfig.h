@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include <base/types.h>
+
 namespace Proxy
 {
 
@@ -9,7 +11,7 @@ struct ServerConfig
 {
     std::string key;
     std::string host;
-    int tcp_port;
+    UInt16 tcp_port = 0;
 
     size_t id() const;
 

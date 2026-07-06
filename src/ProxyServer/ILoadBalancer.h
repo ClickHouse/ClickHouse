@@ -1,5 +1,8 @@
 #pragma once
 
+#include <optional>
+#include <string>
+
 #include <ProxyServer/ConnectionsCounter.h>
 
 namespace Proxy
