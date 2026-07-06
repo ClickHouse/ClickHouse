@@ -23,3 +23,16 @@ SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_rand FINAL
 SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE (k + rand()) % 2 = 0;
 
 DROP TABLE t_prewhere_final_rand;
+
+-- query-scoped constants like now are folded before the optimizer runs, so such filters keep moving
+SELECT '= filter with now is still moved =';
+
+DROP TABLE IF EXISTS t_prewhere_final_now;
+
+CREATE TABLE t_prewhere_final_now (ts DateTime, data String, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY ts;
+
+INSERT INTO t_prewhere_final_now SELECT toDateTime('2026-01-01 00:00:00') - INTERVAL number HOUR, 'x', 1 FROM numbers(100);
+
+SELECT count() > 0 FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_now FINAL WHERE ts >= now() - INTERVAL 1 DAY) WHERE explain LIKE '%Prewhere filter%';
+
+DROP TABLE t_prewhere_final_now;

@@ -5,3 +5,5 @@
 = non-deterministic condition is not moved =
 0
 0
+= filter with now is still moved =
+1
