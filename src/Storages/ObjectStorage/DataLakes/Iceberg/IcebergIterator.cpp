@@ -2,6 +2,7 @@
 #include <Common/CurrentThread.h>
 #if USE_AVRO
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <memory>
@@ -257,16 +258,18 @@ namespace
 {
 
 /// Resolve `iceberg_parallel_manifest_decode_threads` for one query.
-/// Returns 1 when the setting is unset/zero or there are no manifests to walk.
-size_t resolveParallelManifestDecodeThreads(const ContextPtr & ctx, size_t total_manifests)
+/// Returns 1 when the setting is unset/zero or there are no data manifests to walk.
+size_t resolveParallelManifestDecodeThreads(const ContextPtr & ctx, size_t total_data_manifests)
 {
     if (!ctx)
         return 1;
     size_t requested = ctx->getSettingsRef()[Setting::iceberg_parallel_manifest_decode_threads];
     if (requested == 0)
         requested = 1;
-    /// No point spawning more workers than there are manifests to walk.
-    return std::min<size_t>(requested, std::max<size_t>(total_manifests, 1));
+    /// No point spawning more workers than there are data manifests to walk; delete
+    /// manifests are drained serially before the producers start and never participate
+    /// in the parallel decode.
+    return std::min<size_t>(requested, std::max<size_t>(total_data_manifests, 1));
 }
 
 }
@@ -314,9 +317,16 @@ IcebergIterator::IcebergIterator(
     std::sort(equality_deletes_files.begin(), equality_deletes_files.end());
     std::sort(position_deletes_files.begin(), position_deletes_files.end());
 
-    /// 2. Decide how many parallel data-file producers to spawn.
-    const size_t total_manifests = data_snapshot_ ? data_snapshot_->manifest_list_entries.size() : 0;
-    const size_t parallel_threads = resolveParallelManifestDecodeThreads(local_context_, total_manifests);
+    /// 2. Decide how many parallel data-file producers to spawn. Clamp against the number of
+    ///    DATA manifests only: delete manifests were already drained above and a producer that
+    ///    can never claim a DATA entry would occupy a global thread pool slot for nothing.
+    const size_t total_data_manifests = data_snapshot_
+        ? static_cast<size_t>(std::ranges::count(
+              data_snapshot_->manifest_list_entries,
+              Iceberg::ManifestFileContentType::DATA,
+              &ManifestFileCacheKey::content_type))
+        : 0;
+    const size_t parallel_threads = resolveParallelManifestDecodeThreads(local_context_, total_data_manifests);
 
     /// 3. Build N data-file iterators. When N > 1 they share one atomic counter so each `next`
     ///    call against `data_snapshot->manifest_list_entries` claims a non-overlapping index;

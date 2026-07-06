@@ -5594,7 +5594,7 @@ Number of threads used to decode Iceberg manifest files in parallel during query
 
 A value of `1` (the default) preserves the historical single-threaded behavior. Values greater than `1` make the Iceberg iterator spawn several producer tasks that cooperatively walk the snapshot's manifest list, which can reduce query planning time for tables with many manifest files.
 
-The effective number of threads is capped at the number of manifest files in the snapshot, so setting a larger value has no additional effect.
+The effective number of threads is capped at the number of data manifest files in the snapshot (delete manifests are always processed serially), so setting a larger value has no additional effect.
 )", EXPERIMENTAL) \
     DECLARE(Bool, use_parquet_metadata_cache, true, R"(
 If turned on, parquet format may utilize the parquet metadata cache.

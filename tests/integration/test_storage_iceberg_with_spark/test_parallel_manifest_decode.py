@@ -19,8 +19,8 @@ This test:
 4. Tags every query with a unique `query_id` and looks up its
    `ProfileEvents['IcebergParallelManifestDecodeThreadsSpawned']` directly in
    `system.query_log` (no LIKE pattern matching on query text, no sums across
-   queries). Asserts each per-query bump equals `min(threads, total_manifests)`
-   when N > 1, and 0 when N == 1.
+   queries). Asserts each per-query bump equals `min(threads, number of data
+   manifests)` when N > 1, and 0 when N == 1.
 """
 
 import uuid
@@ -37,8 +37,11 @@ from helpers.iceberg_utils import (
 # Each Spark insert into a partitioned iceberg table produces one data manifest;
 # the test inserts into 8 distinct partitions, so the snapshot's manifest list has
 # exactly 8 data entries. The implementation clamps `parallel_threads` to
-# `min(requested, max(total_manifests, 1))`, so any N >= 8 will yield an effective
-# 8-thread spawn (and a corresponding 8-bump on the ProfileEvent counter).
+# `min(requested, max(data_manifests, 1))` — only DATA-content manifests count,
+# since delete manifests are drained serially before the producers start. This
+# fixture performs no deletes, so the data manifest count equals the total: 8.
+# Any N >= 8 therefore yields an effective 8-thread spawn (and a corresponding
+# 8-bump on the ProfileEvent counter).
 TOTAL_MANIFESTS = 8
 
 
@@ -48,7 +51,8 @@ def _execute_spark(spark, cluster, storage_type, table, query):
 
 def _expected_events(threads):
     """Mirror of `resolveParallelManifestDecodeThreads`: counter bumps by 0 in
-    serial mode, otherwise by `min(threads, total_manifests)`."""
+    serial mode, otherwise by `min(threads, data manifests)` (all 8 of this
+    fixture's manifests are data manifests)."""
     if threads <= 1:
         return 0
     return min(threads, TOTAL_MANIFESTS)
