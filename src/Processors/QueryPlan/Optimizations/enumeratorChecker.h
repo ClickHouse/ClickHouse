@@ -42,7 +42,9 @@ class EnumeratorCheckerWithCosts
 public:
     EnumeratorCheckerWithCosts(const size_t num_relations_, Optimizer & optimizer_)
         : dp_table(num_relations_), optimizer(optimizer_), num_relations(num_relations_) {}
-    double computeJoinCost(UInt lhs, UInt rhs, double selectivity) const;
+    /// `selectivity` is the optimizer's `SelectivityEstimate`; the type is deduced because it is
+    /// local to the optimizer's translation unit and not visible here.
+    double computeJoinCost(UInt lhs, UInt rhs, const auto & selectivity) const;
 
     void accept(UInt result_subset_, UInt lhs_subset_, UInt rhs_subset_);
 
@@ -60,11 +62,20 @@ template <class TDPTable, class TOptimizer>
 double
 EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::computeJoinCost(const UInt lhs,
                                                                   const UInt rhs,
-                                                                  const double selectivity) const
+                                                                  const auto & selectivity) const
 {
-    return dp_table[lhs].cost + dp_table[rhs].cost
-        + selectivity * static_cast<double>(dp_table[lhs].estimated_rows.value_or(1))
-        * static_cast<double>(dp_table[rhs].estimated_rows.value_or(1));
+    double lhs_rows = static_cast<double>(dp_table[lhs].estimated_rows.value_or(1));
+    double rhs_rows = static_cast<double>(dp_table[rhs].estimated_rows.value_or(1));
+    double joined_rows = 1.0;
+    if (selectivity.reliable)
+        joined_rows = selectivity.value * lhs_rows * rhs_rows;
+    else if (selectivity.has_equi)
+        /// Equi-join, NDV unknown: assume the smaller side is a unique key (FK->PK), so the join keeps the larger side.
+        joined_rows = std::max(lhs_rows, rhs_rows);
+    else
+        /// No equi condition (cross or range-only join): the result is the full product.
+        joined_rows = lhs_rows * rhs_rows;
+    return dp_table[lhs].cost + dp_table[rhs].cost + joined_rows;
 }
 
 
@@ -111,7 +122,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",
-             selectivity,
+             selectivity.value,
              plan_cost,
              dp_table[lhs_subset].estimated_rows.value_or(0),
              dp_table[rhs_subset].estimated_rows.value_or(0));
@@ -122,7 +133,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
         entry.left = lhs_subset;
         entry.right = rhs_subset;
         entry.cost = plan_cost;
-        entry.sel = selectivity;
+        entry.sel = selectivity.value;
         entry.kind = kind;
         entry.estimated_rows = optimizer.estimateCardinality(dp_table[lhs_subset].estimated_rows, dp_table[rhs_subset].estimated_rows, selectivity, kind);
         entry.edges.assign(edge.begin(), edge.end());
