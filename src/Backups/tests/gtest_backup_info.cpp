@@ -435,12 +435,14 @@ TEST(BackupInfo, NormalizedStringValidatesFilePathWithContext)
     EXPECT_NE(allowed.toNormalizedString(context).find("/also_allowed/backup"), String::npos);
 }
 
-TEST(BackupInfo, NormalizedStringCanonicalizesKeyValueArgNames)
+TEST(BackupInfo, NormalizedStringPreservesKeyValueArgNames)
 {
     auto first = BackupInfo::fromString("S3(collection, url='s3://bucket/backup')");
     auto second = BackupInfo::fromString("S3(collection, URL='s3://bucket/backup')");
 
-    EXPECT_EQ(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString().find("url="), String::npos);
+    EXPECT_NE(second.toNormalizedString().find("URL="), String::npos);
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonStringKeyValueArg)

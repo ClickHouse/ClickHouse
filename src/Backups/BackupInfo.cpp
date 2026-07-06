@@ -338,28 +338,27 @@ namespace
 
     bool isCredentialKeyForNormalizedIdentity(const String & backup_engine_name, const String & key)
     {
-        String lower_key = toLower(key);
         if (backup_engine_name == "S3")
-            return lower_key == "access_key_id"
-                || lower_key == "secret_access_key"
-                || lower_key == "session_token"
-                || lower_key == "use_environment_credentials"
-                || lower_key == "no_sign_request"
-                || lower_key == "expiration_window_seconds"
-                || lower_key == "role_arn"
-                || lower_key == "role_session_name"
-                || lower_key == "http_client"
-                || lower_key == "service_account"
-                || lower_key == "metadata_service"
-                || lower_key == "external_id"
-                || lower_key == "request_token_path";
+            return key == "access_key_id"
+                || key == "secret_access_key"
+                || key == "session_token"
+                || key == "use_environment_credentials"
+                || key == "no_sign_request"
+                || key == "expiration_window_seconds"
+                || key == "role_arn"
+                || key == "role_session_name"
+                || key == "http_client"
+                || key == "service_account"
+                || key == "metadata_service"
+                || key == "external_id"
+                || key == "request_token_path";
 
         if (backup_engine_name == "AzureBlobStorage")
-            return lower_key == "account_name"
-                || lower_key == "account_key"
-                || lower_key == "client_id"
-                || lower_key == "tenant_id"
-                || lower_key == "shared_access_signature";
+            return key == "account_name"
+                || key == "account_key"
+                || key == "client_id"
+                || key == "tenant_id"
+                || key == "shared_access_signature";
 
         return false;
     }
@@ -381,12 +380,11 @@ namespace
 
     String normalizeKeyValueArgForIdentity(const String & backup_engine_name, const String & key, const String & value)
     {
-        String lower_key = toLower(key);
-        if (backup_engine_name == "S3" && lower_key == "url")
+        if (backup_engine_name == "S3" && key == "url")
             return normalizeS3URL(value);
-        if (backup_engine_name == "S3" && lower_key == "filename")
+        if (backup_engine_name == "S3" && key == "filename")
             return normalizeS3Path(value);
-        if (backup_engine_name == "AzureBlobStorage" && (lower_key == "connection_string" || lower_key == "storage_account_url"))
+        if (backup_engine_name == "AzureBlobStorage" && (key == "connection_string" || key == "storage_account_url"))
             return normalizeAzureConnection(value);
         return stripTrailingSlashes(value);
     }
@@ -548,9 +546,7 @@ String BackupInfo::toNormalizedString() const
                     backup_engine_name,
                     kv->formatForErrorMessage());
 
-            String lower_key = toLower(*key);
-            kv_strings.push_back(
-                lower_key + "=" + normalizeKeyValueArgForIdentity(backup_engine_name, lower_key, *value));
+            kv_strings.push_back(*key + "=" + normalizeKeyValueArgForIdentity(backup_engine_name, *key, *value));
         }
 
         std::sort(kv_strings.begin(), kv_strings.end());
