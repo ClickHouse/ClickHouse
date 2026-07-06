@@ -96,6 +96,9 @@ struct ExpressionCost
 {
     Cost cost;          /// Cost of this expression only
     Cost subtree_cost;  /// Total cost of the whole subtree (this expression and all its children)
+    /// False when some input has no implementation for its required properties: no plan can be
+    /// built from this expression, so it must never be recorded as a group's best.
+    bool buildable = true;
 };
 
 

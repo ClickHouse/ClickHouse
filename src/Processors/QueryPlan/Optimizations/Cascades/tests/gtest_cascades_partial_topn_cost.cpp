@@ -131,3 +131,46 @@ TEST(CascadesPartialTopNCost, PhysicalRowsClampedByInput)
     ASSERT_TRUE(partial->physical_output_rows.has_value());
     EXPECT_DOUBLE_EQ(*partial->physical_output_rows, input_rows);
 }
+
+/// An expression whose input has no implementation for the required properties cannot be
+/// built into a plan; costing must mark it so it is never recorded as a group's best.
+TEST(CascadesUnbuildableExpression, UnsatisfiableInputMarksCostUnbuildable)
+{
+    Memo memo(getLogger("gtest_cascades_unbuildable"));
+    CostEstimator estimator(memo);
+    auto header = makeHeader();
+
+    /// Leaf group with a single-node implementation only.
+    auto leaf = std::make_shared<GroupExpression>(QueryPlanStepPtr{});
+    leaf->properties.distribution.node_count = 1;
+    leaf->cost = ExpressionCost{};
+    auto leaf_group_id = memo.addGroup(leaf);
+    auto leaf_group = memo.getGroup(leaf_group_id);
+    leaf_group->statistics = makeStats(100, 10);
+    leaf_group->updateBestImplementation(leaf, memo.getEnvironment().cost_config);
+
+    /// A gather whose input demands the leaf at 4 nodes: no such implementation exists.
+    auto unbuildable = std::make_shared<GroupExpression>(
+        std::make_unique<GatherExchangeStep>(header, 4));
+    unbuildable->properties.distribution.node_count = 1;
+    ExpressionProperties four_nodes;
+    four_nodes.distribution.node_count = 4;
+    unbuildable->inputs.push_back({leaf_group_id, four_nodes});
+    auto group_id = memo.addGroup(unbuildable);
+    memo.getGroup(group_id)->statistics = makeStats(100, 10);
+
+    const auto cost = estimator.estimateCost(unbuildable);
+    EXPECT_FALSE(cost.buildable);
+
+    /// A gather demanding the existing single-node input is buildable.
+    auto buildable = std::make_shared<GroupExpression>(
+        std::make_unique<GatherExchangeStep>(header, 1));
+    buildable->properties.distribution.node_count = 1;
+    ExpressionProperties one_node;
+    one_node.distribution.node_count = 1;
+    buildable->inputs.push_back({leaf_group_id, one_node});
+    memo.getGroup(group_id)->addPhysicalExpression(buildable);
+    buildable->group_id = group_id;
+
+    EXPECT_TRUE(estimator.estimateCost(buildable).buildable);
+}

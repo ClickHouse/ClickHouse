@@ -385,10 +385,12 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     total_cost.cost = estimateOperatorCost(inputs, expression->strategy.get());
     total_cost.subtree_cost = total_cost.cost;
 
-    /// Add input subtree costs. Unsatisfiable inputs produce infinity.
+    /// An input with no implementation for its required properties means no plan can be
+    /// built from this expression at all.
     if (has_unsatisfiable_input)
     {
         total_cost.subtree_cost = Cost::infinity();
+        total_cost.buildable = false;
         return total_cost;
     }
     for (const auto & selected : selected_inputs)

@@ -134,6 +134,15 @@ bool OptimizerContext::costAndUpdateBest(GroupExpressionPtr expression, bool pru
     auto group = memo.getGroup(expression->group_id);
     auto cost = cost_estimator.estimateCost(expression);
 
+    /// Leave the expression uncosted: plan extraction must never walk into a subtree
+    /// that has no implementation for one of its inputs.
+    if (!cost.buildable)
+    {
+        LOG_TEST(log, "Expression '{}' in group #{} has an unsatisfiable input, not a best-plan candidate",
+            expression->getDescription(), expression->group_id);
+        return false;
+    }
+
     if (prune_against_best)
     {
         Float64 subtree_weighted = cost.subtree_cost.total(cost_config);

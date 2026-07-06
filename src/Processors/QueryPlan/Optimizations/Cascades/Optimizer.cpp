@@ -204,7 +204,22 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         stack.push_back({group_id, std::move(expression), 0, {}, on_active_path});
     };
 
-    pushFrame(subtree_root_group_id, selectBest(subtree_root_group_id, required_properties, /*input_is_self_referential=*/false));
+    /// No implementation at the root means no distributable plan exists for this query
+    /// (e.g. an operator that only runs on one node under a multi-node requirement).
+    /// Deeper selection failures stay logical errors: a recorded best implementation
+    /// guarantees its inputs are satisfiable.
+    {
+        auto root_group = memo.getGroup(subtree_root_group_id);
+        auto root_best = root_group->selectInputImplementation(
+            required_properties, cost_config, active_path, /*input_is_self_referential=*/false).expression;
+        if (!root_best)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "make_distributed_plan cannot distribute this query: no plan satisfies {} at the root. "
+                "The distributed Cascades optimizer is experimental; disable enable_cascades_optimizer "
+                "or simplify the query.",
+                required_properties.dump());
+        pushFrame(subtree_root_group_id, std::move(root_best));
+    }
 
     while (!stack.empty())
     {
