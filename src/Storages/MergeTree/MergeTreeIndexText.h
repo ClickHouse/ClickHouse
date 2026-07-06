@@ -4,6 +4,7 @@
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Columns/IColumn.h>
+#include <Common/BitPackedUInt64Array.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -16,6 +17,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <base/types.h>
 
+#include <variant>
 #include <vector>
 
 #include <roaring/roaring.hh>
@@ -262,7 +264,12 @@ struct DictionarySparseIndex : public DictionaryBlockBase
     UInt64 getOffsetInFile(size_t idx) const;
     size_t memoryUsageBytes() const;
 
-    ColumnPtr offsets_in_file;
+    /// Shrinks the tokens column and bit-packs the offsets to reduce memory usage.
+    void optimize();
+
+    /// Offsets in the dictionary file to the beginning of each block.
+    /// Stored as a raw column after creation and bit-packed after optimize.
+    std::variant<ColumnPtr, BitPackedUInt64Array> offsets_in_file;
 };
 
 using DictionarySparseIndexPtr = std::shared_ptr<DictionarySparseIndex>;

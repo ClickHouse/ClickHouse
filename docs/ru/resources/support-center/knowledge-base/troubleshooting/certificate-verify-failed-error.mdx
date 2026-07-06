@@ -1,0 +1,53 @@
+---
+title: Устранение ошибки проверки SSL-сертификата в ClickHouse
+description: Узнайте, как исправить ошибку SSL Exception CERTIFICATE_VERIFY_FAILED.
+date: 2023-05-02
+tags: ['Безопасность и аутентификация', 'Ошибки и исключения']
+keywords: ['Ошибка', 'SSL-сертификат', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## Устранение ошибки проверки SSL-сертификата с кодом 210 в ClickHouse
+</div>
+
+Обычно эта ошибка выглядит так:
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## Причина ошибки
+</div>
+
+Эта ошибка возникает при попытке подключиться к серверу ClickHouse с помощью `clickhouse-client`. Причина может быть одной из следующих:
+
+* в файле конфигурации клиента `config.xml` отсутствует корневой сертификат из системного хранилища доверенных CA по умолчанию, или
+* самоподписанный или внутренний CA‑сертификат не настроен
+
+<div id="solution">
+  ## Решение
+</div>
+
+Если используется внутренняя или самоподписанная CA, настройте корневой CA‑сертификат в `config.xml` в каталоге клиента (например, `/etc/clickhouse-client`) и отключите загрузку корневых CA‑сертификатов по умолчанию из стандартного расположения.
+
+Ниже приведён пример конфигурации:
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## Дополнительные ресурсы
+</div>
+
+См. [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ru/concepts/features/interfaces/cli#configuration_files)

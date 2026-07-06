@@ -1,0 +1,267 @@
+---
+slug: /whats-new/changelog/cloud
+sidebarTitle: '2026'
+title: 'Cloud changelog - 2026'
+description: 'ClickHouse Cloud changelog providing descriptions of what is new in each ClickHouse Cloud release'
+doc_type: 'changelog'
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
+
+
+<Update label="June 30, 2026">
+
+This week's updates include new observability features for Postgres and ClickHouse internals, expanded ClickPipes controls including Kafka exactly-once delivery, and several platform additions: Azure Marketplace BYOC, the official Airflow provider, and ClickHouse Agents updates.
+
+### Kafka exactly-once delivery in ClickPipes
+You can now enable exactly-once delivery for Kafka imports directly in the [ClickPipes](/integrations/clickpipes/kafka/index) import flow, with the same option exposed through the public API for programmatic setup.
+
+### Unified TLS controls for CDC sources
+TLS activation and verification levels are now consistent across CDC sources. The OpenAPI create and update endpoints propagate the `postgres_skip_cert_verification`, `postgres_disable_tls`, and `mongo_skip_cert_verification` fields so you can manage certificate handling via the API.
+
+### Replicated databases return to the ClickPipes picker
+Replicated databases are once again selectable in the ClickPipes destination picker.
+
+### ClickHouse Agents updates (public beta)
+[ClickHouse Agents](/products/cloud/features/ai-ml/agents/index) now support Chat Projects for organizing conversations, a context usage gauge showing token and context-window usage, agent-authored Skills, and bundled ClickHouse best-practice Skills. This release also includes improvements to settings, navigation, shortcuts, and pinning.
+
+### ClickHouse BYOC on the Azure Marketplace
+ClickHouse [Bring Your Own Cloud](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) is now listed on the Azure Marketplace, letting customers purchase via private offer and deploy BYOC billed through their Azure account. Billing support for Azure BYOC marketplace listings and product IDs was added on the platform side.
+
+### Official ClickHouse Airflow provider
+An official Apache Airflow provider for ClickHouse is now available on PyPI and listed in the Airflow registry, replacing reliance on the legacy community plugin for routing data into and out of ClickHouse.
+
+### Billing visibility and marketplace improvements
+Billing now includes a self-service credit history table, a prepaid summary showing used and expired amounts, and GCP MPPO email support.
+
+</Update>
+
+<Update label="June 3, 2026">
+
+Open House 2026 week brought a wave of launches centered on running ClickHouse where your data lives and bringing agentic, AI-assisted workflows into the platform.
+
+### ClickPipes now runs natively on GCP with Private Service Connect
+ClickPipes infrastructure now runs in the same GCP region as your ClickHouse Cloud service for all new GCP services created after May 26, including support for Private Service Connect (PSC). This removes cross-cloud egress costs, reduces latency, keeps data local, and lets you connect to GCP sources over GCP-native private networking instead of workarounds like SSH tunneling. Existing services can be migrated with help from our team.
+
+For more details, see the [ClickPipes static IP list](/integrations/clickpipes/home#list-of-static-ips).
+
+### ClickPipes for GCP Pub/Sub (private preview)
+ClickPipes can now stream data from GCP Pub/Sub topics directly into ClickHouse Cloud, giving GCP-native teams a direct path for analytics on data from Cloud Logging, Cloud Monitoring, GKE, and more. Available via the ClickPipes UI, OpenAPI, and Terraform; [sign-up](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview) is required during private preview.
+
+See the [ClickPipes for GCP Pub/Sub docs](/integrations/clickpipes/pubsub/overview) for setup and configuration details.
+
+### ClickHouse Agents: Claude-powered agentic analytics (public beta)
+ClickHouse Agents is now in public beta at [ai.clickhouse.cloud](http://ai.clickhouse.cloud) — a first-party agent platform powered by Claude for conversational, schema-aware analysis over your ClickHouse Cloud data. Build custom agents with a no-code AgentBuilder, plug in MCP servers (Slack, Linear, Notion, and more), compose subagent workflows, and generate queries, pipelines, and apps without leaving the conversation. Includes AWS Bedrock AgentCore integration and managed LibreChat foundations.
+
+Learn more in the [ClickHouse Agents documentation](/products/cloud/features/ai-ml/agents/index).
+
+### ClickHouse Postgres (public beta)
+Fully managed Postgres on local NVMe storage is now in public beta, delivering 5x+ more TPS than AWS RDS and bridging OLTP and OLAP in one managed stack. A native CDC pipeline streams data directly into ClickHouse with no intermediate infrastructure, and the open-source `pg_clickhouse` extension lets you query ClickHouse tables from standard Postgres sessions.
+
+Read more in [Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements).
+
+### ClickStack Cloud: serverless observability (private preview)
+ClickStack Cloud is a fully managed, serverless observability platform powered by ClickHouse Cloud. Point your OpenTelemetry Collector at a managed OTLP endpoint and immediately explore logs, metrics, and traces in the ClickStack UI — with ingestion, buffering, scaling, storage, query serving, authentication, and RBAC all handled for you. Available in limited private preview on AWS us-east-1.
+
+For more details see [ClickStack Cloud private preview](https://clickhouse.com/blog/clickstack-cloud-private-preview) and the [ClickStack Cloud waitlist](https://clickhouse.com/cloud/clickstack-cloud-waitlist).
+
+### AI Notebooks for Managed ClickStack (beta)
+AI Notebooks bring a persistent, transparent workspace for AI-assisted incident investigation to Managed ClickStack. Capture structured sequences of prompts, queries, charts, and reasoning, branch to explore multiple hypotheses, and share investigations as collaborative team artifacts — with all generated queries and results visible and editable. Accessible from the left navigation in the ClickStack UI.
+
+For more details, see:
+- [ClickStack AI Notebooks docs](/clickstack/notebooks)
+- [AI Notebooks in beta (blog)](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#ai-notebooks-in-beta)
+
+### Horizontal autoscaling (private preview)
+Horizontal autoscaling automatically adjusts the number of replicas in a ClickHouse Cloud cluster, scaling out aggressively when demand spikes and scaling in gradually as load drops — so teams with variable, high-concurrency workloads no longer need to manually right-size clusters. Private preview scales on concurrent query count; CPU and memory signals are planned for public beta. Available to Enterprise and Scale tier customers on ClickHouse 26.2+. 
+
+Note: For the intial GA launch, horizontal and vertical autoscaling are mutually exclusive. Horizontal autoscaling will only activate when vertical autoscaling is disabled (i.e., the service is set to a fixed size). The same applies to vertical autoscaling being enabled when the number of replicas is fixed. This behavior will become more flexible in future releases.
+
+### ClickStack MCP Server (open source)
+The new open-source ClickStack MCP server gives external AI agents structured observability investigation tools built on ClickStack and ClickHouse. It exposes semantic primitives for logs, metrics, and traces — supporting log pattern analysis, trace outlier investigation, correlation analysis, and cross-signal debugging — and can persist dashboards, searches, and alerts, while retaining native SQL access for deeper exploration. Connect agents like Claude Code, Cursor, Codex, or custom frameworks.
+
+For more details see the [ClickStack MCP server docs](/clickstack/mcp) and the [Observability MCP server + AI Notebooks blog post](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server).
+
+{/* vale off */}
+### Executable User Defined Functions
+{/* vale on */}
+
+You can now write a function in Python, zip it up, upload it to your cluster, and call it from SQL like any built-in function. ClickHouse runs a pool of long-lived sandboxed processes and pipes rows through them at query speed, so you can call your function anywhere SQL works: ad-hoc queries, joins, even materialized views that fire on every insert. Your model code lives right next to the data, and deploying it is just one upload screen in the Cloud console.
+
+To show what it can do, we built a [demo](https://github.com/ClickHouse/stock-anomaly-udf). Based on our real-time stock trade data in StockHouse, we trained a small PyTorch autoencoder to score equity trade ticks for anomalies as they get ingested. It's one UDF and one DDL statement, and everything else is plain SQL. We also snuck in a preview of network-access UDFs (private beta), which enable UDFs to make outbound HTTPS calls. We use that to pull in news and SEC filings and have Claude classify why a given trade looks anomalous.
+
+For more details, read the [announcement blog](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta) or the [docs](/products/cloud/features/sql-console-features/user-defined-functions)
+
+</Update>
+
+<Update label="May 25, 2026">
+
+### GA release of organization spend alerts
+Organization [spend alerts](/products/cloud/reference/billing/spend-alerts) are now generally available. Get notified at 50%, 75%, and 100% of your configured organization spend per billing period. Choose from Email, Cloud console (UI), and/or Slack as notification channels. Alerts are based on organization gross usage, fire hourly, and reset automatically each billing period. Requires Org Admin or Billing Admin role.
+
+### New ClickPipes AWS regions
+The `mx-central-1` (Mexico Central) AWS region is now live for [ClickPipes](/integrations/clickpipes/home), following the [Cloud region launch](/resources/changelogs/cloud/2026#new-region-support). For ClickHouse Cloud services created in this region from May 19 2026, ClickPipes will be co-located in the same region. For services created prior to that date, ClickPipes will default to the `us-east-2` region; if that's the case, please [reach out to our team](https://clickhouse.com/company/contact?loc=clickpipes) to get your service patched to use the new region.
+
+### Primary service idling for compute-compute separation now generally available
+Primary service idling for compute-compute separation is now generally available.
+All primary services now have the ability to idle.
+
+</Update>
+
+<Update label="May 18, 2026">
+
+### Python client v1.0.0
+Major version release of [clickhouse-connect](/integrations/language-clients/python/index), the Python client for ClickHouse. Key highlights include:
+
+* First-class SQLAlchemy dialect with deeper support for ClickHouse-specific SQL
+* Native async client built on aiohttp with full feature parity, including streaming
+* Significant performance improvements for DateTime, DateTime64, fixed-width numeric inserts, Maps, Decimals, and BigDecimals
+* Timezone handling redesign with new `tz_mode` and `tz_source` parameters
+* Native Variant column writes
+* Lazy imports for optional dependencies (numpy, pandas, pyarrow, polars), speeding up bare import by 4x
+* Experimental Python 3.14 free-threading support
+
+**Breaking changes:** Dropped support for Python < 3.9 and Pandas 1.x. Review the [release notes](https://github.com/ClickHouse/clickhouse-connect/releases) for other breaking changes around timezones.
+
+### SQL-based charting and alerting in ClickStack
+[ClickStack](/clickstack/overview) now supports building charts and alerts using arbitrary ClickHouse SQL queries. Users can write raw SQL directly in the dashboard and alert builder, with full support for window functions, CTEs, multi-stage queries, and ClickHouse-native analytical functions. SQL alerting allows encoding the entire alerting decision inside the query itself, unlocking anomaly detection, lagging averages, and statistical spike detection. Available across all ClickStack deployments (Cloud, Private, BYOC, OSS). See [SQL-based visualizations](/clickstack/features/dashboards/sql-visualizations) and [SQL alert result interpretation](/clickstack/features/alerts#sql-result-interpretation) for more details.
+
+### New region support
+Support for new ClickHouse Cloud regions:
+
+* AWS Mexico (mx-central-1) — Private Region, PCI
+* Azure Australia East — Private Region
+
+See [supported regions](/products/cloud/reference/supported-regions) for the full list and [Private Region considerations](/products/cloud/reference/supported-regions#private-regions).
+
+### Protobuf support for Kafka ClickPipes
+[Kafka ClickPipes](/integrations/clickpipes/kafka/index) now supports [**Protobuf**](/integrations/clickpipes/kafka/reference#protobuf) as a format, in addition to Avro and JSON. Features include automatic schema resolution via schema registry integration, support for recursive references, well-known types, and the native `oneof` type. Protobuf support is available across all Kafka ClickPipes interfaces (UI, OpenAPI, and Terraform).
+
+</Update>
+
+<Update label="May 8, 2026">
+
+### Postgres query insights (private preview)
+A new **Query insights** tab is now available in [ClickHouse Cloud Managed Postgres](/products/managed-postgres/overview) (Private Preview). It ranks every query pattern by impact and shows why each one is slow across three surfaces:
+
+* **Overview** — one-screen database health
+* **Patterns** — table sortable by runtime, CPU, errors, and P95
+* **Per-pattern flyout** — latency percentiles, CPU vs I/O, cache vs disk, temp spills, parallel-worker shortfalls, and WAL volume
+
+Powered by [pg_stat_ch](https://github.com/ClickHouse/pg_stat_ch), an open-source Postgres extension.
+
+### Data catalog integration expansions
+We have expanded our support of [data catalog integrations](/products/cloud/features/data-catalogs) via the Data Sources UI with more auth methods, table formats, and data catalog flavors:
+
+* IAM support for [AWS Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
+* [BigLake Metastore](/guides/use-cases/data-warehousing/biglake-catalog) support for data catalog integration
+* Delta Tables support on [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+
+</Update>
+
+<Update label="May 2, 2026">
+
+### New GCP London region (europe-west2)
+ClickHouse Cloud now supports a new public region: GCP London (europe-west2). See the full list of [supported regions](/products/cloud/reference/supported-regions) for more details.
+
+</Update>
+
+<Update label="April 25, 2026">
+
+### Index sharding (private preview)
+Index sharding is now available in private preview. This feature distributes the index analysis phase across multiple replicas, reducing per-replica memory usage and improving query performance through distributed parallelization. This is especially beneficial for tables with heavy secondary indexes such as vector search and full-text search. Read the [blog post](https://clickhouse.com/blog/index-sharding-clickhouse-cloud-petabyte-scale-indexing) for more details.
+
+### Terraform & OpenAPI for ClickPipes (general access)
+ClickPipes resources in the ClickHouse [Terraform provider](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) are now generally available as part of stable releases, and [OpenAPI endpoints](/api-reference/organization/get-list-of-available-organizations) are no longer marked as beta. This includes full coverage for CDC connectors (Postgres, MySQL, MongoDB). See the [Terraform documentation](/integrations/clickpipes/programmatic-access/terraform), [OpenAPI documentation](/integrations/clickpipes/programmatic-access/openapi), and [blog post](https://clickhouse.com/blog/terraform-ga) for more details.
+
+</Update>
+
+<Update label="April 17, 2026">
+
+### Refunds visible in billing UI
+Customers can now see all refunds directly in the Cloud console billing UI. Refunds appear once processed; credit card refunds may take additional time to show on statements depending on the bank.
+
+### Organization spend alerts (Private Preview)
+Organization spend alerts are now available in Private Preview. Get notified at 50%, 75%, and 100% of your configured organization spend per billing period. Choose from Email, Cloud console, and/or Slack notification channels. Alerts are based on organization gross usage, fire hourly, and reset automatically each billing period. Requires Org Admin or Billing Admin role.
+
+### ClickPipes region parity on AWS
+ClickPipes is now available in all AWS regions (public and private) supported by ClickHouse Cloud, expanding from 6 regions to 18. This includes strategic regions like Singapore (ap-southeast-1), Seoul (ap-northeast-2), and Tokyo (ap-northeast-1). The new regions are available for services created after April 14, 2026. See the [documentation](/integrations/clickpipes/home#list-of-static-ips) for more details.
+
+</Update>
+
+<Update label="April 10, 2026">
+
+### Centralized marketplace billing
+Customers can now consolidate billing across organizations through a single cloud marketplace subscription (AWS, Azure, and GCP). Key updates include:
+
+* **Marketplace Subscription Sharing:** Switch an organization from credit card billing to an existing marketplace subscription from another organization, removing the need to set up an additional marketplace subscription. Only PAYG usage is consolidated (not prepaid credits).
+* **Update Marketplace Subscriptions:** Swap an organization's marketplace subscription to one used by a different organization.
+* **Backup Payment Method:** Organizations on marketplace billing can now add a credit card as a fallback if the primary marketplace subscription is cancelled or expires.
+
+See the [billing documentation](/products/cloud/reference/billing/managing-payment-methods) for more details.
+
+### clickhousectl CLI (public beta)
+[clickhousectl](https://github.com/ClickHouse/clickhousectl) is the official ClickHouse CLI for managing local installations, running local servers, and operating ClickHouse Cloud. Install it now:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+</Update>
+
+<Update label="April 3, 2026">
+
+- **Smarter auto-scaling with two-window recommender:** ClickHouse Cloud now uses a dual-lookback-window approach to vertical auto-scaling, replacing the previous single 30-hour window with a combined 3-hour "small window" and 30-hour "large window." This reduces scale-down latency from up to 30 hours to as little as 3 hours, lowering infrastructure costs for variable workloads without sacrificing scale-up responsiveness. Read the [blog post](https://clickhouse.com/blog/smarter-auto-scaling) for more details.
+- **Monitoring in the Cloud console:** New overview and infrastructure dashboards provide better visibility into the behavior of ClickHouse servers. Admin users now receive email notifications for common issues when using ClickHouse Cloud. Read the [blog post](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities) for more details.
+- **Compute-compute separation (warehouses):** Support for auto-idling on primary services (also referred to as parent services) is now rolling to public preview. If the feature has not been enabled for your organization, [contact support](https://clickhouse.com/support/program) for access. Once the feature moves to general access, the default behavior will be that existing primary services will have the option to turn on auto-idling and new primary services will have it enabled by default.
+- **Data Catalog integration:** ClickHouse Cloud now supports Iceberg REST Catalog and Microsoft OneLake as data lake catalog integrations in the data sources UI. Once connected, the catalog appears as a database, allowing you to read Iceberg tables directly, without duplicating data.
+- **Bring Your Own Cloud (BYOC) on GCP is now generally available:** ClickHouse BYOC is now GA on Google Cloud, allowing you to deploy ClickHouse services in your own GCP project, and comply with strict data residency requirements. Read the [documentation](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) and the [blog post](https://clickhouse.com/blog/byoc-gcp-ga) for more details. You can [contact us](https://clickhouse.com/cloud/bring-your-own-cloud) to request access.
+- **Billing notifications for prepaid credits and payment method changes:** ClickHouse Cloud now sends notifications when prepaid credits are added to your organization following a committed contract, or when a payment method is updated (credit card or marketplace subscription). Notifications are enabled by default for UI and email, and can be configured to also send to Slack.
+
+</Update>
+
+<Update label="March 20, 2026">
+
+- **Custom date range for Usage Breakdown:** You can now view your usage costs across all billing dimensions on the usage breakdown screen using a custom date range.
+  Select a start and end date (inclusive) to filter costs by a specific period and download the results as a CSV.
+  The date range is limited to a maximum of 31 days.
+
+</Update>
+
+<Update label="February 20, 2026">
+
+- **ClickPipes:** Reverse private endpoints in an inactive state will now be automatically removed after a defined grace period. This ensures unused or misconfigured endpoints are not persisted indefinitely in the backend. See the automatic clean up [documentation](/integrations/clickpipes/aws-privatelink#automatic-cleanup) for more details.
+
+</Update>
+
+<Update label="February 13, 2026">
+
+- [BigQuery Connector](/integrations/clickpipes/bigquery/overview) is now in Private Preview. Read this [blogpost](https://clickhouse.com/blog/bigquery-clickpipe-private-preview) for more details and join the [waitlist](https://clickhouse.com/cloud/clickpipes/bigquery-connector) for access.
+- We are pleased to announce support for PCI deployments for Google Cloud. Regions supported: 
+  - GCP europe-west4 (Netherlands)
+  - GCP us-central1 (Iowa)
+  - GCP us-east1 (South Carolina)
+- Crash report collection preferences can now be configured at the organization level. This setting was previously available only at the service level. When disabled at the organization level, all existing and future services will be opted out automatically.
+
+<Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="Crash reports collection" />
+
+</Update>
+
+<Update label="January 23, 2026">
+
+- ClickPipes is now available in AWS `eu-west-1`. For new ClickHouse Cloud services created from January 20 in that region, the matching region will be used for ClickPipes. For older services, ClickPipes defaults to `eu-central-1`. See the [documentation](/integrations/clickpipes/home#list-of-static-ips) for more details.
+
+</Update>
+
+<Update label="January 16, 2026">
+
+- **Service-level usage cost filtering via API:** Our API now supports filtering your organization's usage costs by specific service tags, making it easier to analyze spend at a more granular level.
+- **Data Catalog integration:** You can now connect an external data catalog as a data source. ClickHouse Cloud supports AWS Glue and Unity Catalog (with more coming soon). Once connected, the catalog appears as a database, allowing you to read Iceberg tables directly—without duplicating data. For access, contact support to request access.
+- **ClickPipes:**
+  - The MongoDB connector has been promoted to Public Beta, and is now available to new and existing ClickHouse Cloud customers, in all service tiers. Read the [blogpost](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) for an overview of new features and head to the [documentation](/integrations/clickpipes/mongodb/index) to get started.
+  - The [S3 ClickPipe](/integrations/clickpipes/object-storage/amazon-s3/overview) is now compatible with OVH Object Storage, the S3 API-compatible object storage service in OVHcloud.
+
+</Update>
