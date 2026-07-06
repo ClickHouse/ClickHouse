@@ -785,11 +785,13 @@ private:
     ChainedBuffers interpretStep(size_t position_phys);
     ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys);
     ChainedBuffers serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
-    /// Serve a populatable retrieve (one that fills a cache cell) from the committed cell -
-    /// the cache is the buffer, so no in-memory bank is held. Drives the in-flight worker
-    /// (or a foreground fallback) until the bottom cell covers the window, reads it back via
-    /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
-    ChainedBuffers serveRetrievePopulatable(size_t ri, ByteRange window);
+    /// The next source piece of a populatable retrieve, off the schedule: the cell's
+    /// append-only floor walked across the job's `fetch_runs`, grid-bounded to the window.
+    /// Empty when no scheduled source byte lies past the cell frontier.
+    ByteRange nextScheduledPiece(size_t ri, ByteRange window_phys) const;
+    /// One bounded cache-blind source read of `window`, banked into the job. The heal verb
+    /// for state no planned job can produce (hung sibling leader; staled committed truth).
+    bool bankDirectRead(size_t ri, ByteRange window);
     // ─── The display: the one state surface where execution results appear ─────────
 
     /// The DISPLAY: everything the plan can serve RIGHT NOW, with live progress - the union of
@@ -834,8 +836,6 @@ private:
     /// this executor's per-writer committed set, so it reads as uncovered here - which is what
     /// bounds the inline serve to its own led prefix.
     IntervalSet committedCoverage(ByteRange window_phys) const;
-    /// Does the committed coverage span the whole window?
-    bool committedCellCovers(ByteRange window_phys) const;
     /// The end of the CONTIGUOUS committed run from `window_phys.offset` (== offset when nothing
     /// is committed there). The inline populatable serve narrows to this prefix: the first
     /// sibling-led byte bounds it short, so the serve returns the led prefix as a short window.

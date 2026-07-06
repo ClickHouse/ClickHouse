@@ -1301,11 +1301,12 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     EXPECT_EQ(result, content) << "no corruption / no missing bytes under eviction pressure";
     /// Destroy the executor so it flushes its `stats` into the thread's ProfileEvents.
     executor.reset();
-    /// The engine's inline pieces run through the machine flow with the in-flow connection
-    /// policy, so the held long connection streams each cold run instead of re-opening per
-    /// window - the re-fetch count returns to the legacy assembler's 7 (the interim bespoke
-    /// inline path paid 9). The small plan does not pin far ahead, so flood-evicted cold
-    /// cells are re-fetched either way.
-    EXPECT_EQ(sourceRequestsSoFar(), 7u)
-        << "the small plan does not pin far ahead, so flood-evicted cold cells are re-fetched";
+    /// The engine's piece walk keys on the FILL frontier (committed cells PLUS the bank), so a
+    /// segment the tiny cache refuses (the plan's held writers make the resident segments
+    /// non-releasable) is fetched ONCE, overflow-banked, and served from the bank - the old
+    /// drain loop was bank-blind (cells-only frontier) and re-fetched the refused range every
+    /// window (7 GETs: one initial + three per refused segment). Pieces now run strictly
+    /// forward, so the held long connection streams the whole scan: ONE request.
+    EXPECT_EQ(sourceRequestsSoFar(), 1u)
+        << "a cache-refused segment is fetched once and served from the bank while it stays banked";
 }

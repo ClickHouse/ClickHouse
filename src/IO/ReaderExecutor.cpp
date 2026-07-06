@@ -2196,14 +2196,70 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
 }
 
 
+ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) const
+{
+    /// The next PIECE of a populatable retrieve, straight off the schedule: the job's
+    /// `fetch_runs` are the source ranges (split at every embedded resident region - served /
+    /// filled down from its tier, never scheduled as a source read), and its fetch grids give
+    /// the cell-fill granularity. The piece starts at the CELL frontier of the grid-floored
+    /// window start - a mid-cell read fills from the cell floor (append-only), and a
+    /// down-filled hit advances the frontier past itself so the next piece resumes after it -
+    /// and runs to the window's end ceiled to the grid (the whole-cell over-read that makes
+    /// one cold cell ONE source read), clamped into the run. No geometry is consulted here -
+    /// the schedule is the job.
+    const auto & r = read_plan.schedule.retrieves[ri];
+    /// The walk frontier is committed CELLS plus the BANK - not resident views (a refused
+    /// down-fill's resident hole must be read through, below) - so a refused-write piece whose
+    /// bytes went to the bank is walked PAST, not refetched forever.
+    const auto fill_prefix_end = [&](ByteRange range)
+    {
+        IntervalSet cov = committedCoverage(range);
+        for (const auto & st : read_plan.retrieve_status)
+            for (const auto & iv : st.ready_bytes.getIntervals())
+            {
+                const size_t lo = std::max(iv.offset + data_start_offset, range.offset);
+                const size_t hi = std::min(iv.end() + data_start_offset, range.end());
+                if (lo < hi)
+                    cov.add(ByteRange{lo, hi - lo});
+            }
+        auto gaps = cov.subtract(range);
+        return gaps.empty() ? range.end() : gaps.front().offset;
+    };
+    const size_t missing = fill_prefix_end(window_phys);
+    const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
+    const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
+    /// The append-only floor: grid-floor the first missing byte (clamped to the job) and walk
+    /// the fill frontier from there - ACROSS runs, so a before-slack run no serve window ever
+    /// reaches (a seek past it) is still fetched and the cell fills whole from its floor.
+    const size_t floor_off = std::max(r.range.offset, missing / head_grid * head_grid);
+    const size_t base = floor_off < missing
+        ? fill_prefix_end(ByteRange{floor_off, missing - floor_off})
+        : missing;
+    /// The piece: from the frontier to the end of the first run past it. The frontier can sit
+    /// in an inter-run resident hole (its down-fill write was skipped by the append-only
+    /// cell); the piece then reads THROUGH the hole from the source so the cell still
+    /// completes - display gaps stop at resident regions and would leave the cell short.
+    for (const auto & fr : r.fetch_runs)
+        if (fr.end() > base)
+            return ByteRange{base,
+                std::min(fr.end(), (window_phys.end() + tail_grid - 1) / tail_grid * tail_grid) - base};
+    return {};
+}
+
 bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
 
-    /// Join an in-flight machine first: ours delivers this job's bytes (cells / overflow bank);
-    /// a FOREIGN one holds the single slot and the cursor already outran it - free the slot.
-    if (machine)
+    /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
+    /// its worker commits cells progressively, so the WAIT below (window-bounded, like the
+    /// old cell-serve's) lets it land the window instead of blocking on the whole remaining
+    /// lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
+    /// outran - free the slot.
+    const bool own_leading = machine && machineFor(ri)
+        && machine->physical_window.offset <= window.offset
+        && window.offset < machine->physical_window.end();
+    if (machine && !own_leading)
     {
         collectInFlightInto(machine->retrieve_index);
         return true;
@@ -2222,46 +2278,81 @@ bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
         std::min(r.range.end(), (window.end() + tail_grid - 1) / tail_grid * tail_grid));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
-    /// 1) Dedup + late hits: wait on ANY cell a live writer is filling (a sibling executor's
-    ///    download; a completed one returns immediately) and BANK the bytes - sibling bytes
-    ///    never enter this executor's committed sets, so the bank is how they reach the
-    ///    display. A bypass gap has no fill-target writer: no-op there.
+    /// 1) Dedup + late hits + our own leading worker's progress: wait on any cell a LIVE
+    ///    writer is filling (a completed one returns immediately), bounded to the cursor
+    ///    WINDOW - the grid-extended tail is not needed to serve it. Bytes our committed
+    ///    cells do not hold (a sibling's download) are BANKED - the bank is their only route
+    ///    to the display - and their cache-read credit is folded here (the bank serve adds no
+    ///    counters). Bytes our own worker committed meanwhile are dropped: the serve reads
+    ///    and counts them from the cells, once. A bypass gap has no fill-target writer:
+    ///    no-op there.
     IntervalSet cov = display.coverage(fetch_window);
     {
         ChainedBuffers waited;
-        display.wait(fetch_window, /*own_worker_only=*/false, waited, cov, stats);
+        IntervalSet wait_cov = display.coverage(window);
+        Stats wait_stats;
+        display.wait(window, /*own_worker_only=*/false, waited, wait_cov, wait_stats);
         if (!waited.empty())
         {
-            if (data_start_offset)
-                waited.shift(-static_cast<ssize_t>(data_start_offset));
-            st.ready_bytes.append(std::move(waited));
+            const IntervalSet committed = committedCoverage(window);
+            ChainedBuffers sibling_bytes;
+            for (const auto & iv : waited.getIntervals())
+                for (const auto & gap : committed.subtract(iv))
+                    sibling_bytes.append(waited.slice(gap));
+            if (!sibling_bytes.empty())
+            {
+                stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());
+                if (data_start_offset)
+                    sibling_bytes.shift(-static_cast<ssize_t>(data_start_offset));
+                st.ready_bytes.append(std::move(sibling_bytes));
+            }
             /// Launch high-water only to the CONTIGUOUS display frontier: a waited middle that
             /// returned short leaves a real hole, and marking it attempted would stop the
             /// background from ever fetching it (the foreground would heal it, but late).
             const size_t contiguous = display.frontier(window);
             if (contiguous > r.range.offset)
                 st.fetched = std::max(st.fetched, contiguous - r.range.offset);
-            return true;
+            if (contiguous > window.offset)
+                return true;
         }
     }
 
-    /// 2) A source piece over the first uncovered gap, run as an INLINE machine (the same Fill
-    ///    flow as the background: elect + fetch with the in-flow connection policy + commit;
-    ///    the collect pins, runs the deferred put, and overflow-banks what the cells refused).
+    /// The wait landed nothing servable at the cursor with our own machine still in flight:
+    /// the worker is done or stuck - join it (a done one's refused bytes overflow-bank here).
+    if (machine)
+    {
+        collectInFlightInto(machine->retrieve_index);
+        return true;
+    }
+
+    /// 2) A source piece run as an INLINE machine (the same Fill flow as the background: elect
+    ///    + fetch with the in-flow connection policy + commit; the collect pins, runs the
+    ///    deferred put, and overflow-banks what the cells refused). A POPULATABLE job's piece
+    ///    comes off the SCHEDULE walk (the cell's append-only floor and the fetch runs, reading
+    ///    through refused-down-fill resident holes so the cell completes); when the walk is
+    ///    exhausted - or for a bypass job - the piece is the display's first uncovered gap.
     ///    A latched `reached_eof` does NOT refuse the launch: under a size-unknown source the
     ///    latch records that AN end was seen, not where - a below-end gap (a pool lead's put
     ///    the cache refused) must still be re-fetched or its window is silently dropped. A gap
     ///    past the true end costs one empty read and the loop breaks, as the legacy path paid.
-    auto gaps = cov.subtract(fetch_window);
-    if (gaps.empty())
-        return false;
-    const ByteRange piece = gaps.front();
+    ByteRange piece{};
+    if (!r.into.empty())
+        piece = nextScheduledPiece(ri, window);
+    if (piece.size == 0)
+    {
+        auto gaps = cov.subtract(fetch_window);
+        if (gaps.empty())
+            return false;
+        piece = gaps.front();
+    }
+    const size_t piece_covered_before = display.coverage(piece).totalBytes();
     if (!launchMachineForWindow(ri, piece, *local_runner))
         return false;
     collectInFlightInto(ri);
     /// Over-read accounting for the piece's extension beyond the cursor window, keyed off the
-    /// display frontier so a short fill records only what landed (the machine's own write path
-    /// does not account over-read).
+    /// display frontier - what LANDED as servable (committed, banked, or a read-through hole's
+    /// resident coverage: those bytes were pulled from the source too) - so a short fill
+    /// records only that. The machine's own write path does not account over-read.
     const size_t frontier = display.frontier(piece);
     if (piece.offset < window.offset && frontier > piece.offset)
         overread_pending.add(ByteRange{piece.offset, std::min(frontier, window.offset) - piece.offset});
@@ -2274,14 +2365,28 @@ bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
     /// overflow bank did - the background never re-launches it.
     if (window.end() > r.range.offset)
         st.fetched = std::max(st.fetched, window.end() - r.range.offset);
-    /// Progress = the display can now serve the window's first byte.
-    if (display.frontier(window) > window.offset)
+    /// Progress = this piece landed NEW servable bytes (a coverage DELTA, not the absolute
+    /// frontier - a read-through piece's pre-covered head would make the absolute check
+    /// vacuously true and starve the escape hatch below) or the display can now serve the
+    /// window's first byte. A populatable piece can legitimately sit LEFT of the cursor,
+    /// filling its cell from the floor - the next call walks past what it landed.
+    if (display.coverage(piece).totalBytes() > piece_covered_before
+        || display.frontier(window) > window.offset)
         return true;
 
     /// 3) Last resort - the wait-timeout escape hatch: a sibling leader hung mid-download, so
     ///    the wait returned short AND our election still loses (the segment keeps a foreign
-    ///    downloader). Read the window from the source directly, cache-blind, and bank it -
-    ///    bounded to one window, only on this rare path (the old bespoke assembler's loser-tail).
+    ///    downloader). Bounded to one window, only on this rare path (the old assembler's
+    ///    loser-tail).
+    return bankDirectRead(ri, window);
+}
+
+bool ReaderExecutor::bankDirectRead(size_t ri, ByteRange window)
+{
+    /// One bounded cache-blind source read of the window, banked - the display serves it and
+    /// the consuming trim retires it. The heal verb for state no planned job can produce:
+    /// a hung sibling leader (the election keeps losing) or a raced shrink/detach that staled
+    /// the committed truth at the cursor. Empty = nothing there (EOF for this extent).
     ChainedBuffers direct = fetchGapsFromSource(window, /*from_prefetch=*/false, reached_eof,
         read_plan.geometry()->pressure_level, read_extent_end, &long_conn, /*stop=*/nullptr,
         /*may_open_long=*/true, stats);
@@ -2289,7 +2394,7 @@ bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
         return false;
     if (data_start_offset)
         direct.shift(-static_cast<ssize_t>(data_start_offset));
-    st.ready_bytes.append(std::move(direct));
+    read_plan.retrieve_status[ri].ready_bytes.append(std::move(direct));
     return true;
 }
 
@@ -2306,19 +2411,34 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
         return {};
     const ByteRange window{position_phys, want};
 
-    /// A populatable retrieve (it fills a cache cell) serves from the committed cell - the
-    /// cache is the buffer. Only a bypass gap (no fillable tier, empty `into`) keeps the bank.
-    if (!read_plan.schedule.retrieves[ri].into.empty())
-        return serveRetrievePopulatable(ri, window);
-
-    /// THE ENGINE: advance the job (join the in-flight machine / wait a sibling / run an
-    /// inline piece) until the display can serve the cursor, then read the display. A false
-    /// advance with nothing servable is EOF for this extent.
-    while (display.frontier(window) == window.offset)
+    /// THE ENGINE - one serve for populatable and bypass jobs alike: advance the job
+    /// (frontier-wait our leading machine / join a finished or foreign one / wait a sibling /
+    /// run an inline piece) until the display can serve the cursor, then read the display.
+    /// The cache is the buffer: a populatable job's bytes are read back OUT of the committed
+    /// cells, so a cold miss legitimately shows BOTH the source fetch (filling the cell) and
+    /// the cache read (serving it back out). A serve that returns nothing despite a claimed
+    /// frontier (a raced reset staled the committed truth) re-enters the pump rather than
+    /// reporting a false EOF; a false advance with nothing servable is EOF for this extent.
+    /// `serveFromDisplay` also runs any scheduled handed fill from the served bytes - a
+    /// planned job runs regardless of which holder served them.
+    while (true)
+    {
+        if (display.frontier(window) > window.offset)
+        {
+            ChainedBuffers out = serveFromDisplay(window);
+            if (!out.empty())
+                return out;
+            /// Claimed but unreadable: a raced shrink/detach staled the committed truth at
+            /// the cursor (the read guards refused to serve it), and every planned job trusts
+            /// the same claim - only a cache-blind read heals it, through the bank. Nothing
+            /// back = a true EOF.
+            if (!bankDirectRead(ri, window))
+                break;
+            continue;
+        }
         if (!advanceJobInline(ri, window))
             break;
-    /// `serveFromDisplay` also runs any scheduled handed fill from the served bytes - a planned
-    /// job runs regardless of which holder served them.
+    }
     return serveFromDisplay(window);
 }
 
@@ -2348,11 +2468,6 @@ IntervalSet ReaderExecutor::committedCoverage(ByteRange window_phys) const
         }
     }
     return covered;
-}
-
-bool ReaderExecutor::committedCellCovers(ByteRange window_phys) const
-{
-    return committedCoverage(window_phys).subtract(window_phys).empty();
 }
 
 size_t ReaderExecutor::committedCellPrefixEnd(ByteRange window_phys) const
@@ -2390,149 +2505,6 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
     /// SERVE never uses this - it reads the display, which is the data truth.
     const auto & r = read_plan.schedule.retrieves[ri];
     return std::max(jobFrontier(ri), r.range.offset + read_plan.retrieve_status[ri].fetched);
-}
-
-ChainedBuffers ReaderExecutor::serveRetrievePopulatable(size_t ri, ByteRange window)
-{
-    /// `window` is the step-bounded serve window (`serveRetrieveStep` computes it once for all
-    /// serve paths). `window_phys` narrows to the servable committed prefix below; keep the
-    /// original for the fallback.
-    ByteRange window_phys = window;
-
-    /// Run the fill INLINE on the serve thread (the same `FetchMachine` flow as the background,
-    /// driven by a local runner) until the cells cover the cursor window, then serve from the
-    /// just-committed cells. The fill starts at the cell's append-only frontier (see the loop) and
-    /// runs the plan's jobs locally - the foreground does not invent new jobs. A machine already in
-    /// flight for `ri` is joined (not relaunched); a machine for ANOTHER retrieve holds the single
-    /// slot, so we leave it and let the cell-serve / fallback below handle this window.
-    ///
-    /// The cache is the buffer: every byte the serve delivers is read OUT of a committed cell, so it
-    /// counts as a cache read (`BytesFrom{Fs,Page}Cache`) - including bytes this serve just fetched
-    /// into the cell from the source. A cold miss therefore shows BOTH the source fetch
-    /// (`BytesFromSource`, filling the cell) and the cache read (serving it back out); the two count
-    /// distinct operations and legitimately overlap.
-    {
-        const auto & r = read_plan.schedule.retrieves[ri];
-        while (!committedCellCovers(window_phys))
-        {
-            /// The next PIECE of this retrieve, straight off the schedule: the job's `fetch_runs`
-            /// are the source ranges (split at every embedded resident region - served / filled
-            /// down from its tier, never scheduled as a source read), and its fetch grids give
-            /// the cell-fill granularity. The piece starts at the display frontier of the
-            /// grid-floored window start - a mid-cell read fills from the cell floor
-            /// (append-only), and a down-filled hit advances the frontier past itself so the
-            /// next piece resumes after it - and runs to the window's end ceiled to the grid
-            /// (the whole-cell over-read that makes one cold cell ONE source read), clamped
-            /// into the run. No geometry is consulted here - the schedule is the job.
-            const size_t missing = committedCellPrefixEnd(window_phys);
-            const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
-            const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
-            /// The append-only floor: grid-floor the first missing byte (clamped to the job) and
-            /// walk the display frontier from there - ACROSS runs, so a before-slack run no serve
-            /// window ever reaches (a seek past it) is still fetched and the cell fills whole
-            /// from its floor.
-            const size_t floor_off = std::max(r.range.offset, missing / head_grid * head_grid);
-            const size_t base = floor_off < missing
-                ? committedCellPrefixEnd(ByteRange{floor_off, missing - floor_off})
-                : missing;
-            /// The piece: from the frontier to the end of the first run past it. The frontier can
-            /// sit in an inter-run resident hole (its down-fill write was skipped by the
-            /// append-only cell); the piece then reads THROUGH the hole from the source so the
-            /// cell still completes - the legacy assembler's behavior.
-            ByteRange piece{};
-            for (const auto & fr : r.fetch_runs)
-                if (fr.end() > base)
-                {
-                    const size_t bound
-                        = std::min(fr.end(), (window_phys.end() + tail_grid - 1) / tail_grid * tail_grid);
-                    piece = ByteRange{base, bound - base};
-                    break;
-                }
-            if (piece.size == 0)
-                break;   /// no scheduled source byte past the frontier - the fallback below resolves it
-            if (machineFor(ri))
-                collectInFlightInto(ri);
-            else if (!machine)
-            {
-                if (reached_eof || !launchMachineForWindow(ri, piece, *local_runner))
-                    break;
-                collectInFlightInto(ri);
-                /// The bytes outside the cursor window - the `[piece.offset, cursor)` head and the
-                /// `[cursor.end, piece.end)` tail of the cell-bounded piece - are over-read: source
-                /// bytes the request did not ask for. The inline collect writes the cells via
-                /// `pushChainToWriters`, which (unlike the sync `assembleAndWriteBack`) does not
-                /// account over-read, so record it here. A later read that consumes the range
-                /// removes it (`overread_pending.remove`); what is never read back is the net
-                /// `OverReadBytes`. Key off the committed frontier so a short (EOF / contended)
-                /// fill records only the bytes that actually landed.
-                const size_t frontier = committedCellPrefixEnd(piece);
-                if (piece.offset < window_phys.offset)
-                    overread_pending.add(ByteRange{piece.offset, std::min(frontier, window_phys.offset) - piece.offset});
-                if (frontier > window_phys.end())
-                {
-                    const size_t tail = std::max(piece.offset, window_phys.end());
-                    overread_pending.add(ByteRange{tail, frontier - tail});
-                }
-            }
-            else
-                break;   /// a read-ahead machine for another retrieve owns the slot
-            /// No progress means the frontier is stuck behind a sibling-led segment (the contended
-            /// collect commits only its led prefix inline, then revokes): stop and serve that prefix
-            /// below. Guards against re-launching forever.
-            if (committedCellPrefixEnd(piece) <= piece.offset)
-                break;
-        }
-        /// A sibling-led hole or EOF stopped the fill short of the window: narrow to the contiguous
-        /// committed prefix so the cell-serve returns it as a short window and the caller's next
-        /// read continues from there (an empty prefix - the cursor sits on a sibling-led segment -
-        /// leaves the window unchanged and the fallback below resolves it).
-        const size_t prefix_end = committedCellPrefixEnd(window_phys);
-        if (prefix_end > window_phys.offset && prefix_end < window_phys.end())
-            window_phys = ByteRange{window_phys.offset, prefix_end - window_phys.offset};
-    }
-
-    /// The in-flight machine fills the LEAD ahead of the cursor, committing cells progressively.
-    /// Read the committed prefix LIVE - never block on the whole lead. The machine "leads" this
-    /// window when its fill range covers it; then the still-uncommitted frontier bytes can be
-    /// waited on individually (a `FileSegment` condition wait), the worker keeps running, and the
-    /// done machine is finalized later in `maybeLaunchAhead`.
-    const bool machine_leads = machineFor(ri)
-        && machine->physical_window.offset <= window_phys.offset
-        && window_phys.end() <= machine->physical_window.end();
-    if (machine_leads || committedCellCovers(window_phys))
-    {
-        ChainedBuffers out;
-        IntervalSet covered;
-        /// Credit the cell-read bytes into a LOCAL Stats and fold them into `stats` only if the
-        /// window is FULLY served from the cells. On a short read (raced reset / EOF) the partial
-        /// `out` is discarded and the foreground fallback re-reads the window, so folding here
-        /// would double-count the discarded prefix against the cache counters.
-        Stats cell_stats;
-        display.read(window_phys, out, covered, cell_stats);
-        if (machine_leads)
-            display.wait(window_phys, /*own_worker_only=*/true, out, covered, cell_stats);
-        if (covered.subtract(window_phys).empty())   /// fully served from the cells
-        {
-            stats += cell_stats;
-            /// Run the scheduled handed fills from the served bytes (still physical): promote
-            /// the window up into the faster cells the fetch skipped, so the pc fill trails the
-            /// serve cursor (its own budget) instead of riding the fetch lead.
-            runHandedFills(window_phys, out, stats);
-            if (data_start_offset)
-                out.shift(-static_cast<ssize_t>(data_start_offset));
-            return out;
-        }
-    }
-
-    /// The cell is short and no in-flight machine is filling this exact window (the cursor sits
-    /// on a segment a sibling executor leads, or the cache refused the write): THE ENGINE -
-    /// advance the job (join the machine / wait the sibling / run an inline piece; the collect
-    /// overflow-banks what the cells refuse) until the display can serve, then read the display.
-    /// The ORIGINAL window, not the narrowed one: the raced/short path re-serves it whole.
-    while (display.frontier(window) == window.offset)
-        if (!advanceJobInline(ri, window))
-            break;
-    return serveFromDisplay(window);
 }
 
 IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const

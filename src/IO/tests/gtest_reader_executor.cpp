@@ -3905,6 +3905,144 @@ TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
            "waiting on the sibling's committed cell (a cache read), not a synchronous source read";
 }
 
+/// KT2b of the two-cursors model (`tmp/reader-executor-two-cursors/DESIGN.md`): display truth
+/// can REGRESS behind the launch high-water. A sibling wins a segment's downloader, our serve
+/// stops at its boundary (short window) - then the sibling's query DIES without committing a
+/// byte, resetting the segment to EMPTY. The hole sits behind everything already attempted,
+/// so only the window-anchored pump can heal it: the next serve must re-elect the segment,
+/// fetch it from the source, POPULATE the cell (not just bank cache-blind bytes), and serve -
+/// no livelock, no false EOF. Same real-`FileCache` choreography as the test above.
+TEST(ReaderExecutor, PumpHealsAbandonedSiblingSegment)
+{
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_sib_death_main");
+    chassert(&DB::CurrentThread::get() == &thread_status);
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_sib_death_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 3 * segment_size;   /// S0 [0,64) S1 [64,128) S2 [128,192)
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 1ull << 20;
+    settings[DB::FileCacheSetting::max_elements] = 64;
+    settings[DB::FileCacheSetting::max_file_segment_size] = segment_size;
+    settings[DB::FileCacheSetting::boundary_alignment] = segment_size;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_sib_death", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+
+    auto key = DB::FileCacheKey::fromPath("obj");
+    auto origin = DB::FileCache::getCommonOrigin();
+    auto provider = std::make_shared<DB::DiskCacheProvider>(
+        cache, cache_settings, /*query_id_=*/String{}, /*local_throttler_=*/nullptr,
+        std::optional<DB::FileCacheKey>(key), std::optional<DB::FileCacheOriginInfo>(origin));
+
+    const String content = String(segment_size, 'A') + String(segment_size, 'B') + String(segment_size, 'C');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = 2 * segment_size;   /// window 1 straddles S0 + the sibling-led S1
+    opts.min_bytes_for_seek = 0;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+
+    std::latch holding{1};      /// sibling holds S1's downloader (DOWNLOADING, zero bytes)
+    std::latch go_die{1};       /// main lets the sibling ABANDON (after window 1 returns)
+    std::latch died{1};         /// the segment is back to EMPTY, holder gone
+    std::atomic<bool> sib_won_downloader{false};
+
+    std::thread sibling([&]
+    {
+        DB::current_thread = nullptr;
+        DB::ThreadStatus sib_status;
+        auto sib_context = DB::Context::createCopy(getContext().context);
+        sib_context->makeQueryContext();
+        sib_context->setCurrentQueryId("reader_exec_sib_death_sibling");
+        auto sib_scope = DB::QueryScope::create(sib_context);
+
+        auto holder = cache->getOrSet(key, segment_size, segment_size, file_size,
+            DB::CreateFileSegmentSettings{}, 0, origin);
+        auto & seg = holder->front();
+        sib_won_downloader.store(seg.getOrSetDownloader() == DB::FileSegment::getCallerId());
+        holding.count_down();
+
+        go_die.wait();
+        /// The death: give up the downloader with ZERO bytes written and drop the holder -
+        /// the killed-query path. The segment resets to EMPTY; nobody will ever commit it.
+        seg.resetDownloader();
+        holder.reset();
+        died.count_down();
+    });
+
+    ReaderExecutor executor(source, objects, {provider}, opts);
+
+    holding.wait();
+    EXPECT_TRUE(sib_won_downloader.load()) << "the sibling must win S1's downloader on its own thread";
+
+    /// Window 1: serves the led prefix [0, 64) short, stopping at the sibling boundary.
+    String got1;
+    {
+        auto chain = executor.readNextWindow();
+        for (const auto & node : chain.getNodes())
+            got1.append(node.data(), node.size);
+    }
+    EXPECT_LE(got1.size(), segment_size) << "window 1 must stop at the sibling boundary";
+    EXPECT_EQ(content.substr(0, got1.size()), got1);
+
+    /// The sibling dies; the hole at S1 now has no live writer and no committed byte.
+    go_die.count_down();
+    died.wait();
+    sibling.join();
+
+    /// The pump must heal the hole: re-elect S1, fetch it, populate the cell, and serve the
+    /// rest of the file. A livelock hangs here; a false EOF truncates `rest`.
+    String rest;
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            rest.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got1 + rest, content) << "the abandoned segment's bytes must be served, not skipped";
+
+    /// The heal must POPULATE the cache cell, not just serve cache-blind banked bytes.
+    auto verify = cache->getOrSet(key, segment_size, segment_size, file_size,
+        DB::CreateFileSegmentSettings{}, 0, origin);
+    EXPECT_EQ(verify->front().state(), DB::FileSegment::State::DOWNLOADED)
+        << "the pump's piece runs the same fill flow as any machine - the cell completes";
+}
+
 /// Reproduces the `chassert(!is_last_holder)` abort in `FileSegment::complete`'s
 /// DOWNLOADING branch. `planResidencyView` credits a concurrently-DOWNLOADING
 /// segment's committed prefix as a HIT, so its `read_holder` passively pins the
