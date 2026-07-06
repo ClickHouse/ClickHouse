@@ -64,9 +64,10 @@
 /// ClickHouse types this wire format can represent; call it eagerly (at format
 /// construction / CREATE FUNCTION time) rather than discovering a rejection
 /// only once the first block is serialized. Not supported: Map, LowCardinality,
-/// Nullable(Array/Tuple/Variant) (no wire slot for a top-level null map on
-/// COL_COMPLEX/COL_VARIANT), Nullable/Variant nested inside Array/Tuple, and
-/// any fixed-width type whose size isn't exactly 1/2/4/8 bytes (so UUID, IPv6,
+/// Nullable(Array/Variant) (no wire slot for a top-level null map on COL_COMPLEX/
+/// COL_VARIANT; Nullable(Tuple(...)) is supported instead, via a top-level null
+/// map on COL_COMPLEX), Nullable/Variant nested inside Array/Tuple, and any
+/// fixed-width type whose size isn't exactly 1/2/4/8 bytes (so UUID, IPv6,
 /// Int128/UInt128, Decimal128/256, and FixedString of any length are all
 /// rejected). Any type kind this format has no encoding for at all (Dynamic,
 /// JSON/Object, AggregateFunction(...), ...) is also rejected.
@@ -147,15 +148,18 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1/ColumnBinary: nested Nullable inside Array/Tuple is not supported: {}", type->getName());
         const DataTypePtr & nested_type = nullable_type->getNestedType();
-        // Only COL_BYTES/COL_FIXED* carry a COL_IS_NULLABLE null map; COL_COMPLEX
-        // (Array/Tuple) and COL_VARIANT have no wire slot for a top-level null map of
-        // their own, so a Nullable wrapping one of them must be rejected here too, not
-        // just once already nested inside an Array/Tuple.
+        // Only COL_BYTES/COL_FIXED*/COL_COMPLEX carry a COL_IS_NULLABLE null map;
+        // COL_VARIANT already has its own per-row NULL representation (the 0xFF
+        // discriminator sentinel) and has no wire slot for an additional top-level
+        // null map, so Nullable(Variant(...)) is rejected. Nullable(Array(...)) is
+        // also rejected, but only defensively: DataTypeArray::canBeInsideNullable()
+        // is false, so ClickHouse can never actually construct this type; Nullable
+        // (Tuple(...)) is real (reachable behind enable_nullable_tuple_type) and is
+        // supported via buildColDescriptor/writeColData's top-level null map.
         if (typeid_cast<const DataTypeArray *>(nested_type.get())
-            || typeid_cast<const DataTypeTuple *>(nested_type.get())
             || typeid_cast<const DataTypeVariant *>(nested_type.get()))
             throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1/ColumnBinary: Nullable(Array/Tuple/Variant) is not supported: {}", type->getName());
+                "COLUMNAR_V1/ColumnBinary: Nullable(Array/Variant) is not supported: {}", type->getName());
         validateColumnarV1SupportedType(nested_type, is_nested);
         return;
     }
@@ -326,6 +330,13 @@ inline uint64_t buildColDescriptor(
     uint64_t write_cursor,
     ColDescriptor & desc)
 {
+    // COL_COMPLEX (Array/Tuple) carries its own top-level null map (reserved below,
+    // guarded by is_nullable); unwrap here so the Variant/Array/Tuple dispatch below
+    // sees the actual complex column regardless of Nullable wrapping. COL_VARIANT
+    // already encodes NULL via its discriminator and is never reached here nullable
+    // (validateColumnarV1SupportedType rejects Nullable(Variant(...))).
+    if (const auto * top_null_col = typeid_cast<const ColumnNullable *>(col))
+        col = &top_null_col->getNestedColumn();
 
     // ── Variant column → COL_VARIANT ─────────────────────────────────────────
     // Wire layout:
@@ -384,9 +395,18 @@ inline uint64_t buildColDescriptor(
                 "COLUMNAR_V1: nested Nullable inside Array is not supported in COL_COMPLEX; "
                 "use a flat nullable column or a different format");
 
-        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
-        desc.null_offset    = 0;
+        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u) | (is_nullable ? COL_IS_NULLABLE : 0u);
         desc.offsets_offset = 0;  // unused for Array; outer offsets are at data_offset
+
+        if (is_nullable)
+        {
+            desc.null_offset = write_cursor;
+            write_cursor += num_rows;
+        }
+        else
+        {
+            desc.null_offset = 0;
+        }
 
         write_cursor = (write_cursor + 7ull) & ~7ull;
         desc.data_offset = write_cursor;
@@ -411,9 +431,20 @@ inline uint64_t buildColDescriptor(
                     "use a flat nullable column or a different format");
         }
 
-        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u);
-        desc.null_offset    = 0;
+        desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u) | (is_nullable ? COL_IS_NULLABLE : 0u);
         desc.offsets_offset = 0;
+
+        if (is_nullable)
+        {
+            desc.null_offset = write_cursor;
+            write_cursor += num_rows;
+            write_cursor = (write_cursor + 7ull) & ~7ull; // realign after null map
+        }
+        else
+        {
+            desc.null_offset = 0;
+        }
+
         desc.data_offset    = write_cursor;
         desc.data_size      = complexDataSize(*tup_col, num_rows);
         write_cursor       += desc.data_size;
@@ -494,6 +525,19 @@ inline void writeColData(
     const ColDescriptor & desc,
     std::span<uint8_t> buf)
 {
+    // Unwrap Nullable up front (mirrors buildColDescriptor) and write its null map
+    // before dispatching on the concrete column, so COL_COMPLEX (Array/Tuple) gets
+    // the same "null map first, then the actual payload" treatment as scalars/strings.
+    if (const auto * top_null_col = typeid_cast<const ColumnNullable *>(col))
+    {
+        col = &top_null_col->getNestedColumn();
+        if (is_nullable && desc.null_offset)
+        {
+            const auto & nm = top_null_col->getNullMapData();
+            std::memcpy(buf.data() + desc.null_offset, nm.data(), num_rows);
+        }
+    }
+
     // ── Variant column → COL_VARIANT ─────────────────────────────────────────
     if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
     {
@@ -570,17 +614,6 @@ inline void writeColData(
     {
         writeComplexData(*tup_col, num_rows, buf.data() + desc.data_offset);
         return;
-    }
-
-    const ColumnNullable * null_col = typeid_cast<const ColumnNullable *>(col);
-    if (null_col)
-        col = &null_col->getNestedColumn();
-
-    if (is_nullable && null_col && desc.null_offset)
-    {
-        // Null map: 1=null, 0=non-null — identical to ColumnNullable::getNullMapData().
-        const auto & nm = null_col->getNullMapData();
-        std::memcpy(buf.data() + desc.null_offset, nm.data(), num_rows);
     }
 
     const ColumnString * str_col = typeid_cast<const ColumnString *>(col);
