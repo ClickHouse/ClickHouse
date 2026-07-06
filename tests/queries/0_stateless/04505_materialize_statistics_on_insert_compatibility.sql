@@ -1,3 +1,8 @@
+-- Tags: no-random-settings
+-- no-random-settings: the settings-randomization harness sets `materialize_statistics_on_insert`
+-- explicitly at the session level, and `compatibility` never overrides a setting the user has
+-- already changed, so the compatibility revert this test checks would be a no-op under randomization.
+
 -- Regression test for the `compatibility` contract of the statistics-on-insert defaults.
 -- Enabling `materialize_statistics_on_insert` by default (26.7) is bounded by the new
 -- `materialize_statistics_on_insert_max_table_size` setting. Before 26.7 there was no size cap,
