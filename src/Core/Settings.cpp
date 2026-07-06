@@ -8892,10 +8892,20 @@ NameToNameMap Settings::toNameToNameMap() const
     NameToNameMap query_parameters;
     for (const auto & param : *impl)
     {
-        std::string value;
-        ReadBufferFromOwnString buf(param.getValueString());
-        readQuoted(value, buf);
-        query_parameters.emplace(param.getName(), value);
+        /// Custom settings serialize their value as a quoted Field dump, so it must be unquoted here.
+        /// Parameters whose name collides with a builtin setting (e.g. `limit`, `offset`, `max_threads`)
+        /// are stored in the builtin field and serialize unquoted, so readQuoted would fail (issue #85768).
+        if (param.isCustom())
+        {
+            std::string value;
+            ReadBufferFromOwnString buf(param.getValueString());
+            readQuoted(value, buf);
+            query_parameters.emplace(param.getName(), value);
+        }
+        else
+        {
+            query_parameters.emplace(param.getName(), param.getValueString());
+        }
     }
     return query_parameters;
 }
