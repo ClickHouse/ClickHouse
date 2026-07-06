@@ -395,7 +395,7 @@ Do not confuse the protocol revision with the [serialization version](#serializa
 
 ## Data types {#data-types}
 
-This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N)` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
+This section documents the wire encoding of the types the Native format can carry within a column's `data`, grouped into four families of increasing decoder complexity. Two types — `AggregateFunction(func, ...)` and `QBit(T, N[, stride])` — are valid `Native` column types but have function- or type-specific payloads that are out of scope here; they are called out below where they would otherwise be mistaken for aliases.
 
 | Family                           | Section | Streams per column | Cross-block state |
 |----------------------------------|---------|--------------------|-------------------|
@@ -1070,7 +1070,7 @@ So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering a
 Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
 - `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
-- `QBit(T, N)` stores a vector with its bit planes transposed for vector-search workloads.
+- `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/sql-reference/data-types/qbit) and in the [binary type encoding](/sql-reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 :::
 
 ### Versioned types {#versioned-types}

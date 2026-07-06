@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'Источник словаря YTsaurus'
+sidebarTitle: 'YTsaurus'
+description: 'Настройка YTsaurus в качестве источника словаря в ClickHouse.'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  Это экспериментальная возможность, которая в будущих выпусках может изменяться с нарушением обратной совместимости.
+  Включите использование источника словаря YTsaurus
+  с помощью настройки [`allow_experimental_ytsaurus_dictionary_source`](/ru/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+Пример настроек:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Configuration file">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Поля настройки:
+
+| Настройка         | Описание                         |
+| ----------------- | -------------------------------- |
+| `http_proxy_urls` | URL HTTP-прокси YTsaurus.        |
+| `cypress_path`    | Путь Cypress к исходной таблице. |
+| `oauth_token`     | Токен OAuth.                     |

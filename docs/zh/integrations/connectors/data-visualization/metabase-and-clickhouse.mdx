@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Metabase'
+slug: /integrations/metabase
+keywords: ['Metabase']
+description: 'Metabase 是一款易于使用的开源 UI 工具，可用于查询您的数据。'
+title: '将 Metabase 连接到 ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+  - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Metabase 是一款易于使用的开源 UI 工具，可用于查询和分析您的数据。Metabase 是一个 Java 应用程序，只需<a href="https://www.metabase.com/start/oss/jar" target="_blank">下载 JAR 文件</a>并使用 `java -jar metabase.jar` 运行即可。Metabase 通过您下载并放入 `plugins` 文件夹中的 JDBC 驱动连接到 ClickHouse：
+
+<div id="goal">
+  ## 目标
+</div>
+
+在本指南中，你将使用 Metabase 向 ClickHouse 中的数据提出一些问题，并将答案可视化。其中一个结果会类似这样：
+
+<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase 饼图可视化，显示来自 ClickHouse 的数据" border />
+
+<p />
+
+<Tip>
+  **添加一些数据**
+
+  如果你还没有可用的数据集，可以添加一个示例数据集。本指南使用 [UK Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 数据集，因此你也可以选择它。同一文档分类下还有其他几个示例可供参考。
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 收集您的连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2--download-the-clickhouse-plugin-for-metabase">
+  ## 2. 下载 Metabase 的 ClickHouse 插件
+</div>
+
+1. 如果你还没有 `plugins` 文件夹，请在保存 `metabase.jar` 的目录下创建一个 `plugins` 子文件夹。
+
+2. 该插件是一个名为 `clickhouse.metabase-driver.jar` 的 JAR 文件。请在 <a href="https://github.com/clickhouse/metabase-clickhouse-driver/release" target="_blank">https://github.com/clickhouse/metabase-clickhouse-driver/releases/latest</a> 下载该 JAR 文件的最新版本。
+
+3. 将 `clickhouse.metabase-driver.jar` 保存到 `plugins` 文件夹中。
+
+4. 启动 (或重启) Metabase，以确保驱动程序正确加载。
+
+5. 通过 <a href="http://localhost:3000/" target="_blank">http://hostname:3000</a> 访问 Metabase。首次启动时，你会看到欢迎界面，并需要依次回答一系列问题。如果系统提示你选择数据库，请选择“**稍后再添加我的数据**”：
+
+<div id="3--connect-metabase-to-clickhouse">
+  ## 3.  将 Metabase 连接到 ClickHouse
+</div>
+
+1. 点击右上角的齿轮图标，并选择 **Admin Settings**，进入您的 <a href="http://localhost:3000/admin/settings/setup" target="_blank">Metabase 管理页面</a>。
+
+2. 点击 **Add a database**。或者，您也可以点击 **Databases** 选项卡，然后选择 **Add database** 按钮。
+
+3. 如果驱动已成功安装，您将在 **Database type** 的下拉菜单中看到 **ClickHouse**：
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Metabase 数据库选择界面，显示 ClickHouse 选项" border />
+
+4. 为您的数据库填写一个 **Display name**。这是 Metabase 中的一项设置，因此您可以使用任意喜欢的名称。
+
+5. 输入 ClickHouse 数据库的连接详细信息。如果您的 ClickHouse 服务器配置为使用 SSL，请启用安全连接。例如：
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Metabase 中用于 ClickHouse 数据库的连接详细信息表单" border />
+
+6. 点击 **Save** 按钮后，Metabase 将扫描数据库中的表。
+
+<div id="4-run-a-sql-query">
+  ## 4. 运行 SQL 查询
+</div>
+
+1. 点击右上角的 **Exit admin** 按钮，退出 **Admin settings**。
+
+2. 点击右上角的 **+ New** 菜单，可以看到你可以提问、运行 SQL 查询以及创建仪表盘：
+
+   <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Metabase 的 New 菜单，显示了创建问题、SQL 查询和仪表盘的选项" border />
+
+3. 例如，下面这条 SQL 查询在名为 `uk_price_paid` 的表上运行，返回 1995 年至 2022 年各年的平均成交价格：
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Metabase SQL 编辑器显示了对英国房价支付数据的查询" border />
+
+<div id="5-ask-a-question">
+  ## 5. 提出问题
+</div>
+
+1. 点击 **+ New**，然后选择 **Question**。请注意，你可以从选择数据库和表开始构建问题。例如，下面这个问题针对 `default` 数据库中名为 `uk_price_paid` 的表，用于计算 Greater Manchester 郡内各城镇的平均房价：
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="带有英国房价数据的 Metabase 问题构建器界面" border />
+
+2. 点击 **Visualize** 按钮，以表格视图查看结果。
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Metabase 可视化，显示按城镇划分的平均房价表格结果" border />
+
+3. 在结果下方，点击 **Visualization** 按钮，将可视化切换为柱状图 (或其他可用选项) ：
+
+   <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase 饼图可视化，显示 Greater Manchester 按城镇划分的平均房价" border />
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+若要进一步了解 Metabase 以及如何构建仪表盘，请<a href="https://www.metabase.com/docs/latest/" target="_blank">访问 Metabase 文档</a>。

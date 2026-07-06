@@ -939,7 +939,7 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
         else
-            readFloatTextFast(x, rb);
+            readFloatImpreciseForCompatibility(x, rb);
     }
     else
         readText(x, rb);
@@ -1011,7 +1011,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
         else
-            return tryReadFloatTextFast(x, rb);
+            return tryReadFloatImpreciseForCompatibility(x, rb);
     }
     else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);
@@ -4724,10 +4724,21 @@ private:
 
     template <typename FloatType>
     static ColumnPtr convertArrayToQBit(
-        ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable * nullable_source, size_t n, size_t size);
+        ColumnsWithTypeAndName & arguments,
+        const DataTypePtr &,
+        const ColumnNullable * nullable_source,
+        size_t n,
+        size_t size,
+        size_t stride);
 
     template <typename T>
     WrapperType createArrayToQBitWrapper(const DataTypeArray & from_array_type, const DataTypeQBit & to_qbit_type) const;
+
+    template <typename FloatType>
+    static ColumnPtr convertQBitToArray(ColumnsWithTypeAndName & arguments, const ColumnNullable * nullable_source, size_t dimension, size_t stride);
+
+    template <typename T>
+    WrapperType createQBitToArrayWrapper(const DataTypeQBit & from_qbit_type, const DataTypeArray & to_type) const;
 
     /// The case of: tuple([key1, key2, ..., key_n], [value1, value2, ..., value_n])
     WrapperType createTupleToMapWrapper(const DataTypes & from_kv_types, const DataTypes & to_kv_types) const;

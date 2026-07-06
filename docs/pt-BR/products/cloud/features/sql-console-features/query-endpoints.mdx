@@ -1,0 +1,57 @@
+---
+sidebar_title: 'Query API endpoints'
+slug: /cloud/features/query-api-endpoints
+description: 'Crie facilmente endpoints de API REST a partir de consultas salvas'
+keywords: ['api', 'query api endpoints', 'query endpoints', 'query rest api']
+title: 'Query API endpoints'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Criar aplicações interativas orientadas por dados exige não apenas um banco de dados rápido, dados bem estruturados e consultas otimizadas.
+Seu front-end e seus microsserviços também precisam de uma maneira fácil de consumir os dados retornados por essas consultas, de preferência por meio de APIs bem estruturadas.
+
+O recurso **Query API Endpoints** permite que você crie um endpoint de API diretamente de qualquer consulta SQL salva no console do ClickHouse Cloud.
+Você poderá acessar endpoints de API via HTTP para executar suas consultas salvas sem precisar se conectar ao seu serviço ClickHouse Cloud por meio de um driver nativo.
+
+<div id="ip-access-control">
+  ## Controle de acesso por IP
+</div>
+
+Os Query API endpoints respeitam a lista de IPs permitidos no nível da API key. Assim como no SQL Console, os Query API endpoints fazem proxy das solicitações de dentro da infraestrutura do ClickHouse, portanto as configurações de lista de IPs permitidos no nível do service não se aplicam.
+
+Para restringir quais clientes podem chamar seus Query API endpoints:
+
+<Steps>
+  <Step>
+    #### Abra as configurações da API key
+
+    1. Vá para ClickHouse Cloud Console → **Organization** → **API Keys**
+
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="API Keys" />
+
+    2. Clique em **Edit** ao lado da API key usada para Query API endpoints
+
+    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Edit" />
+  </Step>
+
+  <Step>
+    #### Adicione os endereços IP permitidos
+
+    1. Na seção **Allow access to this API Key**, selecione **Specific locations**
+    2. Insira endereços IP ou intervalos CIDR (por exemplo, `203.0.113.1` ou `203.0.113.0/24`)
+    3. Adicione várias entradas conforme necessário
+
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Specific locations" />
+
+    A criação de Query API endpoints exige uma Role Admin no Console e uma API key com as permissões adequadas.
+  </Step>
+</Steps>
+
+<Tip>
+  **Guia**
+
+  Consulte o [guia de Query API endpoints](/pt-BR/products/cloud/guides/sql-console/query-endpoints) para ver instruções de como configurar
+  Query API endpoints em algumas etapas simples
+</Tip>

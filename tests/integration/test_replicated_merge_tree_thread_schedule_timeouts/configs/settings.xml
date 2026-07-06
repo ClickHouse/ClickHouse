@@ -3,4 +3,9 @@
     <max_thread_pool_size>300</max_thread_pool_size>
     <thread_pool_queue_size>1</thread_pool_queue_size>
     <background_schedule_pool_size>128</background_schedule_pool_size>
+    <!-- Pre-spawn all schedule pool workers at startup so they actually occupy
+         max_thread_pool_size slots, otherwise (with the default lazy initial
+         size) the global thread pool has too much headroom and the test cannot
+         observe "Cannot schedule a task" exceptions. -->
+    <background_schedule_pool_initial_size>128</background_schedule_pool_initial_size>
 </clickhouse>
