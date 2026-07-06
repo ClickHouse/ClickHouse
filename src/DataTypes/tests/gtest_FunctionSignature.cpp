@@ -112,6 +112,33 @@ GTEST_TEST(FunctionSignature, ArrayWideningTypeFunctions)
     EXPECT_EQ(checkSignature(diff, {makeColumn("Array(DateTime64(3))")}), "Array(Decimal(18, 3))");
 }
 
+/// The `Decimal(precision, scale)` const-value type function used by `toDecimalNN`: the precision is
+/// the fixed maximum for the width and the scale echoes the const scale argument.
+GTEST_TEST(FunctionSignature, DecimalConstValueTypeFunction)
+{
+    EXPECT_EQ(
+        checkSignature("toDecimal32(Any, const S UInt8) -> Decimal(9, S)",
+            {makeColumn("Float64"), makeConstColumn("UInt8", Field(UInt64(3)))}),
+        "Decimal(9, 3)");
+    EXPECT_EQ(
+        checkSignature("toDecimal64(Any, const S UInt8) -> Decimal(18, S)",
+            {makeColumn("Float64"), makeConstColumn("UInt8", Field(UInt64(4)))}),
+        "Decimal(18, 4)");
+    EXPECT_EQ(
+        checkSignature("toDecimal128(Any, const S UInt8) -> Decimal(38, S)",
+            {makeColumn("Float64"), makeConstColumn("UInt8", Field(UInt64(5)))}),
+        "Decimal(38, 5)");
+    EXPECT_EQ(
+        checkSignature("toDecimal256(Any, const S UInt8) -> Decimal(76, S)",
+            {makeColumn("Float64"), makeConstColumn("UInt8", Field(UInt64(0)))}),
+        "Decimal(76, 0)");
+    /// A non-constant scale is rejected (the value is needed to build the type).
+    EXPECT_THAT(
+        checkSignature("toDecimal32(Any, const S UInt8) -> Decimal(9, S)",
+            {makeColumn("Float64"), makeColumn("UInt8")}),
+        ::testing::StartsWith("FAIL:"));
+}
+
 GTEST_TEST(FunctionSignature, ConstArguments)
 {
     EXPECT_EQ(

@@ -586,6 +586,26 @@ public:
     std::string name() const override { return "arrayDifferenceResult"; }
 };
 
+/// `Decimal(precision, scale)` — builds a Decimal type from two const values, choosing
+/// `Decimal32`/`64`/`128`/`256` by precision (exactly like `DataTypeFactory` for `Decimal(P, S)`).
+/// Used by the `toDecimalNN` conversion signatures, where the precision is the fixed maximum for the
+/// width (9 / 18 / 38 / 76) and the scale comes from the const scale argument, e.g.
+/// `toDecimal64(Any, const S UInt8) -> Decimal(18, S)`.
+class TypeFunctionDecimal : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Decimal");
+        const UInt64 precision = args[0].field().safeGet<UInt64>();
+        const UInt64 scale = args[1].field().safeGet<UInt64>();
+        return Value(createDecimal<DataTypeDecimal>(precision, scale));
+    }
+
+    std::string name() const override { return "Decimal"; }
+};
+
 /// If the type was already Nullable, return it as is.
 class TypeFunctionNullable : public ITypeFunction
 {
@@ -1356,6 +1376,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAdditionMultiplicationResult>();
     factory.registerElement<TypeFunctionArraySumResult>();
     factory.registerElement<TypeFunctionArrayDifferenceResult>();
+    factory.registerElement<TypeFunctionDecimal>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();
