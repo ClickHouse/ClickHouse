@@ -223,9 +223,10 @@ private:
     // Various helper functions follow, normally you shouldn't have to call them.
     Field getRandomField(int type);
     Field fuzzField(Field field);
-    /// Fuzz a setting value in place, but leave integer values untouched. Use this at every
-    /// setting-value mutation site instead of a bare fuzzField() so the time-duration invariant
-    /// (see isIntegerField in the .cpp) holds for every AST carrier of SETTINGS.
+    /// Fuzz a setting value in place, but leave integer values (incl. integer-encoding strings)
+    /// untouched. Use this at every setting-value mutation site instead of a bare fuzzField() so
+    /// the time-duration invariant (see isIntegerSettingValue in the .cpp) holds for every AST
+    /// carrier of SETTINGS.
     void fuzzSettingValue(Field & value);
     ASTPtr getRandomColumnLike();
     /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
