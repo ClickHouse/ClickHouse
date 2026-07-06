@@ -372,18 +372,14 @@ struct integer<Bits, Signed>::_impl
 
         self.items[little(0)] = _impl::to_Integral(rhs);
 
+        /// Sign-extend with a value select instead of a branch: a data-dependent branch here
+        /// mispredicts on mixed-sign data and prevents vectorization of columnar conversion loops.
+        base_type extension = 0;
         if constexpr (std::is_signed_v<Integral>)
-        {
-            if (rhs < 0)
-            {
-                for (unsigned i = 1; i < item_count; ++i)
-                    self.items[little(i)] = -1;
-                return;
-            }
-        }
+            extension = rhs < 0 ? base_type(-1) : base_type(0);
 
         for (unsigned i = 1; i < item_count; ++i)
-            self.items[little(i)] = 0;
+            self.items[little(i)] = extension;
     }
 
     template <typename TupleLike, size_t i = 0>
@@ -531,18 +527,13 @@ struct integer<Bits, Signed>::_impl
 
         if constexpr (Bits > Bits2)
         {
+            /// See the rationale in wide_integer_from_builtin.
+            base_type extension = 0;
             if constexpr (std::is_signed_v<Signed2>)
-            {
-                if (rhs < 0)
-                {
-                    for (unsigned i = to_copy; i < item_count; ++i)
-                        self.items[little(i)] = -1;
-                    return;
-                }
-            }
+                extension = rhs < 0 ? base_type(-1) : base_type(0);
 
             for (unsigned i = to_copy; i < item_count; ++i)
-                self.items[little(i)] = 0;
+                self.items[little(i)] = extension;
         }
     }
 
