@@ -4393,51 +4393,6 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
-void MergeTreeData::checkSortingKeyChangeIsPossibleWithPatchParts(
-    const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const
-{
-    UInt64 max_prefix_size = 0;
-    for (const auto & patch_part : getPatchPartsVectorForInternalUsage())
-    {
-        const auto & source_parts_set = patch_part->getSourcePartsSet();
-        if (source_parts_set.getFormatVersion() >= SourcePartsSetForPatch::V2_FORMAT_VERSION)
-            max_prefix_size = std::max(max_prefix_size, source_parts_set.getSortKeyPrefixSize());
-    }
-
-    if (max_prefix_size == 0)
-        return;
-
-    auto get_sorting_key_children = [](const StorageInMemoryMetadata & metadata) -> ASTs
-    {
-        auto expr_list_ast = metadata.getSortingKey().getOriginalExpressionList();
-        if (!expr_list_ast)
-            return {};
-        if (const auto * expr_list = expr_list_ast->as<ASTExpressionList>())
-            return expr_list->children;
-        return {};
-    };
-
-    const auto old_children = get_sorting_key_children(old_metadata);
-    const auto new_children = get_sorting_key_children(new_metadata);
-
-    /// `max_prefix_size <= old_children.size()` holds because every v2 patch captures the full
-    /// sort-key size at write time and this check forbids shrinking below it afterwards.
-    const size_t check_size = std::min<size_t>(max_prefix_size, old_children.size());
-
-    for (size_t i = 0; i < check_size; ++i)
-    {
-        if (i < new_children.size() && new_children[i]->formatWithSecretsOneLine() == old_children[i]->formatWithSecretsOneLine())
-            continue;
-
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Cannot apply this change of the sorting key: table has patch parts created by lightweight updates "
-            "that were written with the first {} expression(s) of the current sorting key, "
-            "so these expressions must stay unchanged and may only be extended. "
-            "Materialize the patches first (ALTER TABLE ... APPLY PATCHES) and retry after patch parts are removed in the background",
-            max_prefix_size);
-    }
-}
-
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -4562,9 +4517,6 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
-
-    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::MODIFY_ORDER_BY; }))
-        checkSortingKeyChangeIsPossibleWithPatchParts(new_metadata, old_metadata);
 
     const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
@@ -5996,9 +5948,15 @@ MergeTreeData::PartsToRemoveFromZooKeeper MergeTreeData::removePartsInRangeFromW
         const auto & source_part = parts_to_remove.front();
         const auto & partition = source_part->partition;
         String empty_part_name = empty_info.getPartNameAndCheckFormat(format_version);
+
         /// Use the source part's metadata so patch parts pick up patch-part metadata.
         auto [new_data_part, tmp_dir_holder] = createEmptyPart(
-            empty_info, partition, empty_part_name, source_part->getMetadataSnapshot(), NO_TRANSACTION_PTR);
+            empty_info,
+            partition,
+            empty_part_name,
+            source_part->getMetadataSnapshot(),
+            NO_TRANSACTION_PTR,
+            source_part->info.isPatch() ? std::optional(source_part->getSourcePartsSet().cloneEmpty()) : std::nullopt);
 
         MergeTreeData::Transaction transaction(*this, NO_TRANSACTION_RAW);
         renameTempPartAndAdd(new_data_part, transaction, lock, /*rename_in_transaction=*/ false);     /// All covered parts must be already removed
@@ -10661,7 +10619,7 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
     const auto & patch_partition_id = patch_part.info.getPartitionId();
-    auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id];
+    auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id].metadata;
 
     if (metadata_snapshot)
         return metadata_snapshot;
@@ -10677,9 +10635,7 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
         }
         case SourcePartsSetForPatch::V2_FORMAT_VERSION:
         {
-            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
-            const auto & main_sorting_key = main_metadata->getSortingKey();
-            metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), main_sorting_key, source_parts_set.getSortKeyPrefixSize(), local_context);
+            metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyColumns(), local_context);
             break;
         }
         default:
@@ -10687,6 +10643,20 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
     }
 
     return metadata_snapshot;
+}
+
+std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
+{
+    std::lock_guard lock(patch_parts_metadata_mutex);
+    auto & sorting_key = patch_parts_metadata_cache[patch_part.info.getPartitionId()].sorting_key;
+
+    if (!sorting_key)
+    {
+        auto main_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
+        sorting_key = buildPatchSortingKeyDescription(patch_part.getSourcePartsSet().getSortingKeyColumns(), main_metadata);
+    }
+
+    return sorting_key;
 }
 
 PatchPartMetadata MergeTreeData::getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const
@@ -10704,9 +10674,8 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(Block sample_block, MergeT
         case MergeTreePatchPartsVersion::V2:
         {
             auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
-            const auto & main_sorting_key = main_metadata->getSortingKey();
-            result.sorting_key_prefix_size = main_sorting_key.column_names.size();
-            result.metadata = DB::getPatchPartMetadataV2(std::move(sample_block), main_sorting_key, *result.sorting_key_prefix_size, local_context);
+            auto sorting_key_columns = getSortingKeyColumnsForPatch(main_metadata->getSortingKey());
+            result.metadata = DB::getPatchPartMetadataV2(std::move(sample_block), sorting_key_columns, local_context);
             break;
         }
     }
@@ -11368,7 +11337,8 @@ void MergeTreeData::incrementMergedPartsProfileEvent(MergeTreeDataPartType type)
 
 std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition, const String & new_part_name,
-        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn) const
+        const StorageMetadataPtr & metadata_snapshot, const MergeTreeTransactionPtr & txn,
+        std::optional<SourcePartsSetForPatch> source_parts_set) const
 {
     auto settings = getSettings();
 
@@ -11388,6 +11358,12 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withBytesAndRows(0, 0, 0)
         .withPartInfo(new_part_info)
         .build();
+
+    /// Keep the format version and sort-key columns of the patch partition (copied from a
+    /// covered or sibling part), so the partition stays uniform for merges and for the
+    /// per-partition metadata cache. An empty set is used when there is no part to copy from.
+    if (new_part_info.isPatch())
+        new_data_part->setSourcePartsSet(source_parts_set ? std::move(*source_parts_set) : SourcePartsSetForPatch{});
 
     if ((*settings)[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();

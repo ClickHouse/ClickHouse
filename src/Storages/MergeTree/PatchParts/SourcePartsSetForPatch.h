@@ -1,10 +1,7 @@
 #pragma once
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Storages/MergeTree/ActiveDataPartSet.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <Core/Block.h>
-
-#include <optional>
 
 namespace DB
 {
@@ -29,14 +26,7 @@ public:
     static constexpr auto FILENAME = "source_parts.dat";
 
     SourcePartsSetForPatch() = default;
-
-    /// For v2 patches eagerly builds `sorting_key_prefix_description` from `metadata_snapshot`
-    /// by slicing the table's ORDER BY expression list to `sorting_key_prefix_size_` children.
-    /// For v1 patches (`sorting_key_prefix_size_ = std::nullopt`) the description stays null.
-    SourcePartsSetForPatch(
-        const StorageMetadataPtr & metadata_snapshot,
-        UInt8 format_version_,
-        std::optional<UInt64> sorting_key_prefix_size_);
+    SourcePartsSetForPatch(UInt8 format_version_, Names sorting_key_columns_);
 
     bool empty() const { return min_max_versions_by_part.empty(); }
     UInt64 getMinDataVersion() const { return min_data_version; }
@@ -47,34 +37,38 @@ public:
 
     UInt8 getFormatVersion() const { return format_version; }
 
-    /// Length of the semantic sort-key prefix of the v2 patch, excluding the trailing
-    /// `_block_number`, `_block_offset` identity columns. Zero for v1 patches.
-    UInt64 getSortKeyPrefixSize() const { return sorting_key_prefix_size; }
+    /// Columns of the table's sorting key the v2 patch was written with, as one-line
+    /// formatted texts with DESC modifiers (see `getSortingKeyColumnsForPatch`), excluding
+    /// the trailing `_block_number`, `_block_offset` identity columns. Empty for v1 patches.
+    const Names & getSortingKeyColumns() const { return sorting_key_columns; }
 
-    /// Shared semantic sort-key prefix `KeyDescription`. Built eagerly in the explicit
-    /// constructor or in `readBinary` (both take `StorageMetadataPtr`). Nullptr for v1 patches
-    /// and for default-constructed sets.
-    const std::shared_ptr<const KeyDescription> & getSortingKeyPrefixDescription() const { return sorting_key_prefix_description; }
+    /// Returns a set with the same format version and sort-key columns but without source
+    /// parts. Used for empty covering parts in patch partitions, which patch nothing but
+    /// must keep the structure of the partition.
+    SourcePartsSetForPatch cloneEmpty() const { return SourcePartsSetForPatch(format_version, sorting_key_columns); }
 
     void addSourcePart(const String & name, UInt64 data_version);
-    PatchParts getPatchParts(const MergeTreePartInfo & original_part, const DataPartPtr & patch_part) const;
+
+    /// `sorting_key` is the effective sort-key prefix for `MergeOnKey` patches
+    /// (see `buildPatchSortingKeyDescription`), unused (nullptr) for v1 patches.
+    PatchParts getPatchParts(
+        const MergeTreePartInfo & original_part,
+        const DataPartPtr & patch_part,
+        std::shared_ptr<const KeyDescription> sorting_key) const;
 
     static SourcePartsSetForPatch build(
         const Block & block,
         UInt64 data_version,
-        const StorageMetadataPtr & metadata_snapshot,
-        std::optional<UInt64> sorting_key_prefix_size_);
+        UInt8 format_version,
+        Names sorting_key_columns);
 
     /// Merge patch-on-patch sets. The input parts share the same partition, so their
-    /// `format_version`, `sorting_key_prefix_size`, and `sorting_key_prefix_description` are
-    /// guaranteed equal; we just copy them from the first part (no metadata rebuild).
+    /// `format_version` and `sorting_key_columns` are guaranteed equal (both are covered
+    /// by the partition-id hash); we just copy them from the first part.
     static SourcePartsSetForPatch merge(const DataPartsVector & source_parts);
 
     void writeBinary(WriteBuffer & out) const;
-
-    /// `metadata_snapshot` is needed to build `sorting_key_prefix_description` for v2 patches;
-    /// for v1 patches it is unused. Passing it avoids a separate two-step init.
-    void readBinary(ReadBuffer & in, const StorageMetadataPtr & metadata_snapshot);
+    void readBinary(ReadBuffer & in);
 
 private:
     void buildSourcePartsSet();
@@ -91,17 +85,11 @@ private:
     UInt64 max_data_version = 0;
 
     /// Format version of the patch part on disk (see `V1_FORMAT_VERSION` / `V2_FORMAT_VERSION`).
-    /// Only the prefix *length* is persisted, not the sort-key AST: v2 readers rebuild the AST
-    /// from the table's current metadata and slice it to `sorting_key_prefix_size`.
     UInt8 format_version = V1_FORMAT_VERSION;
 
-    /// Length of the semantic sort-key prefix persisted on the v2 patch, written to
-    /// `source_parts.dat` right after `format_version`. Zero and unused for v1 patches.
-    UInt64 sorting_key_prefix_size = 0;
-
-    /// Semantic sort-key prefix as a `KeyDescription`, built eagerly in the explicit constructor
-    /// or in `readBinary` and shared across every `PatchPartInfo` produced from this set. Nullptr for v1.
-    std::shared_ptr<const KeyDescription> sorting_key_prefix_description;
+    /// Sort-key columns the v2 patch was written with, persisted in `source_parts.dat` right
+    /// after `format_version`. Empty and unused for v1 patches.
+    Names sorting_key_columns;
 };
 
 /// Returns set with source parts with _part column from block and data_version.
@@ -109,7 +97,6 @@ private:
 SourcePartsSetForPatch buildSourceSetForPatch(
     Block & block,
     UInt64 data_version,
-    const StorageMetadataPtr & metadata_snapshot,
-    std::optional<UInt64> sorting_key_prefix_size);
+    const PatchPartMetadata & patch_metadata);
 
 }

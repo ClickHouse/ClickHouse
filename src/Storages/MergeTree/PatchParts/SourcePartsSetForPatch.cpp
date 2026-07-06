@@ -1,15 +1,12 @@
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
+#include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
-#include <Interpreters/Context.h>
-#include <Parsers/ASTExpressionList.h>
-#include <Parsers/ASTFunction.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
-#include <Storages/StorageInMemoryMetadata.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
@@ -20,57 +17,15 @@ namespace ErrorCodes
 {
     extern const int DUPLICATE_DATA_PART;
     extern const int INCORRECT_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
-namespace
-{
-
-/// Build the shared semantic sorting key prefix `KeyDescription` from the target table's metadata.
-/// Slices the original ORDER BY expression list by the prefix size.
-std::shared_ptr<const KeyDescription> buildSortingKeyPrefixDescription(const StorageMetadataPtr & metadata_snapshot, UInt64 prefix_size)
-{
-    const auto & main_sorting_key = metadata_snapshot->getSortingKey();
-
-    /// Get original expressions to preserve DESC entries for reverse flags.
-    const auto original_expr_list_ast = main_sorting_key.getOriginalExpressionList();
-    const auto * original_expr_list = original_expr_list_ast ? original_expr_list_ast->as<ASTExpressionList>() : nullptr;
-    const size_t main_children = original_expr_list ? original_expr_list->children.size() : 0;
-
-    if (prefix_size > main_children)
-    {
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR,
-            "Patch's persisted sort-key prefix size ({}) exceeds the main table's current sort-key children count ({})",
-            prefix_size, main_children);
-    }
-
-    auto order_by_expression = makeASTFunction("tuple");
-    order_by_expression->arguments = make_intrusive<ASTExpressionList>();
-
-    for (size_t i = 0; i < prefix_size; ++i)
-        order_by_expression->arguments->children.push_back(original_expr_list->children[i]->clone());
-
-    return std::make_shared<const KeyDescription>(KeyDescription::getKeyFromAST(
-        order_by_expression,
-        metadata_snapshot->getColumns(),
-        metadata_snapshot->virtuals,
-        Context::getGlobalContextInstance()));
-}
-
-}
-
-SourcePartsSetForPatch::SourcePartsSetForPatch(
-    const StorageMetadataPtr & metadata_snapshot,
-    UInt8 format_version_,
-    std::optional<UInt64> sorting_key_prefix_size_)
+SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, Names sorting_key_columns_)
     : format_version(format_version_)
-    , sorting_key_prefix_size(sorting_key_prefix_size_.value_or(0))
+    , sorting_key_columns(std::move(sorting_key_columns_))
 {
-    /// Only v2 carries a semantic-prefix sort-key. v1 uses the fixed `(_part, _part_offset)`
-    /// layout handled by `PatchMode::Merge` / `PatchMode::Join` with no `KeyDescription`.
-    if (format_version == V2_FORMAT_VERSION && sorting_key_prefix_size_.has_value())
-        sorting_key_prefix_description = buildSortingKeyPrefixDescription(metadata_snapshot, *sorting_key_prefix_size_);
+    /// Only v2 carries a sort-key. v1 uses the fixed `(_part, _part_offset)`
+    /// layout handled by `PatchMode::Merge` / `PatchMode::Join`.
+    chassert(format_version == V2_FORMAT_VERSION || sorting_key_columns.empty());
 }
 
 void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_version)
@@ -117,7 +72,10 @@ void SourcePartsSetForPatch::buildSourcePartsSet()
     }
 }
 
-PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & original_part, const DataPartPtr & patch_part) const
+PatchParts SourcePartsSetForPatch::getPatchParts(
+    const MergeTreePartInfo & original_part,
+    const DataPartPtr & patch_part,
+    std::shared_ptr<const KeyDescription> sorting_key) const
 {
     UInt64 data_version = original_part.getDataVersion();
     auto it = source_parts_by_version.upper_bound(data_version);
@@ -155,7 +113,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
                 .source_parts = {}, // source part names are not needed for MergeOnKey
                 .source_data_version = original_part.getDataVersion(),
                 .perform_alter_conversions = true,
-                .sorting_key = sorting_key_prefix_description,
+                .sorting_key = std::move(sorting_key),
             });
         }
 
@@ -204,18 +162,15 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
 SourcePartsSetForPatch SourcePartsSetForPatch::build(
     const Block & block,
     UInt64 data_version,
-    const StorageMetadataPtr & metadata_snapshot,
-    std::optional<UInt64> sorting_key_prefix_size_)
+    UInt8 format_version,
+    Names sorting_key_columns_)
 {
     const auto & column_part_name = block.getByName("_part").column;
     const auto & part_name_lc = assert_cast<const ColumnLowCardinality &>(*column_part_name);
     const auto & part_name_dict = part_name_lc.getDictionary().getNestedColumn();
     const auto & part_name_str = assert_cast<const ColumnString &>(*part_name_dict);
 
-    /// Sink callers pass `v2_sorting_key_prefix_size` as the prefix_size
-    /// only when writing v2 patches; absence of the optional is the v1 signal.
-    const UInt8 format_version = sorting_key_prefix_size_.has_value() ? V2_FORMAT_VERSION : V1_FORMAT_VERSION;
-    SourcePartsSetForPatch parts_set(metadata_snapshot, format_version, sorting_key_prefix_size_);
+    SourcePartsSetForPatch parts_set(format_version, std::move(sorting_key_columns_));
 
     for (size_t i = 0; i < part_name_str.size(); ++i)
     {
@@ -238,20 +193,19 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
     {
         const auto & set = part->getSourcePartsSet();
 
-        /// Inputs to a patch-on-patch merge always share the format version, prefix length and
-        /// `sorting_key_prefix_description` contents, because all of them are covered by the
-        /// partition-id hash. Copy them from the first part instead of rebuilding from metadata.
+        /// Inputs to a patch-on-patch merge always share the format version and the sort-key
+        /// columns, because both are covered by the partition-id hash. Copy them from the
+        /// first part.
         if (!format_version_set)
         {
             merged_set.format_version = set.format_version;
-            merged_set.sorting_key_prefix_size = set.sorting_key_prefix_size;
-            merged_set.sorting_key_prefix_description = set.sorting_key_prefix_description;
+            merged_set.sorting_key_columns = set.sorting_key_columns;
             format_version_set = true;
         }
         else
         {
             chassert(merged_set.format_version == set.format_version);
-            chassert(merged_set.sorting_key_prefix_size == set.sorting_key_prefix_size);
+            chassert(merged_set.sorting_key_columns == set.sorting_key_columns);
         }
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
@@ -275,10 +229,14 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(format_version, out);
 
-    /// v2 adds the semantic sort-key prefix length right after the version byte, so readers can
-    /// recover it without a round-trip through the target table's in-memory metadata.
+    /// v2 adds the sort-key columns right after the version byte, so a patch part stays
+    /// self-describing after the table's sorting key is changed by ALTER.
     if (format_version == V2_FORMAT_VERSION)
-        writeBinaryLittleEndian(sorting_key_prefix_size, out);
+    {
+        writeVarUInt(sorting_key_columns.size(), out);
+        for (const auto & column : sorting_key_columns)
+            writeStringBinary(column, out);
+    }
 
     writeBinaryLittleEndian(min_max_versions_by_part.size(), out);
 
@@ -290,7 +248,7 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
     }
 }
 
-void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPtr & metadata_snapshot)
+void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
 {
     UInt8 version = 0;
     readBinaryLittleEndian(version, in);
@@ -302,8 +260,17 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPt
 
     if (format_version == V2_FORMAT_VERSION)
     {
-        readBinaryLittleEndian(sorting_key_prefix_size, in);
-        sorting_key_prefix_description = buildSortingKeyPrefixDescription(metadata_snapshot, sorting_key_prefix_size);
+        static constexpr UInt64 max_sorting_key_columns = 4096;
+
+        UInt64 num_columns = 0;
+        readVarUInt(num_columns, in);
+
+        if (num_columns > max_sorting_key_columns)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Too many sort-key columns in patch part metadata: {}", num_columns);
+
+        sorting_key_columns.resize(num_columns);
+        for (auto & column : sorting_key_columns)
+            readStringBinary(column, in);
     }
 
     UInt64 num_parts = 0;
@@ -325,14 +292,28 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPt
 SourcePartsSetForPatch buildSourceSetForPatch(
     Block & block,
     UInt64 data_version,
-    const StorageMetadataPtr & metadata_snapshot,
-    std::optional<UInt64> sorting_key_prefix_size)
+    const PatchPartMetadata & patch_metadata)
 {
     /// Need to update data version column because it contains data version
     /// of source part, but we store the data version of updated data in patch part.
     auto & data_version_column = block.getByName(PartDataVersionColumn::name).column;
     data_version_column = PartDataVersionColumn::type->createColumnConst(block.rows(), data_version)->convertToFullColumnIfConst();
-    return SourcePartsSetForPatch::build(block, data_version, metadata_snapshot, sorting_key_prefix_size);
+
+    UInt8 format_version = SourcePartsSetForPatch::V1_FORMAT_VERSION;
+    Names sorting_key_columns;
+
+    if (patch_metadata.version == MergeTreePatchPartsVersion::V2)
+    {
+        format_version = SourcePartsSetForPatch::V2_FORMAT_VERSION;
+
+        /// The sorting key of a v2 patch part is (columns..., _block_number, _block_offset);
+        /// strip the two trailing identity columns to recover the table's sort-key columns.
+        sorting_key_columns = getSortingKeyColumnsForPatch(patch_metadata.metadata->getSortingKey());
+        chassert(sorting_key_columns.size() >= 2);
+        sorting_key_columns.resize(sorting_key_columns.size() - 2);
+    }
+
+    return SourcePartsSetForPatch::build(block, data_version, format_version, std::move(sorting_key_columns));
 }
 
 }

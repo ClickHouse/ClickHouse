@@ -25,21 +25,31 @@ StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_c
 StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part. Sort key is
-/// `(<main_sorting_key children[0..sorting_key_prefix_size)>..., _block_number, _block_offset)`,
-/// sliced from the target table's `KeyDescription` to exactly the prefix length the patch was
-/// written with. The sort-key AST itself is not persisted on disk; the snapshot is rebuilt from
-/// the current main-table metadata every time a v2 patch is opened.
+/// `(<sorting_key_columns>..., _block_number, _block_offset)`, parsed from the texts persisted
+/// in the patch part itself, so the snapshot always matches the on-disk layout of the patch
+/// regardless of later `ALTER MODIFY ORDER BY` on the target table.
 StorageMetadataPtr getPatchPartMetadataV2(
     Block sample_block,
-    const KeyDescription & main_sorting_key,
-    UInt64 sorting_key_prefix_size,
+    const Names & sorting_key_columns,
     ContextPtr local_context);
 
 StorageMetadataPtr getPatchPartMetadataV2(
     ColumnsDescription patch_part_desc,
-    const KeyDescription & main_sorting_key,
-    UInt64 sorting_key_prefix_size,
+    const Names & sorting_key_columns,
     ContextPtr local_context);
+
+/// Returns one-line formatted texts of the sorting key expressions, with DESC modifiers
+/// preserved in the text (e.g. `b DESC`). This is the form persisted in v2 patch parts
+/// and compared to find the common prefix of two sorting keys.
+Names getSortingKeyColumnsForPatch(const KeyDescription & sorting_key);
+
+/// Builds the effective sorting key for applying a v2 patch part: the longest common prefix
+/// of the patch's persisted sort-key columns and the table's current sorting key, resolved
+/// against the main table's columns. Both the patch part and the main parts are sorted by
+/// this prefix, and it never gets shorter than the table's (immutable) primary key.
+std::shared_ptr<const KeyDescription> buildPatchSortingKeyDescription(
+    const Names & patch_sorting_key_columns,
+    const StorageMetadataPtr & main_metadata_snapshot);
 
 /// Returns system columns which are common for all v1 patch parts.
 const NamesAndTypesList & getPatchPartKeyColumns();

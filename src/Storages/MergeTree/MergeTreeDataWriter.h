@@ -126,7 +126,7 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        SourcePartsSetForPatch source_parts_set,
+        std::optional<SourcePartsSetForPatch> source_parts_set,
         ContextPtr context,
         UInt64 block_number);
 

@@ -38,6 +38,7 @@
 #include <Poco/Timestamp.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
+#include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -1283,10 +1284,13 @@ public:
     constexpr static auto EMPTY_PART_TMP_PREFIX = "tmp_empty_";
     /// `metadata_snapshot` must come from the source part being covered
     /// (via `IMergeTreeDataPart::getMetadataSnapshot`) so patch parts get patch-part metadata.
+    /// For a part in a patch partition, `source_parts_set` must be seeded from a covered or
+    /// sibling part (see `SourcePartsSetForPatch::cloneEmpty`) to keep the partition uniform.
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn) const;
+        const MergeTreeTransactionPtr & txn,
+        std::optional<SourcePartsSetForPatch> source_parts_set = std::nullopt) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1425,13 +1429,18 @@ public:
 
     /// Returns the metadata snapshot used to read a patch part, rebuilt from the part's columns
     /// and source-parts set: v1 via `getPatchPartMetadataV1`, v2 via `getPatchPartMetadataV2`
-    /// with the persisted sort-key prefix size. Cached by partition id.
+    /// with the persisted sort-key columns. Cached by partition id.
     StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
     /// Builds the patch-sink-side `PatchPartMetadata` bundle for a new patch: picks the format
     /// from the `patch_parts_version` setting and produces the matching patch metadata. For v2
-    /// also captures the sort-key prefix size, later persisted into `source_parts.dat`.
+    /// also captures the sort-key columns, later persisted into `source_parts.dat`.
     PatchPartMetadata getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const;
+
+    /// Returns the effective sorting key for applying a v2 patch part: the longest common
+    /// prefix of the patch's persisted sort-key columns and the table's current sorting key.
+    /// Cached by partition id; invalidated together with `patch_parts_metadata_cache` on ALTER.
+    std::shared_ptr<const KeyDescription> getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const;
 
     static MergingParams getMergingParamsForPatchParts();
 
@@ -1602,11 +1611,19 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// A cache for metadata snapshots for patch parts.
-    /// The key is a partition id of patch part.
-    /// Patch parts in one partition always have the same structure.
+    /// Cached per-partition state of patch parts: the metadata snapshot used to read a patch
+    /// part and (v2 only) the effective sorting key for applying it. Patch parts in one
+    /// partition always have the same structure. The fields are filled lazily and independently.
+    struct PatchPartsMetadataCacheEntry
+    {
+        StorageMetadataPtr metadata;
+        std::shared_ptr<const KeyDescription> sorting_key;
+    };
+
+    /// The key is a partition id of patch part. Invalidated on ALTER: the effective sorting
+    /// key depends on the table's current sorting key (see `getPatchPartSortingKey`).
     mutable std::mutex patch_parts_metadata_mutex;
-    mutable std::unordered_map<String, StorageMetadataPtr> patch_parts_metadata_cache;
+    mutable std::unordered_map<String, PatchPartsMetadataCacheEntry> patch_parts_metadata_cache;
 
     MergeTreePartsMover parts_mover;
 
@@ -1693,15 +1710,6 @@ protected:
         bool allow_empty_sorting_key,
         bool allow_nullable_key_,
         ContextPtr local_context) const;
-
-    /// v2 patch parts persist the length of the sort-key prefix they were written with and
-    /// rebuild their sort description from the *current* sorting key at read time. Rejects
-    /// `ALTER MODIFY ORDER BY` that shrinks or reshapes this prefix while such patches are
-    /// still active; otherwise the change would surface later as a read/load-time exception
-    /// (shrunk key) or as silently incorrect pruning (replaced key expression).
-    void checkSortingKeyChangeIsPossibleWithPatchParts(
-        const StorageInMemoryMetadata & new_metadata,
-        const StorageInMemoryMetadata & old_metadata) const;
 
     /// Runs the same metadata validation as `setProperties` but without publishing
     /// `new_metadata`. Lets `alter()` validate against freshly changed settings before

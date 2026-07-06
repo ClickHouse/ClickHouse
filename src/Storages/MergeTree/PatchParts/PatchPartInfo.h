@@ -39,8 +39,7 @@ struct KeyDescription;
   *
   * Patch parts belong to the different partitions than the original part.
   * The partition id of the patch part is 'patch-<hash of column names in patch part>-<original_partition_id>'.
-  * Therefore patch parts with different columns are stored in different partitions. For the v2 format
-  * the hash additionally covers the sort-key column names and a v2 marker, so v1 and v2 patches never share a partition.
+  * Therefore patch parts with different columns are stored in different partitions.
   * For example three updates "SET x = 1 WHERE <cond>" and "SET y = 1 WHERE <cond>" and "SET x = 1, y = 1 WHERE <cond>"
   * will create three patch parts in three different partition.
   *
@@ -60,8 +59,8 @@ struct KeyDescription;
   *  1. if X contains part A itself. It happens if part A was not participating in merge when UPDATE was executed.
   *  2. if X contains part B and C, which are covered by part A. It happens if there was a merge (B, C) -> A running when UPDATE was executed.
   *
-  * Legacy format handles these two cases with two separate modes (`Merge` for case 1, `Join` for case 2).
-  * The new format handles both cases uniformly with `MergeOnKey`, because sort-key values and
+  * Legacy V1 format handles these two cases with two separate modes (`Merge` for case 1, `Join` for case 2).
+  * V2 format handles both cases uniformly with `MergeOnKey`, because sort-key values and
   * `(_block_number, _block_offset)` are preserved across merges of the original parts.
   *
   * All modes use `_data_version` to leave rows with the latest version.
@@ -76,11 +75,11 @@ using DataPartInfoForReaderPtr = std::shared_ptr<IMergeTreeDataPartInfoForReader
 
 enum class PatchMode
 {
-    /// Legacy v1 format. Apply patch via merging by sorted columns (_part, _part_offset).
+    /// Legacy V1 format. Apply patch via merging by sorted columns (_part, _part_offset).
     Merge,
-    /// Legacy v1 format. Apply patch via joining by key columns (_block_number, _block_offset).
+    /// Legacy V1 format. Apply patch via joining by key columns (_block_number, _block_offset).
     Join,
-    /// New v2 format. Apply patch via streaming merge on the main table's sort-key columns.
+    /// V2 format. Apply patch via streaming merge on the main table's sort-key columns.
     /// Within each equal-sort-key run rows are disambiguated with (_block_number, _block_offset).
     MergeOnKey,
 };
@@ -95,10 +94,8 @@ struct PatchPartInfoBase
     Int64 source_data_version = 0;
     /// If true convert columns from patch to current data types in table metadata.
     bool perform_alter_conversions = true;
-
-    /// Semantic sort-key prefix of the target table, without the trailing `_block_number`, `_block_offset`
-    /// identity columns. Populated for `MergeOnKey` (v2) patches only, nullptr for v1. Built once per
-    /// patch part (see `SourcePartsSetForPatch::getSortingKeyPrefixDescription`) and shared.
+    /// Effective sorting key for applying the patch without the trailing
+    /// `_block_number`, `_block_offset` columns. Populated for `MergeOnKey` (V2) patches only.
     std::shared_ptr<const KeyDescription> sorting_key;
 
     String describe() const;
@@ -113,11 +110,11 @@ using PatchPartsForReader = std::vector<PatchPartInfoForReader>;
 
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
+
 struct PatchPartMetadata
 {
     MergeTreePatchPartsVersion version;
     StorageMetadataPtr metadata;
-    std::optional<UInt64> sorting_key_prefix_size;
 };
 
 }

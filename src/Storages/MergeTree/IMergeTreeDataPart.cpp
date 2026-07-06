@@ -1297,9 +1297,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         loadChecksums(require_columns_checksums);
         loadIndexGranularity();
 
-        /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata depends
-        /// on `source_parts_set.getSortKeyPrefixSize()`, and loading the index with a wrong
-        /// sort-key column count would throw.
+        /// Load `source_parts.dat` before the primary index: a v2 patch's rebuilt metadata takes
+        /// the sort-key columns from it, and the index cannot be deserialized without them.
         loadSourcePartsSet();
 
         /// It's important to load index after index granularity.
@@ -1636,16 +1635,28 @@ void IMergeTreeDataPart::loadDefaultCompressionCodec()
         default_codec = detectDefaultCompressionCodec();
 }
 
+void IMergeTreeDataPart::setSourcePartsSet(SourcePartsSetForPatch source_parts_set_)
+{
+    source_parts_set = std::move(source_parts_set_);
+}
+
+const SourcePartsSetForPatch & IMergeTreeDataPart::getSourcePartsSet() const
+{
+    /// Reading the set of a patch part before it is loaded or set explicitly
+    /// would silently misinterpret the patch as v1 (the default format version).
+    if (!source_parts_set)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Source parts set is not initialized for part {}", name);
+
+    return *source_parts_set;
+}
+
 void IMergeTreeDataPart::loadSourcePartsSet()
 {
     if (!info.isPatch())
         return;
 
     if (auto in = readFileIfExists(SourcePartsSetForPatch::FILENAME))
-    {
-        auto main_metadata = storage.getInMemoryMetadataPtr(storage.getContext(), /*bypass_metadata_cache=*/ false);
-        source_parts_set.readBinary(*in, main_metadata);
-    }
+        source_parts_set.emplace().readBinary(*in);
     else
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing file {} in patch part {}", SourcePartsSetForPatch::FILENAME, name);
 }
