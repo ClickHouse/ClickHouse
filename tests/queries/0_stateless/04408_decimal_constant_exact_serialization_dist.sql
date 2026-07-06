@@ -47,6 +47,15 @@ FROM remote('127.0.0.{1,2}', system.one);
 SELECT DISTINCT toUnixTimestamp64Nano(materialize(fromUnixTimestamp64Nano(1698543000000000000, 'Europe/Berlin')))
 FROM remote('127.0.0.{1,2}', system.one);
 
+-- The DateTime64 carrier must be exact regardless of cast_string_to_date_time_mode. Under 'basic', a
+-- String -> DateTime64 cast reads local date-time text (and would drop a UTC/ISO 'Z' marker), so a
+-- text-based carrier would shift a non-UTC DateTime64 by the zone offset; the String -> Decimal ->
+-- DateTime64 carrier is unaffected because Decimal -> DateTime64 is a numeric reinterpretation.
+SET cast_string_to_date_time_mode = 'basic';
+SELECT DISTINCT toUnixTimestamp64Nano(materialize(fromUnixTimestamp64Nano(1698543000000000000, 'Europe/Berlin')))
+FROM remote('127.0.0.{1,2}', system.one);
+SET cast_string_to_date_time_mode = 'best_effort';
+
 -- Decimals nested in Array/Tuple/Map must be exact too. Without an exact serialization the remote
 -- shard rounds the value and the differing column name makes the query fail with NOT_FOUND_COLUMN_IN_BLOCK.
 SELECT DISTINCT materialize([toDecimal64('123456789012.34567', 5)]) AS c
