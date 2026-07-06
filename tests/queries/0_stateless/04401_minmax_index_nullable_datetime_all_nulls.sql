@@ -17,18 +17,27 @@
 --
 -- The fix:
 --   * `getMinMaxDate` / `getMinMaxTime` short-circuit on `Field::Types::Null`
---     for either bound, and (in `getMinMaxTime`) return an empty range for any
---     unexpected `Field` type instead of throwing `LOGICAL_ERROR`. This makes
---     `system.parts` queries succeed (showing epoch / `1970-01-01` for those
---     parts) instead of failing.
---   * `checkPartitionKeyAndInitMinMax` unwraps `Nullable` before the
---     `isDate` / `isDateTime` / `isDateTime64` checks, so a non-`NULL`
---     `Nullable(...)` partition key actually populates `min_*`/`max_*` instead
---     of staying silently empty.
+--     for either bound, and return an empty range for a bound whose `Field` kind
+--     is *incompatible* with the expected one instead of throwing `LOGICAL_ERROR`
+--     / `BAD_GET`. This makes `system.parts` queries succeed (showing epoch /
+--     `1970-01-01` for those parts) instead of failing.
+--   * `checkPartitionKeyAndInitMinMax` falls back to unwrapping `Nullable` (via
+--     `removeNullable`) only when the partition key has no non-`Nullable`
+--     Date/DateTime/DateTime64 column, so an all-`Nullable` date/time key
+--     populates `min_*`/`max_*` instead of staying silently empty, while a mixed
+--     key such as `(d Date, nd Nullable(Date))` keeps selecting the non-`Nullable`
+--     column `d` exactly as before.
 --
--- The deeper root cause of (1) — stale `minmax_idx_*_column_pos` after `ALTER
--- ... AFTER` — is not addressed here; a concurrency-safe fix needs per-part
--- column-order persistence and is left for a follow-up.
+-- Scope / not covered here:
+--   * The deeper root cause of (1) — stale `minmax_idx_*_column_pos` after `ALTER
+--     ... AFTER` — is not fixed; a concurrency-safe fix needs per-part
+--     column-order persistence and is left for a follow-up.
+--   * Consequently, only NULL bounds and *incompatible*-`Field` stale slots are
+--     rescued. A stale slot pointing at a non-date column that shares the same
+--     `Field` storage (a reordered `UInt64` read as `Date`/`DateTime`, or a plain
+--     `Decimal64` read as `DateTime64`) is still read as a date/time and surfaces
+--     a misleading value rather than an empty range — so this test does not assert
+--     that such same-storage stale slots collapse to epoch.
 
 -- =====================================================
 -- Case 1: The exact reproducer from issue #92834 (path 1 above).
@@ -237,3 +246,50 @@ SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
 FROM system.parts WHERE database = currentDatabase() AND table = 'test_nullable_datetime64_mixed_part' AND active;
 
 DROP TABLE IF EXISTS test_nullable_datetime64_mixed_part;
+
+-- =====================================================
+-- Case 11: Mixed non-`Nullable` `Date` + `Nullable(Date)` in the partition key.
+-- `checkPartitionKeyAndInitMinMax` must keep selecting the non-`Nullable` column
+-- `d` (its historical choice) and NOT treat both `d` and `nd` as date candidates
+-- (which would reset `minmax_idx_date_column_pos` to -1 and regress `min_date` /
+-- `max_date` to epoch). `min_date` / `max_date` must therefore come from `d`
+-- (2024-06-15), not from `nd` (2020-01-01) and not from epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_mixed_date_and_nullable_date;
+
+CREATE TABLE test_mixed_date_and_nullable_date (id UInt64, d Date, nd Nullable(Date))
+ENGINE = MergeTree()
+PARTITION BY (d, nd)
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_mixed_date_and_nullable_date VALUES (1, toDate('2024-06-15'), toDate('2020-01-01'));
+
+SELECT
+    min_date = toDate('2024-06-15') AS min_matches,
+    max_date = toDate('2024-06-15') AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_mixed_date_and_nullable_date' AND active;
+
+DROP TABLE IF EXISTS test_mixed_date_and_nullable_date;
+
+-- =====================================================
+-- Case 12: Mixed non-`Nullable` `DateTime` + `Nullable(DateTime)` in the partition
+-- key (the `DateTime` analogue of case 11). `min_time` / `max_time` must come from
+-- the non-`Nullable` column `t` (2024-06-15 12:00:00), not epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_mixed_datetime_and_nullable_datetime;
+
+CREATE TABLE test_mixed_datetime_and_nullable_datetime (id UInt64, t DateTime('UTC'), nt Nullable(DateTime('UTC')))
+ENGINE = MergeTree()
+PARTITION BY (t, nt)
+ORDER BY id
+SETTINGS allow_nullable_key = 1;
+
+INSERT INTO test_mixed_datetime_and_nullable_datetime VALUES (1, toDateTime('2024-06-15 12:00:00', 'UTC'), toDateTime('2020-01-01 00:00:00', 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_mixed_datetime_and_nullable_datetime' AND active;
+
+DROP TABLE IF EXISTS test_mixed_datetime_and_nullable_datetime;
