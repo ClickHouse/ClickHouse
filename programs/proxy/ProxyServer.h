@@ -64,6 +64,7 @@ private:
         const std::string & listen_host,
         const char * port_name,
         bool start_server,
+        bool listen_try,
         std::vector<DB::ProtocolServerAdapter> & servers,
         CreateServerFunc && func) const;
 
@@ -73,6 +74,7 @@ private:
         const std::vector<std::string> & listen_hosts,
         Poco::ThreadPool & server_pool,
         std::vector<DB::ProtocolServerAdapter> & servers,
+        bool listen_try = false,
         bool start_servers = false,
         const DB::ServerType & server_type = DB::ServerType(DB::ServerType::Type::QUERIES_ALL));
 };

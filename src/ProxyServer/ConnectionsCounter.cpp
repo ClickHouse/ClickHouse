@@ -1,5 +1,4 @@
-
-#include "ConnectionsCounter.h"
+#include <ProxyServer/ConnectionsCounter.h>
 
 #include <mutex>
 #include <stdexcept>
@@ -23,7 +22,13 @@ void GlobalConnectionsCounter::updateConnectionCount(const ServerConfig & server
 
 bool ConnectionsCounter::Entry::operator<(const Entry & other) const
 {
-    return count < other.count;
+    /// Order primarily by active connection count, but break ties by the server key so that distinct
+    /// replicas with equal load stay distinct entries in the set. Comparing by count alone would make
+    /// a freshly initialized cluster collapse to a single zero-count replica and hide the rest, so
+    /// `least_connections` would only ever see one server.
+    if (count != other.count)
+        return count < other.count;
+    return server.key < other.server.key;
 }
 
 ConnectionsCounter::ConnectionsCounter(const std::vector<ServerConfig> & servers_, GlobalConnectionsCounter * global_counter_)

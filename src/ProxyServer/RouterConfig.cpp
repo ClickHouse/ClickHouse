@@ -1,4 +1,4 @@
-#include "RouterConfig.h"
+#include <ProxyServer/RouterConfig.h>
 
 #include <memory>
 
@@ -57,7 +57,23 @@ void parseClusters(const Poco::Util::AbstractConfiguration & config, Clusters & 
 
             ServerConfig server;
             server.host = config.getString(replica_prefix + ".host");
-            server.tcp_port = config.getInt(replica_prefix + ".tcp_port", 0);
+
+            /// Reject a missing or out-of-range 'tcp_port' at startup instead of silently defaulting to 0.
+            /// A replica with port 0 could otherwise be selected by a balancer and reached at connection
+            /// time with no valid socket to redirect to.
+            if (!config.has(replica_prefix + ".tcp_port"))
+                throw DB::Exception(
+                    DB::ErrorCodes::INVALID_CONFIG_PARAMETER, "Replica at {} has no 'tcp_port' configured", replica_prefix);
+
+            const int tcp_port = config.getInt(replica_prefix + ".tcp_port");
+            if (tcp_port <= 0 || tcp_port > 65535)
+                throw DB::Exception(
+                    DB::ErrorCodes::INVALID_CONFIG_PARAMETER,
+                    "Replica at {} has invalid 'tcp_port' {} (must be in the range 1..65535)",
+                    replica_prefix,
+                    tcp_port);
+
+            server.tcp_port = static_cast<UInt16>(tcp_port);
             server.key = makeServerKey(server.host, server.tcp_port);
 
             cluster.push_back(server);

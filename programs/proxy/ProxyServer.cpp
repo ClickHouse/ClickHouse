@@ -1,4 +1,4 @@
-#include "ProxyServer.h"
+#include <ProxyServer.h>
 
 #include <iostream>
 #include <string>
@@ -22,10 +22,15 @@
 
 #include <ProxyServer/TCPHandlerFactory.h>
 
-#include <incbin.h>
-/// A minimal file used when the server is run without installation
-INCBIN(proxy_resource_embedded_xml, SOURCE_DIR "/programs/proxy/embedded.xml");
+#include <Common/Config/ConfigProcessor.h>
 
+/// A minimal file used when the proxy is run without installation
+constexpr unsigned char proxy_resource_embedded_xml[] =
+{
+#embed "embedded.xml"
+};
+
+int mainEntryClickHouseProxy(int argc, char ** argv);
 int mainEntryClickHouseProxy(int argc, char ** argv)
 {
     Proxy::ProxyServer app;
@@ -49,6 +54,7 @@ namespace ErrorCodes
 {
 extern const int NO_ELEMENTS_IN_CONFIG;
 extern const int NETWORK_ERROR;
+extern const int INVALID_CONFIG_PARAMETER;
 }
 }
 
@@ -57,13 +63,16 @@ namespace Proxy
 
 namespace
 {
-std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration & config)
+std::vector<std::string> getListenHosts(const Poco::Util::AbstractConfiguration & config, bool & listen_try)
 {
     auto listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
     if (listen_hosts.empty())
     {
+        /// The implicit defaults include `::1`, which fails to bind on hosts with IPv6 disabled.
+        /// As `clickhouse-server` does, treat a bind failure on an implicit listen host as non-fatal.
         listen_hosts.emplace_back("::1");
         listen_hosts.emplace_back("127.0.0.1");
+        listen_try = true;
     }
     return listen_hosts;
 }
@@ -94,7 +103,8 @@ int ProxyServer::run()
 void ProxyServer::initialize(Poco::Util::Application & self)
 {
     DB::ConfigProcessor::registerEmbeddedConfig(
-        "config.xml", std::string_view(reinterpret_cast<const char *>(gproxy_resource_embedded_xmlData), gproxy_resource_embedded_xmlSize));
+        "config.xml",
+        std::string_view(reinterpret_cast<const char *>(proxy_resource_embedded_xml), std::size(proxy_resource_embedded_xml)));
     BaseDaemon::initialize(self);
     logger().information("starting up");
 
@@ -116,7 +126,7 @@ int ProxyServer::main(const std::vector<std::string> & /*args*/)
 try
 {
 #if USE_JEMALLOC
-    DB::setJemallocBackgroundThreads(true);
+    DB::Jemalloc::setBackgroundThreads(true);
 #endif
 
     Poco::Logger * log = &logger();
@@ -144,12 +154,13 @@ try
 
     // TODO: register config reloader
 
-    const auto listen_hosts = getListenHosts(config());
+    bool listen_try = config().getBool("listen_try", false);
+    const auto listen_hosts = getListenHosts(config(), listen_try);
 
     {
         {
             std::lock_guard lock(servers_lock);
-            createServers(config(), router, listen_hosts, server_pool, servers);
+            createServers(config(), router, listen_hosts, server_pool, servers, listen_try);
             if (servers.empty())
                 throw DB::Exception(
                     DB::ErrorCodes::NO_ELEMENTS_IN_CONFIG,
@@ -179,9 +190,16 @@ try
 
         // TODO: support systemd
 
-        // TODO: graceful shutdown
-
         waitForTerminationRequest();
+
+        /// Stop the listeners so that in-flight relay loops observe the shutdown and exit instead of
+        /// staying alive until their peers disconnect.
+        LOG_DEBUG(log, "Shutting down.");
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+                server.stop();
+        }
     }
 
     return Application::EXIT_OK;
@@ -225,6 +243,7 @@ void ProxyServer::createServer(
     const std::string & listen_host,
     const char * port_name,
     bool start_server,
+    bool listen_try,
     std::vector<DB::ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
@@ -239,10 +258,19 @@ void ProxyServer::createServer(
             return;
     }
 
-    auto port = config.getInt(port_name);
+    /// Validate the port before narrowing it to `UInt16`, so an out-of-range value in the config
+    /// fails loudly instead of silently binding a wrapped-around port. Port 0 means "any free port".
+    const int port = config.getInt(port_name);
+    if (port < 0 || port > 65535)
+        throw DB::Exception(
+            DB::ErrorCodes::INVALID_CONFIG_PARAMETER,
+            "Invalid port {} configured for '{}' (must be in the range 0..65535)",
+            port,
+            port_name);
+
     try
     {
-        servers.push_back(func(port));
+        servers.push_back(func(static_cast<UInt16>(port)));
         if (start_server)
         {
             servers.back().start();
@@ -251,6 +279,17 @@ void ProxyServer::createServer(
     }
     catch (const Poco::Exception &)
     {
+        if (listen_try)
+        {
+            LOG_WARNING(
+                &logger(),
+                "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
+                "then consider specifying a not disabled IP version in the <listen_host> element of the configuration file.",
+                listen_host,
+                port,
+                DB::getCurrentExceptionMessage(false));
+            return;
+        }
         throw DB::Exception(
             DB::ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, DB::getCurrentExceptionMessage(false));
     }
@@ -262,6 +301,7 @@ void ProxyServer::createServers(
     const std::vector<std::string> & listen_hosts,
     Poco::ThreadPool & server_pool,
     std::vector<DB::ProtocolServerAdapter> & servers,
+    bool listen_try,
     bool start_servers,
     const DB::ServerType & server_type)
 {
@@ -270,7 +310,7 @@ void ProxyServer::createServers(
 
     for (const auto & listen_host : listen_hosts)
     {
-        const char * port_name;
+        const char * port_name = nullptr;
 
         // TODO: support TCP Secure, HTTP(S) and the rest
 
@@ -284,6 +324,7 @@ void ProxyServer::createServers(
                 listen_host,
                 port_name,
                 start_servers,
+                listen_try,
                 servers,
                 [&](UInt16 port) -> DB::ProtocolServerAdapter
                 {
@@ -316,6 +357,7 @@ void ProxyServer::createServers(
                 listen_host,
                 port_name,
                 start_servers,
+                listen_try,
                 servers,
                 [&](UInt16 port) -> DB::ProtocolServerAdapter
                 {

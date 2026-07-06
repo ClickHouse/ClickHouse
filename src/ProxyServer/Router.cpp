@@ -42,6 +42,11 @@ Action getActionByRule(
         throw std::runtime_error(fmt::format("balancer returned the server that is not in the servers container. rule #{}", rule_id));
     }
 
+    /// Reserve the selected replica before handing out the RAII action. The matching decrement
+    /// happens in `Action::disconnect`; without this reservation active load is never represented
+    /// and `least_connections` cannot see the connections it is balancing.
+    rule->connections_counter->addConnection(iter->second);
+
     return Action(RuleActionType::Route, {iter->second}, rule->connections_counter, global_counter);
 }
 
@@ -60,6 +65,39 @@ Action::Action(
     {
         connections_counter = std::optional(std::weak_ptr<ConnectionsCounter>(connections_counter_));
     }
+}
+
+Action::Action(Action && other) noexcept
+    : type(other.type)
+    , target(std::move(other.target))
+    , connections_counter(std::move(other.connections_counter))
+    , global_counter(other.global_counter)
+    , disconnected(other.disconnected)
+{
+    /// Neutralize the moved-from action so its destructor does not release the connection now owned here.
+    other.target.reset();
+    other.global_counter = nullptr;
+    other.disconnected = true;
+}
+
+Action & Action::operator=(Action && other) noexcept
+{
+    if (this != &other)
+    {
+        /// Release the connection currently held by this action before taking over the other one.
+        disconnect();
+
+        type = other.type;
+        target = std::move(other.target);
+        connections_counter = std::move(other.connections_counter);
+        global_counter = other.global_counter;
+        disconnected = other.disconnected;
+
+        other.target.reset();
+        other.global_counter = nullptr;
+        other.disconnected = true;
+    }
+    return *this;
 }
 
 Action::~Action()

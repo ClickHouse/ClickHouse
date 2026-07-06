@@ -1,6 +1,8 @@
 #pragma once
 
+#include <memory>
 #include <mutex>
+#include <optional>
 
 #include <boost/noncopyable.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -24,8 +26,11 @@ public:
 
     Action(const Action &) = delete; // non-copyable
     Action & operator=(const Action &) = delete; // non-copyable
-    Action(Action &&) = default; // movable
-    Action & operator=(Action &&) = default; // movable
+
+    /// `~Action` releases the reserved connection, so the moved-from object must be neutralized to
+    /// avoid disconnecting a connection that the moved-to object now owns (or has already released).
+    Action(Action && other) noexcept;
+    Action & operator=(Action && other) noexcept;
 
     RuleActionType getType();
     const std::optional<ServerConfig> & getTarget();

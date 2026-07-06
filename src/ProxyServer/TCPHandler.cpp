@@ -1,4 +1,4 @@
-#include "TCPHandler.h"
+#include <ProxyServer/TCPHandler.h>
 
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/SocketAddress.h>
@@ -13,7 +13,7 @@
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <ProxyServer/Rules.h>
-#include "Common/logger_useful.h"
+#include <Common/logger_useful.h>
 #include <Common/DNSResolver.h>
 #include <Common/ErrorCodes.h>
 #include <Common/Exception.h>
@@ -32,6 +32,11 @@ extern const int UNKNOWN_SOCKET_ADDRESS_FAMILY;
 
 namespace Proxy
 {
+
+/// The client is not authenticated at this point and fully controls the lengths of the binary
+/// strings in the `Hello` packet, so every read must be bounded to avoid arbitrary allocations.
+/// Matches the limit used by the server-side `TCPHandler::receiveHello`.
+static constexpr size_t MAX_HELLO_STRING_SIZE = 64 * 1024;
 
 TCPHandler::TCPHandler(
     IProxyServer & server_, TCPServer & tcp_server_, const Poco::Net::StreamSocket & socket_, bool parse_proxy_protocol_, RouterPtr router_)
@@ -62,7 +67,7 @@ void TCPHandler::run()
 
 void TCPHandler::runImpl()
 {
-    setThreadName("TCPHandler");
+    DB::setThreadName(DB::ThreadName::TCP_HANDLER);
 
     socket().setReceiveTimeout(receive_timeout);
     socket().setSendTimeout(send_timeout);
@@ -350,14 +355,14 @@ void TCPHandler::receiveHello()
             DB::ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (expected Hello, got {})", packet_type);
     }
 
-    readStringBinary(client_name, *in);
+    readStringBinary(client_name, *in, MAX_HELLO_STRING_SIZE);
     readVarUInt(client_version_major, *in);
     readVarUInt(client_version_minor, *in);
     // NOTE For backward compatibility of the protocol, client cannot send its version_patch.
     readVarUInt(client_tcp_protocol_version, *in);
-    readStringBinary(default_database, *in);
-    readStringBinary(user, *in);
-    readStringBinary(password, *in);
+    readStringBinary(default_database, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(user, *in, MAX_HELLO_STRING_SIZE);
+    readStringBinary(password, *in, MAX_HELLO_STRING_SIZE);
 
     if (user.empty())
         throw DB::Exception(DB::ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet from client (no user in Hello package)");
@@ -372,6 +377,9 @@ void TCPHandler::receiveHello()
         client_tcp_protocol_version,
         (!default_database.empty() ? ", database: " + default_database : ""),
         (!user.empty() ? ", user: " + user : ""));
+
+    /// Source address of the client, used to evaluate `<host>` routing conditions.
+    hostname = socket().peerAddress().host().toString();
 
     action = router->route(user, hostname, default_database);
 
@@ -396,12 +404,8 @@ void TCPHandler::receiveHello()
 
             const auto & target = action->getTarget().value();
 
-            if (target.tcp_port == 0) // TODO: check ports when parsing config
-            {
-                LOG_ERROR(log, "Cannot redirect TCP connection to server '{}', there is no 'tcp_port' provided", target.key);
-                return;
-            }
-
+            /// The port is validated to be in the range 1..65535 during config parsing, so a
+            /// selected replica always has a usable `tcp_port` here.
             LOG_DEBUG(log, "Redirecting connection to {}:{}", target.host, target.tcp_port);
 
             connect();
@@ -503,9 +507,23 @@ void TCPHandler::doRedirection()
 
     LOG_DEBUG(log, "Starting proxy redirection between client and server {}:{}", assigned_server.host, assigned_server.tcp_port);
 
+    /// While parsing the Hello packet we read from `in`, which may have prefetched more bytes from
+    /// the socket into its internal buffer than the Hello itself occupies (for example a pipelined
+    /// Addendum packet, or interserver salt / SSH challenge data sent together with the Hello). The
+    /// raw `receiveBytes` relay below only sees bytes still in the kernel socket, so forward the
+    /// already-buffered tail to the upstream before switching to raw byte forwarding.
+    if (in->available() > 0)
+    {
+        const size_t buffered = in->available();
+        target_socket->sendBytes(in->position(), static_cast<int>(buffered));
+        in->ignore(buffered);
+    }
+
     try
     {
-        while (client_active && server_active)
+        /// The loop also observes proxy shutdown so that idle native sessions do not keep the
+        /// handler thread and the upstream socket alive after the listener has been stopped.
+        while (client_active && server_active && !server.isCancelled() && tcp_server.isOpen())
         {
             Poco::Net::Socket::SocketList read_ready;
             Poco::Net::Socket::SocketList write_ready;
