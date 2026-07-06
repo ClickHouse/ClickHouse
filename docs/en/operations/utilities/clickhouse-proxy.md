@@ -60,11 +60,20 @@ and each replica is identified by its `host` and `tcp_port`:
 </upstreams>
 ```
 
+A replica must declare a valid `tcp_port` (in the range `1..65535`); an absent or
+out-of-range port makes the proxy fail at startup rather than at connection time.
+
+The proxy forwards every upstream connection with a PROXY-protocol v1 header (so
+that the upstream can see the original client address). Upstream servers must
+therefore accept that header, i.e. the replica's `tcp_port` must point at a
+server port declared as `tcp_with_proxy_port` in the upstream's configuration.
+
 ### Routing {#routing}
 
 Routing rules are evaluated in order under `<routing><rules>`. A rule matches a
 connection when all of the conditions it declares (`user`, `database`, `host`)
-are satisfied; a condition that is omitted matches any value. The first matching
+are satisfied; a condition that is omitted matches any value. `host` is matched
+against the client's source address as seen by the proxy. The first matching
 rule is applied. If no rule matches, the `<routing><default>` rule is used; if
 there is no default rule, the connection is rejected.
 
