@@ -90,7 +90,7 @@ nonempty_output()
 $CLICKHOUSE_LOCAL -q "
 SELECT
     42::UInt64 AS u,
-    (-7)::Int32 AS i,
+    -7::Int32 AS i,
     0.1::Float64 AS f,
     'hello'::String AS s,
     [10, 20, 30]::Array(UInt32) AS arr,
