@@ -79,7 +79,7 @@ void ObjectStorageQueuePostProcessor::process(const StoredObjects & objects) con
         {
             LOG_WARNING(
                 log,
-                "Failed to tag all {} objects with exception: {}",
+                "Failed to remove all {} objects with exception: {}",
                 objects.size(),
                 getExceptionMessage(std::current_exception(), /*with_stacktrace=*/ false)
             );
