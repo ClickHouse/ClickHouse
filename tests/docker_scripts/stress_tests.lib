@@ -245,11 +245,15 @@ function stop_server()
       echo -e "Possible deadlock on shutdown (see gdb.log)$FAIL" >> /test_output/test_results.tsv
       echo "thread apply all backtrace (on stop)" >> /test_output/gdb.log
       timeout 30m gdb -batch -ex 'thread apply all backtrace' -p "$pid" | ts '%Y-%m-%d %H:%M:%S' >> /test_output/gdb.log
-      clickhouse stop --force
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
-      clickhouse stop --force
     fi
+    clickhouse stop --force
+    # A forced hard-kill makes the watchdog SIGKILL the server, emitting the same
+    # " <Fatal> ... terminated by signal 9" line as a real OOM. Record it so stress_job.py's
+    # OOM detection does not misread this intentional kill as an OOM (which would wrongly
+    # downgrade an unrelated failure to an allowed OOM).
+    echo "$pid" >> /test_output/stress_intentional_server_kills.log
 }
 
 function wait_server_port_free()

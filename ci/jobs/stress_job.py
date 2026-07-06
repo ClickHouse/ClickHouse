@@ -308,27 +308,27 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             f"{result_path}/dmesg.log"
         )
 
-    # Check for OOM (signal 9) in server logs, excluding intentional kills
-    # from the RandomServerRestarter chaos thread.
+    # Check for OOM (signal 9) in server logs, excluding intentional kills.
+    # A " <Fatal> Application: Child process was terminated by signal 9" line is emitted by the
+    # watchdog both for an OS/cgroup OOM kill AND for our own forced hard-kills; the line is
+    # identical, so it cannot be attributed from the log alone. Every intentional hard-kill is
+    # therefore recorded in stress_intentional_server_kills.log -- by the RandomServerRestarter
+    # chaos thread (stress phase) and by stop_server's `clickhouse stop --force` fallback, which
+    # runs during setup/teardown too (before clickhouse-server.log is renamed to .initial.log /
+    # .final.log). So we compare the total signal-9 count across all server logs against the total
+    # recorded intentional kills rather than assuming non-stress logs can only contain OOMs -- a
+    # setup/teardown force-stop otherwise gets misread as an OOM and wrongly downgrades an
+    # unrelated failure to an allowed OOM.
     # stress_runner.sh renames clickhouse-server.log: .initial.log (dataset setup),
     # .stress.log (stress phase), .final.log (post-stress restart).
     # Shared-catalog replicas log to clickhouse-server-sc{1,2}.log.
-    # Intentional kills only happen during the stress phase (.stress.log);
-    # signal-9 in any other log is always an unintentional OOM.
     if server_log_path.exists():
         signal9_pattern = " <Fatal> Application: Child process was terminated by signal 9"
-        stress_signal9_count = int(
-            Shell.get_output(
-                f"rg -Fa '{signal9_pattern}' "
-                f"{server_log_path}/clickhouse-server.stress.log 2>/dev/null | wc -l"
-            )
-            .strip()
-            or "0"
-        )
-        other_signal9_count = int(
+        signal9_count = int(
             Shell.get_output(
                 f"rg -Fa '{signal9_pattern}' "
                 f"{server_log_path}/clickhouse-server.initial.log "
+                f"{server_log_path}/clickhouse-server.stress.log "
                 f"{server_log_path}/clickhouse-server.final.log "
                 f"{server_log_path}/clickhouse-server-sc*.log 2>/dev/null | wc -l"
             )
@@ -341,9 +341,7 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             intentional_kill_count = sum(
                 1 for line in intentional_kills_file.read_text().splitlines() if line.strip()
             )
-        server_log_oom = (
-            stress_signal9_count > intentional_kill_count or other_signal9_count > 0
-        )
+        server_log_oom = signal9_count > intentional_kill_count
         is_oom = is_oom or server_log_oom
 
     # Generate fatal.log from all server logs

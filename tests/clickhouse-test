@@ -1199,6 +1199,50 @@ def get_server_pid():
     return procs[0][0]
 
 
+def get_server_pid_by_port(port) -> Optional[int]:
+    """Return the PID of the clickhouse-server listening on `port` (Linux-only, parses /proc).
+
+    Unlike get_server_pid (first `pgrep` match), this selects the specific server bound to the
+    queried port. With long-lived shared-catalog replicas (clickhouse-server-sc{1,2}) there are
+    several clickhouse-server processes; after RandomServerRestarter restarts the main server its
+    PID becomes newer than the replicas', so pgrep order can return a replica. Returns None if the
+    port is not found listening or /proc is unavailable (e.g. macOS).
+    """
+    try:
+        target_port = f"{int(port):04X}"
+        inodes = set()
+        for proto in ("tcp", "tcp6"):
+            path = f"/proc/net/{proto}"
+            if not os.path.exists(path):
+                continue
+            with open(path) as f:
+                next(f)  # skip header
+                for line in f:
+                    fields = line.split()
+                    # fields: sl local_address rem_address st ... inode(fields[9])
+                    # st == "0A" is TCP_LISTEN.
+                    if len(fields) <= 9 or fields[3] != "0A":
+                        continue
+                    if fields[1].rsplit(":", 1)[-1].upper() == target_port:
+                        inodes.add(fields[9])
+        if not inodes:
+            return None
+        wanted = {f"socket:[{ino}]" for ino in inodes}
+        for pid_dir in os.listdir("/proc"):
+            if not pid_dir.isdigit():
+                continue
+            fd_dir = f"/proc/{pid_dir}/fd"
+            try:
+                for fd in os.listdir(fd_dir):
+                    if os.readlink(f"{fd_dir}/{fd}") in wanted:
+                        return int(pid_dir)
+            except OSError:
+                continue  # process gone or fds not readable
+    except Exception:
+        return None
+    return None
+
+
 def colored(text, args, color=None, on_color=None, attrs=None):
     if termcolor and (sys.stdout.isatty() or args.force_color):
         return termcolor.colored(text, color, on_color, attrs)
@@ -4729,8 +4773,13 @@ def get_server_memory_fraction(args) -> Optional[float]:
     if maximum == 0:
         return None
 
-    # Not cached: RandomServerRestarter may change the PID mid-run.
-    pid = get_server_pid()
+    # Resolve the main server by its listening port, not pgrep order: with shared-catalog
+    # replicas there are several clickhouse-server processes, and after RandomServerRestarter
+    # restarts the main server its PID is newer than the replicas', so get_server_pid() (first
+    # pgrep match) can read a replica's RSS while max_server_memory_usage came from the main
+    # server connection. Not cached either: a restart changes the PID mid-run. Fall back to
+    # get_server_pid() when port resolution is unavailable (single-server run, non-Linux).
+    pid = get_server_pid_by_port(args.http_port) or get_server_pid()
     if pid is None:
         return None
 
