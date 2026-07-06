@@ -238,6 +238,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
@@ -1239,6 +1240,34 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
+    /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
+    /// writes the unified deduplication hash, so silently ignoring the setting would break the
+    /// mixed-version deduplication contract; refuse to start and explain how to migrate. This must run
+    /// after every server-settings load, not just this first one: the ZooKeeper-include reload below
+    /// and the runtime config reloader re-read the settings, so a legacy value could otherwise slip in
+    /// through a ZK-backed config or a `SYSTEM RELOAD CONFIG`.
+    auto validate_insert_deduplication_version = [](const ServerSettings & settings)
+    {
+        const String dedup_version = settings[ServerSetting::insert_deduplication_version];
+        if (dedup_version != "new_unified_hash")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
+                "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
+                "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
+                "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
+                "'compatible_double_hashes' (writing both the legacy and unified hashes), then upgrade to this "
+                "version. For replicated tables run it for at least 'replicated_deduplication_window_seconds' "
+                "(one hour by default); the default windows retain the unified hashes of all inserts for that "
+                "one-hour window, which is considered long enough to cover an insert retry loop. For "
+                "non-replicated tables with 'non_replicated_deduplication_window' > 0 that window is count-based, "
+                "not time-based, so run 'compatible_double_hashes' for at least that many inserts before "
+                "upgrading; otherwise stale legacy block ids can survive the upgrade and a retried insert may be "
+                "accepted as new.",
+                dedup_version);
+    };
+    validate_insert_deduplication_version(server_settings);
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1779,6 +1808,7 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
@@ -2425,6 +2455,16 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Validate the incoming config BEFORE config().replace below: validating after would mutate
+            /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
+            /// system.server_settings reporting an unsupported value. Reject first, then replace.
+            {
+                ServerSettings incoming_server_settings;
+                incoming_server_settings.loadSettingsFromConfig(*loaded_config);
+                validate_insert_deduplication_version(incoming_server_settings);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
