@@ -3,10 +3,13 @@
 #include <DataTypes/NestedUtils.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/UserDefined/UserDefinedExecutableFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/misc.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -696,8 +699,21 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
     if (auto function_base = function_node.getFunctionBase())
         return function_base->isDeterministicInScopeOfQuery();
 
-    /// For an AST-based tree there is no resolved function, so look it up by name
-    auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
+    /// For an AST-based tree there is no resolved function, mirror the legacy analyzer's lookup order
+    const auto function_name = function_node.getFunctionName();
+
+    /// executable UDFs are never stable within a query
+    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+        return false;
+
+    /// WASM UDFs are stable only when declared deterministic, plain SQL UDFs are inlined before this point
+    if (auto create_function_query = UserDefinedSQLFunctionFactory::instance().tryGet(function_name))
+    {
+        const auto * create_wasm_function_query = create_function_query->as<ASTCreateWasmFunctionQuery>();
+        return create_wasm_function_query && create_wasm_function_query->is_deterministic;
+    }
+
+    auto function_resolver = FunctionFactory::instance().tryGet(function_name, context);
     return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 
