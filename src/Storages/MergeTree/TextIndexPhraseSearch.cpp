@@ -16,53 +16,43 @@
 namespace DB
 {
 
-/// Roaringish phrase search via two-phase sorted-key intersection.
+/// Roaringish phrase search: intersect two terms' sorted position lists (key = (doc_id << 32) | group,
+/// plus a 32-bit bitmap of positions within the group). Two match cases for positional distance `shift`:
+///   within-group : matching keys, bitmap = (lhs_bitmap << shift) & rhs_bitmap.
+///   boundary     : a match straddling a 32-position group boundary (rhs key = lhs key + 1),
+///                  bitmap = (lhs_bitmap >> (BITMAP_BITS - shift)) & rhs_bitmap. `key + 1` stays in the
+///                  same document since group <= 0x07FFFFFF (positions are UInt32).
 ///
-/// A phrase term's positions are decoded into a PositionList: a sorted, unique lane of 64-bit keys
-/// `(doc_id << 32) | group` and a parallel lane of 32-bit bitmaps (bit b => position group*32 + b).
-/// Phrase adjacency of two terms with positional distance `shift` reduces to intersecting the two
-/// sorted key lanes and, on a key match, testing a shifted bitmap overlap:
-///   within-group : bitmap = (lhs_bitmap << shift) & rhs_bitmap                     (same key)
-///   boundary     : bitmap = (lhs_bitmap >> (BITMAP_BITS - shift)) & rhs_bitmap     (rhs key = lhs key + 1)
-/// The boundary phase catches matches that straddle a 32-position group boundary; `lhs key + 1`
-/// stays within the same document because group = position / 32 <= 0x07FFFFFF (positions are UInt32).
-///
-/// Only the sorted-key intersection is vectorized (broadcast-compare / 8x8 block compare); the bitmap
-/// overlap and the match emission stay scalar. The scan is the same shape as a vectorized set
-/// intersection, so it maps cleanly onto AVX2 (x86_64_v3) and AVX-512 (x86_64_v4), with a scalar
-/// fallback and a scalar tail for the sub-vector remainder. The active kernel is chosen at runtime
-/// from the CPU's supported ISA; the `CH_PHRASE_KERNEL` environment variable (scalar / v3 / v4) can
-/// force a specific kernel for testing and benchmarking.
+/// The within-group case is the vectorized hot loop (AVX2 / AVX-512, scalar fallback + tail). The
+/// boundary case only fires for lhs buckets whose top `shift` bits are set, so those are gathered into a
+/// small "carry" list and intersected with rhs separately; the two sorted runs are merged. Only the
+/// sorted-key comparison is vectorized; the bitmap overlap and emission stay scalar. `CH_PHRASE_KERNEL`
+/// (scalar / v3 / v4) forces a specific kernel for testing and benchmarking.
 
 namespace
 {
 
-/// Bitmap overlap for a matching key. `boundary` selects the group-straddling high bits.
-ALWAYS_INLINE UInt32 matchBitmap(UInt32 lhs_bitmap, UInt32 rhs_bitmap, UInt32 shift, bool boundary)
+/// Within-group overlap for a matching key; the UInt32 shift drops the high bits (the carry path).
+ALWAYS_INLINE UInt32 matchBitmap(UInt32 lhs_bitmap, UInt32 rhs_bitmap, UInt32 shift)
 {
-    const UInt64 shifted = static_cast<UInt64>(lhs_bitmap) << shift;
-    const UInt32 selected = boundary ? static_cast<UInt32>(shifted >> 32) : static_cast<UInt32>(shifted);
-    return selected & rhs_bitmap;
+    return (lhs_bitmap << shift) & rhs_bitmap;
 }
 
-/// Scalar two-pointer intersection from (i, j) to the end. Serves as both the standalone scalar
-/// kernel (called with i = j = 0) and the tail of every SIMD kernel. Emits a strictly increasing,
-/// unique run of (key, bitmap) into `out`.
+/// Scalar within-group intersection from (i, j) to the end: the standalone scalar kernel (i = j = 0)
+/// and the tail of every SIMD kernel.
 ALWAYS_INLINE void scalarIntersect(
     const PositionList & lhs,
     const PositionList & rhs,
     size_t i,
     size_t j,
     UInt32 shift,
-    bool boundary,
     PositionList & out)
 {
-    const UInt64 add = boundary ? 1 : 0;
     const size_t n = lhs.size();
     const size_t m = rhs.size();
     while (i < n && j < m)
     {
-        const UInt64 lhs_key = lhs.keys[i] + add;
+        const UInt64 lhs_key = lhs.keys[i];
         const UInt64 rhs_key = rhs.keys[j];
         if (lhs_key < rhs_key)
         {
@@ -74,16 +64,15 @@ ALWAYS_INLINE void scalarIntersect(
             ++j;
             continue;
         }
-        if (const UInt32 bitmap = matchBitmap(lhs.bitmap[i], rhs.bitmap[j], shift, boundary))
+        if (const UInt32 bitmap = matchBitmap(lhs.bitmap[i], rhs.bitmap[j], shift))
             out.pushBackKey(rhs_key, bitmap);
         ++i;
         ++j;
     }
 }
 
-/// Emit matches for one 8x8 block, given lane masks m1 (lhs lanes that matched) and m2 (rhs lanes
-/// that matched). Keys are unique per list, so the matches form a monotone bijection: the k-th set
-/// bit of m1 pairs with the k-th set bit of m2. Only used by the AVX-512 block kernel.
+/// Emit matches for one 8x8 block. Keys are unique, so matches form a monotone bijection: the k-th set
+/// bit of m1 pairs with the k-th of m2. AVX-512 block kernel only.
 [[maybe_unused]] ALWAYS_INLINE void emitBlockMatches(
     const PositionList & lhs,
     const PositionList & rhs,
@@ -92,25 +81,61 @@ ALWAYS_INLINE void scalarIntersect(
     unsigned m1,
     unsigned m2,
     UInt32 shift,
-    bool boundary,
     PositionList & out)
 {
     while (m1)
     {
         const int ki = std::countr_zero(m1);
         const int kj = std::countr_zero(m2);
-        if (const UInt32 bitmap = matchBitmap(lhs.bitmap[i + ki], rhs.bitmap[j + kj], shift, boundary))
+        if (const UInt32 bitmap = matchBitmap(lhs.bitmap[i + ki], rhs.bitmap[j + kj], shift))
             out.pushBackKey(rhs.keys[j + kj], bitmap);
         m1 &= m1 - 1;
         m2 &= m2 - 1;
     }
 }
 
-void intersectPhaseScalar(const PositionList & lhs, const PositionList & rhs, UInt32 shift, bool boundary, PositionList & out)
+void intersectWithinScalar(const PositionList & lhs, const PositionList & rhs, UInt32 shift, PositionList & out)
 {
-    scalarIntersect(lhs, rhs, 0, 0, shift, boundary, out);
+    scalarIntersect(lhs, rhs, 0, 0, shift, out);
 }
 
+/// Gather lhs buckets that carry into the next group (top `shift` bits set) as a sorted run of
+/// (key = lhs key + 1, bitmap = carried bits), replacing a second full scan with an O(lhs) filter.
+void buildCarryList(const PositionList & lhs, UInt32 shift, PositionList & carry)
+{
+    const size_t n = lhs.size();
+    const UInt32 drop = RoaringishEntry::BITMAP_BITS - shift;
+    carry.reserve(n / 16 + 16);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const UInt32 overflow = lhs.bitmap[i] >> drop;
+        if (overflow)
+            carry.pushBackKey(lhs.keys[i] + 1, overflow); /// group + 1, same doc (group <= 0x07FFFFFF)
+    }
+}
+
+/// Probe each carry key against rhs with a galloping (moving lower_bound) search, emitting boundary matches.
+void intersectCarry(const PositionList & carry, const PositionList & rhs, PositionList & out)
+{
+    const UInt64 * const base = rhs.keys.data();
+    const UInt64 * const end = base + rhs.size();
+    const UInt64 * cur = base;
+    const size_t c = carry.size();
+    for (size_t i = 0; i < c; ++i)
+    {
+        const UInt64 key = carry.keys[i];
+        cur = std::lower_bound(cur, end, key);
+        if (cur == end)
+            break;
+        if (*cur == key)
+        {
+            if (const UInt32 bitmap = carry.bitmap[i] & rhs.bitmap[static_cast<size_t>(cur - base)])
+                out.pushBackKey(key, bitmap);
+        }
+    }
+}
+
+#if USE_MULTITARGET_CODE
 enum class PhraseKernel
 {
     Auto,
@@ -140,27 +165,25 @@ PhraseKernel chosenKernel()
     static const PhraseKernel kernel = readKernelFromEnv();
     return kernel;
 }
+#endif
 
 }
 
 DECLARE_X86_64_V3_SPECIFIC_CODE(
 
-/// AVX2 broadcast-compare intersection: broadcast the (boundary-adjusted) lhs key and compare it
-/// against 4 rhs keys per iteration. Skip-oriented: cheap per step, galloping when lhs is the
-/// smaller list.
-static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, bool boundary, DB::PositionList & out)
+/// AVX2 within-group intersection: broadcast the lhs key, compare 4 rhs keys per step (skip kernel).
+static void intersectWithin(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, DB::PositionList & out)
 {
     size_t i = 0;
     size_t j = 0;
     const size_t n = lhs.size();
     const size_t m = rhs.size();
-    const UInt64 add = boundary ? 1 : 0;
 
     while (i < n && j + 4 <= m)
     {
-        const UInt64 lhs_key = lhs.keys[i] + add;
+        const UInt64 lhs_key = lhs.keys[i];
 
-        /// The current lhs key is beyond the next 4 rhs keys: skip them.
+        /// lhs key past this block of rhs keys: skip it.
         if (lhs_key > rhs.keys[j + 3])
         {
             j += 4;
@@ -176,7 +199,7 @@ static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionL
         {
             /// Keys are unique per list: at most one match.
             const int k = std::countr_zero(static_cast<unsigned>(mask));
-            if (const UInt32 bitmap = DB::matchBitmap(lhs.bitmap[i], rhs.bitmap[j + k], shift, boundary))
+            if (const UInt32 bitmap = DB::matchBitmap(lhs.bitmap[i], rhs.bitmap[j + k], shift))
                 out.pushBackKey(rhs.keys[j + k], bitmap);
             ++i;
             j += k + 1;
@@ -187,26 +210,24 @@ static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionL
         }
     }
 
-    DB::scalarIntersect(lhs, rhs, i, j, shift, boundary, out);
+    DB::scalarIntersect(lhs, rhs, i, j, shift, out);
 }
 
 ) // DECLARE_X86_64_V3_SPECIFIC_CODE
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
 
-/// AVX-512 broadcast-compare intersection: like the AVX2 kernel but 8 rhs keys per iteration.
-/// Preferred when one list is much larger than the other (galloping over the smaller one).
-static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, bool boundary, DB::PositionList & out)
+/// AVX-512 within-group intersection: like the AVX2 kernel but 8 rhs keys per step (skip kernel).
+static void intersectWithinSkip(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, DB::PositionList & out)
 {
     size_t i = 0;
     size_t j = 0;
     const size_t n = lhs.size();
     const size_t m = rhs.size();
-    const UInt64 add = boundary ? 1 : 0;
 
     while (i < n && j + 8 <= m)
     {
-        const UInt64 lhs_key = lhs.keys[i] + add;
+        const UInt64 lhs_key = lhs.keys[i];
 
         if (lhs_key > rhs.keys[j + 7])
         {
@@ -221,7 +242,7 @@ static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionL
         if (mask)
         {
             const int k = std::countr_zero(static_cast<unsigned>(mask));
-            if (const UInt32 bitmap = DB::matchBitmap(lhs.bitmap[i], rhs.bitmap[j + k], shift, boundary))
+            if (const UInt32 bitmap = DB::matchBitmap(lhs.bitmap[i], rhs.bitmap[j + k], shift))
                 out.pushBackKey(rhs.keys[j + k], bitmap);
             ++i;
             j += k + 1;
@@ -232,24 +253,21 @@ static void intersectPhaseSkip(const DB::PositionList & lhs, const DB::PositionL
         }
     }
 
-    DB::scalarIntersect(lhs, rhs, i, j, shift, boundary, out);
+    DB::scalarIntersect(lhs, rhs, i, j, shift, out);
 }
 
-/// AVX-512 8x8 block intersection emulating VP2INTERSECT with Foundation/BW instructions
-/// (broadcast each of the 8 rhs keys with permutexvar and compare against the 8 lhs keys).
-/// High throughput for lists of comparable size. Advances the side with the smaller block maximum.
-static void intersectPhaseBlock(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, bool boundary, DB::PositionList & out)
+/// AVX-512 8x8 block intersection (emulated VP2INTERSECT: permutexvar-broadcast each rhs key, compare
+/// the 8 lhs keys). High throughput for comparable-size lists; advances the side with the smaller max.
+static void intersectWithinBlock(const DB::PositionList & lhs, const DB::PositionList & rhs, UInt32 shift, DB::PositionList & out)
 {
     size_t i = 0;
     size_t j = 0;
     const size_t n = lhs.size();
     const size_t m = rhs.size();
-    const UInt64 add = boundary ? 1 : 0;
-    const __m512i v_add = _mm512_set1_epi64(static_cast<long long>(add));
 
     while (i + 8 <= n && j + 8 <= m)
     {
-        const __m512i v_lhs_keys = _mm512_add_epi64(_mm512_loadu_si512(reinterpret_cast<const void *>(&lhs.keys[i])), v_add);
+        const __m512i v_lhs_keys = _mm512_loadu_si512(reinterpret_cast<const void *>(&lhs.keys[i]));
         const __m512i v_rhs_keys = _mm512_loadu_si512(reinterpret_cast<const void *>(&rhs.keys[j]));
 
         __mmask8 m1 = 0;
@@ -275,9 +293,9 @@ static void intersectPhaseBlock(const DB::PositionList & lhs, const DB::Position
         m1 |= match; if (match) m2 |= (1 << 7);
 
         if (m1)
-            DB::emitBlockMatches(lhs, rhs, i, j, m1, m2, shift, boundary, out);
+            DB::emitBlockMatches(lhs, rhs, i, j, m1, m2, shift, out);
 
-        const UInt64 last_lhs = lhs.keys[i + 7] + add;
+        const UInt64 last_lhs = lhs.keys[i + 7];
         const UInt64 last_rhs = rhs.keys[j + 7];
         if (last_lhs < last_rhs)
             i += 8;
@@ -290,7 +308,7 @@ static void intersectPhaseBlock(const DB::PositionList & lhs, const DB::Position
         }
     }
 
-    DB::scalarIntersect(lhs, rhs, i, j, shift, boundary, out);
+    DB::scalarIntersect(lhs, rhs, i, j, shift, out);
 }
 
 ) // DECLARE_X86_64_V4_SPECIFIC_CODE
@@ -298,32 +316,31 @@ static void intersectPhaseBlock(const DB::PositionList & lhs, const DB::Position
 namespace
 {
 
-/// Run one intersection phase with the best available (or forced) kernel.
-void dispatchIntersectPhase(const PositionList & lhs, const PositionList & rhs, UInt32 shift, bool boundary, PositionList & out)
+/// Run the within-group intersection with the best available (or forced) kernel.
+void dispatchIntersectWithin(const PositionList & lhs, const PositionList & rhs, UInt32 shift, PositionList & out)
 {
-    const PhraseKernel kernel = chosenKernel();
-
 #if USE_MULTITARGET_CODE
+    const PhraseKernel kernel = chosenKernel();
     const bool want_v4 = kernel == PhraseKernel::V4 || kernel == PhraseKernel::Auto;
     if (want_v4 && isArchSupported(TargetArch::x86_64_v4))
     {
         /// Skip (galloping) kernel when lhs is much smaller than rhs; block (8x8) kernel otherwise.
         if (rhs.size() > lhs.size() * 10)
-            TargetSpecific::x86_64_v4::intersectPhaseSkip(lhs, rhs, shift, boundary, out);
+            TargetSpecific::x86_64_v4::intersectWithinSkip(lhs, rhs, shift, out);
         else
-            TargetSpecific::x86_64_v4::intersectPhaseBlock(lhs, rhs, shift, boundary, out);
+            TargetSpecific::x86_64_v4::intersectWithinBlock(lhs, rhs, shift, out);
         return;
     }
 
     const bool want_v3 = kernel == PhraseKernel::V3 || kernel == PhraseKernel::Auto;
     if (want_v3 && isArchSupported(TargetArch::x86_64_v3))
     {
-        TargetSpecific::x86_64_v3::intersectPhaseSkip(lhs, rhs, shift, boundary, out);
+        TargetSpecific::x86_64_v3::intersectWithin(lhs, rhs, shift, out);
         return;
     }
 #endif
 
-    intersectPhaseScalar(lhs, rhs, shift, boundary, out);
+    intersectWithinScalar(lhs, rhs, shift, out);
 }
 
 }
@@ -336,14 +353,23 @@ PositionList TextIndexPhraseSearch::intersect(const PositionList & lhs, const Po
 
     chassert(shift < RoaringishEntry::BITMAP_BITS);
 
-    /// Two independent passes over the sorted key lanes, each producing a strictly increasing,
-    /// unique run of (key, bitmap): the within-group phase and the boundary-crossing phase.
+    /// Within-group matches: one (vectorized) sorted-key intersection pass.
     PositionList within;
-    PositionList boundary;
     within.reserve(std::min(lhs.size(), rhs.size()));
+    dispatchIntersectWithin(lhs, rhs, shift, within);
 
-    dispatchIntersectPhase(lhs, rhs, shift, /*boundary=*/false, within);
-    dispatchIntersectPhase(lhs, rhs, shift, /*boundary=*/true, boundary);
+    /// Boundary (group-straddling) matches: intersect the carry list with rhs (a plain bitmap AND, i.e.
+    /// shift 0), reusing the vectorized kernels; gallop only when the carry list is tiny relative to rhs.
+    PositionList carry;
+    buildCarryList(lhs, shift, carry);
+    PositionList boundary;
+    if (!carry.empty())
+    {
+        if (rhs.size() > carry.size() * 256)
+            intersectCarry(carry, rhs, boundary);
+        else
+            dispatchIntersectWithin(carry, rhs, /*shift=*/0, boundary);
+    }
 
     chassert(std::is_sorted(within.keys.begin(), within.keys.end()));
     chassert(std::is_sorted(boundary.keys.begin(), boundary.keys.end()));
