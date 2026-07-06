@@ -1,0 +1,59 @@
+---
+description: 'Ce moteur fournit une intégration en lecture seule avec des tables Apache Hudi
+  existantes dans Amazon S3.'
+sidebarTitle: 'Hudi'
+slug: /engines/table-engines/integrations/hudi
+title: 'Moteur de table Hudi'
+doc_type: 'reference'
+---
+
+Ce moteur fournit une intégration en lecture seule avec des tables Apache [Hudi](https://hudi.apache.org/) existantes dans Amazon S3.
+
+<div id="create-table">
+  ## Créer une table
+</div>
+
+Notez que la table Hudi doit déjà exister dans S3 : cette commande n’accepte pas de paramètres DDL permettant de créer une nouvelle table.
+
+```sql
+CREATE TABLE hudi_table
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+```
+
+**Paramètres du moteur**
+
+* `url` — URL du bucket avec le chemin vers une table Hudi existante.
+* `aws_access_key_id`, `aws_secret_access_key` - Identifiants de longue durée de l’utilisateur du compte [AWS](https://aws.amazon.com/). Vous pouvez les utiliser pour authentifier vos requêtes. Ce paramètre est facultatif. Si les identifiants ne sont pas spécifiés, ils sont récupérés depuis le fichier de configuration.
+* `extra_credentials` - Facultatif. Utilisé pour transmettre un `role_arn` pour le contrôle d’accès basé sur les rôles dans ClickHouse Cloud. Voir [Secure S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour les étapes de configuration.
+
+Les paramètres du moteur peuvent être spécifiés à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections).
+
+**Exemple**
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+```
+
+Utilisation des collections nommées :
+
+```xml
+<clickhouse>
+    <named_collections>
+        <hudi_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </hudi_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [fonction de table Hudi](/fr/reference/functions/table-functions/hudi)

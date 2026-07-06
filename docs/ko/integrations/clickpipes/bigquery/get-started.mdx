@@ -1,0 +1,94 @@
+---
+sidebarTitle: '시작하기'
+description: '첫 번째 BigQuery ClickPipe를 만드는 단계별 가이드입니다.'
+slug: /integrations/clickpipes/bigquery/get-started
+title: '첫 번째 BigQuery ClickPipe 만들기'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ko/_intro.mdx';
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="pre-requisites">
+  ## 사전 요구 사항
+</div>
+
+* GCP 프로젝트에서 [서비스 계정](https://docs.cloud.google.com/iam/docs/service-account-overview) 및 [IAM 역할](https://docs.cloud.google.com/iam/docs/roles-overview)을 관리할 수 있는 권한이 있어야 합니다. 해당 권한이 없으면 관리자에게 지원을 요청하십시오. [공식 문서](https://docs.cloud.google.com/iam/docs/service-accounts-create)를 참고하여 필요한 최소한의 [권한](/ko/integrations/clickpipes/bigquery/overview#permissions)만 부여된 전용 서비스 계정을 생성하는 것이 좋습니다.
+
+* 초기 적재에는 스테이징용으로 사용자가 제공하는 Google Cloud Storage (GCS) 버킷이 필요합니다. [공식 문서](https://docs.cloud.google.com/storage/docs/creating-buckets)를 참고하여 ClickPipe 전용 버킷을 생성하는 것이 좋습니다. 향후에는 이 중간 버킷을 ClickPipes에서 제공하고 관리할 예정입니다.
+
+<Steps>
+  <Step>
+    ## 데이터 소스 선택
+
+    **1.** ClickHouse Cloud에서 기본 탐색 메뉴의 **Data sources**를 선택한 다음 **Create ClickPipe**를 클릭합니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+
+    **2.** **BigQuery** 타일을 클릭합니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="BigQuery 타일 선택" size="lg" border />
+  </Step>
+
+  <Step>
+    ## ClickPipe 연결 설정
+
+    새 ClickPipe를 설정하려면 BigQuery 데이터 웨어하우스에 연결하고 인증하는 데 필요한 정보와 스테이징 GCS 버킷을 제공해야 합니다.
+
+    **1.** ClickPipes용으로 생성한 서비스 계정의 `.json` 키를 업로드합니다. 해당 서비스 계정에 필요한 최소 [권한](/ko/integrations/clickpipes/bigquery/overview#permissions)이 있는지 확인합니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="서비스 계정 키 업로드" size="lg" border />
+
+    **2.** **Replication method**를 선택합니다. 비공개 프리뷰에서는 [**초기 적재만**](/ko/integrations/clickpipes/bigquery/overview#initial-load) 지원됩니다.
+
+    **3.** 초기 적재 중 데이터를 스테이징할 GCS 버킷 경로를 입력합니다.
+
+    **4.** 검증하려면 **Next**를 클릭합니다.
+  </Step>
+
+  <Step>
+    ## ClickPipe 구성
+
+    BigQuery 데이터셋의 크기나 동기화하려는 테이블의 전체 크기에 따라 ClickPipe의 기본 수집 설정을 조정해야 할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## 테이블 구성
+
+    **1.** BigQuery 테이블을 복제할 ClickHouse 데이터베이스를 선택합니다. 기존 데이터베이스를 선택하거나 새로 만들 수 있습니다.
+
+    **2.** 복제할 테이블과 필요에 따라 컬럼을 선택합니다. 제공한 서비스 계정이 액세스할 수 있는 데이터셋만 표시됩니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="권한" size="lg" border />
+
+    **3.** 선택한 각 테이블에 대해 **Advanced settings** &gt; **Use a custom sorting key**에서 사용자 지정 정렬 키를 반드시 정의합니다. 향후에는 업스트림 데이터베이스의 기존 클러스터링 키 또는 파티셔닝 키를 기준으로 정렬 키가 자동으로 추론됩니다.
+
+    <Warning>
+      ClickHouse에서 쿼리 성능을 최적화하려면 복제된 테이블에 [정렬 키](/ko/concepts/best-practices/choosing-a-primary-key)를 **반드시** 정의해야 합니다. 그렇지 않으면 정렬 키가 `tuple()`로 설정되며, 이는 프라이머리 인덱스가 생성되지 않는다는 뜻입니다. 그러면 ClickHouse는 해당 테이블의 모든 쿼리에 대해 전체 테이블 스캔을 수행합니다.
+    </Warning>
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="권한" size="lg" border />
+  </Step>
+
+  <Step>
+    ## 권한 구성
+
+    마지막으로 내부 ClickPipes 사용자에 대한 권한을 구성할 수 있습니다.
+
+    **권한:** ClickPipes는 대상 테이블에 데이터를 쓰기 위한 전용 사용자를 생성합니다. 이 내부 사용자에 대해 사용자 지정 역할 또는 사전 정의된 역할 중 하나를 선택할 수 있습니다.
+
+    * `Full access`: 클러스터에 대한 전체 액세스 권한입니다. 대상 테이블과 함께 materialized view 또는 딕셔너리를 사용하는 경우 필요합니다.
+    * `Only destination`: 대상 테이블에 대한 삽입 권한만 부여합니다.
+  </Step>
+
+  <Step>
+    ## 설정 완료
+
+    설정을 완료하려면 **Create ClickPipe**를 클릭합니다. 그러면 개요 페이지로 이동하며, 여기서 초기 적재 진행 상황을 확인하고 클릭하여 BigQuery ClickPipes의 세부 정보를 볼 수 있습니다.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="권한" size="lg" border />
+  </Step>
+</Steps>

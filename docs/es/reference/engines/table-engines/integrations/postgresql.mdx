@@ -1,0 +1,248 @@
+---
+description: 'El motor PostgreSQL permite consultas `SELECT` y `INSERT` sobre datos almacenados
+  en un servidor PostgreSQL remoto.'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/table-engines/integrations/postgresql
+title: 'Motor de tabla de PostgreSQL'
+doc_type: 'guide'
+---
+
+El motor PostgreSQL permite consultas `SELECT` y `INSERT` sobre datos almacenados en un servidor PostgreSQL remoto.
+
+<Note>
+  Actualmente, este motor de tabla solo es compatible con PostgreSQL 12 y versiones posteriores.
+</Note>
+
+<Tip>
+  Consulte nuestro servicio [Managed Postgres](/es/products/managed-postgres/overview). Basado en almacenamiento NVMe físicamente colocalizado con el cómputo, ofrece un rendimiento hasta 10 veces mayor para cargas de trabajo limitadas por el disco en comparación con alternativas que usan almacenamiento conectado a la red como EBS, y le permite replicar sus datos de Postgres a ClickHouse mediante el conector Postgres CDC en ClickPipes.
+</Tip>
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 type1 [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 type2 [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = PostgreSQL({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+Consulte una descripción detallada de la consulta [CREATE TABLE](/es/reference/statements/create/table).
+
+La estructura de la tabla puede diferir de la estructura de la tabla original de PostgreSQL:
+
+* Los nombres de las columnas deben ser los mismos que en la tabla original de PostgreSQL, pero puede usar solo algunas de ellas y en cualquier orden.
+* Los tipos de las columnas pueden diferir de los de la tabla original de PostgreSQL. ClickHouse intenta [convertir](/es/reference/engines/database-engines/postgresql#data_types-support) los valores a los tipos de datos de ClickHouse.
+* La configuración [external&#95;table&#95;functions&#95;use&#95;nulls](/es/reference/settings/session-settings#external_table_functions_use_nulls) define cómo manejar las columnas Nullable. Valor predeterminado: 1. Si es 0, la función de tabla no crea columnas Nullable e inserta valores predeterminados en lugar de valores nulos. Esto también se aplica a los valores NULL dentro de arrays.
+
+**Parámetros del motor**
+
+* `host:port` — Dirección del servidor PostgreSQL.
+* `database` — Nombre de la base de datos remota.
+* `table` — Nombre de la tabla remota.
+* `user` — Usuario de PostgreSQL.
+* `password` — Contraseña del usuario.
+* `schema` — Esquema de tabla distinto del predeterminado. Opcional.
+* `on_conflict` — Estrategia de resolución de conflictos. Ejemplo: `ON CONFLICT DO NOTHING`. Opcional. Nota: añadir esta opción hará que la inserción sea menos eficiente.
+
+Se recomienda usar [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections) (disponibles desde la versión 21.11) en entornos de producción. Aquí tiene un ejemplo:
+
+```xml
+<named_collections>
+    <postgres_creds>
+        <host>localhost</host>
+        <port>5432</port>
+        <user>postgres</user>
+        <password>****</password>
+        <schema>schema1</schema>
+    </postgres_creds>
+</named_collections>
+```
+
+Algunos parámetros pueden sobrescribirse mediante argumentos de clave-valor:
+
+```sql
+SELECT * FROM postgresql(postgres_creds, table='table1');
+```
+
+<div id="implementation-details">
+  ## Detalles de implementación
+</div>
+
+Las consultas `SELECT` del lado de PostgreSQL se ejecutan como `COPY (SELECT ...) TO STDOUT` dentro de una transacción de PostgreSQL de solo lectura, con commit después de cada consulta `SELECT`.
+
+Las cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, se ejecutan en el servidor PostgreSQL.
+
+Todos los joins, las agregaciones, la ordenación, las condiciones `IN [ array ]` y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que finaliza la consulta a PostgreSQL.
+
+Las consultas `INSERT` del lado de PostgreSQL se ejecutan como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de una transacción de PostgreSQL con auto-commit después de cada sentencia `INSERT`.
+
+Los tipos `Array` de PostgreSQL se convierten en arrays de ClickHouse.
+
+<Note>
+  Tenga cuidado: en PostgreSQL, un dato de tipo array, creado como `type_name[]`, puede contener arrays multidimensionales con distintas dimensiones en diferentes filas de la misma columna de la tabla. Pero en ClickHouse solo se permite tener arrays multidimensionales con la misma cantidad de dimensiones en todas las filas de una misma columna.
+</Note>
+
+Admite varias réplicas que deben listarse mediante `|`. Por ejemplo:
+
+```sql
+CREATE TABLE test_replicas (id UInt32, name String) ENGINE = PostgreSQL(`postgres{2|3|4}:5432`, 'clickhouse', 'test_replicas', 'postgres', 'mysecretpassword');
+```
+
+Se admite la prioridad de las réplicas para el origen de diccionario de PostgreSQL. Cuanto mayor sea el número en el mapa, menor será la prioridad. La prioridad más alta es `0`.
+
+En el ejemplo siguiente, la réplica `example01-1` tiene la prioridad más alta:
+
+```xml
+<postgresql>
+    <port>5432</port>
+    <user>clickhouse</user>
+    <password>qwerty</password>
+    <replica>
+        <host>example01-1</host>
+        <priority>1</priority>
+    </replica>
+    <replica>
+        <host>example01-2</host>
+        <priority>2</priority>
+    </replica>
+    <db>db_name</db>
+    <table>table_name</table>
+    <where>id=10</where>
+    <invalidate_query>SQL_QUERY</invalidate_query>
+</postgresql>
+</source>
+```
+
+<div id="usage-example">
+  ## Ejemplo de uso
+</div>
+
+<div id="table-in-postgresql">
+  ### Tabla en PostgreSQL
+</div>
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+ (1 row)
+```
+
+<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
+  ### Crear una tabla en ClickHouse y conectarla con la tabla de PostgreSQL creada anteriormente
+</div>
+
+Este ejemplo utiliza el [motor de tabla PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql) para conectar la tabla de ClickHouse con la tabla de PostgreSQL y usar sentencias SELECT e INSERT en la base de datos PostgreSQL:
+
+```sql
+CREATE TABLE default.postgresql_table
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
+  ### Inserción de los datos iniciales desde una tabla de PostgreSQL en una tabla de ClickHouse mediante una consulta SELECT
+</div>
+
+La [función de tabla postgresql](/es/reference/functions/table-functions/postgresql) copia los datos de PostgreSQL a ClickHouse. Suele utilizarse para mejorar el rendimiento de las consultas al consultar los datos o realizar análisis en ClickHouse en lugar de PostgreSQL, y también puede usarse para migrar datos de PostgreSQL a ClickHouse. Como vamos a copiar los datos de PostgreSQL a ClickHouse, usaremos un motor de tabla MergeTree en ClickHouse y lo llamaremos postgresql&#95;copy:
+
+```sql
+CREATE TABLE default.postgresql_copy
+(
+    `float_nullable` Nullable(Float32),
+    `str` String,
+    `int_id` Int32
+)
+ENGINE = MergeTree
+ORDER BY (int_id);
+```
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
+```
+
+<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
+  ### Insertar datos incrementales desde una tabla de PostgreSQL en una tabla de ClickHouse
+</div>
+
+Si después va a realizar una sincronización continua entre la tabla de PostgreSQL y la tabla de ClickHouse tras la inserción inicial, puede usar una cláusula WHERE en ClickHouse para insertar solo los datos añadidos a PostgreSQL en función de un timestamp o de un ID de secuencia único.
+
+Para ello, debe llevar un registro del ID máximo o del timestamp insertado previamente, como el siguiente:
+
+```sql
+SELECT max(`int_id`) AS maxIntID FROM default.postgresql_copy;
+```
+
+Luego, insertar los valores de la tabla de PostgreSQL que sean mayores que el máximo
+
+```sql
+INSERT INTO default.postgresql_copy
+SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password')
+WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
+```
+
+<div id="selecting-data-from-the-resulting-clickhouse-table">
+  ### Seleccionar datos de la tabla de ClickHouse resultante
+</div>
+
+```sql
+SELECT * FROM postgresql_copy WHERE str IN ('test');
+```
+
+```text
+┌─float_nullable─┬─str──┬─int_id─┐
+│           ᴺᵁᴸᴸ │ test │      1 │
+└────────────────┴──────┴────────┘
+```
+
+<div id="using-non-default-schema">
+  ### Uso de un esquema distinto del predeterminado
+</div>
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+**Véase también**
+
+* [La función de tabla `postgresql`](/es/reference/functions/table-functions/postgresql)
+* [Uso de PostgreSQL como fuente de un diccionario](/es/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [ClickHouse y PostgreSQL: la combinación perfecta para los datos - parte 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* Blog: [ClickHouse y PostgreSQL: la combinación perfecta para los datos - parte 2](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

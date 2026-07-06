@@ -1,0 +1,326 @@
+---
+description: 'INSERT INTO ステートメントに関するドキュメント'
+sidebarTitle: 'INSERT INTO'
+slug: /sql-reference/statements/insert-into
+title: 'INSERT INTO ステートメント'
+doc_type: 'reference'
+---
+
+テーブルにデータを挿入します。
+
+**構文**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] VALUES (v11, v12, v13), (v21, v22, v23), ...
+```
+
+`(c1, c2, c3)` を使って、挿入するカラムのリストを指定できます。また、`*` のようなカラム[マッチャー](/ja/reference/statements/select/index#asterisk)を使った式や、[APPLY](/ja/reference/statements/select/apply_modifier)、[EXCEPT](/ja/reference/statements/select/except_modifier)、[REPLACE](/ja/reference/statements/select/replace_modifier) のような[修飾子](/ja/reference/statements/select/index#select-modifiers)も使用できます。
+
+たとえば、次のテーブルを考えます。
+
+```sql
+SHOW CREATE insert_select_testtable;
+```
+
+```text
+CREATE TABLE insert_select_testtable
+(
+    `a` Int8,
+    `b` String,
+    `c` Int8
+)
+ENGINE = MergeTree()
+ORDER BY a
+```
+
+```sql
+INSERT INTO insert_select_testtable (*) VALUES (1, 'a', 1) ;
+```
+
+カラム `b` を除くすべてのカラムにデータを挿入するには、`EXCEPT` キーワードを使用できます。上記の構文のとおり、指定するカラム数 (`(c1, c3)`) と挿入する値の数 (`VALUES (v11, v13)`) が一致している必要があります。
+
+```sql
+INSERT INTO insert_select_testtable (* EXCEPT(b)) Values (2, 2);
+```
+
+```sql
+SELECT * FROM insert_select_testtable;
+```
+
+```text
+┌─a─┬─b─┬─c─┐
+│ 2 │   │ 2 │
+└───┴───┴───┘
+┌─a─┬─b─┬─c─┐
+│ 1 │ a │ 1 │
+└───┴───┴───┘
+```
+
+この例では、2 番目に挿入された行では `a` と `c` のカラムに指定した値が入り、`b` にはデフォルト値が設定されていることがわかります。`DEFAULT` キーワードを使ってデフォルト値を挿入することもできます:
+
+```sql
+INSERT INTO insert_select_testtable VALUES (1, DEFAULT, 1) ;
+```
+
+カラムの一覧に既存のカラムがすべて含まれていない場合、残りのカラムには次の値が設定されます。
+
+* テーブル定義で指定された `DEFAULT` 式から計算された値。
+* `DEFAULT` 式が定義されていない場合は、ゼロと空文字列。
+
+データは、ClickHouse がサポートする任意の[フォーマット](/ja/reference/formats/index)で INSERT に渡せます。フォーマットはクエリ内で明示的に指定する必要があります。
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
+```
+
+たとえば、次のクエリフォーマットは `INSERT ... VALUES` の基本版と同じです:
+
+```sql
+INSERT INTO [db.]table [(c1, c2, c3)] FORMAT Values (v11, v12, v13), (v21, v22, v23), ...
+```
+
+ClickHouse は、データの前にあるすべての空白と、1 つの改行文字 (ある場合) を削除します。クエリを作成する際は、データが空白で始まる場合に備えて、クエリ演算子の後で改行し、その次の行にデータを置くことを推奨します。
+
+例:
+
+```sql
+INSERT INTO t FORMAT TabSeparated
+11  Hello, world!
+22  Qwerty
+```
+
+[コマンドラインクライアント](/ja/concepts/features/tools-and-utilities/clickhouse-local) または [HTTPインターフェイス](/ja/concepts/features/interfaces/http) を使用すると、クエリとは別にデータを insert できます。
+
+<Note>
+  `INSERT` クエリに `SETTINGS` を指定する場合は、`FORMAT` 句の *前* に指定する必要があります。`FORMAT format_name` より後の内容はすべてデータとして扱われるためです。例:
+
+  ```sql
+  INSERT INTO table SETTINGS ... FORMAT format_name data_set
+  ```
+</Note>
+
+<div id="constraints">
+  ## 制約
+</div>
+
+テーブルに[制約](/ja/reference/statements/create/table#constraints)がある場合、挿入されるデータの各行に対してその式がチェックされます。いずれかの制約が満たされないと、サーバーは制約名と式を含む例外を返し、クエリは停止されます。
+
+<div id="data-type-validation">
+  ## データ型の検証
+</div>
+
+ClickHouse では、許可されたデータ型 (`enable_time_time64_type`、`allow_suspicious_low_cardinality_types`、`allow_suspicious_fixed_string_types` などの設定で制御されます) の検証は、`INSERT` 時ではなく、テーブル作成時 (`CREATE TABLE`) とスキーマ変更時 (`ALTER TABLE`) にのみ行われます。
+
+つまり、許可されていないデータ型を持つテーブルがすでに存在する場合、サーバー側で対応する設定が無効になっていても、そのテーブルにはデータを挿入できます。これは意図された動作です。いったんテーブルが作成された後は、型の作成を制御する設定によって挿入が妨げられるべきではありません。
+
+たとえば:
+
+```sql
+SET enable_time_time64_type = 1;
+
+CREATE TABLE events
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id;
+
+SET enable_time_time64_type = 0;
+
+-- 設定が無効になっていても、これは動作する。
+-- テーブルはすでに存在するため、挿入はブロックされない。
+INSERT INTO events VALUES (1, '14:30:25');
+
+-- ただし、Time型で新しいテーブルを作成しようとすると失敗する。
+CREATE TABLE events_new
+(
+    `id` UInt64,
+    `event_time` Time
+)
+ENGINE = MergeTree()
+ORDER BY id; -- ERR: TYPE_TIME_TIME64_IS_NOT_ENABLED
+```
+
+<Note>
+  その結果、ターゲットテーブルに対応するカラム型がすでに存在していれば、新しいバージョンのクライアント (設定がデフォルトで有効) から、古いバージョンのサーバー (設定が無効) に対して、許可されていないデータ型のデータを挿入できます。検証は DML レベルではなく、DDL レベルで行われます。
+</Note>
+
+<div id="inserting-the-results-of-select">
+  ## SELECT の結果を挿入する
+</div>
+
+**構文**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ...
+```
+
+カラムは `SELECT` 句内での位置に基づいて対応付けられます。ただし、`SELECT` 式内の名前と `INSERT` 先のテーブル内の名前は異なっていてもかまいません。必要に応じて、型変換が行われます。
+
+Valuesフォーマットを除き、どのデータフォーマットでも `now()` や `1 + 2` などの式に値を設定することはできません。Valuesフォーマットでは式を限定的に使用できますが、この場合は非効率なコードで実行されるため、推奨されません。
+
+データパーツを変更するその他のクエリ (`UPDATE`、`DELETE`、`REPLACE`、`MERGE`、`UPSERT`、`INSERT UPDATE`) はサポートされていません。
+ただし、`ALTER TABLE ... DROP PARTITION` を使用して古いデータを削除することはできます。
+
+`SELECT` 句にテーブル関数 [input()](/ja/reference/functions/table-functions/input) が含まれている場合、`FORMAT` 句はクエリの末尾で指定する必要があります。
+
+NULL不可のデータ型を持つカラムに `NULL` の代わりにデフォルト値を挿入するには、[insert&#95;null&#95;as&#95;default](/ja/reference/settings/session-settings#insert_null_as_default) 設定を有効にします。
+
+`INSERT` は CTE (共通テーブル式) もサポートしています。たとえば、次の2つのステートメントは同等です。
+
+```sql
+INSERT INTO x WITH y AS (SELECT * FROM numbers(10)) SELECT * FROM y;
+WITH y AS (SELECT * FROM numbers(10)) INSERT INTO x SELECT * FROM y;
+```
+
+<div id="inserting-data-from-a-file">
+  ## ファイルからデータを挿入する
+</div>
+
+**構文**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FROM INFILE file_name [COMPRESSION type] [SETTINGS ...] [FORMAT format_name]
+```
+
+上記の構文を使用すると、**クライアント**側に保存されているファイル、または複数のファイルからデータを挿入できます。`file_name` と `type` は文字列リテラルです。入力ファイルの[フォーマット](/ja/reference/formats/index)は、`FORMAT` 句で設定する必要があります。
+
+圧縮ファイルもサポートされています。圧縮の種類は、ファイル名の拡張子から検出されます。または、`COMPRESSION` 句で明示的に指定することもできます。サポートされる種類は次のとおりです: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`。
+
+この機能は、[コマンドラインクライアント](/ja/concepts/features/interfaces/client)および[clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local)で利用できます。
+
+**例**
+
+<div id="single-file-with-from-infile">
+  ### FROM INFILE を使った単一ファイル
+</div>
+
+[コマンドラインクライアント](/ja/concepts/features/interfaces/client)を使用して、次のクエリを実行します。
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+clickhouse-client --query="CREATE TABLE table_from_file (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_file FROM INFILE 'input.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM table_from_file FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
+<div id="multiple-files-with-from-infile-using-globs">
+  ### globs を使用した FROM INFILE での複数ファイル
+</div>
+
+この例は前の例とほぼ同じですが、`FROM INFILE 'input_*.csv'` を使用して、複数のファイルから挿入を行います。
+
+```bash
+echo 1,A > input_1.csv ; echo 2,B > input_2.csv
+clickhouse-client --query="CREATE TABLE infile_globs (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;"
+clickhouse-client --query="SELECT * FROM infile_globs FORMAT PrettyCompact;"
+```
+
+<Tip>
+  `*` を使って複数のファイルを選択するだけでなく、範囲指定 (`{1,2}` または `{1..9}`) やその他の [グロブ置換](/ja/reference/functions/table-functions/file#globs-in-path) も使用できます。次の 3 つは、いずれも上記の例で使用できます。
+
+  ```sql
+  INSERT INTO infile_globs FROM INFILE 'input_*.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
+  INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
+  ```
+</Tip>
+
+<div id="inserting-using-a-table-function">
+  ## テーブル関数を使用した挿入
+</div>
+
+データは、[テーブル関数](/ja/reference/functions/table-functions/index)で参照されるテーブルに挿入できます。
+
+**構文**
+
+```sql
+INSERT INTO [TABLE] FUNCTION table_func ...
+```
+
+**例**
+
+[remote](/ja/reference/functions/table-functions/remote) テーブル関数は、以下のクエリで使用されます。
+
+```sql title="Query"
+CREATE TABLE simple_table (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;
+INSERT INTO TABLE FUNCTION remote('localhost', default.simple_table)
+    VALUES (100, 'inserted via remote()');
+SELECT * FROM simple_table;
+```
+
+```text title="Response"
+┌──id─┬─text──────────────────┐
+│ 100 │ inserted via remote() │
+└─────┴───────────────────────┘
+```
+
+<div id="inserting-into-clickhouse-cloud">
+  ## ClickHouse Cloud への挿入
+</div>
+
+デフォルトでは、ClickHouse Cloud のサービスは高可用性のために複数のレプリカを備えています。サービスに接続すると、それらのレプリカのいずれか 1 つとの接続が確立されます。
+
+`INSERT` が成功すると、データは基盤ストレージに書き込まれます。ただし、各レプリカにこれらの更新が反映されるまでには多少時間がかかる場合があります。そのため、別の接続を使って他のレプリカのいずれかに対して `SELECT` クエリを実行すると、更新後のデータがまだ反映されていないことがあります。
+
+`select_sequential_consistency` を使用すると、レプリカに最新の更新を反映させることができます。以下は、この設定を使用した `SELECT` クエリの例です。
+
+```sql
+SELECT .... SETTINGS select_sequential_consistency = 1;
+```
+
+`select_sequential_consistency` を使用すると、ClickHouse Keeper (ClickHouse Cloud の内部で使用) への負荷が増加し、サービスの負荷状況によってはパフォーマンスが低下する可能性があるため、注意してください。必要な場合を除き、この設定は有効にしないことを推奨します。推奨される方法は、同じセッションで読み取りと書き込みを実行するか、ネイティブプロトコルを使用するクライアントドライバー (つまり、スティッキー接続をサポートするもの) を使用することです。
+
+<div id="inserting-into-a-replicated-setup">
+  ## レプリケート構成への挿入
+</div>
+
+レプリケート構成では、データはレプリケーションが完了した後、他のレプリカから参照できるようになります。データのレプリケーション (他のレプリカへのダウンロード) は、`INSERT` の直後に開始されます。これは ClickHouse Cloud とは異なり、ClickHouse Cloud ではデータは即座に共有ストレージへ書き込まれ、レプリカはメタデータの変更をサブスクライブします。
+
+レプリケート構成では、分散合意のために ClickHouse Keeper へのコミットが必要になるため、`INSERT` にかなり時間 (1 秒程度) がかかることがあります。ストレージに S3 を使用すると、さらにレイテンシーが増加します。
+
+<div id="performance-considerations">
+  ## パフォーマンスに関する考慮事項
+</div>
+
+`INSERT` は、入力データを主キーでソートし、パーティションキーに基づいてパーティションに分割します。一度に複数のパーティションにデータを `INSERT` すると、`INSERT` クエリのパフォーマンスが大幅に低下することがあります。これを避けるには、次のようにします。
+
+* 1 回あたり 100,000 行など、ある程度大きなバッチでデータを追加します。
+* ClickHouse にアップロードする前に、パーティションキーごとにデータをまとめます。
+
+次の場合、パフォーマンスは低下しません。
+
+* データをリアルタイムで追加する場合。
+* 通常は時系列順にソートされているデータをアップロードする場合。
+
+<div id="asynchronous-inserts">
+  ### 非同期挿入
+</div>
+
+小規模な挿入を高頻度で行う場合でも、データを非同期に挿入できます。こうした挿入によるデータはバッチにまとめられ、その後、安全にテーブルへ挿入されます。非同期挿入を使用するには、[`async_insert`](/ja/reference/settings/session-settings#async_insert) 設定を有効にします。
+
+`async_insert` または [`Buffer` テーブルエンジン](/ja/reference/engines/table-engines/special/buffer) を使用すると、追加のバッファリングが発生します。
+
+<div id="large-or-long-running-inserts">
+  ### 大量または長時間にわたる挿入
+</div>
+
+大量のデータを挿入する場合、ClickHouse は「まとめる」と呼ばれるプロセスによって書き込み性能を最適化します。メモリ内の小さな挿入データのブロックはマージされ、より大きなブロックにまとめられてからディスクに書き込まれます。まとめることで、各書き込み操作に伴うオーバーヘッドを削減できます。このプロセスでは、挿入されたデータは ClickHouse が [`max_insert_block_size`](/ja/reference/settings/session-settings#max_insert_block_size) 行ごとの書き込みを完了するたびにクエリできるようになります。
+
+**関連項目**
+
+* [async&#95;insert](/ja/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ja/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ja/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ja/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ja/reference/settings/session-settings#async_insert_max_data_size)
