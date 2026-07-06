@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Querio'
+slug: /integrations/querio
+keywords: ['Querio', '连接', '集成', '分析', 'AI']
+description: 'Querio 是一个 AI 原生分析与商业智能工作区。将 ClickHouse 连接到 Querio，即可使用 SQL、Python 和 AI 探索、可视化并分析实时数据。'
+title: '将 ClickHouse 连接到 Querio'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Querio 是一个由 AI 驱动的分析与商业智能工作区，团队可借助 SQL、Python 和自然语言对数据进行查询、探索、可视化并生成洞察。当你将 Querio 连接到 ClickHouse 数据库或仓库后，即可直接基于 ClickHouse 中的数据大规模开展实时分析，并构建看板、笔记本和 AI 辅助报告，无需移动数据。
+
+<div id="setup-clickhouse-for-querio">
+  ## 为 Querio 设置 ClickHouse
+</div>
+
+<Steps>
+  <Step>
+    ### 创建专用用户
+
+    遵循安全最佳实践，请为 Querio 创建一个专用用户账户，并仅授予其最低必要权限：
+
+    ```sql
+    CREATE USER querio_user IDENTIFIED BY 'STRONG_PASSWORD';
+    ```
+
+    <Tip>
+      请使用较长的随机密码 (至少 16 个字符) ，最好由密码管理器生成。
+    </Tip>
+  </Step>
+
+  <Step>
+    ### 授予只读数据库访问权限
+
+    将 Querio 的权限限制为仅能访问其执行查询所需的数据库和表：
+
+    ```sql
+    GRANT SELECT ON my_database.* TO querio_user;
+    ```
+
+    如果只授予特定表的权限，请使用：
+
+    ```sql
+    GRANT SELECT ON database.table_name TO querio_user;
+    ```
+
+    对 Querio 需要访问的每个数据库重复此过程。
+  </Step>
+
+  <Step>
+    ### 收集连接详细信息
+
+    要将 Querio 连接到 ClickHouse，您需要以下连接信息：
+
+    | Parameter  | Description                   |
+    | ---------- | ----------------------------- |
+    | `HOST`     | 您的 ClickHouse 服务器或集群地址        |
+    | `PORT`     | 端口 9440 (安全原生协议的默认端口) 或您配置的端口 |
+    | `DATABASE` | Querio 要查询的数据库                |
+    | `USERNAME` | `querio_user` (或您自定义的用户名)     |
+    | `PASSWORD` | 该用户账户的密码                      |
+
+    <Note>
+      * 对于 ClickHouse Cloud，可在您的云控制台中找到连接详细信息
+      * 对于自管理实例，如果您的 ClickHouse 使用其他端口，请检查您的服务器配置
+      * 端口 9440 是安全原生协议连接的默认端口
+    </Note>
+  </Step>
+</Steps>
+
+<div id="create-account-and-connect">
+  ## 创建 Querio 账户并连接 ClickHouse
+</div>
+
+登录 [https://app.querio.ai/](https://app.querio.ai/)，或创建你的 Querio 工作区
+
+1. 在 Querio 中，前往 **设置 → 数据源**，然后点击 **添加数据源**。
+
+2. 在数据库选项列表中选择 **ClickHouse**。
+
+3. 输入上述连接信息并保存配置。
+
+4. Querio 将验证连接。验证成功后，ClickHouse 将作为数据源在整个工作区中可用。
+
+<div id="querying-clickhouse">
+  ## 查询 ClickHouse
+</div>
+
+将 Querio 连接到 ClickHouse 后，您就可以在整个平台中随时探索和分析数据。在 Querio 笔记本 中创建 SQL 块或 Python 单元，选择 ClickHouse 作为数据源，然后直接查询您的 ClickHouse 集群。使用 Querio 的可视化和 AI 工具发掘洞察、创建看板并共享结果。
+
+<div id="additional-resources">
+  ## 其他资源
+</div>
+
+* [Querio 文档](https://docs.querio.ai/integrations/clickhouse)
+* [Querio 入门指南和教程](https://www.querio.ai)

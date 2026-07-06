@@ -1,0 +1,38 @@
+---
+sidebarTitle: 'Escalado vertical automático'
+slug: /cloud/features/autoscaling/vertical
+description: 'Configuración del escalado vertical automático en ClickHouse Cloud'
+keywords: ['autoescalado', 'escalado automático', 'vertical', 'escalado', 'CPU', 'memoria']
+title: 'Escalado vertical automático'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="Escalado vertical automático" />
+
+Los servicios de los niveles Scale y Enterprise admiten el escalado automático en función del uso de CPU y memoria. El uso del servicio se supervisa continuamente durante una ventana de observación para tomar decisiones de escalado. Si el uso supera o cae por debajo de determinados umbrales, el servicio se escala según corresponda para ajustarse a la demanda.
+
+<div id="configuring-vertical-auto-scaling">
+  ## Configuración del escalado vertical automático
+</div>
+
+Los miembros de la organización con el rol **Admin** pueden ajustar el escalado de los servicios Scale o Enterprise de ClickHouse Cloud. Para configurar el escalado vertical automático, ve a la pestaña **Configuración** de tu servicio y ajusta la memoria mínima y máxima, junto con los ajustes de CPU, como se muestra a continuación.
+
+<Note>
+  Los servicios de una sola réplica no admiten escalado en todos los tiers.
+</Note>
+
+<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Página de configuración del escalado" border />
+
+Establece la **Memoria máxima** de tus réplicas en un valor superior a la **Memoria mínima**. El servicio se escalará según sea necesario dentro de esos límites. Estos ajustes también están disponibles durante el flujo inicial de creación del servicio. A cada réplica de tu servicio se le asignarán los mismos recursos de memoria y CPU.
+
+También puedes optar por establecer ambos valores iguales, lo que básicamente &quot;fija&quot; el servicio a una configuración específica. Al hacerlo, se forzará inmediatamente el escalado al tamaño deseado que hayas elegido.
+
+Es importante tener en cuenta que esto deshabilitará cualquier escalado automático en el clúster, y tu servicio no estará protegido frente a aumentos en el uso de CPU o memoria más allá de estos ajustes.
+
+<Note>
+  Para los servicios del tier Enterprise, los perfiles estándar 1:4 admiten el escalado vertical automático. Los perfiles personalizados no admiten ni el escalado vertical automático ni el escalado vertical manual. Sin embargo, estos servicios pueden escalarse verticalmente contactando con el soporte.
+</Note>

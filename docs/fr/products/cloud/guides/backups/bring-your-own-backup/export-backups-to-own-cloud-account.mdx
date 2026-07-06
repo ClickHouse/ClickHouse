@@ -1,0 +1,190 @@
+---
+sidebarTitle: 'Exporter des sauvegardes'
+slug: /cloud/manage/backups/export-backups-to-own-cloud-account
+title: 'Exporter des sauvegardes vers votre propre compte cloud'
+description: 'Décrit comment exporter des sauvegardes vers votre propre compte Cloud'
+doc_type: 'guide'
+---
+
+ClickHouse Cloud prend en charge l’export de sauvegardes vers votre propre compte auprès d’un fournisseur de services cloud (CSP) (AWS S3, Google Cloud Storage ou Azure Blob Storage).
+Pour en savoir plus sur le fonctionnement des sauvegardes dans ClickHouse Cloud, y compris les sauvegardes « complètes » et « incrémentielles », consultez la documentation sur les [sauvegardes](/fr/products/cloud/guides/backups/review-and-restore-backups).
+
+Dans ce guide, nous montrons des exemples de création de sauvegardes complètes et incrémentielles vers le stockage objet AWS, GCP et Azure, ainsi que la procédure de restauration à partir de ces sauvegardes.
+
+<Note>
+  Toute utilisation impliquant l’export de sauvegardes vers une autre région chez le même fournisseur cloud entraîne des frais de [transfert de données](/fr/products/cloud/reference/billing/network-data-transfer).
+
+  Les sauvegardes inter-cloud ne sont prises en charge que via les commandes de sauvegarde/restauration décrites sur cette page, et non via l’UI.
+</Note>
+
+<div id="requirements">
+  ## Prérequis
+</div>
+
+Vous aurez besoin des informations suivantes pour exporter/restaurer des sauvegardes vers le bucket de stockage de votre propre CSP.
+
+<div id="aws">
+  ### AWS
+</div>
+
+1. Endpoint S3 AWS, au format :
+
+```text
+  s3://<bucket_name>.s3.amazonaws.com/<directory>
+```
+
+Par exemple :
+
+```text
+  s3://testchbackups.s3.amazonaws.com/backups/
+```
+
+Où :
+
+* `testchbackups` est le nom du bucket S3 vers lequel exporter les sauvegardes.
+  * `backups` est un sous-répertoire facultatif.
+
+2. La clé d’accès AWS et la clé secrète AWS. L’authentification basée sur les rôles AWS est également prise en charge et peut être utilisée à la place de la clé d’accès AWS et de la clé secrète AWS.
+
+<Note>
+  Pour utiliser l’authentification basée sur les rôles, veuillez suivre la [configuration sécurisée de S3](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely). De plus, vous devrez ajouter les autorisations `s3:PutObject` et `s3:DeleteObject` à la stratégie IAM décrite [ici.](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)
+</Note>
+
+<div id="azure">
+  ### Azure
+</div>
+
+1. Chaîne de connexion au stockage Azure.
+2. Nom du conteneur Azure dans le compte de stockage.
+3. Blob Azure dans le conteneur.
+
+<div id="google-cloud-storage-gcs">
+  ### Google Cloud Storage (GCS)
+</div>
+
+1. Endpoint GCS, au format :
+
+   ```text
+   https://storage.googleapis.com/<bucket_name>/
+   ```
+2. Clé d’accès HMAC et secret HMAC.
+
+<hr />
+
+<div id="backup-restore">
+  ## Sauvegarde / restauration
+</div>
+
+<div id="backup--restore-to-aws-s3-bucket">
+  ## Sauvegarde / restauration vers un bucket S3 sur AWS
+</div>
+
+<div id="take-a-db-backup">
+  ### Effectuer une sauvegarde d’une base de données
+</div>
+
+**Sauvegarde complète**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+`uuid` désigne ici un identifiant unique permettant de distinguer un ensemble de sauvegardes.
+
+<Note>
+  Vous devrez utiliser un UUID différent pour chaque nouvelle sauvegarde dans ce sous-répertoire, sinon vous obtiendrez l’erreur `BACKUP_ALREADY_EXISTS`.
+  Par exemple, si vous effectuez des sauvegardes quotidiennes, vous devrez utiliser un nouvel UUID chaque jour.
+</Note>
+
+**Sauvegarde incrémentielle**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>') 
+SETTINGS base_backup = S3('https://testchbackups.s3.amazonaws.com/backups/<base-backup-uuid>', '<key id>', '<key secret>')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurer depuis une sauvegarde
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored 
+FROM S3('https://testchbackups.s3.amazonaws.com/backups/<uuid>', '<key id>', '<key secret>')
+```
+
+Voir : [Configurer BACKUP/RESTORE pour utiliser un endpoint S3](/fr/concepts/features/backup-restore/s3-endpoint) pour plus de détails.
+
+<div id="backup--restore-to-azure-blob-storage">
+  ## Sauvegarde / restauration vers Azure Blob Storage
+</div>
+
+<div id="take-a-db-backup">
+  ### Effectuer une sauvegarde d’une base de données
+</div>
+
+**Sauvegarde complète**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>');
+```
+
+où `uuid` correspond à un identifiant unique servant à distinguer un ensemble de sauvegardes.
+
+**Sauvegarde incrémentielle**
+
+```sql
+BACKUP DATABASE test_backups 
+TO AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>/my_incremental') 
+SETTINGS base_backup = AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurer depuis une sauvegarde
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_azure 
+FROM AzureBlobStorage('<AzureBlobStorage endpoint connection string>', '<container>', '<blob>/<uuid>')
+```
+
+Voir : [Configurer BACKUP/RESTORE pour utiliser un endpoint AzureBlobStorage](/fr/concepts/features/backup-restore/azure-blob-storage#configuring-backuprestore-to-use-an-azureblobstorage-endpoint) pour plus de détails.
+
+<div id="backup--restore-to-google-cloud-storage-gcs">
+  ## Sauvegarde / restauration sur Google Cloud Storage (GCS)
+</div>
+
+<div id="take-a-db-backup">
+  ### Effectuer une sauvegarde d’une base de données
+</div>
+
+**Sauvegarde complète**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/<bucket>/<uuid>', <hmac-key>', <hmac-secret>)
+```
+
+Ici, `uuid` est un identifiant unique servant à distinguer un ensemble de sauvegardes.
+
+**Sauvegarde incrémentielle**
+
+```sql
+BACKUP DATABASE test_backups 
+TO S3('https://storage.googleapis.com/test_gcs_backups/<uuid>/my_incremental', 'key', 'secret')
+SETTINGS base_backup = S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```
+
+<div id="restore-from-a-backup">
+  ### Restaurer depuis une sauvegarde
+</div>
+
+```sql
+RESTORE DATABASE test_backups 
+AS test_backups_restored_gcs 
+FROM S3('https://storage.googleapis.com/test_gcs_backups/<uuid>', 'key', 'secret')
+```

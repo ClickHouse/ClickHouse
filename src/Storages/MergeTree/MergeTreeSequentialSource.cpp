@@ -452,6 +452,7 @@ public:
                     /*part_offset_condition=*/{},
                     /*total_offset_condition=*/{},
                     /*exact_ranges=*/nullptr,
+                    /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
 
