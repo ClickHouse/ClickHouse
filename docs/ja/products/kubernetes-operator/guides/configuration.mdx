@@ -1,0 +1,1154 @@
+---
+position: 2
+slug: /clickhouse-operator/guides/configuration
+title: ClickHouse Operator 設定ガイド
+keywords: ['kubernetes']
+description: 'このガイドでは、ClickHouse Operatorを使用して ClickHouse および Keeper のクラスターを設定する方法を説明します。'
+doc_type: 'guide'
+---
+
+このガイドでは、Operatorを使用して ClickHouse および Keeper のクラスターを設定する方法を説明します。
+
+<div id="clickhousecluster-configuration">
+  ## ClickHouseCluster の設定
+</div>
+
+<div id="basic-configuration">
+  ### 基本設定
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  replicas: 3           # シャードあたりのレプリカ数
+  shards: 2             # 分片数
+  keeperClusterRef:
+    name: my-keeper     # KeeperCluster への参照
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="replicas-and-shards">
+  ### レプリカと分片
+</div>
+
+* **レプリカ**: 各分片あたりの ClickHouse インスタンス数 (高可用性のため)
+* **分片**: 水平分割数 (スケーリングのため)
+
+```yaml
+spec:
+  replicas: 3  # デフォルト: 3
+  shards: 2    # デフォルト: 1
+```
+
+`replicas: 3`、`shards: 2` のクラスターでは、ClickHouse ポッドが合計 6 つ作成されます。
+
+<div id="keeper-integration">
+  ### Keeper インテグレーション
+</div>
+
+すべてのClickHouseクラスターで、調整用のKeeperClusterを参照する必要があります。
+
+```yaml
+spec:
+  keeperClusterRef:
+    name: my-keeper
+    # namespace: keeper-system  # 省略可能。デフォルトはClickHouseClusterのネームスペース
+```
+
+`keeperClusterRef.namespace` が設定されている場合、オペレーターは両方のネームスペースを監視する必要があります。`WATCH_NAMESPACE` が設定されている場合は、その一覧に ClickHouse と Keeper のネームスペースを含めてください。
+
+<div id="keepercluster-configuration">
+  ## KeeperCluster の設定
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: my-keeper
+spec:
+  replicas: 3  # 奇数である必要があります: 1, 3, 5, 7, 9, 11, 13, または 15
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 5Gi
+```
+
+<div id="storage-configuration">
+  ## ストレージ構成
+</div>
+
+`dataVolumeClaimSpec` (標準的な Kubernetes の
+`PersistentVolumeClaimSpec`) を使用して永続ストレージを設定します。オペレーターはこれをレプリカごとの PersistentVolumeClaim に変換し、
+データパス `/var/lib/clickhouse` にマウントします：
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<Note>
+  オペレーター が既存の PVC を変更できるのは、基盤となる StorageClass がボリューム拡張に対応している場合のみです。
+</Note>
+
+マルチディスク (JBOD) レイアウトでの追加ディスクの接続、永続
+ボリュームなしでの実行、容量の拡張、カスタムストレージポリシー、および作成後に何を
+変更できないかに関するルールについては、専用の
+[ストレージとボリュームのガイド](/ja/products/kubernetes-operator/guides/storage)で説明しています。
+
+<div id="cluster-domain">
+  ## クラスター ドメイン
+</div>
+
+`spec.clusterDomain` は、オペレーター が ClickHouse server の
+設定に書き込む完全修飾のポッドホスト名を生成する際に使用する、Kubernetes の DNS 接尾辞を設定します。既定値は `cluster.local` で、
+`ClickHouseCluster` と `KeeperCluster` の両方にあります。
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+The オペレーターは、ヘッドレス Service を通じてすべてのポッドに
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` の形式でアクセスします。この接尾辞は、生成される構成の
+2 つの箇所で使われます。
+
+* `ClickHouseCluster` では、この値が `remote_servers` 内のレプリカのホスト名に使用されます
+  (レプリカ間および `Distributed` クエリ用) 。
+* `KeeperCluster` では、この値を基に、ClickHouse が協調に使用する
+  Keeper ノードのホスト名が組み立てられます。
+
+<Note>
+  これを override するのは、クラスターの `キューブレット` が `cluster.local` 以外の `--cluster-domain`
+  で実行されている場合だけにしてください。値が実際のクラスター ドメインと一致しないと、
+  ClickHouse は Keeper とレプリカのホスト名を解決できず、協調と
+  `Distributed` クエリは DNS 名前解決エラーで失敗します。参照先の
+  `KeeperCluster` と `ClickHouseCluster` の両方に、**同じ**値を設定してください。
+</Note>
+
+<div id="multi-disk-jbod-storage">
+  ### 複数ディスク (JBOD) ストレージ
+</div>
+
+`additionalVolumeClaimTemplates` を使うと、使用に必須のプライマリ `dataVolumeClaimSpec` に加えて、各 ClickHouse レプリカに追加のディスクを接続できます。
+各エントリは PVC テンプレートで、`metadata.name` と PVC の `spec` で構成されます。
+これらのディスクは、プライマリ データディスクとまったく同様に、StatefulSet の `volumeClaimTemplates` としてリコンサイルされます。そのため、StatefulSet コントローラーはレプリカごとに 1 つの PVC を作成して保持し、その名前は `<name>-<statefulset>-0` になります。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+オペレーターは各追加ボリュームを `/var/lib/clickhouse/disks/<name>` にマウントし、生成された ClickHouse のストレージ構成に追加します。
+名前に含まれるハイフンは ClickHouse のディスク識別子ではアンダースコアに変換されますが、マウントパスでは元の名前のままです。
+
+プライマリデータディスクとすべての追加ディスクは、`default` ストレージポリシー内の 1 つのボリュームにまとめて配置されるため、ClickHouse は新しいデータパーツをそれらすべてにラウンドロビンで分散します。
+使用可能容量はすべてのディスクの合計となり、独自の `storage_policy` を設定していないすべてのテーブル (`system.*` テーブルを含む) は、この統合されたディスクセットを使用します。
+
+<Note>
+  PVC 名は `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致している必要があり、プライマリデータボリューム名と重複してはなりません。
+  プライマリデータディスクと同様に、追加ディスクのセットは作成時に固定されます。作成後にエントリを追加、削除、または名前変更することはできず、拒否されます。
+  追加の PVC は、プライマリデータディスクと同様に、クラスターを削除しても保持されます。
+  StorageClass が拡張をサポートしている場合、既存エントリのストレージサイズは拡張できます。
+</Note>
+
+<div id="cluster-domain">
+  ## クラスター ドメイン
+</div>
+
+`spec.clusterDomain` は、オペレーターが ClickHouse server の設定に書き込む
+ポッドの完全修飾ホスト名を構築する際に使用する Kubernetes の DNS 接尾辞を設定します。
+既定値は `cluster.local` で、`ClickHouseCluster` と `KeeperCluster` の両方にあります。
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+オペレーターは、ヘッドレス Service 経由で各ポッドを
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>` として参照します。この接尾辞は、
+生成される設定の次の 2 か所で使われます。
+
+* `ClickHouseCluster` では、この値が `remote_servers` 内のレプリカのホスト名に使用されます
+  (レプリカ間および `Distributed` クエリ用) 。
+* `KeeperCluster` では、この値を基に、ClickHouse が協調に使用する
+  Keeper ノードのホスト名が組み立てられます。
+
+<Note>
+  これを上書きするのは、クラスターの `キューブレット` が `cluster.local` 以外の
+  `--cluster-domain` で実行されている場合だけにしてください。値が実際のクラスター
+  ドメインと一致しないと、ClickHouse は Keeper とレプリカのホスト名を名前解決
+  できず、協調および `Distributed` クエリが DNS 名前解決エラーで失敗します。
+  参照先の `KeeperCluster` と `ClickHouseCluster` の両方に、**同じ**値を設定してください。
+</Note>
+
+<div id="pod-configuration">
+  ## ポッドの設定
+</div>
+
+<div id="automatic-topology-spread-and-affinity">
+  ### トポロジースプレッドとアフィニティの自動設定
+</div>
+
+ポッドをアベイラビリティゾーン間に分散します:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+```
+
+<Note>
+  Kubernetesクラスターに、分散制約を満たせるだけのノードが異なるゾーンに十分にあることを確認してください。
+</Note>
+
+<div id="manual-configuration">
+  ### 手動設定
+</div>
+
+ポッドのアフィニティ/アンチアフィニティ ルールやトポロジースプレッド制約を任意に指定できます。
+
+```yaml
+spec:
+  podTemplate:
+    affinity:
+      <your-affinity-rules-here>
+    topologySpreadConstraints:
+      <your-topology-spread-constraints-here>
+```
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
+  ### サポートされているすべてのポッドテンプレートオプションについては、[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#podtemplatespec)を参照してください。
+</div>
+
+<div id="pod-disruption-budgets">
+  ## ポッドの停止予算
+</div>
+
+オペレーターは、各クラスターに対して [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) (PDB) を作成します。これにより、自発的な中断 (ノードのドレイン、ローリングアップグレード、オートスケーラーによるエビクション) が発生しても、クォーラムの喪失や可用性の低下につながるほど多くのポッドが停止しないようにできます。
+
+複数の分片を持つ ClickHouse クラスターでは、**分片ごとに 1 つの PDB が作成されます**。これにより、ある分片での中断が別の分片の許容範囲として扱われることはありません。
+
+<div id="pdb-defaults">
+  ### デフォルト
+</div>
+
+オペレーターはクラスターのサイズに応じて安全なデフォルト値を選択するため、新規に `apply` した時点で、意図しないクォーラムの喪失から保護されます。
+
+| Resource            | Topology                   | Default PDB                                                                                         |
+| ------------------- | -------------------------- | --------------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | `replicas: 1` (単一レプリカの分片)  | `maxUnavailable: 1` — 単一ノードのクラスターでは中断を許可し、ノードのドレインが妨げられないようにします                                     |
+| `ClickHouseCluster` | `replicas: 2+` (複数レプリカの分片) | `minAvailable: 1` — 各分片で少なくとも 1 つのレプリカが稼働したままでなければなりません                                             |
+| `KeeperCluster`     | `replicas: 1`              | `maxUnavailable: 1` — 単一ノードのクラスターでは中断を許可し、ノードのドレインが妨げられないようにします                                     |
+| `KeeperCluster`     | `replicas: 3+`             | `maxUnavailable: replicas/2` — `2F+1` クラスターの RAFT クォーラムを維持します (3 レプリカでは 1 台の停止、5 レプリカでは 2 台の停止まで許容) |
+
+`replicas: 3` の 3 分片 ClickHouseCluster では、オペレーターは分片ごとに 1 つずつ、合計 3 つの PDB を作成し、それぞれに `minAvailable: 1` を設定します。
+
+<div id="pdb-overrides">
+  ### デフォルト設定の上書き
+</div>
+
+`spec.podDisruptionBudget` を使用して、`minAvailable` または `maxUnavailable` のいずれか一方のみを上書きできます (必ずどちらか一方のみ) :
+
+```yaml
+spec:
+  replicas: 3
+  shards: 2
+  podDisruptionBudget:
+    minAvailable: 2   # 障害発生時に各分片で3つのレプリカのうち少なくとも2つを稼働状態に維持する
+```
+
+または、パーセンテージで指定する `maxUnavailable` 形式:
+
+```yaml
+spec:
+  replicas: 5
+  podDisruptionBudget:
+    maxUnavailable: 40%
+```
+
+<Warning>
+  `minAvailable` と `maxUnavailable` の両方を設定すると、検証 webhook によって拒否されます。どちらか一方を選んでください。Kubernetes 自体も、この 2 つを同時に許可していません。
+</Warning>
+
+生成される PDB に [`unhealthyPodEvictionPolicy`](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#unhealthy-pod-eviction-policy) フィールドをそのまま渡すこともできます。これは、まだ `NotReady` 状態のポッドのエビクションを許可する必要がある場合に便利です。
+
+```yaml
+spec:
+  podDisruptionBudget:
+    minAvailable: 2
+    unhealthyPodEvictionPolicy: AlwaysAllow
+```
+
+<div id="pdb-policies">
+  ### ポリシー
+</div>
+
+`spec.podDisruptionBudget.policy` では、オペレーターが PDB を**どの程度積極的に**管理するかを選択できます。
+
+| Policy              | 挙動                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Enabled` (default) | オペレーターはリコンサイルのたびに PDB を作成・更新します。これは本番環境で安全に使えるデフォルト設定です。                                                     |
+| `Disabled`          | オペレーターは PDB を**作成せず**、一致するラベルを持つ既存の PDB を**削除**します。あらゆる自発的な中断を許可したい開発用クラスターで便利です。                            |
+| `Ignored`           | オペレーターは PDB を作成も削除もしません。既存の PDB はそのまま維持されます。別のシステム (例: policy admission、GitOps tool) が PDB 管理を担っている場合に使用します。 |
+
+例 — 開発用クラスターで PDB 管理を完全に無効にする:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Disabled
+```
+
+例 — 手動で作成した PDB をクラスターと同じ場所に置き、オペレーターがそれを変更しないようにします:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Ignored
+```
+
+<div id="pdb-cluster-wide-disable">
+  ### クラスター全体での無効化
+</div>
+
+PDB の管理は、オペレーターの `ENABLE_PDB` 環境変数を使用して、クラスター全体で無効にすることもできます。`ENABLE_PDB=false` の場合、オペレーターは **すべての** ClickHouseCluster と KeeperCluster について、`spec.podDisruptionBudget.policy` の設定にかかわらず PDB のリコンサイル手順をスキップし、`PodDisruptionBudget` リソースを**一切監視しません**。そのため、オペレーターの ServiceAccount には `poddisruptionbudgets.policy/v1` に対する RBAC 権限は不要です。これは、それらの権限を意図的に含めていない制限付きの ServiceAccount でオペレーターを実行する場合に便利です。
+
+```yaml
+# operatorのデプロイメントspecに記述
+env:
+- name: ENABLE_PDB
+  value: "false"
+```
+
+これは、独自の中断ポリシー (たとえば Gatekeeper / Kyverno 経由) を備えており、オペレーターを完全に関与させたくない環境を対象としています。
+
+<div id="container-configuration">
+  ## コンテナーの設定
+</div>
+
+<div id="custom-image">
+  ### カスタムイメージ
+</div>
+
+特定のClickHouseイメージを使用します。
+
+```yaml
+spec:
+  containerTemplate:
+    image:
+      repository: clickhouse/clickhouse-server
+      tag: "25.12"
+    imagePullPolicy: IfNotPresent
+```
+
+<div id="container-resources">
+  ### コンテナーのリソース
+</div>
+
+ClickHouse コンテナーの CPU とメモリを設定します。
+
+```yaml
+# default values
+spec:
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+```
+
+<div id="environment-variables">
+  ### 環境変数
+</div>
+
+任意の環境変数を追加します:
+
+```yaml
+spec:
+  containerTemplate:
+    env:
+    - name: CUSTOM_ENV_VAR
+      value: "1"
+```
+
+<div id="volume-mounts">
+  ### ボリュームマウント
+</div>
+
+追加のボリュームマウントを設定します:
+
+```yaml
+spec:
+  containerTemplate:
+    volumeMounts:
+    - name: custom-config
+      mountPath: /etc/clickhouse-server/config.d/custom.xml
+      subPath: custom.xml
+```
+
+<Note>
+  同じ`mountPath`に対して複数のボリュームマウントを指定できます。
+  Operator は、指定されたすべてのマウントを含む projected volume を作成します。
+</Note>
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
+  ### サポートされているすべての コンテナー テンプレートオプションについては、[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#containertemplatespec)を参照してください。
+</div>
+
+<div id="tls-ssl-configuration">
+  ## TLS/SSL の設定
+</div>
+
+<div id="configure-secure-endpoints">
+  ### セキュアなエンドポイントを設定する
+</div>
+
+セキュアなエンドポイントを有効にするには、TLS 証明書を含む Kubernetes Secret への参照を指定します
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true # 設定すると、非セキュアポートは無効になります
+      serverCertSecret:
+        name: <certificate-secret-name>
+```
+
+<div id="ssl-certificate-secret-format">
+  ### SSL 証明書 Secret の形式
+</div>
+
+Secret には、サーバーのキーペアが含まれている必要があります。
+
+* `tls.crt` - PEM エンコードされたサーバー証明書
+* `tls.key` - PEM エンコードされた秘密鍵
+
+<Note>
+  この形式は、cert-manager によって生成された証明書と互換性があります。
+</Note>
+
+<div id="clickhouse-keeper-communication-over-tls">
+  ### TLS を介した ClickHouse-Keeper 通信
+</div>
+
+KeeperCluster で TLS が有効になっている場合、ClickHouseCluster は Keeper ノードへのセキュアな接続を自動的に使用します。
+
+ClickHouseCluster は、システムのトラストストアに加えて、設定した `caBundle` を使用して Keeper ノードの証明書を検証します。
+
+プライベート CA (たとえば、自己署名 CA や内部 CA) を信頼するには、カスタム CA バンドルへの参照を指定します。
+
+```yaml
+spec:
+    settings:
+        tls:
+          caBundle:
+            name: <ca-certificate-secret-name>
+            key: <ca-certificate-key>
+```
+
+<div id="external-secret">
+  ## External Secret
+</div>
+
+デフォルトでは、オペレーター はクラスターの内部認証情報 (interserver password、management password、Keeper identity、cluster secret、named-collections key) を含む Secret を作成して管理します。この Secret にはクラスター名が付けられ、クラスターのネームスペース内に作成されます。
+
+これらの認証情報を自分で管理したい場合 (たとえば、HashiCorp Vault、AWS Secrets Manager、または [External Secrets Operator](https://external-secrets.io/) から取得する場合) は、`spec.externalSecret` を使用して、既存の Secret をオペレーター に指定します。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+  externalSecret:
+    name: my-clickhouse-credentials
+    policy: Observe
+```
+
+<Note>
+  参照先のSecretは、ClickHouseClusterと**同じネームスペース**内に存在している必要があります。オペレーターが自ら作成していないSecretを削除することはありません。
+</Note>
+
+<div id="external-secret-required-keys">
+  ### 必須のキー
+</div>
+
+Secret には、次のキーが含まれている必要があります。
+
+| Key                     | Format                                          | When required               |
+| ----------------------- | ----------------------------------------------- | --------------------------- |
+| `interserver-password`  | 平文のパスワード                                        | 常に必須                        |
+| `management-password`   | 平文のパスワード                                        | 常に必須                        |
+| `keeper-identity`       | `clickhouse:<password>`                         | 常に必須                        |
+| `cluster-secret`        | 平文のパスワード                                        | 常に必須                        |
+| `named-collections-key` | 16 バイトの AES 秘密鍵を 16 進数でエンコードしたもの (32 文字の 16 進数) | ClickHouse `>= 25.12` の場合のみ |
+
+完全な Secret は次のようになります。
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-clickhouse-credentials
+  namespace: sample
+type: Opaque
+stringData:
+  interserver-password: "a-strong-random-password"
+  management-password: "another-strong-password"
+  keeper-identity: "clickhouse:keeper-auth-password"
+  cluster-secret: "cluster-internal-secret"
+  named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+```
+
+<div id="external-secret-policy">
+  ### ポリシー: Observe と Manage
+</div>
+
+`spec.externalSecret.policy` は、必須キーが不足している場合に オペレーター がどのように扱うかを制御します。
+
+| Policy            | キー不足時の動作                                                                                                                                              |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Observe` (デフォルト) | 必須キーがすべて揃うまで リコンサイル処理 は**停止**されます。オペレーター は不足している各キーとそのフォーマットのヒントを、`ExternalSecretValid` 条件 (reason は `ExternalSecretInvalid`) と `Warning` イベントで報告します。 |
+| `Manage`          | オペレーター は不足している必須キーを**生成**し、同じ Secret に書き戻します。Bootstrap に便利です。空の Secret を作成して オペレーター に値を補完させ、必要に応じてその後アクセスをさらに制限できます。なお、オペレーター が Secret を削除することはありません。 |
+
+<Note>
+  `policy: Manage` を指定していても、Secret はそのネームスペース内にあらかじめ存在している必要があります。オペレーター は Secret 自体を作成せず、既存の Secret に生成したキーを書き込むだけです。参照先の Secret が存在しない場合、ポリシーに関係なく `ExternalSecretNotFound` reason で リコンサイル処理 は停止されます。
+</Note>
+
+外部システム (Vault、ESO、sealed-secrets、GitOps) を信頼できる情報源として扱い、設定ミスがあれば オペレーター に明確に失敗させたい場合は `Observe` を選択してください。自己完結的な Bootstrap を行いつつ、Secret オブジェクト自体の管理権は保持しておきたい (たとえばバックアップしたい) 場合は `Manage` を選択してください.
+
+<div id="external-secret-status">
+  ### ステータス条件とトラブルシューティング
+</div>
+
+オペレーターは `ClickHouseCluster.status.conditions` に `ExternalSecretValid` 条件を出力します。リコンサイルが停止しているように見える場合は、この条件を確認してください。
+
+```bash
+# Plain kubectl — works out of the box
+kubectl describe clickhousecluster sample | sed -n '/Conditions:/,$p'
+
+# Same data as YAML
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+
+# Pretty-printed JSON (requires jq)
+kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
+```
+
+考えられる理由:
+
+| `reason`                 | 意味                                                                                    | 対処                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `ExternalSecretNotFound` | 参照先の Secret がネームスペース内に存在しません。                                                         | Secret を作成するか、`spec.externalSecret.name` を修正してください。 |
+| `ExternalSecretInvalid`  | Secret は存在しますが、必要なキーが不足しています (`Observe` の場合のみ) 。メッセージには、不足している各キーと想定されるフォーマットが表示されます。 | 不足しているキーを追加するか、`policy: Manage` に切り替えてください。         |
+| `ExternalSecretValid`    | 必要なキーがすべてそろっており、オペレーター がその Secret を使用しています。                                         | —                                                   |
+
+Secret が無効な間、オペレーター はリコンサイルを再キューするため、不足しているキーを追加すれば、次回のリコンサイルで自動的に反映されます。ポッドを再起動する必要はありません。
+
+<Note>
+  必要なキーのセットは、実行中の ClickHouse のバージョンによって異なります。`named-collections-key` が検証されるのは、オペレーター の version probe が ClickHouse `25.12` 以降を検出した場合のみです。古いバージョンでは、このキーが Secret に含まれていなくても問題ありません。
+</Note>
+
+<div id="additional-ports">
+  ## 追加ポート
+</div>
+
+オペレーターは、すべての ClickHouse ポッドとそのヘッドレス Service で、固定のポート群を公開します。具体的には、`8123` HTTP、`9000` ネイティブ、`9009` interserver、`9001` management、`9363` Prometheus メトリクス、さらに TLS が有効な場合は TLS 用の `8443`/`9440` です。ClickHouse で MySQL、PostgreSQL、gRPC、または任意のカスタムポートなどの追加プロトコルを待ち受けるようにするには、`spec.additionalPorts` で宣言します。
+
+```yaml
+spec:
+  additionalPorts:
+    - name: mysql
+      port: 9004
+    - name: postgres
+      port: 9005
+    - name: grpc
+      port: 9100
+```
+
+operator は、それらのポートをポッドの `containerPorts` と headless Service に追加します。完全な例は、[`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml) にあります。
+
+<Warning>
+  `additionalPorts` は、Kubernetes 側でのみポートを開きます。これだけでは、ClickHouse server がそれらのポートで待ち受けるようには設定され**ません**。対応するプロトコルを `spec.settings.extraConfig.protocols` で有効にする必要もあります。これを行わないと、Service 上ではポートが開いていても、ポッド内では何も応答しません。
+</Warning>
+
+<div id="additional-ports-mysql-example">
+  ### エンドツーエンドの例: MySQLワイヤプロトコル
+</div>
+
+ポート `9004` で ClickHouse を MySQLワイヤプロトコル経由で公開するには:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 1
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 2Gi
+
+  # 1) Open the port on the Pod and the headless Service.
+  additionalPorts:
+    - name: mysql
+      port: 9004
+
+  # 2) Tell ClickHouse server to actually listen on it.
+  settings:
+    extraConfig:
+      protocols:
+        mysql:
+          type: mysql
+          port: 9004
+          description: "MySQL wire protocol"
+```
+
+適用後、クラスター内で確認します：
+
+```bash
+kubectl exec sample-clickhouse-0-0-0 -- \
+  clickhouse-client --port 9004 --query "SELECT 1"
+```
+
+<div id="additional-ports-constraints">
+  ### フィールドの制約
+</div>
+
+| フィールド  | ルール                                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------ |
+| `name` | DNS&#95;LABEL パターン `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致する必要があります。最大 63 文字です。一意性は、CRD により list-map キーとして保証されます。 |
+| `port` | `[1, 65535]` の整数です。webhook は、リスト内の重複するポート番号を拒否します。                                                           |
+
+<div id="additional-ports-reserved">
+  ### 予約済みのポートと名前
+</div>
+
+validating webhook は、オペレーター 自身がバインドするポートと競合する `additionalPorts` エントリを拒否します。TLS 関連のポートは、後から `spec.settings.tls.enabled` を切り替えても、それまで有効だったクラスターが壊れないよう、**無条件で**予約されています。
+
+| ポート    | 予約用途             |
+| ------ | ---------------- |
+| `8123` | HTTP             |
+| `8443` | HTTPS            |
+| `9000` | native TCP       |
+| `9440` | native TLS       |
+| `9009` | interserver      |
+| `9001` | management       |
+| `9363` | Prometheus メトリクス |
+
+次の名前も拒否されます。これらは オペレーター の内部的なプロトコル種別の識別子であり (人が読める別名ではありません) 、以下のとおりです。
+
+| 名前            |
+| ------------- |
+| `http`        |
+| `http-secure` |
+| `tcp`         |
+| `tcp-secure`  |
+| `interserver` |
+| `management`  |
+| `prometheus`  |
+
+拒否されたリクエストでは、次のようなエラーが生成されます。
+
+```
+spec.additionalPorts[0].port: 8123 is reserved for the operator-managed HTTP port
+spec.additionalPorts[0].name: "http" is reserved by the operator
+```
+
+<div id="version-probe-and-upgrade-channel">
+  ## バージョンプローブとアップグレードチャネル
+</div>
+
+オペレーターは、クラスターのバージョンに関して 2 つの独立した処理を行います。
+
+1. **バージョン報告** — `ClickHouseCluster` では、Kubernetes の `Job` がコンテナーイメージを 1 回実行して実行中の ClickHouse のバージョンを検出します。`KeeperCluster` では、オペレーターが実行中のレプリカからサーバーが報告するバージョンを読み取ります。検出されたバージョンは `.status.version` に記録され、他の リコンサイル ステップで使用されます (たとえば、`External Secret` の named-collections キーは ClickHouse `25.12` 以降でのみ必要です) 。
+2. **アップグレードチャネル** — 公開されている ClickHouse のリリースフィード (`https://clickhouse.com/data/version_date.tsv`) を定期的に確認します。オペレーターは、新しいバージョンが利用可能かどうかを `VersionUpgraded` ステータス条件で報告します。クラスターを自動的にアップグレードすることはなく、イメージタグはユーザーが管理します。
+
+<div id="upgrade-channel-choosing">
+  ### リリースチャネルの選択
+</div>
+
+`spec.upgradeChannel` は、オペレーターが比較対象とするアップストリームのリリース群を選択します。このフィールドは `ClickHouseCluster` と `KeeperCluster` の両方にあります。
+
+```yaml
+spec:
+  upgradeChannel: lts   # or "stable", or "25.8", or omitted
+```
+
+許可される値 (CRD によりパターン `^(lts|stable|\d+\.\d+)?$` で検証) :
+
+| Value                             | Behavior                                                                                                                  |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| *empty* (default)                 | オペレーターは、現在実行中の major.minor 系列内の **マイナー** 更新のみを提示します。`25.8.3.1` のクラスターには `25.8.4.x` が通知されますが、`25.9.x` は通知されません。            |
+| `stable`                          | アップストリームの `stable` チャネルを追跡します。これは、ClickHouse Inc. がメインのリリース系列で安定版として示している最新の release です。`lts` チャネルより早くメジャーアップグレードを受け取ります。 |
+| `lts`                             | アップストリームの `lts` チャネルを追跡します。これは長期サポートの release です。メジャーアップグレードの頻度は低く、サポート期間は長くなります。                                         |
+| `25.8` (or any `<major>.<minor>`) | チャネルを特定の major.minor 系列に固定します。アップストリームに新しいバージョンが存在していても、それを超えるメジャーアップグレードは提示されません。                                        |
+
+本番環境では、通常、チャネルを明示的な `<major>.<minor>` (例: `25.8`) に固定することが推奨されます。これにより、クラスターを意図したメジャー release 系列に固定でき、いずれかのレプリカが何らかの理由で別のメジャーへずれてしまった場合に、オペレーターが `WrongReleaseChannel` 警告を表示できるようになります。これは特に、イメージが人が読めるタグではなくダイジェスト (`@sha256:...`) で参照されている場合に重要です。デフォルトの空値は、メジャーバージョンのジャンプが問題にならない開発用クラスターであれば問題ありません。
+
+<div id="version-status-conditions">
+  ### ステータス条件
+</div>
+
+プローブとアップグレードチェックの結果は、次の 2 つの条件に反映されます。
+
+| Condition         | Reason                 | Meaning                                                                                                                                                                                  |
+| ----------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VersionInSync`   | `VersionMatch`         | すべてのレプリカが同じバージョンを報告しています                                                                                                                                                                 |
+| `VersionInSync`   | `VersionMismatch`      | レプリカごとに異なるバージョンで稼働しています。計画されたローリングアップグレード中は、この理由は抑止されます。通常これは、可変のイメージタグ (たとえば `latest` や、`26.3` のようなメジャー番号だけのタグ) を固定しており、基盤となるレジストリの内容が pull の間に変わった結果、同じタグでも各レプリカで異なるパッチ版が使われた場合に発生します。 |
+| `VersionInSync`   | `VersionPending`       | バージョンプローブ Job がまだ完了していないか、Keeper レプリカのバージョンがまだ観測されていません                                                                                                                                  |
+| `VersionInSync`   | `VersionProbeFailed`   | ClickHouse プローブ Job が失敗したため、オペレーターは実行中のバージョンを特定できません                                                                                                                                     |
+| `VersionUpgraded` | `UpToDate`             | クラスターは、選択したチャネルで利用可能な最新バージョンを実行しています                                                                                                                                                     |
+| `VersionUpgraded` | `MinorUpdateAvailable` | 同じ `major.minor` 系列で、より新しいパッチが利用可能です                                                                                                                                                     |
+| `VersionUpgraded` | `MajorUpdateAvailable` | 選択したチャネル内で、より新しい `major.minor` が利用可能です                                                                                                                                                   |
+| `VersionUpgraded` | `VersionOutdated`      | 実行中のバージョンは古く、選択したチャネルから今後修正を受けられなくなります。通常、これはそのメジャー系列が上流の `lts` または `stable` から外されたためです                                                                                                  |
+| `VersionUpgraded` | `WrongReleaseChannel`  | 実行中のイメージは、選択した `upgradeChannel` に属していません。例: `upgradeChannel: lts` で `26.5` を実行しているクラスター。`26.5` は上流の `lts` 系列に含まれていないためです。                                                                |
+| `VersionUpgraded` | `UpgradeCheckFailed`   | オペレーターが上流のリリースフィードに到達できませんでした                                                                                                                                                            |
+
+次のように確認します:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+<div id="version-probe-template">
+  ### バージョンプローブ Job のオーバーライド
+</div>
+
+これは `ClickHouseCluster` にのみ適用されます。`KeeperCluster` では version-probe Job は実行されなくなりました。バージョンは実行中の Keeper レプリカから直接読み取られるため、`spec.versionProbeTemplate` は非推奨であり、`KeeperCluster` では効果がありません。
+
+この probe は通常の Kubernetes `Job` として実装されています。クラスターで、特定の Tolerations、node selector、security context を必須とする Admission ポリシーが設定されている場合や、完了後の probe Job の保持期間を制限したい場合は、`spec.versionProbeTemplate` でテンプレートをオーバーライドします:
+
+```yaml
+spec:
+  versionProbeTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600   # delete completed probe Jobs 10 minutes after completion
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/arch: amd64
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: clickhouse
+              effect: NoSchedule
+          containers:
+            - name: version-probe
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+```
+
+コンテナー名 `version-probe` はオペレーターのデフォルトです。`containers:` 配下の項目は名前でこれに一致するため、オペレーターはユーザー指定のフィールドをデフォルトに対してディープマージします。
+
+<div id="version-operator-flags">
+  ### オペレーター全体に適用される制御
+</div>
+
+オペレーターマネージャーの 2 つのフラグで、アップグレードチェックのループ全体を制御します。
+
+| フラグ                               | デフォルト   | 効果                                                                                           |
+| --------------------------------- | ------- | -------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`   | オペレーターがアップストリームのバージョン一覧を再取得する頻度                                                              |
+| `--disable-version-update-checks` | `false` | アップグレードチェッカーを完全に無効にします。`VersionUpgraded` 条件は設定されず、`clickhouse.com` への外向きの HTTP トラフィックも発生しません |
+
+エアギャップ環境、または `clickhouse.com` への egress が許可されていない場合は、`--disable-version-update-checks=true` を設定してください。
+
+<div id="clickhouse-settings">
+  ## ClickHouse の設定
+</div>
+
+<div id="default-user-password">
+  ### `default` ユーザーのパスワード
+</div>
+
+`spec.settings.defaultUserPassword` は、組み込みの `default`
+ユーザーのパスワードを設定します。値は、CR に直接記述するのではなく、
+作成した Secret (推奨) または ConfigMap のキーから指定してください。
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password   # default; see "Password types" below
+      secret:                  # exactly one of secret or configMap
+        name: clickhouse-password   # name of the Secret/ConfigMap
+        key: password               # the key inside it, not the password value
+```
+
+`secret` または `configMap` のいずれか一方のみを指定し、どちらの場合も `name` (オブジェクト)
+と `key` (パスワードを保持するエントリ) の両方を指定してください。
+
+<div id="password-types">
+  #### パスワードの種類
+</div>
+
+`passwordType` は、値をどのように解釈するかを ClickHouse に指定します。デフォルトは
+`password` (平文) で、代わりに
+`password_sha256_hex` や `password_double_sha1_hex` などのハッシュ形式も使用できます。平文が
+保存されないよう、ハッシュ化された種類を使用することを推奨します。完全な一覧は、
+[ClickHouse のユーザー設定](https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword)
+を参照してください。
+
+<div id="default-password-secret-example">
+  #### Secretを使った完全な例
+</div>
+
+Secretを作成し、そのキーを参照します。
+
+```bash
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='your-secure-password'
+```
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<Note>
+  `passwordType: password` を使用すると、ポッド内の `clickhouse-client` が
+  このパスワードで設定されるため、デバッグに便利です。
+</Note>
+
+パスワードをハッシュ化する場合は、平文ではなくハッシュ値を保存します。
+
+```bash
+echo -n 'your-secure-password' | sha256sum   # use the hex digest as the value
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='<sha256-hex-digest>'
+```
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<div id="using-configmap-for-user-passwords">
+  #### ConfigMap を使用する
+</div>
+
+ConfigMap も同じように機能しますが、その内容は Secret のように保護されません。
+機密性のない値、またはすでにハッシュ化されている値にのみ使用してください。たとえば、
+`password_sha256_hex` ダイジェストです。
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        name: clickhouse-config
+        key: default_password
+```
+
+<Note>
+  平文のパスワードを ConfigMap に入れないでください。平文の値
+  (`passwordType: password`) には、必ず Secret を使用してください。
+</Note>
+
+<div id="custom-users-in-configuration">
+  ### 設定でのカスタムユーザー
+</div>
+
+設定ファイルで追加ユーザーを設定します。
+
+ユーザー用のConfigMapとSecretを作成します。
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-config
+data:
+  reader.yaml: |
+    users:
+      reader:
+        password:
+          - '@from_env': READER_PASSWORD
+        profile: default
+        grants:
+          - query: "GRANT SELECT ON *.*"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reader-password
+data:
+  password: "c2VjcmV0LXBhc3N3b3Jk"  # base64("secret-password")
+
+```
+
+ClickHouseCluster にカスタム設定を追加します:
+
+```yaml
+spec:
+  podTemplate:
+    volumes:
+      - name: reader-user
+        configMap:
+          name: user-config
+  containerTemplate:
+    env:
+      - name: READER_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: reader-password
+            key: password
+    volumeMounts:
+      - mountPath: /etc/clickhouse-server/users.d/
+        name: reader-user
+        readOnly: true
+```
+
+<div id="database-sync">
+  ### データベース同期
+</div>
+
+新しいレプリカのデータベース自動同期を有効にします。
+
+```yaml
+spec:
+  settings:
+    enableDatabaseSync: true  # デフォルト: true
+```
+
+有効にすると、オペレーターは Replicated テーブルとインテグレーション テーブルを新しいレプリカに同期します。
+
+<div id="server-logging">
+  ### サーバーロギング
+</div>
+
+`spec.settings.logger` で ClickHouse server のログを設定します。すべてのフィールドは省略可能で、安全なデフォルト値が設定されているため、何も変更していないクラスターでも、コンテナーのコンソールとディスク上のローテーションされるファイルの両方に `trace` レベルでログが出力されます。
+
+```yaml
+spec:
+  settings:
+    logger:
+      logToFile: true   # Default: true. Set false to log only to the console
+      jsonLogs: false   # Default: false. Set true for structured JSON log lines
+      level: trace      # Default: trace
+      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
+      count: 50         # Default: 50. Number of rotated files to keep
+```
+
+| フィールド       | 既定値     | 説明                                                                                                       |
+| ----------- | ------- | -------------------------------------------------------------------------------------------------------- |
+| `logToFile` | `true`  | `false` の場合、オペレーターはファイル出力先を削除し、サーバーはコンテナーのコンソールにのみログを出力します。                                              |
+| `jsonLogs`  | `false` | `true` の場合、オペレーターは `formatting.type: json` を追加するため、各行が JSONオブジェクトになります。                                  |
+| `level`     | `trace` | ログの詳細度です。`test`、`trace`、`debug`、`information`、`notice`、`warning`、`error`、`critical`、`fatal` のいずれかを指定します。 |
+| `size`      | `1000M` | ローテーションされる前の単一ログファイルの最大サイズです。                                                                            |
+| `count`     | `50`    | サーバーが保持するローテーション済みログファイルの数です。                                                                            |
+
+オペレーターは、`kubectl logs` が使えるよう、常にコンソールへのログ出力を有効にしています。`logToFile` が `true` の場合は、それに加えてファイルへのログ出力も有効にします。既定値を使用するクラスターでは、次の `ロガー` ブロックが生成されます。
+
+```yaml
+logger:
+  console: true
+  level: trace
+  log: /var/log/clickhouse-server/clickhouse-server.log
+  errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
+  size: 1000M
+  count: 50
+```
+
+同じ `spec.settings.logger` ブロックは `KeeperCluster` にも適用されます。この場合、operator はファイルを代わりに `/var/log/clickhouse-keeper/` 配下へ書き込みます。
+
+<Note>
+  `logToFile` の設定にかかわらずコンソールへのログ出力は有効なままなので、ファイルロギングを無効にしても `kubectl logs` は引き続き利用できます。JSON を解析する構造化ログストアにログを送る場合は、`jsonLogs: true` を設定してください。
+</Note>
+
+<div id="custom-configuration">
+  ## カスタム設定
+</div>
+
+<div id="embedded-extra-configuration">
+  ### 埋め込みの追加設定
+</div>
+
+カスタムの設定ファイルをマウントする代わりに、追加の ClickHouse 設定オプションを直接指定できます。
+
+`extraConfig` を使用して、カスタムの ClickHouse 設定を追加します。
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      background_pool_size: 20
+```
+
+<div id="useful-links">
+  #### 役立つリンク:
+</div>
+
+* [YAML 設定例](/ja/concepts/features/configuration/server-config/configuration-files#example-1)
+* [すべてのサーバー設定](/ja/reference/settings/server-settings/settings)
+
+<div id="embedded-extra-users-configuration">
+  ### 埋め込み追加ユーザー設定
+</div>
+
+`extraUsersConfig` を使用すると、追加の ClickHouse ユーザー設定を指定することもできます。これは、ユーザー、プロファイル、クォータ、権限をクラスター仕様内で直接定義する場合に便利です。
+
+```yaml
+spec:
+  settings:
+    extraUsersConfig:
+      users:
+        analyst:
+          password:
+            - '@from_env': ANALYST_PASSWORD
+          profile: "readonly"
+          quota: "default"
+      profiles:
+        readonly:
+          readonly: 1
+          max_memory_usage: 10000000000
+      quotas:
+        default:
+          interval:
+            duration: 3600
+            queries: 1000
+            errors: 100
+```
+
+<Note>
+  `extraUsersConfig` は k8s の ConfigMap オブジェクトに保存されます。平文のシークレットはそこに保存しないでください。
+</Note>
+
+<div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
+  #### サポートされているすべての ClickHouse ユーザー設定オプションについては、[ドキュメント](/ja/concepts/features/configuration/settings/settings-users)を参照してください。
+</div>
+
+<div id="configuration-example">
+  ### 設定例
+</div>
+
+設定例全体は次のとおりです:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 10Gi
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: <keeper-certificate-secret>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-user-password
+data:
+  # シークレットパスワード
+  password: "..." # パスワードのsha256 16進数
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 200Gi
+  keeperClusterRef:
+    name: sample
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: clickhouse-cert
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        key: password
+        name: default-password
+```

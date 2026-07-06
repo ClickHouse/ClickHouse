@@ -1,0 +1,183 @@
+---
+sidebarTitle: 'Avro, Arrow 및 ORC'
+slug: /integrations/data-formats/arrow-avro-orc
+title: 'ClickHouse에서 Avro, Arrow 및 ORC 데이터 다루기'
+description: 'ClickHouse에서 Avro, Arrow 및 ORC 데이터를 다루는 방법을 설명하는 페이지'
+keywords: ['Apache Avro', 'Apache Arrow', 'ORC 포맷', '컬럼형 포맷', '빅데이터 포맷']
+doc_type: 'guide'
+---
+
+Apache는 분석 환경에서 활발히 사용되는 여러 데이터 포맷을 제공하고 있으며, 여기에는 널리 사용되는 [Avro](https://avro.apache.org/), [Arrow](https://arrow.apache.org/), [Orc](https://orc.apache.org/)가 포함됩니다. ClickHouse는 이들 포맷을 사용한 데이터 가져오기와 내보내기를 지원합니다.
+
+<div id="importing-and-exporting-in-avro-format">
+  ## Avro 포맷으로 가져오기 및 내보내기
+</div>
+
+ClickHouse는 Hadoop 시스템에서 널리 사용되는 [Apache Avro](https://avro.apache.org/) 데이터 파일을 읽고 쓰는 기능을 지원합니다.
+
+[avro file](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.avro)에서 가져오려면 `INSERT` 문에서 [Avro](/ko/reference/formats/Avro/Avro) 포맷을 사용해야 합니다:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.avro'
+FORMAT Avro
+```
+
+[file()](/ko/reference/functions/regular-functions/files#file) 함수를 사용하면 데이터를 실제로 가져오기 전에 Avro 파일도 미리 확인할 수 있습니다:
+
+```sql
+SELECT path, hits
+FROM file('data.avro', Avro)
+ORDER BY hits DESC
+LIMIT 5;
+```
+
+```response
+┌─path────────────┬──hits─┐
+│ Amy_Poehler     │ 62732 │
+│ Adam_Goldberg   │ 42338 │
+│ Aaron_Spelling  │ 25128 │
+│ Absence_seizure │ 18152 │
+│ Ammon_Bundy     │ 11890 │
+└─────────────────┴───────┘
+```
+
+Avro 파일로 내보내려면 다음과 같이 하십시오:
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.avro'
+FORMAT Avro;
+```
+
+<div id="avro-and-clickhouse-data-types">
+  ### Avro와 ClickHouse 데이터 타입
+</div>
+
+Avro 파일을 가져오거나 내보낼 때는 [데이터 타입 매핑](/ko/reference/formats/Avro/Avro#data-type-mapping)을 확인하십시오. Avro 파일에서 데이터를 로드할 때는 명시적 타입 캐스팅으로 변환하십시오:
+
+```sql
+SELECT
+    date,
+    toDate(date)
+FROM file('data.avro', Avro)
+LIMIT 3;
+```
+
+```response
+┌──date─┬─toDate(date)─┐
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+│ 16556 │   2015-05-01 │
+└───────┴──────────────┘
+```
+
+<div id="avro-messages-in-kafka">
+  ### Kafka의 Avro 메시지
+</div>
+
+Kafka 메시지가 Avro 포맷을 사용하는 경우, ClickHouse는 [AvroConfluent](/ko/reference/formats/Avro/AvroConfluent) 포맷과 [Kafka](/ko/reference/engines/table-engines/integrations/kafka) 엔진을 사용해 이러한 스트림을 읽을 수 있습니다:
+
+```sql
+CREATE TABLE some_topic_stream
+(
+    field1 UInt32,
+    field2 String
+)
+ENGINE = Kafka() SETTINGS
+kafka_broker_list = 'localhost',
+kafka_topic_list = 'some_topic',
+kafka_group_name = 'some_group',
+kafka_format = 'AvroConfluent';
+```
+
+<div id="working-with-arrow-format">
+  ## Arrow 형식 사용하기
+</div>
+
+또 다른 열 지향 포맷인 [Apache Arrow](https://arrow.apache.org/)는 ClickHouse에서 가져오기와 내보내기를 모두 지원합니다. [Arrow 파일](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.arrow)에서 데이터를 가져오려면 [Arrow](/ko/reference/formats/Arrow/Arrow) 포맷을 사용합니다:
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'data.arrow'
+FORMAT Arrow
+```
+
+Arrow 파일로 내보내는 방법도 동일합니다:
+
+```sql
+SELECT * FROM sometable
+INTO OUTFILE 'export.arrow'
+FORMAT Arrow
+```
+
+또한 수동 변환이 필요한 항목이 있는지 확인하려면 [데이터 타입 매핑](/ko/reference/formats/Arrow/Arrow#data-types-matching)을 참조하십시오.
+
+<div id="arrow-data-streaming">
+  ### Arrow 데이터 스트리밍
+</div>
+
+[ArrowStream](/ko/reference/formats/Arrow/ArrowStream) 포맷은 Arrow 스트리밍(인메모리 처리에 사용됨)으로 작업할 때 사용할 수 있습니다. ClickHouse는 Arrow 스트림을 읽고 쓸 수 있습니다.
+
+ClickHouse가 Arrow 데이터를 스트리밍하는 방법을 보여주기 위해, 이를 다음 Python 스크립트로 파이프해 보겠습니다(이 스크립트는 Arrow 스트리밍 포맷의 입력 스트림을 읽고, 결과를 Pandas 테이블로 출력합니다):
+
+```python
+import sys, pyarrow as pa
+
+with pa.ipc.open_stream(sys.stdin.buffer) as reader:
+  print(reader.read_pandas())
+```
+
+이제 ClickHouse의 출력을 스크립트로 파이프해 데이터를 스트리밍할 수 있습니다:
+
+```bash
+clickhouse-client -q "SELECT path, hits FROM some_data LIMIT 3 FORMAT ArrowStream" | python3 arrow.py
+```
+
+```response
+                           path  hits
+0       b'Akiba_Hebrew_Academy'   241
+1           b'Aegithina_tiphia'    34
+2  b'1971-72_Utah_Stars_season'     1
+```
+
+ClickHouse는 같은 ArrowStream 포맷으로 Arrow 스트림도 읽을 수 있습니다:
+
+```sql
+arrow-stream | clickhouse-client -q "INSERT INTO sometable FORMAT ArrowStream"
+```
+
+`arrow-stream`을 Arrow 스트리밍 데이터의 가능한 소스 중 하나로 사용했습니다.
+
+<div id="importing-and-exporting-orc-data">
+  ## ORC 데이터 가져오기 및 내보내기
+</div>
+
+[Apache ORC](https://orc.apache.org/) 포맷은 일반적으로 Hadoop에서 사용하는 열 지향 스토리지 포맷입니다. ClickHouse는 [ORC 포맷](/ko/reference/formats/ORC)을 사용해 [ORC 데이터](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.orc)를 가져오고 내보낼 수 있습니다:
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'data.orc'
+FORMAT ORC;
+
+INSERT INTO sometable
+FROM INFILE 'data.orc'
+FORMAT ORC;
+```
+
+또한 내보내기와 가져오기를 최적화하려면 [데이터 타입 매핑](/ko/reference/formats/ORC)과 [추가 설정](/ko/reference/formats/Parquet/Parquet#format-settings)도 확인하십시오.
+
+<div id="further-reading">
+  ## 추가 읽을거리
+</div>
+
+ClickHouse는 다양한 시나리오와 플랫폼을 지원하기 위해 텍스트 포맷과 바이너리 포맷을 비롯한 여러 포맷을 제공합니다. 더 많은 포맷과 활용 방법은 다음 문서를 참조하십시오:
+
+* [CSV 및 TSV 포맷](/ko/guides/clickhouse/data-formats/csv-tsv)
+* [JSON 포맷](/ko/guides/clickhouse/data-formats/json/intro)
+* [Regex 및 Template](/ko/guides/clickhouse/data-formats/templates-regex)
+* [네이티브 및 바이너리 포맷](/ko/guides/clickhouse/data-formats/binary)
+* [SQL 포맷](/ko/guides/clickhouse/data-formats/sql)
+
+또한 [clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)도 확인해 보십시오. ClickHouse 서버 없이도 로컬/원격 파일을 대상으로 작업할 수 있는, 이식성이 뛰어난 완전한 기능의 도구입니다.

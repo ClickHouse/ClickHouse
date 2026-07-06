@@ -1,0 +1,123 @@
+---
+title: 'Página de status de lançamento'
+sidebarTitle: 'Status de lançamento'
+keywords: ['nuvem', 'status de lançamento', 'rollout', 'versão', 'atualização']
+description: 'Página com o status de lançamento de cada canal de lançamento'
+slug: /cloud/release-status
+doc_type: 'reference'
+---
+
+import ReleaseSchedule from "/snippets/pt-BR/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+O ClickHouse Cloud oferece diferentes canais de lançamento para atender às diferentes necessidades dos usuários em relação à estabilidade, ao acesso a novos recursos e à previsibilidade das atualizações. Cada canal tem um cronograma de atualização próprio e foi pensado para diferentes casos de uso — tanto para usuários que querem acesso imediato a novas versões quanto para aqueles que preferem adiar atualizações para garantir que recebam a versão mais estável.
+
+<div id="release-channel-details">
+  ## Detalhes dos canais de lançamento
+</div>
+
+<Accordion title="Saiba mais sobre os canais de lançamento">
+  | Nome do canal            | Descrição                                                                                                                                                                                                                                               | Principais considerações                                                                                                                         | Tiers compatíveis                            |
+  | :----------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------- |
+  | **Fast (Early Release)** | Recomendado para ambientes não produtivos. Este é o primeiro canal de lançamento para cada upgrade de versão do banco de dados                                                                                                                          | Acesso a novos recursos em troca de estabilidade.<br />Possibilidade de testar releases em ambientes não produtivos antes do upgrade em produção | Basic (padrão)<br />tiers Scale e Enterprise |
+  | **Regular**              | Canal de lançamento padrão para todos os serviços com várias réplicas.<br />O rollout nesse canal normalmente começa duas semanas após o início do canal de lançamento Fast.                                                                            | Upgrades padrão/em toda a frota.<br />Os serviços são atualizados gradualmente ao longo de várias semanas                                        | Scale e Enterprise                           |
+  | **Slow (Deferred)**      | Recomendado para usuários mais avessos a riscos que desejam que seus serviços sejam atualizados mais perto do fim do cronograma de lançamento.<br />O rollout nesse canal normalmente começa duas semanas após o início do canal de lançamento Regular. | Máxima estabilidade e previsibilidade.<br />Indicado para quem precisa de mais testes das novas releases nos canais Fast/Regular                 | Enterprise                                   |
+
+  <br />
+
+  <br />
+
+  <Note>
+    Todos os serviços com réplica única são inscritos automaticamente no canal de lançamento Fast.
+  </Note>
+</Accordion>
+
+Janelas de upgrade programadas estão disponíveis em todos os canais de lançamento para serviços no tier Enterprise. Esse recurso permite configurar uma janela de horário em um determinado dia da semana para upgrades.
+
+<div id="release-schedule">
+  ## Cronograma de lançamento
+</div>
+
+<Warning>
+  **Entendendo as datas de lançamento**
+
+  As datas mostradas abaixo indicam quando o ClickHouse **inicia o rollout** em cada canal de lançamento, não quando o seu serviço específico será atualizado.
+
+  * Os rollouts são automatizados e ocorrem gradualmente ao longo de várias semanas
+  * Serviços com janelas de upgrade programadas são atualizados durante a janela agendada na semana seguinte ao fim do rollout do canal (a partir de segunda-feira às 00:00 UTC)
+  * A conclusão do rollout pode ser adiada devido a pausas no rollout (por exemplo, congelamentos em feriados) ou ao monitoramento de integridade
+
+  Para testes antecipados antes dos upgrades em produção, use o canal Fast ou Regular para serviços que não sejam de produção e o canal Slow para serviços de produção.
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: 'A definir',
+   regular_start_date: 'A definir',
+   regular_end_date: 'A definir',
+   slow_start_date: 'A definir',
+   slow_end_date: 'A definir',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: '2026-04-03',
+   fast_end_date: '2026-04-14',
+   regular_start_date: '2026-05-06',
+   regular_end_date: '2026-06-17',
+   slow_start_date: '2026-07-01',
+   slow_end_date: 'A definir',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   fast_delay_note: 'Serviços com janelas de upgrade serão atualizados a partir de 2026-04-15.',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: '2026-02-10',
+   fast_end_date: '2026-02-11',
+   regular_start_date: '2026-03-09',
+   regular_end_date: '2026-03-18',
+   slow_start_date: '2026-04-07',
+   slow_end_date: '2026-04-09',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+   regular_delay_note: 'Serviços com janelas de upgrade programadas receberão 25.12 durante a janela agendada na semana após 23 de março',
+   slow_delay_note: 'Serviços com janelas de upgrade programadas receberão 25.12 durante a janela agendada na semana após 13 de abril',
+ },
+ {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+   version: '25.10',
+   fast_start_date: '2025-12-11',
+   fast_end_date: '2025-12-15',
+   regular_start_date: '2026-01-23',
+   regular_end_date: '2026-03-10',
+   slow_start_date: '2026-03-23',
+   slow_end_date: '2026-03-23',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+ },
+ {
+  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+  version: '25.8',
+  fast_start_date: 'Completed',
+  fast_end_date: 'Completed',
+  regular_start_date: '2025-10-29',
+  regular_end_date: '2025-12-19',
+  slow_start_date: '2026-01-27',
+  slow_end_date: '2026-02-04',
+  fast_progress: 'green',
+  regular_progress: 'green',
+  slow_progress: 'green',
+}
+]}
+/>

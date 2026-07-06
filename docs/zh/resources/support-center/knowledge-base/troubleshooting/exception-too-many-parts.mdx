@@ -1,0 +1,45 @@
+---
+title: 解决 ClickHouse 中“parts 过多”错误
+description: 了解如何通过优化插入速率、配置 MergeTree 设置以及有效管理分区，来解决 ClickHouse 中的“parts 过多”错误。
+date: 2023-03-20
+tags: ['错误与异常']
+keywords: ['parts 过多']
+---
+
+{frontMatter.description}
+
+{/* 截断 */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: parts 过多 (Error: 252) 。Merges 的处理速度明显低于 inserts
+</div>
+
+你已达到 MergeTree 表上的 `parts_to_throw_insert` 设置阈值。
+
+你可以通过以下方式监控指定表中的活动 parts 数量：
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+关于向 ClickHouse 插入数据，最重要的要求是：绝不要在每秒内发送过多 `INSERT` 语句。理想情况下，应为每秒一次插入，或每隔几秒一次插入。
+
+所以，你可以做到每秒插入 100K 行，但前提是使用一条大的批量 `INSERT` 语句。如果你每秒向 *MergeTree 表发送几百条甚至几千条插入语句，始终都会遇到一些错误，而且这不能通过调整某些设置来解决。
+
+如果你无法在外部把大量插入合并成一条大的批量插入语句，那么你应该在 *MergeTree 表前面创建一个 Buffer 表。
+
+1. 每次插入都会在 `/var/lib/clickhouse/.../table_name/` 中创建一个文件夹。该文件夹内，每一列都有 2 个文件：一个存储数据 (已压缩) ，另一个存储索引。数据在这些文件中会按主键进行物理排序。这些文件夹称为 &#39;**parts**&#39;。
+
+2. ClickHouse 会在后台将这些较小的 parts 合并成更大的 parts。它会根据一些规则选择要合并的 parts。合并两个 (或更多) parts 后，会创建一个更大的 part，旧的 parts 则会进入待删除队列。你列出的这些设置可用于微调 parts 的合并规则。合并过程的目标是：为每个分区保留一个大的 part (或者每个分区保留少数几个大的 part，如果它们已经很大，不值得再继续合并) 。另请参阅该[注释](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726)。
+
+3. 如果你创建新 parts 的速度太快 (例如进行了大量小批量插入) ，而 ClickHouse 又无法以足够快的速度合并它们 (也就是新 parts 产生的速度快于 ClickHouse 的合并速度) ，那么你就会收到异常 &#39;Merges are processing significantly slower than inserts&#39;。你可以尝试提高限制，但这样可能会导致文件系统问题，因为文件 / 目录数量过多 (例如触及 inodes 限制) 。
+
+4. 如果你一次插入到大量分区中，问题会按本次插入影响到的分区数量成倍放大。
+
+5. 你可以尝试用列出的某个设置，或者用 max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth 来调整 ClickHouse 的行为。但是，更好的解决方案还是按预期节奏插入数据。预期节奏是：**每 1-2 秒一次插入，每次插入包含 10K-500K 行数据**。
+
+6. 因此，要正确解决 &quot;Merges are processing significantly slower than inserts&quot;，应该调整每秒插入次数以及每次插入的行数。如果数据是一行一行到达的，请使用批次插入把多个小插入合并成一个更大的插入。如果你一次需要插入过多数据，请对超大的插入进行限流。不要改动 ClickHouse 内部机制，除非你非常清楚这意味着什么。
+
+7. 如果你的数据到达速度超过每秒 500K 行，那么你大概率需要在 cluster 中增加更多 server 来承载这些流量，而不是去调整设置。
+
+8. 后台 merges 的速度通常取决于存储速度、所使用的压缩设置、MergeTree 选项 (合并算法——普通合并/聚合/求和/collapsing 等) ，以及所使用的 sorting key。

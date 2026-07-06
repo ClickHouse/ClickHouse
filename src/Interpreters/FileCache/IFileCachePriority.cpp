@@ -47,7 +47,6 @@ IFileCachePriority::Entry::Entry(const Entry & other)
     , offset(other.offset)
     , key_metadata(other.key_metadata)
     , size(other.size.load())
-    , hits(other.hits.load())
 {
 }
 
@@ -57,6 +56,14 @@ std::string IFileCachePriority::Entry::toString(const std::string & prefix) cons
         "{}{}:{}:{} (state: {})",
         prefix, key, offset, size.load(),
         magic_enum::enum_name(state.load(std::memory_order_relaxed)));
+}
+
+KeyMetadataPtr IFileCachePriority::Entry::getKeyMetadata() const
+{
+    auto locked = key_metadata.lock();
+    if (!locked)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Key metadata is expired for entry {}", toString());
+    return locked;
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const

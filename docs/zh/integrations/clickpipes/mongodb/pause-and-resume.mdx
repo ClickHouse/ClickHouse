@@ -1,0 +1,51 @@
+---
+title: '暂停和恢复 MongoDB ClickPipe'
+description: '暂停和恢复 MongoDB ClickPipe'
+sidebarTitle: '暂停表'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '数据摄取', '实时同步']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+在某些情况下，暂停 MongoDB ClickPipe 会很有帮助。例如，你可能想在数据保持静止状态时对现有数据进行一些分析；或者，你可能正在对 MongoDB 进行升级。以下说明如何暂停和恢复 MongoDB ClickPipe。
+
+<div id="pause-clickpipe-steps">
+  ## 暂停 MongoDB ClickPipe 的步骤
+</div>
+
+1. 在 数据源 选项卡中，单击要暂停的 MongoDB ClickPipe。
+2. 切换到 **Settings** 选项卡。
+3. 单击 **Pause** 按钮。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. 此时会弹出确认对话框。再次单击 Pause。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. 切换到 **Metrics** 选项卡。
+5. 等待该管道的状态变为 **Paused**。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## 恢复 MongoDB ClickPipe 的步骤
+</div>
+
+1. 在“数据源”选项卡中，点击要恢复的 MongoDB ClickPipe。mirror 的初始状态应为 **Paused**。
+2. 前往 **设置** 选项卡。
+3. 点击 **Resume** 按钮。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. 此时会出现一个确认对话框。再次点击 **Resume**。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. 前往 **指标** 选项卡。
+6. 等待管道状态变为 **Running**。

@@ -1,0 +1,56 @@
+---
+title: ClickHouse Cloud の Dictionary でデータが表示されないのはなぜですか？
+description: Dictionary のデータは、作成直後にはすぐに表示されないことがあります。
+date: 2024-04-12
+tags: ['Cloud の管理', 'データモデリング']
+keywords: ['Dictionaries']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dictionaries-in-clickhouse">
+  ## ClickHouse における Dictionaries
+</div>
+
+ClickHouse Cloud で作成した Dictionaries は、初回の作成時に不整合が発生することがあります。つまり、作成直後は dictionary にデータがまったく表示されない場合があります。ただし、数回再試行すると、作成クエリが別のレプリカに到達し、データが表示されるようになることがあります。
+
+これは、part が server に到達する前に dictionary が作成されたために発生する場合があります。例を挙げると、次のとおりです。
+
+```
+2024-01-25 13:38:25.615837 - CREATE DICTIONARY received
+2024-01-25 13:38:25.626468 - CREATE DICTIONARY finished
+2024-01-25 13:38:25.733008 - Part all_0_0_0 downloaded
+```
+
+ご覧のとおり、part が到着したのは Dictionary の作成後でした。`LIFETIME(MIN 0 MAX 0)` を使用している場合、これはさらに深刻な問題になる可能性があります。これは、Dictionary が自動的に更新されないことを意味するためです。したがって、`RELOAD DICTIONARIES` コマンドを実行するまで、Dictionary は空のままです。
+
+この問題を解決するには、Dictionary の作成時にソーステーブルを指定する代わりに `SELECT` クエリを使用し、`select_sequential_consistency=1` 設定を有効にします。
+
+ソーステーブルを指定する代わりに:
+
+```sql
+SOURCE(CLICKHOUSE(
+    table 'test.temp_title_table_1706189903924'
+    user default password 'PASSWORD'))
+```
+
+`select_sequential_consistency=1` を指定した `SELECT` クエリを使用します:
+
+```sql
+SOURCE(CLICKHOUSE(QUERY
+    'SELECT songTitle, mappedTitle
+    FROM test.temp_title_table_1706189903924
+    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+```
+
+<div id="why-does-this-issue-occur">
+  ## この問題はなぜ発生するのですか？
+</div>
+
+データを挿入してから Dictionary を作成または再読み込みすると、データ (または新しいデータ) より先に DDL がレプリカに到達することがあります。その結果、Dictionary がレプリカ間で不整合になり、どのレプリカがクエリを受け取るかによって結果が異なる場合があります。
+
+同じことは、データを挿入してその直後にテーブルから読み取る場合にも起こります。まだデータがレプリケートされていないレプリカから読み取ると、新しく挿入されたデータは見えません。パフォーマンスを犠牲にしてでも逐次整合性が必要な場合は、`select_sequential_consistency` を有効にできます (そのため、通常は使用は推奨されません) 。
+
+Dictionary の場合は少し厄介で、Dictionary はクエリの設定ではなく、サーバーの設定を使用します。そのため、Dictionary にデータを読み込む際は、`SET select_sequential_consistency=1` を指定していても、データがレプリカ間で不整合に読み込まれることがあります。Dictionary ソースのクエリで `select_sequential_consistency=1` を指定すると、サーバー設定としてグローバルに有効になっていなくても、Dictionary はこの設定に従うことができます。
