@@ -67,10 +67,19 @@ The Cascades optimizer is **only active** when both `enable_cascades_optimizer =
 `make_distributed_plan = 1` are set. Without these settings, the existing pipeline
 runs as before.
 
-The feature fails closed: a plan that received exchange steps but cannot be converted to
-distributed stages is rejected with a clear error instead of silently running the
-exchanges as no-ops locally, and a search that does not finish within the task budget
-rejects the query instead of building a plan from a partial memo.
+The feature fails closed. `make_distributed_plan` first rejects plan shapes the
+distributed pipeline cannot execute correctly (`WITH TOTALS`, `ROLLUP`, `CUBE`, extremes,
+`PASTE JOIN`) and distributed reads a worker cannot reproduce (pinned block-number
+boundaries, `_part_index` / `_part_starting_offset`). When Cascades is active, a second
+pre-check rejects reads that cannot be cloned, `LOCAL` joins, non-full sorts, and
+in-order aggregation that relies on implicit input order; other non-shippable plans
+(e.g. explicitly sorted in-order aggregation) fail fragment-serializability validation
+before execution. During search, an expression whose input has no implementation for
+the required properties is never recorded as a group's best, and a search that proves
+the query has no distributable plan rejects it at the root. A plan that received
+exchange steps but cannot be converted to distributed stages is rejected instead of
+silently running the exchanges as no-ops locally, and a search that does not finish
+within the task budget rejects the query instead of building a plan from a partial memo.
 
 ## Key Concepts
 
@@ -127,7 +136,7 @@ These are the network data transfer operators that Cascades adds to the plan:
 | `GatherExchange` | Collect data from N nodes to 1 node | Gather partial aggregation results |
 | `GatherExchange(sorted)` | Merge-sorted gather preserving sort order | Gather pre-sorted data |
 | `BroadcastExchange` | Replicate full data from 1 node to all N nodes (each node gets a complete copy) | Small dimension table needed on every node |
-| `ScatterExchange` | Distribute data from 1 node across N nodes (each node gets a disjoint slice) | 1-to-N redistribution without specific partitioning |
+| `ScatterExchange` | Distribute data from 1 node across N nodes; without partitioning columns, chunks go round-robin | 1-to-N redistribution, with or without specific partitioning |
 
 ### Read Strategies
 
@@ -252,25 +261,45 @@ up to `limit * node_count` rows.
 With a high `sequential_weight`, the optimizer prefers plans that minimize
 single-node bottlenecks (e.g., shuffle over broadcast for large hash tables).
 
-Cost weights are configurable at query time via:
+The whole cost configuration is overridable at query time via one JSON parameter —
+the three weights, the per-exchange overhead, and the calibration constants
+(`expression_cost_per_row`, `hash_table_build_factor`, `unknown_leaf_cost`,
+`funnel_sequential_cost_per_row`, `merge_sequential_cost_per_row`):
 ```sql
 SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":1,"sequential_weight":1000}';
 ```
 
-Weights must be finite and non-negative (zero is allowed to ignore a dimension); an
+`cpu_weight` is also accepted as a legacy alias for `work_weight` when `work_weight`
+is absent. All values must be finite and non-negative (zero is allowed to ignore a
+dimension); an
 invalid config rejects the query instead of silently falling back to defaults, and an
 infinite cost component stays infinite under any weights, so an impossible plan can
 never win by a zero weight.
 
-The cluster size is derived automatically from the `stateless_worker_client.cluster`
-config (same source as `TaskToHostMap`).  A query parameter overrides it for testing:
+The cluster size is derived automatically from the worker configuration
+(`stateless_worker_client.cluster`, or a single `stateless_worker_client.host`) — the
+same source `TaskToHostMap` uses.  A query parameter overrides it for testing (it also
+caps the host list used for execution):
 ```sql
 SET param__internal_cascades_cluster_node_count = 20;
 ```
 
 The optimizer explores only two parallelism levels: `{1 node}` (local) and `{N nodes}`
 (full cluster).  Intermediate counts are not explored because they were never chosen
-on TPC-H and would multiply the search space.
+on TPC-H and would multiply the search space. The rule-based planner's
+`distributed_plan_default_shuffle_join_bucket_count`,
+`distributed_plan_default_reader_bucket_count`, and
+`distributed_plan_max_rows_to_broadcast` heuristics are not used: fan-out and
+broadcast-vs-shuffle are decided by estimated cost.
+
+The per-query environment (cluster size, cost configuration, and the query settings the
+rules honor) is fixed before the search starts and lives on the memo
+(`OptimizationEnvironment`). The rules honor `distributed_aggregation_memory_efficient`
+and `distributed_plan_force_shuffle_aggregation` for aggregation, and
+`exact_rows_before_limit` disables the two-stage top-N (its internal per-shard cap would
+break the exact `rows_before_limit_at_least` accounting). The sort settings of the
+query's own `SortingStep` (size limits, spill thresholds) are captured while the memo is
+built and reused when `SortingEnforcer` creates a new sort.
 
 **Key files**: `Cost.h/cpp`
 
@@ -278,8 +307,12 @@ on TPC-H and would multiply the search space.
 
 Best implementations per group are stored in an
 `unordered_map<UInt64, vector<GroupExpressionPtr>>` keyed by distribution shape
-`(node_count, is_replicated)`. This gives O(1) bucket lookup followed by a small linear
-scan (typically 2-5 entries per bucket).
+`(node_count, is_replicated)`. This gives O(1) bucket lookup followed by a linear scan
+of the non-dominated alternatives for that distribution shape.
+
+An expression whose input has no implementation for its required properties is never
+recorded (see `ExpressionCost::buildable`), so plan extraction cannot walk into a
+missing subtree.
 
 A Pareto frontier is maintained: when a new implementation is added, dominated entries
 (same or broader properties at higher cost) are removed. One exception protects plan
@@ -290,26 +323,37 @@ cheaper enforcer covers its requirement.
 ### Rules
 
 **Transformation rules** (generate logically equivalent expressions):
-- `JoinCommutativity` — swaps join sides (left ↔ right)
+- `JoinCommutativity` — swaps join sides (left ↔ right) for joins where the swap is
+  semantics-preserving: `INNER ALL`, `CROSS`, and `SEMI`/`ANY`/`ANTI` strictness;
+  never `ASOF` or `INNER ANY`
 - `TwoPhaseAggregation` — splits aggregation into partial + merge
 - `TwoStageTopN` — splits a top-N sort into a per-node bounded sort, a sorted-merge
   gather, and a coordinator limit
 
 **Implementation rules** (generate physical expressions with properties):
-- `HashJoinImplementation` — creates local, broadcast, and shuffle hash join strategies
-- `AggregationImplementation` — creates local, shuffle, and partial aggregation strategies
+- `HashJoinImplementation` — creates local joins, broadcast joins (skipped for join
+  kinds where a replicated build side would duplicate output rows), full-key shuffle
+  joins, and single-key shuffle alternatives for multi-key equi-joins
+- `AggregationImplementation` — creates local and shuffle aggregation (including
+  single-key alternatives for multi-key `GROUP BY`) and implements the partial
+  aggregations; shuffle is not created for global aggregation, grouping sets, overflow
+  rows, or `max_rows_to_group_by`
 - `LocalReadImplementation` — single-node read
 - `ParallelReadImplementation` — parallel N-way read across nodes
 - `ReplicatedReadImplementation` — full table read on each node (shared storage)
 - `SortImplementation` — bounded sort at one node, or per node for the top-N partial
-- `DefaultImplementation` — wraps any step at `{1 node}` as fallback
+- `DefaultImplementation` — wraps otherwise-unhandled steps at `{1 node}`; operators
+  with dedicated rules above are excluded
 - `DistributionPassthrough` — propagates distribution through stateless per-row steps
-  (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`)
+  (`ExpressionStep`, `FilterStep`, `BuildRuntimeFilterStep`), translating distribution
+  and sort columns through the step's `ActionsDAG` and creating sorted passthrough
+  variants; expressions with per-block or non-deterministic functions stay single-node
 
 **Enforcer rules** (bridge property gaps):
 - `DistributionEnforcer` — adds `GatherExchange`, `BroadcastExchange`,
-  `ShuffleExchange`, `ScatterExchange`. Produces both regular and sorted-merge
-  gather variants.
+  `ShuffleExchange`, `ScatterExchange` (keyed, or column-less round-robin for a
+  multi-node requirement with no partitioning constraint). Produces both regular
+  and sorted-merge gather variants.
 - `SortingEnforcer` — adds `SortingStep` with required sort description.
 
 **Key files**: `Rules/*.cpp`
@@ -387,16 +431,21 @@ branch-and-bound pruning as the primary bound.
 
 ### Optimizer Features
 
-5. **Runtime bloom filters in Cascades**: The single biggest gap vs StarRocks.
-6. **Join ordering in Cascades**: DPHyp for inner joins in
+5. **`ReplicatedRead` validation and gating**: the rule assumes every worker sees the
+   same complete table (shared storage) and has no hard size gate; an oversized
+   replicated read loses only on cost.
+6. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
+   `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
+   create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
+7. **Join ordering in Cascades**: DPHyp for inner joins in
    [PR #98798](https://github.com/ClickHouse/ClickHouse/pull/98798); outer/semi/anti
    support needed.
-7. **Window function distribution**: `WindowStep` currently goes through
+8. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.
-8. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
+9. **CTE / common subplan sharing**: Detect `CommonSubplanReferenceStep` and
    map to existing groups instead of cloning.
-9. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
+10. **Dependent group-by key elimination**: Remove redundant GROUP BY columns using
    functional dependencies from MergeTree keys.
 
 ---
