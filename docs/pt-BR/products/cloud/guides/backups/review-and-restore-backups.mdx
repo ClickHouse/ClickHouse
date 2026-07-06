@@ -1,0 +1,202 @@
+---
+sidebarTitle: 'Revisar e restaurar backups'
+slug: /cloud/manage/backups/overview
+title: 'Revisar e restaurar backups'
+keywords: ['backups', 'backups na nuvem', 'restaurar']
+description: 'Apresenta uma visão geral dos backups no ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções você tem para configurar backups para o seu serviço e como restaurar a partir de um backup.
+
+**Pré-requisitos**
+
+* Você leu [&quot;Como os backups funcionam no ClickHouse Cloud&quot;](/pt-BR/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (página de visão geral do recurso)
+
+<div id="backup-status-list">
+  ## Lista de status de backups
+</div>
+
+Seu serviço terá backups realizados de acordo com a programação definida, seja a programação diária padrão ou uma [programação personalizada](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhida por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista de status de backups no ClickHouse Cloud" border />
+
+<div id="understanding-backup-cost">
+  ## Entendendo o custo dos backups
+</div>
+
+De acordo com a política padrão, o ClickHouse Cloud exige um backup por dia, com retenção de 24 horas. Escolher um agendamento que exija a retenção de mais dados ou resulte em backups mais frequentes pode gerar cobranças adicionais de armazenamento para os backups.
+
+Para entender o custo dos backups, você pode ver o custo por serviço na tela de uso (como mostrado abaixo). Depois de executar os backups por alguns dias com um agendamento personalizado, você poderá ter uma ideia do custo e extrapolar para chegar ao custo mensal dos backups.
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="Gráfico de uso de backups no ClickHouse Cloud" border />
+
+Para estimar o custo total dos seus backups, é necessário definir um agendamento. Antes de definir um agendamento, você pode usar a [calculadora de preços](https://clickhouse.com/pricing) para obter uma estimativa do custo mensal, fornecendo os seguintes dados:
+
+* Tamanho dos backups completos e incrementais
+* Frequência de backup desejada
+* Retenção de backups desejada
+* Provedor de nuvem e região
+
+<Note>
+  Tenha em mente que o custo estimado dos backups mudará à medida que o volume de dados no serviço aumentar ao longo do tempo.
+</Note>
+
+<div id="restore-a-backup">
+  ## Restaurar um backup
+</div>
+
+Os backups são restaurados em um novo serviço do ClickHouse Cloud, e não no serviço existente do qual o backup foi gerado.
+
+Após clicar no ícone de backup **Restore**, você pode especificar o nome do novo serviço que será criado e, em seguida, restaurar esse backup:
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="Restaurando um backup no ClickHouse Cloud" />
+
+O novo serviço aparecerá na lista de serviços como `Provisioning` até ficar pronto:
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Provisionamento do serviço em andamento" border />
+
+<div id="working-with-your-restored-service">
+  ## Trabalhando com seu serviço restaurado
+</div>
+
+Depois que um backup for restaurado, você passará a ter dois serviços semelhantes: o **serviço original** que precisou ser restaurado e um novo **serviço restaurado**, restaurado a partir de um backup do original.
+
+Quando a restauração do backup for concluída, faça uma das seguintes opções:
+
+* Use o novo serviço restaurado e remova o serviço original.
+* Migre os dados do novo serviço restaurado de volta para o serviço original e remova o novo serviço restaurado.
+
+<div id="use-the-new-restored-service">
+  ### Use o **novo serviço restaurado**
+</div>
+
+Para usar o novo serviço, siga estas etapas:
+
+1. Verifique se o novo serviço possui as entradas da IP Access List necessárias para o seu caso de uso.
+2. Verifique se o novo serviço contém os dados de que você precisa.
+3. Remova o serviço original.
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### Migre os dados do **serviço restaurado recentemente** de volta para o **serviço original**
+</div>
+
+Suponha que, por algum motivo, você não consiga trabalhar com o serviço restaurado recentemente — por exemplo, se ainda houver usuários ou aplicações conectadas ao serviço existente. Nesse caso, você pode optar por migrar os dados restaurados recentemente para o serviço original. A migração pode ser feita seguindo estas etapas:
+
+**Permita acesso remoto ao serviço restaurado recentemente**
+
+O novo serviço deve ser restaurado a partir de um backup com a mesma IP Access List do serviço original. Isso é necessário, pois conexões com outros serviços do ClickHouse Cloud não serão permitidas, a menos que você tenha liberado acesso de **Anywhere**. Modifique a allow list e permita acesso de **Anywhere** temporariamente. Consulte a documentação de [IP Access List](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters) para mais detalhes.
+
+**No serviço ClickHouse restaurado recentemente (o sistema que hospeda os dados restaurados)**
+
+<Note>
+  Você precisará redefinir a senha do novo serviço para acessá-lo. Isso pode ser feito na aba **Settings** da lista de serviços.
+</Note>
+
+Adicione um usuário somente leitura que possa ler a source table (`db.table` neste exemplo):
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+Copie a definição da tabela:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**No sistema de destino do ClickHouse Cloud (aquele que tinha a tabela danificada):**
+
+Crie o banco de dados de destino:
+
+```sql
+  CREATE DATABASE db
+```
+
+Usando a instrução `CREATE TABLE` da origem, crie o destino:
+
+<Tip>
+  Altere o `ENGINE` para `ReplicatedMergeTree` sem nenhum parâmetro ao executar a instrução `CREATE`. O ClickHouse Cloud sempre replica as tabelas e fornece os parâmetros corretos.
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+Use a função `remoteSecure` para extrair os dados do novo serviço do ClickHouse Cloud restaurado para o serviço original:
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+Depois de inserir os dados com sucesso no seu serviço original, verifique os dados no serviço. Você também deve excluir o novo  serviço assim que os dados forem verificados.
+
+<div id="undeleting-or-undropping-tables">
+  ## Recuperando tabelas excluídas ou removidas
+</div>
+
+O comando `UNDROP` é compatível com o ClickHouse Cloud por meio do [Shared Catalog](/pt-BR/products/cloud/features/infrastructure/shared-catalog).
+
+Para evitar que usuários removam tabelas acidentalmente, você pode usar instruções [`GRANT`](/pt-BR/reference/statements/grant) para revogar as permissões do [comando `DROP TABLE`](/pt-BR/reference/statements/drop#drop-table) de um usuário ou Role específico.
+
+<Note>
+  Para evitar a exclusão acidental de dados, observe que, por padrão, não é possível excluir tabelas com tamanho &gt;`1TB` no ClickHouse Cloud.
+  Caso queira excluir tabelas acima desse limite, você pode usar a configuração `max_table_size_to_drop` para isso:
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- aumenta o limite para 2TB
+  ```
+</Note>
+
+<Note>
+  Planos legados: para clientes em planos legados, os backups diários padrão, retidos por 24 horas, estão incluídos no custo de armazenamento.
+</Note>
+
+<div id="backup-durations">
+  ## Duração dos backups
+</div>
+
+A duração do backup e da restauração depende de vários fatores, como o tamanho do banco de dados, o schema e o número de tabelas no banco de dados.
+Os backups incrementais normalmente são concluídos muito mais rápido do que um backup completo, já que há menos dados para incluir no backup.
+A restauração a partir de um backup incremental será um pouco mais lenta do que a restauração a partir de um backup completo, pois todos os backups incrementais e o último backup completo da cadeia são incluídos na restauração, conforme explicado acima.
+
+Em nossos testes, observamos que backups menores, de ~1 TB, podem levar cerca de 10 a 15 minutos ou mais para serem concluídos.
+Backups com menos de 20 TB devem ser concluídos em até uma hora, e o backup de 50 TB de dados deve levar cerca de 2 a 3 horas.
+Backups em tamanhos maiores se beneficiam de economias de escala, e vimos backups de até 1 PB para alguns serviços internos serem concluídos em cerca de 10 horas.
+
+<Note>
+  Backups para buckets externos podem ser mais lentos do que backups para buckets do ClickHouse
+</Note>
+
+A duração da restauração é aproximadamente a mesma que a do backup.
+
+Recomendamos testar com seu próprio banco de dados ou com dados de amostra para obter estimativas mais precisas, já que a duração real depende de vários fatores, conforme descrito acima.
+
+<div id="configurable-backups">
+  ## Backups configuráveis
+</div>
+
+Se você quiser definir uma programação de backups diferente da programação padrão, consulte [Backups configuráveis](/pt-BR/products/cloud/guides/backups/configurable-backups).
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## Exporte backups para sua própria conta na nuvem
+</div>
+
+Para usuários que desejam exportar backups para sua própria conta na nuvem, consulte [este guia](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account).

@@ -36,7 +36,7 @@ public:
 
     void setReadUntilEnd() override { setReadUntilPosition(getFileSize()); }
 
-    std::optional<size_t> tryGetFileSize() override { return getTotalSize(blobs_to_read); }
+    std::optional<size_t> tryGetFileSize() override;
 
     size_t getFileOffsetOfBufferEnd() const override { return file_offset_of_buffer_end; }
 

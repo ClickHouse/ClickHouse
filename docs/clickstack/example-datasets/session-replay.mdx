@@ -1,0 +1,174 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: 'Session replay demo'
+description: 'Interactive demo application showing how to instrument a web app for ClickStack session replay'
+doc_type: 'guide'
+keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+<Info>
+**TL;DR**
+
+This guide walks through instrumenting a web application for session replay using the ClickStack Browser SDK. Unlike other sample datasets that load pre-generated data, this demo provides an interactive application where you generate session data through your own interactions.
+
+Time required: 10-15 minutes
+</Info>
+
+## Overview {#overview}
+
+The [session replay demo application](https://github.com/ClickHouse/clickstack-session-replay-demo) is a documentation explorer built with vanilla JavaScript. It demonstrates how minimal session replay instrumentation can be — one script tag and one initialization call captures all user interactions automatically.
+
+The repository includes two branches:
+
+- **`main`** — fully instrumented and ready to use immediately
+- **`pre-instrumented`** — a clean version without instrumentation, with code comments indicating where to add it
+
+This guide uses the `main` branch first to see session replay in action, then walks through the instrumentation code so you can apply the same pattern to your own application.
+
+For background on what session replay is and how it fits into ClickStack, see the [Session Replay](/clickstack/features/session-replay) feature page.
+
+## Prerequisites {#prerequisites}
+
+- Docker and Docker Compose installed
+- Ports 3000, 4317, 4318, and 8080 available
+
+## Running the demo {#running-the-demo}
+
+<Steps>
+<Step>
+### Clone the repository {#clone-repository}
+
+```shell
+git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+cd clickstack-session-replay-demo
+```
+</Step>
+<Step>
+### Start ClickStack {#start-clickstack}
+
+```shell
+docker-compose up -d clickstack
+```
+</Step>
+<Step>
+### Get your API key {#get-api-key}
+
+1. Open HyperDX at [http://localhost:8080](http://localhost:8080)
+2. Create an account or log in if needed
+3. Navigate to **Team Settings → API Keys**
+4. Copy your **Ingestion API Key**
+
+<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+
+5. Set it as an environment variable:
+
+```shell
+export CLICKSTACK_API_KEY='your-api-key-here'
+```
+</Step>
+<Step>
+### Start the demo application {#start-demo-app}
+
+```shell
+docker-compose --profile demo up demo-app
+```
+
+<Note>
+Ensure you run this command in the same terminal where you exported the `CLICKSTACK_API_KEY` variable.
+</Note>
+
+Open [http://localhost:3000](http://localhost:3000) in your browser and interact with the app — search for topics, filter by category, view code examples, and bookmark items.
+
+<Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app"/>
+
+All interactions are automatically captured by the ClickStack Browser SDK.
+</Step>
+<Step>
+### View your session replay {#view-session-replay}
+
+Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
+
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search"/>
+
+You should see your session listed with its duration and event count. Click the ▶️ button to replay it.
+
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay"/>
+
+Switch between **Highlighted** and **All Events** modes to adjust the level of detail on the timeline.
+</Step>
+</Steps>
+
+## The instrumentation {#instrumentation}
+
+The demo application shows how little code is needed to enable session replay. Two additions to the application are all it takes:
+
+**1. Include the SDK (`app/public/index.html`):**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. Initialize ClickStack (`app/public/js/app.js`):**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+Everything else is standard application code. The SDK automatically captures all user interactions, console logs, network requests, and errors — no additional instrumentation is needed.
+
+### Try it yourself {#try-it-yourself}
+
+To instrument the app from scratch, switch to the `pre-instrumented` branch:
+
+```shell
+git checkout pre-instrumented
+```
+
+This branch contains the same application without any ClickStack instrumentation. Code comments in `app/public/index.html` and `app/public/js/app.js` indicate exactly where to add the two code snippets above. Once added, restart the demo app and your interactions will begin appearing in ClickStack.
+
+## Troubleshooting {#troubleshooting}
+
+### Sessions not appearing in HyperDX {#sessions-not-appearing}
+
+1. Check the browser console for errors
+2. Verify ClickStack is running: `docker-compose ps`
+3. Confirm the API key is set: `echo $CLICKSTACK_API_KEY`
+4. Adjust the time range in the Client Sessions view (try **Last 15 minutes**)
+5. Hard refresh the browser: `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows/Linux)
+
+### 401 Unauthorized errors {#401-errors}
+
+The API key isn't set correctly. Make sure you:
+
+1. Exported it in your terminal: `export CLICKSTACK_API_KEY='your-key'`
+2. Started the demo app in the **same terminal** where you exported it
+3. Got the key from the HyperDX UI (not a randomly generated string)
+
+## Cleanup {#cleanup}
+
+Stop the services:
+
+```bash
+docker-compose down
+```
+
+Remove all data:
+
+```bash
+docker-compose down -v
+```
+
+## Learn more {#learn-more}
+
+- [Session Replay](/clickstack/features/session-replay) — feature overview, SDK options, and privacy controls
+- [Browser SDK Reference](/clickstack/ingesting-data/sdks/browser) — full SDK options and advanced configuration
+- [ClickStack Getting Started](/clickstack/getting-started/index) — deploy ClickStack and ingest your first data
+- [All Sample Datasets](/clickstack/example-datasets/index) — other example datasets and guides
