@@ -805,8 +805,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         const UInt64 max_table_size = context->getSettingsRef()[Setting::materialize_statistics_on_insert_max_table_size];
         /// Skip building statistics on INSERT for large tables (e.g. fact tables): they materialize
         /// statistics during merges instead, avoiding per-insert overhead. `getTotalActiveSizeInBytes`
-        /// is an O(1) atomic load. `0` disables the size limit.
-        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() <= max_table_size)
+        /// is an O(1) atomic load; parts of the current INSERT are not active yet, so we add the size
+        /// of the block being written (`block.bytes()`, the same estimate used below for the part size)
+        /// to still bound the very first bulk load into an otherwise empty table. `0` disables the limit.
+        if (max_table_size == 0 || data.getTotalActiveSizeInBytes() + block.bytes() <= max_table_size)
         {
             ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::MergeTreeDataWriterStatisticsCalculationMicroseconds);
             statistics = ColumnsStatistics(metadata_snapshot->getColumns());
