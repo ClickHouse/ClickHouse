@@ -4677,10 +4677,28 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values
+        /// Fuzz existing setting values, but skip time-duration settings (names ending in one of the
+        /// suffixes below): these are timeouts, sleeps and intervals, and fuzzing them to a large
+        /// value can make a query hang for minutes -- e.g. a fault-injection `sleep_in_send_data_ms`
+        /// mutated from 10 to 1048576 sleeps uninterruptibly in `TCPHandler` (ignoring query
+        /// cancellation and `max_execution_time`), which the stress-test hung-check reports as a
+        /// false "possible deadlock". Leave their values as written by the query.
         for (auto & c : set->changes)
-            if (fuzz_rand() % 50 == 0)
+        {
+            if (fuzz_rand() % 50 != 0)
+                continue;
+
+            bool is_duration = false;
+            for (const char * suffix : {"_ms", "_sec", "_seconds", "_timeout", "_time", "_interval", "_duration"})
+                if (endsWith(c.name, suffix))
+                {
+                    is_duration = true;
+                    break;
+                }
+
+            if (!is_duration)
                 c.value = fuzzField(c.value);
+        }
     }
     else if (auto * param = typeid_cast<ASTQueryParameter *>(ast.get()))
     {
