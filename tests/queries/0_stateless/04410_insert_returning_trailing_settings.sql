@@ -38,6 +38,17 @@ SETTINGS max_result_rows = 1, result_overflow_mode = 'break';
 
 SELECT count() FROM t_ret_settings;
 
+-- Trailing settings must also affect source-query planning/execution.
+SELECT 'trailing settings affect source planning';
+TRUNCATE TABLE t_ret_settings;
+SET union_default_mode = 'ALL';
+INSERT INTO t_ret_settings SELECT 1 UNION SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS union_default_mode = 'DISTINCT';
+SET union_default_mode = '';
+
+SELECT count() FROM t_ret_settings;
+
 -- Source SELECT settings placed before RETURNING must also stay source-only.
 SELECT 'source settings before returning do not cap returning';
 TRUNCATE TABLE t_ret_settings;
