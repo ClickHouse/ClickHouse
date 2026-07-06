@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Vision'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: 'Vision'
+description: 'Entrada de imágenes y comprensión visual en ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'vision', 'entrada de imagen', 'multimodal']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+Vision permite a los usuarios subir imágenes para que un agente las analice. El agente pasa la imagen a un modelo compatible con Vision, que la describe, la resume o responde preguntas sobre su contenido.
+
+<div id="enable-it">
+  ## Habilitar las capacidades de Vision
+</div>
+
+Vision solo funciona con modelos que admiten entrada de imágenes. Si el modelo seleccionado no admite entrada de imágenes, el control de carga en el editor de mensajes se desactiva. Cambia a un modelo compatible con Vision para volver a habilitarlo.
+
+<div id="use-it">
+  ## Usa las capacidades de Vision
+</div>
+
+Haz clic en el icono del clip en la esquina inferior izquierda del editor de mensajes y elige **Upload to Provider** para adjuntar una imagen: una captura de pantalla, una foto, un gráfico o un diagrama. Después, haz cualquier pregunta que requiera leer la imagen: *&quot;¿Qué tiene de malo este plan de consulta?&quot;*, *&quot;Transcribe el texto de esta captura de pantalla&quot;* o *&quot;Compara este dashboard con el de la semana pasada.&quot;*
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="Editor de mensajes con el menú del clip abierto que muestra las opciones Upload to Provider, Upload as Text y Upload to Code Environment" size="lg" />
+
+El agente trata la imagen como parte del contexto del mensaje, así que las preguntas de seguimiento dentro del mismo turno pueden hacer referencia a lo que vio sin tener que volver a subirla.
+
+<div id="combine-with-other-tools">
+  ## Combina Vision con otras herramientas
+</div>
+
+Vision se complementa bien con el [code interpreter](/es/products/cloud/features/ai-ml/agents/builder/code-interpreter) para analizar imágenes; por ejemplo, el agente extrae números de una captura de pantalla y luego ejecuta Python para calcular totales, y con [web search](/es/products/cloud/features/ai-ml/agents/builder/web-search) cuando una imagen hace referencia a algo que el modelo necesita buscar.

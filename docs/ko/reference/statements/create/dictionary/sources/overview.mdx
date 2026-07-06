@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: '딕셔너리 소스'
+sidebarTitle: '개요'
+doc_type: 'reference'
+description: '딕셔너리 소스 유형 구성'
+---
+
+import CloudDetails from '/snippets/ko/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="dictionary-sources">
+  ## 구문
+</div>
+
+<CloudDetails />
+
+딕셔너리는 다양한 소스를 통해 ClickHouse에 연결할 수 있습니다.
+소스는 설정 파일에서는 `source` 섹션에서, DDL 문에서는 `SOURCE` 절을 사용해 구성합니다.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (...)
+    ...
+    SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- 소스 구성
+    ...
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <clickhouse>
+      <dictionary>
+        ...
+        <source>
+          <source_type>
+            <!-- 소스 구성 -->
+          </source_type>
+        </source>
+        ...
+      </dictionary>
+      ...
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="supported-dictionary-sources">
+  ## 지원되는 딕셔너리 소스
+</div>
+
+다음 소스 유형(`SOURCE_TYPE`/`source_type`)을 지원합니다:
+
+* [로컬 파일](/ko/reference/statements/create/dictionary/sources/local-file)
+* [실행형 파일](/ko/reference/statements/create/dictionary/sources/executable-file)
+* [실행형 풀](/ko/reference/statements/create/dictionary/sources/executable-pool)
+* [HTTP(S)](/ko/reference/statements/create/dictionary/sources/http)
+* DBMS
+  * [ODBC](/ko/reference/statements/create/dictionary/sources/odbc)
+  * [MySQL](/ko/reference/statements/create/dictionary/sources/mysql)
+  * [ClickHouse](/ko/reference/statements/create/dictionary/sources/clickhouse)
+  * [MongoDB](/ko/reference/statements/create/dictionary/sources/mongodb)
+  * [Redis](/ko/reference/statements/create/dictionary/sources/redis)
+  * [Cassandra](/ko/reference/statements/create/dictionary/sources/cassandra)
+  * [PostgreSQL](/ko/reference/statements/create/dictionary/sources/postgresql)
+  * [YTsaurus](/ko/reference/statements/create/dictionary/sources/ytsaurus)
+* [YAMLRegExpTree](/ko/reference/statements/create/dictionary/sources/yamlregexptree)
+* [Null](/ko/reference/statements/create/dictionary/sources/null)
+
+소스 유형 [로컬 파일](/ko/reference/statements/create/dictionary/sources/local-file), [실행형 파일](/ko/reference/statements/create/dictionary/sources/executable-file), [HTTP(s)](/ko/reference/statements/create/dictionary/sources/http), [ClickHouse](/ko/reference/statements/create/dictionary/sources/clickhouse)에서는
+선택적 설정을 지정할 수 있습니다:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql highlight={2}
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    SETTINGS(format_csv_allow_single_quotes = 0)
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml highlight={7}
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+      <settings>
+          <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+      </settings>
+    </source>
+    ```
+  </Tab>
+</Tabs>
