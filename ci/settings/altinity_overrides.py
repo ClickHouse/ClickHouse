@@ -65,6 +65,12 @@ DISABLED_WORKFLOWS = [
     "nightly_fuzzers.py",
     "nightly_jepsen.py",
     "nightly_statistics.py",
+    "nightly_keeper.py",
+    "nightly_keeper_faults.py",
+    "nightly_upload.py",
+    "optimize_clickhouse.py",
+    "pr_version_info.py",
+    "release_builds.py",
     "VectorSearchStress.py",
 ]
 

@@ -322,16 +322,6 @@ class JobConfigs:
             provides=[ArtifactNames.CH_ARM_BINARY],
             runs_on=RunnerLabels.BUILDER_AMD,
         ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_UBSAN,
-            provides=[ArtifactNames.CH_ARM_UBSAN, ArtifactNames.DEB_ARM_UBSAN],
-            runs_on=RunnerLabels.BUILDER_AMD,
-        ),
-        Job.ParamSet(
-            parameter=BuildTypes.ARM_BINARY,
-            provides=[ArtifactNames.CH_ARM_BINARY],
-            runs_on=RunnerLabels.BUILDER_AMD,
-        ),
     ) + common_sanitizer_build_job_config.set_post_hooks(
         post_hooks=[
             # "python3 ./ci/jobs/scripts/job_hooks/build_master_head_hook.py",
@@ -756,7 +746,7 @@ class JobConfigs:
         ),
         Job.ParamSet(
             parameter="arm_binary, sequential",
-            runs_on=RunnerLabels.ARM_SMALL,
+            runs_on=RunnerLabels.FUNC_TESTER_ARM,
             requires=[ArtifactNames.CH_ARM_BINARY],
         ),
     )

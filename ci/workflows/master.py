@@ -44,14 +44,13 @@ workflow = Workflow.Config(
         *AltinityJobConfigs.sign_release_jobs,
         AltinityJobConfigs.source_upload_job,
         *JobConfigs.compatibility_test_jobs,
-        *JobConfigs.functional_tests_jobs,
-        # *JobConfigs.functional_test_llvm_coverage_jobs,
-        # *JobConfigs.functional_test_excluded_from_llvm_job,
         *[
             j
             for j in JobConfigs.functional_tests_jobs
             if "coverage" not in j.name
         ],
+        # *JobConfigs.functional_test_llvm_coverage_jobs,
+        # *JobConfigs.functional_test_excluded_from_llvm_job,
         *JobConfigs.functional_tests_jobs_coverage,
         *JobConfigs.functional_tests_jobs_azure,
         *JobConfigs.integration_test_jobs_required,
