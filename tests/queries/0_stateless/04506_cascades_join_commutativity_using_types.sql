@@ -4,8 +4,9 @@
 
 -- `JoinCommutativity` swaps joins whose `USING` clause casts a mismatched key type to the
 -- supertype: `swapInputs` remaps the cast and the `join_use_nulls` wrappers to the new sides.
--- Every join type the rule can swap is checked: the swap must win on cost (the big right side
--- makes the swapped broadcast build much cheaper) and the results must match the plain plan.
+-- Every join type the rule can swap is checked: the swap must win on cost (statistics hints
+-- make the right side look huge, so the swapped broadcast build is much cheaper) and the
+-- results must match the plain plan. The physical tables stay tiny to keep the test fast.
 -- Keys are unique on each side, so ANY joins are deterministic.
 
 SET enable_analyzer = 1;
@@ -14,6 +15,7 @@ SET enable_join_runtime_filters = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET query_plan_optimize_join_order_randomize = 0;
+SET param__internal_join_table_stat_hints = '{"t_uc_small": {"cardinality": 100, "avg_row_bytes": 20, "distinct_keys": {"k": 100}}, "t_uc_big": {"cardinality": 100000000, "avg_row_bytes": 20, "distinct_keys": {"k": 1000000}}}';
 
 DROP TABLE IF EXISTS t_uc_small;
 DROP TABLE IF EXISTS t_uc_big;
@@ -29,8 +31,8 @@ SYSTEM STOP MERGES t_uc_big;
 -- keys 0..19 match the big side; 4000000000 and 4000000001 do not
 INSERT INTO t_uc_small SELECT number, 'v' || toString(number) FROM numbers(20);
 INSERT INTO t_uc_small VALUES (4000000000, 'v_a'), (4000000001, 'v_b');
--- keys 0..49999 and two negative keys that never match the UInt32 side
-INSERT INTO t_uc_big SELECT number, 'w' || toString(number) FROM numbers(50000);
+-- keys 0..99 and two negative keys that never match the UInt32 side
+INSERT INTO t_uc_big SELECT number, 'w' || toString(number) FROM numbers(100);
 INSERT INTO t_uc_big VALUES (-1, 'w_neg1'), (-2, 'w_neg2');
 
 SELECT '-- 1. the swapped variant wins for every join type the rule can swap';
