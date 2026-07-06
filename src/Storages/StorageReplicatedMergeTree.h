@@ -359,6 +359,8 @@ public:
 
     bool isTableReadOnly () { return is_readonly || isStaticStorage(); }
 
+    bool isShuttingDown() const override { return shutdown_called || partial_shutdown_called; }
+
     std::optional<bool> hasMetadataInZooKeeper () { return has_metadata_in_zookeeper; }
 
     /// Get a sequential consistent view of current parts.

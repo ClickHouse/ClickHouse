@@ -151,14 +151,16 @@ public:
         catch (const Exception & e)
         {
             is_finished = true;
-            /// A retriable error (transient Keeper hardware error, network error, etc.) means the
-            /// part could not be verified, not that it is broken. Propagate it so the query surfaces
-            /// a retriable error instead of reporting the table broken (a spurious 0). Everything
-            /// else keeps the historical behavior of being reported as a failed check result. The
-            /// shutdown ABORTED exception this catch was originally added for is excluded explicitly:
-            /// isRetryableException treats ABORTED as retriable, but here it signals shutdown and must
-            /// keep returning a prompt failed result rather than propagating.
-            if (e.code() != ErrorCodes::ABORTED && isRetryableException(std::current_exception()))
+            /// A retriable error (transient Keeper hardware error, network error, S3, cache-write,
+            /// etc.) means the part could not be verified, not that it is broken. Propagate it so the
+            /// query surfaces a retriable error instead of reporting the table broken (a spurious 0).
+            /// Everything else keeps the historical behavior of being reported as a failed check
+            /// result. The one exception is a shutdown-time ABORTED: isRetryableException treats
+            /// ABORTED as retriable, but during shutdown it signals "stop, do not block" and must keep
+            /// returning a prompt failed result rather than propagating. Guard on the table shutdown
+            /// state (not on the ABORTED code) so a genuine retriable ABORTED is still propagated.
+            if (!(e.code() == ErrorCodes::ABORTED && table->isShuttingDown())
+                && isRetryableException(std::current_exception()))
                 throw;
             CheckResult result{"", false, e.displayText()};
             return result;

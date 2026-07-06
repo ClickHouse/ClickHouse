@@ -681,6 +681,11 @@ public:
     /// NOTE: write-once also does not support INSERTs/merges/... for MergeTree
     virtual bool isStaticStorage() const;
 
+    /// Returns true while the table is shutting down. CHECK TABLE uses this to tell a
+    /// shutdown-time ABORTED (which must return a prompt failed result) apart from a
+    /// genuinely retryable error (which must be propagated).
+    virtual bool isShuttingDown() const { return false; }
+
     /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
     /// Used for:
     /// - Simple count() optimization
