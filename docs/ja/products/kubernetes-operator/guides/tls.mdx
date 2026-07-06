@@ -1,0 +1,334 @@
+---
+position: 6
+slug: /clickhouse-operator/guides/tls
+title: TLS でクラスターを保護する
+keywords: ['kubernetes', 'tls', 'ssl', 'cert-manager', 'security', 'certificates']
+description: 'cert-manager を使用して ClickHouse クラスターを TLS で保護する方法を説明します。クライアント接続と Keeper の暗号化も含みます。'
+doc_type: 'guide'
+---
+
+このガイドでは、ClickHouse クラスター全体をエンドツーエンドで暗号化する手順を説明します。具体的には、[cert-manager](https://cert-manager.io/) による証明書の発行、クラスターでの TLS の有効化、セキュアなポート経由でのクライアント接続、さらに Keeper の協調通信への暗号化の適用を扱います。
+
+このガイドは、実際の作業手順に沿って構成されています。`spec.settings.tls` のフィールドごとのリファレンスについては、
+[Configuration → TLS/SSL 設定](/ja/products/kubernetes-operator/guides/configuration#tls-ssl-configuration)
+および [API リファレンス](/ja/products/kubernetes-operator/reference/api-reference#clustertlsspec) を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* オペレーターによって管理されている稼働中の ClickHouse クラスター ([Introduction](/ja/products/kubernetes-operator/guides/introduction)を参照) 。
+* クラスターに [cert-manager](https://cert-manager.io/docs/installation/) がインストールされていること。
+* クラスターのネームスペースに `kubectl` でアクセスできること。
+
+オペレーター自体は証明書を生成しません。代わりに、ユーザーが用意した Kubernetes の
+`Secret` を利用します。cert-manager はその `Secret` の生成とローテーションに推奨される方法ですが、想定された形式で `Secret` を書き込めるツールであればどれでも利用できます。
+
+<div id="secret-format">
+  ## オペレーターが想定する証明書の形式
+</div>
+
+TLS は、サーバーの鍵ペアを含む Secret を `spec.settings.tls.serverCertSecret` で指定することで有効になります。
+
+| Secret キー | 内容                  | 必須 |
+| --------- | ------------------- | -- |
+| `tls.crt` | PEM エンコードされたサーバー証明書 | はい |
+| `tls.key` | PEM エンコードされた秘密鍵     | はい |
+
+これは cert-manager が `Certificate` リソースに書き込む形式と完全に同じなので、変換は不要です。オペレーターはこの鍵ペアを各ポッドの
+`/etc/clickhouse-server/tls/` にマウントし、ClickHouse の `openSSL` 設定に組み込みます。
+
+<Note>
+  `tls.enabled: true` の場合、`serverCertSecret` は **必須** です。validating
+  webhook は、これが設定されていない状態で TLS を有効にしたクラスターを拒否し、`enabled: true`
+  でない限り `required: true` も拒否します。
+</Note>
+
+<div id="step-1-ca">
+  ## ステップ 1 — cert-manager で CA を Bootstrap する
+</div>
+
+最も再現性が高い構成は、自己署名 CA を用意し、その CA でサーバー
+証明書に署名する方法です。これにより、クライアントが信頼できる安定した `ca.crt` を使用できます。
+
+```yaml
+# A self-signed issuer used only to mint the CA certificate
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-bootstrap
+  namespace: <namespace>
+spec:
+  selfSigned: {}
+---
+# The CA certificate itself
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-ca
+  namespace: <namespace>
+spec:
+  isCA: true
+  commonName: clickhouse-ca
+  secretName: clickhouse-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-bootstrap
+    kind: Issuer
+---
+# A CA issuer that signs leaf certificates from the CA above
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: clickhouse-ca-issuer
+  namespace: <namespace>
+spec:
+  ca:
+    secretName: clickhouse-ca
+```
+
+本番環境では、自己署名のブートストラップを実際の発行元 (社内 CA、
+Vault、ACME など) に置き換えます。変更が必要なのはステップ 2 のみで、クラスターの構成は
+同じです。
+
+<div id="step-2-cert">
+  ## ステップ 2 — サーバー証明書を発行する
+</div>
+
+CA issuer からリーフ証明書をリクエストします。`dnsNames` には、クライアントが
+ポッドのアドレス指定に使用する名前を含める必要があります。オペレーターは
+`<cluster-name>-clickhouse-headless` という名前の単一の **ヘッドレス** Service を作成し、
+各レプリカ ポッドには
+`<cluster-name>-clickhouse-<shard>-<index>-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local`
+でアクセスできます。
+ヘッドレス Service ドメインに対するワイルドカードを使用すると、すべてのレプリカをカバーできます。
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: clickhouse-server
+  namespace: <namespace>
+spec:
+  secretName: clickhouse-cert        # <-- the Secret the operator will read
+  duration: 8760h                    # 1 year
+  renewBefore: 720h                  # rotate 30 days early
+  issuerRef:
+    name: clickhouse-ca-issuer
+    kind: Issuer
+  dnsNames:
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc"
+    - "*.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local"
+    - "localhost"
+```
+
+<Note>
+  オペレーターは、クラスター全体で利用できる (ロードバランシングされた) Service を**作成しません**。接続先として単一の安定したエンドポイントが必要な場合は、クラスターのポッドを選択する独自の `クラスタIP` Service を作成し、その DNS 名を上記の `dnsNames` に追加してください。
+</Note>
+
+cert-manager は `tls.crt`、`tls.key`、`ca.crt` を含む `clickhouse-cert` Secret を作成し、有効期限が切れる前に更新します。存在することを確認してください。
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert -o jsonpath='{.data}' | jq 'keys'
+# ["ca.crt","tls.crt","tls.key"]
+```
+
+<div id="step-3-enable">
+  ## ステップ 3 — クラスターで TLS を有効にする
+</div>
+
+クラスターがその Secret を参照するように設定します:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: <cluster-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true            # disable the insecure ports entirely
+      serverCertSecret:
+        name: clickhouse-cert
+```
+
+<div id="what-the-operator-does">
+  ### オペレーターの動作
+</div>
+
+`tls.enabled: true` の場合、オペレーターは次の処理を行います。
+
+* **すべてのポッドと ヘッドレス Service でセキュアなポートを公開**します: `9440`
+  (native TLS) および `8443` (HTTPS) 。これらは既存のポートに追加されます。
+* **Secret を** `/etc/clickhouse-server/tls/` **にマウント**し、
+  `verificationMode: relaxed`、
+  `disableProtocols: sslv2,sslv3`、`preferServerCiphers: true` を含む
+  ClickHouse の `openSSL` ブロックを生成します。これらはデフォルト値です。上書きするには、[TLS 設定のカスタマイズ](#custom-tls-settings)を参照してください。
+
+さらに `required: true` も設定すると、オペレーターは追加で次の処理を行います。
+
+* **非セキュアなポート** `9000` (native) と `8123` (HTTP) を**削除**します。TLS
+  版のみが残るため、平文クライアントは接続できなくなります。
+* **ポッドの liveness probe を** セキュアな native ポート `9440` に**切り替え**るため、
+  平文リスナーがなくてもヘルスチェックは引き続き機能します。
+
+<Note>
+  TLS ポート `8443` と `9440` は、TLS が無効な場合でも webhook により**無条件で**
+  予約されます。
+  そのため、後から `tls.enabled` を切り替えても、
+  `spec.additionalPorts` のエントリと競合することはありません。詳しくは
+  [Configuration → `additionalPorts`](/ja/products/kubernetes-operator/guides/configuration#additional-ports)を参照してください。
+</Note>
+
+<div id="step-4-connect">
+  ## ステップ 4 — TLS 経由で接続する
+</div>
+
+`required: true` の場合、クライアントはセキュアなポートを使用し、CA を信頼する必要があります。ヘッドレスService (または作成している場合は独自の`クラスタIP`
+Service) 経由で、特定のレプリカのポッドを指定してください。
+
+**ネイティブプロトコル** (`clickhouse-client`, ポート `9440`):
+
+```bash
+clickhouse-client --secure \
+  --host <cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local \
+  --port 9440 \
+  --ca-certificate /path/to/ca.crt \
+  --query "SELECT 1"
+```
+
+**HTTPS** (ポート `8443`) :
+
+```bash
+curl --cacert /path/to/ca.crt \
+  "https://<cluster-name>-clickhouse-0-0-0.<cluster-name>-clickhouse-headless.<namespace>.svc.cluster.local:8443/?query=SELECT%201"
+```
+
+ローカルでのテスト用に、Secret から `ca.crt` を直接取得します:
+
+```bash
+kubectl -n <namespace> get secret clickhouse-cert \
+  -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
+```
+
+<div id="keeper-tls">
+  ## Keeper トラフィックの暗号化
+</div>
+
+ClickHouse クラスターで TLS を有効にしても、Keeper との接続は**暗号化されません**。
+`KeeperCluster` 側でも個別に有効にしてください — Keeper
+サービス用の証明書を発行し (Keeper サービスの `dnsNames` を使って手順 1～2 を実施) 、それを参照してください:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: <keeper-name>
+  namespace: <namespace>
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: keeper-cert
+```
+
+Keeper は、セキュアなクライアントポートを `2281` で公開します。Keeper で TLS を有効にすると、**ClickHouse
+クラスターは自動的に TLS 経由で Keeper に接続します**。ClickHouseCluster 側で追加の設定を行う必要は
+ありません。ClickHouse は、システムのトラストストアに加えて、設定した
+[`caBundle`](#custom-ca) を使用して Keeper の証明書を検証します。
+
+<div id="custom-ca">
+  ## カスタム CA バンドル
+</div>
+
+既定では、ClickHouse は接続先のピア (他のレプリカ、Keeper、HTTPS
+Dictionary ソース、S3 など) を **システムのトラストストア** に対して検証します。システムストアにルート証明書が含まれていない自己署名 CA や社内 CA などのプライベート CA も **追加で** 信頼するには、
+`caBundle` を指定します。
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      serverCertSecret:
+        name: clickhouse-cert
+      caBundle:
+        name: <ca-secret-name>
+        key: ca.crt
+```
+
+オペレーターはこのバンドルをマウントし、`openSSL` クライアントのトラストストア
+(`caConfig`) に追加します。システムのトラストストアも引き続き有効であり、プライベート CA はパブリック
+ルートに**加えて**信頼されるため、パブリックエンドポイントへの接続もそのまま機能します。自己署名の
+セットアップでは、cert-manager が書き込んだ同じ Secret の `ca.crt` キーを `caBundle` で参照してください
+(`cluster_with_ssl` の例のとおり)。
+
+<div id="custom-tls-settings">
+  ## TLS 設定のカスタマイズ
+</div>
+
+オペレーターが生成する `openSSL` ブロックはデフォルト設定であり、上限ではありません。これは
+メインのサーバー設定に書き込まれます。`spec.settings.extraConfig` 配下の内容はすべて
+`config.d/99-extra-config.yaml` にレンダリングされ、ClickHouse はそれを**最後に**マージするため、
+生成された値を上書きします。
+
+デフォルトを強化するには — たとえば、厳格なピア検証を必須にし、最小
+プロトコルを TLS 1.2 に引き上げるには — 変更したい `openSSL.server` のキーを設定します:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      openSSL:
+        server:
+          verificationMode: strict
+          disableProtocols: "sslv2,sslv3,tlsv1,tlsv1_1"
+```
+
+マージはキー単位で行われます。置き換えられるのは設定した値のみで、生成されたキーのうち
+省略したもの (証明書のパス、CA の設定) は保持されます。使用可能なオプションについては
+[`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings#openssl)
+を、`extraConfig` がどのようにマージされるかについては
+[設定 → 埋め込みの追加設定](/ja/products/kubernetes-operator/guides/configuration#embedded-extra-configuration)
+を参照してください。
+
+<div id="troubleshoot">
+  ## 確認とトラブルシューティング
+</div>
+
+**ヘッドレス Service でセキュアポートが有効になっていることを確認します。**
+
+```bash
+kubectl -n <namespace> get svc <cluster-name>-clickhouse-headless \
+  -o jsonpath='{.spec.ports[*].name}'
+# expect: ... tcp-secure http-secure   (and NO tcp/http when required: true)
+```
+
+**証明書がポッドにマウントされていることを確認します。**
+
+```bash
+kubectl -n <namespace> exec <pod> -- ls /etc/clickhouse-server/tls/
+# clickhouse-server.crt  clickhouse-server.key   (plus custom-ca.crt when caBundle is set)
+```
+
+| 症状                                   | 考えられる原因                                                                                                                                                                                                                      |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TLS を有効にした後、ポッドが起動しない / ボリュームマウントエラー | 参照先の Secret が存在しないか、`tls.crt`/`tls.key` が不足しています (または、`caBundle` が設定されている場合は、それが参照する Secret またはキーが不足しています) 。オペレーターは Secret の内容を検証しないため、キー不足は専用の status 条件ではなく、ポッドのボリュームマウント失敗として表面化します。`kubectl describe pod` でポッドを確認してください。 |
+| Webhook がクラスターを拒否する                  | `enabled: true` を設定せずに `required: true` を設定しているか、`serverCertSecret` を設定せずに `enabled: true` を設定しています。                                                                                                                         |
+| クライアントで `certificate verify failed`  | クライアントが CA を信頼していません。Secret の `ca.crt` を渡すか、証明書の `dnsNames` に接続先のホストが含まれていることを確認してください。                                                                                                                                      |
+| 平文クライアントが突然接続できなくなる                  | `required: true` により、ポート `9000`/`8123` が使えなくなっています。クライアントを `9440`/`8443` に切り替えるか、移行中も安全でないポートを開けたままにするには `required: false` を設定してください。                                                                                        |
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [設定 → TLS/SSL 設定](/ja/products/kubernetes-operator/guides/configuration#tls-ssl-configuration) — フィールドのリファレンス
+* [設定 → `additionalPorts`](/ja/products/kubernetes-operator/guides/configuration#additional-ports) — 予約済みポート
+* [API リファレンス → ClusterTLSSpec](/ja/products/kubernetes-operator/reference/api-reference#clustertlsspec)
+* [`openSSL` サーバー設定](/ja/reference/settings/server-settings/settings#openssl) — `extraConfig` で上書き可能な TLS オプション

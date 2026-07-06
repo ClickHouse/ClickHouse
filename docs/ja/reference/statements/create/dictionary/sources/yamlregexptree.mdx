@@ -1,0 +1,81 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/yamlregexptree
+title: 'YAMLRegExpTree Dictionary ソース'
+sidebarTitle: 'YAMLRegExpTree'
+description: '正規表現ツリー辞書のソースとして YAML ファイルを設定します。'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+`YAMLRegExpTree` ソースは、ローカルファイルシステム上の YAML ファイルから正規表現ツリーを読み込みます。
+これは [`regexp_tree`](/ja/reference/statements/create/dictionary/layouts/regexp-tree) 辞書レイアウト専用に設計されており、
+ユーザーエージェントのパースなど、パターンベースのルックアップ向けに、正規表現から属性への階層的なマッピングを提供します。
+
+<Note>
+  `YAMLRegExpTree` ソースは ClickHouse Open Source でのみ利用できます。
+  ClickHouse Cloud では、代わりに辞書を CSV にエクスポートし、[ClickHouse table source](/ja/reference/statements/create/dictionary/sources/clickhouse) を使用して読み込んでください。
+  詳細は [Using regexp&#95;tree Dictionaries in ClickHouse Cloud](/ja/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-cloud) を参照してください。
+</Note>
+
+<div id="configuration">
+  ## 設定
+</div>
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0);
+```
+
+設定フィールド:
+
+| 設定     | 説明                                                                             |
+| ------ | ------------------------------------------------------------------------------ |
+| `PATH` | 正規表現ツリーを含む YAML ファイルへの絶対パスです。DDL で作成する場合、ファイルは `user_files` ディレクトリ内になければなりません。 |
+
+<div id="yaml-file-structure">
+  ## YAML ファイルの構造
+</div>
+
+YAML ファイルには、正規表現ツリーのノードの一覧が含まれます。各ノードは属性と子ノードを持つことができ、階層構造を形成します。
+
+```yaml
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Android'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+```
+
+各ノードは次の構造になっています。
+
+* **`regexp`**: このノードの正規表現。
+* **attributes**: ユーザー定義のDictionary 属性 (例: `name`、`version`) 。属性値には、`\1` または `$1` (1～9の数字) で表される、正規表現のキャプチャグループへの**後方参照**を含めることができます。これらはクエリ時に、マッチしたキャプチャグループに置き換えられます。
+* **child nodes**: 子ノードのリストです。各子ノードはそれぞれ独自の属性を持ち、必要に応じてさらに子ノードを持つこともできます。子ノードのリスト名は任意です (例: 上記の `versions`) 。文字列のマッチングは深さ優先で行われます。文字列がノードに一致した場合は、その子ノードもチェックされます。最も深い階層で一致したノードの属性が優先され、同名の親属性を上書きします。
+
+<div id="related-pages">
+  ## 関連ページ
+</div>
+
+* [regexp&#95;tree Dictionary レイアウト](/ja/reference/statements/create/dictionary/layouts/regexp-tree) — レイアウト設定、クエリ例、マッチングモード
+* [dictGet](/ja/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictGetAll](/ja/reference/functions/regular-functions/ext-dict-functions#dictGetAll) — regexp tree Dictionaries をクエリする関数

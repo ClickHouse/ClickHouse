@@ -1,0 +1,407 @@
+---
+slug: /integrations/postgresql/connecting-to-postgresql
+title: 'توصيل ClickHouse بـ PostgreSQL'
+keywords: ['clickhouse', 'postgres', 'postgresql', 'ربط', 'تكامل', 'جدول', 'محرك']
+description: 'صفحة تشرح الطرق المختلفة لربط PostgreSQL بـ ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+تستعرض هذه الصفحة الخيارات التالية لدمج PostgreSQL مع ClickHouse:
+
+* استخدام محرك الجدول `PostgreSQL` للقراءة من جدول في PostgreSQL
+* استخدام محرك قاعدة البيانات التجريبي `MaterializedPostgreSQL` لمزامنة قاعدة بيانات في PostgreSQL مع قاعدة بيانات في ClickHouse
+
+<Tip>
+  اطّلع على خدمة [Managed Postgres](/ar/products/managed-postgres/overview) الخاصة بنا. فهي تعتمد على تخزين NVMe موجود فعليًا إلى جانب موارد الحوسبة، ما يوفّر أداءً أسرع حتى 10 مرات لأحمال العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم التخزين المتصل بالشبكة مثل EBS، كما تتيح لك نسخ بيانات Postgres إلى ClickHouse باستخدام موصل Postgres CDC في ClickPipes.
+</Tip>
+
+<div id="using-the-postgresql-table-engine">
+  ## استخدام محرك الجدول PostgreSQL
+</div>
+
+يتيح محرك الجدول `PostgreSQL` تنفيذ عمليتي **SELECT** و**INSERT** على البيانات المخزنة على خادم PostgreSQL البعيد من داخل ClickHouse.
+تهدف هذه المقالة إلى توضيح طرق التكامل الأساسية باستخدام جدول واحد.
+
+<div id="1-setting-up-postgresql">
+  ### 1. إعداد PostgreSQL
+</div>
+
+1. في ملف `postgresql.conf`، أضِف الإدخال التالي لتمكين PostgreSQL من الاستماع عبر واجهات الشبكة:
+
+```text
+  listen_addresses = '*'
+```
+
+2. أنشئ مستخدمًا للاتصال عبر ClickHouse. ولأغراض التوضيح، يمنح هذا المثال صلاحيات مستخدم فائق كاملة.
+
+```sql
+  CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+```
+
+3. أنشئ قاعدة بيانات جديدة في PostgreSQL:
+
+```sql
+  CREATE DATABASE db_in_psg;
+```
+
+4. أنشئ جدولًا جديدًا:
+
+```sql
+  CREATE TABLE table1 (
+      id         integer primary key,
+      column1    varchar(10)
+  );
+```
+
+5. لنُضِف بضعة صفوف للاختبار:
+
+```sql
+  INSERT INTO table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def');
+```
+
+6. لتهيئة PostgreSQL للسماح بإجراء اتصالات بقاعدة البيانات الجديدة باستخدام المستخدم الجديد لأغراض النسخ المتماثل، أضف الإدخال التالي إلى ملف `pg_hba.conf`. حدِّث سطر العنوان باستخدام الشبكة الفرعية أو عنوان IP لخادم PostgreSQL:
+
+```text
+  # TYPE  DATABASE        USER            ADDRESS                 METHOD
+  host    db_in_psg             clickhouse_user 192.168.1.0/24          password
+```
+
+7. أعد تحميل إعدادات `pg_hba.conf` (عدّل هذا الأمر وفقًا لإصدارك):
+
+```text
+  /usr/pgsql-12/bin/pg_ctl reload
+```
+
+8. تحقّق من إمكانية تسجيل دخول المستخدم الجديد `clickhouse_user`:
+
+```text
+  psql -U clickhouse_user -W -d db_in_psg -h <your_postgresql_host>
+```
+
+<Note>
+  إذا كنت تستخدم هذه الميزة في ClickHouse Cloud، فقد تحتاج إلى السماح لعناوين IP الخاصة بـ ClickHouse Cloud بالوصول إلى مثيل PostgreSQL لديك.
+  راجع [واجهة برمجة تطبيقات Cloud Endpoints في ClickHouse](/ar/products/cloud/guides/sql-console/query-endpoints) للاطّلاع على تفاصيل حركة المرور الصادرة.
+</Note>
+
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. عرّف جدولًا في ClickHouse
+</div>
+
+1. سجّل الدخول إلى `clickhouse-client`:
+
+```bash
+  clickhouse-client --user default --password ClickHouse123!
+```
+
+2. لننشئ قاعدة بيانات جديدة:
+
+```sql
+  CREATE DATABASE db_in_ch;
+```
+
+3. أنشئ جدولًا يستخدم `PostgreSQL`:
+
+```sql
+  CREATE TABLE db_in_ch.table1
+  (
+      id UInt64,
+      column1 String
+  )
+  ENGINE = PostgreSQL('postgres-host.domain.com:5432', 'db_in_psg', 'table1', 'clickhouse_user', 'ClickHouse_123');
+```
+
+الحد الأدنى من المعلمات المطلوبة هو:
+
+| المعلمة   | الوصف                            | المثال                        |
+| --------- | -------------------------------- | ----------------------------- |
+| host:port | اسم المضيف أو عنوان IP والمنفذ   | postgres-host.domain.com:5432 |
+| database  | اسم قاعدة بيانات PostgreSQL      | db&#95;in&#95;psg             |
+| user      | اسم المستخدم للاتصال بـ Postgres | clickhouse&#95;user           |
+| password  | كلمة المرور للاتصال بـ Postgres  | ClickHouse&#95;123            |
+
+<Note>
+  راجع صفحة وثائق [محرك الجدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) للحصول على قائمة كاملة بالمعلمات.
+</Note>
+
+<div id="3-test-the-integration">
+  ### 3 اختبر التكامل
+</div>
+
+1. في ClickHouse، اعرض الصفوف المبدئية:
+
+```sql
+  SELECT * FROM db_in_ch.table1
+```
+
+يجب أن يُملأ جدول ClickHouse تلقائيًا بالصفّين اللذين كانا موجودين بالفعل في جدول PostgreSQL:
+
+```response
+  Query id: 34193d31-fe21-44ac-a182-36aaefbd78bf
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  └────┴─────────┘
+```
+
+2. في PostgreSQL مرة أخرى، أضف صفَّين إلى الجدول:
+
+```sql
+  INSERT INTO table1
+    (id, column1)
+  VALUES
+    (3, 'ghi'),
+    (4, 'jkl');
+```
+
+4. من المفترض أن يظهر هذان الصفّان الجديدان في جدول ClickHouse لديك:
+
+```sql
+  SELECT * FROM db_in_ch.table1
+```
+
+يجب أن تكون الاستجابة كما يلي:
+
+```response
+  Query id: 86fa2c62-d320-4e47-b564-47ebf3d5d27b
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
+```
+
+5. لنرَ ما يحدث عند إضافة صفوف إلى جدول ClickHouse:
+
+```sql
+  INSERT INTO db_in_ch.table1
+    (id, column1)
+  VALUES
+    (5, 'mno'),
+    (6, 'pqr');
+```
+
+6. يجب أن تظهر الصفوف المضافة إلى ClickHouse في الجدول في PostgreSQL:
+
+```sql
+  db_in_psg=# SELECT * FROM table1;
+  id | column1
+  ----+---------
+    1 | abc
+    2 | def
+    3 | ghi
+    4 | jkl
+    5 | mno
+    6 | pqr
+  (6 rows)
+```
+
+عرض هذا المثال التكامل الأساسي بين PostgreSQL وClickHouse باستخدام محرك الجدول `PostrgeSQL`.
+اطّلع على [صفحة التوثيق الخاصة بمحرك جدول PostgreSQL](/ar/reference/engines/table-engines/integrations/postgresql) لمزيد من الميزات، مثل تحديد المخططات، وإرجاع مجموعة فرعية من الأعمدة فقط، والاتصال بعدة نُسخ متماثلة. واطّلع أيضًا على مدونة [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres).
+
+<div id="using-the-materializedpostgresql-database-engine">
+  ## استخدام محرك قاعدة البيانات MaterializedPostgreSQL
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+يستخدم محرك قاعدة البيانات PostgreSQL ميزات النسخ المتماثل في PostgreSQL لإنشاء نسخة مطابقة من قاعدة البيانات تتضمن جميع المخططات والجداول أو مجموعة فرعية منها.
+تهدف هذه المقالة إلى توضيح الأساليب الأساسية للتكامل باستخدام قاعدة بيانات واحدة ومخطط واحد وجدول واحد.
+
+***في الإجراءات التالية، يُستخدم PostgreSQL CLI ‏(psql) وClickHouse CLI ‏(clickhouse-client). خادم PostgreSQL مُثبّت على Linux. وفيما يلي الحد الأدنى من الإعدادات إذا كانت قاعدة بيانات PostgreSQL عبارة عن تثبيت اختباري جديد***
+
+<div id="1-in-postgresql">
+  ### 1. في PostgreSQL
+</div>
+
+1. في `postgresql.conf`، عيّن الحد الأدنى لمستويات الاستماع، ومستوى `WAL` للنسخ المتماثل، وفتحات النسخ المتماثل:
+
+أضِف الإدخالات التالية:
+
+```text
+listen_addresses = '*'
+max_replication_slots = 10
+wal_level = logical
+```
+
+**يتطلب ClickHouse حدًا أدنى لمستوى wal يبلغ `logical`، وحدًا أدنى قدره `2` من replication slots*
+
+2. باستخدام حساب مسؤول، أنشئ مستخدمًا لكي يتصل ClickHouse من خلاله:
+
+```sql
+CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+```
+
+**لأغراض التوضيح، مُنحت صلاحيات المستخدم الفائق الكاملة.*
+
+3. أنشئ قاعدة بيانات جديدة:
+
+```sql
+CREATE DATABASE db1;
+```
+
+4. اتصل بقاعدة البيانات الجديدة باستخدام `psql`:
+
+```text
+\connect db1
+```
+
+5. أنشئ جدولًا جديدًا:
+
+```sql
+CREATE TABLE table1 (
+    id         integer primary key,
+    column1    varchar(10)
+);
+```
+
+6. أضف الصفوف الأولية:
+
+```sql
+INSERT INTO table1
+(id, column1)
+VALUES
+(1, 'abc'),
+(2, 'def');
+```
+
+7. اضبط PostgreSQL للسماح بالاتصال بقاعدة البيانات الجديدة باستخدام المستخدم الجديد لأغراض النسخ المتماثل. فيما يلي الحد الأدنى من الإدخالات التي يجب إضافتها إلى ملف `pg_hba.conf`:
+
+```text
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    db1             clickhouse_user 192.168.1.0/24          password
+```
+
+**لأغراض العرض التوضيحي، تُستخدم هنا طريقة المصادقة بكلمة مرور بنص صريح. حدِّث سطر العنوان ليستخدم إمّا الشبكة الفرعية أو عنوان الخادم وفقًا لوثائق PostgreSQL*
+
+8. أعد تحميل إعداد `pg_hba.conf` بشيءٍ مثل هذا (عدِّله بما يناسب إصدارك):
+
+```text
+/usr/pgsql-12/bin/pg_ctl reload
+```
+
+9. اختبر تسجيل الدخول باستخدام اسم المستخدم الجديد `clickhouse_user`:
+
+```text
+ psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
+```
+
+<div id="2-in-clickhouse">
+  ### 2. في ClickHouse
+</div>
+
+1. سجّل الدخول إلى ClickHouse CLI
+
+```bash
+clickhouse-client --user default --password ClickHouse123!
+```
+
+2. فعِّل الميزة التجريبية لـ PostgreSQL في محرك قاعدة البيانات:
+
+```sql
+SET allow_experimental_database_materialized_postgresql=1
+```
+
+3. أنشئ قاعدة البيانات الجديدة التي ستخضع للنسخ المتماثل، وعرّف الجدول الأولي:
+
+```sql
+CREATE DATABASE db1_postgres
+ENGINE = MaterializedPostgreSQL('postgres-host.domain.com:5432', 'db1', 'clickhouse_user', 'ClickHouse_123')
+SETTINGS materialized_postgresql_tables_list = 'table1';
+```
+
+الحد الأدنى من الخيارات:
+
+| المعلمة   | الوصف                            | مثال                                                               |
+| --------- | -------------------------------- | ------------------------------------------------------------------ |
+| host:port | اسم المضيف أو عنوان IP والمنفذ   | postgres-host.domain.com:5432                                      |
+| database  | اسم قاعدة بيانات PostgreSQL      | db1                                                                |
+| user      | اسم المستخدم للاتصال بـ Postgres | clickhouse&#95;user                                                |
+| password  | كلمة المرور للاتصال بـ Postgres  | ClickHouse&#95;123                                                 |
+| settings  | إعدادات إضافية للمحرّك           | materialized&#95;postgresql&#95;tables&#95;list = &#39;table1&#39; |
+
+<Info>
+  للاطلاع على الدليل الكامل لمحرك قاعدة البيانات PostgreSQL، راجع https://clickhouse.com/docs/engines/database-engines/materialized-postgresql/#settings
+</Info>
+
+4. تحقّق من أن الجدول الأول يحتوي على بيانات:
+
+```sql
+ch_env_2 :) select * from db1_postgres.table1;
+
+SELECT *
+FROM db1_postgres.table1
+```
+
+```response
+Query id: df2381ac-4e30-4535-b22e-8be3894aaafc
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+```
+
+<div id="3-test-basic-replication">
+  ### 3. اختبار النسخ المتماثل الأساسي
+</div>
+
+1. في PostgreSQL، أضِف صفوفًا جديدة:
+
+```sql
+INSERT INTO table1
+(id, column1)
+VALUES
+(3, 'ghi'),
+(4, 'jkl');
+```
+
+2. في ClickHouse، تأكّد من ظهور الصفوف الجديدة:
+
+```sql
+ch_env_2 :) select * from db1_postgres.table1;
+
+SELECT *
+FROM db1_postgres.table1
+```
+
+```response
+Query id: b0729816-3917-44d3-8d1a-fed912fb59ce
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  4 │ jkl     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  3 │ ghi     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+```
+
+<div id="4-summary">
+  ### 4. الملخص
+</div>
+
+ركّز دليل التكامل هذا على مثال بسيط يوضّح كيفية إجراء النسخ المتماثل لقاعدة بيانات تضم جدولًا واحدًا، لكن تتوفر أيضًا خيارات أكثر تقدمًا، مثل إجراء النسخ المتماثل لقاعدة البيانات بالكامل أو إضافة جداول ومخططات جديدة إلى عمليات النسخ المتماثل القائمة. وعلى الرغم من أن أوامر DDL غير مدعومة في هذا النوع من النسخ المتماثل، يمكن تهيئة المحرّك لاكتشاف التغييرات وإعادة تحميل الجداول عند إجراء تغييرات هيكلية.
+
+<Info>
+  للاطلاع على مزيد من الميزات المتاحة ضمن الخيارات المتقدمة، يُرجى مراجعة [الوثائق المرجعية](/ar/reference/engines/database-engines/materialized-postgresql).
+</Info>

@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Artie'
+keywords: ['clickhouse', 'Artie', 'connect', 'integrate', 'cdc', 'etl', 'data integration', 'real-time', 'streaming']
+slug: /integrations/artie
+description: 'Artie CDC 스트리밍 플랫폼을 사용해 데이터를 ClickHouse로 스트리밍합니다'
+title: 'Artie를 ClickHouse에 연결하기'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+<a href="https://www.artie.com/" target="_blank">Artie</a>는 프로덕션 데이터를 ClickHouse로 복제해 고객 대상 분석, 운영 워크플로, 그리고 프로덕션 환경의 Agentic AI를 구현할 수 있게 해주는 완전 관리형 실시간 데이터 스트리밍 플랫폼입니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+Artie는 AI 시대를 위한 최신 데이터 인프라 계층으로, 운영 데이터를 웨어하우스와 지속적으로 동기화 상태로 유지해 주는 완전 관리형 실시간 데이터 스트리밍 플랫폼입니다.
+
+기업들이 실시간 AI 워크로드, 운영 분석, 고객 대상 데이터 제품을 위해 웨어하우스를 활용함에 따라, 빠르고 안정적이며 확장성을 고려해 설계된 인프라를 표준으로 채택하고 있습니다.
+
+Artie는 Netflix, DoorDash, Instacart가 사내에서 구축한 수준의 스트리밍 파이프라인과 심층 관측성을, 10명 이상의 엔지니어를 채용하거나 1~2년간 플랫폼 구축에 투자하지 않고도 제공합니다. Artie는 변경 데이터 캡처, 머지, 백필, 관측성을 포함한 전체 수집 수명 주기를 자동화하며, 별도의 엔지니어링 유지 관리 없이 몇 분 만에 배포할 수 있습니다.
+
+ClickUp, Substack, Alloy와 같은 선도 기업들은 현재의 파이프라인 문제를 해결하는 데 그치지 않고, AI 전략이 가속화됨에 따라 데이터 스택을 미래에도 안정적으로 운영할 수 있도록 Artie를 활용하고 있습니다.
+
+<Steps>
+  <Step>
+    ## Artie 계정 만들기
+
+    <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a>에 방문하여 양식을 작성하고 액세스를 요청하세요.
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Artie 가입 페이지" />
+  </Step>
+
+  <Step>
+    ## ClickHouse 자격 증명 찾기
+
+    ClickHouse Cloud에서 서비스를 생성한 후 다음 필수 설정을 확인하세요.
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## Artie에서 새 파이프라인 만들기
+
+    이전 단계에서 수집한 정보를 바탕으로 Artie에서 다음 3단계에 따라 새 파이프라인을 만드세요.
+
+    1. **원본 연결** - 원본 데이터베이스(Postgres, MySQL, Events API 등)를 구성합니다
+    2. **복제할 테이블 선택** - ClickHouse와 동기화할 테이블을 선택합니다
+    3. **대상 연결** - ClickHouse 자격 증명을 입력합니다
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Artie 파이프라인 편집 인터페이스" />
+  </Step>
+</Steps>
+
+<div id="contact-us">
+  ## 문의하기
+</div>
+
+궁금한 점이 있으면 <a href="https://www.artie.com/docs/destinations/clickhouse" target="_blank">ClickHouse 문서</a>를 참고하거나 <a href="mailto:hi@artie.com">hi@artie.com</a>으로 문의하십시오.
+
+<div id="product-screenshots">
+  ## 제품 스크린샷
+</div>
+
+분석 포털
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="분석 포털" />
+
+파이프라인 및 테이블별 모니터링
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="기본 제공 모니터링" />
+
+일일 스키마 변경 알림
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="스키마 변경 알림" />

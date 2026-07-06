@@ -1,0 +1,113 @@
+---
+title: "ClickHouse の system データベースをクエリする"
+slug: /cloud/monitoring/system-tables
+description: 'システムテーブルを直接クエリして ClickHouse Cloud を監視する'
+keywords: ['クラウド', '監視', 'システムテーブル', 'query_log', 'clusterAllReplicas', 'オブザーバビリティダッシュボード']
+sidebarTitle: 'システムテーブル'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+すべての ClickHouse インスタンスには、`system` データベース内に [システムテーブル](/ja/reference/system-tables/overview) 一式が用意されており、次のような情報が含まれています。
+
+* サーバーの状態、プロセス、実行環境
+* サーバー内部のプロセス
+* ClickHouse バイナリのビルド時に使用されたオプション
+
+これらのテーブルを直接クエリすると、ClickHouse デプロイメントの監視、特に詳細な内部診断やデバッグに役立ちます。
+
+<div id="using-cloud-console">
+  ## ClickHouse Cloud Console を使用する
+</div>
+
+ClickHouse Cloud Console には、システムテーブルのクエリに利用できる [SQL コンソール](/ja/products/cloud/features/sql-console-features/sql-console) と [ダッシュボード機能](/ja/products/cloud/features/sql-console-features/dashboards) があります。たとえば、以下のクエリでは、直近 2 時間に新しいパーツがいくつ、どのくらいの頻度で作成されたかを確認できます。
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **その他のクエリ例**
+
+  監視用の追加クエリについては、以下のリソースを参照してください。
+
+  * [トラブルシューティングに役立つクエリ](/ja/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [insert クエリの監視とトラブルシューティング](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [select クエリの監視とトラブルシューティング](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  これらのクエリを使用して、Cloud Console で[カスタムダッシュボードを作成](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud)することもできます。
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## 組み込みの高度なオブザーバビリティダッシュボード
+</div>
+
+ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`system.dashboards` に含まれる Cloud Overview のメトリクスを表示できます。アクセス先は `$HOST:$PORT/dashboard` で、ユーザー名とパスワードが必要です。
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="ネイティブの高度なオブザーバビリティダッシュボード" border />
+
+<Note>
+  このダッシュボードでは ClickHouse インスタンスへの直接認証が必要です。追加の認証なしで Cloud Console UI からアクセスできる [Cloud Console 高度なダッシュボード](/ja/products/cloud/features/monitoring/cloud-console#advanced-dashboard) とは別のものです。
+</Note>
+
+利用可能な可視化や、それらをトラブルシューティングに活用する方法の詳細については、[高度なダッシュボードのドキュメント](/ja/products/cloud/features/monitoring/advanced-dashboard)を参照してください。
+
+<div id="querying-across-nodes">
+  ## ノードやバージョンをまたいだクエリ
+</div>
+
+クラスター全体を包括的に確認するには、`clusterAllReplicas` 関数を `merge` 関数と組み合わせて使用できます。`clusterAllReplicas` 関数を使うと、&quot;default&quot; クラスター内のすべてのレプリカにまたがってシステムテーブルをクエリでき、ノード固有のデータを 1 つの結果に集約できます。さらに `merge` 関数と組み合わせることで、クラスター内の特定のテーブルに関するすべてのシステムデータを対象にできます。
+
+たとえば、過去 1 時間において、全レプリカを対象に実行時間が最も長いクエリ上位 5 件を見つけるには、次のようにします。
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+このアプローチは、クラスター全体にわたる運用の監視や問題の調査に特に有用で、ユーザーは ClickHouse Cloud デプロイメントの健全性とパフォーマンスを効果的に分析できます。
+
+詳細については、[ノードをまたいだクエリ](/ja/reference/system-tables/overview#querying-across-nodes) を参照してください。
+
+<div id="system-considerations">
+  ## システムに関する考慮事項
+</div>
+
+<Warning>
+  システムテーブルを直接クエリすると、本番サービスにクエリ負荷がかかるほか、ClickHouse Cloud インスタンスがアイドル状態に入れなくなり (コストに影響する可能性があります) 、監視の可用性が本番システムのシステムヘルスに左右されることになります。本番システムに障害が発生すると、監視にも影響が及ぶ可能性があります。
+</Warning>
+
+運用面で分離を保ちながら本番環境をリアルタイムで監視するには、[Prometheus互換のメトリクスエンドポイント](/ja/products/cloud/features/monitoring/prometheus) または [Cloud Console ダッシュボード](/ja/products/cloud/features/monitoring/cloud-console) の利用を検討してください。いずれも事前にスクレイプされたメトリクスを使用し、基盤となるサービスに対してクエリを発行しません。
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [システムテーブルのリファレンス](/ja/reference/system-tables/overview) — 利用可能なすべてのシステムテーブルの完全なリファレンス
+* [Cloud Console の監視](/ja/products/cloud/features/monitoring/cloud-console) — サービスのパフォーマンスに影響を与えない、設定不要のダッシュボード
+* [Prometheus エンドポイント](/ja/products/cloud/features/monitoring/prometheus) — メトリクスを外部の監視ツールにエクスポート
+* [高度なダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard) — ダッシュボードの可視化に関する詳細なリファレンス

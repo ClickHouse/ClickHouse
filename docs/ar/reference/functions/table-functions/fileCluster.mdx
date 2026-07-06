@@ -1,0 +1,101 @@
+---
+description: 'يُمكّن من معالجة الملفات التي تطابق مسارًا محددًا بشكل متزامن عبر عدة
+  عقد ضمن عنقود. تنشئ العقدة المُبادِرة اتصالات مع العقد العاملة، وتوسّع
+  أنماط glob في مسار الملف، وتُسنِد مهام قراءة الملفات إلى العقد العاملة.
+  وتستعلم كل عقدة عاملة من العقدة المُبادِرة عن الملف التالي المطلوب
+  معالجته، ويتكرر ذلك حتى تكتمل جميع المهام (أي تتم قراءة جميع الملفات).'
+sidebarTitle: 'fileCluster'
+slug: /sql-reference/table-functions/fileCluster
+title: 'fileCluster'
+doc_type: 'reference'
+---
+
+يُمكّن من معالجة الملفات التي تطابق مسارًا محددًا بشكل متزامن عبر عدة عقد ضمن عنقود. تنشئ العقدة المُبادِرة اتصالات مع العقد العاملة، وتوسّع أنماط glob في مسار الملف، وتُسنِد مهام قراءة الملفات إلى العقد العاملة. وتستعلم كل عقدة عاملة من العقدة المُبادِرة عن الملف التالي المطلوب معالجته، ويتكرر ذلك حتى تكتمل جميع المهام (أي تتم قراءة جميع الملفات).
+
+<Note>
+  لن تعمل هذه الدالة *على نحو صحيح* إلا إذا كانت مجموعة الملفات المطابقة للمسار المحدد في البداية متطابقة على جميع العقد، وكان محتواها متسقًا بين العقد المختلفة.
+  أما إذا اختلفت هذه الملفات بين العقد، فلا يمكن تحديد القيمة المُعادة مسبقًا، إذ تعتمد على الترتيب الذي تطلب وفقه العقد العاملة المهام من العقدة المُبادِرة.
+</Note>
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+fileCluster(cluster_name, path[, format, structure, compression_method])
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+| الوسيطة              | الوصف                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `cluster_name`       | اسم عنقود يُستخدم لإنشاء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.                                                                                   |
+| `path`               | المسار النسبي للملف من [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path). كما يدعم مسار الملف أيضًا [أنماط glob](#globs-in-path). |
+| `format`             | [تنسيق](/ar/reference/formats/index) الملفات. النوع: [String](/ar/reference/data-types/string).                                                                                |
+| `structure`          | بنية الجدول بتنسيق `'UserID UInt64, Name String'`. وتحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                          |
+| `compression_method` | طريقة الضغط. أنواع الضغط المدعومة هي `gz` و`br` و`xz` و`zst` و`lz4` و`bz2`.                                                                                              |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول بالتنسيق والبنية المحدَّدين، ويحتوي على بيانات من الملفات التي تطابق المسار المحدَّد.
+
+**مثال**
+
+بافتراض وجود عنقود باسم `my_cluster`، والقيمة التالية للإعداد `user_files_path`:
+
+```bash
+$ grep user_files_path /etc/clickhouse-server/config.xml
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+```
+
+وكذلك، بافتراض وجود الملفين `test1.csv` و`test2.csv` داخل `user_files_path` في كل عقدة من عقد العنقود، وأن محتواهما متطابق في مختلف العقد:
+
+```bash
+$ cat /var/lib/clickhouse/user_files/test1.csv
+    1,"file1"
+    11,"file11"
+
+$ cat /var/lib/clickhouse/user_files/test2.csv
+    2,"file2"
+    22,"file22"
+```
+
+على سبيل المثال، يمكن إنشاء هذه الملفات عن طريق تنفيذ هذين الاستعلامين على كل عقدة في العنقود:
+
+```sql
+INSERT INTO TABLE FUNCTION file('file1.csv', 'CSV', 'i UInt32, s String') VALUES (1,'file1'), (11,'file11');
+INSERT INTO TABLE FUNCTION file('file2.csv', 'CSV', 'i UInt32, s String') VALUES (2,'file2'), (22,'file22');
+```
+
+الآن، اقرأ محتويات البيانات من `test1.csv` و`test2.csv` عبر دالة الجدول `fileCluster`:
+
+```sql
+SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s String') ORDER BY i, s
+```
+
+```response
+┌──i─┬─s──────┐
+│  1 │ file1  │
+│ 11 │ file11 │
+└────┴────────┘
+┌──i─┬─s──────┐
+│  2 │ file2  │
+│ 22 │ file22 │
+└────┴────────┘
+```
+
+<div id="globs-in-path">
+  ## أنماط glob في المسار
+</div>
+
+تدعم FileCluster أيضًا جميع الأنماط التي تدعمها دالة الجدول [File](/ar/reference/functions/table-functions/file#globs-in-path).
+
+<div id="related">
+  ## ذات صلة
+</div>
+
+* [دالة الجدول File](/ar/reference/functions/table-functions/file)
