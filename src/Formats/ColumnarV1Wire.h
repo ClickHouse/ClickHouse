@@ -70,12 +70,14 @@
 /// only once the first block is serialized. Not supported: Map, LowCardinality,
 /// Nullable(Array/Variant) (no wire slot for a top-level null map on COL_COMPLEX/
 /// COL_VARIANT; Nullable(Tuple(...)) is supported instead, via a top-level null
-/// map on COL_COMPLEX), and Nullable/Variant nested inside Array/Tuple. Any
-/// fixed-width type is supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8
-/// bytes, COL_FIXEDN for everything else — UUID, IPv6, Int128/UInt128,
-/// Decimal128/256), and so is FixedString(N) of any length (also COL_FIXEDN).
-/// Any type kind this format has no encoding for at all (Dynamic, JSON/Object,
-/// AggregateFunction(...), ...) is also rejected.
+/// map on COL_COMPLEX), and Variant nested inside Array/Tuple. Nullable(T) nested
+/// inside Array/Tuple is supported (u8 null_map[n] prepended to T's own layout,
+/// see complexDataSize/writeComplexData/the decode lambda). Any fixed-width type
+/// is supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8 bytes, COL_FIXEDN
+/// for everything else — UUID, IPv6, Int128/UInt128, Decimal128/256), and so is
+/// FixedString(N) of any length (also COL_FIXEDN). Any type kind this format has
+/// no encoding for at all (Dynamic, JSON/Object, AggregateFunction(...), ...) is
+/// also rejected.
 
 #include <cstring>
 #include <span>
@@ -151,20 +153,23 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
 {
     if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
     {
-        if (is_nested)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1/ColumnBinary: nested Nullable inside Array/Tuple is not supported: {}", type->getName());
         const DataTypePtr & nested_type = nullable_type->getNestedType();
-        // Only COL_BYTES/COL_FIXED*/COL_COMPLEX carry a COL_IS_NULLABLE null map;
-        // COL_VARIANT already has its own per-row NULL representation (the 0xFF
-        // discriminator sentinel) and has no wire slot for an additional top-level
-        // null map, so Nullable(Variant(...)) is rejected. Nullable(Array(...)) is
-        // also rejected, but only defensively: DataTypeArray::canBeInsideNullable()
-        // is false, so ClickHouse can never actually construct this type; Nullable
-        // (Tuple(...)) is real (reachable behind enable_nullable_tuple_type) and is
-        // supported via buildColDescriptor/writeColData's top-level null map.
-        if (typeid_cast<const DataTypeArray *>(nested_type.get())
-            || typeid_cast<const DataTypeVariant *>(nested_type.get()))
+        // Top-level: only COL_BYTES/COL_FIXED*/COL_COMPLEX carry a COL_IS_NULLABLE null
+        // map. COL_VARIANT already has its own per-row NULL representation (the 0xFF
+        // discriminator sentinel) and has no wire slot for an additional top-level null
+        // map, so Nullable(Variant(...)) is rejected. Nullable(Array(...)) is also
+        // rejected, but only defensively: DataTypeArray::canBeInsideNullable() is false,
+        // so ClickHouse can never actually construct this type. Nullable(Tuple(...)) is
+        // real (reachable behind enable_nullable_tuple_type) and is supported via
+        // buildColDescriptor/writeColData's top-level null map.
+        //
+        // Nested (inside Array/Tuple): complexDataSize/writeComplexData/the decode
+        // lambda all support Nullable(T) generically (u8 null_map[n] prepended to T's
+        // own layout), so no Array/Variant restriction applies there — Nullable(Array/
+        // Variant) is still unreachable via ClickHouse's type system regardless.
+        if (!is_nested
+            && (typeid_cast<const DataTypeArray *>(nested_type.get())
+                || typeid_cast<const DataTypeVariant *>(nested_type.get())))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1/ColumnBinary: Nullable(Array/Variant) is not supported: {}", type->getName());
         validateColumnarV1SupportedType(nested_type, is_nested);
@@ -255,10 +260,9 @@ inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
         uint64_t chars = str.getChars().size();
         return (static_cast<uint64_t>(n) + 1u) * 8u + chars;
     }
-    if (typeid_cast<const ColumnNullable *>(&col))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
-            "use a flat nullable column or a different format");
+    if (const auto * null_col = typeid_cast<const ColumnNullable *>(&col))
+        // Nested Nullable(T): u8 null_map[n] prepended, then T's own complexData layout.
+        return static_cast<uint64_t>(n) + complexDataSize(null_col->getNestedColumn(), n);
     if (typeid_cast<const ColumnVariant *>(&col))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
@@ -309,10 +313,13 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
         }
         return;
     }
-    if (typeid_cast<const ColumnNullable *>(&col))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
-            "use a flat nullable column or a different format");
+    if (const auto * null_col = typeid_cast<const ColumnNullable *>(&col))
+    {
+        const auto & nm = null_col->getNullMapData();
+        std::memcpy(dst, nm.data(), n);
+        writeComplexData(null_col->getNestedColumn(), n, dst + n);
+        return;
+    }
     if (typeid_cast<const ColumnVariant *>(&col))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
@@ -391,11 +398,6 @@ inline uint64_t buildColDescriptor(
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
-        if (typeid_cast<const ColumnNullable *>(&arr_col->getData()))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: nested Nullable inside Array is not supported in COL_COMPLEX; "
-                "use a flat nullable column or a different format");
-
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u) | (is_nullable ? COL_IS_NULLABLE : 0u);
         desc.offsets_offset = 0;  // unused for Array; outer offsets are at data_offset
 
@@ -424,14 +426,6 @@ inline uint64_t buildColDescriptor(
     // ── Tuple column → COL_COMPLEX (no outer offsets, fields concatenated) ───
     if (const auto * tup_col = typeid_cast<const ColumnTuple *>(col))
     {
-        for (const auto & field : tup_col->getColumns())
-        {
-            if (typeid_cast<const ColumnNullable *>(field.get()))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: nested Nullable inside Tuple is not supported in COL_COMPLEX; "
-                    "use a flat nullable column or a different format");
-        }
-
         desc.type           = COL_COMPLEX | (is_const ? COL_IS_CONST : 0u) | (is_nullable ? COL_IS_NULLABLE : 0u);
         desc.offsets_offset = 0;
 
@@ -770,10 +764,19 @@ inline MutableColumnPtr readColumnFromDesc(
             }
             return col_str;
         }
-        if (typeid_cast<const DataTypeNullable *>(type.get()))
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1: nested Nullable inside Array/Tuple is not supported in COL_COMPLEX; "
-                "use a flat nullable column or a different format");
+        if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
+        {
+            // Mirrors writeComplexData: u8 null_map[n] prepended, then the nested
+            // type's own complexData layout.
+            if (p + static_cast<uint64_t>(n) > data_end)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_COMPLEX nested Nullable null map out of bounds");
+            auto null_map_col = ColumnUInt8::create(n);
+            std::memcpy(null_map_col->getData().data(), p, n);
+            p += n;
+            auto inner = decode(p, nullable_type->getNestedType(), n);
+            return ColumnNullable::create(std::move(inner), std::move(null_map_col));
+        }
         if (typeid_cast<const DataTypeVariant *>(type.get()))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
