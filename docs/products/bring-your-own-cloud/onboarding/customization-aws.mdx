@@ -45,7 +45,7 @@ Ensure your VPC has working DNS resolution and doesn't block, interfere with, or
 <Step>
 ### Configure your AWS account {#configure-aws-account}
 
-The initial BYOC setup creates a privileged IAM role (`ClickHouseManagementRole`) that enables BYOC controllers from ClickHouse Cloud to manage your infrastructure. This can be performed using either a [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) or a [Terraform module](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+The initial BYOC setup creates a privileged IAM role (`ClickHouseManagementRole`) that enables BYOC controllers from ClickHouse Cloud to manage your infrastructure. This can be performed using either a [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) or a Terraform module (see below).
 
 When deploying for a `BYO-VPC` setup, set the `IncludeVPCWritePermissions` parameter to `false` to ensure ClickHouse Cloud doesn't receive permissions to modify your customer-managed VPC.
 
@@ -53,17 +53,21 @@ When deploying for a `BYO-VPC` setup, set the `IncludeVPCWritePermissions` param
 Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren't included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
 </Note>
 
-#### Alternative Terraform module {#terraform-module-aws}
+#### Terraform module {#terraform-module-aws}
 
-If you prefer to use Terraform instead of CloudFormation, use the following module:
+If you prefer to use Terraform instead of CloudFormation, use the [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module:
 
 ```hcl
 module "clickhouse_onboarding" {
-  source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-  byoc_env                   = "production"
+  source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=v1.2.0"
+  external_id                   = "<external-id-provided-by-clickhouse>"
   include_vpc_write_permissions = false
 }
 ```
+
+<Note>
+The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
+</Note>
 </Step>
 <Step>
 ### Set up BYOC infrastructure {#set-up-byoc-infrastructure}
