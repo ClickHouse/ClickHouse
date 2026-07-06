@@ -1,0 +1,459 @@
+---
+slug: /guides/developer/understanding-query-execution-with-the-analyzer
+sidebarTitle: '분석기로 쿼리 실행 이해하기'
+title: '분석기로 쿼리 실행 이해하기'
+description: '분석기를 사용해 ClickHouse가 쿼리를 실행하는 방식을 이해하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['쿼리 실행', '분석기', '쿼리 최적화', 'EXPLAIN', '성능']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse는 쿼리를 매우 빠르게 처리하지만, 쿼리 실행 과정은 그리 단순하지 않습니다. `SELECT` 쿼리가 어떻게 실행되는지 살펴보겠습니다. 이를 설명하기 위해 ClickHouse의 테이블에 데이터를 몇 개 추가해 보겠습니다:
+
+```sql
+CREATE TABLE session_events(
+   clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type String
+) ORDER BY (timestamp);
+
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000;
+```
+
+이제 ClickHouse에 데이터가 어느 정도 준비되었으므로, 몇 가지 쿼리를 실행하고 그 실행 과정을 살펴보겠습니다. 쿼리 실행은 여러 단계로 나뉩니다. 각 단계는 해당 `EXPLAIN` 쿼리를 사용해 분석하고 문제를 진단할 수 있습니다. 이러한 단계는 아래 차트에 요약되어 있습니다:
+
+<Image img="/images/guides/developer/analyzer1.webp" alt="Explain 쿼리 단계" size="md" />
+
+이제 쿼리 실행 중 각 엔터티가 어떻게 동작하는지 살펴보겠습니다. 몇 가지 쿼리를 예로 들어 `EXPLAIN` 구문을 사용해 자세히 살펴보겠습니다.
+
+<div id="parser">
+  ## 파서
+</div>
+
+파서의 목적은 쿼리 텍스트를 AST(Abstract Syntax Tree)로 변환하는 것입니다. 이 단계는 `EXPLAIN AST`를 사용해 시각적으로 확인할 수 있습니다:
+
+```sql
+EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+```
+
+```response
+┌─explain────────────────────────────────────────────┐
+│ SelectWithUnionQuery (children 1)                  │
+│  ExpressionList (children 1)                       │
+│   SelectQuery (children 2)                         │
+│    ExpressionList (children 2)                     │
+│     Function min (alias minimum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│     Function max (alias maximum_date) (children 1) │
+│      ExpressionList (children 1)                   │
+│       Identifier timestamp                         │
+│    TablesInSelectQuery (children 1)                │
+│     TablesInSelectQueryElement (children 1)        │
+│      TableExpression (children 1)                  │
+│       TableIdentifier session_events               │
+└────────────────────────────────────────────────────┘
+```
+
+출력 결과는 아래와 같이 시각화할 수 있는 추상 구문 트리(Abstract Syntax Tree)입니다:
+
+<Image img="/images/guides/developer/analyzer2.webp" alt="AST 출력" size="md" />
+
+각 노드에는 해당 자식 노드가 있으며, 전체 트리는 쿼리의 전반적인 구조를 나타냅니다. 이는 쿼리를 처리하는 데 도움이 되는 논리적 구조입니다. 최종 사용자 입장에서는(쿼리 실행 자체에 관심이 있는 경우가 아니라면) 그다지 유용하지 않으며, 이 도구는 주로 개발자가 사용합니다.
+
+<div id="analyzer">
+  ## 분석기
+</div>
+
+ClickHouse에는 현재 분석기에 두 가지 아키텍처가 있습니다. `enable_analyzer=0`으로 설정하면 기존 아키텍처를 사용할 수 있습니다. 새 아키텍처는 기본적으로 활성화되어 있습니다. 기존 아키텍처는 새 분석기가 일반 제공되면 더 이상 권장되지 않을 예정이므로, 여기서는 새 아키텍처만 설명하겠습니다.
+
+<Note>
+  새 아키텍처는 ClickHouse 성능을 개선하기 위한 더 나은 기반을 제공합니다. 다만 쿼리 처리 과정의 핵심 구성 요소이기 때문에 일부 쿼리에 부정적인 영향을 줄 수 있으며, [알려진 비호환성](/ko/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities)도 있습니다. 쿼리 수준 또는 사용자 수준에서 `enable_analyzer` 설정을 변경하면 기존 분석기로 되돌릴 수 있습니다.
+</Note>
+
+분석기는 쿼리 실행의 중요한 단계입니다. 분석기는 AST를 받아 쿼리 트리로 변환합니다. AST와 비교했을 때 쿼리 트리의 가장 큰 장점은 예를 들어 스토리지와 같은 많은 요소가 해석된다는 점입니다. 또한 어느 테이블에서 읽어야 하는지도 알 수 있고, alias도 해석되며, 트리는 사용되는 다양한 데이터 타입도 파악합니다. 이러한 장점 덕분에 분석기는 최적화를 적용할 수 있습니다. 이러한 최적화는 &quot;패스&quot;를 통해 이루어집니다. 각 패스는 서로 다른 최적화를 찾습니다. 모든 패스는 [여기](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)에서 확인할 수 있습니다. 이전 쿼리를 예로 들어 실제로 어떻게 동작하는지 살펴보겠습니다:
+
+```sql
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                            │
+│   PROJECTION                                                                           │
+│     LIST id: 1, nodes: 2                                                               │
+│       FUNCTION id: 2, alias: minimum_date, function_name: min, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 3, nodes: 1                                                         │
+│             IDENTIFIER id: 4, identifier: timestamp                                    │
+│       FUNCTION id: 5, alias: maximum_date, function_name: max, function_type: ordinary │
+│         ARGUMENTS                                                                      │
+│           LIST id: 6, nodes: 1                                                         │
+│             IDENTIFIER id: 7, identifier: timestamp                                    │
+│   JOIN TREE                                                                            │
+│     IDENTIFIER id: 8, identifier: session_events                                       │
+│   SETTINGS allow_experimental_analyzer=1                                               │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+```sql
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+```
+
+```response
+┌─explain───────────────────────────────────────────────────────────────────────────────────┐
+│ QUERY id: 0                                                                               │
+│   PROJECTION COLUMNS                                                                      │
+│     minimum_date DateTime                                                                 │
+│     maximum_date DateTime                                                                 │
+│   PROJECTION                                                                              │
+│     LIST id: 1, nodes: 2                                                                  │
+│       FUNCTION id: 2, function_name: min, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 3, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│       FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: DateTime │
+│         ARGUMENTS                                                                         │
+│           LIST id: 7, nodes: 1                                                            │
+│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│   JOIN TREE                                                                               │
+│     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
+│   SETTINGS allow_experimental_analyzer=1                                                  │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+두 번의 실행을 비교해 보면 별칭과 프로젝션이 해석되는 것을 확인할 수 있습니다.
+
+<div id="planner">
+  ## 플래너
+</div>
+
+플래너는 쿼리 트리를 입력으로 받아 이를 바탕으로 쿼리 실행 계획을 생성합니다. 쿼리 트리는 특정 쿼리에서 무엇을 수행할지 나타내고, 쿼리 실행 계획은 이를 어떻게 수행할지 나타냅니다. 추가적인 최적화도 쿼리 실행 계획의 일부로 수행됩니다. `EXPLAIN PLAN` 또는 `EXPLAIN`을 사용해 쿼리 실행 계획을 확인할 수 있습니다(`EXPLAIN`은 `EXPLAIN PLAN`을 실행합니다).
+
+```sql
+EXPLAIN PLAN WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│   Aggregating                                    │
+│     Expression (Before GROUP BY)                 │
+│       ReadFromMergeTree (default.session_events) │
+└──────────────────────────────────────────────────┘
+```
+
+이것만으로도 일부 정보는 확인할 수 있지만, 더 자세한 정보도 얻을 수 있습니다. 예를 들어, 프로젝션이 필요한 컬럼의 이름까지 확인하고 싶을 수 있습니다. 쿼리에 헤더를 추가할 수 있습니다:
+
+```SQL
+EXPLAIN header = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain──────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))      │
+│ Header: type String                              │
+│         minimum_date DateTime                    │
+│         maximum_date DateTime                    │
+│         percentage Nullable(Float64)             │
+│   Aggregating                                    │
+│   Header: type String                            │
+│           min(timestamp) DateTime                │
+│           max(timestamp) DateTime                │
+│           count() UInt64                         │
+│     Expression (Before GROUP BY)                 │
+│     Header: timestamp DateTime                   │
+│             type String                          │
+│       ReadFromMergeTree (default.session_events) │
+│       Header: timestamp DateTime                 │
+│               type String                        │
+└──────────────────────────────────────────────────┘
+```
+
+이제 마지막 Projection에 생성해야 하는 컬럼 이름(`minimum_date`, `maximum_date`, `percentage`)은 알게 되었지만, 실행해야 하는 모든 작업의 세부 정보도 확인할 수 있습니다. 이를 위해 `actions=1`로 설정하면 됩니다.
+
+```sql
+EXPLAIN actions = 1
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Projection + Before ORDER BY))                                                                                                │
+│ Actions: INPUT :: 0 -> type String : 0                                                                                                     │
+│          INPUT : 1 -> min(timestamp) DateTime : 1                                                                                          │
+│          INPUT : 2 -> max(timestamp) DateTime : 2                                                                                          │
+│          INPUT : 3 -> count() UInt64 : 3                                                                                                   │
+│          COLUMN Const(Nullable(UInt64)) -> total_rows Nullable(UInt64) : 4                                                                 │
+│          COLUMN Const(UInt8) -> 100 UInt8 : 5                                                                                              │
+│          ALIAS min(timestamp) :: 1 -> minimum_date DateTime : 6                                                                            │
+│          ALIAS max(timestamp) :: 2 -> maximum_date DateTime : 1                                                                            │
+│          FUNCTION divide(count() :: 3, total_rows :: 4) -> divide(count(), total_rows) Nullable(Float64) : 2                               │
+│          FUNCTION multiply(divide(count(), total_rows) :: 2, 100 :: 5) -> multiply(divide(count(), total_rows), 100) Nullable(Float64) : 4 │
+│          ALIAS multiply(divide(count(), total_rows), 100) :: 4 -> percentage Nullable(Float64) : 5                                         │
+│ Positions: 0 6 1 5                                                                                                                         │
+│   Aggregating                                                                                                                              │
+│   Keys: type                                                                                                                               │
+│   Aggregates:                                                                                                                              │
+│       min(timestamp)                                                                                                                       │
+│         Function: min(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       max(timestamp)                                                                                                                       │
+│         Function: max(DateTime) → DateTime                                                                                                 │
+│         Arguments: timestamp                                                                                                               │
+│       count()                                                                                                                              │
+│         Function: count() → UInt64                                                                                                         │
+│         Arguments: none                                                                                                                    │
+│   Skip merging: 0                                                                                                                          │
+│     Expression (Before GROUP BY)                                                                                                           │
+│     Actions: INPUT :: 0 -> timestamp DateTime : 0                                                                                          │
+│              INPUT :: 1 -> type String : 1                                                                                                 │
+│     Positions: 0 1                                                                                                                         │
+│       ReadFromMergeTree (default.session_events)                                                                                           │
+│       ReadType: Default                                                                                                                    │
+│       Parts: 1                                                                                                                             │
+│       Granules: 1                                                                                                                          │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+이제 사용되고 있는 모든 입력, 함수, 별칭, 데이터 타입을 확인할 수 있습니다. 플래너가 적용하는 일부 최적화는 [여기](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h)에서 확인할 수 있습니다.
+
+<div id="query-pipeline">
+  ## 쿌리 파이프라인
+</div>
+
+쿼리 파이프라인은 쿼리 실행 계획으로부터 생성됩니다. 쿼리 파이프라인은 쿼리 실행 계획과 매우 유사하지만, 트리가 아닌 그래프 구조라는 점이 다릅니다. 쿼리 파이프라인은 ClickHouse가 쿼리를 어떻게 실행하는지, 그리고 어떤 리소스가 사용되는지를 보여줍니다. 쿼리 파이프라인을 분석하면 입출력 측면에서 병목 지점을 파악하는 데 매우 유용합니다. 앞서 사용한 쿼리를 바탕으로 쿼리 파이프라인 실행을 살펴보겠습니다.
+
+```sql
+EXPLAIN PIPELINE
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type;
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                               │
+│ ExpressionTransform × 2                                                    │
+│   (Aggregating)                                                            │
+│   Resize 1 → 2                                                             │
+│     AggregatingTransform                                                   │
+│       (Expression)                                                         │
+│       ExpressionTransform                                                  │
+│         (ReadFromMergeTree)                                                │
+│         MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) 0 → 1 │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+괄호 안에는 쿼리 실행 계획 단계가, 그 옆에는 프로세서가 표시됩니다. 유용한 정보이지만, 이것이 그래프 구조인 만큼 시각적으로 확인할 수 있으면 더욱 편리합니다. `graph` 설정을 1로 지정하고 출력 형식을 TSV로 설정할 수 있습니다:
+
+```sql
+EXPLAIN PIPELINE graph=1 WITH
+   (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT type, min(timestamp) AS minimum_date, max(timestamp) AS maximum_date, count(*) /total_rows * 100 AS percentage FROM session_events GROUP BY type FORMAT TSV;
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   subgraph cluster_0 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n5 [label="ExpressionTransform × 2"];
+     }
+   }
+   subgraph cluster_1 {
+     label ="Aggregating";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n3 [label="AggregatingTransform"];
+       n4 [label="Resize"];
+     }
+   }
+   subgraph cluster_2 {
+     label ="Expression";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n2 [label="ExpressionTransform"];
+     }
+   }
+   subgraph cluster_3 {
+     label ="ReadFromMergeTree";
+     style=filled;
+     color=lightgrey;
+     node [style=filled,color=white];
+     { rank = same;
+       n1 [label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+     }
+   }
+ }
+ n3 -> n4 [label=""];
+ n4 -> n5 [label="× 2"];
+ n2 -> n3 [label=""];
+ n1 -> n2 [label=""];
+}
+```
+
+이 출력 결과를 복사하여 [여기](https://dreampuf.github.io/GraphvizOnline)에 붙여넣으면 다음과 같은 그래프가 생성됩니다:
+
+<Image img="/images/guides/developer/analyzer3.webp" alt="그래프 출력" size="md" />
+
+흰색 직사각형은 파이프라인 노드를, 회색 직사각형은 쿼리 실행 계획 단계를 나타내며, `x` 뒤에 오는 숫자는 사용 중인 입력/출력의 수를 나타냅니다. `compact` 형식으로 표시하지 않으려면 `compact=0`을 추가하세요:
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+ rankdir="LR";
+ { node [shape = rect]
+   n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+   n1[label="ExpressionTransform"];
+   n2[label="AggregatingTransform"];
+   n3[label="Resize"];
+   n4[label="ExpressionTransform"];
+   n5[label="ExpressionTransform"];
+ }
+ n0 -> n1;
+ n1 -> n2;
+ n2 -> n3;
+ n3 -> n4;
+ n3 -> n5;
+}
+```
+
+<Image img="/images/guides/developer/analyzer4.webp" alt="Compact 그래프 출력" size="md" />
+
+ClickHouse가 왜 여러 스레드를 사용해 테이블을 읽지 않을까요? 테이블에 데이터를 더 추가해 보겠습니다:
+
+```sql
+INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
+   sessionId UUID,
+   pageId UUID,
+   timestamp DateTime,
+   type Enum(\'type1\', \'type2\')', 1, 10, 2) LIMIT 1000000;
+```
+
+이제 `EXPLAIN` 쿼리를 다시 실행해 보겠습니다:
+
+```sql
+EXPLAIN PIPELINE graph = 1, compact = 0
+WITH (
+       SELECT count(*)
+       FROM session_events
+   ) AS total_rows
+SELECT
+   type,
+   min(timestamp) AS minimum_date,
+   max(timestamp) AS maximum_date,
+   (count(*) / total_rows) * 100 AS percentage
+FROM session_events
+GROUP BY type
+FORMAT TSV
+```
+
+```response
+digraph
+{
+  rankdir="LR";
+  { node [shape = rect]
+    n0[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n1[label="MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread)"];
+    n2[label="ExpressionTransform"];
+    n3[label="ExpressionTransform"];
+    n4[label="StrictResize"];
+    n5[label="AggregatingTransform"];
+    n6[label="AggregatingTransform"];
+    n7[label="Resize"];
+    n8[label="ExpressionTransform"];
+    n9[label="ExpressionTransform"];
+  }
+  n0 -> n2;
+  n1 -> n3;
+  n2 -> n4;
+  n3 -> n4;
+  n4 -> n5;
+  n4 -> n6;
+  n5 -> n7;
+  n6 -> n7;
+  n7 -> n8;
+  n7 -> n9;
+}
+```
+
+<Image img="/images/guides/developer/analyzer5.webp" alt="병렬 그래프 출력" size="md" />
+
+따라서 데이터 양이 충분히 크지 않아 실행기는 작업을 병렬화하지 않았습니다. 이후 행을 더 추가하자, 그래프에 표시된 것처럼 실행기는 여러 스레드를 사용하기로 했습니다.
+
+<div id="executor">
+  ## 실행기
+</div>
+
+마지막으로 쿼리 실행의 최종 단계는 실행기가 담당합니다. 실행기는 쿌리 파이프라인을 받아 실행합니다. `SELECT`, `INSERT`, 또는 `INSERT SELECT` 중 어떤 작업을 수행하는지에 따라 실행기의 유형이 달라집니다.

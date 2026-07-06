@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'PlanetScale para Postgres'
+description: 'Configura PlanetScale para Postgres como fuente para ClickPipes'
+slug: /integrations/clickpipes/postgres/source/planetscale
+title: 'Guía de configuración de PlanetScale para Postgres como fuente'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Info>
+  PlanetScale para Postgres se encuentra actualmente en [acceso temprano](https://planetscale.com/postgres).
+</Info>
+
+<div id="supported-postgres-versions">
+  ## Versiones compatibles de Postgres
+</div>
+
+ClickPipes es compatible con Postgres 12 y versiones posteriores.
+
+<div id="enable-logical-replication">
+  ## Habilitar la replicación lógica
+</div>
+
+1. Para habilitar la replicación en su instancia de Postgres, debemos asegurarnos de que estén configurados los siguientes parámetros:
+
+   ```sql
+   wal_level = logical
+   ```
+
+   Para comprobarlo, puede ejecutar el siguiente comando SQL:
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   La salida debería ser `logical` de forma predeterminada. Si no es así, inicie sesión en la consola de PlanetScale, vaya a `Cluster configuration->Parameters` y desplácese hacia abajo hasta `Write-ahead log` para cambiarlo.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="Ajuste de wal_level en la consola de PlanetScale" size="md" border />
+
+<Warning>
+  Cambiar esto en la consola de PlanetScale ACTIVARÁ un reinicio.
+</Warning>
+
+2. Además, se recomienda aumentar el valor de `max_slot_wal_keep_size` respecto a su valor predeterminado de 4GB. Esto también se hace desde la consola de PlanetScale; vaya a `Cluster configuration->Parameters` y, a continuación, desplácese hacia abajo hasta `Write-ahead log`. Para ayudarle a determinar el nuevo valor, consulte [aquí](/es/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="Ajuste de max_slot_wal_keep_size en la consola de PlanetScale" size="md" border />
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## Crear un usuario con permisos y una publicación
+</div>
+
+Conéctese a su instancia de PlanetScale Postgres con el usuario predeterminado `postgres.<...>` y ejecute los siguientes comandos:
+
+1. Cree un usuario específico para ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Conceda acceso de solo lectura a nivel de esquema al usuario que creó en el paso anterior. El siguiente ejemplo muestra los permisos para el esquema `public`. Repita estos comandos para cada esquema que contenga tablas que quiera replicar:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Conceda privilegios de replicación al usuario:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Cree una [publicación](https://www.postgresql.org/docs/current/logical-replication-publication.html) con las tablas que quiera replicar. Recomendamos encarecidamente incluir en la publicación solo las tablas que necesite para evitar una sobrecarga de rendimiento.
+
+<Warning>
+  Cualquier tabla incluida en la publicación debe tener definida una **clave primaria** *o* tener configurada su **identidad de réplica** como `FULL`. Consulte las [preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para obtener orientación sobre cómo delimitar el alcance.
+</Warning>
+
+* Para crear una publicación para tablas específicas:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Para crear una publicación para todas las tablas de un esquema específico:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados a partir de las tablas especificadas, y más adelante se usará para ingestar el flujo de replicación.
+
+<div id="caveats">
+  ## Consideraciones
+</div>
+
+1. Para conectarse a PlanetScale Postgres, es necesario añadir la rama actual al nombre de usuario creado anteriormente. Por ejemplo, si el usuario creado se llama `clickpipes_user`, el usuario real que debe proporcionarse durante la creación de ClickPipe es `clickpipes_user`.`branch`, donde `branch` hace referencia al &quot;id&quot; de la [rama](https://planetscale.com/docs/postgres/branching) actual de PlanetScale Postgres. Para identificarlo rápidamente, puede consultar el nombre de usuario del usuario `postgres` que utilizó antes para crear el usuario; la parte que aparece después del punto corresponde al id de la rama.
+2. No utilice el puerto `PSBouncer` (actualmente `6432`) para pipes de CDC que se conecten a PlanetScale Postgres; debe usarse el puerto estándar `5432`. Cualquiera de los dos puertos puede usarse para pipes solo de carga inicial.
+3. Asegúrese de conectarse únicamente a la instancia principal; [la conexión a instancias de réplica](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas) no es compatible actualmente.
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ahora puedes [crear tu ClickPipe](/es/integrations/clickpipes/postgres/index) y empezar a ingestar datos desde tu instancia de Postgres en ClickHouse Cloud.
+Asegúrate de anotar los datos de conexión que usaste al configurar tu instancia de Postgres, ya que los necesitarás durante el proceso de creación de ClickPipe.

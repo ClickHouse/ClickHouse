@@ -151,7 +151,9 @@ def upsert_section(body: Optional[str], section_body: str) -> str:
     if body and not body.endswith("\n"):
         body += "\n"
     if body:
-        body += "\n"
+        # Two blank lines before the block to visually separate the version-info
+        # section from the preceding PR/issue description.
+        body += "\n\n"
     return body + block
 
 

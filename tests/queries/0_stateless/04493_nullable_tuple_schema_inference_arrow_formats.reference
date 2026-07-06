@@ -1,0 +1,120 @@
+-- Schema inference must not return Nullable(Tuple) for an optional (nullable) struct column
+-- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
+-- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
+-- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
+-- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
+-- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
+-- obsolete and they run on the native reader.
+
+-- { echo }
+
+SET engine_file_truncate_on_insert = 1;
+-- Write files containing optional (nullable) struct columns, including a nested struct, while the type is allowed.
+SET allow_experimental_nullable_tuple_type = 1;
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.arrow', 'Arrow', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.arrowstream', 'ArrowStream', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.orc', 'ORC', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04493.parquet', 'Parquet', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') SELECT number, if(number = 1, NULL, (number * 10, 'x')), if(number = 2, NULL, (number * 100, (number * 1000, 'y'))) FROM numbers(3);
+-- The default settings must not infer Nullable(Tuple), and CREATE TABLE from the inferred schema must work.
+SET allow_experimental_nullable_tuple_type = DEFAULT;
+-- Arrow
+DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
+id	Int64					
+s	Tuple(\n    a Int64,\n    b String)					
+n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
+SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
+0	(0,'x')	(0,(0,'y'))
+1	(10,'x')	(100,(1000,'y'))
+2	(20,'x')	(200,(2000,'y'))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow');
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- ArrowStream
+DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
+id	Int64					
+s	Tuple(\n    a Int64,\n    b String)					
+n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
+SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream') ORDER BY id;
+0	(0,'x')	(0,(0,'y'))
+1	(10,'x')	(100,(1000,'y'))
+2	(20,'x')	(200,(2000,'y'))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- ORC (native reader)
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');
+id	Nullable(Int64)					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC');
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- ORC (legacy Arrow-based reader)
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+id	Nullable(Int64)					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- Parquet (native reader)
+DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
+id	Int64					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet');
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- Parquet (legacy Arrow-based reader where available)
+DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 0;
+id	Int64					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id SETTINGS input_format_parquet_use_native_reader_v3 = 0;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 0;
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- With the setting enabled, schema inference still returns Nullable(Tuple).
+SET allow_experimental_nullable_tuple_type = 1;
+DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
+id	Int64					
+s	Nullable(Tuple(a Int64, b String))					
+n	Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))					
+DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
+id	Int64					
+s	Nullable(Tuple(a Int64, b String))					
+n	Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))					
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+id	Nullable(Int64)					
+s	Nullable(Tuple(a Nullable(Int64), b Nullable(String)))					
+n	Nullable(Tuple(x Nullable(Int64), t Nullable(Tuple(y Nullable(Int64), z Nullable(String)))))					
+SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
+0	(0,'x')	(0,(0,'y'))
+1	\N	(100,(1000,'y'))
+2	(20,'x')	\N
+-- Reading into an explicitly requested Nullable(Tuple) structure still works.
+SELECT s FROM file(currentDatabase() || '_04493.arrow', 'Arrow', 'id Int64, s Nullable(Tuple(a Int64, b String)), n Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))') ORDER BY id;
+(0,'x')
+\N
+(20,'x')

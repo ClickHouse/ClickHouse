@@ -1,0 +1,135 @@
+---
+description: '`URL`의 지정된 `포맷`과 `구조`를 사용해 테이블을 생성합니다'
+sidebarTitle: 'url'
+slug: /sql-reference/table-functions/url
+title: 'url'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="url-table-function">
+  # url 테이블 함수
+</div>
+
+`url` 함수는 지정된 `포맷`과 `구조`를 사용해 `URL`에서 테이블을 생성합니다.
+
+`url` 함수는 [URL](/ko/reference/engines/table-engines/special/url) 테이블의 데이터에 대해 `SELECT` 및 `INSERT` 쿼리에서 사용할 수 있습니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+url(URL [,format] [,structure] [,headers])
+```
+
+<div id="parameters">
+  ## 매개변수
+</div>
+
+| 매개변수        | 설명                                                                                                                                        |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | `GET` 또는 `POST` 요청을 받을 수 있는 작은따옴표로 묶인 HTTP 또는 HTTPS 서버 주소입니다(`SELECT` 또는 `INSERT` 쿼리에 각각 해당). 유형: [String](/ko/reference/data-types/string). |
+| `format`    | 데이터의 [포맷](/ko/reference/formats/index)입니다. 유형: [String](/ko/reference/data-types/string).                                                       |
+| `structure` | `'UserID UInt64, Name String'` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 결정합니다. 유형: [String](/ko/reference/data-types/string).                               |
+| `headers`   | `'headers('key1'='value1', 'key2'='value2')'` 포맷의 헤더입니다. HTTP 호출에 사용할 헤더를 설정할 수 있습니다.                                                     |
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 포맷과 구조를 가지며, 지정된 `URL`의 데이터를 포함하는 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`String` 및 [UInt32](/ko/reference/data-types/int-uint) 타입의 컬럼이 포함된 테이블에서, [CSV](/ko/reference/formats/CSV/CSV) 포맷으로 응답하는 HTTP 서버를 통해 처음 3개 행을 가져옵니다.
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+`URL`에서 테이블로 데이터 삽입:
+
+```sql
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
+```
+
+<div id="globs-in-url">
+  ## URL의 글롭 패턴
+</div>
+
+`{ }` 안의 패턴은 세그먼트 집합을 생성하거나 장애 조치 주소를 지정하는 데 사용됩니다. 지원되는 패턴 유형과 예시는 [remote](/ko/reference/functions/table-functions/remote#globs-in-addresses) 함수 설명을 참조하십시오.
+패턴 안의 문자 `|`는 장애 조치 주소를 지정하는 데 사용됩니다. 주소는 패턴에 나열된 순서대로 순회됩니다. 생성되는 주소 수는 [glob&#95;expansion&#95;max&#95;elements](/ko/reference/settings/session-settings#glob_expansion_max_elements) 설정에 의해 제한됩니다.
+
+<div id="virtual-columns">
+  ## 가상 컬럼
+</div>
+
+* `_path` — `URL` 경로입니다. 유형: `LowCardinality(String)`.
+* `_file` — `URL`의 리소스 이름입니다. 유형: `LowCardinality(String)`.
+* `_size` — 리소스의 크기(바이트)입니다. 유형: `Nullable(UInt64)`. 크기를 알 수 없으면 값은 `NULL`입니다.
+* `_time` — 파일의 최종 수정 시간입니다. 유형: `Nullable(DateTime)`. 시간을 알 수 없으면 값은 `NULL`입니다.
+* `_headers` - HTTP 응답 헤더입니다. 유형: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="hive-style-partitioning">
+  ## use_hive_partitioning 설정
+</div>
+
+`use_hive_partitioning` 설정을 1로 지정하면 ClickHouse가 경로(`/name=value/`)에서 Hive 스타일 파티셔닝을 감지하고, 쿼리에서 파티션 컬럼을 가상 컬럼으로 사용할 수 있습니다. 이러한 가상 컬럼은 파티셔닝된 경로에 있는 이름과 동일한 이름을 가집니다.
+
+**예시**
+
+Hive 스타일 파티셔닝으로 생성된 가상 컬럼 사용
+
+```sql
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="resolving-relative-urls">
+  ## 상대 URL 해석
+</div>
+
+[url&#95;base](/ko/reference/settings/session-settings#url_base) 설정을 사용하면 `url` 함수에 상대 URL을 전달할 수 있습니다. `url_base`가 설정되어 있고 함수 인수가 상대 참조인 경우 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986)에 따라 기준 URL을 기준으로 이를 해석합니다.
+
+해석 규칙은 다음과 같습니다:
+
+* **경로 상대** (예: `data.csv`): 기준 URL 경로에 머지되며 기준 경로에서 마지막 `/` 뒤의 모든 내용이 대체됩니다. 끝의 슬래시 유무가 중요합니다. `https://example.com/dir/` + `data.csv`는 `https://example.com/dir/data.csv`가 되지만, `https://example.com/dir` + `data.csv`는 `https://example.com/data.csv`가 됩니다. 점 세그먼트(`./` 및 `../`)는 정규화됩니다.
+* **호스트 상대** (예: `/test/data.csv`): 기준 URL의 스킴과 호스트를 사용해 해석합니다.
+* **스킴 상대** (예: `//other.com/test/data.csv`): 기준 URL의 스킴을 사용해 해석합니다.
+* **쿼리만 있는 경우** (예: `?x=1`): 전체 기준 경로 뒤에 추가되며 기존 쿼리나 프래그먼트는 대체됩니다.
+* **프래그먼트만 있는 경우** (예: `#frag`): 기준 URL 뒤에 추가되며 쿼리는 유지되고 기존 프래그먼트는 대체됩니다.
+* **비어 있는 경우**: 프래그먼트가 없는 기준 URL을 반환합니다.
+* **절대 URL**: 변경 없이 그대로 전달되며 `url_base`는 무시됩니다.
+
+**예시**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
+```
+
+<div id="storage-settings">
+  ## 스토리지 설정
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ko/reference/settings/session-settings#engine_url_skip_empty_files) - 읽는 중 비어 있는 파일을 건너뛸 수 있습니다. 기본적으로 비활성화되어 있습니다.
+* [enable&#95;url&#95;encoding](/ko/reference/settings/session-settings#enable_url_encoding) - URI의 경로 인코딩/디코딩을 활성화하거나 비활성화할 수 있습니다. 기본적으로 활성화되어 있습니다.
+* [url&#95;base](/ko/reference/settings/session-settings#url_base) - `url` 함수에 전달된 상대 URL을 해석하는 데 사용하는 기준 URL입니다.
+
+<div id="permissions">
+  ## 권한
+</div>
+
+`url` 함수는 `CREATE TEMPORARY TABLE` 권한이 필요합니다. 따라서 [readonly](/ko/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1로 설정된 사용자에게는 작동하지 않습니다. 최소 `readonly = 2`가 필요합니다.
+
+<div id="related">
+  ## 관련 항목
+</div>
+
+* [가상 컬럼](/ko/reference/engines/table-engines/index#table_engines-virtual_columns)

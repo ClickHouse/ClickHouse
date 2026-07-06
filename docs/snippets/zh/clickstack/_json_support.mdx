@@ -1,0 +1,24 @@
+---
+title: JSON 支持
+---
+
+<div id="json-type-support">
+  ## JSON type 支持
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **Beta 功能 - 尚未准备好用于生产环境**
+
+  **ClickStack** 中的 JSON type 支持是一项 **Beta 功能**。虽然 JSON type 本身在 ClickHouse 25.3+ 中已可用于生产环境，但其在 ClickStack 中的集成仍处于积极开发阶段，可能存在一些限制、在未来发生变化，或包含缺陷。
+</Warning>
+
+从版本 `2.0.4` 开始，ClickStack 提供对 [JSON type](/zh/reference/formats/JSON/JSON) 的 Beta 支持。
+
+有关此类型的优势，请参阅 [JSON type 的优势](/zh/clickstack/ingesting-data/schema/map-vs-json)。
+
+要启用 JSON type 支持，必须设置以下环境变量：
+
+* `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` - 在 OTel collector 中启用支持，确保使用 JSON type 创建 schema。
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` (仅适用于 ClickStack Open Source)  - 在 ClickStack UI 应用中启用支持，从而允许查询 JSON 数据。

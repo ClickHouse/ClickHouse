@@ -1,0 +1,66 @@
+---
+sidebarTitle: '创建表'
+title: '在 ClickHouse 中创建表'
+slug: /guides/creating-tables
+description: '了解如何在 ClickHouse 中创建表'
+keywords: ['创建表', 'CREATE TABLE', '表创建', '数据库指南', 'MergeTree engine']
+doc_type: 'guide'
+---
+
+与大多数数据库一样，ClickHouse 会在逻辑上将**表**组织到**数据库**中。使用 `CREATE DATABASE` 命令在 ClickHouse 中创建一个新数据库：
+
+```sql
+CREATE DATABASE IF NOT EXISTS helloworld
+```
+
+同样，使用 `CREATE TABLE` 定义新表。如果未指定数据库名称，该表将位于
+`default` 数据库中。
+
+下面这个名为 `my_first_table` 的表会在 `helloworld` 数据库中创建：
+
+```sql
+  CREATE TABLE helloworld.my_first_table
+  (
+      user_id UInt32,
+      message String,
+      timestamp DateTime,
+      metric Float32
+  )
+  ENGINE = MergeTree()
+  PRIMARY KEY (user_id, timestamp)
+```
+
+在上面的示例中，`my_first_table` 是一个包含四列的 `MergeTree` 表：
+
+* `user_id`：32 位无符号整数
+* `message`：`String` 数据类型，用于替代其他数据库系统中的 `VARCHAR`、`BLOB`、`CLOB` 等类型
+* `timestamp`：`DateTime` 值，表示某一时刻
+* `metric`：32 位浮点数
+
+<Note>
+  表引擎决定了：
+
+  * 数据如何存储以及存储在何处
+  * 支持哪些查询
+  * 数据是否复制
+
+  可选引擎有很多，但对于单节点 ClickHouse server 上的简单表，[MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 往往是首选。
+</Note>
+
+<div id="a-brief-intro-to-primary-keys">
+  ## 主键简介
+</div>
+
+在继续之前，务必要先了解 ClickHouse 中主键的工作方式 (它的实现可能会让你有些意外！) ：
+
+* ClickHouse 中的主&#x952E;***并不要求表中每一行都唯一***
+
+ClickHouse 表的主键决定了数据写入磁盘时的排序方式。每 8,192 行或 10MB 数据 (称为**索引粒度**) 都会在主键索引文件中创建一个条目。这个粒度概念形成了**稀疏索引**，因此索引可以轻松放入内存；而 granules 则表示执行 `SELECT` 查询时会处理的最小列数据条带。
+
+可以使用 `PRIMARY KEY` 参数定义主键。如果定义表时未指定 `PRIMARY KEY`，则该键默认为 `ORDER BY` 子句中指定的元组。如果同时指定了 `PRIMARY KEY` 和 `ORDER BY`，则主键必须是排序顺序的前缀。
+
+主键同时也是排序键，即由 `(user_id, timestamp)` 组成的元组。因此，每个列文件中存储的数据都会先按 `user_id` 排序，再按 `timestamp` 排序。
+
+<Tip>
+  如需了解更多详细信息，请查看 ClickHouse Academy 中的 [Modeling Data 培训模块](https://learn.clickhouse.com/visitor_catalog_class/show/1328860/?utm_source=clickhouse\&utm_medium=docs)。
+</Tip>
