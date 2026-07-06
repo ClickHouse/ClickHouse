@@ -195,6 +195,48 @@ void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t r
     writeChar('"', ostr);
 }
 
+/// Not valid JSON but accept it as mongodb shell syntax to parse inner string
+/// Case: ISODate("2024-05-29T23:16:12.256") or new ISODate("2024-05-29T23:16:12.256Z")
+template <typename ReturnType>
+static ReturnType deserializeISODateJSON(
+    DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings,
+    const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    String inner;
+    if constexpr (throw_exception)
+        readJSONString(inner, istr, settings.json);
+    else if (!tryReadJSONStringInto(inner, istr, settings.json))
+        return ReturnType(false);
+
+    if constexpr (throw_exception)
+        assertChar(')', istr);
+    else if (!checkChar(')', istr))
+        return ReturnType(false);
+
+    ReadBufferFromString buf(inner);
+    if constexpr (throw_exception)
+        readText(x, scale, buf, settings, time_zone, utc_time_zone);
+    else if (!tryReadText(x, scale, buf, settings, time_zone, utc_time_zone))
+        return ReturnType(false);
+
+    /// Consume optional timezone 'Z' suffix that readText may leave behind
+    /// Case: ISODate("2024-05-29T23:16:12.256Z")
+    if (!buf.eof() && *buf.position() == 'Z')
+        ++buf.position();
+
+    if (!buf.eof())
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Unexpected data after parsed DateTime64 value inside ISODate wrapper");
+        return ReturnType(false);
+    }
+
+    return ReturnType(true);
+}
+
 void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DateTime64 x = 0;
@@ -207,21 +249,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     /// Case: ISODate("2024-05-29T23:16:12.256")
     else if (checkString("new ISODate(", istr) || checkString("ISODate(", istr))
     {
-        String inner;
-        readJSONString(inner, istr, settings.json);
-        assertChar(')', istr);
-
-        ReadBufferFromString buf(inner);
-        readText(x, scale, buf, settings, time_zone, utc_time_zone);
-
-        /// Consume optional timezone 'Z' suffix that readText may leave behind
-        /// Case: ISODate("2024-05-29T23:16:12.256Z")
-        if (!buf.eof() && *buf.position() == 'Z')
-            ++buf.position();
-
-        if (!buf.eof())
-            throw Exception(ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                "Unexpected data after parsed DateTime64 value inside ISODate wrapper");
+        deserializeISODateJSON<void>(x, scale, istr, settings, time_zone, utc_time_zone);
     }
     else
     {
@@ -236,6 +264,13 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     if (checkChar('"', istr))
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
+            return false;
+    }
+    /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
+    /// Case: ISODate("2024-05-29T23:16:12.256")
+    else if (checkString("new ISODate(", istr) || checkString("ISODate(", istr))
+    {
+        if (!deserializeISODateJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
             return false;
     }
     else
