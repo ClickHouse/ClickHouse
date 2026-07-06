@@ -127,22 +127,27 @@ void ASTIndexDeclaration::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             else
             {
                 /// The parser consumes one leading `(` as the index's own bracket, so re-wrap the
-                /// single expression whenever the re-parse would otherwise swallow a syntax-critical
-                /// `(`. Two such cases:
+                /// single expression whenever the re-parse would otherwise not reconstruct the same
+                /// AST. Three such cases:
                 ///   - the canonical form starts with a `(` that closes before the end (`(a, b).1`,
-                ///     `(x, y) -> x`, `(a + b) * c`) — detected on the rendered text;
-                ///   - the expression is a scalar subquery / VALUES, which formats as `(SELECT ...)`:
-                ///     the leading `(` encloses the whole node, but `SELECT ...` is not a valid
-                ///     `ParserOrderByExpressionList`, so a bare bracket cannot round-trip.
+                ///     `(x, y) -> x`, `(a + b) * c`), detected on the rendered text;
+                ///   - a scalar subquery / VALUES, which formats as `(SELECT ...)`: the leading `(`
+                ///     encloses the whole node, but `SELECT ...` is not a valid
+                ///     `ParserOrderByExpressionList`, so a bare bracket cannot round-trip;
+                ///   - a tuple literal, which formats as `(1, 2)`: a bare bracket re-parses as a
+                ///     multi-column order-by list and is rebuilt as a `tuple(...)` function, so the
+                ///     string round-trips but the AST does not.
                 /// An alias already forces its own enclosing `(...)` (`need_parens`), which supplies
-                /// the compensating bracket, so the subquery re-wrap is skipped in that case. Forms
-                /// whose leading `(` both encloses the whole expression and re-parses as an order-by
-                /// list (`(a, b)`, `(expr AS alias)`) are left as is.
+                /// the compensating bracket, so the AST-kind re-wraps are skipped in that case. Forms
+                /// whose leading `(` both encloses the whole expression and re-parses to the same AST
+                /// (bare tuple `(a, b)`, `(expr AS alias)`) are left as is.
                 WriteBufferFromOwnString expr_buf;
                 expr->format(expr_buf, s, state, nested_frame);
                 const auto expr_str = expr_buf.stringView();
-                const bool subquery_needs_wrap = expr->as<ASTSubquery>() && !nested_frame.need_parens;
-                if (subquery_needs_wrap || leadingParenClosesEarly(expr_str))
+                const auto * literal = expr->as<ASTLiteral>();
+                const bool ast_kind_needs_wrap = !nested_frame.need_parens
+                    && (expr->as<ASTSubquery>() || (literal && literal->value.getType() == Field::Types::Tuple));
+                if (ast_kind_needs_wrap || leadingParenClosesEarly(expr_str))
                     ostr << "(" << expr_str << ")";
                 else
                     ostr << expr_str;

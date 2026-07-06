@@ -9,6 +9,9 @@
 --   3. A scalar subquery / VALUES expression formats as `(SELECT ...)`: the leading `(` encloses
 --      the whole node, so cause 2's early-close scan misses it, but the re-parse still swallows
 --      that `(` as the index bracket and the bare `SELECT ...` is not a valid order-by list.
+--   4. A single tuple literal formats as `(1, 2)`: a bare bracket re-parses as a multi-column
+--      order-by list and is rebuilt as a `tuple(...)` function, so the string round-trips but the
+--      AST does not, still tripping the tree-hash comparison the round-trip check runs first.
 
 DROP TABLE IF EXISTS t04502;
 CREATE TABLE t04502 (a UInt32, b UInt32, c String) ENGINE = MergeTree ORDER BY a;
@@ -17,6 +20,9 @@ CREATE TABLE t04502 (a UInt32, b UInt32, c String) ENGINE = MergeTree ORDER BY a
 -- fires once the round-trip check passes cleanly.
 CREATE HYPOTHETICAL INDEX i0 ON t04502 ((a())) TYPE a; -- { serverError UNKNOWN_FUNCTION }
 CREATE INDEX i1 ON t04502 ((a())) TYPE a; -- { serverError UNKNOWN_FUNCTION }
+-- Tuple-literal reproducer: must not abort. Constants are rejected in a secondary index, so a
+-- plain INCORRECT_QUERY fires once the round-trip (tree-hash) check passes cleanly.
+CREATE INDEX i2 ON t04502 ((1, 2)) TYPE minmax; -- { serverError INCORRECT_QUERY }
 
 -- format(x) must equal format(format(x)) for every index expression; this is exactly what the
 -- internal round-trip check verifies. Redundant-parenthesization class:
@@ -43,6 +49,11 @@ SELECT formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((SELECT 1)
 -- An aliased subquery already carries its own required `(...)`, so it must not be over-wrapped.
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax'));
 
+-- Tuple-literal class: a single tuple literal keeps the wrapper so the re-parse rebuilds the same
+-- `ASTLiteral(Tuple)` node instead of splitting the comma into a multi-column order-by list.
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((1, 2)) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((1, 2)) TYPE minmax'));
+SELECT formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((1, 2)) TYPE minmax') = formatQuerySingleLine(formatQuerySingleLine('CREATE HYPOTHETICAL INDEX i0 ON t04502 ((1, 2)) TYPE minmax'));
+
 -- Concrete formatted output: redundant parens are dropped, leading-paren forms keep the wrapper.
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a())) TYPE a');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 (((a()))) TYPE a');
@@ -55,6 +66,7 @@ SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((a + b) * a) TYPE minma
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1)) TYPE minmax');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((VALUES (1))) TYPE minmax');
 SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((SELECT 1) AS s) TYPE minmax');
+SELECT formatQuerySingleLine('CREATE INDEX i0 ON t04502 ((1, 2)) TYPE minmax');
 
 -- The fix must not over-reach: a multi-element tuple keeps its single parens (they are the value's
 -- representation, not redundant grouping) and an alias keeps its required parens.

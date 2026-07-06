@@ -157,9 +157,11 @@ TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
         "CREATE INDEX i ON t ((a, b) -> a) TYPE minmax GRANULARITY 1",
         "CREATE INDEX i ON t ((a + b) * a) TYPE minmax GRANULARITY 1",
         "CREATE INDEX i ON t ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ((1, 2)) TYPE minmax GRANULARITY 1",
         "CREATE INDEX i ON t (a, b) TYPE minmax GRANULARITY 1",
         "CREATE INDEX i ON t ON CLUSTER c ((a, b).1) TYPE minmax GRANULARITY 1",
         "CREATE INDEX i ON t ON CLUSTER c ((SELECT 1)) TYPE minmax GRANULARITY 1",
+        "CREATE INDEX i ON t ON CLUSTER c ((1, 2)) TYPE minmax GRANULARITY 1",
         "CREATE HYPOTHETICAL INDEX i ON t ((a, b).1) TYPE minmax GRANULARITY 1",
     };
 
@@ -174,12 +176,17 @@ TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
         ASTPtr cloned = ast->clone();
         EXPECT_EQ(ast->formatWithSecretsOneLine(), cloned->formatWithSecretsOneLine()) << "clone of: " << query;
 
-        /// And the original must survive a format+reparse+format round trip.
+        /// And the original must survive a format+reparse+format round trip, and the reparsed AST
+        /// must be identical to the original. The AST-equality check is what catches the tuple
+        /// literal `(1, 2)`: without the extra wrapper the string round-trips but the reparse
+        /// rebuilds it as a `tuple(...)` function, so `executeQueryImpl`'s tree-hash comparison
+        /// (which runs before the string comparison) still trips `Inconsistent AST formatting`.
         String formatted = ast->formatWithSecretsOneLine();
         ParserQuery reparse_parser(formatted.data() + formatted.size());
         ASTPtr reparsed = parseQuery(reparse_parser, formatted, "", 0, 0, 0);
         ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
         EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "AST roundtrip of: " << query;
     }
 }
 
