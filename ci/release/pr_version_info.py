@@ -91,7 +91,7 @@ DEFAULT_LOOKBACK_DAYS = 30
 # may itself contain slashes, e.g. `release/26.5`), group 2 the original number.
 BACKPORT_BRANCH_RE = re.compile(r"^backport/(.+)/(\d+)$")
 
-# Mirrors tests/ci/pr_info.py:Labels -- a PR carrying any of these has (or is
+# Mirrors ci/release/pr_info.py:Labels -- a PR carrying any of these has (or is
 # meant to have) backports, so it is worth scanning release branches for them.
 BACKPORT_LABELS = {
     "pr-backports-created",

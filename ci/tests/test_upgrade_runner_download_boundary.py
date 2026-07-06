@@ -2,7 +2,7 @@
 Shell-level contract test for the previous-release download boundary in
 `tests/docker_scripts/upgrade_runner.sh`.
 
-`download_release_packages` (see `tests/ci/download_release_packages.py`) exits
+`download_release_packages` (see `ci/release/download_release_packages.py`) exits
 nonzero when a required previous-release package is missing or fails to download.
 The runner must stop at that boundary instead of recording success and reaching
 `install_packages`, which would otherwise die later with an opaque `dpkg` glob

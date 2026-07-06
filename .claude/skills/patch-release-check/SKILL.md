@@ -17,7 +17,7 @@ failed (classified), and walks gated remediation. There are two distinct failure
 modes, and they need different fixes:
 
 - **Guard failure** — `AutoReleaseInfo` aborts before releasing anything because an
-  open "version bump" PR trips a guard in `tests/ci/auto_release.py`. Repo/PR side.
+  open "version bump" PR trips a guard in `ci/release/auto_release.py`. Repo/PR side.
 - **Runner failure** — runs can't start at all because no `[self-hosted, release-maker]`
   runner is available. Infra side, not a repo change.
 
@@ -248,7 +248,7 @@ generated `auto/v<tag>` changelog PR. Track status in `#core-ci-info`.
 
 ## Known issue / hardening
 
-The guard query in `tests/ci/auto_release.py` (~line 100,
+The guard query in `ci/release/auto_release.py` (~line 100,
 `gh pr list --search "Update version_date.tsv"`) is a **loose full-text search**, so a
 single forgotten or unrelated PR can halt all releases. Worth a separate PR: scope it
 to genuine robot bump PRs, e.g. `--search "Update version_date.tsv in:title author:robot-clickhouse"`

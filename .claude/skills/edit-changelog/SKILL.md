@@ -364,7 +364,7 @@ For each entry, decide if its current category is right. Common moves:
   New Feature or Improvement.
 
 The preferred category order (from `utils/changelog/changelog.py`, which
-wraps `tests/ci/changelog.py`) is:
+wraps `ci/release/changelog.py`) is:
 
 1. Backward Incompatible Change
 2. New Feature

@@ -23,10 +23,10 @@ import types
 import pytest
 
 # Load the module directly from its file so we do not have to put the whole
-# `tests/ci` directory on `sys.path` for the entire pytest session (which would
+# `ci/release` directory on `sys.path` for the entire pytest session (which would
 # risk shadowing equally-named modules in other tests).
 _BDH_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "tests", "ci", "build_download_helper.py"
+    os.path.dirname(__file__), "..", "release", "build_download_helper.py"
 )
 _spec = importlib.util.spec_from_file_location("build_download_helper", _BDH_PATH)
 bdh = importlib.util.module_from_spec(_spec)

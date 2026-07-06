@@ -17,11 +17,11 @@ import sys
 
 import pytest
 
-# `download_release_packages` imports sibling modules from `tests/ci` by bare
+# `download_release_packages` imports sibling modules from `ci/release` by bare
 # name, so put that directory on `sys.path` only while importing it and remove
 # it again afterwards to avoid leaking it into the rest of the pytest session.
 _CI_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "ci")
+    os.path.join(os.path.dirname(__file__), "..", "release")
 )
 sys.path.insert(0, _CI_DIR)
 try:

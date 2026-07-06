@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Unit tests for the pure helpers in `tests/ci/pr_version_info.py`. Run with
+Unit tests for the pure helpers in `ci/release/pr_version_info.py`. Run with
 `pytest ci/tests/test_pr_version_info.py` from the repo root; the `CI Tests`
-job runs them on every PR touching `ci/` or `tests/ci`.
+job runs them on every PR touching `ci/`.
 
 `pr_version_info` keeps its GitHub / CIDB imports inside `main()`, so importing
 the helpers here pulls in no heavyweight dependencies.
@@ -12,12 +12,11 @@ import os
 import sys
 import unittest
 
-# `pr_version_info` lives in `tests/ci`; put that directory on `sys.path` only
-# while importing it and remove it again afterwards to avoid leaking it into
-# the rest of the pytest session.
-_CI_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "ci")
-)
+# `pr_version_info` lives in `ci/release`, whose modules import each other by
+# bare name; put that directory on `sys.path` only while importing it and
+# remove it again afterwards to avoid leaking it into the rest of the pytest
+# session.
+_CI_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "release"))
 sys.path.insert(0, _CI_DIR)
 try:
     # pylint: disable=import-error

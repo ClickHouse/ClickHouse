@@ -79,7 +79,7 @@ Note: extra context after `---` is fine — reviewers see it, but only the chang
 
 The entry is what ends up in the published CHANGELOG. Write it for a user who is upgrading and scanning for what affects them. The PR link and author attribution are appended automatically by tooling — do not include them.
 
-**Format:** the changelog script (`tests/ci/changelog.py`) collects all lines after the `### Changelog entry:` header up to the first blank line, then joins them with spaces into a single string. This means:
+**Format:** the changelog script (`ci/release/changelog.py`) collects all lines after the `### Changelog entry:` header up to the first blank line, then joins them with spaces into a single string. This means:
 - The entry can span multiple lines in the template — they become one paragraph
 - A blank line terminates collection — anything after it is ignored
 - Write it as a single paragraph (no bullet lists, no blank lines within)

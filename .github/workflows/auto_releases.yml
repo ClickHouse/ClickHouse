@@ -41,7 +41,7 @@ jobs:
       - name: Prepare Info
         id: info
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
+          cd "$GITHUB_WORKSPACE/ci/release"
           python3 auto_release.py --prepare
           echo "::group::Auto Release Info"
           python3 -m json.tool /tmp/autorelease_info.json
@@ -58,7 +58,7 @@ jobs:
           fi
       - name: Post Release Branch statuses
         run: |
-          cd "$GITHUB_WORKSPACE/tests/ci"
+          cd "$GITHUB_WORKSPACE/ci/release"
           python3 auto_release.py --post-status
       - name: Clean up
         uses: ./.github/actions/clean
@@ -97,5 +97,5 @@ jobs:
 #        uses: ClickHouse/checkout@v1
 #      - name: Post
 #        run: |
-#          cd "$GITHUB_WORKSPACE/tests/ci"
+#          cd "$GITHUB_WORKSPACE/ci/release"
 #          python3 auto_release.py --post-auto-release-complete --wf-status ${{ job.status }}
