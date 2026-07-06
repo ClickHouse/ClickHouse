@@ -42,7 +42,6 @@ private:
     OptimizedRegularExpression::MatchVec matches;
     size_t capture{};
 
-    Pos begin{};
     Pos pos{};
     Pos end{};
 public:
@@ -82,7 +81,6 @@ public:
     /// Called for each next string.
     void set(Pos pos_, Pos end_)
     {
-        begin = pos_;
         pos = pos_;
         end = end_;
     }
@@ -93,9 +91,7 @@ public:
         if (!pos || pos > end)
             return false;
 
-        /// Match over the whole string starting at `pos`, so that the characters before `pos` are seen as context
-        /// for zero-width assertions such as `\b` and `^`. The returned offsets are relative to `begin`.
-        if (!re->match(begin, end - begin, pos - begin, matches) || !matches[0].length)
+        if (!re->match(pos, end - pos, matches) || !matches[0].length)
             return false;
 
         if (matches[capture].offset == std::string::npos)
@@ -106,11 +102,11 @@ public:
         }
         else
         {
-            token_begin = begin + matches[capture].offset;
+            token_begin = pos + matches[capture].offset;
             token_end = token_begin + matches[capture].length;
         }
 
-        pos = begin + matches[0].offset + matches[0].length;
+        pos += matches[0].offset + matches[0].length;
 
         return true;
     }

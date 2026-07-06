@@ -1211,9 +1211,27 @@ CONV_FN(ExprBetween, ebetween)
 
 CONV_FN(ExplainQuery, explain);
 
-CONV_FN(ExprInType, ein)
+CONV_FN(ExprIn, ein)
 {
-    using InType = ExprInType::InOneofCase;
+    const ExprList & elist = ein.expr();
+
+    if (elist.extra_exprs_size() == 0)
+    {
+        ExprToString(ret, elist.expr());
+    }
+    else
+    {
+        ret += "(";
+        ExprListToString(ret, ein.expr());
+        ret += ")";
+    }
+    ret += " ";
+    if (ein.global())
+        ret += "GLOBAL ";
+    if (ein.not_())
+        ret += "NOT ";
+    ret += "IN ";
+    using InType = ExprIn::InOneofCase;
     switch (ein.in_oneof_case())
     {
         case InType::kSingleExpr: ExprToString(ret, ein.single_expr()); break;
@@ -1236,36 +1254,13 @@ CONV_FN(ExprInType, ein)
     }
 }
 
-CONV_FN(ExprIn, ein)
-{
-    const ExprList & elist = ein.expr();
-
-    if (elist.extra_exprs_size() == 0)
-    {
-        ExprToString(ret, elist.expr());
-    }
-    else
-    {
-        ret += "(";
-        ExprListToString(ret, ein.expr());
-        ret += ")";
-    }
-    ret += " ";
-    if (ein.global())
-        ret += "GLOBAL ";
-    if (ein.not_())
-        ret += "NOT ";
-    ret += "IN ";
-    ExprInTypeToString(ret, ein.in_type());
-}
-
 CONV_FN(ExprAny, eany)
 {
     ExprToString(ret, eany.expr());
     BinaryOperatorToString(ret, static_cast<BinaryOperator>(((static_cast<int>(eany.op()) % 8) + 1)));
-    ret += ExprAny_AnyAllSome_Name(eany.anyall()).substr(4);
+    ret += eany.anyall() == AnyAllSome::AAS_ALL ? "ALL" : eany.anyall() == AnyAllSome::AAS_SOME ? "SOME" : "ANY";
     ret += "(";
-    ExprInTypeToString(ret, eany.in_type());
+    ExplainQueryToString(ret, eany.sel());
     ret += ")";
 }
 
@@ -1633,7 +1628,7 @@ CONV_FN(WindowDef, wdef)
 
 CONV_FN(IntervalExpr, ie)
 {
-    if (!ie.use_extract() && ie.interval() <= IntervalExpr::YEAR)
+    if (ie.interval() <= IntervalExpr::YEAR)
     {
         ret += "INTERVAL (";
         ExprToString(ret, ie.expr());

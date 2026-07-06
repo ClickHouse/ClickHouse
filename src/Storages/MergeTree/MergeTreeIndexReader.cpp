@@ -121,9 +121,9 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
+void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule)
 {
-    auto load_func = [this, mark, condition, readable_ranges](auto & res)
+    auto load_func = [this, mark, condition](auto & res)
     {
         initStreamIfNeeded();
 
@@ -142,7 +142,6 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .condition = condition,
             .part = *part,
             .index = *index,
-            .readable_ranges = readable_ranges,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

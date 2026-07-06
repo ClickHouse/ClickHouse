@@ -1,4 +1,3 @@
-#include <Coordination/KeeperCommon.h>
 #include <Coordination/KeeperSnapshotManagerS3.h>
 
 #if USE_AWS_S3
@@ -24,6 +23,10 @@
 
 #include <aws/core/auth/AWSCredentials.h>
 #include <aws/s3/S3Errors.h>
+
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -209,8 +212,7 @@ void KeeperSnapshotManagerS3::uploadSnapshotImpl(const SnapshotFileInfo & snapsh
 
         auto snapshot_file = snapshot_disk->readFile(snapshot_path, getReadSettings());
 
-        /// Strip the unique suffix so every node uploads the same index under the same S3 key.
-        auto snapshot_name = getCanonicalSnapshotS3Name(snapshot_path);
+        auto snapshot_name = fs::path(snapshot_path).filename().string();
         auto lock_file = fmt::format(".{}_LOCK", snapshot_name);
 
         if (S3::objectExists(*s3_client->client, s3_client->uri.bucket, snapshot_name))
