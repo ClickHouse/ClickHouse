@@ -52,6 +52,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"reader_executor_max_tail_for_drain", 1048576, 1048576, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
             {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"query_plan_merge_expression_into_join", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."},
             {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
             {"use_text_index_header_cache", false, true, "Enabled the text index header cache globally."},
