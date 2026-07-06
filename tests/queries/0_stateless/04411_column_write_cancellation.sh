@@ -16,6 +16,10 @@
 # cancel. Without the in-loop cancellation check the `KILL` blocks until the whole block is written and
 # the bounded `KILL QUERY` below trips its timeout.
 #
+# A final case checks that a throw-mode `max_execution_time` expiring inside the same write loop is
+# reported as `TIMEOUT_EXCEEDED` (not `QUERY_WAS_CANCELLED`), i.e. the writer-side check preserves the
+# recorded cancel reason.
+#
 # no-random-settings: the test issues a single large controlled `INSERT` and manages termination via
 # `KILL QUERY`; randomized query limits would break that -- e.g. a low `max_rows_to_read` /
 # `max_memory_usage` aborts it early, and a random `max_execution_time` would terminate it instead of
@@ -109,5 +113,61 @@ run_case()
 # chosen kind (both thresholds must sit above the part size to keep it Compact).
 run_case wide    "min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
 run_case compact "min_bytes_for_wide_part = '100G', min_rows_for_wide_part = 1000000000"
+
+# A throw-mode `max_execution_time` that expires while the writer is serializing the block must report
+# `TIMEOUT_EXCEEDED`, not `QUERY_WAS_CANCELLED`. Both a KILL and a throw-mode timeout set the same
+# `is_killed` flag (the timeout via `CancellationChecker::cancelQuery(CancelReason::TIMEOUT)`), so the
+# writer-side check calls `QueryStatus::throwIfKilled`, which maps the recorded cancel reason back to
+# the right error code. This case guards that mapping for the write path (the exception mapping lives in
+# the shared writer base, so exercising one part kind covers both).
+run_timeout_case()
+{
+    local table="t_col_write_timeout_wide"
+
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${table}"
+    ${CLICKHOUSE_CLIENT} -q "
+    CREATE TABLE ${table} (s String CODEC(ZSTD(22)))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS index_granularity = 8192, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0
+    "
+
+    local query_id="col_write_timeout_${CLICKHOUSE_DATABASE}_$$"
+    local err="${CLICKHOUSE_TMP}/04411_col_write_timeout_err.txt"
+
+    # `max_execution_time = 8` (throw) is far above the cheap read of the pre-materialized source (a few
+    # seconds at most, even on sanitizer builds) and far below the ZSTD(22) write of the whole block
+    # (tens of seconds to minutes), so the deadline reliably lands inside the column write loop.
+    ${CLICKHOUSE_CLIENT} --query_id "$query_id" \
+        --max_block_size $ROWS --max_insert_block_size $ROWS \
+        --min_insert_block_size_rows $ROWS --min_insert_block_size_bytes 0 \
+        --max_execution_time 8 --timeout_overflow_mode throw \
+        -q "INSERT INTO ${table} SELECT s FROM t_col_write_src" >/dev/null 2>"$err" &
+    local insert_pid=$!
+
+    # Confirm the query reaches the write phase (source fully read => execution inside the writer) before
+    # the deadline; this is what makes the timeout fire in the column write loop rather than in the read.
+    local read_rows=0
+    local _
+    for _ in $(seq 1 600); do
+        read_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT read_rows FROM system.processes WHERE query_id = '$query_id'")
+        if [ -n "$read_rows" ] && [ "$read_rows" -ge "$ROWS" ]; then break; fi
+        # Stop polling once the query is gone (already finished / timed out).
+        if ! kill -0 "$insert_pid" 2>/dev/null; then break; fi
+        sleep 0.1
+    done
+
+    wait "$insert_pid" 2>/dev/null
+    if grep -q "TIMEOUT_EXCEEDED" "$err"; then
+        echo "timeout wide: reported as timeout"
+    else
+        echo "timeout wide: wrong error"
+        cat "$err"
+    fi
+
+    rm -f "$err"
+    ${CLICKHOUSE_CLIENT} -q "DROP TABLE ${table}"
+}
+
+run_timeout_case
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE t_col_write_src"
