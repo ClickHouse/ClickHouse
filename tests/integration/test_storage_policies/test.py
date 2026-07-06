@@ -21,6 +21,31 @@ def started_cluster():
         cluster.shutdown()
 
 
+def restart_with_config(config_name):
+    node.stop_clickhouse()
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, config_name),
+        "/etc/clickhouse-server/config.d/disks.xml",
+    )
+    node.start_clickhouse()
+
+
+def reload_config(config_name):
+    node.copy_file_to_container(
+        os.path.join(CONFIG_DIR, config_name),
+        "/etc/clickhouse-server/config.d/disks.xml",
+    )
+    node.query("SYSTEM RELOAD CONFIG")
+
+
+def get_disk2_data_path(table_name):
+    disk1_path = "/var/lib/clickhouse1/"
+    data_path = node.query(
+        f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table_name}'"
+    ).strip()
+    return f"/var/lib/clickhouse2/{data_path.removeprefix(disk1_path)}"
+
+
 def test_storage_policy_configuration_change(started_cluster):
     try:
         node.query(
@@ -44,12 +69,7 @@ def test_storage_policy_configuration_change(started_cluster):
 
 
 def test_storage_policy_configuration_change_rejects_existing_disk_contents(started_cluster):
-    node.stop_clickhouse()
-    node.copy_file_to_container(
-        os.path.join(CONFIG_DIR, "disk2_existing_before_reload.xml"),
-        "/etc/clickhouse-server/config.d/disks.xml",
-    )
-    node.start_clickhouse()
+    restart_with_config("disk2_existing_before_reload.xml")
 
     table_name = "test_config_reload_existing_disk_contents"
     disk2_data_path = None
@@ -59,37 +79,102 @@ def test_storage_policy_configuration_change_rejects_existing_disk_contents(star
         )
         node.query(f"INSERT INTO {table_name} VALUES (1)")
 
-        disk1_path = "/var/lib/clickhouse1/"
-        data_path = node.query(
-            f"SELECT data_paths[1] FROM system.tables WHERE database = currentDatabase() AND name = '{table_name}'"
-        ).strip()
-        disk2_data_path = f"/var/lib/clickhouse2/{data_path.removeprefix(disk1_path)}"
+        disk2_data_path = get_disk2_data_path(table_name)
         node.exec_in_container(
             ["bash", "-c", f"mkdir -p {shlex.quote(disk2_data_path)}/all_0_0_0"]
         )
 
-        node.copy_file_to_container(
-            os.path.join(CONFIG_DIR, "disk2_added_to_test_policy.xml"),
-            "/etc/clickhouse-server/config.d/disks.xml",
-        )
-        node.query("SYSTEM RELOAD CONFIG")
+        reload_config("disk2_added_to_test_policy.xml")
 
         assert (
             node.query(
                 "SELECT max(has(disks, 'disk2')) FROM system.storage_policies WHERE policy_name = 'test_policy'"
             )
-            == "0\n"
+            == "1\n"
+        )
+        assert "already contain data" in node.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (2)"
         )
     finally:
-        node.query(f"DROP TABLE IF EXISTS {table_name}")
-        if disk2_data_path:
-            node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
-        node.stop_clickhouse()
-        node.copy_file_to_container(
-            os.path.join(CONFIG_DIR, "disks.xml"),
-            "/etc/clickhouse-server/config.d/disks.xml",
+        try:
+            if disk2_data_path:
+                node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
+        finally:
+            restart_with_config("disks.xml")
+
+
+def test_storage_policy_configuration_change_initializes_existing_disk_on_use(started_cluster):
+    restart_with_config("disk2_existing_before_reload.xml")
+
+    table_name = "test_config_reload_existing_disk_initialized_on_use"
+    disk2_data_path = None
+    try:
+        node.query(
+            f"CREATE TABLE {table_name} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'test_policy'"
         )
-        node.start_clickhouse()
+        node.query(f"INSERT INTO {table_name} VALUES (1)")
+
+        disk2_data_path = get_disk2_data_path(table_name)
+
+        reload_config("disk2_added_to_test_policy.xml")
+
+        node.query(f"INSERT INTO {table_name} VALUES (2)")
+        assert node.query(f"SELECT sum(x) FROM {table_name}") == "3\n"
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"test -f {shlex.quote(disk2_data_path)}/table_identity.json",
+            ]
+        )
+    finally:
+        try:
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
+            if disk2_data_path:
+                node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+        finally:
+            restart_with_config("disks.xml")
+
+
+def test_storage_policy_configuration_change_rejects_bad_table_identity(started_cluster):
+    restart_with_config("disk2_existing_before_reload.xml")
+
+    table_name = "test_config_reload_bad_table_identity"
+    disk2_data_path = None
+    try:
+        node.query(
+            f"CREATE TABLE {table_name} (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 'test_policy'"
+        )
+        node.query(f"INSERT INTO {table_name} VALUES (1)")
+
+        disk2_data_path = get_disk2_data_path(table_name)
+        bad_identity = (
+            '{"version":1,"table_uuid":null,'
+            '"relative_data_path":"wrong/path/","format_version":1}'
+        )
+        node.exec_in_container(
+            [
+                "bash",
+                "-c",
+                f"mkdir -p {shlex.quote(disk2_data_path)} && "
+                f"printf '%s' {shlex.quote(bad_identity)} > "
+                f"{shlex.quote(disk2_data_path)}/table_identity.json",
+            ]
+        )
+
+        reload_config("disk2_added_to_test_policy.xml")
+
+        assert "Bad table identity file" in node.query_and_get_error(
+            f"INSERT INTO {table_name} VALUES (2)"
+        )
+    finally:
+        try:
+            if disk2_data_path:
+                node.exec_in_container(["bash", "-c", f"rm -rf {shlex.quote(disk2_data_path)}"])
+            node.query(f"DROP TABLE IF EXISTS {table_name}")
+        finally:
+            restart_with_config("disks.xml")
 
 
 def test_alter_storage_policy_with_existing_disk_contents(started_cluster):

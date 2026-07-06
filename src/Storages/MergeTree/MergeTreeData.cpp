@@ -37,6 +37,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -82,8 +83,6 @@
 #include <Storages/MergeTree/Compaction/MergeSelectorApplier.h>
 #include <Storages/MergeTree/Compaction/PartProperties.h>
 #include <Storages/MergeTree/Compaction/PartsCollectors/Common.h>
-#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
-#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -97,6 +96,8 @@
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/MergeTree/Streaming/MergeTreeBoundsSubscription.h>
+#include <Storages/MergeTree/Streaming/SubscriptionEnrichment.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -142,6 +143,9 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
+#include <Poco/Dynamic/Var.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -375,6 +379,17 @@ namespace ErrorCodes
     extern const int TOO_LARGE_LIGHTWEIGHT_UPDATES;
 }
 
+namespace
+{
+
+bool isMergeTreeRootHousekeepingEntry(const String & name)
+{
+    return startsWith(name, "tmp") || name == MergeTreeData::FORMAT_VERSION_FILE_NAME || name == MergeTreeData::TABLE_IDENTITY_FILE_NAME
+        || name == MergeTreeData::DETACHED_DIR_NAME;
+}
+
+}
+
 static String getPartNameFromAST(const ASTPtr & partition)
 {
     const auto * literal = partition->as<ASTLiteral>();
@@ -463,8 +478,9 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
 
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     std::optional<UInt32> read_format_version;
+    auto storage_policy = getStoragePolicyNoInitialize();
 
-    for (const auto & disk : getDisks())
+    for (const auto & disk : storage_policy->getDisks())
     {
         if (disk->isBroken())
             continue;
@@ -497,7 +513,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         format_version = min_format_version;
 
         /// Try to write to first non-readonly disk
-        for (const auto & disk : getStoragePolicy()->getDisks())
+        for (const auto & disk : storage_policy->getDisks())
         {
             if (disk->isBroken())
                continue;
@@ -528,6 +544,9 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
         if (min_format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING.toUnderType())
             throw Exception(ErrorCodes::METADATA_MISMATCH, "MergeTree data format version on disk doesn't support custom partitioning");
     }
+
+    data_path_initialized = true;
+    ensureStoragePolicyInitialized(storage_policy);
 }
 DataPartsLock::DataPartsLock(SharedMutex & data_parts_mutex_, const MergeTreeData * data_)
     : wait_watch(Stopwatch(CLOCK_MONOTONIC))
@@ -818,6 +837,14 @@ VirtualColumnsDescription MergeTreeData::createVirtuals(const KeyDescription * p
 }
 
 StoragePolicyPtr MergeTreeData::getStoragePolicy() const
+{
+    auto storage_policy = getStoragePolicyNoInitialize();
+    if (data_path_initialized)
+        ensureStoragePolicyInitialized(storage_policy);
+    return storage_policy;
+}
+
+StoragePolicyPtr MergeTreeData::getStoragePolicyNoInitialize() const
 {
     auto settings = getSettings();
     const auto & context = getContext();
@@ -1489,7 +1516,7 @@ void checkSpecialColumnWithDataType(const std::string_view column_meta_name, con
 
 void MergeTreeData::checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const
 {
-    const auto old_storage_policy = getStoragePolicy();
+    const auto old_storage_policy = getStoragePolicyNoInitialize();
     old_storage_policy->checkCompatibleWith(new_storage_policy);
 }
 
@@ -2454,10 +2481,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
             {
-                /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-                if (startsWith(it->name(), "tmp")
-                    || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
-                    || it->name() == DETACHED_DIR_NAME)
+                if (isMergeTreeRootHousekeepingEntry(it->name()))
                     continue;
 
                 if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
@@ -2748,10 +2772,7 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 
         for (auto it = disk_ptr->iterateDirectory(relative_data_path); it->isValid(); it->next())
         {
-            /// Skip temporary directories, file 'format_version.txt' and directory 'detached'.
-            if (startsWith(it->name(), "tmp")
-                || it->name() == MergeTreeData::FORMAT_VERSION_FILE_NAME
-                || it->name() == DETACHED_DIR_NAME)
+            if (isMergeTreeRootHousekeepingEntry(it->name()))
                 continue;
 
             if (auto part_info = MergeTreePartInfo::tryParsePartName(it->name(), format_version))
@@ -4061,6 +4082,20 @@ void MergeTreeData::rename(const String & new_table_path, const StorageID & new_
 
     relative_data_path = new_table_path;
     renameInMemory(new_table_id);
+
+    {
+        std::lock_guard lock(storage_policy_initialization_mutex);
+        initialized_storage_policy.reset();
+    }
+
+    auto storage_policy = getStoragePolicyNoInitialize();
+    for (const auto & disk : storage_policy->getDisks())
+    {
+        if (!disk->isBroken())
+            writeTableIdentityFile(disk);
+    }
+
+    ensureStoragePolicyInitialized(storage_policy);
 }
 
 void MergeTreeData::renameInMemory(const StorageID & new_table_id)
@@ -4191,8 +4226,10 @@ void MergeTreeData::dropAllData()
             continue;
         }
 
-        LOG_INFO(log, "dropAllData: remove format_version.txt, detached, moving and write ahead logs");
+        LOG_INFO(log, "dropAllData: remove metadata files, detached, moving and write ahead logs");
         disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+        disk->removeFileIfExists(fs::path(relative_data_path) / TABLE_IDENTITY_FILE_NAME);
+        disk->removeFileIfExists(fs::path(relative_data_path) / TEMPORARY_TABLE_IDENTITY_FILE_NAME);
 
         if (disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
         {
@@ -4263,6 +4300,8 @@ void MergeTreeData::dropIfEmpty()
                 continue;
             /// Non recursive, exception is thrown if there are more files.
             disk->removeFileIfExists(fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME);
+            disk->removeFileIfExists(fs::path(relative_data_path) / TABLE_IDENTITY_FILE_NAME);
+            disk->removeFileIfExists(fs::path(relative_data_path) / TEMPORARY_TABLE_IDENTITY_FILE_NAME);
             disk->removeDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME);
             disk->removeDirectory(relative_data_path);
         }
@@ -5171,19 +5210,261 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
 }
 
-StoragePolicyPtr MergeTreeData::getStoragePolicyFromSelector(const StoragePolicySelectorPtr & storage_policy_selector) const
+namespace
 {
-    const auto settings = getSettings();
+constexpr UInt64 TABLE_IDENTITY_VERSION = 1;
 
-    if ((*settings)[MergeTreeSetting::disk].changed)
+NameSet getPolicyDiskNames(const StoragePolicyPtr & storage_policy)
+{
+    NameSet disk_names;
+    for (const auto & disk : storage_policy->getDisks())
     {
-        const String disk_name = (*settings)[MergeTreeSetting::disk];
-        const auto storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
-        return storage_policy_selector->tryGet(storage_policy_name);
+        if (!disk->isBroken())
+            disk_names.insert(disk->getName());
+    }
+    return disk_names;
+}
+
+String describeTableIdentityFileError(const String & path, const String & reason)
+{
+    return fmt::format("Bad table identity file {}: {}", path, reason);
+}
+
+void assertJsonKeySet(const Poco::JSON::Object::Ptr & json, const String & path)
+{
+    std::vector<std::string> names;
+    json->getNames(names);
+
+    static const NameSet expected_names = {
+        "version",
+        "table_uuid",
+        "relative_data_path",
+        "format_version",
+    };
+
+    if (names.size() != expected_names.size())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, "unexpected set of keys"));
+
+    for (const auto & name : names)
+    {
+        if (!expected_names.contains(name))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, fmt::format("unexpected key {}", name)));
+    }
+}
+
+void assertJsonInteger(const Poco::Dynamic::Var & value, const String & path, const String & key)
+{
+    if (!value.isInteger())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, fmt::format("key {} is not an integer", key)));
+}
+
+void assertJsonString(const Poco::Dynamic::Var & value, const String & path, const String & key)
+{
+    if (!value.isString())
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, fmt::format("key {} is not a string", key)));
+}
+}
+
+bool MergeTreeData::hasTableIdentityPath(const DiskPtr & disk) const
+{
+    return disk->existsFileOrDirectory(fs::path(relative_data_path) / TABLE_IDENTITY_FILE_NAME);
+}
+
+void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
+{
+    const auto table_identity_path = fs::path(relative_data_path) / TABLE_IDENTITY_FILE_NAME;
+    const auto table_identity_full_path = fullPath(disk, table_identity_path);
+
+    auto in = disk->readFileIfExists(table_identity_path, getReadSettings());
+    if (!in)
+    {
+        if (disk->existsFileOrDirectory(table_identity_path))
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA, "Bad table identity file {}: is not a readable regular file", table_identity_full_path);
+
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad table identity file {}: file does not exist", table_identity_full_path);
     }
 
-    const String storage_policy_name = (*settings)[MergeTreeSetting::storage_policy];
-    return storage_policy_selector->tryGet(storage_policy_name);
+    String contents;
+    readStringUntilEOF(contents, *in);
+
+    Poco::JSON::Object::Ptr json;
+    try
+    {
+        Poco::JSON::Parser parser;
+        json = parser.parse(contents).extract<Poco::JSON::Object::Ptr>();
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad table identity file {}: {}", table_identity_full_path, e.what());
+    }
+
+    assertJsonKeySet(json, table_identity_full_path);
+
+    const auto version = json->get("version");
+    assertJsonInteger(version, table_identity_full_path, "version");
+    const auto actual_version = version.convert<Int64>();
+    if (actual_version != static_cast<Int64>(TABLE_IDENTITY_VERSION))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Bad table identity file {}: version {} expected version is {}",
+            table_identity_full_path,
+            actual_version,
+            TABLE_IDENTITY_VERSION);
+
+    const auto expected_uuid = getStorageID().uuid;
+    const auto table_uuid = json->get("table_uuid");
+    if (expected_uuid == UUIDHelpers::Nil)
+    {
+        if (!table_uuid.isEmpty())
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad table identity file {}: table_uuid must be null", table_identity_full_path);
+    }
+    else
+    {
+        assertJsonString(table_uuid, table_identity_full_path, "table_uuid");
+        const String expected_uuid_string = toString(expected_uuid);
+        const String actual_uuid_string = table_uuid.convert<String>();
+        if (actual_uuid_string != expected_uuid_string)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Bad table identity file {}: table_uuid {} expected {}",
+                table_identity_full_path,
+                actual_uuid_string,
+                expected_uuid_string);
+    }
+
+    const auto table_relative_data_path = json->get("relative_data_path");
+    assertJsonString(table_relative_data_path, table_identity_full_path, "relative_data_path");
+    if (table_relative_data_path.convert<String>() != relative_data_path)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Bad table identity file {}: relative_data_path {} expected {}",
+            table_identity_full_path,
+            table_relative_data_path.convert<String>(),
+            relative_data_path);
+
+    const auto table_format_version = json->get("format_version");
+    assertJsonInteger(table_format_version, table_identity_full_path, "format_version");
+    const auto actual_format_version = table_format_version.convert<Int64>();
+    if (actual_format_version != static_cast<Int64>(format_version.toUnderType()))
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Bad table identity file {}: format_version {} expected {}",
+            table_identity_full_path,
+            actual_format_version,
+            format_version.toUnderType());
+}
+
+void MergeTreeData::writeTableIdentityFile(const DiskPtr & disk) const
+{
+    if (disk->isReadOnly() || disk->isWriteOnce())
+        return;
+
+    const auto table_identity_path = fs::path(relative_data_path) / TABLE_IDENTITY_FILE_NAME;
+    const auto temporary_table_identity_path = fs::path(relative_data_path) / TEMPORARY_TABLE_IDENTITY_FILE_NAME;
+    {
+        auto buf = disk->writeFile(
+            temporary_table_identity_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, getContext()->getWriteSettings());
+        writeCString("{\"version\":", *buf);
+        writeIntText(TABLE_IDENTITY_VERSION, *buf);
+        writeCString(",\"table_uuid\":", *buf);
+        if (getStorageID().uuid == UUIDHelpers::Nil)
+            writeCString("null", *buf);
+        else
+            writeJSONString(toString(getStorageID().uuid), *buf, FormatSettings{});
+        writeCString(",\"relative_data_path\":", *buf);
+        writeJSONString(relative_data_path, *buf, FormatSettings{});
+        writeCString(",\"format_version\":", *buf);
+        writeIntText(format_version.toUnderType(), *buf);
+        writeChar('}', *buf);
+        buf->finalize();
+        if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+            buf->sync();
+    }
+    disk->replaceFile(temporary_table_identity_path, table_identity_path);
+    validateTableIdentityFile(disk);
+}
+
+void MergeTreeData::writeFormatVersionFileIfNeeded(const DiskPtr & disk) const
+{
+    if (disk->isReadOnly() || disk->isWriteOnce())
+        return;
+
+    const auto format_version_path = fs::path(relative_data_path) / FORMAT_VERSION_FILE_NAME;
+    if (disk->existsFile(format_version_path))
+        return;
+
+    auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+    writeIntText(format_version.toUnderType(), *buf);
+    buf->finalize();
+    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        buf->sync();
+}
+
+void MergeTreeData::initializeTablePathOnDisk(const DiskPtr & disk, bool validate_as_new_disk) const
+{
+    if (validate_as_new_disk)
+    {
+        assertNewDiskDoesNotContainTableData(disk);
+    }
+    else
+    {
+        const auto snapshot = makeNewDiskPathSnapshot(disk);
+        if (auto format_version_error = getFormatVersionErrorOnNewDisk(snapshot))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "{}", *format_version_error);
+    }
+
+    if (!disk->isReadOnly())
+    {
+        disk->createDirectories(relative_data_path);
+        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
+    }
+
+    writeFormatVersionFileIfNeeded(disk);
+    writeTableIdentityFile(disk);
+
+    if (validate_as_new_disk)
+    {
+        assertNewDiskDoesNotContainTableData(disk);
+    }
+}
+
+void MergeTreeData::ensureStoragePolicyInitialized(const StoragePolicyPtr & storage_policy) const
+{
+    const auto current_disk_names = getPolicyDiskNames(storage_policy);
+
+    std::lock_guard lock(storage_policy_initialization_mutex);
+    if (initialized_storage_policy && initialized_storage_policy->policy == storage_policy
+        && initialized_storage_policy->disk_names == current_disk_names)
+        return;
+
+    bool has_any_table_identity = false;
+    for (const auto & disk : storage_policy->getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+
+        if (hasTableIdentityPath(disk))
+        {
+            validateTableIdentityFile(disk);
+            has_any_table_identity = true;
+        }
+    }
+
+    for (const auto & disk : storage_policy->getDisks())
+    {
+        if (disk->isBroken())
+            continue;
+
+        const bool has_identity_on_disk = hasTableIdentityPath(disk);
+        if (has_identity_on_disk)
+            validateTableIdentityFile(disk);
+
+        initializeTablePathOnDisk(disk, has_any_table_identity && !has_identity_on_disk);
+    }
+
+    initialized_storage_policy = InitializedStoragePolicyState{storage_policy, current_disk_names};
 }
 
 MergeTreeData::NewDiskPathSnapshot MergeTreeData::makeNewDiskPathSnapshot(const DiskPtr & disk) const
@@ -5203,7 +5484,8 @@ MergeTreeData::NewDiskPathSnapshot MergeTreeData::makeNewDiskPathSnapshot(const 
         const auto name = it->name();
         const auto entry_path = fs::path(relative_data_path) / name;
         const bool is_directory = disk->existsDirectory(entry_path);
-        snapshot.root_entries.push_back({name, fullPath(disk, entry_path), is_directory});
+        const bool is_file = disk->existsFile(entry_path);
+        snapshot.root_entries.push_back({name, fullPath(disk, entry_path), is_directory, is_file});
 
         if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
         {
@@ -5285,6 +5567,22 @@ std::optional<String> MergeTreeData::getUnsafeNewDiskTablePathContentReason(cons
         if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
             continue;
 
+        if (name == MergeTreeData::TABLE_IDENTITY_FILE_NAME)
+        {
+            if (!entry.is_file)
+                return fmt::format("table identity path {} is not a readable regular file", entry.full_path);
+
+            continue;
+        }
+
+        if (name == TEMPORARY_TABLE_IDENTITY_FILE_NAME)
+        {
+            if (!entry.is_file)
+                return fmt::format("temporary table identity path {} is not a readable regular file", entry.full_path);
+
+            continue;
+        }
+
         bool is_temporary_directory = false;
         bool has_temporary_directory_prefix = false;
         for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
@@ -5348,32 +5646,13 @@ void MergeTreeData::changeSettings(
                     new_storage_policy = getContext()->getStoragePolicyFromDisk(change.value.safeGet<String>());
                 else
                     new_storage_policy = getContext()->getStoragePolicy(change.value.safeGet<String>());
-                StoragePolicyPtr old_storage_policy = getStoragePolicy();
+                StoragePolicyPtr old_storage_policy = getStoragePolicyNoInitialize();
 
                 /// StoragePolicy of different version or name is guaranteed to have different pointer
                 if (new_storage_policy != old_storage_policy)
                 {
                     checkStoragePolicy(new_storage_policy);
-
-                    std::unordered_set<String> all_diff_disk_names;
-                    for (const auto & disk : new_storage_policy->getDisks())
-                        all_diff_disk_names.insert(disk->getName());
-                    for (const auto & disk : old_storage_policy->getDisks())
-                        all_diff_disk_names.erase(disk->getName());
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        assertNewDiskDoesNotContainTableData(disk);
-                    }
-
-                    for (const String & disk_name : all_diff_disk_names)
-                    {
-                        auto disk = new_storage_policy->getDiskByName(disk_name);
-                        disk->createDirectories(relative_data_path);
-                        disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
-                    }
-                    /// FIXME how would that be done while reloading configuration???
+                    ensureStoragePolicyInitialized(new_storage_policy);
 
                     has_storage_policy_changed = true;
                 }
@@ -11385,57 +11664,12 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     storage.currently_emerging_big_parts.erase(emerging_part_name);
 }
 
-std::vector<DiskPtr> MergeTreeData::getNewDisksOnConfigChangeWithLock(
-    const StoragePolicySelectorPtr & old_storage_policy_selector,
-    const StoragePolicySelectorPtr & new_storage_policy_selector,
-    const std::lock_guard<std::mutex> & /*storage_policies_lock*/) const
-{
-    std::vector<DiskPtr> new_disks;
-    auto old_storage_policy = getStoragePolicyFromSelector(old_storage_policy_selector);
-    auto new_storage_policy = getStoragePolicyFromSelector(new_storage_policy_selector);
-    if (!old_storage_policy || !new_storage_policy || old_storage_policy == new_storage_policy)
-        return new_disks;
-
-    std::unordered_set<String> old_disk_names;
-    for (const auto & disk : old_storage_policy->getDisks())
-        old_disk_names.insert(disk->getName());
-
-    for (const auto & disk : new_storage_policy->getDisks())
-    {
-        if (!old_disk_names.contains(disk->getName()) && !disk->isBroken() && !disk->isReadOnly())
-            new_disks.push_back(disk);
-    }
-
-    return new_disks;
-}
-
-void MergeTreeData::prepareNewDiskOnConfigChange(const DiskPtr & new_disk) const
-{
-    assertNewDiskDoesNotContainTableData(new_disk);
-
-    new_disk->createDirectories(relative_data_path);
-    new_disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-
-    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
-    auto buf = new_disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
-    writeIntText(format_version.toUnderType(), *buf);
-    buf->finalize();
-    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-        buf->sync();
-
-    assertNewDiskDoesNotContainTableData(new_disk);
-}
-
 bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
 {
-    auto storage_policy = getStoragePolicy();
-    for (const auto & name : new_added_disks)
-    {
-        auto disk = storage_policy->tryGetDiskByName(name);
-        /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
-        if (disk && !disk->isBroken() && !disk->isReadOnly())
-            prepareNewDiskOnConfigChange(disk);
-    }
+    /// Disk reload task is best-effort warmup. Actual operations call getStoragePolicy()
+    /// and run the same initialization before using the policy.
+    UNUSED(new_added_disks);
+    ensureStoragePolicyInitialized(getStoragePolicyNoInitialize());
     return true;
 }
 

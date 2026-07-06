@@ -276,7 +276,6 @@ public:
     }
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
-    std::vector<StoragePtr> getTablesForNewDisksOnConfigChange();
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();
