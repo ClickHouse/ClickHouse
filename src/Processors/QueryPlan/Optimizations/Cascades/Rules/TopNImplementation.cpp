@@ -66,8 +66,8 @@ std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr
         impl->properties.distribution.node_count = node_count;
         impl->properties.sorting = sort_desc;                  /// output is sorted
 
-        memo.getGroup(expression->group_id)->addPhysicalExpression(impl);
-        result.push_back(impl);
+        if (memo.getGroup(expression->group_id)->addPhysicalExpression(impl))
+            result.push_back(impl);
     };
 
     const bool is_partial = dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()) != nullptr;

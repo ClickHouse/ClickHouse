@@ -118,8 +118,8 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             partial_impl->properties.distribution = dist;
 
             partial_impl->setApplied(*this, required_properties);
-            memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl);
-            result.push_back(partial_impl);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl))
+                result.push_back(partial_impl);
         }
         return result;
     }
@@ -152,8 +152,8 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
         local_agg->properties.distribution = single_node;
 
         local_agg->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(local_agg);
-        result.push_back(local_agg);
+        if (memo.getGroup(expression->group_id)->addPhysicalExpression(local_agg))
+            result.push_back(local_agg);
     }
 
     /// For a single-node cluster distributed strategies are identical to local — skip them.
@@ -188,8 +188,8 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             shuffle_agg->properties.distribution = by_keys;
 
             shuffle_agg->setApplied(*this, required_properties);
-            memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg);
-            result.push_back(shuffle_agg);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg))
+                result.push_back(shuffle_agg);
         }
 
         /// Strategy B2: Single-key shuffle alternatives.
@@ -217,8 +217,8 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
                     single_key_agg->properties.distribution = by_single_key;
 
                     single_key_agg->setApplied(*this, required_properties);
-                    memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_agg);
-                    result.push_back(single_key_agg);
+                    if (memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_agg))
+                        result.push_back(single_key_agg);
                 }
             }
         }

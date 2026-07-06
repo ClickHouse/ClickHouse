@@ -142,8 +142,8 @@ protected:
             DistributionDescription single_node;    /// node_count=1, not replicated (default)
             if (auto implementation_expression = createAtDistribution(expression, required_properties, single_node))
             {
-                memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
-                result.push_back(implementation_expression);
+                if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
+                    result.push_back(implementation_expression);
             }
             return result;
         }
@@ -151,8 +151,8 @@ protected:
         /// Implementation at the parent's required distribution.
         if (auto implementation_expression = createAtDistribution(expression, required_properties, required_properties.distribution))
         {
-            memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
-            result.push_back(implementation_expression);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
+                result.push_back(implementation_expression);
         }
 
         /// Speculative implementations at each candidate node count.
@@ -167,8 +167,8 @@ protected:
 
             if (auto implementation_expression = createAtDistribution(expression, required_properties, dist))
             {
-                memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
-                result.push_back(implementation_expression);
+                if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
+                    result.push_back(implementation_expression);
             }
         }
 
@@ -196,8 +196,8 @@ protected:
                     sorted_impl->properties.distribution = dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
 
-                    memo.getGroup(expression->group_id)->addPhysicalExpression(sorted_impl);
-                    result.push_back(sorted_impl);
+                    if (memo.getGroup(expression->group_id)->addPhysicalExpression(sorted_impl))
+                        result.push_back(sorted_impl);
                 };
 
                 for (size_t candidate : candidates)

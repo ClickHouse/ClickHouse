@@ -56,7 +56,8 @@ protected:
         implementation_expression->setApplied(*this, required_properties);
         /// No distribution propagation: output stays at default {1 node}.
 
-        memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+        if (!memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
+            return {};
         return {implementation_expression};
     }
 };

@@ -64,8 +64,8 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         local_join->properties.distribution = single_node;
 
         local_join->setApplied(*this, required_properties);
-        memo.getGroup(expression->group_id)->addPhysicalExpression(local_join);
-        result.push_back(local_join);
+        if (memo.getGroup(expression->group_id)->addPhysicalExpression(local_join))
+            result.push_back(local_join);
     }
 
     /// For a single-node cluster all distributed strategies are identical to local join — skip them.
@@ -163,8 +163,8 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             broadcast_join->properties.distribution = left_dist;
 
             broadcast_join->setApplied(*this, required_properties);
-            memo.getGroup(expression->group_id)->addPhysicalExpression(broadcast_join);
-            result.push_back(broadcast_join);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(broadcast_join))
+                result.push_back(broadcast_join);
         }
 
         /// Strategy 3: Partitioned (shuffle) join — both inputs shuffled by join key columns.
@@ -261,8 +261,8 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             partitioned_join->properties.distribution = output_dist;
 
             partitioned_join->setApplied(*this, required_properties);
-            memo.getGroup(expression->group_id)->addPhysicalExpression(partitioned_join);
-            result.push_back(partitioned_join);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(partitioned_join))
+                result.push_back(partitioned_join);
         }
 
         /// Strategy 3b: Single-key shuffle alternatives.
@@ -311,8 +311,8 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 single_key_join->properties.distribution = single_output_dist;
 
                 single_key_join->setApplied(*this, required_properties);
-                memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_join);
-                result.push_back(single_key_join);
+                if (memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_join))
+                    result.push_back(single_key_join);
             }
         }
     }

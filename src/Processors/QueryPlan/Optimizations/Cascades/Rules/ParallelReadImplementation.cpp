@@ -77,7 +77,8 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     parallel_read_expression->properties = parallel_properties;
 
     parallel_read_expression->setApplied(*this, required_properties);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(parallel_read_expression);
+    if (!memo.getGroup(expression->group_id)->addPhysicalExpression(parallel_read_expression))
+        return {};
 
     return {parallel_read_expression};
 }
@@ -133,7 +134,8 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     replicated_read_expression->properties = replicated_properties;
 
     replicated_read_expression->setApplied(*this, required_properties);
-    memo.getGroup(expression->group_id)->addPhysicalExpression(replicated_read_expression);
+    if (!memo.getGroup(expression->group_id)->addPhysicalExpression(replicated_read_expression))
+        return {};
 
     return {replicated_read_expression};
 }
@@ -158,7 +160,8 @@ protected:
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
         implementation_expression->setApplied(*this, required_properties);
         /// No distribution propagation: output stays at default {1 node}.
-        memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression);
+        if (!memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
+            return {};
         return {implementation_expression};
     }
 };
