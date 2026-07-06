@@ -132,12 +132,12 @@ def test_generated_workflow_preserves_release_invariants():
     # (legacy used a fixed `group: release`).
     assert "concurrency:" in yml and "group: ${{ github.workflow }}" in yml
     # auto_releases.yml reuses this workflow via `uses:`, which needs both
-    # triggers.
+    # triggers and the inherited secret.
     assert "workflow_dispatch:" in yml
     assert "workflow_call:" in yml
-    # The release authenticates as the `clickhouse-gh` App (enable_gh_auth), not
-    # a robot PAT, so the old commit-token secret must be gone from the workflow.
-    assert "ROBOT_CLICKHOUSE_COMMIT_TOKEN" not in yml
+    # The release pushes with the robot PAT (the App token lacks the `workflow`
+    # scope), so the commit-token secret must be declared on the workflow.
+    assert "ROBOT_CLICKHOUSE_COMMIT_TOKEN" in yml
     # The env setup must read the `inputs` context too, otherwise workflow_call
     # (auto_releases) runs get an empty github.event.inputs and lose `ref`.
     assert "toJson(inputs)" in yml

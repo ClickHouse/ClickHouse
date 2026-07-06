@@ -13,6 +13,10 @@ from ci.praktika.result import Result
 from ci.praktika.secret import Secret
 from ci.praktika.utils import Shell, Utils
 
+_GH_TOKEN_SECRET = Secret.Config(
+    name="/github-tokens/robot-1",
+    type=Secret.Type.AWS_SSM_PARAMETER,
+)
 # Docker Hub robot credentials for pushing release images. The legacy
 # `release-maker` runner was logged in to Docker Hub out-of-band; the
 # ephemeral `release-maker-asg` runners are not, so the registry push must
@@ -132,12 +136,15 @@ def main():
     # runner.
     gnupg_home = None
 
-    # No standing GitHub token: the job runs with `enable_gh_auth=True`, so
-    # praktika has already logged `gh` in as the `clickhouse-gh` App. `gh`
-    # commands use that session directly, and git pushes go through the App via
-    # `gh auth setup-git` (below). The few spots that still need an explicit
-    # token materialize a short-lived one inline with `gh auth token`, scoped to
-    # that single command, rather than exporting a long-lived PAT job-wide.
+    # Export the robot token once for the whole job (the legacy workflow set it
+    # as a job-level `env: GH_TOKEN`). Commands then reference `$GH_TOKEN` instead
+    # of interpolating the secret value, so praktika's verbose command logging
+    # (Shell.run prints every command) never writes the token to the job log. The
+    # robot PAT carries the `workflow` scope, so pushes of tags/branches whose
+    # `.github/workflows` differ from master are not rejected by GitHub's
+    # push-time workflow-scope check (which the App token, lacking that scope,
+    # cannot pass on a repo this large).
+    os.environ["GH_TOKEN"] = _GH_TOKEN_SECRET.get_value()
 
     results = []
     ok = True
@@ -170,9 +177,9 @@ def main():
             # The checkout step authenticates `origin` with the default
             # GITHUB_TOKEN through an http extraheader. Release pushes (tags,
             # the new release branch, the version-bump branch) must use the
-            # App instead so they carry the right permissions and trigger
-            # downstream workflows such as ReleaseBranchCI. Drop the extraheader
-            # and let gh's credential helper supply the App installation token.
+            # robot token instead so they carry the right permissions and
+            # trigger downstream workflows such as ReleaseBranchCI. Drop the
+            # extraheader and let gh's credential helper supply $GH_TOKEN.
             "git config --unset-all http.https://github.com/.extraheader || true",
             "gh auth setup-git",
         ],
@@ -390,19 +397,15 @@ def main():
                 "echo 'Generate ChangeLog'",
                 "docker pull clickhouse/style-test:latest",
                 # changelog.py runs inside the container, which cannot see the
-                # host gh session, so it needs an explicit token via
-                # `--gh-user-or-token`. Mint a short-lived App token into a shell
-                # variable first, then expand it into the argument: a `VAR=val cmd`
-                # prefix would not affect `$VAR` expansion in the same command, so
-                # the token must be a normal variable set before `docker run`. The
-                # command string carries `$(gh auth token)`/`$token`, not the value,
-                # so verbose logging never prints the token.
-                f'token="$(gh auth token)" && CI=1 docker run -u {uid}:{gid}'
-                f" -e PYTHONUNBUFFERED=1 -e CI=1"
-                f" --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
+                # host gh session, so pass the robot token in via `-e GH_TOKEN`
+                # (inherited from the job-wide export) and `--gh-user-or-token`.
+                # The command string carries `$GH_TOKEN`, not its value, so
+                # verbose logging never prints the token.
+                f"CI=1 docker run -u {uid}:{gid} -e PYTHONUNBUFFERED=1 -e CI=1"
+                f" -e GH_TOKEN --network=host --volume='{REPO_PATH}:/wd' --workdir=/wd"
                 f" clickhouse/style-test:latest"
                 f" ./tests/ci/changelog.py -v --debug-helpers"
-                f' --gh-user-or-token "$token"'
+                f' --gh-user-or-token "$GH_TOKEN"'
                 f" --jobs=5"
                 f" --output=./docs/changelogs/{release_tag}.md {release_tag}",
                 f"git add ./docs/changelogs/{release_tag}.md",
@@ -454,7 +457,7 @@ def main():
                     strict=True,
                 )
                 Shell.check(
-                    f"git push --force origin {pr_branch}",
+                    f"git push --force https://x-access-token:$GH_TOKEN@github.com/ClickHouse/ClickHouse.git {pr_branch}",
                     strict=True,
                 )
 

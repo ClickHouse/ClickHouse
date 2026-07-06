@@ -52,15 +52,18 @@ class Git:
         retries: int = 1,
         verbose: bool = True,
     ) -> bool:
-        """Push `refspec` to `repo` over HTTPS authenticated as the GitHub App.
+        """Push `refspec` to `repo` over HTTPS with an App/PAT token.
 
-        Mints the App token inline and clears the inherited http extraheader
-        per-command so the tokenized URL — not the checkout's default
-        GITHUB_TOKEN — is what authenticates (only an App/PAT push re-triggers
-        downstream workflows). The token expands at runtime, so its literal
-        `${token}` stays out of the f-string and the URL is assembled by
-        concatenation; `repo`/`refspec` are passed shell-quoted. Retry helps past
-        GitHub's push-time workflow-file check timing out on a large repo.
+        The token is `$GH_TOKEN` when the caller has one exported (the release
+        job sets it to the robot PAT, which carries the `workflow` scope), else
+        the App installation token from the `gh` session (native_jobs). It is
+        used in the URL instead of the checkout's default GITHUB_TOKEN, and the
+        inherited http extraheader is cleared per-command so that tokenized URL
+        is what authenticates (only an App/PAT push re-triggers downstream
+        workflows). The token expands at runtime, so its literal `${token}`
+        stays out of the f-string and the URL is assembled by concatenation;
+        `repo`/`refspec` are passed shell-quoted. Retry helps past GitHub's
+        push-time workflow-file check timing out on a large repo.
 
         `verbose` is safe to enable: the command carries only the literal
         `${token}`/`$(gh auth token)` (expanded at runtime, and git redacts URL
@@ -88,7 +91,7 @@ class Git:
         )
         force_flag = "--force " if force else ""
         push_cmd = (
-            'token="$(gh auth token)" && '
+            'token="${GH_TOKEN:-$(gh auth token)}" && '
             "git -c http.https://github.com/.extraheader= push "
             f"{force_flag}{repo_url} {shlex.quote(refspec)}"
         )

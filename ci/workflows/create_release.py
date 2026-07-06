@@ -1,22 +1,29 @@
-from praktika import Job, Workflow
+from praktika import Job, Secret, Workflow
 
 from ci.defs.defs import SECRETS
+
+robot_token_secret = Secret.Config(
+    name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
+    type=Secret.Type.GH_SECRET,
+)
 
 release_job = Job.Config(
     name="CreateRelease",
     runs_on=["self-hosted", "amd-release-maker"],
     command="PYTHONPATH=. python3 ./ci/jobs/release_job.py",
     timeout=2 * 3600,
-    # Authenticate `gh` (and, via `gh auth setup-git`, release git pushes) as
-    # the `clickhouse-gh` App using the App secrets in SECRETS — no robot PAT.
-    enable_gh_auth=True,
+    # Push release tags/branches with the robot PAT (the App token lacks the
+    # `workflow` scope, so GitHub's push-time workflow-scope check times out and
+    # rejects tags whose `.github/workflows` differ from master — i.e. every
+    # release-branch tag). release_job.py exports it as GH_TOKEN.
+    secrets=[robot_token_secret],
 )
 
 workflow = Workflow.Config(
     name="CreateRelease",
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
-    secrets=SECRETS,
+    secrets=SECRETS + [robot_token_secret],
     # Releases mutate shared state (tags, package repos, Docker tags); never run
     # two concurrently. Dispatch workflows always emit `concurrency: group:
     # ${{ github.workflow }}`, which serializes CreateRelease runs. auto_releases.yml
