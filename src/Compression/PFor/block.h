@@ -199,7 +199,8 @@ inline size_t blockDecode(const uint8_t * in, unsigned cnt, T * out, Delta mode,
         if (!need(p, 1))
             return 0;
         hb = *p++;
-        if (hb > typeBits<T>)
+        // Valid exceptions have hb in [1, typeBits<T> - b]; hb == 0 drops the patch, larger shifts bits out of T (b < typeBits<T> here, so no underflow).
+        if (hb == 0 || hb > typeBits<T> - b)
             return 0;
     }
 

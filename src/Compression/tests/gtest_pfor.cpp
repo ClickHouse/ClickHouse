@@ -302,3 +302,25 @@ TEST(PForSelfDescribing, FailClosed)
     EXPECT_TRUE(PFor::decompress<uint32_t>(std::span<const uint8_t>(wide)).empty());
     EXPECT_TRUE(PFor::decompress<uint64_t>(span_of(good_size)).empty());
 }
+
+/// An exception header that blockEncode can never emit must fail closed, not silently drop the
+/// patch (hb == 0) or shift its bits out of T (hb > typeBits - b). A genuine exception still decodes.
+TEST(PForBlockDecode, RejectsImpossibleExceptionHeader)
+{
+    /// Real exception block (small base + one outlier) round-trips unchanged.
+    std::vector<uint32_t> v(200, 5);
+    v[100] = 1u << 20;
+    std::vector<uint8_t> enc(PFor::maxCompressedBytes<uint32_t>(v.size()));
+    const size_t sz = PFor::encodeBlocks<uint32_t>(std::span<const uint32_t>(v), PFor::Delta::none, enc.data());
+    std::vector<uint32_t> dec(v.size() + 64, 0);
+    EXPECT_EQ(PFor::decodeBlocks<uint32_t>(enc.data(), v.size(), PFor::Delta::none, dec.data(), enc.data() + sz), sz);
+    for (size_t i = 0; i < v.size(); ++i)
+        ASSERT_EQ(dec[i], v[i]) << "at " << i;
+
+    /// Hand-built single normal block: byte0 = b, byte1 = e, byte2 = hb. Here b = 4, e = 1.
+    uint32_t out = 0;
+    const std::vector<uint8_t> hb_zero = {4, 1, 0};   // hb == 0: patch would be a silent no-op
+    EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_zero.data(), 1, PFor::Delta::none, &out, hb_zero.data() + hb_zero.size()), 0u);
+    const std::vector<uint8_t> hb_over = {4, 1, 29};  // hb > typeBits(32) - b(4): patch shifts out of range
+    EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_over.data(), 1, PFor::Delta::none, &out, hb_over.data() + hb_over.size()), 0u);
+}
