@@ -3398,17 +3398,18 @@ bool ParserExpressionImpl::parse(std::unique_ptr<Layer> start, IParser::Pos & po
 /// `OperatorType::None`). These are routed only through the `arrayExists`/`arrayAll` lambda
 /// form, never the subquery -> `IN` rewrite, which has no meaning for them.
 ///
-/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`) are
-/// included: `MatchImpl` supports a constant haystack with a non-constant needle, so
-/// `'abc' LIKE SOME(['a%', 'b%'])` rewrites to `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])`
-/// and evaluates without throwing. Keep this in sync with the operator documentation for the
-/// array quantifier.
+/// The string-search predicates (`LIKE`, `ILIKE`, `NOT LIKE`, `NOT ILIKE`, `REGEXP`,
+/// `SIMILAR TO`, `NOT SIMILAR TO`) are included: `MatchImpl` supports a constant haystack with a
+/// non-constant needle (`constantVector`), so `'abc' LIKE SOME(['a%', 'b%'])` rewrites to
+/// `arrayExists(_a -> 'abc' LIKE _a, ['a%', 'b%'])` and evaluates without throwing. Keep this in
+/// sync with the operator documentation for the array quantifier.
 static bool isArrayQuantifierPredicate(std::string_view function_name)
 {
     static const std::unordered_set<std::string_view> predicates
     {
         "isDistinctFrom", "isNotDistinctFrom",
-        "like", "ilike", "notLike", "notILike", "match"
+        "like", "ilike", "notLike", "notILike", "match",
+        "similarTo", "notSimilarTo"
     };
     return predicates.contains(function_name);
 }

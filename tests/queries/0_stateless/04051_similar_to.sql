@@ -210,3 +210,16 @@ SELECT '^x'   SIMILAR TO '%\^%';                   -- Returns: 1
 SELECT 'ab'   SIMILAR TO '%\^%';                   -- Returns: 0
 SELECT 'x$y'  SIMILAR TO '%\$%';                   -- Returns: 1
 SELECT 'ab'   SIMILAR TO '%\$%';                   -- Returns: 0
+
+SELECT '-- Array quantifiers: SIMILAR TO / NOT SIMILAR TO with SOME / ALL over a pattern array';
+SELECT 'abc' SIMILAR TO SOME(['a%', 'z%']);        -- exists: 'abc' SIMILAR TO 'a%'          -> 1
+SELECT 'abc' SIMILAR TO ALL(['a%', 'z%']);         -- not all: 'abc' NOT SIMILAR TO 'z%'      -> 0
+SELECT 'abc' SIMILAR TO ALL(['a%', '%c']);         -- all: 'abc' matches both                 -> 1
+SELECT 'abc' SIMILAR TO SOME(['(a|z)bc', 'x+']);   -- exists: 'abc' matches '(a|z)bc'          -> 1
+SELECT 'abc' NOT SIMILAR TO SOME(['z%', 'a%']);    -- exists: 'abc' NOT SIMILAR TO 'z%'        -> 1
+SELECT 'abc' NOT SIMILAR TO ALL(['x%', 'y%']);     -- all: 'abc' matches neither pattern       -> 1
+SELECT 'abc' NOT SIMILAR TO ALL(['a%', 'z%']);     -- not all: 'abc' SIMILAR TO 'a%'           -> 0
+-- Equivalence to the explicit arrayExists / arrayAll lambda form.
+SELECT ('abc' SIMILAR TO SOME(['a%', 'z%'])) = arrayExists(_a -> 'abc' SIMILAR TO _a, ['a%', 'z%']);
+SELECT ('abc' SIMILAR TO ALL(['a%', '%c'])) = arrayAll(_a -> 'abc' SIMILAR TO _a, ['a%', '%c']);
+SELECT ('abc' NOT SIMILAR TO ALL(['x%', 'y%'])) = arrayAll(_a -> 'abc' NOT SIMILAR TO _a, ['x%', 'y%']);
