@@ -11,8 +11,8 @@
 --
 -- The per-repetition cost is dominated by the probe-side scan, so the probe is kept small to
 -- stay fast under the debug/sanitizer `flaky check` (which runs the test many times with
--- randomized settings and enforces a 180s per-run limit). The 30 repetitions are what make the
--- race reliable, so their count is preserved; only the per-repetition probe scan is trimmed.
+-- randomized settings and enforces a 180s per-run limit). The repetitions are what make the
+-- race reliable, so many cheap ones are used; only the per-repetition probe scan is trimmed.
 
 DROP TABLE IF EXISTS rf_probe;
 DROP TABLE IF EXISTS rf_build;
@@ -40,8 +40,14 @@ SET join_overflow_mode = 'break';
 SET max_bytes_in_join = 1;
 SET max_threads = 16;
 SET max_block_size = 8192;
+-- Pin the external-join spill threshold. The `flaky check` harness randomizes
+-- max_bytes_before_external_join between 0 and 1000000000, and 0 closes the early-break window
+-- and prevents the race from reproducing at all. Pin it to the harness's own nonzero value so
+-- the reproducer is not silently disabled on randomized runs (a tiny value instead would force
+-- grace-hash spilling and raise LIMIT_EXCEEDED before find() is ever reached).
+SET max_bytes_before_external_join = 1000000000;
 
-{% for i in range(30) -%}
+{% for i in range(60) -%}
 SELECT count() FROM rf_probe AS l JOIN rf_build AS r ON l.k = r.k FORMAT Null;
 {% endfor %}
 
