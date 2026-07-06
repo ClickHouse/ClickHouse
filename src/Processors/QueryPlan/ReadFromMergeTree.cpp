@@ -2271,6 +2271,11 @@ void ReadFromMergeTree::buildIndexes(
 
         auto index_helper = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, *data.getSettings());
 
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot answer queries. Skip them so a filtered query does not throw building the condition.
+        if (index_helper->isInert())
+            continue;
+
         MergeTreeIndexConditionPtr condition;
         if (index_helper->isVectorSimilarityIndex())
         {
@@ -2353,25 +2358,10 @@ void ReadFromMergeTree::buildIndexes(
                 for (const auto & substream : format.substreams)
                 {
                     String stream_name = idx.index->getFileName() + substream.suffix;
-                    /// Check for both original and hashed filenames in checksums.txt
-                    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, part.data_part->checksums);
-                    if (actual_stream_name)
-                    {
-                        index_size += part.data_part->getFileSizeOrZero(*actual_stream_name + substream.extension);
-                    }
-                    else
-                    {
-                        /// Packed substreams have no individual checksum entry (only
-                        /// skp_idx.packed does), so the checksums-only lookup above returns
-                        /// nullopt. Ask the storage overlay - DataPartStorageOnDiskFull serves
-                        /// packed virtual-file sizes from the archive index. Without this
-                        /// fallback the cost-based skip-index reordering treats packed indices
-                        /// as free and may evaluate expensive ones before cheap ones.
-                        const String data_file = stream_name + substream.extension;
-                        const auto & storage = part.data_part->getDataPartStorage();
-                        if (storage.existsFile(data_file))
-                            index_size += storage.getFileSize(data_file);
-                    }
+                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
+                    /// reordering accounts for them instead of treating them as free.
+                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
                 }
 
                 index_sizes.emplace_back(index_size);

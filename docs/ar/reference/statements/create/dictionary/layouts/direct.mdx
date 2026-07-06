@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'تخطيط القاموس من نوع direct'
+sidebarTitle: 'direct'
+description: 'تخطيط قاموس يستعلم مباشرةً من المصدر من دون استخدام التخزين المؤقت.'
+doc_type: 'مرجع'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+لا يُخزَّن القاموس في الذاكرة، بل يصل مباشرةً إلى المصدر عند معالجة الطلب.
+
+يكون مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint).
+
+جميع أنواع [المصادر](/ar/reference/statements/create/dictionary/sources/overview#dictionary-sources) مدعومة، باستثناء الملفات المحلية.
+
+مثال على الإعداد:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="ملف الإعداد">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+هذا النوع من التخزين مخصّص للاستخدام مع [المفاتيح](/ar/reference/statements/create/dictionary/attributes#composite-key) المركّبة. وهو مشابه لـ `direct`.

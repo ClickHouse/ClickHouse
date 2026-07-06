@@ -1,0 +1,68 @@
+---
+sidebarTitle: 'سجل تدقيق قاعدة البيانات'
+slug: /cloud/security/audit-logging/database-audit-log
+title: 'سجل تدقيق قاعدة البيانات'
+description: 'توضح هذه الصفحة كيفية مراجعة سجل تدقيق قاعدة البيانات'
+doc_type: 'guide'
+keywords: ['تسجيل التدقيق', 'سجلات قاعدة البيانات', 'الامتثال', 'الأمان', 'المراقبة']
+---
+
+يوفّر ClickHouse سجلات تدقيق قاعدة البيانات افتراضيًا. وتركّز هذه الصفحة على السجلات ذات الصلة بالأمان. ولمزيد من المعلومات حول البيانات التي يسجّلها النظام، راجع وثائق [جداول النظام](/ar/reference/system-tables/overview).
+
+<Tip>
+  **الاحتفاظ بالسجلات**
+
+  تُسجَّل المعلومات مباشرةً في جداول النظام، ويُحتفَظ بها افتراضيًا لمدة تصل إلى 30 يومًا. وقد تطول هذه المدة أو تقصر، بحسب وتيرة عمليات الدمج في النظام. ويمكن للعملاء اتخاذ تدابير إضافية للاحتفاظ بالسجلات لمدة أطول أو تصديرها إلى نظام إدارة معلومات وأحداث الأمان (SIEM) للتخزين طويل الأمد. التفاصيل أدناه.
+</Tip>
+
+<div id="security-relevant-logs">
+  ## السجلات ذات الصلة بالأمان
+</div>
+
+يسجّل ClickHouse أحداث قاعدة البيانات المرتبطة بالأمان بشكل أساسي في سجلات الجلسات وسجلات الاستعلامات.
+
+يسجّل [system.session&#95;log](/ar/reference/system-tables/session_log) محاولات تسجيل الدخول الناجحة والفاشلة، بالإضافة إلى موقع محاولة المصادقة. ويمكن استخدام هذه المعلومات لاكتشاف هجمات حشو بيانات الاعتماد أو هجمات القوة الغاشمة ضد مثيل ClickHouse.
+
+استعلام نموذجي يوضح حالات فشل تسجيل الدخول
+
+```sql
+select event_time
+    ,type
+    ,user
+    ,auth_type
+    ,client_address 
+FROM clusterAllReplicas('default',system.session_log) 
+WHERE type='LoginFailure' 
+LIMIT 100
+```
+
+يسجل [system.query&#95;log](/ar/reference/system-tables/query_log) نشاط الاستعلامات المنفَّذة على مثيل ClickHouse. ويمكن أن تكون هذه المعلومات مفيدة في تحديد الاستعلامات التي نفذها مهاجم.
+
+مثال على استعلام للبحث عن أنشطة المستخدم &quot;compromised&#95;account&quot;
+
+```sql
+SELECT event_time
+    ,address
+    ,initial_user
+    ,initial_address
+    ,forwarded_for
+    ,query 
+FROM clusterAllReplicas('default', system.query_log) 
+WHERE user=’compromised_account’
+```
+
+<div id="reatining-log-data-within-services">
+  ## الاحتفاظ ببيانات السجلات داخل الخدمات
+</div>
+
+يمكن للعملاء الذين يحتاجون إلى فترة احتفاظ أطول أو متانة أكبر للسجلات استخدام العروض المادية لتحقيق هذه الأهداف. ولمزيد من المعلومات عن العروض المادية، وماهيتها، وفوائدها، وكيفية تنفيذها، راجع فيديوهاتنا ووثائقنا حول [العروض المادية](/ar/concepts/features/materialized-views/index).
+
+<div id="exporting-logs">
+  ## تصدير السجلات
+</div>
+
+يمكن كتابة سجلات النظام أو تصديرها إلى وجهة تخزين باستخدام تنسيقات متعددة متوافقة مع أنظمة SIEM. لمزيد من المعلومات، راجع وثائق [دوال الجداول](/ar/reference/functions/table-functions/index) الخاصة بنا. وأكثر الأساليب شيوعًا هي:
+
+* [الكتابة إلى S3](/ar/reference/functions/table-functions/s3)
+* [الكتابة إلى GCS](/ar/reference/functions/table-functions/gcs)
+* [الكتابة إلى Azure Blob Storage](/ar/reference/functions/table-functions/azureBlobStorage)

@@ -1,0 +1,110 @@
+---
+slug: /sql-reference/table-functions/generate_series
+sidebarTitle: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: 'يعيد جدولًا يحتوي على عمود واحد هو `generate_series` ‏(UInt64)، ويتضمن أعدادًا صحيحة من start إلى stop، بما في ذلك القيمتان الحدّيتان.'
+doc_type: 'مرجع'
+---
+
+الاسم البديل: `generateSeries`
+
+<div id="syntax">
+  ## البنية
+</div>
+
+يعيد جدولًا يحتوي على العمود الوحيد &#39;generate&#95;series&#39; (`UInt64`) ويتضمن أعدادًا صحيحة من start إلى stop، بشمول الطرفين:
+
+```sql
+generate_series(START, STOP)
+```
+
+يعيد جدولًا يحتوي على العمود الوحيد &#39;generate&#95;series&#39; (`UInt64`) ويتضمن أعدادًا صحيحة من start إلى stop، مع تضمين القيمتين، وبفاصل بين القيم يحدده `STEP`:
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+يمكن أن تكون `STEP` سالبة، وفي هذه الحالة تُنشأ السلسلة بترتيب تنازلي من `START` حتى `STOP`. وإذا كانت `STEP` سالبة وكان `START < STOP`، فستكون النتيجة فارغة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+تُرجِع الاستعلامات التالية جداول لها المحتوى نفسه ولكن بأسماء أعمدة مختلفة:
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+وتُرجِع الاستعلامات التالية جداول ذات المحتوى نفسه ولكن بأسماء أعمدة مختلفة (مع أن الخيار الثاني أكثر كفاءة):
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+ولّد متتالية تنازلية:
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```
