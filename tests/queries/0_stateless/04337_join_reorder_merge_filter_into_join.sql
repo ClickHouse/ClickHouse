@@ -13,6 +13,7 @@ SET query_plan_optimize_join_order_limit = 64;
 SET query_plan_optimize_join_order_randomize = 1;
 SET query_plan_merge_expression_into_join = 1;
 SET query_plan_merge_filters_into_join = 1;
+SET explain_query_plan_default = 'legacy'; -- The step-counting queries below match plan lines with anchored LIKE, which the pretty tree format breaks
 
 CREATE TABLE a (id Int32, x Int32, s String) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE b (id Int32, x Nullable(Int32), s Nullable(String)) ENGINE = MergeTree ORDER BY tuple();

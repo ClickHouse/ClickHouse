@@ -94,7 +94,7 @@ Positions: 1
           SaveSubqueryResultToBuffer
             JoinLogical
             Join: part[10000] ⋈ lineitem[100]
-            ResultRows: 10000
+            ResultRows: 100
             Type: INNER
             Strictness: ALL
             Locality: UNSPECIFIED
