@@ -1,0 +1,202 @@
+---
+sidebarTitle: '查看和恢复备份'
+slug: /cloud/manage/backups/overview
+title: '查看和恢复备份'
+keywords: ['备份', '云备份', '恢复']
+description: '概述 ClickHouse Cloud 中的备份'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南介绍了 ClickHouse Cloud 中备份的工作方式、可为你的服务配置备份的选项，以及如何从备份中恢复。
+
+**前置条件**
+
+* 你已阅读[&quot;ClickHouse Cloud 中备份的工作方式&quot;](/zh/products/cloud/features/backups/overview#how-backups-work-in-clickhouse-cloud) (功能概览页面)
+
+<div id="backup-status-list">
+  ## 备份状态列表
+</div>
+
+无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照设定的计划为您的服务执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用备份。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
+
+<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud 中的备份状态列表" border />
+
+<div id="understanding-backup-cost">
+  ## 了解备份成本
+</div>
+
+根据默认策略，ClickHouse Cloud 要求每天执行一次备份，并保留 24 小时。选择需要保留更多数据或提高备份频率的计划，可能会产生额外的备份存储费用。
+
+要了解备份成本，你可以在用量页面中查看每个服务的备份成本 (如下所示) 。当你按自定义计划运行备份几天后，就可以大致了解相关成本，并据此推算出每月的备份成本。
+
+<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud 中的备份使用情况图表" border />
+
+要估算备份的总成本，你需要先设定备份计划。在设置计划之前，你可以使用[定价计算器](https://clickhouse.com/pricing)，通过提供以下信息来获取每月成本估算：
+
+* 全量备份和增量备份的大小
+* 所需的备份频率
+* 所需的备份保留策略
+* 云提供商和区域
+
+<Note>
+  请注意，随着服务中的数据量随时间增长，备份的预计成本也会发生变化。
+</Note>
+
+<div id="restore-a-backup">
+  ## 恢复备份
+</div>
+
+备份会恢复到新的 ClickHouse Cloud 服务，而不是恢复到创建该备份时的现有服务。
+
+点击 **Restore** 备份图标后，您可以指定即将创建的新服务的服务名称，然后恢复此备份：
+
+<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="在 ClickHouse Cloud 中恢复备份" />
+
+在新服务准备就绪之前，它会在服务列表中显示为 `Provisioning`：
+
+<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="服务正在预配中" border />
+
+<div id="working-with-your-restored-service">
+  ## 使用已恢复的服务
+</div>
+
+备份恢复后，您现在会有两个相似的服务：需要恢复的**原始服务**，以及一个从原始服务备份中恢复出来的新的**已恢复服务**。
+
+备份恢复完成后，您应执行以下操作之一：
+
+* 使用新的已恢复服务，并删除原始服务。
+* 将数据从新的已恢复服务迁回原始服务，并删除新的已恢复服务。
+
+<div id="use-the-new-restored-service">
+  ### 使用**新已恢复服务**
+</div>
+
+要使用这个新服务，请执行以下步骤：
+
+1. 确认新服务包含适用于您的使用场景所需的 IP Access List 条目。
+2. 确认新服务包含您需要的数据。
+3. 删除原始服务。
+
+<div id="migrate-data-from-the-newly-restored-service-back-to-the-original-service">
+  ### 将数据从**已恢复服务**迁移回**原始服务**
+</div>
+
+假设由于某种原因，你无法使用已恢复服务，例如仍有用户或应用连接到现有服务。此时，你可以选择将新恢复的数据迁移到原始服务。可按以下步骤完成迁移：
+
+**允许远程访问已恢复服务**
+
+新服务应从备份恢复，并使用与原始服务相同的 IP 允许列表。这是必需的，因为除非你此前已允许从 **Anywhere** 访问，否则将无法连接到其他 ClickHouse Cloud 服务。请修改允许列表，临时允许从 **Anywhere** 访问。详情请参阅 [IP Access List](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 文档。
+
+**在新恢复的 ClickHouse 服务上 (即托管已恢复数据的系统)&#x20;**
+
+<Note>
+  你需要先重置新服务的密码才能访问它。可在服务列表的 **Settings** 选项卡中执行此操作。
+</Note>
+
+添加一个只读用户，使其能够读取源表 (本例中为 `db.table`) ：
+
+```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+```
+
+```sql
+  GRANT SELECT ON db.table TO exporter;
+```
+
+复制表定义：
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'db' AND table = 'table'
+```
+
+**在目标端 ClickHouse Cloud 系统上 (即包含已损坏表的那个系统) ：**
+
+创建目标端数据库：
+
+```sql
+  CREATE DATABASE db
+```
+
+使用源端的 `CREATE TABLE` 语句创建目标端：
+
+<Tip>
+  运行 `CREATE` 语句时，将 `ENGINE` 改为不带任何参数的 `ReplicatedMergeTree`。ClickHouse Cloud 会始终复制表，并提供正确的参数。
+</Tip>
+
+```sql
+  CREATE TABLE db.table ...
+  ENGINE = ReplicatedMergeTree
+  ORDER BY ...
+```
+
+使用 `remoteSecure` 函数，将数据从已恢复服务拉取到原有服务中：
+
+```sql
+  INSERT INTO db.table
+  SELECT *
+  FROM remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+在成功将数据插入原始服务后，请务必核实该服务中的数据。确认数据无误后，您还应删除这个新的  服务。
+
+<div id="undeleting-or-undropping-tables">
+  ## 取消删除或恢复表
+</div>
+
+ClickHouse Cloud 通过 [Shared Catalog](/zh/products/cloud/features/infrastructure/shared-catalog) 支持 `UNDROP` 命令。
+
+为防止用户误删表，可以使用 [`GRANT` 语句](/zh/reference/statements/grant) 撤销特定用户或角色执行 [`DROP TABLE` 命令](/zh/reference/statements/drop#drop-table) 的权限。
+
+<Note>
+  为防止数据被误删，请注意，在 ClickHouse Cloud 中，默认无法删除大于 `1TB` 的表。
+  如果你确实需要删除超过此阈值的表，可以使用设置 `max_table_size_to_drop`：
+
+  ```sql
+  DROP TABLE IF EXISTS table_to_drop
+  SYNC SETTINGS max_table_size_to_drop=2000000000000 -- 将限制提高到 2TB
+  ```
+</Note>
+
+<Note>
+  旧版套餐：对于使用旧版套餐的客户，默认包含保留 24 小时的每日备份，费用计入存储成本。
+</Note>
+
+<div id="backup-durations">
+  ## 备份耗时
+</div>
+
+备份和恢复的耗时取决于多种因素，例如数据库大小、schema 以及数据库中的表数量。
+由于需要备份的数据量更少，增量备份通常会比全量备份快得多。
+如上所述，从增量备份恢复通常会比从全量备份恢复稍慢，因为恢复时需要包含该事件链中的所有增量备份以及最近一次全量备份。
+
+根据我们的测试，较小的备份 (约 1 TB) 完成备份可能需要约 10–15 分钟，甚至更久。
+小于 20 TB 的备份通常可在 1 小时内完成，而备份 50 TB 的数据大约需要 2–3 小时。
+随着规模增大，备份会体现出规模效应。我们还观察到，某些内部服务高达 1 PB 的备份可在约 10 小时内完成。
+
+<Note>
+  备份到外部存储桶的速度可能会比备份到 ClickHouse 存储桶更慢
+</Note>
+
+恢复耗时与备份耗时大致相当。
+
+我们建议使用你自己的数据库或样本数据进行测试，以获得更准确的预估，因为实际耗时取决于上文所述的多种因素。
+
+<div id="configurable-backups">
+  ## 可配置备份
+</div>
+
+如果您想设置不同于默认备份计划的备份计划，请参阅[可配置备份](/zh/products/cloud/guides/backups/configurable-backups)。
+
+<div id="export-backups-to-your-own-cloud-account">
+  ## 将备份导出到您自己的云账户
+</div>
+
+如果您想将备份导出到自己的云账户，请参阅[此处](/zh/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)。

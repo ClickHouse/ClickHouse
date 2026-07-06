@@ -1,0 +1,69 @@
+---
+title: 如何计算表中各列的空值/零值占比
+description: 了解如何计算 ClickHouse 表中各列的空值或零值占比，以优化稀疏列的序列化。
+date: 2023-05-18
+tags: ['性能与优化']
+keywords: ['空值/零值占比', '计算']
+---
+
+<div id="how-to-calculate-the-ratio-of-emptyzero-values-in-every-column-in-a-table">
+  ## 如何计算表中每一列的空值/零值占比
+</div>
+
+如果某一列是稀疏的 (为空或大多数值为零) ，ClickHouse 可以将其编码为稀疏格式，并自动优化计算——查询时无需对数据进行完全解压。实际上，如果你知道某一列的稀疏程度，就可以通过 [`ratio_of_defaults_for_sparse_serialization` 设置](/zh/reference/settings/merge-tree-settings#ratio_of_defaults_for_sparse_serialization) 来定义其占比，从而优化序列化。
+
+这个实用查询可能需要一些时间，但它会分析表中的每一行，并计算指定表中每一列的零值 (或默认值) 占比：
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM table_name
+FORMAT Vertical
+```
+
+例如，我们在上文中对名为 `sensors` 的[environmental sensors dataset](/zh/get-started/sample-datasets/environmental-sensors)表执行了这个查询；该表包含超过 200 亿行和 19 列：
+
+```sql
+SELECT *
+    APPLY x -> (x = defaultValueOfArgumentType(x)) APPLY avg APPLY x -> round(x, 3)
+FROM sensors
+FORMAT Vertical
+```
+
+响应如下：
+
+```response
+
+Row 1:
+──────
+round(avg(equals(sensor_id, defaultValueOfArgumentType(sensor_id))), 3):                 0
+round(avg(equals(sensor_type, defaultValueOfArgumentType(sensor_type))), 3):             0.159
+round(avg(equals(location, defaultValueOfArgumentType(location))), 3):                   0
+round(avg(equals(lat, defaultValueOfArgumentType(lat))), 3):                             0.001
+round(avg(equals(lon, defaultValueOfArgumentType(lon))), 3):                             0.001
+round(avg(equals(timestamp, defaultValueOfArgumentType(timestamp))), 3):                 0
+round(avg(equals(P1, defaultValueOfArgumentType(P1))), 3):                               0.474
+round(avg(equals(P2, defaultValueOfArgumentType(P2))), 3):                               0.475
+round(avg(equals(P0, defaultValueOfArgumentType(P0))), 3):                               0.995
+round(avg(equals(durP1, defaultValueOfArgumentType(durP1))), 3):                         0.999
+round(avg(equals(ratioP1, defaultValueOfArgumentType(ratioP1))), 3):                     0.999
+round(avg(equals(durP2, defaultValueOfArgumentType(durP2))), 3):                         1
+round(avg(equals(ratioP2, defaultValueOfArgumentType(ratioP2))), 3):                     1
+round(avg(equals(pressure, defaultValueOfArgumentType(pressure))), 3):                   0.83
+round(avg(equals(altitude, defaultValueOfArgumentType(altitude))), 3):                   1
+round(avg(equals(pressure_sealevel, defaultValueOfArgumentType(pressure_sealevel))), 3): 1
+round(avg(equals(temperature, defaultValueOfArgumentType(temperature))), 3):             0.532
+round(avg(equals(humidity, defaultValueOfArgumentType(humidity))), 3):                   0.544
+
+1 row in set. Elapsed: 992.041 sec. Processed 20.69 billion rows, 1.39 TB (20.86 million rows/s., 1.40 GB/s.)
+```
+
+根据上述结果：
+
+* `sensor_id` 列完全不稀疏。实际上，每一行都有一个非零值
+* `sensor_type` 列只有大约 15.9% 的情况下是稀疏的
+* `P0` 列非常稀疏：99.9% 的值都是零
+* `pressure` 列相当稀疏，达到 83%
+* `temperature` 列有 53.2% 的值缺失或为零
+
+正如前面所说，这条查询语句很适合用来计算 ClickHouse 表中各列的稀疏程度！

@@ -1,0 +1,41 @@
+---
+description: '始终驻留在 RAM 中的数据集。它 предназначено 用于 `IN` 运算符的右侧。'
+sidebarTitle: 'Set'
+slug: /engines/table-engines/special/set
+title: 'Set 表引擎'
+doc_type: 'reference'
+---
+
+<Note>
+  在 ClickHouse Cloud 中，如果您的服务是使用早于 25.4 的版本创建的，则需要使用 `SET compatibility=25.4` 将兼容性至少设置为 25.4。
+</Note>
+
+始终驻留在 RAM 中的数据集。它 предназначено 用于 `IN` 运算符的右侧 (参见“In operators”一节) 。
+
+您可以使用 `INSERT` 向表中插入数据。新元素会被添加到数据集中，而重复项会被忽略。
+但您不能从该表执行 `SELECT`。检索数据的唯一方式是将其用在 `IN` 运算符的右半部分。
+
+数据始终位于 RAM 中。对于 `INSERT`，插入的数据块也会写入磁盘上表的目录中。启动 server 时，这些数据会被加载到 RAM 中。换句话说，重启后，数据仍会保留。
+
+如果 server 发生异常重启，磁盘上的数据块可能会丢失或损坏。在后一种情况下，您可能需要手动删除包含损坏数据的文件。
+
+<div id="join-limitations-and-settings">
+  ### 限制与设置
+</div>
+
+创建表时，将应用以下设置：
+
+<div id="persistent">
+  #### Persistent
+</div>
+
+禁用 Set 和 [Join](/zh/reference/engines/table-engines/special/join) 表引擎的持久化功能。
+
+可降低 I/O 开销。适用于追求性能且无需持久化的场景。
+
+可能的值：
+
+* 1 — 启用。
+* 0 — 禁用。
+
+默认值：`1`。

@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Middleware'
+slug: /integrations/middleware
+keywords: ['clickhouse', 'middleware', 'observabilidade', 'integração', 'monitoramento']
+description: 'Conecte o Middleware ao ClickHouse para monitorar e analisar métricas e logs do ClickHouse.'
+title: 'Conectar o Middleware ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import PartnerBadge from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Middleware](https://middleware.io/) é uma plataforma de observabilidade em nuvem para monitorar infraestrutura, logs e o desempenho de aplicações.
+
+Você pode conectar o ClickHouse ao Middleware para coletar e visualizar a telemetria do banco de dados como parte dos seus fluxos de monitoramento mais amplos.
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Um serviço do ClickHouse em execução (Cloud ou autogerenciado)
+* Acesso ao host, à porta, ao nome de usuário e à senha do seu ClickHouse
+* Uma conta no Middleware
+
+<div id="connect-clickhouse-in-middleware">
+  ## Conecte o ClickHouse ao Middleware
+</div>
+
+1. Faça login na sua conta do Middleware.
+2. Vá para **Integrations** e procure por **ClickHouse**.
+3. Escolha a integração do ClickHouse e insira os detalhes da conexão:
+   * Host
+   * Porta
+   * Banco de dados
+   * Nome de usuário
+   * Senha
+4. Salve a integração e faça um teste de conexão.
+
+<div id="verify-data-collection">
+  ## Verifique a coleta de dados
+</div>
+
+Após a configuração, confirme se as métricas e/ou os logs do ClickHouse estão visíveis nos dashboards do Middleware.
+
+Se a validação da conexão falhar, verifique se:
+
+* o ClickHouse aceita conexões vindas do Middleware
+* as configurações de SSL/TLS correspondem ao endpoint do ClickHouse
+* as credenciais e as permissões no banco de dados estão corretas
+
+<div id="additional-resources">
+  ## Recursos adicionais
+</div>
+
+* [Site da Middleware](https://middleware.io/)

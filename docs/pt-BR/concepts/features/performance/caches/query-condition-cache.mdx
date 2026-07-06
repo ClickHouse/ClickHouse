@@ -1,0 +1,80 @@
+---
+description: 'Guia para usar e configurar o recurso de cache de condições de consulta no ClickHouse'
+sidebarTitle: 'Cache de condições de consulta'
+slug: /operations/query-condition-cache
+title: 'Cache de condições de consulta'
+doc_type: 'guide'
+---
+
+<Note>
+  O cache de condições de consulta só funciona quando [enable&#95;analyzer](/pt-BR/reference/settings/session-settings#enable_analyzer) está definido como true, que é o valor padrão.
+</Note>
+
+Muitas cargas de trabalho do mundo real envolvem consultas repetidas sobre os mesmos dados ou praticamente os mesmos dados (por exemplo, dados já existentes mais dados novos).
+O ClickHouse oferece várias técnicas de otimização para esse tipo de padrão de consulta.
+Uma possibilidade é ajustar o layout físico dos dados usando estruturas de índice (por exemplo, índices de chave primária, skipping indexes, projeções) ou pré-cálculo (visões materializadas).
+Outra possibilidade é usar o [cache de consultas](/pt-BR/concepts/features/performance/caches/query-cache) do ClickHouse para evitar a reavaliação de consultas repetidas.
+A desvantagem da primeira abordagem é que ela exige intervenção manual e monitoramento por um administrador de banco de dados.
+A segunda abordagem pode retornar resultados desatualizados (já que o cache de consultas não é consistente do ponto de vista transacional), o que pode ou não ser aceitável, dependendo do caso de uso.
+
+O cache de condições de consulta oferece uma solução elegante para ambos os problemas.
+Ele se baseia na ideia de que avaliar uma condição de filtro (por exemplo, `WHERE col = 'xyz'`) sobre os mesmos dados sempre retornará os mesmos resultados.
+Mais especificamente, o cache de condições de consulta memoriza, para cada filtro avaliado e cada grânulo (= um bloco de 8192 linhas por padrão), se nenhuma linha no grânulo satisfaz a condição de filtro.
+Essa informação é registrada como um único bit: um bit 0 indica que nenhuma linha corresponde ao filtro, enquanto um bit 1 significa que existe pelo menos uma linha correspondente.
+No primeiro caso, o ClickHouse pode ignorar o grânulo correspondente durante a avaliação do filtro; no segundo, o grânulo precisa ser carregado e avaliado.
+
+O cache de condições de consulta é eficaz se três pré-requisitos forem atendidos:
+
+* Primeiro, a carga de trabalho deve avaliar repetidamente as mesmas condições de filtro. Isso acontece naturalmente quando uma consulta é repetida várias vezes, mas também pode acontecer se duas consultas compartilharem os mesmos filtros, por exemplo, `SELECT product FROM products WHERE quality > 3` e `SELECT vendor, count() FROM products WHERE quality > 3`.
+* Segundo, a maior parte dos dados é imutável, ou seja, não muda entre consultas. Em geral, esse é o caso no ClickHouse, pois as partes são imutáveis e são criadas apenas por INSERTs.
+* Terceiro, os filtros são seletivos, ou seja, apenas relativamente poucas linhas satisfazem a condição de filtro. Quanto menos linhas corresponderem à condição de filtro, mais grânulos serão registrados com bit 0 (nenhuma linha correspondente) e mais dados poderão ser &quot;podados&quot; das avaliações de filtro subsequentes.
+
+<div id="memory-consumption">
+  ## Consumo de memória
+</div>
+
+Como o cache de condições de consulta armazena apenas um único bit por condição de filtro e por grânulo, ele consome pouca memória.
+O tamanho máximo do cache de condições de consulta pode ser configurado usando a configuração do servidor [`query_condition_cache_size`](/pt-BR/reference/settings/server-settings/settings#query_condition_cache_size) (padrão: 100 MB).
+Um tamanho de cache de 100 MB corresponde a 100 * 1024 * 1024 * 8 = 838.860.800 entradas.
+Como cada entrada representa uma mark (8192 linhas por padrão), o cache pode abranger até 6.871.947.673.600 (6,8 trilhões) linhas de uma única coluna.
+Na prática, os filtros são avaliados em mais de uma coluna, portanto esse número precisa ser dividido pelo número de colunas filtradas.
+
+<div id="configuration-settings-and-usage">
+  ## Configurações e uso
+</div>
+
+A configuração [use&#95;query&#95;condition&#95;cache](/pt-BR/reference/settings/session-settings#use_query_condition_cache) controla se uma consulta específica ou todas as consultas da sessão atual devem usar o cache de condições de consulta.
+
+Por exemplo, a primeira execução da consulta
+
+```sql
+SELECT col1, col2
+FROM table
+WHERE col1 = 'x'
+SETTINGS use_query_condition_cache = true;
+```
+
+armazenará intervalos da tabela que não satisfazem o predicado.
+Execuções subsequentes da mesma consulta, também com o parâmetro `use_query_condition_cache = true`, usarão o cache de condições de consulta para ler menos dados.
+
+<div id="administration">
+  ## Administração
+</div>
+
+O cache de condições de consulta não é preservado entre reinicializações do ClickHouse.
+
+Para limpar o cache de condições de consulta, execute [`SYSTEM CLEAR QUERY CONDITION CACHE`](/pt-BR/reference/statements/system#drop-query-condition-cache).
+
+O conteúdo do cache é exibido na tabela do sistema [system.query&#95;condition&#95;cache](/pt-BR/reference/system-tables/query_condition_cache).
+Para calcular o tamanho atual do cache de condições de consulta em MB, execute `SELECT formatReadableSize(sum(entry_size)) FROM system.query_condition_cache`.
+Se quiser investigar condições de filtro individuais, você pode verificar o campo `condition` em `system.query_condition_cache`. Observe que esse campo está disponível apenas em builds de depuração.
+
+O número de acertos e falhas do cache de condições de consulta desde a inicialização do banco de dados é mostrado nos eventos &quot;QueryConditionCacheHits&quot; e &quot;QueryConditionCacheMisses&quot; na tabela do sistema [system.events](/pt-BR/reference/system-tables/events).
+Ambos os contadores são atualizados apenas para consultas `SELECT` executadas com a configuração `use_query_condition_cache = true`; outras consultas não afetam &quot;QueryCacheMisses&quot;.
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Apresentando o cache de condições de consulta](https://clickhouse.com/blog/introducing-the-clickhouse-query-condition-cache)
+* [Predicate Caching: Query-Driven Secondary Indexing for Cloud Data Warehouses (Schmidt et. al., 2024)](https://doi.org/10.1145/3626246.3653395)

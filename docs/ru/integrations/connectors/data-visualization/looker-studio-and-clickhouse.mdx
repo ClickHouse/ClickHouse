@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Looker Studio'
+slug: /integrations/lookerstudio
+keywords: ['clickhouse', 'looker', 'studio', 'connect', 'mysql', 'integrate', 'ui']
+description: 'Looker Studio, ранее известный как Google Data Studio, — это онлайн-инструмент для преобразования данных в настраиваемые информативные отчёты и панели мониторинга.'
+title: 'Looker Studio'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import MySQLCloudSetup from '/snippets/ru/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/ru/_clickhouse_mysql_on_premise_setup.mdx';
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker Studio может подключаться к ClickHouse через интерфейс MySQL, используя официальный источник данных Google MySQL.
+
+<div id="clickhouse-cloud-setup">
+  ## Настройка ClickHouse Cloud
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## Настройка сервера ClickHouse в собственной инфраструктуре
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-looker-studio-to-clickhouse">
+  ## Подключение Looker Studio к ClickHouse
+</div>
+
+Сначала войдите на https://lookerstudio.google.com с помощью своей учетной записи Google и создайте новый источник данных:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="Создание нового источника данных в интерфейсе Looker Studio" border />
+
+<br />
+
+Найдите официальный коннектор MySQL от Google (он называется просто **MySQL**):
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="Поиск коннектора MySQL в списке коннекторов Looker Studio" border />
+
+<br />
+
+Укажите сведения о подключении. Обратите внимание, что порт интерфейса MySQL по умолчанию — 9004,
+и он может отличаться в зависимости от конфигурации сервера.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="Указание сведений о MySQL-подключении к ClickHouse в Looker Studio" border />
+
+<br />
+
+Теперь у вас есть два варианта получения данных из ClickHouse. Во-первых, можно использовать функцию Table Browser:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="Использование Table Browser для выбора таблиц ClickHouse в Looker Studio" border />
+
+<br />
+
+Либо можно указать пользовательский запрос, чтобы получить данные:
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="Использование пользовательского SQL-запроса для получения данных из ClickHouse в Looker Studio" border />
+
+<br />
+
+Наконец, вы должны увидеть определённую автоматически структуру таблицы и при необходимости скорректировать типы данных.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="Просмотр автоматически определённой структуры таблицы ClickHouse в Looker Studio" border />
+
+<br />
+
+Теперь вы можете перейти к изучению данных или созданию нового отчета!
+
+<div id="using-looker-studio-with-clickhouse-cloud">
+  ## Использование Looker Studio с ClickHouse Cloud
+</div>
+
+При использовании ClickHouse Cloud сначала необходимо включить интерфейс MySQL. Это можно сделать в диалоговом окне подключения на вкладке &quot;MySQL&quot;.
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="Включение интерфейса MySQL в настройках ClickHouse Cloud" border />
+
+<br />
+
+В интерфейсе Looker Studio выберите опцию &quot;Enable SSL&quot;. SSL-сертификат ClickHouse Cloud подписан [Let&#39;s Encrypt](https://letsencrypt.org/certificates/). Вы можете скачать этот корневой сертификат [здесь](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="Настройка подключения Looker Studio с параметрами SSL для ClickHouse Cloud" border />
+
+<br />
+
+Остальные шаги такие же, как в предыдущем разделе выше.

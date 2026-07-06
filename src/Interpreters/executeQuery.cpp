@@ -877,7 +877,7 @@ void logExceptionBeforeStart(
 
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
-        quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1420,6 +1420,9 @@ static BlockIO executeQueryImpl(
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+        /// Make the hash available to the parts of execution that account `NORMALIZED_QUERY_HASH`
+        /// quotas but do not otherwise have it (e.g. the insert path).
+        context->setNormalizedQueryHash(normalized_query_hash);
     }
     catch (...)
     {
@@ -1924,6 +1927,10 @@ static BlockIO executeQueryImpl(
 
         auto & pipeline = res.pipeline;
 
+        /// Propagate the normalized query hash so that `NORMALIZED_QUERY_HASH` quotas account the
+        /// result/read/execution-time counters against the per-hash intervals of this query pattern.
+        pipeline.setNormalizedQueryHash(normalized_query_hash);
+
         if (pipeline.pulling() || pipeline.completed())
         {
             /// Limits on the result, the quota on the result, and also callback for progress.
@@ -1984,7 +1991,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1999,7 +2006,7 @@ static BlockIO executeQueryImpl(
                 if (!internal)
                 {
                     if (my_quota)
-                        my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                        my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);

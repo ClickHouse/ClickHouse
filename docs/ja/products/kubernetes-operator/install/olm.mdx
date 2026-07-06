@@ -1,0 +1,113 @@
+---
+slug: /clickhouse-operator/install/olm
+title: 'Operator Lifecycle Manager（OLM）を使用した ClickHouse Operator のインストール'
+keywords: ['kubernetes']
+description: 'このガイドでは、kubectl とマニフェストファイルを使用して ClickHouse Operator をインストールする方法を説明します。'
+doc_type: 'guide'
+sidebarTitle: 'OLM'
+---
+
+このガイドでは、Operator Lifecycle Manager (OLM) を使用して ClickHouse Operator をインストールする方法を説明します。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Kubernetes クラスターのバージョンが 1.28.0 以降であること
+* kubectl がクラスターにアクセスできるように設定されていること
+* クラスター管理者権限
+* OLM (Operator Lifecycle Manager) がインストールされていること
+
+<div id="install-olm">
+  ## OLM をインストールする
+</div>
+
+クラスターに OLM がまだインストールされていない場合は、インストールします。
+
+```bash
+# OLMがインストールされているか確認する
+kubectl get ns olm
+
+# インストールされていない場合はOLMをインストールする
+curl -sL https://github.com/operator-framework/operator-lifecycle-manager/releases/download/v0.28.0/install.sh | bash -s v0.28.0
+```
+
+<div id="install-the-operator">
+  ## Operator をインストール
+</div>
+
+<div id="install-from-github-catalog">
+  ### GitHub Catalog からインストール
+</div>
+
+```bash
+# operatorのネームスペースを作成する
+kubectl create namespace clickhouse-operator-system
+
+# CatalogSourceを作成する
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: CatalogSource
+metadata:
+  name: clickhouse-operator-catalog
+  namespace: clickhouse-operator-system
+spec:
+  sourceType: grpc
+  image: ghcr.io/clickhouse/clickhouse-operator-catalog:latest
+  displayName: ClickHouse Operator
+  publisher: ClickHouse
+  updateStrategy:
+    registryPoll:
+      interval: 30m
+EOF
+
+# OperatorGroupを作成する
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: clickhouse-operator-group
+  namespace: clickhouse-operator-system
+EOF
+
+# Subscriptionを作成する
+kubectl apply -f - <<EOF
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: clickhouse-operator
+  namespace: clickhouse-operator-system
+spec:
+  channel: stable-v0
+  name: clickhouse-operator
+  source: clickhouse-operator-catalog
+  sourceNamespace: clickhouse-operator-system
+  installPlanApproval: Automatic
+EOF
+```
+
+<div id="uninstall">
+  ## アンインストール
+</div>
+
+```bash
+# サブスクリプションを削除する
+kubectl delete subscription clickhouse-operator -n clickhouse-operator-system
+# 関連するすべてのリソースを検索する
+kubectl get operator clickhouse-operator.clickhouse-operator-system -o=jsonpath="{.status.components.refs}" | jq 'map({kind, name})'
+# 関連するリソース（CRD、デプロイメントなど）を削除する
+kubectl delete <resource> <name> [-n <namespace>]  # 見つかった各リソースに対して繰り返す
+
+# OperatorGroup を削除する（任意）:
+kubectl delete operatorgroup clickhouse-operator-group -n clickhouse-operator-system
+# Operator ビューを削除する
+kubectl delete operator clickhouse-operator.clickhouse-operator-system
+```
+
+アンインストールの詳細については、[OLMのドキュメント](https://olm.operatorframework.io/docs/tasks/uninstall-operator/)を参照してください。
+
+<div id="additional-resources">
+  ## 関連リソース
+</div>
+
+* [Operator Lifecycle Manager のドキュメント](https://olm.operatorframework.io/docs)
