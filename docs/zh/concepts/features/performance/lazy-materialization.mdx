@@ -1,0 +1,178 @@
+---
+slug: /optimize/lazy-materialization
+sidebarTitle: '惰性物化'
+description: '介绍 ClickHouse 中惰性物化的文章'
+title: '惰性物化'
+doc_type: 'guide'
+keywords: ['optimization', '惰性物化']
+---
+
+本文介绍惰性物化的工作机制，以及它在 ClickHouse 更广泛的 I/O 优化栈中的作用。
+本文还通过一个真实场景示例，展示惰性物化如何提升查询性能。
+
+<Tip>
+  **自 25.4 版本起可用**
+
+  惰性物化于 ClickHouse 25.4 版本中引入，并默认启用。
+</Tip>
+
+<div id="overview">
+  ## 概述
+</div>
+
+多年来，ClickHouse 引入了一系列分层优化，以大幅减少 I/O。
+这些技术构成了其高性能和高效率的基础：
+
+| Optimization                                                                                                                                                                                                | Description                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| [**列式存储**](/zh/get-started/about/intro#row-oriented-vs-column-oriented-storage)                                                                                                                                | 允许跳过查询中不需要的整列，还能通过将相似值集中存储来实现高压缩，从而在数据加载期间尽可能减少 I/O。                                                                       |
+| [**稀疏主索引**](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes) | [**二级数据跳过索引**](/zh/concepts/features/performance/skip-indexes/skipping-indexes) | [**投影**](/zh/concepts/features/projections/projections) | 通过识别哪些 [粒度](/zh/concepts/core-concepts/glossary#granule) (行块) 可能匹配&#95;已建立索引的列&#95;上的过滤条件，剪除无关数据。这些技术在粒度级别发挥作用，既可单独使用，也可组合使用。 |
+| [**PREWHERE**](/zh/reference/statements/select/prewhere)                                                                                                                                                       | 还会检查&#95;未建立索引的&#95;列上的过滤条件匹配情况，以便尽早跳过原本会被加载后又丢弃的数据。它既可以独立工作，也可以进一步细化索引选出的粒度，通过跳过不匹配&#95;所有&#95;列过滤条件的行来补充粒度剪枝。            |
+| [**查询条件缓存**](/zh/concepts/features/performance/caches/query-condition-cache)                                                                                                                                   | 通过记住上一次哪些粒度匹配了所有过滤条件，来加速重复查询。这样，即使查询形态发生变化，ClickHouse 也可以跳过读取和过滤那些未匹配的粒度。                                                  |
+
+尽管上述 I/O 优化可以显著减少数据读取量，但它们仍然假定：在执行排序、聚合或 `LIMIT` 等操作之前，必须先加载所有通过 `WHERE` 子句的行所对应的全部列。但如果某些列要到后续阶段才需要，或者某些数据虽然通过了 `WHERE` 子句，实际上却根本不会被用到，又该怎么办？
+这正是 惰性物化 发挥作用的地方。它是一种正交增强，补全了整个 I/O 优化栈：
+
+* 索引结合 `PREWHERE`，可确保只处理匹配 `WHERE` 子句中列过滤条件的行。
+* 惰性物化 在此基础上，进一步将列读取推迟到查询执行计划实际需要时才进行。
+  即使在过滤之后，也只会立即加载下一步操作所需的列——例如排序所需的列。
+  其他列会延后读取，并且由于 `LIMIT` 的存在，通常只会部分读取，仅读取足以生成最终结果的数据。
+  这使得 惰性物化 对 Top N 查询尤其有效，因为最终结果可能只需要从某些列 (而这些列往往很大) 中取出少量几行。
+
+<div id="worked-example">
+  ## 一个完整示例
+</div>
+
+我们强烈建议阅读博客文章[&quot;ClickHouse gets lazier (and faster): Introducing lazy materialization&quot;](https://clickhouse.com/blog/clickhouse-gets-lazier-and-faster-introducing-lazy-materialization#speed-without-filters-lazy-materialization-in-isolation)，以深入了解 惰性物化。下面的示例摘自上述博文，并在此重现，用于展示 ClickHouse 查询如何借助 惰性物化 将耗时从 219 秒缩短到仅 139 毫秒 (提速 1576×) 。
+
+要从索引和 `PREWHERE` 中受益，查询需要具备过滤条件：对于索引，过滤条件需作用于主键列；对于 `PREWHERE`，则可以作用于任意列。
+惰性物化 可以自然地叠加在这些优化之上，但与前面提到的其他优化不同，它甚至还能加速完全没有列过滤条件的查询。
+
+来看下面这个示例查询：它会找出 helpful votes 数量最多的 Amazon 评论，不考虑日期、产品、评分或验证状态，并返回前 3 条评论及其 title、headline 和全文。
+
+首先，在禁用 惰性物化 (使用 [`query_plan_optimize_lazy_materialization`](/zh/reference/settings/session-settings#query_plan_optimize_lazy_materialization)) 的情况下运行该查询 (文件系统缓存处于冷状态) ：
+
+```sql title="Query"
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+    query_plan_optimize_lazy_materialization = false;
+```
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 219.071 sec. Processed 150.96 million rows, 71.38 GB (689.08 thousand rows/s., 325.81 MB/s.)
+Peak memory usage: 1.11 GiB.
+```
+
+接着，再次运行该查询 (同样是在文件系统缓存未预热的情况下) ，但这次启用了延迟物化：
+
+```sql title="Query" highlight={11}
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+FORMAT Vertical
+SETTINGS
+query_plan_optimize_lazy_materialization = true;
+```
+
+<Tip>
+  一般情况下，你无需显式设置 `query_plan_optimize_lazy_materialization = true`，也能享受到惰性物化带来的好处。
+  该选项默认已启用。
+</Tip>
+
+```response title="Response" highlight={22-23}
+Row 1:
+──────
+helpful_votes:   47524
+product_title:   Kindle: Amazon's Original Wireless Reading Device (1st generation)
+review_headline: Why and how the Kindle changes everything
+review_body:     This is less a \"pros and cons\" review than a hopefully use...
+
+Row 2:
+──────
+helpful_votes:   41393
+product_title:   BIC Cristal For Her Ball Pen, 1.0mm, Black, 16ct (MSLP16-Blk)
+review_headline: FINALLY!
+review_body:     Someone has answered my gentle prayers and FINALLY designed ...
+
+Row 3:
+──────
+helpful_votes:   41278
+product_title:   The Mountain Kids 100% Cotton Three Wolf Moon T-Shirt
+review_headline: Dual Function Design
+review_body:     This item has wolves on it which makes it intrinsically swee...
+
+0 rows in set. Elapsed: 0.139 sec. Processed 150.96 million rows, 1.81 GB (1.09 billion rows/s., 13.06 GB/s.)
+Peak memory usage: 3.80 MiB.
+```
+
+比较关闭和启用惰性物化时的性能差异：
+
+| 指标     | 关闭惰性物化    | 开启惰性物化   | 改进       |
+| ------ | --------- | -------- | -------- |
+| 耗时     | 219.071 秒 | 0.139 秒  | 快约 1576× |
+| 读取数据量  | 71.38 GB  | 1.81 GB  | 少约 40×   |
+| 峰值内存占用 | 1.11 GiB  | 3.80 MiB | 少约 300×  |
+
+<div id="confirm-lazy-materialization">
+  ## 如何在查询执行计划中确认惰性物化
+</div>
+
+你可以使用 [`EXPLAIN`](/zh/reference/statements/explain) 子句查看该查询的逻辑执行计划，以观察前一个查询中惰性物化的使用情况：
+
+```sql
+EXPLAIN actions = 1
+SELECT
+    helpful_votes,
+    product_title,
+    review_headline,
+    review_body
+FROM amazon.amazon_reviews
+ORDER BY helpful_votes DESC
+LIMIT 3
+SETTINGS
+    query_plan_optimize_lazy_materialization = true;
+```
+
+```response highlight={2}
+...
+Lazily read columns: review_headline, review_body, product_title
+  Limit
+    Sorting
+      ReadFromMergeTree
+```
+
+您可以自下而上查看该算子计划，并看到 ClickHouse 会在排序和限制之后，才读取这三个较大的 String 列。

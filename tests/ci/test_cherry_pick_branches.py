@@ -9,7 +9,6 @@ anywhere. Label constants mirror `pr_info.Labels` and are kept local to avoid
 importing the heavyweight `cherry_pick` module.
 """
 import unittest
-from typing import List, Set
 
 from cherry_pick_branches import (
     backport_floor,

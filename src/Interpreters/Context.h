@@ -102,6 +102,7 @@ class Cluster;
 class Compiler;
 class MarkCache;
 class UniqueKeyIndexCache;
+class DeleteBitmapCache;
 class PrimaryIndexCache;
 class PageCache;
 class MMappedFileCache;
@@ -151,12 +152,14 @@ class AsynchronousInsertLog;
 class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
+class HypotheticalIndexStore;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
 struct InitialAllRangesAnnouncement;
+struct InitialAllRangesAnnouncementResponse;
 struct ParallelReadRequest;
 struct ParallelReadResponse;
 class S3SettingsByEndpoint;
@@ -222,8 +225,6 @@ using MergeMutateBackgroundExecutorPtr = std::shared_ptr<MergeMutateBackgroundEx
 class RoundRobinRuntimeQueue;
 using OrdinaryBackgroundExecutor = MergeTreeBackgroundExecutor<RoundRobinRuntimeQueue>;
 using OrdinaryBackgroundExecutorPtr = std::shared_ptr<OrdinaryBackgroundExecutor>;
-struct PartUUIDs;
-using PartUUIDsPtr = std::shared_ptr<PartUUIDs>;
 class KeeperDispatcher;
 struct WriteSettings;
 
@@ -259,7 +260,7 @@ struct ClusterFunctionReadTaskResponse;
 using ClusterFunctionReadTaskResponsePtr = std::shared_ptr<ClusterFunctionReadTaskResponse>;
 using ClusterFunctionReadTaskCallback = std::function<ClusterFunctionReadTaskResponsePtr()>;
 
-using MergeTreeAllRangesCallback = std::function<void(InitialAllRangesAnnouncement)>;
+using MergeTreeAllRangesCallback = std::function<std::optional<InitialAllRangesAnnouncementResponse>(InitialAllRangesAnnouncement)>;
 using MergeTreeReadTaskCallback = std::function<std::optional<ParallelReadResponse>(ParallelReadRequest)>;
 
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
@@ -381,6 +382,7 @@ protected:
 
     std::weak_ptr<QueryStatus> process_list_elem;  /// For tracking total resource usage for query.
     bool has_process_list_elem = false;     /// It's impossible to check if weak_ptr was initialized or not
+    UInt64 normalized_query_hash = 0;       /// Hash of the normalized query text, used for `NORMALIZED_QUERY_HASH` quotas.
     struct InsertionTableInfo
     {
         StorageID table = StorageID::createEmpty();
@@ -397,6 +399,7 @@ protected:
     String insert_format; /// Format, used in insert query.
 
     TemporaryTablesMapping external_tables_mapping;
+    mutable std::shared_ptr<HypotheticalIndexStore> hypothetical_index_store;
     /// Query scalars
     Scalars scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
@@ -674,9 +677,6 @@ protected:
 
     QueryMetadataCacheWeakPtr query_metadata_cache;
 
-    PartUUIDsPtr part_uuids; /// set of parts' uuids, is used for query parts deduplication
-    PartUUIDsPtr ignored_part_uuids; /// set of parts' uuids are meant to be excluded from query processing
-
     NameToNameMap query_parameters;   /// Dictionary with query parameters for prepared statements.
                                                      /// (key=name, value)
 
@@ -753,6 +753,7 @@ public:
     String getUserFilesPath() const;
     String getDictionariesLibPath() const;
     String getUserScriptsPath() const;
+    String getDynamicUserDefinedExecutableFunctionsPath() const;
     String getFilesystemCachesPath() const;
     String getFilesystemCacheUser() const;
 
@@ -829,6 +830,7 @@ public:
     void setUserFilesPath(const String & path);
     void setDictionariesLibPath(const String & path);
     void setUserScriptsPath(const String & path);
+    void setDynamicUserDefinedExecutableFunctionsPath(const String & path);
 
     void setTemporaryStorageInCache(const String & cache_disk_name, size_t max_size);
     void setTemporaryStoragePolicy(const String & policy_name, size_t max_size);
@@ -902,16 +904,21 @@ public:
     RowPolicyFilterPtr getRowPolicyFilter(const String & database, const String & table_name, RowPolicyFilterType filter_type) const;
 
     std::shared_ptr<const EnabledQuota> getQuota() const;
-    std::optional<QuotaUsage> getQuotaUsage() const;
+    std::vector<QuotaUsage> getQuotaUsages() const;
 
     /// Resource management related
     ResourceManagerPtr getResourceManager() const;
     ClassifierPtr getWorkloadClassifier() const;
+    /// Release the query slot early so the client can reuse it for its next query.
+    /// Only the query slot is released, not the memory reservation: pipeline threads still hold raw
+    /// pointers to it, so it is released later by `BlockIO::onFinish` after the pipeline is finalized.
     void releaseQuerySlot() const;
     String getMergeWorkload() const;
     void setMergeWorkload(const String & value);
     String getLicenseFile() const;
     void setLicenseFile(const String & value);
+    bool getShowLicenseExpirationWarnings() const;
+    void setShowLicenseExpirationWarnings(bool value);
     String getMutationWorkload() const;
     void setMutationWorkload(const String & value);
     bool getThrowOnUnknownWorkload() const;
@@ -923,7 +930,8 @@ public:
     UInt64 getConcurrentThreadsSoftLimitNum() const;
     UInt64 getConcurrentThreadsSoftLimitRatioToCores() const;
     String getConcurrentThreadsScheduler() const;
-    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler);
+    bool getConcurrentThreadsLazyAllocation() const;
+    std::pair<UInt64, String> setConcurrentThreadsSoftLimit(UInt64 num, UInt64 ratio_to_cores, const String & scheduler, bool lazy_allocation);
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -1001,6 +1009,8 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
+    HypotheticalIndexStore & getHypotheticalIndexStore() const;
+
     Scalars getScalars() const;
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
@@ -1077,6 +1087,10 @@ public:
 
     const QueryPrivilegesInfo & getQueryPrivilegesInfo() const { return *getQueryPrivilegesInfoPtr(); }
     QueryPrivilegesInfoPtr getQueryPrivilegesInfoPtr() const { return query_privileges_info; }
+    /// Share the privilege-accounting object with another context, so privileges checked on this context are
+    /// reported for the same query in `system.query_log`. Used when a background worker (e.g. RESTORE) runs on
+    /// a copy of the original query context but should still account its access checks to the original query.
+    void setQueryPrivilegesInfo(const QueryPrivilegesInfoPtr & query_privileges_info_) { query_privileges_info = query_privileges_info_; }
     void addQueryPrivilegesInfo(const String & privilege, bool granted) const;
 
     /// For table functions s3/file/url/hdfs/input we can use structure from
@@ -1180,6 +1194,9 @@ public:
     IUserDefinedSQLObjectsStorage & getUserDefinedSQLObjectsStorage();
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
+    /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
+    void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
+
     std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
@@ -1233,20 +1250,37 @@ public:
     void setHTTPHeaderFilter(const Poco::Util::AbstractConfiguration & config);
     const HTTPHeaderFilter & getHTTPHeaderFilter() const;
 
-    size_t getMaxNamedCollectionNumToWarn() const;
-    size_t getMaxTableNumToWarn() const;
-    size_t getMaxViewNumToWarn() const;
-    size_t getMaxDictionaryNumToWarn() const;
-    size_t getMaxDatabaseNumToWarn() const;
     size_t getMaxPartNumToWarn() const;
     size_t getMaxPendingMutationsToWarn() const;
     size_t getMaxPendingMutationsExecutionTimeToWarn() const;
 
-    void setMaxNamedCollectionNumToWarn(size_t max_named_collection_to_warn);
-    void setMaxTableNumToWarn(size_t max_table_to_warn);
-    void setMaxViewNumToWarn(size_t max_view_to_warn);
-    void setMaxDictionaryNumToWarn(size_t max_dictionary_to_warn);
-    void setMaxDatabaseNumToWarn(size_t max_database_to_warn);
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(M) \
+    M(named_collection, NamedCollection, 1000lu, max_named_collection_num_to_warn, "max_named_collection_num_to_warn") \
+    M(table, Table, 5000lu, max_table_num_to_warn, "max_table_num_to_warn") \
+    M(view, View, 10000lu, max_view_num_to_warn, "max_view_num_to_warn") \
+    M(dictionary, Dictionary, 1000lu, max_dictionary_num_to_warn, "max_dictionary_num_to_warn") \
+    M(database, Database, 1000lu, max_database_num_to_warn, "max_database_num_to_warn")
+
+#define APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(M) \
+    M(named_collection, NamedCollection, 0lu, max_named_collection_num_to_throw, "max_named_collection_num_to_throw") \
+    M(table, Table, 0lu, max_table_num_to_throw, "max_table_num_to_throw") \
+    M(view, View, 0lu, max_view_num_to_throw, "max_view_num_to_throw") \
+    M(dictionary, Dictionary, 0lu, max_dictionary_num_to_throw, "max_dictionary_num_to_throw") \
+    M(database, Database, 0lu, max_database_num_to_throw, "max_database_num_to_throw") \
+    M(replicated_table, ReplicatedTable, 0lu, max_replicated_table_num_to_throw, "max_replicated_table_num_to_throw")
+
+#define DECLARE_ENTITY_LIMIT_WITH_WARNING(ename, EName, warn_default, warn_setting, warn_setting_name) \
+    size_t getMax##EName##NumToWarn() const; \
+    void setMax##EName##NumToWarn(size_t max_##ename##_to_warn);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_WARNING(DECLARE_ENTITY_LIMIT_WITH_WARNING)
+#undef DECLARE_ENTITY_LIMIT_WITH_WARNING
+
+#define DECLARE_ENTITY_LIMIT_WITH_THROW(ename, EName, throw_default, throw_setting, throw_setting_name) \
+    size_t getMax##EName##NumToThrow() const; \
+    void setMax##EName##NumToThrow(size_t max_##ename##_to_throw);
+    APPLY_FOR_CONTEXT_LIMITED_ENTITIES_WITH_THROW(DECLARE_ENTITY_LIMIT_WITH_THROW)
+#undef DECLARE_ENTITY_LIMIT_WITH_THROW
+
     void setMaxPartNumToWarn(size_t max_part_to_warn);
     // Based on asynchronous metrics
     void setMaxPendingMutationsToWarn(size_t max_pending_mutations_to_warn);
@@ -1267,7 +1301,10 @@ public:
 
     std::optional<UInt16> getTCPPortSecure() const;
 
-    /// Register server ports during server starting up. No lock is held.
+    /// Register a server listener port. May be called concurrently from
+    /// `SYSTEM START LISTEN` at runtime (in `clickhouse-local`); re-registering
+    /// the same `port_name` overwrites the previous value, e.g. when an
+    /// ephemeral port-0 listener is stopped and started again on a new port.
     void registerServerPort(String port_name, UInt16 port);
 
     UInt16 getServerPort(const String & port_name) const;
@@ -1328,6 +1365,11 @@ public:
     /// Can return nullptr if the query was not inserted into the ProcessList.
     QueryStatusPtr getProcessListElement() const;
     QueryStatusPtr getProcessListElementSafe() const;
+
+    /// Hash of the normalized query text. Set once before execution; used to account resources of
+    /// `NORMALIZED_QUERY_HASH` quotas (e.g. on the insert path, where the hash is not otherwise available).
+    void setNormalizedQueryHash(UInt64 normalized_query_hash_);
+    UInt64 getNormalizedQueryHash() const;
 
     /// List all queries.
     ProcessList & getProcessList();
@@ -1420,6 +1462,14 @@ public:
     void updateUniqueKeyIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<UniqueKeyIndexCache> getUniqueKeyIndexCache() const;
     void clearUniqueKeyIndexCache() const;
+
+    /// UNIQUE KEY delete-bitmap cache. Registration mirrors `setMarkCache` /
+    /// `setPrimaryIndexCache`. `max_cache_size_in_bytes == 0` leaves the
+    /// cache unregistered — callers get `nullptr` from `getDeleteBitmapCache`.
+    void setDeleteBitmapCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateDeleteBitmapCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<DeleteBitmapCache> getDeleteBitmapCache() const;
+    void clearDeleteBitmapCache() const;
 
     void setPrimaryIndexCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
@@ -1763,9 +1813,6 @@ public:
 
     bool isServerCompletelyStarted() const;
     void setServerCompletelyStarted();
-
-    PartUUIDsPtr getPartUUIDs() const;
-    PartUUIDsPtr getIgnoredPartUUIDs() const;
 
     AsynchronousInsertQueue * tryGetAsynchronousInsertQueue() const;
     void setAsynchronousInsertQueue(const std::shared_ptr<AsynchronousInsertQueue> & ptr);

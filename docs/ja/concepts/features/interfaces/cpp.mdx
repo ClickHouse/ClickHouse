@@ -1,0 +1,178 @@
+---
+description: 'ClickHouse C++ クライアントライブラリと u-server フレームワークとのインテグレーションに関するドキュメント'
+sidebarTitle: 'C++'
+slug: /interfaces/cpp
+title: 'C++ クライアントライブラリ'
+doc_type: 'reference'
+---
+
+`clickhouse-cpp` は ClickHouse の公式 C++ クライアントライブラリであり、ClickHouse のネイティブバイナリプロトコルを使用して、高速で型安全なインターフェイスを提供します。
+
+ビルド手順、使用例、追加ドキュメントは、プロジェクトの GitHub リポジトリで確認できます: [https://github.com/ClickHouse/clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp).
+
+<Note>
+  このライブラリは活発に開発が進められています。すでに ClickHouse の中核機能はサポートしていますが、
+  一部の機能やデータ型は、まだ完全には実装またはサポートされていない場合があります。
+
+  皆様からのフィードバックは非常に貴重であり、新機能や改善の優先順位付けに役立ちます。制限事項、未実装の機能、または予期しない動作に遭遇した場合は、issue tracker からご意見や機能要望をお寄せください。
+  [https://github.com/ClickHouse/clickhouse-cpp/issues](https://github.com/ClickHouse/clickhouse-cpp/issues)
+</Note>
+
+<div id="including-library-into-project">
+  ## ライブラリをプロジェクトに組み込む
+</div>
+
+ライブラリをプロジェクトに組み込む最も簡単な方法は、CMake の `FetchContent`
+モジュールを使用することです。この方法なら、ライブラリの特定のバージョンを固定し、
+通常の CMake ワークフローの一部としてビルドできます。
+
+```cmake
+include(FetchContent)
+
+set(WITH_OPENSSL YES CACHE BOOL "Enable OpenSSL in clickhouse-cpp" FORCE)
+FetchContent_Declare(
+    clickhouse-cpp
+    GIT_REPOSITORY https://github.com/ClickHouse/clickhouse-cpp.git
+    GIT_TAG v2.6.0   # `master` や他のブランチも指定可能
+)
+FetchContent_MakeAvailable(clickhouse-cpp)
+```
+
+`WITH_OPENSSL` オプションを有効にすると、ライブラリで TLS がサポートされ、ClickHouse Cloud や SSL が有効な
+その他の ClickHouse デプロイメントに接続する際に必要になります。TLS を使用しない
+接続では省略できますが、通常は有効にしておくことを推奨します。
+
+SSL サポート付きでビルドするには、OpenSSL の開発パッケージをインストールしておく必要があります。Debian、Ubuntu、
+またはその派生ディストリビューションでは `libssl-dev`、Fedora、Red Hat では `openssl-devel`、
+macOS では Homebrew を使って `openssl` をインストールしてください。
+
+依存関係を利用できるようにしたら、エクスポートされたライブラリターゲットをリンク先として指定します：
+
+```cmake
+target_link_libraries(your-target PRIVATE clickhouse-cpp-lib)
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="example-setup-client">
+  ### クライアントオブジェクトの設定
+</div>
+
+ClickHouse への接続を確立するために、`Client` インスタンスを作成します。次の例では、
+パスワードが不要で SSL も有効になっていないローカルの ClickHouse インスタンスに接続する方法を
+示します。
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{clickhouse::ClientOptions().SetHost("localhost")};
+```
+
+より高度なセットアップでは、追加の設定が必要です。次の例では、
+いくつかの追加パラメーターを使用して ClickHouse Cloud インスタンスに接続する方法を示します。
+
+```cpp
+#include <clickhouse/client.h>
+
+clickhouse::Client client{
+    clickhouse::ClientOptions{}
+      .SetHost("your.instance.clickhouse.cloud")
+      .SetUser("default")
+      .SetPassword("your-password")
+      .SetSSLOptions({})   // SSLを有効にする
+      .SetPort(9440)       // SSL経由の接続の場合、ClickHouse Cloud はポート9440を使用する
+    };
+```
+
+<div id="example-create-table">
+  ### 結果データを返さないテーブル作成やクエリの実行
+</div>
+
+テーブルの作成など、結果データを返さないクエリを実行するには、`Execute` メソッドを使用します。
+同じ方法は、`ALTER TABLE` や `DROP` などのほかのステートメントにも使えます。
+
+```cpp
+client.Execute(R"(
+    CREATE TABLE IF NOT EXISTS greetings (
+        id UInt64,
+        message String,
+        language String) 
+    ENGINE = MergeTree ORDER BY id)");
+```
+
+<div id="example-insert-data">
+  ### データの挿入
+</div>
+
+テーブルにデータを挿入するには、`Block` を作成し、テーブルのスキーマに対応するカラムオブジェクトを設定します。データはカラムごとに追加され、その後、効率的なバッチ書き込み向けに最適化された `Insert` メソッドを使用して、1 回の操作で挿入します。
+
+```cpp
+auto id = std::make_shared<clickhouse::ColumnUInt64>();
+auto message = std::make_shared<clickhouse::ColumnString>();
+auto language = std::make_shared<clickhouse::ColumnString>();
+
+id->Append(1);
+message->Append("Hello, World!");
+language->Append("English");
+
+id->Append(2);
+message->Append("¡Hola, Mundo!");
+language->Append("Spanish");
+
+id->Append(3);
+message->Append("Hallo wereld!");
+language->Append("Dutch");
+
+clickhouse::Block block{};
+block.AppendColumn("id", id);
+block.AppendColumn("message", message);
+block.AppendColumn("language", language);
+
+client.Insert("greetings", block);
+```
+
+<div id="example-select">
+  ### データの取得
+</div>
+
+データを返すクエリを実行するには、`Select` メソッドを使用し、結果を処理するコールバックを
+指定します。クエリ結果は `Block` オブジェクトとして返され、ClickHouse ネイティブの
+カラム指向データ表現を反映しています。
+
+```cpp
+client.Select(
+    "SELECT id, message, language FROM greetings",
+    [](const clickhouse::Block & block){
+        for (size_t i = 0; i < block.GetRowCount(); ++i) {
+            auto id = block[0]->AsStrict<clickhouse::ColumnUInt64>()->At(i);
+            auto message = block[1]->AsStrict<clickhouse::ColumnString>()->At(i);
+            auto language = block[2]->AsStrict<clickhouse::ColumnString>()->At(i);
+            std::cout << id << "\t" << message << "\t" << language << "\n";
+        }
+    });
+```
+
+<div id="supported-data-types">
+  ## サポートされているデータ型
+</div>
+
+* `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, `Int64`
+* `UInt128`, `Int128`
+* `Decimal32`, `Decimal64`, `Decimal128`
+* `Float32`, `Float64`
+* `Date`
+* `DateTime`, `DateTime64`
+* `DateTime([timezone])`, `DateTime64(N, [timezone])`
+* `UUID`
+* `Enum8`, `Enum16`
+* `String`
+* `FixedString(N)`
+* `LowCardinality(String)` および `LowCardinality(FixedString(N))`
+* `Nullable(T)`
+* `Array(T)`
+* `Tuple`
+* `Map`
+* `IPv4`, `IPv6`
+* `Point`, `Ring`, `Polygon`, `MultiPolygon`

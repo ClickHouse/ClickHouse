@@ -1,0 +1,40 @@
+---
+slug: /faq/integration/json-import
+title: 'كيفية استيراد JSON إلى ClickHouse؟'
+toc_hidden: true
+toc_priority: 11
+description: 'توضح هذه الصفحة كيفية استيراد JSON إلى ClickHouse'
+keywords: ['استيراد JSON', 'تنسيق JSONEachRow', 'استيراد البيانات', 'إدخال JSON', 'تنسيقات البيانات']
+doc_type: 'guide'
+---
+
+يدعم ClickHouse مجموعة واسعة من [تنسيقات البيانات للإدخال والإخراج](/ar/reference/formats/index). ومن بينها عدة صيغ مختلفة لـ JSON، لكن الصيغة الأكثر استخدامًا لإدخال البيانات هي [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow). وتتوقع هذه الصيغة وجود كائن JSON واحد في كل صف، مع فصل كل كائن عن الآخر بسطر جديد.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+من خلال [واجهة HTTP](/ar/concepts/features/interfaces/http):
+
+```bash
+$ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+باستخدام [واجهة سطر الأوامر (CLI)](/ar/concepts/features/interfaces/cli):
+
+```bash
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+```
+
+بدلًا من إدراج البيانات يدويًا، يمكنك استخدام [أداة تكامل](/ar/integrations/home) بدلًا من ذلك.
+
+<div id="useful-settings">
+  ## إعدادات مفيدة
+</div>
+
+* يتيح `input_format_skip_unknown_fields` إدراج JSON حتى عند وجود حقول إضافية غير موجودة في مخطط الجدول (مع تجاهلها).
+* يتيح `input_format_import_nested_json` إدراج كائنات JSON المتداخلة في أعمدة من النوع [Nested](/ar/reference/data-types/nested-data-structures/index).
+
+<Note>
+  تُحدَّد الإعدادات على هيئة معاملات `GET` لواجهة HTTP، أو كوسائط إضافية لسطر الأوامر مسبوقة بـ `--` لواجهة سطر الأوامر (CLI).
+</Note>

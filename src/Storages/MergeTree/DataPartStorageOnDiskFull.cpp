@@ -51,13 +51,8 @@ bool DataPartStorageOnDiskFull::exists() const
     return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return true;
-    }
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
 
@@ -97,13 +92,8 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
     return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
 }
 
-size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
+size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
 {
-    if (looksLikePackedSkipIndexFile(file_name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(file_name))
-            return reader->getFileSize(file_name);
-    }
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
 
@@ -135,42 +125,20 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareRead(
+void DataPartStorageOnDiskFull::prepareReadImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-        {
-            /// Packed substreams skip the disk's normal pipeline (filesystem cache,
-            /// async prefetch, etc.) and read through PackedFilesReader::readFile, which
-            /// already opens the archive via the underlying disk and wraps the result with
-            /// ReadBufferFromFileView at the right offset.
-            ReadPipeline::BufferCreator creator =
-                [reader, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
-                {
-                    return reader->readFile(name, s, read_hint);
-                };
-            pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
-            return;
-        }
-    }
     volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    if (looksLikePackedSkipIndexFile(name))
-    {
-        if (const auto * reader = getSkipIndicesPackedReader(); reader && reader->exists(name))
-            return reader->readFile(name, settings, read_hint);
-    }
     return volume->getDisk()->readFileIfExists(fs::path(root_path) / part_dir / name, settings, read_hint);
 }
 

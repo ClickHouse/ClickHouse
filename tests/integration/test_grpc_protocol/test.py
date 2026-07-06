@@ -10,7 +10,7 @@ import lz4.frame
 import pytest
 import pytz
 
-from helpers.cluster import ClickHouseCluster, run_and_check
+from helpers.cluster import ClickHouseCluster
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 pb2_dir = os.path.join(script_dir, "pb2")
@@ -188,7 +188,7 @@ class QueryThread(Thread):
 def start_cluster():
     cluster.start()
     try:
-        with create_channel() as channel:
+        with create_channel():
             yield cluster
 
     finally:

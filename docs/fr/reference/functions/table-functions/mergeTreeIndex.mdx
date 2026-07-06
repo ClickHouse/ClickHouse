@@ -1,0 +1,97 @@
+---
+description: 'Représente le contenu des fichiers d’index et de marks des tables MergeTree.
+  Il peut être utilisé à des fins d’introspection.'
+sidebarTitle: 'mergeTreeIndex'
+slug: /sql-reference/table-functions/mergeTreeIndex
+title: 'mergeTreeIndex'
+doc_type: 'reference'
+---
+
+Représente le contenu des fichiers d’index et de marks des tables MergeTree. Il peut être utilisé à des fins d’introspection.
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+mergeTreeIndex(database, table [, with_marks = true] [, with_minmax = true])
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+| Argument      | Description                                                             |
+| ------------- | ----------------------------------------------------------------------- |
+| `database`    | Nom de la base de données contenant l’index et les marks à lire.        |
+| `table`       | Nom de la table contenant l’index et les marks à lire.                  |
+| `with_marks`  | Indique s’il faut inclure dans le résultat les colonnes avec des marks. |
+| `with_minmax` | Indique s’il faut inclure l’index min-max dans le résultat.             |
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+Un objet table avec des colonnes contenant les valeurs de l’index primaire et de l’index min-max (s’il est activé) de la table source, des colonnes contenant les valeurs des marks (s’ils sont activés) pour tous les fichiers possibles dans les parties de données de la table source, ainsi que des colonnes virtuelles :
+
+* `part_name` - Le nom de la partie de données.
+* `mark_number` - Le numéro du mark courant dans la partie de données.
+* `rows_in_granule` - Le nombre de lignes dans la granule courante.
+
+La colonne des marks peut contenir la valeur `(NULL, NULL)` si la colonne est absente de la partie de données ou si les marks de l’un de ses sous-flux ne sont pas écrits (par exemple dans les parties compactes).
+
+<div id="usage-example">
+  ## Exemple d’utilisation
+</div>
+
+```sql
+CREATE TABLE test_table
+(
+    `id` UInt64,
+    `n` UInt64,
+    `arr` Array(UInt64)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 3, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 8;
+
+INSERT INTO test_table SELECT number, number, range(number % 5) FROM numbers(5);
+
+INSERT INTO test_table SELECT number, number, range(number % 5) FROM numbers(10, 10);
+```
+
+```sql
+SELECT * FROM mergeTreeIndex(currentDatabase(), test_table, with_marks = true);
+```
+
+```text
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─id─┬─id.mark─┬─n.mark──┬─arr.size0.mark─┬─arr.mark─┐
+│ all_1_1_0 │           0 │               3 │  0 │ (0,0)   │ (42,0)  │ (NULL,NULL)    │ (84,0)   │
+│ all_1_1_0 │           1 │               2 │  3 │ (133,0) │ (172,0) │ (NULL,NULL)    │ (211,0)  │
+│ all_1_1_0 │           2 │               0 │  4 │ (271,0) │ (271,0) │ (NULL,NULL)    │ (271,0)  │
+└───────────┴─────────────┴─────────────────┴────┴─────────┴─────────┴────────────────┴──────────┘
+┌─part_name─┬─mark_number─┬─rows_in_granule─┬─id─┬─id.mark─┬─n.mark─┬─arr.size0.mark─┬─arr.mark─┐
+│ all_2_2_0 │           0 │               3 │ 10 │ (0,0)   │ (0,0)  │ (0,0)          │ (0,0)    │
+│ all_2_2_0 │           1 │               3 │ 13 │ (0,24)  │ (0,24) │ (0,24)         │ (0,24)   │
+│ all_2_2_0 │           2 │               3 │ 16 │ (0,48)  │ (0,48) │ (0,48)         │ (0,80)   │
+│ all_2_2_0 │           3 │               1 │ 19 │ (0,72)  │ (0,72) │ (0,72)         │ (0,128)  │
+│ all_2_2_0 │           4 │               0 │ 19 │ (0,80)  │ (0,80) │ (0,80)         │ (0,160)  │
+└───────────┴─────────────┴─────────────────┴────┴─────────┴────────┴────────────────┴──────────┘
+```
+
+```sql
+DESCRIBE mergeTreeIndex(currentDatabase(), test_table, with_marks = true) SETTINGS describe_compact_output = 1;
+```
+
+```text
+┌─name────────────┬─type─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ part_name       │ String                                                                                           │
+│ mark_number     │ UInt64                                                                                           │
+│ rows_in_granule │ UInt64                                                                                           │
+│ id              │ UInt64                                                                                           │
+│ id.mark         │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ n.mark          │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ arr.size0.mark  │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+│ arr.mark        │ Tuple(offset_in_compressed_file Nullable(UInt64), offset_in_decompressed_block Nullable(UInt64)) │
+└─────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────┘
+```

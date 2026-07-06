@@ -1,0 +1,757 @@
+---
+description: 'Документация по оператору CREATE VIEW'
+sidebarTitle: 'VIEW'
+slug: /sql-reference/statements/create/view
+title: 'CREATE VIEW'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import DeprecatedBadge from "/snippets/ru/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+Создает новое представление. Представления бывают [обычными](#normal-view), [материализованными](#materialized-view), [обновляемыми материализованными](#refreshable-materialized-view) и [оконными](/ru/reference/statements/create/view#window-view).
+
+<div id="normal-view">
+  ## Обычное представление
+</div>
+
+Синтаксис:
+
+```sql
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+Обычные представления не хранят данные. При каждом обращении они просто читают их из другой таблицы. Иными словами, обычное представление — это всего лишь сохранённый запрос. При чтении из представления этот сохранённый запрос используется как подзапрос в секции [FROM](/ru/reference/statements/select/from).
+
+Например, предположим, что вы создали представление:
+
+```sql
+CREATE VIEW view AS SELECT ...
+```
+
+и написали запрос:
+
+```sql
+SELECT a, b, c FROM view
+```
+
+Этот запрос полностью эквивалентен использованию такого подзапроса:
+
+```sql
+SELECT a, b, c FROM (SELECT ...)
+```
+
+<div id="parameterized-view">
+  ## Параметризованное представление
+</div>
+
+Параметризованные представления похожи на обычные представления, но могут создаваться с параметрами, значения которых определяются не сразу. Эти представления можно использовать с табличными функциями: имя представления указывается как имя функции, а значения параметров — как её аргументы.
+
+```sql
+CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
+```
+
+Выше создаётся представление для таблицы, которое можно использовать как табличную функцию, подставив параметры, как показано ниже.
+
+```sql
+SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+<div id="materialized-view">
+  ## Materialized View
+</div>
+
+```sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+`OR REPLACE` и `IF NOT EXISTS` являются взаимоисключающими: их совместное использование вызывает синтаксическую ошибку.
+
+<div id="create-or-replace-materialized-view">
+  ### CREATE OR REPLACE MATERIALIZED VIEW
+</div>
+
+`CREATE OR REPLACE MATERIALIZED VIEW` атомарно заменяет существующее materialized view и его внутреннюю таблицу хранения (если она есть). Для выполнения этой операции требуется движок базы данных `Atomic` или `Replicated`.
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
+[TO [db.]target_table]
+[ENGINE = engine]
+[POPULATE]
+[REFRESH ...]
+AS SELECT ...
+```
+
+Ключевые особенности:
+
+* **Без предложения `TO`**: старая внутренняя таблица удаляется и создается новая. Существующие данные во внутренней таблице теряются, если не указан `POPULATE`.
+* **С предложением `TO`**: заменяется только определение представления; целевая таблица и ее данные не затрагиваются.
+* Совместимо с `REFRESH`, `ON CLUSTER` и любыми параметрами движка. `POPULATE` поддерживается только в базах данных `Atomic` — в базах данных `Replicated` он не допускается (см. примечание о `POPULATE` ниже).
+* Требуются привилегии `CREATE VIEW` и `DROP VIEW`.
+
+<Note>
+  `CREATE OR REPLACE MATERIALIZED VIEW` поддерживается только для движков баз данных `Atomic` и `Replicated`. Для движка базы данных `Ordinary` это не поддерживается.
+</Note>
+
+**Примеры:**
+
+```sql
+-- Create a materialized view with an inner table
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, sum(y) AS total FROM src GROUP BY x;
+
+-- Replace with a new definition (old inner table data is lost)
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, count() AS cnt FROM src GROUP BY x;
+
+-- Replace with POPULATE to backfill from existing source data
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    POPULATE
+    AS SELECT x FROM src;
+
+-- Replace an inner-table MV with a TO-table MV (target data is preserved)
+CREATE OR REPLACE MATERIALIZED VIEW mv TO target
+    AS SELECT x FROM src;
+```
+
+<Tip>
+  Вот пошаговое руководство по использованию [materialized views](/ru/concepts/features/materialized-views/cascading-materialized-views).
+</Tip>
+
+Materialized views хранят данные, преобразованные соответствующим запросом [SELECT](/ru/reference/statements/select/index).
+
+При создании materialized view без `TO [db].[table]` необходимо указать `ENGINE` — движок таблицы для хранения данных.
+
+При создании materialized view с `TO [db].[table]` нельзя одновременно использовать `POPULATE`.
+
+Materialized view работает следующим образом: при вставке данных в таблицу, указанную в `SELECT`, часть вставленных данных преобразуется этим запросом `SELECT`, а результат вставляется в представление.
+
+<Note>
+  В ClickHouse materialized view при вставке в целевую таблицу используют **имена столбцов**, а не их порядок. Если каких-то имён столбцов нет в результате запроса `SELECT`, ClickHouse использует значение по умолчанию, даже если столбец не является [Nullable](/ru/reference/data-types/nullable). Надёжнее всего указывать псевдонимы для каждого столбца при использовании materialized view.
+
+  В ClickHouse materialized view реализованы скорее как триггеры вставки. Если в запросе представления есть агрегация, она применяется только к пакету только что вставленных данных. Любые изменения существующих данных в исходной таблице (например, update, delete, drop partition и т. д.) не изменяют materialized view.
+
+  В ClickHouse у materialized view нет детерминированного поведения в случае ошибок. Это означает, что блоки, которые уже были записаны, сохранятся в целевой таблице, а все блоки после ошибки — нет.
+
+  По умолчанию, если запись в одно из представлений приводит к исключению, запрос `INSERT` завершается ошибкой. При этом нет гарантии, что к этому моменту блок уже попал в исходную таблицу — это зависит от момента срабатывания конвейера вставки, а не от ошибки представления. Повторите неудавшийся `INSERT` с дедупликацией вставки (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`), чтобы получить доставку exactly-once в исходную таблицу и все зависимые представления.
+
+  Установка `materialized_views_ignore_errors=true` в запросе `INSERT` изменяет только отчётность об ошибках: каждая ошибка представления записывается как предупреждение, а запрос `INSERT` завершается успешно. Доставка в пункт назначения представления, завершившегося с ошибкой, будет частичной — блоки, обработанные до исключения, сохраняются, а проблемный блок и все последующие блоки отбрасываются из этого представления. Представления ниже по цепочке от этого пункта назначения видят только те блоки, которые действительно поступили, поэтому их доставка тоже частична. Соседние представления (и их нисходящие цепочки), которые не сгенерировали исключение, записываются полностью, а запись в исходную таблицу происходит как обычно. Поскольку `INSERT` сообщает об успехе, клиент не получает сигнала о сбое и автоматический повтор не запускается; используйте эту настройку только тогда, когда запись в исходную таблицу не должна блокироваться из-за проблем на стороне представлений (например, для таблиц `system.*_log`).
+
+  Для таблиц `system.*_log` значение `materialized_views_ignore_errors` по умолчанию равно `true`.
+</Note>
+
+Если указать `POPULATE`, существующие данные таблицы будут вставлены в представление при его создании, как при выполнении `CREATE TABLE ... AS SELECT ...`. В противном случае запрос содержит только данные, вставленные в таблицу после создания представления. Мы **не рекомендуем** использовать `POPULATE`, поскольку данные, вставленные в таблицу во время создания представления, в него не попадут.
+
+<Note>
+  Поскольку `POPULATE` работает как `CREATE TABLE ... AS SELECT ...`, у него есть ограничения:
+
+  * Он не поддерживается для базы данных Replicated
+  * Он не поддерживается в ClickHouse Cloud
+
+  Вместо этого можно использовать отдельный `INSERT ... SELECT`.
+</Note>
+
+Запрос `SELECT` может содержать `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Обратите внимание, что соответствующие преобразования выполняются независимо для каждого блока вставленных данных. Например, если задан `GROUP BY`, данные агрегируются во время вставки, но только в пределах одного пакета вставленных данных. Далее данные не агрегируются. Исключение — использование `ENGINE`, который сам выполняет агрегацию данных, например `SummingMergeTree`.
+
+Если materialized view использует конструкцию `TO [db.]name`, можно выполнить `DETACH` представления, запустить `ALTER` для целевой таблицы, а затем `ATTACH` ранее отсоединённого (`DETACH`) представления.
+
+Обратите внимание, что на materialized view влияет настройка [optimize&#95;on&#95;insert](/ru/reference/settings/session-settings#optimize_on_insert). Данные объединяются перед вставкой в представление.
+
+Представления выглядят так же, как обычные таблицы. Например, они отображаются в результате запроса `SHOW TABLES`.
+
+Чтобы удалить представление, используйте [DROP VIEW](/ru/reference/statements/drop#drop-view). Хотя `DROP TABLE` тоже работает для VIEW.
+
+<div id="sql_security">
+  ## Безопасность SQL
+</div>
+
+`DEFINER` и `SQL SECURITY` позволяют указать, от имени какого пользователя ClickHouse выполнять запрос, лежащий в основе представления.
+`SQL SECURITY` имеет три допустимых значения: `DEFINER`, `INVOKER` или `NONE`. В секции `DEFINER` можно указать любого существующего пользователя или `CURRENT_USER`.
+
+В следующей таблице показано, какие права требуются и какому пользователю, чтобы выполнять `SELECT` из представления.
+Обратите внимание: независимо от выбранного режима безопасности SQL, в любом случае для чтения из представления по-прежнему требуется `GRANT SELECT ON <view>`.
+
+| Параметр безопасности SQL | Представление                                                                | Materialized View                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `DEFINER alice`           | У `alice` должен быть grant `SELECT` на исходную таблицу представления.      | У `alice` должен быть grant `SELECT` на исходную таблицу представления и grant `INSERT` на целевую таблицу представления. |
+| `INVOKER`                 | У пользователя должен быть grant `SELECT` на исходную таблицу представления. | `SQL SECURITY INVOKER` нельзя указывать для materialized view.                                                            |
+| `NONE`                    | -                                                                            | -                                                                                                                         |
+
+<Note>
+  `SQL SECURITY NONE` — устаревший параметр. Любой пользователь, имеющий права на создание представлений с `SQL SECURITY NONE`, сможет выполнять любые произвольные запросы.
+  Поэтому для создания представления с этим параметром требуется `GRANT ALLOW SQL SECURITY NONE TO <user>`.
+</Note>
+
+Если `DEFINER`/`SQL SECURITY` не указаны, используются значения по умолчанию:
+
+* `SQL SECURITY`: `INVOKER` для обычных представлений и `DEFINER` для materialized view ([настраивается через settings](/ru/reference/settings/session-settings#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([настраивается через settings](/ru/reference/settings/session-settings#default_view_definer))
+
+Если представление присоединено без указания `DEFINER`/`SQL SECURITY`, по умолчанию используется `SQL SECURITY NONE` для materialized view и `SQL SECURITY INVOKER` для обычного представления.
+
+Чтобы изменить безопасность SQL для существующего представления, используйте
+
+```sql
+ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
+```
+
+<div id="examples">
+  ### Примеры
+</div>
+
+```sql
+CREATE VIEW test_view
+DEFINER = alice SQL SECURITY DEFINER
+AS SELECT ...
+```
+
+```sql
+CREATE VIEW test_view
+SQL SECURITY INVOKER
+AS SELECT ...
+```
+
+<div id="live-view">
+  ## Live View
+</div>
+
+<DeprecatedBadge />
+
+Эта возможность объявлена устаревшей и будет удалена в будущем.
+
+Для вашего удобства старая документация находится [здесь](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
+
+<div id="refreshable-materialized-view">
+  ## Refreshable Materialized View
+</div>
+
+```sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+REFRESH [EVERY|AFTER interval [OFFSET interval]]
+[RANDOMIZE FOR interval]
+[DEPENDS ON [db.]name [, [db.]name [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]
+[APPEND]
+[TO[db.]name] [(columns)] [ENGINE = engine]
+[EMPTY]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+где `interval` — последовательность простых интервалов:
+
+```sql
+number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
+```
+
+В части `REFRESH` должно быть указано как минимум одно из `EVERY`, `AFTER` или `DEPENDS ON`. Просто `REFRESH` (без них) не допускается. `REFRESH DEPENDS ON ...` без `EVERY`/`AFTER` — это сокращение для `REFRESH AFTER 0 SECOND DEPENDS ON ...`; см. ниже раздел [Refresh Dependencies](#refresh-dependencies).
+
+Периодически выполняет соответствующий запрос и сохраняет его результат в таблице.
+
+* Если указано `APPEND`, при каждом обновлении в таблицу добавляются новые строки без удаления существующих. Вставка не является атомарной, как и в обычном запросе `INSERT INTO ... SELECT`.
+* В противном случае при каждом обновлении предыдущее содержимое таблицы атомарно заменяется.
+
+Отличия от обычных non-refreshable materialized views:
+
+* Нет insert trigger. Когда новые данные вставляются в таблицу, указанную в `SELECT`, они *не* передаются автоматически в refreshable materialized view. Вместо этого данные вставляются только во время периодических или ручных обновлений.
+* Для запроса `SELECT` нет ограничений. Допускаются табличные функции (например, `url()`), просмотры, UNION, JOIN.
+
+<Note>
+  Настройки в части запроса `REFRESH ... SETTINGS` — это настройки обновления (например, `refresh_retries`), а не обычные настройки (например, `max_threads`). Обычные настройки можно указать с помощью `SETTINGS` в конце запроса.
+</Note>
+
+<div id="refresh-schedule">
+  ### Расписание обновления
+</div>
+
+Примеры расписаний обновления:
+
+```sql
+REFRESH EVERY 1 DAY -- every day, at midnight (UTC)
+REFRESH EVERY 1 MONTH -- on 1st day of every month, at midnight
+REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 am
+REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
+REFRESH EVERY 30 MINUTE -- at 00:00, 00:30, 01:00, 01:30, etc
+REFRESH AFTER 30 MINUTE -- 30 minutes after the previous refresh completes, no alignment with time of day
+-- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax error, OFFSET is not allowed with AFTER
+REFRESH EVERY 1 WEEK 2 DAYS -- every 9 days, not on any particular day of the week or month;
+                            -- specifically, when day number (since 1969-12-29) is divisible by 9
+REFRESH EVERY 5 MONTHS -- every 5 months, different months each year (as 12 is not divisible by 5);
+                       -- specifically, when month number (since 1970-01) is divisible by 5
+```
+
+`RANDOMIZE FOR` случайным образом смещает время каждого обновления, например:
+
+```sql
+REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random time between 01:30 and 02:30
+```
+
+Для одного представления одновременно может выполняться не более одного обновления. Например, если обновление представления с `REFRESH EVERY 1 MINUTE` занимает 2 минуты, оно будет обновляться раз в 2 минуты. Если затем оно начнёт выполняться быстрее и обновляться за 10 секунд, оно снова вернётся к обновлению раз в минуту. (В частности, оно не будет обновляться каждые 10 секунд, чтобы наверстать пропущенные обновления — никакой очереди таких обновлений не существует.)
+
+Обычно первое обновление запускается сразу после создания materialized view: время с момента последнего обновления равно бесконечности, поэтому по любому расписанию обновление должно начаться прямо сейчас. Если указано `EMPTY`, это начальное обновление пропускается, а первое обновление произойдёт в следующий момент по расписанию; например, для `EVERY 1 HOUR` первое обновление произойдёт в конце текущего часа.
+
+<div id="in-replicated-db">
+  ### В базе данных Replicated
+</div>
+
+Если refreshable materialized view находится в [базе данных Replicated](/ru/reference/engines/database-engines/replicated), реплики координируют работу между собой так, что в каждый запланированный момент обновление выполняет только одна реплика. Для этого требуется движок таблицы [ReplicatedMergeTree](/ru/reference/engines/table-engines/mergetree-family/replication), чтобы все реплики видели данные, полученные в результате обновления.
+
+В режиме `APPEND` координацию можно отключить с помощью `SETTINGS all_replicas = 1`. В этом случае реплики выполняют обновления независимо друг от друга. Тогда ReplicatedMergeTree не требуется.
+
+В режиме без `APPEND` поддерживается только координируемое обновление. Для нескоординированного обновления используйте базу данных `Atomic` и запрос `CREATE ... ON CLUSTER`, чтобы создать refreshable materialized view на всех репликах.
+
+Координация выполняется через Keeper. Путь znode определяется настройкой сервера [default&#95;replica&#95;path](/ru/reference/settings/server-settings/settings#default_replica_path).
+
+<div id="refresh-dependencies">
+  ### Зависимости при обновлении
+</div>
+
+`DEPENDS ON` синхронизирует обновление разных таблиц:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH EVERY 1 HOUR DEPENDS ON dependency [...]
+```
+
+Обновление зависимого представления начнется только после того, как завершится обновление всех представлений, от которых оно зависит.
+
+Чтобы запускать обновление сразу после обновления другого представления:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH AFTER 0 SECOND DEPENDS ON dependency [...]
+```
+
+Или, что то же самое:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
+```
+
+<Note>
+  `DEPENDS ON` работает только между refreshable materialized view. В частности, если представление-зависимость использует `TO <table>`, обязательно указывайте имя представления, а не таблицы. Если список `DEPENDS ON` содержит обычную таблицу, не-refreshable представление или опечатку, представление никогда не будет обновляться и в `system.view_refreshes` будет иметь состояние `MissingDependencies`. Зависимости можно изменить или удалить с помощью `ALTER`, см. [Изменение параметров обновления](#changing-refresh-parameters).
+</Note>
+
+<div id="using-depends-on-for-consistent-propagation-latency">
+  #### Использование DEPENDS ON для согласованной задержки распространения
+</div>
+
+Если оба представления используют `REFRESH EVERY` с одинаковым периодом, зависимость действует в каждом временном интервале.
+
+Например, предположим, что представления X и Y используют `REFRESH EVERY 1 HOUR`, а Y читает из выходной таблицы X. Без зависимостей Y обычно будет видеть данные X из обновления за предыдущий час. С `DEPENDS ON X` обновление Y в 11:00 начнется только после завершения обновления X в 11:00.
+
+```text
+           10:00            11:00            12:00
+           │                │                │
+  X:        [run]┐           [run]┐           [run]┐
+                 │                │                │
+  Y:             └►[run]          └►[run]          └►[run]
+```
+
+И зависимость, и зависящий от неё объект могут независимо пропускать временные интервалы, если обновление занимает больше времени, чем период обновления. Нет гарантии, что зависимый объект будет обновляться ровно один раз на каждое обновление зависимости.
+
+```text
+           10:00          11:00          12:00          13:00
+           │              │              │              |
+  X:        [run]┐         [run]┐         [run]┐         [run]┐
+                 │              └────┐    (Y skips 12:00)     └───┐
+  Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
+```
+
+<div id="using-depends-on-for-batched-stream-processing">
+  #### Использование DEPENDS ON для батчевой потоковой обработки
+</div>
+
+Если `REFRESH EVERY` не используется, зависимое представление X обновляется, когда все его зависимости обновились хотя бы один раз с момента последнего обновления X. `REFRESH AFTER T` добавляет задержку: зависимое представление начнет обновляться через T после завершения обновления зависимости.
+
+Циклические зависимости допустимы и полезны. Рассмотрим такой граф refreshable materialized views:
+
+1. X берет батч строк из некоторого потока и помещает их в таблицу.
+2. Затем Y и Z читают из этой таблицы, выполняют разные агрегации и добавляют результаты в другие таблицы.
+3. После полной обработки батча X берет следующий батч, и цикл повторяется.
+
+```text
+            source
+               │
+               ▼
+          ┌─────────┐
+     ┌───►│    X    │◄───┐
+     │    └──┬───┬──┘    │
+  DEPENDS    │   │    DEPENDS
+    ON       ▼   ▼      ON
+     │      ┌─┐ ┌─┐      │
+     └──────┤Y│ │Z├──────┘
+            └─┘ └─┘
+```
+
+Полный пример:
+
+```sql
+CREATE TABLE current_batch (t UInt64, v Int64) ENGINE ReplicatedMergeTree ORDER BY t;
+CREATE TABLE batch_log (max_t UInt64, n Int64, v_sum Int64, processed_at DateTime64) ENGINE ReplicatedMergeTree ORDER BY max_t;
+CREATE TABLE stats (h UInt64, n UInt64) ENGINE ReplicatedSummingMergeTree ORDER BY h;
+
+-- (system.numbers stands in for a data source with monotonically increasing timestamps or sequence numbers)
+CREATE MATERIALIZED VIEW current_batch_v REFRESH EVERY 10 SECOND DEPENDS ON batch_log_v, stats_v TO current_batch AS SELECT number as t, number * 10 as v FROM system.numbers WHERE number > (SELECT max(max_t) FROM batch_log) LIMIT 100;
+
+CREATE MATERIALIZED VIEW batch_log_v REFRESH DEPENDS ON current_batch_v APPEND TO batch_log AS SELECT max(t) as max_t, count() as n, sum(v) as v_sum, now64() as processed_at FROM current_batch;
+
+CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO stats AS SELECT cityHash64(v) % 20 as h, count() as n FROM current_batch GROUP BY h;
+
+-- Must trigger initial refresh manually.
+SYSTEM REFRESH VIEW current_batch_v;
+```
+
+Более длинные цепочки тоже работают.
+
+Однако это работает хорошо только при включенной координации обновления, то есть когда представления находятся в базе данных Replicated или Shared. Без координации перезапуск сервера прерывает цикл, и после каждого перезапуска приходится вручную выполнять `SYSTEM REFRESH VIEW`, а не только один раз после создания представлений.
+
+<div id="refresh-settings">
+  ### Настройки обновления
+</div>
+
+Доступные настройки обновления:
+
+* `refresh_retries` - Сколько раз повторять попытку, если запрос обновления завершается исключением. Если все повторные попытки завершаются неудачей, обновление пропускается до следующего запланированного времени. 0 означает отсутствие повторных попыток, -1 — бесконечное число повторных попыток. Значение по умолчанию: 2.
+* `refresh_retry_initial_backoff_ms` - Задержка перед первой повторной попыткой, если `refresh_retries` не равно нулю. При каждой следующей повторной попытке задержка удваивается, вплоть до `refresh_retry_max_backoff_ms`. Значение по умолчанию: 100 мс.
+* `refresh_retry_max_backoff_ms` - Ограничение на экспоненциальный рост задержки между попытками обновления. Значение по умолчанию: 60000 мс (1 минута).
+* `all_replicas` - В [Replicated database](/ru/reference/engines/database-engines/replicated) с `APPEND` определяет, будут ли все реплики обновляться независимо или в каждый запланированный момент обновление будет выполнять только одна реплика. Не может быть изменено после создания представления. Значение по умолчанию: `false`.
+
+<div id="changing-refresh-parameters">
+  ### Изменение параметров обновления
+</div>
+
+Параметры обновления существующей refreshable materialized view изменяются командой [`ALTER TABLE ... MODIFY REFRESH`](/ru/reference/statements/alter/view#alter-table--modify-refresh-statement):
+
+```sql
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
+```
+
+Расписание (`EVERY` или `AFTER`) обязательно: этот оператор всегда заменяет *все* параметры обновления — расписание, `RANDOMIZE FOR`, `DEPENDS ON` и настройки обновления — на указанные в нём. Всё, что опущено, сбрасывается к значению по умолчанию (настройки) или удаляется (зависимости, рандомизация).
+
+<Note>
+  * Чтобы изменить только настройки обновления (например, `refresh_retries`), заново укажите текущее расписание:
+
+    ```sql
+    ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 5;
+    ```
+
+  * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` не поддерживается для materialized view; нужно использовать `MODIFY REFRESH`.
+
+  * Добавлять или удалять `APPEND` не поддерживается.
+
+  * Настройку `all_replicas` нельзя изменить после создания.
+</Note>
+
+Примеры:
+
+```sql
+-- Изменить расписание, удалить существующие настройки и зависимости.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- Изменить расписание и настроить поведение повторных попыток.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- Сохранить зависимость при изменении периода.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- Удалить зависимость, опустив `DEPENDS ON`.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
+
+<div id="other-operations">
+  ### Другие операции
+</div>
+
+Статус всех refreshable materialized view доступен в таблице [`system.view_refreshes`](/ru/reference/system-tables/view_refreshes). В частности, в ней содержатся прогресс обновления (если оно выполняется), время последнего и следующего обновления, а также сообщение об исключении, если обновление завершилось ошибкой.
+
+Чтобы вручную остановить, запустить, инициировать или отменить обновления, используйте [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](/ru/reference/statements/system#managing-refreshable-materialized-views).
+
+Чтобы дождаться завершения обновления, используйте [`SYSTEM WAIT VIEW`](/ru/reference/statements/system#wait-view). Это особенно полезно, если нужно дождаться первого обновления после создания представления.
+
+<Note>
+  Интересный факт: запросу обновления разрешено читать из обновляемого представления, при этом он видит версию данных до обновления. Это означает, что вы можете реализовать игру «Жизнь» Конвея: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
+</Note>
+
+<div id="window-view">
+  ## Оконное представление
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  Это экспериментальная возможность, которая в будущих выпусках может измениться обратно несовместимым образом. Чтобы включить использование оконных представлений и запроса `WATCH`, включите настройку [allow&#95;experimental&#95;window&#95;view](/ru/reference/settings/session-settings#allow_experimental_window_view). Введите команду `set allow_experimental_window_view = 1`.
+</Info>
+
+```sql
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
+AS SELECT ...
+GROUP BY time_window_function
+[COMMENT 'comment']
+```
+
+Оконное представление может агрегировать данные по временному окну и выводить результаты, когда окно готово выдать их. Оно хранит частичные результаты агрегации во внутренней (или указанной) таблице, чтобы уменьшить задержку, и может записывать результат обработки в указанную таблицу или отправлять уведомления с помощью запроса WATCH.
+
+Создание оконного представления похоже на создание `MATERIALIZED VIEW`. Для хранения промежуточных данных оконному представлению требуется внутреннее хранилище. Его можно указать с помощью предложения `INNER ENGINE`; по умолчанию оконное представление использует `AggregatingMergeTree` в качестве внутреннего движка.
+
+При создании оконного представления без `TO [db].[table]` необходимо указать `ENGINE` — движок таблицы для хранения данных.
+
+<div id="time-window-functions">
+  ### Функции временных окон
+</div>
+
+[Функции временных окон](/ru/reference/functions/regular-functions/time-window-functions) используются для получения нижней и верхней границ окна для записей. Оконное представление необходимо использовать вместе с функцией временного окна.
+
+<div id="time-attributes">
+  ### АТРИБУТЫ ВРЕМЕНИ
+</div>
+
+Оконное представление поддерживает обработку по **времени обработки** и **времени события**.
+
+**Время обработки** позволяет оконному представлению формировать результаты на основе локального времени машины и используется по умолчанию. Это наиболее простое понятие времени, однако оно не обеспечивает детерминированность. Атрибут времени обработки можно задать, установив `time_attr` функции временного окна в столбец таблицы или используя функцию `now()`. Следующий запрос создает оконное представление с временем обработки.
+
+```sql
+CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
+```
+
+**Время события** — это время, когда каждое отдельное событие произошло на устройстве-источнике. Обычно эта временная метка записывается в запись в момент её создания. Обработка по времени события позволяет получать согласованные результаты даже при нарушении порядка событий или при позднем поступлении событий. Оконное представление поддерживает обработку по времени события с помощью синтаксиса `WATERMARK`.
+
+Оконное представление поддерживает три стратегии водяной метки:
+
+* `STRICTLY_ASCENDING`: Выдаёт водяную метку, равную максимальной наблюдаемой на текущий момент временной метке. Строки, у которых временная метка меньше максимальной, не считаются опоздавшими.
+* `ASCENDING`: Выдаёт водяную метку, равную максимальной наблюдаемой на текущий момент временной метке минус 1. Строки, у которых временная метка равна максимальной или меньше неё, не считаются опоздавшими.
+* `BOUNDED`: WATERMARK=INTERVAL. Выдаёт водяные метки, равные максимальной наблюдаемой временной метке минус указанная задержка.
+
+Следующие запросы — примеры создания оконного представления с `WATERMARK`:
+
+```sql
+CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+```
+
+По умолчанию окно срабатывает при поступлении водяной метки, а элементы, поступившие позже водяной метки, отбрасываются. Оконное представление поддерживает обработку опоздавших событий с помощью настройки `ALLOWED_LATENESS=INTERVAL`. Пример обработки опоздавших событий:
+
+```sql
+CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
+```
+
+Обратите внимание, что элементы, выдаваемые при позднем срабатывании, следует рассматривать как обновлённые результаты предыдущего вычисления. Вместо срабатывания в конце окна оконное представление срабатывает сразу при поступлении позднего события. Таким образом, для одного и того же окна будет сформировано несколько результатов. Пользователям нужно учитывать эти дублирующиеся результаты или выполнять их дедупликацию.
+
+Вы можете изменить `SELECT` запрос, указанный в оконном представлении, с помощью оператора `ALTER TABLE ... MODIFY QUERY`. Структура данных, получающаяся в результате выполнения нового `SELECT` запроса, должна быть такой же, как у исходного `SELECT` запроса, как с предложением `TO [db.]name`, так и без него. Обратите внимание, что данные в текущем окне будут потеряны, поскольку промежуточное состояние нельзя использовать повторно.
+
+<div id="monitoring-new-windows">
+  ### Мониторинг новых окон
+</div>
+
+Оконное представление поддерживает запрос [WATCH](/ru/reference/statements/watch) для мониторинга изменений, либо можно использовать синтаксис `TO` для вывода результатов в таблицу.
+
+```sql
+WATCH [db.]window_view
+[EVENTS]
+[LIMIT n]
+[FORMAT format]
+```
+
+Можно указать `LIMIT`, чтобы задать количество обновлений, которые нужно получить до завершения запроса. Предложение `EVENTS` позволяет использовать сокращённую форму запроса `WATCH`: вместо результата запроса вы получите только последнюю водяную метку запроса.
+
+<div id="settings-1">
+  ### Настройки
+</div>
+
+* `window_view_clean_interval`: Интервал очистки оконного представления в секундах для удаления устаревших данных. Система сохраняет окна, которые ещё не были полностью активированы в соответствии с системным временем или конфигурацией `WATERMARK`, а остальные данные удаляются.
+* `window_view_heartbeat_interval`: Интервал heartbeat-сигнала в секундах, показывающий, что watch-запрос активен.
+* `wait_for_window_view_fire_signal_timeout`: Тайм-аут ожидания сигнала срабатывания оконного представления при обработке по времени события.
+
+<div id="example">
+  ### Пример
+</div>
+
+Предположим, нам нужно подсчитать количество записей о кликах за каждые 10 секунд в таблице журналов `data`, и структура этой таблицы такова:
+
+```sql
+CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
+```
+
+Сначала создадим оконное представление с окном tumble с 10-секундным интервалом:
+
+```sql
+CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+Затем с помощью запроса `WATCH` получаем результаты.
+
+```sql
+WATCH wv
+```
+
+При вставке логов в таблицу `data`,
+
+```sql
+INSERT INTO data VALUES(1,now())
+```
+
+Запрос `WATCH` должен вывести результаты в следующем виде:
+
+```text
+┌─count(id)─┬────────window_start─┐
+│         1 │ 2020-01-14 16:56:40 │
+└───────────┴─────────────────────┘
+```
+
+Либо можно направить вывод в другую таблицу, используя синтаксис `TO`.
+
+```sql
+CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+Дополнительные примеры можно найти в тестах ClickHouse с сохранением состояния (там они называются `*window_view*`).
+
+<div id="window-view-usage">
+  ### Использование оконного представления
+</div>
+
+Оконное представление полезно в следующих сценариях:
+
+* **Мониторинг**: Агрегируйте и вычисляйте метрики по журналам во времени и выводите результаты в целевую таблицу. Панель мониторинга может использовать целевую таблицу в качестве исходной.
+* **Анализ**: Автоматически агрегируйте и предварительно обрабатывайте данные в пределах временного окна. Это может быть полезно при анализе большого количества журналов. Предварительная обработка устраняет повторяющиеся вычисления в нескольких запросах и уменьшает задержку выполнения запросов.
+
+<div id="related-content">
+  ## Связанные материалы
+</div>
+
+* Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* Блог: [Создание решения для обсервабилити на ClickHouse — часть 2 — трейсы](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+
+<div id="temporary-views">
+  ## Временные представления
+</div>
+
+ClickHouse поддерживает **временные представления** со следующими характеристиками (где применимо — аналогично временным таблицам):
+
+* **Срок жизни сеанса**
+  Временное представление существует только в рамках текущего сеанса. По завершении сеанса оно удаляется автоматически.
+
+* **Без базы данных**
+  Для временного представления **нельзя** указывать имя базы данных. Оно существует вне баз данных (в пространстве имен сеанса).
+
+* **Не реплицируется / без ON CLUSTER**
+  Временные объекты локальны для сеанса и **не могут** создаваться с `ON CLUSTER`.
+
+* **Разрешение имен**
+  Если временный объект (таблица или представление) имеет то же имя, что и постоянный объект, и запрос ссылается на это имя **без** указания базы данных, используется **временный** объект.
+
+* **Логический объект (без хранения)**
+  Временное представление хранит только текст своего `SELECT` (внутри используется хранилище `View`). Оно не сохраняет данные и не поддерживает `INSERT`.
+
+* **Предложение ENGINE**
+  Указывать `ENGINE` **не** требуется; если указать `ENGINE = View`, оно будет проигнорировано / обработано как то же логическое представление.
+
+* **Безопасность / привилегии**
+  Для создания временного представления требуется привилегия `CREATE TEMPORARY VIEW`, которая неявно предоставляется через `CREATE VIEW`.
+
+* **SHOW CREATE**
+  Используйте `SHOW CREATE TEMPORARY VIEW view_name;`, чтобы вывести DDL временного представления.
+
+<div id="temporary-views-syntax">
+  ### Синтаксис
+</div>
+
+```sql
+CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
+```
+
+`OR REPLACE` **не** поддерживается для временных представлений (по аналогии с временными таблицами). Если вам нужно «заменить» временное представление, удалите его и создайте заново.
+
+<div id="examples">
+  ### Примеры
+</div>
+
+Создайте временную исходную таблицу и временное представление на её основе:
+
+```sql
+CREATE TEMPORARY TABLE t_src (id UInt32, val String);
+INSERT INTO t_src VALUES (1, 'a'), (2, 'b');
+
+CREATE TEMPORARY VIEW tview AS
+SELECT id, upper(val) AS u
+FROM t_src
+WHERE id <= 2;
+
+SELECT * FROM tview ORDER BY id;
+```
+
+Показать DDL:
+
+```sql
+SHOW CREATE TEMPORARY VIEW tview;
+```
+
+Удалить её:
+
+```sql
+DROP TEMPORARY VIEW IF EXISTS tview;  -- временные представления удаляются с использованием синтаксиса TEMPORARY TABLE
+```
+
+<div id="temporary-views-limitations">
+  ### Недопустимые варианты / ограничения
+</div>
+
+* `CREATE OR REPLACE TEMPORARY VIEW ...` → **не допускается** (используйте `DROP` + `CREATE`).
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **не допускается**.
+* `CREATE TEMPORARY VIEW db.view AS ...` → **не допускается** (без указания базы данных).
+* `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **не допускается** (временные объекты локальны для сеанса).
+* `POPULATE`, `REFRESH`, `TO [db.table]`, внутренние движки и все специфичные для MV секции → **не применимы** к временным представлениям.
+
+<div id="temporary-views-distributed-notes">
+  ### Примечания о распределённых запросах
+</div>
+
+Временное **представление** — это лишь определение; передавать здесь нечего. Если ваше временное представление ссылается на временные **таблицы** (например, `Memory`), их данные могут передаваться на удалённые серверы при выполнении распределённого запроса — так же, как и в случае временных таблиц.
+
+<div id="temporary-views-distributed-example">
+  #### Пример
+</div>
+
+```sql
+-- Таблица в памяти в рамках сеанса
+CREATE TEMPORARY TABLE temp_ids (id UInt64) ENGINE = Memory;
+
+INSERT INTO temp_ids VALUES (1), (5), (42);
+
+-- Представление в рамках сеанса над временной таблицей (исключительно логическое)
+CREATE TEMPORARY VIEW v_ids AS
+SELECT id FROM temp_ids;
+
+-- Замените 'test' именем вашего кластера.
+-- GLOBAL JOIN заставляет ClickHouse *отправлять* небольшую сторону JOIN (temp_ids через v_ids)
+-- на каждый удалённый сервер, выполняющий левую часть запроса.
+SELECT count()
+FROM cluster('test', system.numbers) AS n
+GLOBAL ANY INNER JOIN v_ids USING (id)
+WHERE n.number < 100;
+
+```

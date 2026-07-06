@@ -9,7 +9,7 @@ title: 's3Cluster'
 doc_type: 'reference'
 ---
 
-This is an extension to the [s3](sql-reference/table-functions/s3.md) table function.
+This is an extension to the [s3](/sql-reference/table-functions/s3.md) table function.
 
 Allows processing files from [Amazon S3](https://aws.amazon.com/s3/) and Google Cloud Storage [Google Cloud Storage](https://cloud.google.com/storage/) in parallel with many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in S3 file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
@@ -35,7 +35,7 @@ s3Cluster(cluster_name, named_collection[, option=value [,..]])
 | `headers`                             | Parameter is optional. Allows headers to be passed in the S3 request. Pass in the format `headers(key=value)` e.g. `headers('x-amz-request-payer' = 'requester')`. See [here](/sql-reference/table-functions/s3#accessing-requester-pays-buckets) for example of use. |
 | `extra_credentials`                   | Optional. `roleARN` can be passed via this parameter. See [here](/cloud/data-sources/secure-s3#access-your-s3-bucket-with-the-clickhouseaccess-role) for an example.                                          |
 
-Arguments can also be passed using [named collections](operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
+Arguments can also be passed using [named collections](/operations/named-collections.md). In this case `url`, `access_key_id`, `secret_access_key`, `format`, `structure`, `compression_method` work in the same way, and some extra parameters are supported:
 
 | Argument                       | Description                                                                                                                                                                                                                       |
 |--------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -69,7 +69,7 @@ Count the total amount of rows in all files in the cluster `cluster_simple`:
 If your listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
 :::
 
-For production use cases, it is recommended to use [named collections](operations/named-collections.md). Here is the example:
+For production use cases, it is recommended to use [named collections](/operations/named-collections.md). Here is the example:
 ```sql
 
 CREATE NAMED COLLECTION creds AS

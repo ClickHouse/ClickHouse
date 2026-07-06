@@ -30,6 +30,7 @@
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
 #include <Common/OOMCanary/OOMCanary.h>
 #include <Common/ClickHouseRevision.h>
@@ -61,6 +62,9 @@
 #include <Common/CPUID.h>
 #include <Common/HTTPConnectionPool.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Server/createServer.h>
+#include <Server/socketBindListen.h>
+#include <Server/stopServers.h>
 #include <Server/waitServersToFinish.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -93,6 +97,8 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
 #include <Formats/registerFormats.h>
@@ -228,9 +234,11 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_num;
     extern const ServerSettingsUInt64 concurrent_threads_soft_limit_ratio_to_cores;
     extern const ServerSettingsString concurrent_threads_scheduler;
+    extern const ServerSettingsBool concurrent_threads_lazy_allocation;
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
@@ -297,6 +305,9 @@ namespace ServerSetting
     extern const ServerSettingsString unique_key_index_cache_policy;
     extern const ServerSettingsUInt64 unique_key_index_cache_size_bytes;
     extern const ServerSettingsDouble unique_key_index_cache_size_ratio;
+    extern const ServerSettingsString unique_key_bitmap_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_bitmap_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_bitmap_cache_size_ratio;
     extern const ServerSettingsUInt64 max_fetch_partition_thread_pool_size;
     extern const ServerSettingsUInt64 max_active_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_backups_io_thread_pool_free_size;
@@ -312,12 +323,19 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_io_thread_pool_size;
     extern const ServerSettingsUInt64 max_keep_alive_requests;
     extern const ServerSettingsUInt64 max_outdated_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 max_partition_size_to_drop;
     extern const ServerSettingsUInt64 max_part_num_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_to_warn;
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -338,6 +356,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
     extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
@@ -349,6 +368,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -375,10 +395,12 @@ namespace ServerSetting
     extern const ServerSettingsString uncompressed_cache_policy;
     extern const ServerSettingsUInt64 uncompressed_cache_size;
     extern const ServerSettingsDouble uncompressed_cache_size_ratio;
+    extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
     extern const ServerSettingsBool use_separate_cache_arena;
     extern const ServerSettingsString primary_index_cache_policy;
     extern const ServerSettingsUInt64 primary_index_cache_size;
     extern const ServerSettingsDouble primary_index_cache_size_ratio;
+    extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsBool wait_dictionaries_load_at_startup;
     extern const ServerSettingsUInt64 max_prefixes_deserialization_thread_pool_size;
@@ -409,6 +431,7 @@ namespace ServerSetting
     extern const ServerSettingsString user_files_path;
     extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
+    extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
@@ -596,18 +619,7 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto address = makeSocketAddress(host, port, &logger());
-    socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ server_settings[ServerSetting::listen_reuse_port]);
-    /// If caller requests any available port from the OS, discover it after binding.
-    if (port == 0)
-    {
-        address = socket.address();
-        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
-    }
-
-    socket.listen(/* backlog = */ server_settings[ServerSetting::listen_backlog]);
-
-    return address;
+    return DB::socketBindListen(server_settings, socket, host, port, &logger());
 }
 
 namespace
@@ -663,43 +675,17 @@ void Server::createServer(
     std::vector<ProtocolServerAdapter> & servers,
     CreateServerFunc && func) const
 {
-    /// For testing purposes, user may omit tcp_port or http_port or https_port in configuration file.
-    if (config.getString(port_name, "").empty())
-        return;
-
-    /// If we already have an active server for this listen_host/port_name, don't create it again
-    for (const auto & server : servers)
+    if (DB::createServer(config, listen_host, port_name, listen_try, start_server, servers, std::move(func), &logger()))
     {
-        if (!server.isStopping() && server.getListenHost() == listen_host && server.getPortName() == port_name)
-            return;
-    }
-
-    auto port = config.getInt(port_name);
-    try
-    {
-        servers.push_back(func(static_cast<UInt16>(port)));
-        if (start_server)
-        {
-            servers.back().start();
-            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
-        }
-        global_context->registerServerPort(port_name, static_cast<UInt16>(port));
-    }
-    catch (const Poco::Exception &)
-    {
-        if (listen_try)
-        {
-            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
-                "then consider to "
-                "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
-                "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
-                " Example for disabled IPv4: <listen_host>::</listen_host>",
-                listen_host, port, getCurrentExceptionMessage(false));
-        }
-        else
-        {
-            throw Exception(ErrorCodes::NETWORK_ERROR, "Listen [{}]:{} failed: {}", listen_host, port, getCurrentExceptionMessage(false));
-        }
+        /// Register the configured port rather than the actual bound port. `getServerPort` keeps a
+        /// single value per `port_name`, so with `tcp_port=0` (OS-assigned) and several `listen_host`
+        /// values (e.g. the default `::1` + `127.0.0.1`) each host binds a distinct ephemeral port and
+        /// registering the actual port would let the last host overwrite the others, leaving
+        /// `getServerPort` pointing at a port that is not listening on the host a client uses. When the
+        /// configured port is non-zero it equals the bound port anyway, so this preserves the previous
+        /// behavior in all cases. (`clickhouse-local` registers the actual bound port because it needs
+        /// the OS-assigned value, but it rejects the ambiguous `port=0` + multiple `listen_host` combo.)
+        global_context->registerServerPort(port_name, static_cast<UInt16>(config.getInt(port_name)));
     }
 }
 
@@ -1254,6 +1240,34 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
+    /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
+    /// writes the unified deduplication hash, so silently ignoring the setting would break the
+    /// mixed-version deduplication contract; refuse to start and explain how to migrate. This must run
+    /// after every server-settings load, not just this first one: the ZooKeeper-include reload below
+    /// and the runtime config reloader re-read the settings, so a legacy value could otherwise slip in
+    /// through a ZK-backed config or a `SYSTEM RELOAD CONFIG`.
+    auto validate_insert_deduplication_version = [](const ServerSettings & settings)
+    {
+        const String dedup_version = settings[ServerSetting::insert_deduplication_version];
+        if (dedup_version != "new_unified_hash")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
+                "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
+                "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
+                "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
+                "'compatible_double_hashes' (writing both the legacy and unified hashes), then upgrade to this "
+                "version. For replicated tables run it for at least 'replicated_deduplication_window_seconds' "
+                "(one hour by default); the default windows retain the unified hashes of all inserts for that "
+                "one-hour window, which is considered long enough to cover an insert retry loop. For "
+                "non-replicated tables with 'non_replicated_deduplication_window' > 0 that window is count-based, "
+                "not time-based, so run 'compatible_double_hashes' for at least that many inserts before "
+                "upgrading; otherwise stale legacy block ids can survive the upgrade and a retried insert may be "
+                "accepted as new.",
+                dedup_version);
+    };
+    validate_insert_deduplication_version(server_settings);
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1353,6 +1367,8 @@ try
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
+
+    ProfileEvents::setUserPerCPUEnabled(server_settings[ServerSetting::user_profile_events_per_cpu]);
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
@@ -1501,6 +1517,9 @@ try
 
         if (server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size])
             total_memory_tracker.setSampleMaxAllocationSize(server_settings[ServerSetting::total_memory_profiler_sample_max_allocation_size]);
+
+        if (current_thread)
+            current_thread->resolveMemorySampleConfig();
     }
 
     total_memory_tracker.setJemallocFlushProfileInterval(server_settings[ServerSetting::jemalloc_flush_profile_interval_bytes]);
@@ -1548,6 +1567,7 @@ try
         .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
         .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
         .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+        .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
         .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
             ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
             : 0.0,
@@ -1788,6 +1808,7 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
@@ -2019,6 +2040,14 @@ try
         global_context->setUserScriptsPath(user_scripts_path);
     }
 
+    {
+        const auto & dynamic_udf_path_setting = server_settings[ServerSetting::dynamic_user_defined_executable_functions_path];
+        std::string dynamic_udf_path = dynamic_udf_path_setting.changed
+            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : String(path / "dynamic_user_defined_executable_functions/");
+        global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+        fs::create_directories(dynamic_udf_path);
+    }
+
     /// top_level_domains_lists
     {
         const auto & top_level_domains_path_setting = server_settings[ServerSetting::top_level_domains_path];
@@ -2189,6 +2218,17 @@ try
     }
     global_context->setUniqueKeyIndexCache(unique_key_index_cache_policy_name, unique_key_index_cache_size, unique_key_index_cache_size_ratio);
 
+    /// UNIQUE KEY delete-bitmap cache. Zero size disables.
+    String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
+    size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
+    double unique_key_bitmap_cache_size_ratio = server_settings[ServerSetting::unique_key_bitmap_cache_size_ratio];
+    if (unique_key_bitmap_cache_size > max_cache_size)
+    {
+        unique_key_bitmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_bitmap_cache_size));
+    }
+    global_context->setDeleteBitmapCache(unique_key_bitmap_cache_policy_name, unique_key_bitmap_cache_size, unique_key_bitmap_cache_size_ratio);
+
     String primary_index_cache_policy = server_settings[ServerSetting::primary_index_cache_policy];
     size_t primary_index_cache_size = server_settings[ServerSetting::primary_index_cache_size];
     double primary_index_cache_size_ratio = server_settings[ServerSetting::primary_index_cache_size_ratio];
@@ -2327,6 +2367,14 @@ try
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    size_t point_in_polygon_cache_size = server_settings[ServerSetting::point_in_polygon_cache_size];
+    if (point_in_polygon_cache_size > max_cache_size)
+    {
+        point_in_polygon_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
+    }
+    setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
+
     NamedCollectionFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
@@ -2407,6 +2455,16 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Validate the incoming config BEFORE config().replace below: validating after would mutate
+            /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
+            /// system.server_settings reporting an unsupported value. Reject first, then replace.
+            {
+                ServerSettings incoming_server_settings;
+                incoming_server_settings.loadSettingsFromConfig(*loaded_config);
+                validate_insert_deduplication_version(incoming_server_settings);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
@@ -2462,6 +2520,9 @@ try
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
 
+            per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
+            per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
+
             size_t merges_mutations_memory_usage_soft_limit = new_server_settings[ServerSetting::merges_mutations_memory_usage_soft_limit];
 
             const double merges_mutations_memory_usage_to_ram_ratio = new_server_settings[ServerSetting::merges_mutations_memory_usage_to_ram_ratio];
@@ -2509,6 +2570,7 @@ try
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(config());
+                global_context->loadUserDefinedExecutableFunctionDrivers(config());
                 global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
@@ -2523,6 +2585,12 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
+            global_context->setMaxNamedCollectionNumToThrow(new_server_settings[ServerSetting::max_named_collection_num_to_throw]);
+            global_context->setMaxTableNumToThrow(new_server_settings[ServerSetting::max_table_num_to_throw]);
+            global_context->setMaxReplicatedTableNumToThrow(new_server_settings[ServerSetting::max_replicated_table_num_to_throw]);
+            global_context->setMaxViewNumToThrow(new_server_settings[ServerSetting::max_view_num_to_throw]);
+            global_context->setMaxDictionaryNumToThrow(new_server_settings[ServerSetting::max_dictionary_num_to_throw]);
+            global_context->setMaxDatabaseNumToThrow(new_server_settings[ServerSetting::max_database_num_to_throw]);
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
@@ -2564,7 +2632,8 @@ try
             auto [concurrent_threads_soft_limit, concurrency_control_scheduler] = global_context->setConcurrentThreadsSoftLimit(
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_num],
                 new_server_settings[ServerSetting::concurrent_threads_soft_limit_ratio_to_cores],
-                new_server_settings[ServerSetting::concurrent_threads_scheduler]);
+                new_server_settings[ServerSetting::concurrent_threads_scheduler],
+                new_server_settings[ServerSetting::concurrent_threads_lazy_allocation]);
             LOG_INFO(log, "ConcurrencyControl limit is set to {} CPU slots with '{}' scheduler",
                 concurrent_threads_soft_limit == UnlimitedSlots ? std::string("UNLIMITED") : std::to_string(concurrent_threads_soft_limit),
                 concurrency_control_scheduler);
@@ -2706,6 +2775,7 @@ try
                 global_context->updateUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateMarkCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateUniqueKeyIndexCacheConfiguration(config(), max_cache_size_in_bytes);
+                global_context->updateDeleteBitmapCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updatePrimaryIndexCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexUncompressedCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateIndexMarkCacheConfiguration(config(), max_cache_size_in_bytes);
@@ -2716,6 +2786,8 @@ try
                 global_context->updateMMappedFileCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryResultCacheConfiguration(config(), max_cache_size_in_bytes);
                 global_context->updateQueryConditionCacheConfiguration(config(), max_cache_size_in_bytes);
+                setPointInPolygonCacheMaxSizeInBytes(
+                    std::min<size_t>(new_server_settings[ServerSetting::point_in_polygon_cache_size], max_cache_size_in_bytes));
 #if USE_AVRO
                 global_context->updateIcebergMetadataFilesCacheConfiguration(config(), max_cache_size_in_bytes);
 #endif
@@ -3210,7 +3282,13 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
+        global_context->loadUserDefinedExecutableFunctionDrivers(config());
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+        /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
+        /// dynamic configuration files exist; re-run their drivers if they are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
@@ -4064,36 +4142,7 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    LoggerRawPtr log = &logger();
-
-    /// Remove servers once all their connections are closed
-    auto check_server = [&log](const char prefix[], auto & server)
-    {
-        if (!server.isStopping())
-            return false;
-        size_t current_connections = server.currentConnections();
-        LOG_DEBUG(log, "Server {}{}: {} ({} connections)",
-            server.getDescription(),
-            prefix,
-            !current_connections ? "finished" : "waiting",
-            current_connections);
-        return !current_connections;
-    };
-
-    std::erase_if(servers, std::bind_front(check_server, " (from one of previous remove)"));
-
-    for (auto & server : servers)
-    {
-        if (!server.isStopping())
-        {
-            const std::string server_port_name = server.getPortName();
-
-            if (server_type.shouldStop(server_port_name))
-                server.stop();
-        }
-    }
-
-    std::erase_if(servers, std::bind_front(check_server, ""));
+    DB::stopServers(servers, server_type, &logger());
 }
 
 void Server::updateServers(
