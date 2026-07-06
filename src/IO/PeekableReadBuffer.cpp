@@ -61,11 +61,10 @@ bool PeekableReadBuffer::peekNext()
     /// Save unread data from sub-buffer to own memory
     memcpy(memory_data + peeked_size, sub_buf->position(), bytes_to_copy);
 
-    /// If useSubbufferOnly() is false, then checkpoint is in own memory and it was updated in resizeOwnMemoryIfNecessary
-    /// Otherwise, checkpoint now at the beginning of own memory
-    if (checkpoint && useSubbufferOnly())
+    /// If checkpoint is in sub-buffer and its byte is copied to own memory, move checkpoint to own memory
+    if (checkpoint && !checkpoint_in_own_memory && *checkpoint < sub_buf->position() + bytes_to_copy)
     {
-        checkpoint.emplace(memory_data);
+        checkpoint.emplace(memory_data + peeked_size + (*checkpoint - sub_buf->position()));
         checkpoint_in_own_memory = true;
     }
 
@@ -77,7 +76,7 @@ bool PeekableReadBuffer::peekNext()
     else
     {
         /// Switch to reading from own memory
-        size_t pos_offset = peeked_size + this->offset();
+        size_t pos_offset = peeked_size + (pos - sub_buf->position());
         if (useSubbufferOnly())
         {
             if (checkpoint)
@@ -111,6 +110,8 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         {
             /// Both checkpoint and position are in the same buffer.
             pos = *checkpoint;
+            if (!currentlyReadFromOwnMemory() && pos > working_buffer.end())
+                pos = working_buffer.end();
         }
         else
         {
@@ -129,6 +130,8 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
         {
             /// Both checkpoint and position are in the same buffer.
             pos = *checkpoint + offset_from_checkpoint;
+            if (!currentlyReadFromOwnMemory() && pos > working_buffer.end())
+                pos = working_buffer.end();
         }
         else
         {
@@ -140,7 +143,9 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
             {
                 /// Recursive checkpoint is in sub buffer with current position.
                 /// Just move position to the recursive checkpoint
-                pos = buffer().begin() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+                pos = sub_buf->position() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+                if (pos > working_buffer.end())
+                    pos = working_buffer.end();
             }
             else
             {

@@ -37,3 +37,15 @@ JSONEachRow UTF-32 LE BOM:
 JSONEachRow UTF-32 BE BOM:
 1	Alice
 2	Bob
+JSONColumns UTF-16 LE BOM:
+1	Alice
+2	Bob
+JSONColumns UTF-16 BE BOM:
+1	Alice
+2	Bob
+JSONCompactColumns UTF-16 LE BOM:
+1	Alice
+2	Bob
+JSONCompactColumns UTF-16 BE BOM:
+1	Alice
+2	Bob
