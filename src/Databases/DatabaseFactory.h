@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/AccessType.h>
+#include <Common/Documentation.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
@@ -68,6 +69,7 @@ public:
     {
         CreatorFn creator_fn;
         EngineFeatures features;
+        Documentation documentation;
     };
 
     DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE);
@@ -80,16 +82,16 @@ public:
         .supports_table_overrides = false,
         .is_external = false,
         .source_access_type = std::nullopt,
-    });
+    }, Documentation documentation = {});
 
     const DatabaseEngines & getDatabaseEngines() const { return database_engines; }
 
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;
 
-    std::vector<String> getAllRegisteredNames() const override
+    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
     {
-        std::vector<String> result;
+        VectorWithMemoryTracking<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;

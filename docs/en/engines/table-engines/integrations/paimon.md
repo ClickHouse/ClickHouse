@@ -20,7 +20,7 @@ Creating `Paimon*` tables is gated by `allow_experimental_paimon_storage_engine`
 SET allow_experimental_paimon_storage_engine = 1;
 
 CREATE TABLE paimon_table_s3
-    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
 
 CREATE TABLE paimon_table_azure
     ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
@@ -123,7 +123,7 @@ You can build an end-to-end pipeline that continuously syncs data from a Paimon 
 
 **Step 1 — Create the Paimon source table with incremental read and metadata refresh enabled.**
 
-The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the `Paimon` alias as appropriate for your storage backend:
+The example below uses `PaimonLocal`. Replace the engine with `PaimonS3`, `PaimonAzure`, `PaimonHDFS`, or the auto-detecting `Paimon` engine as appropriate for your storage backend:
 
 ```sql
 SET allow_experimental_paimon_storage_engine = 1;
@@ -137,7 +137,7 @@ SETTINGS
     paimon_replica_name = '{replica}',
     paimon_metadata_refresh_interval_sec = 1;
 
--- S3 storage (Paimon is an alias for PaimonS3)
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
 CREATE TABLE paimon_mv_source
 ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
 SETTINGS
@@ -193,7 +193,7 @@ Stop the MV before dropping it to prevent background refresh from blocking DDL o
 
 ## Aliases {#aliases}
 
-Table engine `Paimon` is an alias to `PaimonS3` now.
+The `Paimon` table engine auto-detects the storage backend from the `disk` setting and dispatches to `PaimonS3`, `PaimonAzure`, or `PaimonLocal` accordingly. When no `disk` is specified, it defaults to the `PaimonS3` implementation.
 
 ## Virtual Columns {#virtual-columns}
 

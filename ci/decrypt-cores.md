@@ -28,7 +28,9 @@ When a job collects core dumps, it attaches the following files to the run:
   `ci/tmp/run_r*/core.*`.
 
 You will also need the matching `clickhouse` binary (download it from the build
-job for the same commit) to actually analyze the core in `gdb`.
+job for the same commit) to actually analyze the core in `gdb`. That binary is
+self-extracting; to get the inner ELF with symbols, see "Loading the Core in
+gdb" below.
 
 ## Prerequisites
 
@@ -66,12 +68,20 @@ Repeat steps 2 and 3 for each `core.<pid>.zst.enc` artifact. The same
 
 ## Loading the Core in gdb
 
+The downloaded `clickhouse` is a self-extracting executable, so `gdb` only sees
+the decompressor stub's symbols unless you extract the inner ELF first. On the
+binary's own architecture (or with `qemu` user-mode emulation for it) you can
+run `./clickhouse` once to self-extract in place. Otherwise extract it offline
+with the helper in `.claude/skills/decompress-binary`:
+
 ```bash
-gdb /path/to/clickhouse core.<pid>
+python3 .claude/skills/decompress-binary/extract_self_extracting.py clickhouse clickhouse.elf
+gdb clickhouse.elf core.<pid>      # or: lldb clickhouse.elf -c core.<pid>
 ```
 
-The `clickhouse` binary must come from the exact build that produced the core;
-mismatched binaries yield unusable backtraces.
+The binary must come from the exact build that produced the core (matching
+`.note.gnu.build-id`); mismatched binaries yield unusable backtraces. `gdb` and
+`lldb` read foreign-architecture cores fine for backtraces and memory inspection.
 
 ## Cleanup
 

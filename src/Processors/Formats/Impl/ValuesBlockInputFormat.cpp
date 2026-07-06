@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <IO/ReadHelpers.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/convertFieldToType.h>
@@ -7,6 +8,7 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/EscapingRuleUtils.h>
+#include <Formats/ParseError.h>
 #include <Core/Block.h>
 #include <base/find_symbols.h>
 #include <Common/typeid_cast.h>
@@ -606,7 +608,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        auto const_column = value_raw.second->createColumnConst(1, expression_value);
+        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
         auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
@@ -804,6 +806,43 @@ void registerInputFormatValues(FormatFactory & factory)
     {
         return std::make_shared<ValuesBlockInputFormat>(buf, std::make_unique<const Block>(header), params, settings);
     });
+
+    factory.setDocumentation("Values", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `Values` format prints every row in brackets. 
+
+- Rows are separated by commas without a comma after the last row. 
+- The values inside the brackets are also comma-separated. 
+- Numbers are output in a decimal format without quotes. 
+- Arrays are output in `[]`.
+- Strings, dates, and dates with times are output in quotes. 
+- Escaping rules and parsing are similar to the [TabSeparated](TabSeparated/TabSeparated.md) format.
+
+During formatting, extra spaces aren't inserted, but during parsing, they are allowed and skipped (except for spaces inside array values, which are not allowed). 
+[`NULL`](/sql-reference/syntax.md) is represented as `NULL`.
+
+The minimum set of characters that you need to escape when passing data in the `Values` format: 
+- single quotes
+- backslashes
+
+This is the format that is used in `INSERT INTO t VALUES ...`, but you can also use it for formatting query results.
+
+## Example usage {#example-usage}
+
+## Format settings {#format-settings}
+
+| Setting                                                                                                                                                     | Description                                                                                                                                                                                   | Default |
+|-------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|
+| [`input_format_values_interpret_expressions`](../../operations/settings/settings-formats.md/#input_format_values_interpret_expressions)                     | if the field could not be parsed by streaming parser, run SQL parser and try to interpret it as SQL expression.                                                                               | `true`  |
+| [`input_format_values_deduce_templates_of_expressions`](../../operations/settings/settings-formats.md/#input_format_values_deduce_templates_of_expressions) | if the field could not be parsed by streaming parser, run SQL parser, deduce template of the SQL expression, try to parse all rows using template and then interpret expression for all rows. | `true`  |
+| [`input_format_values_accurate_types_of_literals`](../../operations/settings/settings-formats.md/#input_format_values_accurate_types_of_literals)           | when parsing and interpreting expressions using template, check actual type of literal to avoid possible overflow and precision issues.                                                       | `true`  |
+)DOCS_MD"});
 }
 
 void registerValuesSchemaReader(FormatFactory & factory);

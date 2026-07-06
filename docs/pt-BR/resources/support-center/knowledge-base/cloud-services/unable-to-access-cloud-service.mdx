@@ -1,0 +1,36 @@
+---
+title: Não consigo acessar um serviço do ClickHouse Cloud
+description: "Solução de problemas de acesso a serviços do ClickHouse Cloud, incluindo a configuração da IP Access List"
+date: 2024-07-02
+tags: ['Erros e exceções', 'Gerenciamento do Cloud']
+keywords: ['acesso ao serviço do Cloud', 'IP Access List']
+doc_type: 'guide'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="i-am-unable-to-access-a-clickhouse-cloud-service">
+  ## Não consigo acessar um serviço do ClickHouse Cloud
+</div>
+
+Se você estiver vendo uma mensagem de erro como uma destas, sua IP Access List pode estar bloqueando o acesso:
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+ou
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+ou
+
+```response
+Code: 210. DB::NetException: SSL connection unexpectedly closed (e46453teek.us-east-2.aws.clickhouse-staging.com:9440). (NETWORK_ERROR)
+```
+
+Verifique a [IP Access List](/pt-BR/products/cloud/guides/security/connectivity/setting-ip-filters); se você estiver tentando se conectar a partir de um IP fora da lista permitida, a conexão falhará.

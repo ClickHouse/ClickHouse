@@ -587,6 +587,33 @@ bool FillingTransform::generateSuffixIfNeeded(
     return true;
 }
 
+/// Whether the sorting-prefix columns are equal at two positions, using the ORDER BY
+/// collation (the stream is sorted by it). Mirrors LimitTransform::sortColumnsEqualAt.
+template <typename LhsColumns, typename RhsColumns>
+static bool sortPrefixEqualAt(
+    const LhsColumns & lhs_columns,
+    size_t lhs_row,
+    const RhsColumns & rhs_columns,
+    size_t rhs_row,
+    const SortDescription & sort_prefix)
+{
+    for (size_t i = 0, size = sort_prefix.size(); i < size; ++i)
+    {
+        const IColumn & lhs = *lhs_columns[i];
+        const IColumn & rhs = *rhs_columns[i];
+
+        int res = 0;
+        if (sort_prefix[i].collator && lhs.isCollationSupported())
+            res = lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction, *sort_prefix[i].collator);
+        else
+            res = lhs.compareAt(lhs_row, rhs_row, rhs, sort_prefix[i].nulls_direction);
+
+        if (res != 0)
+            return false;
+    }
+    return true;
+}
+
 template <typename Predicate>
 size_t getRangeEnd(size_t begin, size_t end, Predicate pred)
 {
@@ -857,16 +884,7 @@ void FillingTransform::transform(Chunk & chunk)
         for (size_t pos : sort_prefix_positions)
             last_sort_prefix_columns.push_back(last_row[pos].get());
 
-        new_sort_prefix = false;
-        for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
-        {
-            const int res = input_sort_prefix_columns[i]->compareAt(0, 0, *last_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-            if (res != 0)
-            {
-                new_sort_prefix = true;
-                break;
-            }
-        }
+        new_sort_prefix = !sortPrefixEqualAt(input_sort_prefix_columns, 0, last_sort_prefix_columns, 0, sort_prefix);
     }
 
     for (size_t row_ind = 0; row_ind < num_rows;)
@@ -877,14 +895,8 @@ void FillingTransform::transform(Chunk & chunk)
             num_rows,
             [&](size_t pos_with_current_sort_prefix, size_t row_pos)
             {
-                for (size_t i = 0; i < input_sort_prefix_columns.size(); ++i)
-                {
-                    const int res = input_sort_prefix_columns[i]->compareAt(
-                        pos_with_current_sort_prefix, row_pos, *input_sort_prefix_columns[i], sort_prefix[i].nulls_direction);
-                    if (res != 0)
-                        return false;
-                }
-                return true;
+                return sortPrefixEqualAt(
+                    input_sort_prefix_columns, pos_with_current_sort_prefix, input_sort_prefix_columns, row_pos, sort_prefix);
             });
 
         /// generate suffix for the previous range

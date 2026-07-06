@@ -1,0 +1,150 @@
+---
+description: '초 단위 정밀도로 시간 범위를 저장하는 ClickHouse의 Time 데이터 타입에 대한 문서'
+slug: /sql-reference/data-types/time
+sidebarTitle: 'Time'
+title: 'Time'
+doc_type: 'reference'
+---
+
+데이터 타입 `Time`은 시, 분, 초 요소로 이루어진 시간을 나타냅니다.
+이 타입은 특정 달력 날짜와는 무관하며, 일, 월, 연 요소가 필요하지 않은 값에 적합합니다.
+
+구문:
+
+```sql
+Time
+```
+
+텍스트 표현 범위: [-999:59:59, 999:59:59].
+
+해상도: 1초.
+
+<div id="implementation-details">
+  ## 구현 세부 사항
+</div>
+
+**표현 방식과 성능**.
+데이터 타입 `Time`은 내부적으로 초를 인코딩하는 부호 있는 32비트 정수로 저장됩니다.
+`Time`과 `DateTime` 타입 값은 바이트 크기가 같으므로 성능도 비슷합니다.
+
+**정규화**.
+문자열을 `Time`으로 파싱할 때 시간 구성 요소는 정규화되며, 유효성 검사는 수행하지 않습니다.
+예를 들어 `25:70:70`은 `26:11:10`으로 해석됩니다.
+
+**음수 값**.
+선행 마이너스 기호가 지원되며 그대로 유지됩니다.
+음수 값은 일반적으로 `Time` 값에 대한 산술 연산으로 발생합니다.
+`Time` 타입에서는 텍스트 입력(예: `'-01:02:03'`)과 숫자 입력(예: `-3723`) 모두에서 음수 입력이 그대로 유지됩니다.
+
+**포화**.
+하루 중 시간(time-of-day) 구성 요소는 [-999:59:59, 999:59:59] 범위로 제한됩니다.
+시간이 999를 초과하는 값(또는 -999보다 작은 값)은 텍스트로 `999:59:59`(또는 `-999:59:59`)로 표현되며, 다시 텍스트로 변환해도 동일하게 유지됩니다.
+
+**시간대**.
+`Time`은 시간대를 지원하지 않으며, 즉 `Time` 값은 지역별 맥락 없이 해석됩니다.
+타입 매개변수로 `Time`에 시간대를 지정하거나 값을 생성할 때 시간대를 지정하면 오류가 발생합니다.
+마찬가지로 `Time` 컬럼에 시간대를 적용하거나 변경하려는 시도도 지원되지 않으며 오류가 발생합니다.
+`Time` 값은 서로 다른 시간대에 따라 암묵적으로 재해석되지 않습니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+**1.** `Time` 타입 컬럼이 있는 테이블을 생성하고 데이터를 삽입하는 예시:
+
+```sql
+CREATE TABLE tab
+(
+    `event_id` UInt8,
+    `time` Time
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Time 파싱
+-- - 문자열에서,
+-- - 00:00:00 이후 경과한 초 수를 나타내는 정수에서.
+INSERT INTO tab VALUES (1, '14:30:25'), (2, 52225);
+
+SELECT * FROM tab ORDER BY event_id;
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**2.** `Time` 값으로 필터링
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT * FROM tab WHERE time = toTime('14:30:25')
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+`Time` 컬럼 값은 `WHERE` 프레디케이트에서 문자열 값으로 필터링할 수 있습니다. 문자열 값은 자동으로 `Time`으로 변환됩니다:
+
+```sql
+SELECT * FROM tab WHERE time = '14:30:25'
+```
+
+```text
+   ┌─event_id─┬──────time─┐
+1. │        1 │ 14:30:25 │
+2. │        2 │ 14:30:25 │
+   └──────────┴───────────┘
+```
+
+**3.** 결과 데이터 타입 확인:
+
+```sql
+SELECT CAST('14:30:25' AS Time) AS column, toTypeName(column) AS type
+```
+
+```text
+   ┌────column─┬─type─┐
+1. │ 14:30:25 │ Time │
+   └───────────┴──────┘
+```
+
+<div id="addition-with-date">
+  ## Date와의 덧셈
+</div>
+
+[Time](/ko/reference/data-types/time) 값은 [Date](/ko/reference/data-types/date) 또는 [Date32](/ko/reference/data-types/date32) 값에 더해 [DateTime](/ko/reference/data-types/datetime) 또는 [DateTime64](/ko/reference/data-types/datetime64) 값을 만들 수 있습니다:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') as datetime;
+```
+
+```text
+   ┌────────────datetime─┐
+1. │ 2024-07-15 14:30:25 │
+   └─────────────────────┘
+```
+
+지원되는 모든 조합과 결과 타입에 관한 자세한 내용은 [날짜 및 시간 덧셈](/ko/reference/operators/index#date-time-addition)을 참조하십시오.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [타입 변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions)
+* [날짜 및 시간을 다루는 함수](/ko/reference/functions/regular-functions/date-time-functions)
+* [배열을 다루는 함수](/ko/reference/functions/regular-functions/array-functions)
+* [`date_time_input_format` 설정](/ko/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 설정](/ko/reference/settings/formats#date_time_output_format)
+* [`timezone` 서버 구성 매개변수](/ko/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 설정](/ko/reference/settings/session-settings#session_timezone)
+* [`DateTime` 데이터 타입](/ko/reference/data-types/datetime)
+* [`Date` 데이터 타입](/ko/reference/data-types/date)

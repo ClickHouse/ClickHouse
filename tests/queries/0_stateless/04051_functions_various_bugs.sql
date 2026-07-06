@@ -31,8 +31,8 @@ SELECT if(toUInt8(0), 10, 20);
 SELECT if(toUInt8(2), 1.5, 2.5);
 SELECT if(toUInt8(0), 1.5, 2.5);
 
--- `trimRight` with too-long trim character string
-SELECT trimRight('hello', repeat('x', 257)); -- { serverError TOO_LARGE_STRING_SIZE }
+-- `trimRight` with a trim character set longer than 16 characters (any length is supported)
+SELECT trimRight('hello', repeat('x', 257));
 
 -- `parseDateTime` with insufficient input
 SELECT parseDateTime('42', '%f'); -- { serverError CANNOT_PARSE_DATETIME }

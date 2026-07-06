@@ -3,6 +3,7 @@
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <Columns/ColumnConst.h>
 
 
 namespace DB
@@ -102,7 +103,7 @@ public:
         if (equals_return_type->isNullable())
         {
             const auto & if_null_func = fun_if_null;
-            auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+            ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
             ColumnsWithTypeAndName if_null_args
             {
                 {equals_result, equals_return_type, ""},
@@ -113,7 +114,7 @@ public:
         }
 
         // if (isNull(when)) then 0 else (expr = when)
-        auto zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
+        ColumnPtr zero_const = DataTypeUInt8().createColumnConst(input_rows_count, 0u);
         ColumnsWithTypeAndName inner_if_args
         {
             {is_null_when, std::make_shared<DataTypeUInt8>(), ""},

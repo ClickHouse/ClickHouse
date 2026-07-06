@@ -5,6 +5,7 @@
 #include <Common/logger_useful.h>
 #include <Common/FailPoint.h>
 
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Common/assert_cast.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -375,15 +376,14 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
                     /// cast it to column's type.
                     if (!column_node->result_type->equals(*literal_node->result_type))
                     {
-                        DB::ColumnWithTypeAndName column;
-                        column.name = column_node->result_type->getName();
-                        column.column = DB::DataTypeString().createColumnConst(0, column.name);
-                        column.type = std::make_shared<DB::DataTypeString>();
+                        auto column_name = column_node->result_type->getName();
+                        auto column_type = std::make_shared<DB::DataTypeString>();
+                        auto column = assert_cast<const DB::ColumnConst &>(*column_type->createColumnConst(0, column_name)).getPtr();
 
                         /// TODO: get rid of const_cast.
                         DB::ActionsDAG & dag = const_cast<DB::ActionsDAG &>(iterator_data.predicate.getFilterDAG());
 
-                        const auto * right_arg = &dag.addColumn(std::move(column));
+                        const auto * right_arg = &dag.addColumn(std::move(column), std::move(column_type), std::move(column_name));
                         const auto * left_arg = literal_node;
 
                         DB::CastDiagnostic diagnostic = {literal_node->result_name, column_node->result_name};
@@ -409,8 +409,7 @@ uintptr_t EngineIterator::getNextImpl(EngineIteratorData & iterator_data, const 
 
                     const auto comparison_type_index = getTypeIndex(column_node);
 
-                    DB::Field value;
-                    literal_node->column->get(0, value);
+                    DB::Field value = literal_node->column->getField();
 
                     uintptr_t constant = visitLiteralValue(
                         value,

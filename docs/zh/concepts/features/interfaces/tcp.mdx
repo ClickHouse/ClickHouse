@@ -1,0 +1,14 @@
+---
+description: 'ClickHouse 原生 TCP 接口文档'
+sidebarTitle: '原生接口（TCP）'
+slug: /interfaces/tcp
+title: '原生接口（TCP）'
+doc_type: 'reference'
+---
+
+原生协议用于[命令行客户端](/zh/concepts/features/interfaces/cli)、分布式查询处理期间的服务器间通信，也用于一些语言客户端 (例如 [clickhouse-go](/zh/integrations/language-clients/go/index#connection-details)) 。
+
+ClickHouse 提供了关于原生协议及其承载的列式格式的官方规范：
+
+* [原生协议](/zh/reference/interfaces/specs/NativeProtocol) — 数据包分帧、连接状态机、版本协商，以及每一种非 `Block` 消息的消息体。
+* [原生格式](/zh/reference/interfaces/specs/NativeFormat) — `Block` 和列结构、各类型的编码方式，以及压缩帧。这种格式也出现在 TCP 协议之外，例如通过 HTTP 使用 `FORMAT Native` 时。
