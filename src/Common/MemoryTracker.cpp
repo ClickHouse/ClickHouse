@@ -692,20 +692,33 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 void MemoryTracker::updateMemoryCredits(Int64 current_amount)
 {
     /// MemoryCredits is the integral of memory usage over time, measured in bytes * microseconds.
-    /// It is accumulated only for the Process-level tracker, which corresponds to a single query or merge.
-    /// This keeps the value attributed to a query independent of the depth of the tracker hierarchy and
-    /// leaves the much hotter Global/Thread allocation paths untouched (they only pay a single branch).
-    if (level != VariableContext::Process || current_amount <= 0)
+    /// It is accumulated only for the outermost Process-level tracker of a query or merge: the one whose
+    /// parent is not itself a Process tracker. Its `amount` already aggregates all nested allocations, so
+    /// charging there integrates the whole memory of the query. Nested Process trackers (created for
+    /// materialized views or async-insert flushes, whose parent is the enclosing query's Process tracker)
+    /// must be skipped: a single allocation traverses every Process tracker in the chain, and each call to
+    /// `ProfileEvents::increment` lands on the same thread's counters, so charging more than once would
+    /// double-count. This also keeps the value independent of the depth of the tracker hierarchy and leaves
+    /// the much hotter Global/Thread allocation paths untouched (they only pay a single branch).
+    if (level != VariableContext::Process)
+        return;
+    if (const auto * loaded_parent = parent.load(std::memory_order_relaxed); loaded_parent && loaded_parent->level == VariableContext::Process)
         return;
 
+    /// Advance the timestamp on every allocation and free so the next interval is always measured from
+    /// this point. This is done before the checks below so that the very first allocation (which finds
+    /// nothing held during the interval that just elapsed) seeds the timestamp instead of being skipped;
+    /// otherwise the first interval a query holds memory would be lost entirely.
     const UInt64 now = clock_gettime_ns() / 1000;
     const UInt64 prev = memory_credits_last_update_us.exchange(now, std::memory_order_relaxed);
 
-    /// `prev == 0` is the first update for this tracker, so there is no interval to attribute yet.
+    /// Attribute the just-elapsed interval only when memory was actually held during it:
+    ///   * `prev == 0` is the first update for this tracker, so there is no interval to attribute yet;
+    ///   * `current_amount <= 0` means no memory was held (or a rare negative accounting artifact);
+    ///   * `now > prev` guards against a rare reordering where the clock is read before the winner stored.
     /// The atomic exchange makes each elapsed interval be counted exactly once, with no gaps or overlaps,
     /// even when several threads of the same query allocate or free memory concurrently.
-    /// `now > prev` guards against a rare reordering where the clock is read before the winner stored its value.
-    if (prev != 0 && now > prev)
+    if (prev != 0 && current_amount > 0 && now > prev)
         ProfileEvents::increment(ProfileEvents::MemoryCredits, static_cast<Int64>(static_cast<UInt64>(current_amount) * (now - prev)));
 }
 

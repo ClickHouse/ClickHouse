@@ -147,7 +147,7 @@ private:
 
     /// Timestamp (in microseconds) of the previous `MemoryCredits` accumulation, used to measure
     /// the elapsed interval. Atomic because several threads of the same query update it concurrently;
-    /// only the Process-level tracker ever touches it, so it is kept out of the hot cache line above.
+    /// only the outermost Process-level tracker ever touches it, so it is kept out of the hot cache line above.
     std::atomic<UInt64> memory_credits_last_update_us {0};
 
     /// allocImpl(...) and free(...) should not be used directly
