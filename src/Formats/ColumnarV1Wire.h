@@ -57,6 +57,19 @@
 /// no null terminators (see ColumnString.h); the wire matches exactly.
 /// All offset arrays in the data blob (COL_BYTES, Array outer offsets,
 /// recursive String/Array offsets inside COL_COMPLEX) are uint64.
+///
+/// ── Supported types ─────────────────────────────────────────────────────────
+///
+/// validateColumnarV1SupportedType is the single source of truth for which
+/// ClickHouse types this wire format can represent; call it eagerly (at format
+/// construction / CREATE FUNCTION time) rather than discovering a rejection
+/// only once the first block is serialized. Not supported: Map, LowCardinality,
+/// Nullable(Array/Tuple/Variant) (no wire slot for a top-level null map on
+/// COL_COMPLEX/COL_VARIANT), Nullable/Variant nested inside Array/Tuple, and
+/// any fixed-width type whose size isn't exactly 1/2/4/8 bytes (so UUID, IPv6,
+/// Int128/UInt128, Decimal128/256, and FixedString of any length are all
+/// rejected). Any type kind this format has no encoding for at all (Dynamic,
+/// JSON/Object, AggregateFunction(...), ...) is also rejected.
 
 #include <cstring>
 #include <span>
