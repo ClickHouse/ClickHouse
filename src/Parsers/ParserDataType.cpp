@@ -248,8 +248,13 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
+    ///  * Nullable(`255`) -> Nullable(255) -> the unquoted name re-lexes as a number literal
+    ///    (ASTLiteral) instead of a type name (ASTDataType), breaking the AST round-trip check
+    ///    in `executeQuery` (DEBUG/sanitizer builds). See STID 1941-1bfa.
     /// Here we check for these cases and reject.
-    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    if (type_name.empty()
+        || isNumericASCII(type_name.front())
+        || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
     {
         expected.add(pos, "type name");
         return false;

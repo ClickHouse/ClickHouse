@@ -46,3 +46,10 @@ $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t3 (a Nullable(multiply((NULL
 # quantileInterpolatedWeighted) must not be mistaken for a MySQL integer type and
 # have its leading (N) group eaten as a display width (which broke the round-trip).
 $CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t (a quantileInterpolatedWeighted(0.8)(a, 1)) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
+
+# A back-quoted type name starting with a digit (e.g. `255`) is printed unquoted
+# by the formatter and then re-lexes as a number literal (ASTLiteral) instead of
+# a type name (ASTDataType), breaking the AST round-trip. Reject at parse time.
+# See STID 1941-1bfa.
+$CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t4 (\`x\` Nullable(\`255\`)) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
+$CLICKHOUSE_FORMAT --oneline --query "CREATE TABLE t5 (\`x\` Nullable(multiIf(equals(\`255\`, 2147483647), toFixedString('', 2), toFixedString('', 2)))) ENGINE = Memory" 2>&1 | grep -o -F 'Syntax error'
