@@ -3,7 +3,7 @@ services:
     volumes:
       - paimon-warehouse:/var/lib/clickhouse/user_files/warehouse
   paimon-rest-bearer:
-    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    image: altinityinfra/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
     restart: "no"
     user: "0:0"
     expose:
@@ -21,7 +21,7 @@ services:
     stop_grace_period: 5s
     cpus: 2
   paimon-rest-dlf:
-    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    image: altinityinfra/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
     restart: "no"
     user: "0:0"
     expose:

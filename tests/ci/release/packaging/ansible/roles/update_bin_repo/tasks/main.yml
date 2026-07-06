@@ -1,0 +1,52 @@
+- name: Set major version
+  set_fact:
+    major_version: "{{ pkgver.split('.')[0] | int }}"
+
+- name: Copy new binaries
+  shell:
+    cmd: |
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/clickhouse {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/self-extracting/clickhouse
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/clickhouse-stripped {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/self-extracting/clickhouse-stripped
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/non-self-extracting/clickhouse {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/non-self-extracting/clickhouse
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/non-self-extracting/clickhouse-stripped {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/non-self-extracting/clickhouse-stripped
+  loop:
+    - amd64
+    - arm64
+  when: major_version >= 24
+
+- name: Sha512 encrypt the binaries
+  shell: echo $(sha512sum {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }} | cut -d ' ' -f 1) >> {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}.sha512
+  loop:
+    - amd64/v{{ pkgver }}/self-extracting/clickhouse
+    - amd64/v{{ pkgver }}/self-extracting/clickhouse-stripped
+    - amd64/v{{ pkgver }}/non-self-extracting/clickhouse
+    - amd64/v{{ pkgver }}/non-self-extracting/clickhouse-stripped
+    - arm64/v{{ pkgver }}/self-extracting/clickhouse
+    - arm64/v{{ pkgver }}/self-extracting/clickhouse-stripped
+    - arm64/v{{ pkgver }}/non-self-extracting/clickhouse
+    - arm64/v{{ pkgver }}/non-self-extracting/clickhouse-stripped
+  when: major_version >= 24
+
+- name: Copy new binaries
+  shell:
+    cmd: |
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/clickhouse {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/clickhouse
+      mv /home/runner/.cache/tmp/packages/{{ item }}-bin/clickhouse-stripped {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}/v{{ pkgver }}/clickhouse-stripped
+  loop:
+    - amd64
+    - arm64
+  when: major_version < 24
+
+- name: Sha512 encrypt the binaries
+  shell: echo $(sha512sum {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }} | cut -d ' ' -f 1) >> {{ local_repo_path }}/{{ repo_prefix }}bin-repo/{{ item }}.sha512
+  loop:
+    - amd64/v{{ pkgver }}/clickhouse
+    - amd64/v{{ pkgver }}/clickhouse-stripped
+    - arm64/v{{ pkgver }}/clickhouse
+    - arm64/v{{ pkgver }}/clickhouse-stripped
+  when: major_version < 24
+
+- name: Sync remaining repos between source and target
+  shell: 'aws s3 sync --delete "{{ local_repo_path }}/{{ item }}" "{{ s3_repo_target_path }}/{{ item }}"'
+  loop: "{{ bin_repos }}"
+  when: cloudfront_origin_path != ""

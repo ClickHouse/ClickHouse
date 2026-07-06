@@ -1,0 +1,8 @@
+- hosts: localhost
+  roles:
+    - get_cloudfront_info
+    - update_bin_repo
+    - update_deb_repo
+    - update_rpm_repo
+    - update_tgz_repo
+    - publish_pkgs

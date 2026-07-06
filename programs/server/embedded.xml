@@ -15,9 +15,9 @@
     <mlock_executable>true</mlock_executable>
 
     <send_crash_reports>
-        <enabled>true</enabled>
-        <send_logical_errors>true</send_logical_errors>
-        <endpoint>https://crash.clickhouse.com/</endpoint>
+        <enabled>false</enabled>
+        <send_logical_errors>false</send_logical_errors>
+        <endpoint></endpoint>
     </send_crash_reports>
 
     <http_options_response>

@@ -1,4 +1,4 @@
-# docker build -t clickhouse/mysql-golang-client .
+# docker build -t altinityinfra/mysql-golang-client .
 # MySQL golang client docker container
 # Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 

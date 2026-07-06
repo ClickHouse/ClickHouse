@@ -217,21 +217,27 @@ def main():
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
         os.environ["SCCACHE_S3_READ_ONLY"] = "true"
-    if info.is_local_run:
+    if info.is_local_run or info.is_community_pr:
         print("NOTE: It's a local run")
         if os.environ.get("SCCACHE_ENDPOINT"):
             print(f"NOTE: Using custom sccache endpoint: {os.environ['SCCACHE_ENDPOINT']}")
-        if os.environ.get("AWS_ACCESS_KEY_ID"):
+        if os.environ.get("AWS_ACCESS_KEY_ID") and not info.is_community_pr:
             print("NOTE: Using custom AWS credentials for sccache")
         else:
+            print("NOTE: Community contribution or local run - set sccache to run without AWS credentials")
             os.environ["SCCACHE_S3_NO_CREDENTIALS"] = "true"
+            # NOTE (strtgbb): sccache will throw an error if AWS credentials are present with SCCACHE_S3_NO_CREDENTIALS=1
+            os.environ.pop("AWS_SECRET_ACCESS_KEY", None)
+            os.environ.pop("AWS_ACCESS_KEY_ID", None)
     else:
-        os.environ["CH_HOSTNAME"] = (
-            "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
-        )
-        os.environ["CH_USER"] = "ci_builder"
-        os.environ["CH_PASSWORD"] = chcache_secret.get_value()
-        os.environ["CH_USE_LOCAL_CACHE"] = "false"
+        pass
+        # NOTE (strtgbb): Not used yet, but we should look into setting up the secrets for it
+        # os.environ["CH_HOSTNAME"] = (
+        #     "https://build-cache.eu-west-1.aws.clickhouse-staging.com"
+        # )
+        # os.environ["CH_USER"] = "ci_builder"
+        # os.environ["CH_PASSWORD"] = chcache_secret.get_value()
+        # os.environ["CH_USE_LOCAL_CACHE"] = "false"
 
     Utils.add_to_PATH(
         f"{os.path.dirname(clickhouse_bin_path)}:{current_directory}/tests"
@@ -360,7 +366,7 @@ def main():
 
         test_exit_code = CH.run_test(fast_test_command)
 
-        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR).run(
+        test_results = FTResultsProcessor(wd=Settings.OUTPUT_DIR, test_options=["fast"]).run(
             runner_exit_code=test_exit_code,
         )
         if test_exit_code != 0:

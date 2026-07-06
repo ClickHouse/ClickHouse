@@ -1,4 +1,4 @@
-#  docker build -t clickhouse/integration-test-with-hms .
+#  docker build -t altinityinfra/integration-test-with-hms .
 ARG FROM_TAG=latest
 FROM eclipse-temurin:8-jre AS build
 

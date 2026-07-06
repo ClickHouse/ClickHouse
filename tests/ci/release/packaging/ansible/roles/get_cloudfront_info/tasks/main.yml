@@ -1,0 +1,34 @@
+- name: Get existing CloudFront information
+  community.aws.cloudfront_info:
+    distribution: yes
+    domain_name_alias: "{{ repo_dns_name }}"
+  register: cloudfront_info
+
+- name: Get current CloudFront origin path
+  set_fact:
+    cloudfront_origin_path: "{{ cloudfront_info.cloudfront[repo_dns_name].Distribution.DistributionConfig.Origins.Items[0].OriginPath }}"
+
+- name: Calculate the source S3 path
+  set_fact:
+    s3_repo_source_path: "s3://{{ repo_dns_name }}{{ cloudfront_origin_path }}"
+
+- name: Decide on the target (blue/green)
+  set_fact:
+    new_cloudfront_origin_path: "{{ '/Green' if cloudfront_origin_path == '/Blue' else '/Blue' }}"
+  when: 'not (push_to_active|default(false))'
+
+- name: Update the active site, when push_to_active is defined
+  set_fact:
+    new_cloudfront_origin_path: "{{ cloudfront_origin_path }}"
+  when: 'push_to_active|default(false)'
+
+- name: Calculate the target S3 path
+  set_fact:
+    s3_repo_target_path: "s3://{{ repo_dns_name }}{{ new_cloudfront_origin_path }}"
+
+- name: Show the source S3 path
+  debug:
+    msg:
+      - "Active path (current live site): {{ s3_repo_source_path }}"
+      - "Target path (to be updated):     {{ s3_repo_target_path }}"
+

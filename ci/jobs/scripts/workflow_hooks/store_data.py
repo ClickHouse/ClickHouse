@@ -28,7 +28,7 @@ if __name__ == "__main__":
     # jobs, and both this query and the build artifacts in `find_master_builds` use the
     # public upstream namespace regardless of the repo the workflow runs in.
     raw = Shell.get_output(
-        "gh api 'repos/ClickHouse/ClickHouse/commits?sha=master&per_page=50' -q '.[].sha'",
+        "gh api 'repos/Altinity/ClickHouse/commits?sha={info.git_branch}&per_page=50' -q '.[].sha'",
         verbose=True,
     )
     master_commits = raw.splitlines()
@@ -58,7 +58,7 @@ if __name__ == "__main__":
         try:
             # Get the merge base commit using git
             merge_base_commit_sha = Shell.get_output(
-                f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
+                f"gh api repos/Altinity/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
                 verbose=True,
             ).strip()
             info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)

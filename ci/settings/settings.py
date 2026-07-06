@@ -5,13 +5,17 @@ S3_REPORT_BUCKET_HTTP_ENDPOINT = "s3.amazonaws.com/clickhouse-test-reports"
 
 
 class RunnerLabels:
-    STYLE_CHECK_AMD = ["self-hosted", "style-checker"]
-    STYLE_CHECK_ARM = ["self-hosted", "style-checker-aarch64"]
+    STYLE_CHECK_AMD = ["self-hosted", "altinity-on-demand", "altinity-style-checker"]
+    STYLE_CHECK_ARM = [
+        "self-hosted",
+        "altinity-on-demand",
+        "altinity-style-checker-aarch64",
+    ]
 
 
 MAIN_BRANCH = "master"
 S3_ARTIFACT_PATH = S3_BUCKET_NAME
-CI_CONFIG_RUNS_ON = RunnerLabels.STYLE_CHECK_ARM
+CI_CONFIG_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD
 
 ENABLE_MULTIPLATFORM_DOCKER_IN_ONE_JOB = False
 DOCKER_MERGE_RUNS_ON = RunnerLabels.STYLE_CHECK_AMD

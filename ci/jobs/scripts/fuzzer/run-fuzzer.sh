@@ -74,8 +74,8 @@ function configure
 </clickhouse>
 EOL
 
-
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
+    # NOTE (strtgbb): Log tables are disabled, we don't use them
+    # (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_config) || echo "Failed to create log export config"
 }
 
 function filter_exists_and_template
@@ -201,7 +201,8 @@ function fuzz
 
     echo 'Server started and responded.'
 
-    (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || echo "Failed to start log exports"
+    # NOTE (strtgbb): Log tables are disabled, we don't use them
+    # (cd $repo_dir && python3 $repo_dir/ci/jobs/scripts/clickhouse_proc.py logs_export_start) || echo "Failed to start log exports"
 
     # Setup arguments for the fuzzer
     FUZZER_OUTPUT_SQL_FILE=''

@@ -800,16 +800,17 @@ clickhouse-client --query "SELECT count() FROM test.visits"
                 subprocess.run([sys.executable, str(_clickhouse_test), "--cleanup"], check=False)
 
     def terminate(self, force=False):
-        if self.minio_proc:
-            # remove the webhook so it doesn't spam with errors once we stop ClickHouse
-            Shell.check(
-                "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
-                verbose=True,
-            )
-            Shell.check(
-                "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
-                verbose=True,
-            )
+        # NOTE (strtgbb): Log tables are disabled, we don't use them
+        # if self.minio_proc:
+        #     # remove the webhook so it doesn't spam with errors once we stop ClickHouse
+        #     Shell.check(
+        #         "/mc admin config reset clickminio logger_webhook:ch_server_webhook",
+        #         verbose=True,
+        #     )
+        #    Shell.check(
+        #        "/mc admin config reset clickminio audit_webhook:ch_audit_webhook",
+        #        verbose=True,
+        #    )
 
         if self.kafka_proc:
             print("Stopping Redpanda broker")
@@ -1157,12 +1158,12 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             "trace_log",
             "transactions_info_log",
             "metric_log",
-            "blob_storage_log",
+            # "blob_storage_log", # NOTE (strtgbb): contains Azure container name, currently considered secret by s3 upload secret scanner.
             "error_log",
             "query_metric_log",
             "part_log",
-            "minio_audit_logs",
-            "minio_server_logs",
+            # "minio_audit_logs", # NOTE (strtgbb): we do not use these logs
+            # "minio_server_logs",
         ]
         ROWS_COUNT_IN_SYSTEM_TABLE_LIMIT = 20_000_000
 
@@ -1383,6 +1384,7 @@ if __name__ == "__main__":
     res = False
     try:
         if command == "logs_export_config":
+            exit(0) # Note (strtgbb): We don't use log exports
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
@@ -1390,6 +1392,7 @@ if __name__ == "__main__":
             else:
                 res = True
         elif command == "logs_export_start":
+            exit(0) # Note (strtgbb): We don't use log exports
             # FIXME: the start_time must be preserved globally in ENV or something like that
             # to get the same values in different DBs
             # As a wild idea, it could be stored in a Info.check_start_timestamp
@@ -1400,6 +1403,7 @@ if __name__ == "__main__":
             else:
                 res = True
         elif command == "logs_export_stop":
+            exit(0) # Note (strtgbb): We don't use log exports
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)

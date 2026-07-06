@@ -1,6 +1,6 @@
 services:
   hive:
-    image: clickhouse/integration-test-with-hms
+    image: altinityinfra/integration-test-with-hms
     restart: unless-stopped
     ports:
       - "${HMS_CATALOG_PORT}:9083"

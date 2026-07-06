@@ -1,0 +1,61 @@
+- name: Copy new tgz
+  shell: mv builds is making me evil. im on day 4 of working on the /packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}"
+  loop: "{{ tgz_pkg_names }}"
+
+- name: Copy library-bridge and obdc-bridge tgz if version is 24.8
+  when: (pkgver | regex_replace('^(\\d+\\.\\d+).*$', '\\1')) is version('24.8', '==')
+  shell: mv builds is making me evil. im on day 4 of working on the /packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}"
+  loop:
+    - "clickhouse-library-bridge-{{ pkgver }}-amd64.tgz"
+    - "clickhouse-library-bridge-{{ pkgver }}-arm64.tgz"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-amd64.tgz"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-arm64.tgz"
+
+- name: Copy new tgz sha512
+  shell: mv /home/runner/.cache/tmp/packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}"
+  loop: "{{ sha512_pkg_names }}"
+
+- name: Copy library-bridge and obdc-bridge sha512 if version is 24.8
+  when: (pkgver | regex_replace('^(\\d+\\.\\d+).*$', '\\1')) is version('24.8', '==')
+  shell: mv /home/runner/.cache/tmp/packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}"
+  loop:
+    - "clickhouse-library-bridge-{{ pkgver }}-amd64.tgz.sha512"
+    - "clickhouse-library-bridge-{{ pkgver }}-arm64.tgz.sha512"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-amd64.tgz.sha512"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-arm64.tgz.sha512"
+
+- name: Verify sha512 from repo
+  shell: cat {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}.sha512 | grep $(sha512sum {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }} | cut -d ' ' -f 1) || SHA_VERIFICATION="fail"
+  loop: "{{ tgz_pkg_names }}"
+
+- name: Verify library-bridge and obdc-bridge sha512 from repo
+  when: (pkgver | regex_replace('^(\\d+\\.\\d+).*$', '\\1')) is version('24.8', '==')
+  shell: cat {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }}.sha512 | grep $(sha512sum {{ local_repo_path }}/{{ repo_prefix }}tgz-repo/{{ item }} | cut -d ' ' -f 1) || SHA_VERIFICATION="fail"
+  loop:
+    - "clickhouse-library-bridge-{{ pkgver }}-amd64.tgz"
+    - "clickhouse-library-bridge-{{ pkgver }}-arm64.tgz"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-amd64.tgz"
+    - "clickhouse-odbc-bridge-{{ pkgver }}-arm64.tgz"
+
+- name: save verification output
+  shell: echo $SHA_VERIFICATION
+  register: SHA_VERIFICATION
+
+- name: Verify the sha512s match
+  fail:
+    msg: "Failure, sha512 does not match."
+  when: SHA_VERIFICATION == "fail"
+
+- name: Sync remaining repos between source and target
+  shell: 'aws s3 sync --delete "{{ local_repo_path }}/{{ item }}" "{{ s3_repo_target_path }}/{{ item }}"'
+  loop: "{{ tgz_repos }}"
+  when: cloudfront_origin_path != ""
+
+- name: Copy new src
+  shell: mv /home/runner/.cache/tmp/packages/{{ item }} {{ local_repo_path }}/{{ repo_prefix }}src-repo/{{ item }}
+  loop: "{{ src_pkg_names }}"
+
+- name: Sync remaining repos between source and target
+  shell: 'aws s3 sync --delete "{{ local_repo_path }}/{{ item }}" "{{ s3_repo_target_path }}/{{ item }}"'
+  loop: "{{ src_repos }}"
+  when: cloudfront_origin_path != ""

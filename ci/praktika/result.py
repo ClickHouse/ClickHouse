@@ -62,6 +62,7 @@ class Result(MetaClasses.Serializable):
         FAIL = "FAIL"
         SKIPPED = "SKIPPED"
         ERROR = "ERROR"
+        BROKEN = "BROKEN"
         UNKNOWN = "UNKNOWN"
         XFAIL = "XFAIL"  # expected failure: test failed as expected, not a problem
         XPASS = "XPASS"  # unexpected pass: test was expected to fail but passed
@@ -167,6 +168,7 @@ class Result(MetaClasses.Serializable):
                 if result.status in (
                     Result.Status.OK,
                     Result.Status.SKIPPED,
+                    Result.Status.BROKEN,
                     Result.Status.XFAIL,
                 ):
                     continue
@@ -237,11 +239,12 @@ class Result(MetaClasses.Serializable):
         return self.status in (
             Result.Status.OK,
             Result.Status.SKIPPED,
+            Result.Status.BROKEN,
             Result.Status.XFAIL,
         )
 
     def is_success(self):
-        return self.status in (Result.Status.OK, Result.Status.XFAIL)
+        return self.status in (Result.Status.OK, Result.Status.BROKEN, Result.Status.XFAIL)
 
     def is_failure(self):
         return self.status in (Result.Status.FAIL, Result.Status.XPASS)

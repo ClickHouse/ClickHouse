@@ -4,6 +4,7 @@ import json
 import platform
 import shlex
 import sys
+import os
 import traceback
 from pathlib import Path
 
@@ -284,7 +285,13 @@ def _prepare_submodule_cache(workflow_config: RunConfig) -> Result:
     )
 
 
-def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_dockers=()):
+def _filter_unaffected_jobs(
+    jobs,
+    workflow_config,
+    changed_files,
+    affected_dockers=(),
+    additional_required_artifacts=(),
+):
     """
     Update workflow_config.filtered_jobs for jobs unaffected by changed_files.
 
@@ -299,7 +306,7 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
     """
     affected_artifacts = []
     unaffected_jobs = {}  # name → job
-    all_required_artifacts = set()
+    all_required_artifacts = set(additional_required_artifacts)
 
     for job in jobs:
         if _is_praktika_job(job.name):
@@ -332,6 +339,8 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
             print(f"Job [{job.name}] is not affected by the change")
             unaffected_jobs[job.name] = job
 
+    if additional_required_artifacts:
+        print(f"Including artifacts for custom jobs [{additional_required_artifacts}]")
     print(f"All required artifacts [{all_required_artifacts}]")
     print(f"Affected artifacts [{affected_artifacts}]")
 
@@ -368,7 +377,9 @@ def _filter_unaffected_jobs(jobs, workflow_config, changed_files, affected_docke
 
 def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
     # debug info
-    GH.print_log_in_group("GITHUB envs", Shell.get_output("env | grep GITHUB"))
+    GH.print_log_in_group(
+        "GITHUB envs", Shell.get_output("env | grep -P '^GITHUB_(?!.*TOKEN)'")
+    )
 
     def _check_yaml_up_to_date():
         # Workflow YAML files under .github/workflows are generated from the
@@ -753,7 +764,12 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             )
         )
 
-    if workflow.enable_job_filtering_by_changes and results[-1].is_ok():
+    pr_allows_cache = "[x] <!---no_ci_cache" not in Info().pr_body
+    if (
+        workflow.enable_job_filtering_by_changes
+        and results[-1].is_ok()
+        and pr_allows_cache
+    ):
         print("Filter not affected jobs")
 
         def check_affected_jobs():
@@ -776,8 +792,33 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
             if all_affected_dockers:
                 print(f"Affected docker images [{all_affected_dockers}]")
 
+            # NOTE (strtgbb): We always want these build artifacts for our report and regression tests.
+            # If we make FinishCIReport and regression tests into praktika jobs, we can remove this.
+            extra_required: set = set()
+            if "CIReport" in workflow.additional_jobs:
+                extra_required.update(
+                    [
+                        "CH_AMD_RELEASE",
+                        "CH_ARM_RELEASE",
+                    ]
+                )
+            if (
+                "Regression" in workflow.additional_jobs
+                and "regression"
+                not in workflow_config.custom_data.get("ci_exclude_tags", [])
+            ):
+                extra_required.update(["CH_AMD_BINARY"])
+                if "aarch64" not in workflow_config.custom_data.get(
+                    "ci_exclude_tags", []
+                ):
+                    extra_required.update(["CH_ARM_BIN"])
+
             _filter_unaffected_jobs(
-                workflow.jobs, workflow_config, changed_files, all_affected_dockers
+                workflow.jobs,
+                workflow_config,
+                changed_files,
+                all_affected_dockers,
+                additional_required_artifacts=extra_required,
             )
 
             workflow_config.dump()
@@ -790,6 +831,11 @@ def _config_workflow(workflow: Workflow.Config, job_name) -> Result:
         )
 
     if results[-1].is_ok() and workflow.enable_cache:
+        # NOTE (strtgbb): We can't safely skip this code block entirely if enable_cache=True is set at the workflow level
+        # set DISABLE_CI_CACHE=1 to signal that the cache should be skipped
+        if not pr_allows_cache:
+            os.environ["DISABLE_CI_CACHE"] = "1"
+
         print("Cache Lookup")
         stop_watch = Utils.Stopwatch()
         info = ""

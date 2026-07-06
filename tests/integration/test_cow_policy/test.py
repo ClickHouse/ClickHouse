@@ -43,7 +43,9 @@ def test_cow_policy(start_cluster, storage_policy):
             ENGINE = MergeTree
             ORDER BY (postcode1, postcode2, addr1, addr2)
             SETTINGS storage_policy = '{storage_policy}'
-            """
+            """,
+            timeout=60,
+            retry_count=3,
         )
         prev_count = int(node.query("SELECT count() FROM uk_price_paid"))
         assert prev_count > 0

@@ -16,7 +16,7 @@ RUN arch=${TARGETARCH:-amd64} \
     esac
 
 
-FROM alpine
+FROM alpine:3.21
 
 ENV LANG=en_US.UTF-8 \
     LANGUAGE=en_US:en \
@@ -35,9 +35,11 @@ RUN arch=${TARGETARCH:-amd64} \
         arm64) ln -sf /lib/ld-2.35.so /lib/ld-linux-aarch64.so.1 ;; \
     esac
 
+# NOTE (strtgbb): Removed install methods other than direct URL install to tidy the Dockerfile
+
 # lts / testing / prestable / etc
 ARG REPO_CHANNEL="stable"
-ARG REPOSITORY="https://packages.clickhouse.com/tgz/${REPO_CHANNEL}"
+ARG REPOSITORY=""
 ARG VERSION="26.5.3.52"
 ARG PACKAGES="clickhouse-keeper"
 ARG DIRECT_DOWNLOAD_URLS=""
@@ -63,12 +65,7 @@ RUN arch=${TARGETARCH:-amd64} \
             && wget -c -q "$url" \
         ; done \
     else \
-        for package in ${PACKAGES}; do \
-            cd /tmp \
-            && echo "Get ${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz" \
-            && wget -c -q "${REPOSITORY}/${package}-${VERSION}-${arch}.tgz.sha512" \
-        ; done \
+        exit 1; \
     fi \
     && cat *.tgz.sha512 | sha512sum -c \
     && for file in *.tgz; do \

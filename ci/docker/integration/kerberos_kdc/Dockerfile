@@ -1,4 +1,4 @@
-# docker build -t clickhouse/kerberos-kdc .
+# docker build -t altinityinfra/kerberos-kdc .
 FROM centos:6
 
 RUN sed -i '/^mirrorlist/s/^/#/;/^#baseurl/{s/#//;s/mirror.centos.org\/centos\/$releasever/vault.centos.org\/6.10/}' /etc/yum.repos.d/*B*

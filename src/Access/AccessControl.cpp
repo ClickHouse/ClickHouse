@@ -642,9 +642,6 @@ AuthResult AccessControl::authenticate(const Credentials & credentials, const Po
 
             message << R"(
 
-If you use ClickHouse Cloud, the password can be reset at https://clickhouse.cloud/
-on the settings page for the corresponding service.
-
 If you have installed ClickHouse and forgot password you can reset it in the configuration file.
 The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml
 and deleting this file will reset the password.

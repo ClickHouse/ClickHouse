@@ -1,6 +1,6 @@
-# docker build -t clickhouse/integration-test-with-unity-catalog .
+# docker build -t altinityinfra/integration-test-with-unity-catalog .
 ARG FROM_TAG=latest
-FROM clickhouse/integration-test:$FROM_TAG
+FROM altinityinfra/integration-test:$FROM_TAG
 
 # Fix missing GPG key for kitware repository to prevent apt-get update failure
 RUN rm -f /etc/apt/sources.list.d/kitware.list || true

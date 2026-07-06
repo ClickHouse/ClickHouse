@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import random
 import subprocess
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
-from ci.jobs.scripts.find_tests import Targeting
+from ci.jobs.scripts.find_tests import Targeting, resolve_workflow_branch
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -103,6 +104,8 @@ def run_tests(
     # a master-side memory-limit failure would be inverted as a reproduced bug.
     limit_source = build_type if build_type is not None else Info().job_name
     memory_limit = 10 * 2**30 if "asan_ubsan" in limit_source else 5 * 2**30
+    # NOTE (strtgbb): Upstream appears to only monitor test memory usage on their HEAD build, let's not get distracted by OOM issues in our pipeline
+    memory_limit = 10 * 2**30
     # Hand the time budget to `clickhouse-test` itself via `--global_time_limit`
     # so it stops *gracefully* between tests and exits with
     # `GLOBAL_TIME_LIMIT_EXIT_CODE` - reported as a benign "time limit reached"
@@ -158,6 +161,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
+    "amd_tsan": " --timeout 1200",  # NOTE (strtgbb): tsan is slow, increase the timeout to avoid timeout errors
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
@@ -247,7 +251,7 @@ def main():
     is_per_test_coverage = False
     runner_options = ""
     # optimal value for most of the jobs
-    nproc = int(Utils.cpu_count() * 0.6)
+    nproc = int(Utils.cpu_count() * 0.5)
     info = Info()
 
     for to in test_options:
@@ -391,6 +395,12 @@ def main():
         # Derived from rerun_count so the ratio stays stable as policy evolves.
         runner_options += f" --sequential-test-runs {rerun_count // 2}"
 
+    if info.is_community_pr:
+        print(
+            "NOTE: No azure credentials provided for community PR - disable azure storage"
+        )
+        config_installs_args += " --no-azure"
+
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
         runner_options += " --encrypted-storage"
@@ -506,7 +516,11 @@ def main():
         if not has_stateful:
             has_stateful_tests = False
 
-    targeter = Targeting(info=info)
+    if not info.is_community_pr:
+        targeter = Targeting(info=info)
+    else:
+        targeter = None
+
     if is_flaky_check or is_bugfix_validation:
         if info.is_local_run:
             assert (
@@ -565,12 +579,13 @@ def main():
 
     if res and JobStages.INSTALL_CLICKHOUSE in stages:
 
-        def configure_log_export():
-            if not info.is_local_run:
-                print("prepare log export config")
-                return CH.create_log_export_config()
-            else:
-                print("skip log export config for local run")
+        # NOTE (strtgbb): Disable log export throughout this file, it depends on aws ssm, which we don't have configured
+        # def configure_log_export():
+        #     if not info.is_local_run:
+        #         print("prepare log export config")
+        #         return CH.create_log_export_config()
+        #     else:
+        #         print("skip log export config for local run")
 
         commands = [
             "rm -rf /etc/clickhouse-client/* /etc/clickhouse-server/* /etc/clickhouse-server1/* /etc/clickhouse-server2/*",
@@ -602,8 +617,8 @@ def main():
             f"prof_prefix:{temp_dir}/jemalloc_profiles/clickhouse.jemalloc"
         )
 
-        if not is_llvm_coverage:
-            commands.append(configure_log_export)
+        # if not is_llvm_coverage:
+        #     commands.append(configure_log_export)
 
         results.append(
             Result.from_commands_run(name="Install ClickHouse", command=commands)
@@ -631,13 +646,14 @@ def main():
                     # triaging Kafka/Avro test failures caused by a broken setup.
                     return False
 
-                if not Info().is_local_run:
-                    if not CH.start_log_exports(stop_watch.start_time):
-                        info.add_workflow_warning("Failed to start log export")
-                        print("Failed to start log export")
-                if not CH.create_minio_log_tables():
-                    info.add_workflow_warning("Failed to create minio log tables")
-                    print("Failed to create minio log tables")
+                # Note (strtgbb): We don't use this
+                # if not Info().is_local_run:
+                #     if not CH.start_log_exports(stop_watch.start_time):
+                #        info.add_workflow_warning("Failed to start log export")
+                #        print("Failed to start log export")
+                #if not CH.create_minio_log_tables():
+                #    info.add_workflow_warning("Failed to create minio log tables")
+                #    print("Failed to create minio log tables")
 
                 if has_stateful_tests:
                     res = (
@@ -659,13 +675,15 @@ def main():
         )
         res = results[-1].is_ok()
 
+    runner_options += f" --known-fails-file-path tests/broken_tests.yaml"
+
     test_result = None
     if res and JobStages.TEST in stages:
         stop_watch_ = Utils.Stopwatch()
         step_name = "Tests"
         print(step_name)
 
-        ft_res_processor = FTResultsProcessor(wd=temp_dir)
+        ft_res_processor = FTResultsProcessor(wd=temp_dir, test_options=test_options)
 
         global_time_limit = 0
         if is_flaky_check:
@@ -1009,6 +1027,7 @@ def main():
                     src=CH,
                     dest=cidb_cluster,
                     job_name=info.job_name,
+                    branch=resolve_workflow_branch(info),
                 ).do(),
             )
         )
@@ -1070,6 +1089,10 @@ def main():
 
     if test_result:
         test_result.sort()
+
+    broken_tests_handler_log = os.path.join(temp_dir, "broken_tests_handler.log")
+    if os.path.exists(broken_tests_handler_log):
+        debug_files.append(broken_tests_handler_log)
 
     R = Result.create_from(
         results=results,

@@ -1,0 +1,73 @@
+all:
+  hosts:
+    localhost:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      repo_dns_name: "builds.staging.altinity.cloud"
+      aws_region: "us-east-1"
+      repo_subtitle: "Staging Builds"
+      repo_title: "Altinity {{ repo_subtitle }}"
+      repo_name: "altinity-staging"
+      repo_deb_dist: "stable"
+      repo_install_packages: "clickhouse-server clickhouse-client"
+      deb_pkg_names:
+        - "clickhouse-client_{{ pkgver }}_amd64.deb"
+        - "clickhouse-common-static_{{ pkgver }}_amd64.deb"
+        - "clickhouse-common-static-dbg_{{ pkgver }}_amd64.deb"
+        - "clickhouse-server_{{ pkgver }}_amd64.deb"
+        - "clickhouse-client_{{ pkgver }}_arm64.deb"
+        - "clickhouse-common-static_{{ pkgver }}_arm64.deb"
+        - "clickhouse-common-static-dbg_{{ pkgver }}_arm64.deb"
+        - "clickhouse-server_{{ pkgver }}_arm64.deb"
+      rpm_pkg_names:
+        - "clickhouse-client-{{ pkgver }}.x86_64.rpm"
+        - "clickhouse-common-static-{{ pkgver }}.x86_64.rpm"
+        - "clickhouse-common-static-dbg-{{ pkgver }}.x86_64.rpm"
+        - "clickhouse-server-{{ pkgver }}.x86_64.rpm"
+        - "clickhouse-client-{{ pkgver }}.aarch64.rpm"
+        - "clickhouse-common-static-{{ pkgver }}.aarch64.rpm"
+        - "clickhouse-common-static-dbg-{{ pkgver }}.aarch64.rpm"
+        - "clickhouse-server-{{ pkgver }}.aarch64.rpm"
+      tgz_pkg_names:
+        - "clickhouse-client-{{ pkgver }}-amd64.tgz"
+        - "clickhouse-common-static-{{ pkgver }}-amd64.tgz"
+        - "clickhouse-common-static-dbg-{{ pkgver }}-amd64.tgz"
+        - "clickhouse-server-{{ pkgver }}-amd64.tgz"
+        - "clickhouse-client-{{ pkgver }}-arm64.tgz"
+        - "clickhouse-common-static-{{ pkgver }}-arm64.tgz"
+        - "clickhouse-common-static-dbg-{{ pkgver }}-arm64.tgz"
+        - "clickhouse-server-{{ pkgver }}-arm64.tgz"
+      sha512_pkg_names:
+        - "clickhouse-client-{{ pkgver }}-amd64.tgz.sha512"
+        - "clickhouse-common-static-{{ pkgver }}-amd64.tgz.sha512"
+        - "clickhouse-common-static-dbg-{{ pkgver }}-amd64.tgz.sha512"
+        - "clickhouse-server-{{ pkgver }}-amd64.tgz.sha512"
+        - "clickhouse-client-{{ pkgver }}-arm64.tgz.sha512"
+        - "clickhouse-common-static-{{ pkgver }}-arm64.tgz.sha512"
+        - "clickhouse-common-static-dbg-{{ pkgver }}-arm64.tgz.sha512"
+        - "clickhouse-server-{{ pkgver }}-arm64.tgz.sha512"
+      tgz_repos:
+        - "tgz-repo"
+        - "fips-tgz-repo"
+        - "antalya-tgz-repo"
+        - "hotfix-tgz-repo"
+      src_repos:
+        - "src-repo"
+        - "fips-src-repo"
+        - "antalya-src-repo"
+        - "hotfix-src-repo"
+      bin_repos:
+        - "bin-repo"
+        - "fips-bin-repo"
+        - "antalya-bin-repo"
+        - "hotfix-bin-repo"
+      apt_repos:
+        - "apt-repo"
+        - "fips-apt-repo"
+        - "antalya-apt-repo"
+        - "hotfix-apt-repo"
+      yum_repos:
+        - "yum-repo"
+        - "fips-yum-repo"
+        - "antalya-yum-repo"
+        - "hotfix-yum-repo"

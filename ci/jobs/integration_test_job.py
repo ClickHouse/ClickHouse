@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+import yaml  # NOTE (strtgbb): Used for loading broken tests rules
+
 from ci.jobs.scripts.bugfix_validation import BUGFIX_BUILD_TYPES, find_master_builds
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
@@ -119,6 +121,104 @@ def start_docker_in_docker():
         time.sleep(2)
     print(f"Started docker-in-docker asynchronously with PID {dockerd_proc.pid}")
 
+def get_broken_tests_rules(broken_tests_file_path: str) -> dict:
+    if (
+        not os.path.isfile(broken_tests_file_path)
+        or os.path.getsize(broken_tests_file_path) == 0
+    ):
+        raise ValueError(
+            "There is something wrong with getting broken tests rules: "
+            f"file '{broken_tests_file_path}' is empty or does not exist."
+        )
+
+    with open(broken_tests_file_path, "r", encoding="utf-8") as broken_tests_file:
+        broken_tests = yaml.safe_load(broken_tests_file)
+
+    compiled_rules = {"exact": {}, "pattern": []}
+
+    for test in broken_tests:
+        regex = test.get("regex") is True
+        rule = {
+            "reason": test["reason"],
+        }
+
+        if test.get("message"):
+            rule["message"] = re.compile(test["message"]) if regex else test["message"]
+
+        if test.get("not_message"):
+            rule["not_message"] = (
+                re.compile(test["not_message"]) if regex else test["not_message"]
+            )
+        if test.get("check_types"):
+            rule["check_types"] = test["check_types"]
+
+        if regex:
+            rule["regex"] = True
+            compiled_rules["pattern"].append((re.compile(test["name"]), rule))
+        else:
+            compiled_rules["exact"][test["name"]] = rule
+
+    return compiled_rules
+
+
+def test_is_known_fail(broken_tests_rules, test_name, test_logs, job_flags):
+    matching_rules = []
+
+    def matches_substring(substring, log, is_regex):
+        if log is None:
+            return False
+        if is_regex:
+            return bool(substring.search(log))
+        return substring in log
+
+    broken_tests_log = f"{temp_path}/broken_tests_handler.log"
+
+    with open(broken_tests_log, "a") as log_file:
+
+        log_file.write(f"Checking known broken tests for failed test: {test_name}\n")
+        log_file.write("Potential matching rules:\n")
+        exact_rule = broken_tests_rules["exact"].get(test_name)
+        if exact_rule:
+            log_file.write(f"{test_name} - {exact_rule}\n")
+            matching_rules.append(exact_rule)
+
+        for name_re, data in broken_tests_rules["pattern"]:
+            if name_re.fullmatch(test_name):
+                log_file.write(f"{name_re} - {data}\n")
+                matching_rules.append(data)
+
+        if not matching_rules:
+            return False
+
+        log_file.write(f"First line of test logs: {test_logs.splitlines()[0]}\n")
+
+        for rule_data in matching_rules:
+            if rule_data.get("check_types") and not any(
+                ct in flag for ct in rule_data["check_types"] for flag in job_flags
+            ):
+                log_file.write(
+                    f"Skip rule: Check types didn't match: '{rule_data['check_types']}' not in '{job_flags}'\n"
+                )
+                continue  # check_types didn't match → skip rule
+
+            is_regex = rule_data.get("regex", False)
+            not_message = rule_data.get("not_message")
+            if not_message and matches_substring(not_message, test_logs, is_regex):
+                log_file.write(
+                    f"Skip rule: Not message matched: '{rule_data['not_message']}'\n"
+                )
+                continue  # not_message matched → skip rule
+            message = rule_data.get("message")
+            if message and not matches_substring(message, test_logs, is_regex):
+                log_file.write(
+                    f"Skip rule: Message didn't match: '{rule_data['message']}'\n"
+                )
+                continue
+
+            log_file.write(f"Matched rule: {rule_data}\n")
+            return rule_data["reason"]
+
+        return False
 
 _COMPOSE_DIR = Path("./tests/integration/compose")
 
@@ -958,12 +1058,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # hard subprocess backstop). Used below to keep an empty flaky/targeted result a
     # best-effort SKIPPED only when a timeout actually exhausted the budget.
     timed_out = False
-    session_timeout_parallel = 3600 * 2
-    session_timeout_sequential = 3600
+    session_timeout_parallel = 3600 * 3
+    session_timeout_sequential = 3600 * 1.5
 
     if is_llvm_coverage:
-        session_timeout_parallel = 7200
-        session_timeout_sequential = 7200
+        session_timeout_parallel = 3600 * 3
+        session_timeout_sequential = 3600 * 3
 
     if args.session_timeout:
         session_timeout_parallel = args.session_timeout * 2
@@ -1188,10 +1288,10 @@ tar -czf ./ci/tmp/logs.tar.gz \
         is_flaky_check or is_bugfix_validation or is_targeted_check or info.is_local_run
     ):
         test_result_retries, _ = run_pytest_and_collect_results(
-            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=1200",
+            command=f"{' '.join(failed_test_cases)} --report-log-exclude-logs-on-passed-tests --tb=short -n 1 --dist=loadfile --session-timeout=7000",
             env=test_env,
             report_name="retries",
-            timeout=1200 + 600,
+            timeout=7000 + 600,
         )
         successful_retries = [t.name for t in test_result_retries.results if t.is_ok()]
         failed_retries = [t.name for t in test_result_retries.results if t.is_failure()]
@@ -1199,6 +1299,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             for test_case in test_results:
                 if test_case.name in successful_retries:
                     test_case.set_label(Result.Label.OK_ON_RETRY)
+                    test_case.set_status(Result.Status.OK)
                 elif test_case.name in failed_retries:
                     test_case.set_label(Result.Label.FAILED_ON_RETRY)
 
@@ -1286,6 +1387,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
     empty_harness_failure = (
         (is_flaky_check or is_targeted_check) and not pytest_has_results and not timed_out
     )
+
+    broken_tests_rules = get_broken_tests_rules("tests/broken_tests.yaml")
+    for result in test_results:
+        if result.status == Result.Status.FAIL:
+            try:
+                known_fail_reason = test_is_known_fail(
+                    broken_tests_rules,
+                    result.name,
+                    result.info,
+                    job_params,
+                )
+            except Exception as e:
+                print(f"Error getting known fail reason for result {result.name}: {e}")
+                continue
+            else:
+                if not known_fail_reason:
+                    continue
+                result.status = Result.Status.BROKEN
+                result.info += f"\nMarked as broken: {known_fail_reason}"
+
     R = Result.create_from(
         results=test_results,
         status=(

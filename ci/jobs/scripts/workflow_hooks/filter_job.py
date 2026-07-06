@@ -31,10 +31,10 @@ DO_NOT_TEST_JOBS = [
 ]
 
 PRELIMINARY_JOBS = [
-    JobNames.STYLE_CHECK,
+    # JobNames.STYLE_CHECK,
     JobNames.FAST_TEST,
-    "Build (amd_tidy)",
-    "Build (arm_tidy)",
+    # "Build (amd_tidy)",
+    # "Build (arm_tidy)",
 ]
 
 BUILDS_FOR_TESTS = [
@@ -254,6 +254,11 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
+    ci_exclude_tags = _info_cache.get_kv_data("ci_exclude_tags") or []
+    for tag in ci_exclude_tags:
+        if tag in job_name.lower():
+            return True, f"Skipped, job name includes excluded tag '{tag}'"
+
     # If only CI scripts changed (no product code), run a minimal set of tests
     # to validate the CI pipeline: stateless batch 1 and amd_asan_ubsan integration batch 1.
     # Individual coverage test jobs run normally, but the LLVM merge/report job is skipped
@@ -264,19 +269,24 @@ def should_skip_job(job_name):
         if job_name == JobNames.LLVM_COVERAGE:
             return True, "Skipped: only CI scripts changed; skipping coverage merge to preserve master coverage number"
 
-        if JobNames.STATELESS in job_name:
-            match = re.search(r"(\d)/\d", job_name)
-            if match and match.group(1) != "1" or "sequential" in job_name:
-                return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
+    # NOTE (strtgbb): disabled this feature for now
+    # If only the functional tests script changed, run only the first batch of stateless tests
+    # if changed_files and all(
+    #     f.startswith("ci/") and f.endswith(".py") for f in changed_files
+    # ):
+    #     if JobNames.STATELESS in job_name:
+    #         match = re.search(r"(\d)/\d", job_name)
+    #         if match and match.group(1) != "1" or "sequential" in job_name:
+    #             return True, "Skipped: only CI scripts changed; running stateless batch 1 only"
 
-        if JobNames.INTEGRATION in job_name:
-            match = re.search(r"(\d)/\d", job_name)
-            if (
-                match
-                and match.group(1) != "1"
-                or "sequential" in job_name
-                or "_asan" not in job_name
-            ):
-                return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
+    #     if JobNames.INTEGRATION in job_name:
+    #         match = re.search(r"(\d)/\d", job_name)
+    #         if (
+    #             match
+    #             and match.group(1) != "1"
+    #             or "sequential" in job_name
+    #             or "_asan" not in job_name
+    #         ):
+    #             return True, "Skipped: only CI scripts changed; running amd_asan_ubsan integration batch 1 only"
 
     return False, ""

@@ -6,8 +6,8 @@ from ci.jobs.scripts.docker_image import DockerImage
 from ci.praktika.result import Result
 from ci.praktika.utils import Shell, Utils
 
-RPM_IMAGE = "clickhouse/install-rpm-test"
-DEB_IMAGE = "clickhouse/install-deb-test"
+RPM_IMAGE = "altinityinfra/install-rpm-test"
+DEB_IMAGE = "altinityinfra/install-deb-test"
 REPO_PATH = Utils.cwd()
 TEMP_PATH = Path(f"{REPO_PATH}/ci/tmp/")
 
@@ -23,7 +23,10 @@ echo "$test_env" >> /etc/default/clickhouse
 # listening manually here.
 systemctl restart clickhouse-server
 clickhouse-client -q 'SELECT version()'
-grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ"""
+grep "$test_env" /proc/$(cat /var/run/clickhouse-server/clickhouse-server.pid)/environ
+echo "Check Stacktrace"
+output=$(clickhouse-local --stacktrace --query="SELECT throwIf(1,'throw')" 2>&1 >/dev/null || true)
+echo "$output" | grep 'FunctionThrowIf::executeImpl'"""
     initd_via_systemd_test = r"""#!/bin/bash
 set -e
 trap "bash -ex /packages/preserve_logs.sh" ERR

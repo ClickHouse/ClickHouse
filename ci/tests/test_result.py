@@ -29,6 +29,7 @@ ALL_STATUSES = {
     Result.Status.PENDING,
     Result.Status.RUNNING,
     Result.Status.DROPPED,
+    Result.Status.BROKEN,
 }
 
 
@@ -64,7 +65,7 @@ def test_status_values_are_unique():
 # --- is_ok / is_success / is_failure / is_error ---
 
 def test_is_ok():
-    ok_statuses = {Result.Status.OK, Result.Status.SKIPPED, Result.Status.XFAIL}
+    ok_statuses = {Result.Status.OK, Result.Status.SKIPPED, Result.Status.BROKEN, Result.Status.XFAIL}
     not_ok = ALL_STATUSES - ok_statuses
     for s in ok_statuses:
         assert Result("t", s).is_ok(), f"{s} should be ok"
@@ -73,7 +74,7 @@ def test_is_ok():
 
 
 def test_is_success():
-    success_statuses = {Result.Status.OK, Result.Status.XFAIL}
+    success_statuses = {Result.Status.OK, Result.Status.BROKEN, Result.Status.XFAIL}
     for s in success_statuses:
         assert Result("t", s).is_success(), f"{s} should be success"
     for s in ALL_STATUSES - success_statuses:

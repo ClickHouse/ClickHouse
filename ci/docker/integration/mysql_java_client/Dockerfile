@@ -1,4 +1,4 @@
-# docker build -t clickhouse/mysql-java-client .
+# docker build -t altinityinfra/mysql-java-client .
 # MySQL Java client docker container
 # Rebuild to enable SBOM/provenance attestations (see #97903, #98511)
 

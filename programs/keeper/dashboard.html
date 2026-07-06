@@ -3,8 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <link rel="icon"
-        href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1NCIgaGVpZ2h0PSI0OCIgdmlld0JveD0iMCAwIDkgOCI+PHN0eWxlPi5ve2ZpbGw6I2ZjMH0ucntmaWxsOnJlZH08L3N0eWxlPjxwYXRoIGQ9Ik0wLDcgaDEgdjEgaC0xIHoiIGNsYXNzPSJyIi8+PHBhdGggZD0iTTAsMCBoMSB2NyBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNMiwwIGgxIHY4IGgtMSB6IiBjbGFzcz0ibyIvPjxwYXRoIGQ9Ik00LDAgaDEgdjggaC0xIHoiIGNsYXNzPSJvIi8+PHBhdGggZD0iTTYsMCBoMSB2OCBoLTEgeiIgY2xhc3M9Im8iLz48cGF0aCBkPSJNOCwzLjI1IGgxIHYxLjUgaC0xIHoiIGNsYXNzPSJvIi8+PC9zdmc+">
+    <link rel="icon" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTUwIDE1MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cGF0aCBkPSJtMTkgNzIgODItNDhMNzUgOSAxOSA0MnptNSAzIDIzIDE0VjYyem00OSAzNEwxOSA3OHY2MnptMjgtNTIgMjktMTctMjQtMTMtMjggMTd6bTMgN3Y2MGwyOCAxNlY4MHptMi00IDI2IDE1VjQ1eiIgZmlsbD0iIzE5OURDRiIvPjwvc3ZnPg==">
     <title>ClickHouse Keeper</title>
 
     <!-- Code Style:
@@ -231,6 +230,11 @@
 
         #logo {
             fill: var(--logo-color);
+            color: var(--logo-color);
+        }
+
+        #logo text {
+            fill: var(--logo-color);
         }
 
         #cloud-logo {
@@ -243,6 +247,10 @@
         #logo:hover {
             fill: var(--logo-color-active);
             color: var(--logo-color-active);
+        }
+
+        #logo:hover text {
+            fill: var(--logo-color-active);
         }
 
         #cloud-logo:hover {
@@ -748,7 +756,7 @@
         </div>
 
         <p id="logo-container">
-            <a href="https://clickhouse.com/">
+            <a href="https://altinity.com/">
                 <svg id="logo" width="50%" viewBox="0 0 180 28" version="1.1" xmlns="http://www.w3.org/2000/svg"
                     xmlns:xlink="http://www.w3.org/1999/xlink">
                     <title>Powered by ClickHouse</title>
@@ -783,10 +791,11 @@
                         <path
                             d="M136.379248,19.4286849 C135.765636,19.9144267 135.063746,20.2807344 134.311043,20.5080563 C133.397586,20.8060079 132.439751,20.9505822 131.477601,20.9357317 C129.484022,21.0457076 127.539179,20.3034303 126.141631,18.899182 C124.819952,17.3656124 124.152831,15.3875844 124.280246,13.3801321 C124.263071,12.3194805 124.438164,11.2643153 124.797297,10.2642109 C125.111353,9.39844373 125.596363,8.60246478 126.224359,7.92217864 C126.799559,7.29363386 127.504769,6.79365416 128.292565,6.4558628 C129.13245,6.11650376 130.03203,5.94349361 130.939868,5.94672536 C131.84844,5.93569173 132.749586,6.10900306 133.587171,6.4558628 C134.355957,6.77570775 135.026242,7.28828126 135.531284,7.94254414 C136.069381,8.66407624 136.423989,9.5021104 136.565387,10.3864039 C136.756685,11.5054228 136.756685,12.6480576 136.565387,13.7670765 L126.720728,13.7670765 C126.831033,17.1749031 128.464915,18.8788165 131.622376,18.8788165 C132.38185,18.8941966 133.138087,18.7769813 133.856038,18.532603 C134.495821,18.304128 135.106567,18.0034291 135.676058,17.6365211 L136.379248,19.4286849 Z M131.022596,7.73888916 C130.017668,7.7293132 129.052936,8.12697327 128.354611,8.83862604 C127.526752,9.75405949 127.031943,10.9148261 126.948231,12.1378367 L134.331725,12.1378367 C134.534684,10.9751452 134.259342,9.78072052 133.566489,8.81826055 C132.931983,8.09270485 131.993938,7.6946933 131.022596,7.73888916 Z"
                             id="Shape"></path>
+                        <text dy="10" background-color="transparent" dx="135" fill="currentColor">®</text>
                     </g>
                 </svg>
             </a>
-            <a id="cloud-logo" href="https://clickhouse.cloud/">☁</a>
+            <a id="cloud-logo" href="https://altinity.cloud/">☁</a>
         </p>
     </div>
 </body>

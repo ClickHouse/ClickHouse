@@ -3,7 +3,7 @@ services:
     volumes:
       - paimon-inc-warehouse:/var/lib/clickhouse/user_files
   paimon-incremental-writer:
-    image: clickhouse/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
+    image: altinityinfra/integration-test-with-hms:${DOCKER_BASE_WITH_HMS_TAG:-latest}
     restart: "no"
     user: "0:0"
     volumes:

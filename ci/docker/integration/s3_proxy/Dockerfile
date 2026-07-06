@@ -1,4 +1,4 @@
-# docker build -t clickhouse/s3-proxy .
+# docker build -t altinityinfra/s3-proxy .
 FROM nginx:alpine
 
 COPY run.sh /run.sh

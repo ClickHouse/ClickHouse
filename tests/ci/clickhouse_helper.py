@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from env_helper import GITHUB_REPOSITORY
+from env_helper import CLICKHOUSE_TEST_STAT_URL, CLICKHOUSE_TEST_STAT_PASSWORD, CLICKHOUSE_TEST_STAT_LOGIN
 from get_robot_token import get_parameter_from_ssm
 from pr_info import PRInfo
 from report import TestResults
@@ -28,12 +28,12 @@ class ClickHouseHelper:
         self, url: Optional[str] = None, auth: Optional[Dict[str, str]] = None
     ):
         if url is None:
-            url = get_parameter_from_ssm("clickhouse-test-stat-url")
+            url = CLICKHOUSE_TEST_STAT_URL
 
         self.url = url
         self.auth = auth or {
-            "X-ClickHouse-User": get_parameter_from_ssm("clickhouse-test-stat-login"),
-            "X-ClickHouse-Key": get_parameter_from_ssm("clickhouse-test-stat-password"),
+            "X-ClickHouse-User": CLICKHOUSE_TEST_STAT_LOGIN,
+            "X-ClickHouse-Key": CLICKHOUSE_TEST_STAT_PASSWORD,
         }
 
     @staticmethod
@@ -212,11 +212,11 @@ def prepare_tests_results_for_clickhouse(
     report_url: str,
     check_name: str,
 ) -> List[dict]:
-    base_ref = pr_info.base_ref
-    base_repo = pr_info.base_name
-    head_ref = pr_info.head_ref
-    head_repo = pr_info.head_name
-    pull_request_url = f"https://github.com/{GITHUB_REPOSITORY}/commits/{head_ref}"
+    pull_request_url = "https://github.com/Altinity/ClickHouse/commits/master"
+    base_ref = "master"
+    head_ref = "master"
+    base_repo = pr_info.repo_full_name
+    head_repo = pr_info.repo_full_name
     if pr_info.number != 0:
         pull_request_url = pr_info.pr_html_url
 

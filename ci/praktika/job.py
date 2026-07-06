@@ -78,7 +78,7 @@ class Job:
         # experimental jobs that are not yet stable enough to be enforced.
         force_success: bool = False
 
-        enable_commit_status: bool = False
+        enable_commit_status: bool = True
 
         enable_gh_auth: bool = False
 
