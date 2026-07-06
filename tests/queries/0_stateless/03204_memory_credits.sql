@@ -6,7 +6,7 @@ SET log_queries = 1;
 SELECT count() FROM (SELECT number % 1000000 AS k FROM numbers(10000000) GROUP BY k) FORMAT Null
 SETTINGS max_threads = 4, log_comment = '03204_memory_credits';
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['MemoryCredits'] > 0
 FROM system.query_log
