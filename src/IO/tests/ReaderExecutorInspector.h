@@ -65,10 +65,9 @@ public:
         chunk.append(ChainedBufferNode{buf, 0, bytes.size(), logical_offset});
         ex.read_plan.retrieve_status[ri].ready_bytes.append(std::move(chunk));
     }
-    std::vector<ByteRange> bankIntervals(size_t ri) const
+    const VectorWithMemoryTracking<ByteRange> & bankIntervals(size_t ri) const
     {
-        const auto & ivs = ex.read_plan.retrieve_status[ri].ready_bytes.getIntervals();
-        return {ivs.begin(), ivs.end()};
+        return ex.read_plan.retrieve_status[ri].ready_bytes.getIntervals();
     }
     /// The schedule job whose range holds `phys`, or `size_t(-1)`.
     size_t retrieveIndexAt(size_t phys) const
