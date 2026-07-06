@@ -16,6 +16,7 @@
 #endif
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 
@@ -107,11 +108,19 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         {
             std::span<uint8_t> mem_span = compartment->getMemory(ptr_val, size_val);
 
-            /// If the call succeeds, read one byte to trigger ASan on OOB.
+            /// A successful getMemory promises exactly `size_val` bytes fully inside the
+            /// WASM memory. A span whose start is in bounds but whose tail runs past the
+            /// end (e.g. a missing `ptr + size <= memory_size` check) would not be caught
+            /// by only probing the first byte, so touch both ends and verify the length.
+            if (mem_span.size() != size_val)
+                abort();
+
             if (!mem_span.empty())
             {
-                volatile uint8_t probe = mem_span[0];
-                (void)probe;
+                volatile uint8_t first = mem_span.front();
+                volatile uint8_t last = mem_span.back();
+                (void)first;
+                (void)last;
             }
         }
         catch (...)
