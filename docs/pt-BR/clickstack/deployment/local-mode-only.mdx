@@ -1,0 +1,64 @@
+---
+slug: /use-cases/observability/clickstack/deployment/local-mode-only
+title: 'Somente no modo local'
+description: 'Implantação do ClickStack somente no modo local - a stack de observabilidade do ClickHouse'
+doc_type: 'guide'
+keywords: ['clickstack', 'implantação', 'setup', 'configuração', 'observabilidade']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import JSONSupport from '/snippets/pt-BR/_json_support.mdx';
+
+Semelhante à [imagem all-in-one](/pt-BR/clickstack/deployment/docker-compose), esta imagem Docker completa reúne todos os componentes do ClickStack:
+
+* **ClickHouse**
+* **HyperDX**
+* **collector do OpenTelemetry (OTel)** (expondo OTLP nas portas `4317` e `4318`)
+* **MongoDB** (para o estado persistente da aplicação)
+
+**No entanto, a autenticação de usuários está desabilitada para esta distribuição do HyperDX**
+
+<div id="suitable-for">
+  ### Indicado para
+</div>
+
+* Demonstrações
+* Depuração
+* Desenvolvimento em que o HyperDX é usado
+
+<div id="deployment-steps">
+  ## Etapas de implantação
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Implantar com Docker
+
+    O modo local implanta a UI do HyperDX na porta 8080.
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+  </Step>
+
+  <Step>
+    ### Acesse a UI do HyperDX
+
+    Acesse [http://localhost:8080](http://localhost:8080) para abrir a UI do HyperDX.
+
+    **Você não precisará criar um usuário, pois a autenticação não está habilitada neste modo de implantação.**
+
+    Conecte-se ao seu próprio cluster externo do ClickHouse, por exemplo, o ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Criar login" size="md" />
+
+    Crie uma fonte, mantenha todos os valores padrão e preencha o campo `Table` com o valor `otel_logs`. Todas as outras configurações devem ser detectadas automaticamente, permitindo que você clique em `Save New Source`.
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="Criar fonte de logs" size="md" />
+  </Step>
+</Steps>
+
+<JSONSupport />

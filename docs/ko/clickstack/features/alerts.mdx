@@ -1,0 +1,392 @@
+---
+slug: /use-cases/observability/clickstack/alerts
+title: 'ClickStack의 알림'
+sidebarTitle: '알림'
+description: 'ClickStack의 알림'
+doc_type: 'guide'
+keywords: ['ClickStack', '관측성', '알림', 'search-alerts', '알림', '임계값', 'slack', 'email', 'pagerduty', '오류-모니터링', '성능-모니터링', '사용자-이벤트']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickStack에는 로그, 메트릭, 트레이스 전반에서 팀이 문제를 실시간으로 감지하고 대응할 수 있도록 기본 제공 알림 기능이 포함되어 있습니다.
+
+알림은 HyperDX 인터페이스에서 직접 생성할 수 있으며, Slack 및 PagerDuty와 같은 널리 사용되는 알림 시스템과 통합됩니다.
+
+알림 기능은 ClickStack 데이터 전반에서 원활하게 작동하여 시스템 상태를 추적하고, 성능 저하를 포착하며, 주요 비즈니스 이벤트를 모니터링하는 데 도움이 됩니다.
+
+<div id="types-of-alerts">
+  ## 알림 유형
+</div>
+
+ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, 즉 **검색 알림**과 **대시보드 차트 알림**을 지원합니다. 알림이 생성되면 검색 또는 차트 중 하나에 연결됩니다.
+
+<div id="search-alerts">
+  ### 1. 검색 알림
+</div>
+
+검색 알림을 사용하면 저장된 검색 결과를 기준으로 알림을 트리거할 수 있습니다. 이를 통해 특정 이벤트나 패턴이 예상보다 더 자주 또는 덜 자주 발생하는 시점을 감지할 수 있습니다.
+
+정의된 시간 윈도우 내에서 일치하는 결과 수가 지정된 임계값을 초과하거나 미만으로 떨어지면 알림이 트리거됩니다.
+
+검색 알림을 만들려면 다음 단계를 따르십시오.
+
+검색에 대한 알림을 만들려면 먼저 해당 검색이 저장되어 있어야 합니다. 기존에 저장된 검색에 대해 알림을 만들 수도 있고, 알림 생성 과정에서 검색을 저장할 수도 있습니다. 아래 예시에서는 검색이 저장되지 않은 상태를 가정합니다.
+
+<Steps>
+  <Step>
+    #### 알림 생성 대화상자 열기
+
+    먼저 [검색](/ko/clickstack/features/search)을 입력한 다음 `Search` 페이지 오른쪽 상단의 `Alerts` 버튼을 클릭하십시오.
+
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="검색 보기 알림" size="lg" />
+  </Step>
+
+  <Step>
+    #### 알림 만들기
+
+    알림 생성 패널에서는 다음 작업을 수행할 수 있습니다.
+
+    * 알림과 연결된 저장된 검색에 이름을 지정합니다.
+    * 임계값을 설정하고, 지정된 기간 내에 해당 조건이 몇 번 충족되어야 하는지 지정합니다. 임계값은 상한 또는 하한으로도 사용할 수 있습니다. 여기서 설정한 기간은 알림이 트리거되는 빈도에도 영향을 줍니다.
+    * `grouped by` 값을 지정합니다. 이렇게 하면 검색 결과를 집계할 수 있습니다. 예를 들어 `ServiceName`으로 그룹화하면 동일한 검색에서 여러 알림을 트리거할 수 있습니다.
+    * 알림을 받을 웹훅 대상을 선택합니다. 이 화면에서 직접 새 웹훅을 추가할 수도 있습니다. 자세한 내용은 [웹훅 추가](#add-webhook)를 참조하십시오.
+
+    저장하기 전에 ClickStack이 임계값 조건을 시각화하므로 예상대로 동작하는지 확인할 수 있습니다.
+
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="검색 알림" size="lg" />
+  </Step>
+</Steps>
+
+하나의 검색에 여러 알림을 추가할 수 있습니다. 위 과정을 반복하면 알림 편집 대화상자 상단에 현재 알림이 탭으로 표시되며, 각 알림에는 번호가 할당됩니다.
+
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="여러 알림" size="md" />
+
+<div id="dashboard-alerts">
+  ### 2. 대시보드 차트 알림
+</div>
+
+대시보드 차트 알림은 차트에도 알림 기능을 확장합니다.
+
+고급 계산을 위한 SQL 집계와 ClickHouse 함수를 활용해, 저장된 대시보드에서 직접 차트 기반 알림을 생성할 수 있습니다.
+
+메트릭이 지정된 임계값을 넘으면 알림이 자동으로 트리거되어 시간 경과에 따른 KPI, 지연 시간 또는 기타 주요 메트릭을 모니터링할 수 있습니다.
+
+<Note>
+  대시보드의 시각화에 알림을 생성하려면 먼저 대시보드를 저장해야 합니다.
+</Note>
+
+대시보드 알림을 추가하려면 다음과 같이 하십시오.
+
+알림은 차트를 만드는 과정에서 생성하거나, 대시보드에 차트를 추가할 때 생성하거나, 기존 차트에 추가할 수 있습니다. 아래 예시에서는 차트가 이미 대시보드에 있다고 가정합니다.
+
+<Steps>
+  <Step>
+    #### 차트 편집 대화 상자 열기
+
+    차트의 설정 메뉴를 열고 알림 버튼을 선택하십시오. 그러면 차트 편집 대화 상자가 표시됩니다.
+
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="차트 알림 편집" size="lg" />
+  </Step>
+
+  <Step>
+    #### 알림 추가
+
+    **Add Alert**를 선택하십시오.
+
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="차트에 알림 추가" size="lg" />
+  </Step>
+
+  <Step>
+    #### 알림 조건 정의
+
+    조건(`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), 임계값, 지속 시간, 웹훅을 정의하십시오. 여기서 지속 시간은 알림이 얼마나 자주 트리거되는지도 결정합니다.
+
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="차트용 알림 생성" size="lg" />
+
+    이 화면에서 직접 새 웹훅을 추가할 수도 있습니다. 자세한 내용은 [웹훅 추가](#add-webhook)를 참조하십시오.
+  </Step>
+</Steps>
+
+<div id="add-webhook">
+  ## 웹훅 추가
+</div>
+
+알림을 생성하는 동안 기존 웹훅을 사용하거나 새로 생성할 수 있습니다. 웹훅을 한 번 생성하면 다른 알림에서도 재사용할 수 있습니다.
+
+웹훅은 Slack, PagerDuty, 일반 대상 등 다양한 서비스 유형으로 생성할 수 있습니다.
+
+예시로, 아래 차트에 대한 알림 생성 과정을 살펴보겠습니다. 웹훅을 지정하기 전에 사용자는 `Add New Webhook`을 선택할 수 있습니다.
+
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="새 웹훅 추가" size="lg" />
+
+그러면 웹훅 생성 대화상자가 열리고, 여기에서 새 웹훅을 생성할 수 있습니다.
+
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="웹훅 생성" size="md" />
+
+웹훅 이름은 필수이며 설명은 선택 사항입니다. 그 외 필수로 입력해야 하는 설정은 서비스 유형에 따라 다릅니다.
+
+서비스 유형은 ClickStack Open Source와 ClickStack Cloud에서 서로 다를 수 있습니다. 자세한 내용은 [서비스 유형 통합](#integrations)을 참조하십시오.
+
+<div id="integrations">
+  ### 서비스 유형별 통합
+</div>
+
+ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩니다.
+
+* **Slack**: 웹훅 또는 API를 통해 채널로 직접 알림을 보냅니다.
+* **PagerDuty**: PagerDuty API를 통해 온콜 팀으로 인시던트를 라우팅합니다.
+* **Webhook**: 범용 웹훅을 통해 알림을 사용자 지정 시스템 또는 워크플로에 연결합니다.
+
+<Info>
+  **ClickHouse Cloud 전용 통합**
+
+  Slack API 및 PagerDuty 통합은 ClickHouse Cloud에서만 지원됩니다.
+</Info>
+
+서비스 유형에 따라 입력해야 하는 정보가 다릅니다. 구체적으로는 다음과 같습니다.
+
+**Slack (Webhook URL)**
+
+* Webhook URL. 예시: `https://hooks.slack.com/services/<unique_path>`. 자세한 내용은 [Slack 문서](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)를 참조하십시오.
+
+**Slack (API)**
+
+* Slack 봇 토큰. 자세한 내용은 [Slack 문서](https://docs.slack.dev/authentication/tokens/#bot/)를 참조하십시오.
+
+**PagerDuty API**
+
+* PagerDuty 통합 키. 자세한 내용은 [PagerDuty 문서](https://support.pagerduty.com/main/docs/api-access-keys)를 참조하십시오.
+
+**Generic**
+
+* Webhook URL
+* Webhook 헤더(선택 사항)
+* Webhook 본문(선택 사항). 현재 본문에서는 템플릿 변수 `{{title}}`, `{{body}}`, `{{link}}`를 지원합니다.
+
+<div id="managing-alerts">
+  ## 알림 관리
+</div>
+
+알림은 HyperDX 왼쪽의 알림 패널에서 중앙 집중식으로 관리할 수 있습니다.
+
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="알림 관리" size="lg" />
+
+이 화면에서는 생성되어 현재 ClickStack에서 실행 중인 모든 알림을 확인할 수 있습니다.
+
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="알림 보기" size="lg" />
+
+이 화면에는 알림 평가 이력도 표시됩니다. 알림은 일정한 시간 인터벌로 평가되며(알림 생성 시 설정한 period/duration에 따라 결정됨), 각 평가 시 HyperDX가 데이터를 쿼리하여 알림 조건이 충족되었는지 확인합니다.
+
+* **빨간 막대**: 이번 평가에서 임계값 조건이 충족되어 알림이 트리거되었습니다(알림 전송됨)
+* **초록 막대**: 알림이 평가되었지만 임계값 조건이 충족되지 않았습니다(알림 전송 안 됨)
+
+각 평가는 서로 독립적으로 수행됩니다. 알림은 해당 시간 윈도우의 데이터를 확인하고, 그 시점에 조건이 참일 때만 트리거됩니다.
+
+위 예시에서 첫 번째 알림은 모든 평가에서 트리거되었으며, 이는 문제가 지속되고 있음을 나타냅니다. 두 번째 알림은 해결된 문제를 보여줍니다. 처음에는 두 번 트리거되었지만(빨간 막대), 이후 평가에서는 더 이상 임계값 조건이 충족되지 않았습니다(초록 막대).
+
+알림을 클릭하면 해당 알림이 연결된 차트 또는 검색으로 이동합니다.
+
+<div id="deleting-alerts">
+  ### 알림 삭제
+</div>
+
+알림을 삭제하려면 연결된 검색 또는 차트의 편집 대화상자를 연 다음 **Remove Alert**를 선택하십시오.
+아래 예시에서 `Remove Alert` 버튼을 클릭하면 차트에서 알림이 삭제됩니다.
+
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="차트 알림 제거" size="lg" />
+
+<div id="sql-based-alerts">
+  ## SQL 기반 차트 알림
+</div>
+
+SQL 기반 차트 알림을 사용하면 원하는 ClickHouse SQL을 작성해 알림 조건을 정의할 수 있습니다. 이를 통해 필터링(filtering), 집계(aggregation), 계산을 완전히 제어할 수 있으며, SQL로 표현할 수 있다면 무엇이든 알림 조건으로 사용할 수 있습니다.
+
+<div id="supported-chart-types">
+  ### 지원되는 차트 유형
+</div>
+
+SQL 기반 알림은 다음 3가지 차트 유형에서 지원됩니다.
+
+| 차트 유형           | 동작                                                              |
+| --------------- | --------------------------------------------------------------- |
+| **선**        | 시계열 알림입니다. 쿼리는 시간 버킷별 행을 생성해야 합니다. 각 버킷은 임계값을 기준으로 독립적으로 평가됩니다. |
+| **Stacked Bar** | 시계열 알림입니다. 선과 동일하게 동작합니다.                                    |
+| **Number**      | 단일 값 알림입니다. 쿼리는 단일 숫자 결과를 반환하며, 평가할 때마다 한 번씩 임계값과 비교됩니다.        |
+
+그 외 SQL 기반 차트 유형(Table, Pie, Heatmap 등)은 알림을 지원하지 않습니다.
+
+<div id="create-sql-based-alert">
+  ### SQL 알림 만들기
+</div>
+
+SQL 기반 차트에 알림을 만들려면 다음 단계를 따르십시오.
+
+<Steps>
+  <Step>
+    #### 대시보드에서 SQL 기반 차트 만들기 또는 열기
+
+    저장된 대시보드에서 [**SQL** 차트 모드로 새 차트를 만들거나](/ko/clickstack/features/dashboards/sql-visualizations), 기존 SQL 기반 차트를 열어 편집합니다.
+
+    표시 유형으로 **선**, **Stacked Bar**, 또는 **Number**를 선택합니다.
+
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="SQL 차트 만들기" size="lg" />
+  </Step>
+
+  <Step>
+    #### 알림 추가
+
+    차트 편집기의 알림 섹션에서 **Add Alert**를 선택합니다. 다음 항목을 설정합니다.
+
+    * **임계값 유형**: `>=` (크거나 같음), `>` (초과), `<=` (작거나 같음), `<` (미만), `=` (같음), `!=` (같지 않음), `<= x >=` (범위 내), 또는 `> or <` (범위 밖)
+    * **임계값 값**: 비교 기준이 되는 숫자 값
+    * **인터벌**: 알림을 평가하는 주기입니다(1m, 5m, 15m, 30m, 1h, 6h, 12h 또는 1d). 각 평가에 사용되는 시간 윈도우도 함께 정의합니다.
+    * **웹훅**: 알림이 발생할 때 사용할 알림 채널입니다. [웹훅 추가](#add-webhook)를 참조하십시오.
+
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="차트 알림 편집" size="lg" />
+
+    <Warning>
+      **알림 시간 범위**
+
+      일반적으로 알림 쿼리는 인터벌마다 한 번씩 실행됩니다. 그러나 오류 또는 느린 쿼리로 인해 하나 이상의 인터벌을 건너뛴 경우, 다음 실행에서는 누락된 인터벌이 포함된 시간 범위를 사용합니다. 이 경우 쿼리의 인터벌 매개변수는 여전히 알림에 설정된 주기로 유지되지만, 시간 범위 매개변수는 더 긴 시간 범위를 반영합니다.
+    </Warning>
+  </Step>
+
+  <Step>
+    #### 대시보드 저장
+
+    알림을 활성화하려면 대시보드를 저장합니다. 알림은 설정된 인터벌에 따라 평가를 시작합니다.
+  </Step>
+</Steps>
+
+<div id="sql-result-interpretation">
+  ### 쿼리 결과 해석 방법
+</div>
+
+알림 시스템은 SQL 쿼리가 반환한 컬럼을 검사하여 어떤 값을 임계값과 비교할지 결정합니다.
+
+* **값 컬럼**: `SELECT` 절의 **마지막 숫자 컬럼**이 알림 값으로 사용됩니다. 쿼리가 여러 숫자 컬럼(예: `count, avg_latency, p99_latency`)을 반환하는 경우, 마지막 컬럼인 `p99_latency`만 임계값과 비교됩니다.
+* **타임스탬프 컬럼**: 시계열 차트(선 및 Stacked Bar)의 경우, 시스템은 결과에 있는 Date/DateTime 컬럼을 시간 버킷(즉, 시계열 차트의 x축)으로 식별합니다. 각 시간 버킷의 값 컬럼은 임계값에 대해 개별적으로 평가되며, 어느 한 시간 버킷의 값이라도 설정된 임계값을 초과하면 알림이 트리거됩니다.
+* **그룹 컬럼**: 숫자 컬럼이나 타임스탬프 컬럼이 아닌 컬럼(예: `ServiceName`, `Environment`)은 그룹화 차원으로 처리됩니다. 그룹이 있으면 각 고유한 그룹 값 조합이 별도로 추적되며 각각에 대해 알림이 생성됩니다. ClickStack은 설정된 임계값을 초과하는 값을 가진 각 그룹에 대해 알림을 전송합니다. 그룹은 시계열 차트에서만 사용할 수 있습니다.
+
+<div id="query-params">
+  ### 쿼리 매개변수와 매크로
+</div>
+
+SQL 알림 쿼리는 평가할 때 자동으로 대체되는 템플릿 매개변수와 매크로를 지원합니다. 이는 [SQL 기반 차트를 만들 때](/ko/clickstack/features/dashboards/sql-visualizations) 사용할 수 있는 매개변수 및 매크로와 동일합니다.
+
+<div id="required-alert-parameters">
+  #### 필수 및 권장 매개변수
+</div>
+
+선 또는 Stacked Bar 차트 알림에 사용되는 쿼리에는 인터벌 매개변수 또는 매크로(`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)`, 또는 `$__timeInterval_ms(col)`)가 **반드시** 포함되어야 합니다. 알림 실행 시 이 값은 알림에 설정된 주기로 대체됩니다.
+
+알림에 사용되는 쿼리에는 시간 범위 필터(`{startDateMilliseconds:Int64}` 및 `{endDateMilliseconds:Int64}`, 또는 `$__timeFilter(col)` 등)를 **포함하는 것이 좋습니다**. 쿼리에 시간 범위 필터가 포함되어 있는지와 관계없이 알림 쿼리는 알림에 설정된 주기를 기준으로 실행됩니다. 시간 범위 필터가 없으면 쿼리는 실행될 때마다 원본 테이블에서 사용 가능한 전체 시간 범위를 읽습니다.
+
+<Warning>
+  **알림 시간 범위**
+
+  일반적으로 알림 쿼리는 인터벌마다 한 번씩 실행됩니다. 그러나 오류 또는 쿼리 지연으로 인해 하나 이상의 인터벌을 건너뛴 경우, 다음 실행에서는 누락된 인터벌을 포함하는 시간 범위를 사용합니다. 이 경우 쿼리의 인터벌 매개변수는 여전히 알림에 설정된 주기로 지정되지만, 시간 범위 매개변수에는 더 긴 시간 범위가 반영됩니다.
+</Warning>
+
+<div id="example-queries">
+  ### 알림 쿼리 예시
+</div>
+
+<div id="example-error-rate">
+  #### 서비스별 오류율(시계열)
+</div>
+
+트래픽이 적은 서비스에서 불필요한 알림이 발생하지 않도록, 알림 기간 동안 요청 수가 최소 10건인 경우에만 오류율이 5%를 초과하는 서비스에 대해 알림을 보냅니다.
+
+```sql
+WITH error_rates AS (
+  SELECT
+    $__timeInterval(Timestamp) as ts,
+    ServiceName,
+    countIf (SpanKind = 'Server') as request_count,
+    countIf (
+      SpanKind = 'Server'
+      and StatusCode = 'Error'
+    ) as error_count,
+    error_count / request_count * 100 AS error_percent
+  FROM $__sourceTable
+  WHERE $__timeFilter(Timestamp)
+  GROUP BY ts, ServiceName
+)
+SELECT ts, ServiceName, error_percent
+FROM error_rates
+WHERE request_count > 10
+```
+
+**표시 유형**: 선 또는 Stacked Bar
+**임계값**: `>= 5` (오류율이 5%에 도달하면 알림이 트리거됩니다)
+
+이 쿼리에서 `ServiceName`은 숫자형 컬럼도 타임스탬프(timestamp) 컬럼도 아니므로, 각 서비스가 별도의 알림 그룹으로 추적됩니다. 알림은 서비스별로 독립적으로 트리거됩니다.
+
+<div id="example-anomaly-detection">
+  #### 후행 평균을 사용한 이상 탐지(시계열)
+</div>
+
+이동 평균을 두 표준편차 이상 초과하는 과도한 오류 수에 대해 알림을 설정합니다. 이렇게 하면 고정된 임계값 대신 최근 기준 수준과 비교한 급증을 포착할 수 있습니다.
+
+```sql
+WITH buckets AS (
+  SELECT
+    $__timeInterval(Timestamp) AS ts,
+    count() AS bucket_count
+  FROM $__sourceTable
+  WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+        - toIntervalSecond($__interval_s * 30) -- 이전 30개 인터벌 조회
+    AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+    AND SeverityText = 'error'
+  GROUP BY ts
+  ORDER BY ts
+  WITH FILL
+    FROM toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+    TO toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+    STEP toIntervalSecond($__interval_s)
+),
+
+anomaly_detection AS (
+  SELECT
+    ts,
+    bucket_count,
+    avg(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_avg,
+    stddevPop(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_stddev,
+    greatest(
+      bucket_count - (previous_30_avg + 2 * previous_30_stddev), 0
+    ) AS excess_error_count
+  FROM buckets
+)
+
+SELECT ts, excess_error_count
+FROM anomaly_detection
+WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+```
+
+**표시 유형**: 선
+**임계값**: `> 0` (이동 기준선을 초과하는 오류가 감지되면 트리거됨)
+
+이 쿼리는 이동 윈도우 계산의 초기값을 만들기 위해 날짜 범위 시작 *이전* 30개의 인터벌을 가져온 다음, 최종 출력이 평가 윈도우만 포함하도록 필터링합니다.
+
+<div id="common-alert-scenarios">
+  ## 일반적인 알림 시나리오
+</div>
+
+다음은 HyperDX에서 활용할 수 있는 몇 가지 일반적인 알림 시나리오입니다:
+
+**오류:** 오류가 과도하게 발생할 때 알림을 받을 수 있도록 기본
+`All Error Events` 및 `HTTP Status >= 400` saved searches에 대해 알림을 설정하는 것을 권장합니다.
+
+**느린 작업:** 느린 작업(예:
+`duration:>5000`)에 대한 검색을 설정한 뒤, 느린 작업이 지나치게 많이
+발생할 때 알림을 보내도록 구성할 수 있습니다.
+
+**사용자 이벤트:** 신규 사용자 가입이나 중요한 사용자 작업이 수행될 때 고객 접점 팀이
+알림을 받을 수 있도록 알림을 설정할 수도 있습니다.

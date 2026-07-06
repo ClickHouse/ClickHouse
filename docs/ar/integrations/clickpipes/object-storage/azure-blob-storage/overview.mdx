@@ -1,0 +1,226 @@
+---
+sidebarTitle: 'نظرة عامة'
+description: 'وصّل تخزين الكائنات لديك بـ ClickHouse Cloud بسهولة.'
+slug: /integrations/clickpipes/object-storage/abs/overview
+title: 'تكامل Azure Blob Storage مع ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر ABS ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيعاب البيانات من Azure Blob Storage إلى ClickHouse Cloud. وهو يدعم كلاً من **الاستيعاب لمرة واحدة** و**الاستيعاب المستمر**، مع ضمان معالجة كل سجل مرة واحدة فقط.
+
+يمكن نشر ABS ClickPipes وإدارتها يدويًا عبر ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="supported-formats">
+  ## التنسيقات المدعومة
+</div>
+
+* [JSON](/ar/reference/formats/JSON/JSON)
+* [CSV](/ar/reference/formats/CSV/CSV)
+* [TSV](/ar/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/ar/reference/formats/Parquet/Parquet)
+* [Avro](/ar/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="one-time-ingestion">
+  ### الاستيعاب لمرة واحدة
+</div>
+
+سيحمّل ClickPipe الخاص بـ ABS جميع الملفات المطابقة لنمط معيّن من الحاوية المحددة إلى جدول الوجهة في ClickHouse ضمن عملية دفعية واحدة. وما إن تكتمل مهمة الاستيعاب، يتوقف ClickPipe تلقائيًا. يوفّر وضع الاستيعاب لمرة واحدة هذا ضمان المعالجة مرة واحدة فقط، بما يضمن معالجة كل ملف بشكل موثوق من دون تكرار.
+
+<div id="continuous-ingestion">
+  ### الاستيعاب المستمر
+</div>
+
+عند تفعيل الاستيعاب المستمر، تواصل ClickPipes استيعاب البيانات من المسار المحدد. ولتحديد ترتيب الاستيعاب، يعتمد ClickPipe الخاص بـ ABS على [الترتيب المعجمي](#continuous-ingestion-lexicographical-order) الضمني للملفات.
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### الترتيب المعجمي
+</div>
+
+يفترض ABS ClickPipe أن الملفات تُضاف إلى الحاوية وفق الترتيب المعجمي، ويعتمد على هذا الترتيب الضمني لاستيعاب الملفات بشكل تسلسلي. وهذا يعني أن أي ملف جديد **يجب** أن يكون أكبر معجميًا من آخر ملف تم استيعابه. على سبيل المثال، ستُستوعَب الملفات المسماة `file1` و`file2` و`file3` بالتسلسل، ولكن إذا أُضيف ملف جديد باسم `file 0` إلى الحاوية، فسيتم **تجاهله** لأن اسم الملف ليس أكبر معجميًا من آخر ملف تم استيعابه.
+
+في هذا الوضع، يُجري ABS ClickPipe تحميلًا أوليًا لـ **جميع الملفات** في المسار المحدد، ثم يتحقق من وجود ملفات جديدة على فاصل زمني قابل للتهيئة (30 ثانية افتراضيًا). **لا يمكن** بدء الاستيعاب من ملف محدد أو من نقطة زمنية معينة — إذ ستقوم ClickPipes دائمًا بتحميل جميع الملفات في المسار المحدد.
+
+<div id="file-pattern-matching">
+  ### مطابقة أنماط الملفات
+</div>
+
+تتبع Object Storage ClickPipes معيار POSIX في مطابقة أنماط الملفات. جميع الأنماط **حساسة لحالة الأحرف**، وتُطابق **المسار الكامل** بعد اسم الحاوية. ولتحسين الأداء، استخدم النمط الأكثر تحديدًا قدر الإمكان (مثل `data-2024-*.csv` بدلًا من `*.csv`).
+
+<div id="supported-patterns">
+  #### الأنماط المدعومة
+</div>
+
+| النمط              | الوصف                                                                               | مثال                | يطابق                                                             |
+| ------------------ | ----------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`                | يطابق **حرفًا واحدًا** تمامًا (باستثناء `/`)                                        | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`                | يطابق **صفرًا أو أكثر** من الأحرف (باستثناء `/`)                                    | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> تكراري | يطابق **صفرًا أو أكثر** من الأحرف (بما في ذلك `/`). يتيح اجتياز الأدلة بشكل تكراري. | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**أمثلة:**
+
+* `https://storageaccount.blob.core.windows.net/container/folder/*.csv`
+* `https://storageaccount.blob.core.windows.net/container/logs/**/data.json`
+* `https://storageaccount.blob.core.windows.net/container/file-?.parquet`
+* `https://storageaccount.blob.core.windows.net/container/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### الأنماط غير المدعومة
+</div>
+
+| النمط       | الوصف                          | المثال                 | البدائل                              |
+| ----------- | ------------------------------ | ---------------------- | ------------------------------------ |
+| `{abc,def}` | توسيع الأقواس المعقوفة - بدائل | `{logs,data}/file.csv` | أنشئ ClickPipes منفصلة لكل مسار.     |
+| `{N..M}`    | توسيع النطاق الرقمي            | `file-{1..100}.csv`    | استخدم `file-*.csv` أو `file-?.csv`. |
+
+**أمثلة:**
+
+* `https://storageaccount.blob.core.windows.net/container/{documents-01,documents-02}.json`
+* `https://storageaccount.blob.core.windows.net/container/file-{1..100}.csv`
+* `https://storageaccount.blob.core.windows.net/container/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### ضمان المعالجة مرة واحدة فقط
+</div>
+
+قد تحدث أنواع مختلفة من الإخفاقات عند استيعاب مجموعات بيانات كبيرة، ما قد يؤدي إلى عمليات إدراج جزئية أو بيانات مكررة. تتمتع Object Storage ClickPipes بالمرونة في مواجهة إخفاقات الإدراج وتوفّر ضمان المعالجة مرة واحدة فقط. ويتحقق ذلك باستخدام جداول &quot;مرحلية&quot; مؤقتة. تُدرج البيانات أولاً في الجداول المرحلية. وإذا حدث خطأ ما أثناء عملية الإدراج هذه، يمكن إفراغ الجدول المرحلي وإعادة محاولة الإدراج من حالة نظيفة. ولا تُنقل الأقسام من الجدول المرحلي إلى الجدول الهدف إلا بعد اكتمال عملية الإدراج بنجاح. ولمزيد من المعلومات حول هذه الاستراتيجية، اطّلع على [هذه التدوينة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+
+<div id="virtual-columns">
+  ### الأعمدة الافتراضية
+</div>
+
+لتتبّع الملفات التي تم إدخالها، أدرِج العمود الافتراضي `_file` ضمن قائمة تعيين الأعمدة. يحتوي العمود الافتراضي `_file` على اسم ملف الكائن المصدر، ويمكن استخدامه للاستعلام عن الملفات التي تمت معالجتها.
+
+<div id="access-control">
+  ## التحكم بالوصول
+</div>
+
+<div id="permissions">
+  ### الأذونات
+</div>
+
+لا يدعم ClickPipe الخاص بـ ABS إلا الحاويات الخاصة. الحاويات العامة **غير** مدعومة.
+
+يجب أن تسمح الحاويات بالإجراءين [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html) و[`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html) في سياسة الـ bucket.
+
+<div id="authentication">
+  ### المصادقة
+</div>
+
+<Note>
+  المصادقة باستخدام Microsoft Entra ID (بما في ذلك الهويات المُدارة) غير مدعومة حاليًا.
+</Note>
+
+تعتمد المصادقة في Azure Blob Storage على [سلسلة اتصال](https://docs.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string)، وهي تدعم كلًا من مفاتيح الوصول وتوقيعات الوصول المشتركة (SAS).
+
+<div id="access-key">
+  #### مفتاح الوصول
+</div>
+
+للمصادقة باستخدام [مفتاح وصول الحساب](https://docs.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage)، قدّم سلسلة اتصال بالتنسيق التالي:
+
+```bash
+DefaultEndpointsProtocol=https;AccountName=storage-account-name;AccountKey=account-access-key;EndpointSuffix=core.windows.net
+```
+
+يمكنك العثور على اسم حساب التخزين ومفتاح الوصول في Azure Portal ضمن **Storage Account &gt; Access keys**.
+
+<div id="sas">
+  #### توقيع الوصول المشترك (SAS)
+</div>
+
+للمصادقة باستخدام [توقيع الوصول المشترك (SAS)](https://docs.microsoft.com/en-us/azure/storage/common/storage-sas-overview)، قدِّم سلسلة اتصال تتضمن رمز SAS:
+
+```bash
+BlobEndpoint=https://storage-account-name.blob.core.windows.net/;SharedAccessSignature=sas-token
+```
+
+أنشئ رمز SAS في Azure Portal ضمن **Storage Account &gt; Shared access signature** مع الأذونات المناسبة (`Read`، `List`) للحاوية وكائنات blob التي تريد إدخالها.
+
+<div id="network-access">
+  ### الوصول إلى الشبكة
+</div>
+
+تستخدم ABS ClickPipes مسارين منفصلين للشبكة لاكتشاف البيانات الوصفية واستيعاب البيانات: خدمة ClickPipes وخدمة ClickHouse Cloud، على التوالي. إذا كنت تريد تهيئة طبقة إضافية من أمان الشبكة (على سبيل المثال، لأسباب تتعلق بالامتثال)، **فيجب تهيئة الوصول إلى الشبكة لكلا المسارين**.
+
+<Warning>
+  إن **التحكم في الوصول المستند إلى عناوين IP لا يعمل** إذا كانت حاوية Azure Blob Storage الخاصة بك في منطقة Azure نفسها التي توجد فيها خدمة ClickHouse Cloud. وعندما تكون الخدمتان في المنطقة نفسها، تُوجَّه حركة المرور عبر شبكة Azure الداخلية بدلًا من الإنترنت العام.
+</Warning>
+
+* بالنسبة إلى **التحكم في الوصول المستند إلى عناوين IP**، يجب أن تسمح [قواعد شبكة IP](https://learn.microsoft.com/en-us/azure/storage/common/storage-network-security) في جدار حماية Azure Storage بعناوين IP الثابتة الخاصة بمنطقة خدمة ClickPipes والمدرجة [هنا](/ar/integrations/clickpipes/home#list-of-static-ips)، بالإضافة إلى [عناوين IP الثابتة](/ar/products/cloud/guides/data-sources/cloud-endpoints-api) الخاصة بخدمة ClickHouse Cloud. وللحصول على عناوين IP الثابتة لمنطقة ClickHouse Cloud، افتح الطرفية وشغّل:
+
+  ```bash
+  # استبدل <your-region> بمنطقة ClickHouse Cloud الخاصة بك
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.azure[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+<div id="advanced-settings">
+  ## الإعدادات المتقدمة
+</div>
+
+يوفّر ClickPipes إعدادات افتراضية مناسبة تلبي متطلبات معظم حالات الاستخدام. وإذا كانت حالة الاستخدام لديك تتطلب ضبطًا أدق، فيمكنك تعديل الإعدادات التالية:
+
+| Setting                              | Default value | Description                                                                                                                                         |
+| ------------------------------------ | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB          | عدد البايتات التي ستتم معالجتها في دفعة insert واحدة.                                                                                               |
+| `Max file count`                     | 100           | الحد الأقصى لعدد الملفات التي ستتم معالجتها في دفعة insert واحدة.                                                                                   |
+| `Max threads`                        | auto(3)       | [الحد الأقصى لعدد سلاسل التنفيذ المتزامنة](/ar/reference/settings/session-settings#max_threads) لمعالجة الملفات.                                       |
+| `Max insert threads`                 | 1             | [الحد الأقصى لعدد سلاسل تنفيذ insert المتزامنة](/ar/reference/settings/session-settings#max_insert_threads) لمعالجة الملفات.                           |
+| `Min insert block size bytes`        | 1GB           | [الحد الأدنى لحجم البايتات في block](/ar/reference/settings/session-settings#min_insert_block_size_bytes) التي يمكن إدراجها في جدول.                   |
+| `Max download threads`               | 4             | [الحد الأقصى لعدد سلاسل تنفيذ التنزيل المتزامنة](/ar/reference/settings/session-settings#max_download_threads).                                        |
+| `Object storage polling interval`    | 30s           | يضبط الحد الأقصى لفترة الانتظار قبل إدراج البيانات في مجموعة ClickHouse.                                                                            |
+| `Parallel distributed insert select` | 2             | [إعداد parallel distributed insert select](/ar/reference/settings/session-settings#parallel_distributed_insert_select).                                |
+| `Parallel view processing`           | false         | ما إذا كان سيتم تمكين تمرير البيانات إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings#parallel_view_processing). |
+| `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عقد.                                                                                                  |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="الإعدادات المتقدمة في ClickPipes" size="lg" border />
+
+<div id="scaling">
+  ### التحجيم
+</div>
+
+يتم تحجيم Object Storage ClickPipes بناءً على الحد الأدنى لحجم خدمة ClickHouse الذي تحدده [إعدادات التحجيم التلقائي الرأسي المُعدّة](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling). ويُحدَّد حجم ClickPipe عند إنشائه. ولن تؤثر أي تغييرات لاحقة على إعدادات خدمة ClickHouse في حجم ClickPipe.
+
+لزيادة معدل النقل في مهام إدخال البيانات الكبيرة، نوصي بتحجيم خدمة ClickHouse قبل إنشاء ClickPipe.
+
+<div id="known-limitations">
+  ## القيود المعروفة
+</div>
+
+<div id="file-size">
+  ### حجم الملف
+</div>
+
+لن يحاول ClickPipes إلا إدخال الكائنات التي يبلغ حجمها **10GB أو أقل**. وإذا تجاوز حجم الملف 10GB، فستُضاف رسالة خطأ إلى جدول الأخطاء المخصّص لـ ClickPipes.
+
+<div id="latency">
+  ### زمن الاستجابة
+</div>
+
+بالنسبة إلى الحاويات التي تضم أكثر من 100,000 ملف، تضيف عمليات `LIST` في Azure blob storage زمن استجابة إضافيًا عند اكتشاف الملفات الجديدة، إلى جانب الفاصل الافتراضي للاستطلاع:
+
+* **&lt; 100k files**: ~30 ثانية (الفاصل الافتراضي للاستطلاع)
+* **100k files**: ~40-45 ثانية
+* **250k files**: ~55-70 ثانية
+* **500k+ files**: قد تتجاوز 90 ثانية
+
+بالنسبة إلى [الاستيعاب المستمر](#continuous-ingestion)، يجب على ClickPipes فحص الحاوية لتحديد الملفات الجديدة التي تأتي ترتيبًا معجميًا بعد آخر ملف تم استيعابه. نوصي بتنظيم الملفات ضمن حاويات أصغر، أو باستخدام بنى أدلة هرمية لتقليل عدد الملفات في كل عملية سرد.
+
+<div id="view-support">
+  ### دعم العروض
+</div>
+
+العروض المادية على الجدول الهدف مدعومة أيضًا. ستُنشئ ClickPipes جداول مرحلية ليس فقط للجدول الهدف، بل أيضًا لأي عرض مادي تابع له.
+
+نحن لا ننشئ جداول مرحلية للعروض غير المادية. وهذا يعني أنه إذا كان لديك جدول هدف يتبعه عرض مادي واحد أو أكثر في المراحل اللاحقة، فينبغي أن تتجنب هذه العروض المادية تحديد البيانات عبر عرض من الجدول الهدف. وإلا، فقد تلاحظ فقدان بعض البيانات في العرض المادي.
+
+<div id="dependencies">
+  ### التبعيات
+</div>
+
+أي تغييرات تُجرى على جدول الوجهة، أو على عروضه المادية (بما في ذلك العروض المادية المتسلسلة)، أو على الجداول الهدف للعروض المادية أثناء تشغيل ClickPipe ستؤدي إلى أخطاء قابلة لإعادة المحاولة. ولإجراء تغييرات على المخطط لهذه التبعيات، ينبغي إيقاف ClickPipe مؤقتًا، وتطبيق التغييرات، ثم استئنافه.

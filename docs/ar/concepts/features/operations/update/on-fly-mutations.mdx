@@ -1,0 +1,103 @@
+---
+slug: /guides/developer/on-the-fly-mutations
+sidebarTitle: 'التعديل الفوري'
+title: 'التعديل الفوري'
+keywords: ['التعديل الفوري']
+description: 'يوفر وصفًا للتعديل الفوري'
+doc_type: 'guide'
+---
+
+<div id="on-the-fly-mutations">
+  ## التعديلات الفورية
+</div>
+
+عند تمكين التعديلات الفورية، تُعلَّم الصفوف التي جرى تحديثها فورًا، وستُرجع استعلامات `SELECT` اللاحقة القيم المعدَّلة تلقائيًا. وعندما لا تكون التعديلات الفورية مُمكَّنة، فقد تحتاج إلى الانتظار حتى تُطبَّق تعديلاتك بواسطة عملية تعمل في الخلفية لكي تتمكّن من رؤية القيم المعدَّلة.
+
+يمكن تمكين التعديلات الفورية للجداول من عائلة `MergeTree` عبر تفعيل الإعداد على مستوى الاستعلام `apply_mutations_on_fly`.
+
+```sql
+SET apply_mutations_on_fly = 1;
+```
+
+<div id="example">
+  ## مثال
+</div>
+
+لنُنشئ جدولًا ونُجري بعض عمليات mutation:
+
+```sql
+CREATE TABLE test_on_fly_mutations (id UInt64, v String)
+ENGINE = MergeTree ORDER BY id;
+
+-- Disable background materialization of mutations to showcase
+-- default behavior when on-the-fly mutations are not enabled
+SYSTEM STOP MERGES test_on_fly_mutations;
+SET mutations_sync = 0;
+
+-- Insert some rows in our new table
+INSERT INTO test_on_fly_mutations VALUES (1, 'a'), (2, 'b'), (3, 'c');
+
+-- Update the values of the rows
+ALTER TABLE test_on_fly_mutations UPDATE v = 'd' WHERE id = 1;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'd';
+ALTER TABLE test_on_fly_mutations UPDATE v = 'e' WHERE id = 2;
+ALTER TABLE test_on_fly_mutations DELETE WHERE v = 'e';
+```
+
+دعونا نتحقق من نتيجة التحديثات باستخدام استعلام `SELECT`:
+
+```sql
+-- Explicitly disable on-the-fly-mutations
+SET apply_mutations_on_fly = 0;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+لاحظ أن قيم الصفوف لم تُحدَّث بعد عند الاستعلام من الجدول الجديد:
+
+```response
+┌─id─┬─v─┐
+│  1 │ a │
+│  2 │ b │
+│  3 │ c │
+└────┴───┘
+```
+
+لنرَ الآن ما الذي يحدث عند تفعيل عمليات التعديل الفوري:
+
+```sql
+-- Enable on-the-fly mutations
+SET apply_mutations_on_fly = 1;
+
+SELECT id, v FROM test_on_fly_mutations ORDER BY id;
+```
+
+يعرض استعلام `SELECT` الآن النتيجة الصحيحة فورًا، من دون الحاجة إلى انتظار تطبيق عمليات التعديل:
+
+```response
+┌─id─┬─v─┐
+│  3 │ c │
+└────┴───┘
+```
+
+<div id="performance-impact">
+  ## تأثير الأداء
+</div>
+
+عند تمكين التعديلات الفورية، لا تُجسَّد التعديلات على الفور، بل لا تُطبَّق إلا أثناء استعلامات `SELECT`. ومع ذلك، يُرجى ملاحظة أن هذه التعديلات لا تزال تُجسَّد بشكل غير متزامن في الخلفية، وهي عملية مكلفة.
+
+إذا ظل عدد التعديلات المُرسلة يتجاوز، على مدى فترة زمنية معينة، عدد التعديلات التي تُعالَج في الخلفية، فسيواصل طابور التعديلات غير المُجسَّدة التي يجب تطبيقها النمو. وسيؤدي ذلك في نهاية المطاف إلى تراجع أداء استعلامات `SELECT`.
+
+نقترح تمكين الإعداد `apply_mutations_on_fly` مع إعدادات أخرى على مستوى `MergeTree` مثل `number_of_mutations_to_throw` و`number_of_mutations_to_delay` للحد من النمو غير المحدود للتعديلات غير المُجسَّدة.
+
+<div id="support-for-subqueries-and-non-deterministic-functions">
+  ## دعم الاستعلامات الفرعية والدوال غير الحتمية
+</div>
+
+توفّر التعديل الفوري دعمًا محدودًا للاستعلامات الفرعية والدوال غير الحتمية. ولا يُدعَم إلا الاستعلامات الفرعية ذات القيمة المفردة التي تكون نتيجتها بحجم معقول (ويتحكم فيه الإعداد `mutations_max_literal_size_to_replace`). كما لا تُدعَم إلا الدوال غير الحتمية الثابتة (مثل الدالة `now()`).
+
+تتحكم الإعدادات التالية في هذه السلوكيات:
+
+* `mutations_execute_nondeterministic_on_initiator` - إذا كانت القيمة true، تُنفَّذ الدوال غير الحتمية على النسخة المتماثلة المُبادِرة وتُستبدل بقيم حرفية في استعلامات `UPDATE` و`DELETE`. القيمة الافتراضية: `false`.
+* `mutations_execute_subqueries_on_initiator` - إذا كانت القيمة true، تُنفَّذ الاستعلامات الفرعية ذات القيمة المفردة على النسخة المتماثلة المُبادِرة وتُستبدل بقيم حرفية في استعلامات `UPDATE` و`DELETE`. القيمة الافتراضية: `false`.
+* `mutations_max_literal_size_to_replace` - الحد الأقصى لحجم القيم الحرفية المُسلسلة، بالبايت، التي سيتم استبدالها في استعلامات `UPDATE` و`DELETE`. القيمة الافتراضية: `16384` (16 KiB).

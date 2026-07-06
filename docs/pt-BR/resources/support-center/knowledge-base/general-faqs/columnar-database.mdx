@@ -1,0 +1,45 @@
+---
+title: O que é um banco de dados colunar?
+description: "Um banco de dados colunar armazena os dados de cada coluna de forma independente. Isso permite ler do disco apenas os dados das colunas usadas em uma determinada consulta."
+date: 2021-09-01
+tags: ['Conceitos Fundamentais de Dados']
+keywords: ['Banco de Dados Colunar']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Um banco de dados colunar armazena os dados de cada coluna de forma independente. Isso permite ler do disco apenas os dados das colunas usadas em uma determinada consulta. Em contrapartida, operações que afetam linhas inteiras se tornam proporcionalmente mais caras. Um banco de dados colunar é um sinônimo de sistema gerenciador de banco de dados orientado a colunas. ClickHouse é um exemplo típico desse tipo de sistema.
+
+<div id="advantages-of-a-columnar-database">
+  ## Vantagens de um banco de dados colunar
+</div>
+
+As principais vantagens de um banco de dados colunar são:
+
+* Consultas que usam apenas algumas colunas entre muitas.
+* Consultas de agregação sobre grandes volumes de dados.
+* Compressão de dados por coluna.
+
+<div id="row-oriented-vs-column-oriented-databases">
+  ## Bancos de dados orientados a linhas vs orientados a colunas
+</div>
+
+Veja abaixo uma ilustração da diferença entre sistemas tradicionais orientados a linhas e bancos de dados colunares na criação de relatórios:
+
+**Tradicional orientado a linhas**
+
+<Image img="/images/row-oriented.webp" alt="Ilustração do armazenamento tradicional de banco de dados orientado a linhas" size="md" />
+
+**Colunar**
+
+<Image img="/images/column-oriented.webp" alt="Ilustração do armazenamento de banco de dados colunar" size="md" />
+
+Um banco de dados colunar é a escolha preferida para aplicações analíticas porque permite ter muitas colunas em uma tabela por garantia, sem pagar o custo das colunas não utilizadas na execução de consultas de leitura (um banco de dados OLTP tradicional lê todos os dados durante as consultas, pois os dados são armazenados em linhas, e não em colunas). Bancos de dados orientados a colunas são projetados para processamento de big data e armazenamento de dados. Muitas vezes, eles escalam nativamente usando clusters distribuídos de hardware de baixo custo para aumentar a vazão. ClickHouse faz isso com a combinação de tabelas [distributed](/pt-BR/reference/engines/table-engines/special/distributed) e [replicated](/pt-BR/reference/engines/table-engines/mergetree-family/replication).

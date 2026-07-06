@@ -1,0 +1,49 @@
+---
+alias: []
+description: 'Form 格式说明文档'
+input_format: true
+keywords: ['Form']
+output_format: false
+slug: /interfaces/formats/Form
+title: 'Form'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 描述
+</div>
+
+`Form` 格式可用于读取采用 application/x-www-form-urlencoded 格式的单条记录，
+其数据形式为 `key1=value1&key2=value2`。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+假设在 `user_files` 路径中放置了一个名为 `data.tmp` 的文件，其中包含一些经过 URL 编码的数据：
+
+```text title="data.tmp"
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql title="Query"
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>

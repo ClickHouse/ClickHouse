@@ -1,0 +1,193 @@
+---
+sidebarTitle: 'リファレンス'
+description: 'Kafka ClickPipes でサポートされる対応フォーマット、ソース、配信セマンティクス、認証、実験的機能について詳しく説明します。'
+slug: /integrations/clickpipes/kafka/reference
+title: 'リファレンス'
+doc_type: 'reference'
+keywords: ['kafka reference', 'clickpipes', 'data sources', 'avro', '仮想カラム']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="supported-data-sources">
+  ## 対応データソース
+</div>
+
+| 名称               | ロゴ                                                                                                 | 種別      | ステータス | 説明                                                                            |
+| ---------------- | -------------------------------------------------------------------------------------------------- | ------- | ----- | ----------------------------------------------------------------------------- |
+| Apache Kafka     | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka ロゴ" width="32" />                | ストリーミング | 安定版   | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。     |
+| Confluent Cloud  | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />         | ストリーミング | 安定版   | 直接インテグレーションにより、Confluent と ClickHouse Cloud の連携を活用できます。                       |
+| Redpanda         | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />            | ストリーミング | 安定版   | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。         |
+| AWS MSK          | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" width="32" />                       | ストリーミング | 安定版   | ClickPipes を設定し、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。          |
+| Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" /> | ストリーミング | 安定版   | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。 |
+| WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />             | ストリーミング | 安定版   | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。       |
+
+<div id="supported-data-formats">
+  ## 対応データフォーマット
+</div>
+
+対応しているフォーマットは次のとおりです。
+
+* [JSON](/ja/guides/clickhouse/data-formats/json/intro)
+* [AvroConfluent](/ja/reference/formats/Avro/AvroConfluent)
+* [Protobuf](/ja/reference/formats/Protobuf/Protobuf)
+
+<div id="supported-data-types">
+  ## サポートされているデータ型
+</div>
+
+<div id="standard-types-support">
+  ### 標準
+</div>
+
+現在、ClickPipes では以下の標準的な ClickHouse データ型がサポートされています。
+
+* 基本的な数値型 - [U]Int8/16/32/64、Float32/64、BFloat16
+* 大きな整数型 - [U]Int128/256
+* Decimal 型
+* Boolean
+* String
+* FixedString
+* Date、Date32
+* DateTime、DateTime64 (UTC タイムゾーンのみ)
+* Enum8/Enum16
+* UUID
+* IPv4
+* IPv6
+* Time、Time64
+* JSON
+* すべての ClickHouse LowCardinality 型
+* キーと値に上記のいずれかの型を使用する Map (Nullable を含む)
+* 要素に上記のいずれかの型を使用する Tuple と Array (Nullable を含む、深さは 1 レベルのみ)
+* SimpleAggregateFunction 型 (AggregatingMergeTree または SummingMergeTree の宛先向け)
+
+<div id="variant-type-support">
+  ### Variant 型のサポート
+</div>
+
+ClickPipes は、次の条件で Variant 型をサポートします。
+
+* Avro のユニオン。Avro スキーマに複数の NULL 以外の型を含むユニオンがある場合、ClickPipes は適切な
+  Variant 型を推論します。それ以外の Avro データでは、Variant 型はサポートされません。
+* JSON フィールド。ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を
+  手動で指定できます。複雑なサブタイプ (Array/Map/Tuple) はサポートされません。また、ClickPipes では使用すべき
+  Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つのみです。たとえば、`Variant(Int64, UInt32)` はサポートされません。
+
+<div id="json-type-support">
+  ### JSON 型のサポート
+</div>
+
+ClickPipes は、次の状況で JSON 型をサポートします。
+
+* Avro の Record フィールドと Protobuf の Message フィールドは、常に JSON カラムに割り当てることができます。
+* Avro の String フィールドと Bytes フィールドは、Avro フィールドに実際には JSON オブジェクトを表す文字列が含まれている場合、JSON カラムに割り当てることができます。
+* Protobuf の String 型と Bytes 型は、Protobuf フィールドに実際には JSON オブジェクトを表す文字列が含まれている場合、JSON カラムに割り当てることができます。
+* 値が常に JSON オブジェクトである JSON フィールドは、宛先の JSON カラムに割り当てることができます。
+
+fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型に手動で変更する必要があることに注意してください。
+
+<div id="avro">
+  ### Avro
+</div>
+
+<div id="supported-avro-data-types">
+  #### サポートされる Avro データ型
+</div>
+
+ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。
+また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
+
+<div id="nullable-types-and-avro-unions">
+  #### Nullable 型と Avro ユニオン
+</div>
+
+Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` または `(null, T)` のユニオン スキーマを使って定義されます。スキーマ推論時には、このようなユニオンは ClickHouse の `Nullable` カラムにマッピングされます。なお、ClickHouse は
+`Nullable(Array)`、`Nullable(Map)`、`Nullable(Tuple)` 型をサポートしていません。これらの型に対する Avro の null ユニオンは、非 Nullable 型にマッピングされます (Avro の Record 型は ClickHouse の named Tuple にマッピングされます) 。これらの型における Avro の `null` は、次のように挿入されます。
+
+* null の Avro array の場合は空の Array
+* null の Avro Map の場合は空の Map
+* null の Avro Record の場合は、すべてのフィールドがデフォルト値またはゼロ値の named Tuple
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+<div id="supported-protobuf-data-types">
+  #### サポートされている Protobuf データ型
+</div>
+
+ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を除き、Protobuf 2 および 3 のすべての型をサポートしています。基本的な型変換には、以下のマッピングが使用されます。
+
+<Note>
+  すべての基本型で、`Array`、`Map`、`Nullable` の各バリアントもサポートされています。
+</Note>
+
+| Protobuf type                 | ClickHouse type |
+| ----------------------------- | --------------- |
+| `bool`                        | `UInt8`         |
+| `float`                       | `Float32`       |
+| `double`                      | `Float64`       |
+| `int32`, `sint32`, `sfixed32` | `Int32`         |
+| `int64`, `sint64`, `sfixed64` | `Int64`         |
+| `uint32`, `fixed32`           | `UInt32`        |
+| `uint64`, `fixed64`           | `UInt64`        |
+| `string`, `bytes`             | `String`        |
+| `enum`                        | `Enum`          |
+| `repeated T`                  | `Array(T)`      |
+| `message`                     | `Tuple`         |
+
+<Tip>
+  数値型では、オーバーフローや精度低下を避けるため、厳密に対応する型を使用することを推奨します。
+</Tip>
+
+次の [既知の型](https://protobuf.dev/reference/protobuf/google.protobuf/) もサポートされています。
+
+| Well-known type                                                                              | ClickHouse type          |
+| -------------------------------------------------------------------------------------------- | ------------------------ |
+| `google.protobuf.Timestamp`                                                                  | `DateTime`, `DateTime64` |
+| `google.protobuf.Duration`                                                                   | `Time`, `Time64`         |
+| `google.protobuf.StringValue`, `google.protobuf.BytesValue`                                  | `Nullable(String)`       |
+| `google.protobuf.Int32Value`, `google.protobuf.SInt32Value`, `google.protobuf.SFixed32Value` | `Nullable(Int32)`        |
+| `google.protobuf.Int64Value`, `google.protobuf.SInt64Value`, `google.protobuf.SFixed64Value` | `Nullable(Int64)`        |
+| `google.protobuf.UInt32Value`, `google.protobuf.Fixed32Value`                                | `Nullable(UInt32)`       |
+| `google.protobuf.UInt64Value`, `google.protobuf.Fixed64Value`                                | `Nullable(UInt64)`       |
+| `google.protobuf.FloatValue`                                                                 | `Nullable(Float32)`      |
+| `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
+| `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
+
+<div id="protobuf-one-ofs">
+  #### Protobuf `oneof`
+</div>
+
+スキーマ推論では、Protobuf の `oneof` フィールドはデフォルトで名前付き `Tuple` にマッピングされ、非デフォルト値を持つフィールドは最大でも 1 つだけです。これらのフィールドは、設定されている構成フィールドの型をアクティブな値が取る `Variant` カラムに自動的にマッピングすることもできます。あるいは、各構成フィールドをそれぞれ個別の ClickHouse カラムに手動でマッピングすることもできます。`oneof` フィールドは相互排他的であるため、各レコードで値が入るカラムは 1 つだけです。
+
+<div id="protobuf-message-lists">
+  #### メッセージのリスト
+</div>
+
+ClickPipe 用に定義された最上位の Protobuf スキーマに、それ自体が protobuf の Message である単一の `repeated` フィールドが含まれている場合、スキーマ推論とカラムマッピングは、その「内包された」Message フィールドに基づいて行われます。Kafka メッセージはそのようなメッセージのリストとして処理され、1 つの Kafka メッセージが複数の ClickHouse の行に展開されます。
+
+<div id="kafka-virtual-columns">
+  ## Kafka 仮想カラム
+</div>
+
+以下の仮想カラムは、Kafka 互換のストリーミングデータソースでサポートされています。新しい宛先を作成する際は、`Add Column` ボタンを使用して仮想カラムをターゲットテーブルに追加できます。
+
+| 名前               | 説明                     | 推奨データ型          |
+| ---------------- | ---------------------- | --------------- |
+| `_key`           | Kafka メッセージキー          | `String`        |
+| `_timestamp`     | Kafka タイムスタンプ (ミリ秒精度)  | `DateTime64(3)` |
+| `_partition`     | Kafka パーティション          | `Int32`         |
+| `_offset`        | Kafka オフセット            | `Int64`         |
+| `_topic`         | Kafka トピック             | `String`        |
+| `_header_keys`   | レコードヘッダー内のキーの並列配列      | `Array(String)` |
+| `_header_values` | レコードヘッダー内の値の並列配列       | `Array(String)` |
+| `_raw_message`   | Kafka メッセージ全体          | `String`        |
+
+`_raw_message` カラムは、JSON データに対してのみ推奨される点に注意してください。
+JSON 文字列だけが必要なユースケースでは (たとえば、ClickHouse の [`JsonExtract*`](/ja/reference/functions/regular-functions/json-functions#jsonextract-functions) 関数を使用して
+下流の materialized view にデータを投入する場合) 、「仮想ではない」カラムをすべて削除することで ClickPipes のパフォーマンスが向上することがあります。

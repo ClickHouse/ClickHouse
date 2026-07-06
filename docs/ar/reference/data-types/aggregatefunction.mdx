@@ -1,0 +1,122 @@
+---
+description: 'توثيق نوع البيانات AggregateFunction في ClickHouse، الذي
+يخزّن الحالات الوسيطة للدوال التجميعية'
+keywords: ['AggregateFunction', 'النوع']
+sidebarTitle: 'AggregateFunction'
+slug: /sql-reference/data-types/aggregatefunction
+title: 'نوع AggregateFunction'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+تتضمّن جميع [الدوال التجميعية](/ar/reference/functions/aggregate-functions/index) في ClickHouse
+حالةً وسيطة خاصة بالتنفيذ يمكن إجراء تسلسل لها إلى
+نوع البيانات `AggregateFunction` وتخزينها في جدول. وعادةً ما يتم ذلك
+باستخدام [العرض المادي](/ar/reference/statements/create/view).
+
+يوجد مُعدِّلان من [مُعدِّلات الدوال التجميعية](/ar/reference/functions/aggregate-functions/combinators)
+يُستخدمان عادةً مع النوع `AggregateFunction`:
+
+* مُعدِّل الدالة التجميعية [`-State`](/ar/reference/functions/aggregate-functions/combinators#-state)، الذي عند إلحاقه باسم
+  دالة تجميعية، يُنتج الحالات الوسيطة من `AggregateFunction`.
+* مُعدِّل الدالة التجميعية [`-Merge`](/ar/reference/functions/aggregate-functions/combinators#-merge)،
+  الذي يُستخدم للحصول على النتيجة النهائية لعملية التجميع
+  من الحالات الوسيطة.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+AggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**المعلمات**
+
+* `aggregate_function_name` - اسم دالة تجميعية. إذا كانت الدالة
+  ذات معاملات، فيجب تحديد معاملاتها أيضًا.
+* `types_of_arguments` - أنواع وسائط الدالة التجميعية.
+
+على سبيل المثال:
+
+```sql
+CREATE TABLE t
+(
+    column1 AggregateFunction(uniq, UInt64),
+    column2 AggregateFunction(anyIf, String, UInt8),
+    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
+) ENGINE = ...
+```
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+<div id="data-insertion">
+  ### إدراج البيانات
+</div>
+
+لإدراج البيانات في جدول يحتوي على أعمدة من النوع `AggregateFunction`، يمكنك
+استخدام `INSERT SELECT` مع الدوال التجميعية ومُعدِّل
+الدوال التجميعية [`-State`](/ar/reference/functions/aggregate-functions/combinators#-state).
+
+على سبيل المثال، للإدراج في أعمدة من النوع `AggregateFunction(uniq, UInt64)` و
+`AggregateFunction(quantiles(0.5, 0.9), UInt64)`، ستستخدم
+الدوال التجميعية التالية مع المُعدِّلات.
+
+```sql
+uniqState(UserID)
+quantilesState(0.5, 0.9)(SendTiming)
+```
+
+على عكس الدالتين `uniq` و`quantiles`، فإن `uniqState` و`quantilesState`
+(مع إلحاق المُعدِّل `-State`) تُرجعان الحالة بدلًا من القيمة النهائية.
+وبعبارة أخرى، تُرجعان قيمة من النوع `AggregateFunction`.
+
+في نتائج استعلام `SELECT`، يكون للقيم من النوع `AggregateFunction`
+تمثيلات ثنائية خاصة بالتنفيذ في جميع تنسيقات الإخراج في ClickHouse.
+
+يوجد إعداد خاص على مستوى الجلسة باسم `aggregate_function_input_format` يتيح إنشاء الحالة من قيم الإدخال.
+وهو يدعم التنسيقات التالية:
+
+* `state` - سلسلة ثنائية تحتوي على الحالة المُسلسلة (وهو التنسيق الافتراضي).
+  إذا فرّغت البيانات، على سبيل المثال، إلى تنسيق `TabSeparated` باستخدام استعلام `SELECT`،
+  فيمكن تحميل هذا التفريغ مرة أخرى باستخدام استعلام `INSERT`.
+* `value` - سيتوقع التنسيق قيمة واحدة لوسيطة الدالة التجميعية، أو في حال وجود عدة وسيطات، `Tuple` منها؛ وسيُفك تسلسلها لتكوين الحالة المناسبة
+* `array` - سيتوقع التنسيق `Array` من القيم، كما هو موضح في خيار `value` أعلاه؛ وستُجمَّع جميع عناصر المصفوفة لتكوين الحالة
+
+<div id="data-selection">
+  ### اختيار البيانات
+</div>
+
+عند اختيار البيانات من جدول `AggregatingMergeTree`، استخدم عبارة `GROUP BY`
+ونفس دوال التجميع التي استخدمتها عند إدخال البيانات، ولكن استخدم
+المُعدِّل [`-Merge`](/ar/reference/functions/aggregate-functions/combinators#-merge).
+
+تأخذ دالة التجميع المُلحَق بها المُعدِّل `-Merge` مجموعةً من
+حالات التجميع، وتدمجها، ثم تُرجع نتيجة تجميع البيانات بالكامل.
+
+على سبيل المثال، يُرجع الاستعلامان التاليان النتيجة نفسها:
+
+```sql
+SELECT uniq(UserID) FROM table
+
+SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
+```
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+راجع وصف محرك [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* مدونة: [استخدام مُعدِّلات التجميع في ClickHouse للمصفوفات والخرائط والحالات](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+* المُعدِّل [MergeState](/ar/reference/functions/aggregate-functions/combinators#-mergestate).
+* المُعدِّل [State](/ar/reference/functions/aggregate-functions/combinators#-state).
