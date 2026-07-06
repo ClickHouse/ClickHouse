@@ -229,13 +229,13 @@ private:
     {
         auto & c = CurrentThread::getProfileEvents();
         return {
-            c[ProfileEvents::ReaderExecutorSourceRequests].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorIncompleteConnections].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorOverReadBytes].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorCachePopulateRequests].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorCacheGetRequests].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed),
-            c[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed),
+            c[ProfileEvents::ReaderExecutorSourceRequests],
+            c[ProfileEvents::ReaderExecutorIncompleteConnections],
+            c[ProfileEvents::ReaderExecutorOverReadBytes],
+            c[ProfileEvents::ReaderExecutorCachePopulateRequests],
+            c[ProfileEvents::ReaderExecutorCacheGetRequests],
+            c[ProfileEvents::ReaderExecutorBytesFromSource],
+            c[ProfileEvents::ReaderExecutorRequestedBytes],
         };
     }
 

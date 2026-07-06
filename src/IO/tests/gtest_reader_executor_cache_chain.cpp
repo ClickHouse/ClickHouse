@@ -91,17 +91,17 @@ namespace
 /// on this thread.
 size_t sourceRequestsSoFar()
 {
-    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorSourceRequests].load(std::memory_order_relaxed);
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorSourceRequests];
 }
 
 size_t promotedBytesSoFar()
 {
-    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesPromoted].load(std::memory_order_relaxed);
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesPromoted];
 }
 
 size_t bytesFromSourceSoFar()
 {
-    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+    return CurrentThread::getProfileEvents()[ProfileEvents::ReaderExecutorBytesFromSource];
 }
 
 /// In-memory source reader. `open` materializes the requested object into a
@@ -1000,8 +1000,8 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     }
 
     auto & counters = CurrentThread::getProfileEvents();
-    const auto hit_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
-    const auto miss_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+    const auto hit_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
+    const auto miss_before = counters[ProfileEvents::ReaderExecutorBytesFromSource];
     const size_t src_before = sourceRequestsSoFar();
 
     /// Executor #2: read the whole file. Prefix from fs, tail from source.
@@ -1015,8 +1015,8 @@ TEST_F(ReaderExecutorCacheChain, PartialFsHitTailFromSource)
     }
     EXPECT_GT(sourceRequestsSoFar() - src_before, 0u) << "the tail must be fetched from source";
 
-    const auto hit_delta = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - hit_before;
-    const auto miss_delta = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - miss_before;
+    const auto hit_delta = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - hit_before;
+    const auto miss_delta = counters[ProfileEvents::ReaderExecutorBytesFromSource] - miss_before;
 
     /// The cache is the buffer, so every delivered byte is read out of a cell and counts as a
     /// filesystem-cache read: the warmed prefix (a hit) AND the tail (fetched from the source, then
@@ -1062,9 +1062,9 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
     }
 
     auto & counters = CurrentThread::getProfileEvents();
-    const auto page_before = counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed);
-    const auto fs_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed);
-    const auto src_before = counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed);
+    const auto page_before = counters[ProfileEvents::ReaderExecutorBytesFromPageCache];
+    const auto fs_before = counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
+    const auto src_before = counters[ProfileEvents::ReaderExecutorBytesFromSource];
     const size_t src_req_before = sourceRequestsSoFar();
 
     /// Warm read: the page cache serves the whole file.
@@ -1079,11 +1079,11 @@ TEST_F(ReaderExecutorCacheChain, PageCacheHitAttributedToPageTier)
 
     EXPECT_EQ(sourceRequestsSoFar(), src_req_before)
         << "the warm read must be served entirely from the page cache";
-    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromPageCache].load(std::memory_order_relaxed) - page_before, file_size)
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromPageCache] - page_before, file_size)
         << "the warm read must be attributed to the page-cache tier";
-    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load(std::memory_order_relaxed) - fs_before, 0u)
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - fs_before, 0u)
         << "no filesystem cache is in the chain";
-    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromSource].load(std::memory_order_relaxed) - src_before, 0u)
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesFromSource] - src_before, 0u)
         << "the source must not be touched on a page hit";
 }
 
@@ -1109,7 +1109,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
     caches.push_back(page_provider);
 
     auto & counters = CurrentThread::getProfileEvents();
-    const auto pushed_before = counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
+    const auto pushed_before = counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync];
 
     /// Cold read in bypass mode: serves the file from the source, populates nothing.
     const size_t src_before_cold = sourceRequestsSoFar();
@@ -1122,7 +1122,7 @@ TEST_F(ReaderExecutorCacheChain, PageCacheBypassModeDoesNotPopulate)
         EXPECT_EQ(drainAll(executor), content);
     }
     EXPECT_GT(sourceRequestsSoFar() - src_before_cold, 0u) << "a cold bypass read hits the source";
-    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - pushed_before, 0u)
+    EXPECT_EQ(counters[ProfileEvents::ReaderExecutorBytesPushedToCacheSync] - pushed_before, 0u)
         << "bypass mode must not push (or count) any bytes to the cache";
 
     /// A second reader on the same provider still misses - bypass populated nothing.

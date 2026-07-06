@@ -3448,7 +3448,7 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
 
     /// No prefetch pool: every populate runs on the foreground path.
     {
-        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
+        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync];
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
             ReaderExecutor::Options executor_options;
@@ -3456,14 +3456,14 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
             ReaderExecutor executor(source, objects, {cache}, executor_options);
             while (!executor.readNextWindow().empty()) {}
         }
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before, file_size)
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync] - sync_before, file_size)
             << "without a prefetch pool every populate is synchronous";
     }
 
     /// With a prefetch pool the worker fetches the gap bytes, but the collect writes
     /// them INLINE on the read thread - so the populate is synchronous too.
     {
-        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed);
+        const auto sync_before = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync];
         {
             auto cache = std::make_shared<MockCacheProvider>(window);
             auto pool = std::make_shared<SyncPrefetchPool>();
@@ -3473,7 +3473,7 @@ TEST(ReaderExecutor, PopulatesInlineWithOrWithoutPool)
             ReaderExecutor executor(source, objects, {cache}, executor_options);
             while (!executor.readNextWindow().empty()) {}
         }
-        const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync].load(std::memory_order_relaxed) - sync_before;
+        const auto sync_delta = pe[ProfileEvents::ReaderExecutorBytesPushedToCacheSync] - sync_before;
         EXPECT_EQ(sync_delta, file_size) << "the prefetch-collect fill writes inline on the read thread";
     }
 }
@@ -4545,10 +4545,10 @@ void validateScheduleMatchesReality(
 
     TestThreadGroup tg;  /// per-call ProfileEvents context for the KPI deltas
     auto & pe = CurrentThread::getProfileEvents();
-    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
-    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load();
-    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load();
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
+    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache];
+    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor executor(src, objects, std::move(caches), opts);
 
@@ -4584,11 +4584,11 @@ void validateScheduleMatchesReality(
     if (min_bytes_for_seek == 0)
     {
         const auto k = predictKpi(sched);
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";
-        EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load() - page0)
-                + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load() - fs0),
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, k.from_source) << "R";
+        EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache] - page0)
+                + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - fs0),
             k.served_from_cache) << "served from cache";
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, k.over_read) << "over-read";
+        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, k.over_read) << "over-read";
     }
 }
 
@@ -4909,10 +4909,10 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
 
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
-    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
-    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load();
-    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load();
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
+    const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache];
+    const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2;
@@ -4936,11 +4936,11 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, 0);
     auto k = predictKpi(sched);
 
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, k.from_source) << "R";
-    EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache].load() - page0)
-            + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache].load() - fs0),
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, k.from_source) << "R";
+    EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache] - page0)
+            + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - fs0),
         k.served_from_cache) << "served from cache";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, k.over_read) << "over-read";
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, k.over_read) << "over-read";
 }
 
 /// An embedded upper-tier hit inside a lower-tier segment is sourced from the
@@ -4961,8 +4961,8 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
 
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
-    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
@@ -4975,9 +4975,9 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     executor.seek(0);  // reap any deferred fills
 
     /// Only the true gaps reach the source; the embedded hit is NOT over-read.
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 448u * 1024u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 448u * 1024u)
         << "only the gaps [0,192K)+[256K,512K) are fetched";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
         << "the embedded hit is sourced from the upper serve, not over-read";
     /// The slow segment still completes (filled across the embedded hit).
     EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
@@ -5003,8 +5003,8 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
 
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
-    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
@@ -5018,9 +5018,9 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
 
     /// The hit (128K >= min_bytes_for_seek) is NOT bridged: only the two gaps reach
     /// the source, and the hit is never over-read.
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 384u * 1024u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 384u * 1024u)
         << "only the gaps [0,128K)+[256K,512K) are fetched; the wide hit reopens, not bridges";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
         << "the embedded hit is sourced from the upper serve, not over-read";
     /// The slow segment still completes (filled down across the embedded hit).
     EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
@@ -5045,8 +5045,8 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
 
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
-    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource].load();
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes].load();
+    const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
+    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;
@@ -5058,9 +5058,9 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     while (!executor.readNextWindow().empty()) {}
     executor.seek(0);  // reap deferred fills
 
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource].load() - src0, 0u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 0u)
         << "fully upper-resident request: no remote fetch";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes].load() - over0, 0u)
+    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
         << "no over-read at all";
     /// The slower tier is NOT written down from the fully-covering upper hit
     /// today (no gap -> no fetch -> no assemble-push); a page->fs write-down is
