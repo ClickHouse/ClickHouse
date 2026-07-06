@@ -1,0 +1,817 @@
+---
+description: "Page de présentation des fonctions de fenêtre"
+sidebarTitle: "Fonctions de fenêtre"
+slug: /sql-reference/window-functions/
+title: "Fonctions de fenêtre"
+doc_type: "reference"
+---
+
+Les fonctions de fenêtre vous permettent d’effectuer des calculs sur un ensemble de lignes liées à la ligne en cours.
+Elles peuvent être utilisées pour effectuer des calculs similaires à ceux réalisés avec des fonctions d’agrégation, mais s’en distinguent par le fait qu’une fonction de fenêtre ne regroupe pas les lignes en une seule sortie ; au contraire, les lignes individuelles sont toujours renvoyées.
+
+<div id="standard-window-functions">
+  ## Fonctions de fenêtre standard
+</div>
+
+ClickHouse prend en charge la syntaxe SQL standard pour les fenêtres et les fonctions de fenêtre.
+Le tableau ci-dessous indique les fonctionnalités actuellement prises en charge :
+
+| Fonctionnalité                                                                            | Pris en charge ? | Commentaire                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spécification de fenêtre ad hoc (`count(*) OVER (PARTITION BY id ORDER BY time DESC)`)    | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Expressions faisant intervenir des fonctions de fenêtre, par ex. `(count(*) OVER ()) / 2` | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Clause `WINDOW` (`SELECT ... FROM table WINDOW w AS (PARTITION BY id)`)                   | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Cadre `ROWS`                                                                              | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Cadre `RANGE`                                                                             | ✅                | Utilisé par défaut lorsqu’un cadre n’est pas explicitement spécifié (`RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`).                                                                                                                                                                                                                                                                                                                             |
+| Syntaxe `INTERVAL` pour un cadre `RANGE OFFSET` de type `DateTime`                        | ❌                | Indiquez plutôt le nombre de secondes (`RANGE` fonctionne avec n’importe quel type numérique).                                                                                                                                                                                                                                                                                                                                                         |
+| Cadre `GROUPS`                                                                            | ❌                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Calcul de fonctions d’agrégation sur un cadre (`sum(value) OVER (ORDER BY time)`)         | ✅                | Toutes les fonctions d’agrégation sont prises en charge.                                                                                                                                                                                                                                                                                                                                                                                               |
+| `rank()`, `dense_rank()`/`denseRank()`, `row_number()`                                    | ✅                |                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `percent_rank()`/`percentRank()`                                                          | ✅                | Calcule efficacement le rang relatif d’une valeur au sein d’une partition. Remplace le calcul SQL manuel, plus verbeux et plus coûteux en calcul, exprimé par `ifNull((rank() OVER (PARTITION BY x ORDER BY y) - 1) / nullif(count(1) OVER (PARTITION BY x) - 1, 0), 0)`.                                                                                                                                                                              |
+| `cume_dist()`                                                                             | ✅                | Calcule la distribution cumulée d’une valeur au sein d’un groupe de valeurs. Renvoye le pourcentage de lignes dont les valeurs sont inférieures ou égales à celle de la ligne en cours.                                                                                                                                                                                                                                                                |
+| `lag/lead(value, offset)`                                                                 | ✅                | Vous pouvez également utiliser l’une des solutions de contournement suivantes :<br /> 1) `any(value) OVER (... ROWS BETWEEN <offset> PRECEDING AND <offset> PRECEDING)`, ou `FOLLOWING` à la place de `PRECEDING` pour `lead` <br /> 2) `lagInFrame/leadInFrame`, qui sont analogues mais respectent le cadre de la fenêtre. Pour obtenir un comportement identique à `lag/lead`, utilisez `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`. |
+| `ntile(buckets)`                                                                          | ✅                | Spécifiez la fenêtre, par exemple, ainsi : `(PARTITION BY x ORDER BY y ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)`.                                                                                                                                                                                                                                                                                                                     |
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```text
+aggregate_function (column_name)
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column] 
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name as ([
+  [PARTITION BY grouping_column]
+  [ORDER BY sorting_column]
+  [ROWS or RANGE expression_to_bound_rows_within_the_group]
+])
+```
+
+* `PARTITION BY` - définit comment découper un jeu de résultats en groupes.
+* `ORDER BY` - définit comment ordonner les lignes à l’intérieur du groupe pendant le calcul de aggregate&#95;function.
+* `ROWS or RANGE` - définit les bornes d’un cadre, aggregate&#95;function étant calculée dans ce cadre.
+* `WINDOW` - permet à plusieurs expressions d’utiliser la même définition de fenêtre.
+
+```text
+      PARTITION
+┌─────────────────┐  <-- UNBOUNDED PRECEDING (BEGINNING of the PARTITION)
+│                 │
+│                 │
+│=================│  <-- N PRECEDING  <─┐
+│      N ROWS     │                     │  F
+│  Before CURRENT │                     │  R
+│~~~~~~~~~~~~~~~~~│  <-- CURRENT ROW    │  A
+│     M ROWS      │                     │  M
+│   After CURRENT │                     │  E
+│=================│  <-- M FOLLOWING  <─┘
+│                 │
+│                 │
+└─────────────────┘  <--- UNBOUNDED FOLLOWING (END of the PARTITION)
+```
+
+<div id="functions">
+  ## Fonctions utilisables uniquement comme fonctions de fenêtre
+</div>
+
+Les fonctions suivantes ne peuvent être utilisées que comme fonctions de fenêtre. La plupart sont des fonctions SQL standard ; `lagInFrame`, `leadInFrame` et `nonNegativeDerivative` sont des extensions de ClickHouse.
+
+| Fonction                                                                                                                                    | Description                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| [`row_number()`](/fr/reference/functions/window-functions/row_number)                                                                          | Numérote la ligne actuelle dans sa partition à partir de 1.                                                                   |
+| [`first_value(x)`](/fr/reference/functions/window-functions/first_value)                                                                       | Renvoie la première valeur évaluée dans son cadre ordonné.                                                                    |
+| [`last_value(x)`](/fr/reference/functions/window-functions/last_value)                                                                         | Renvoie la dernière valeur évaluée dans son cadre ordonné.                                                                    |
+| [`nth_value(x, offset)`](/fr/reference/functions/window-functions/nth_value)                                                                   | Renvoie la première valeur non-NULL évaluée sur la n-ième ligne (`offset`) de son cadre ordonné.                              |
+| [`rank()`](/fr/reference/functions/window-functions/rank)                                                                                      | Attribue un rang à la ligne actuelle dans sa partition avec des écarts.                                                       |
+| [`dense_rank()`](/fr/reference/functions/window-functions/dense_rank)                                                                          | Attribue un rang à la ligne actuelle dans sa partition sans écarts.                                                           |
+| [`lagInFrame(x)`](/fr/reference/functions/window-functions/lagInFrame)                                                                         | Renvoie une valeur évaluée sur la ligne située à un décalage physique spécifié avant la ligne actuelle dans le cadre ordonné. |
+| [`leadInFrame(x)`](/fr/reference/functions/window-functions/leadInFrame)                                                                       | Renvoie une valeur évaluée sur la ligne située au nombre de lignes indiqué après la ligne actuelle dans le cadre ordonné.     |
+| [`nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])`](/fr/reference/functions/window-functions/nonNegativeDerivative) | Calcule la dérivée non négative de `metric_column` par rapport à `timestamp_column`. Spécifique à ClickHouse.                 |
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Voyons quelques exemples d’utilisation des fonctions de fenêtre.
+
+<div id="numbering-rows">
+  ### Numérotation des lignes
+</div>
+
+```sql
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M');
+```
+
+```sql
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─row─┐
+│ Michael Stanley │ 150000 │   1 │
+│ Scott Harrison  │ 150000 │   2 │
+│ Charles Juarez  │ 190000 │   3 │
+│ Gary Chen       │ 195000 │   4 │
+│ Robert George   │ 195000 │   5 │
+└─────────────────┴────────┴─────┘
+```
+
+```sql
+SELECT
+    player,
+    salary,
+    row_number() OVER (ORDER BY salary ASC) AS row,
+    rank() OVER (ORDER BY salary ASC) AS rank,
+    dense_rank() OVER (ORDER BY salary ASC) AS denseRank
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─row─┬─rank─┬─denseRank─┐
+│ Michael Stanley │ 150000 │   1 │    1 │         1 │
+│ Scott Harrison  │ 150000 │   2 │    1 │         1 │
+│ Charles Juarez  │ 190000 │   3 │    3 │         2 │
+│ Gary Chen       │ 195000 │   4 │    4 │         3 │
+│ Robert George   │ 195000 │   5 │    4 │         3 │
+└─────────────────┴────────┴─────┴──────┴───────────┘
+```
+
+<div id="aggregation-functions">
+  ### Fonctions d’agrégation
+</div>
+
+Comparez le salaire de chaque joueur à la moyenne de son équipe.
+
+```sql
+SELECT
+    player,
+    salary,
+    team,
+    avg(salary) OVER (PARTITION BY team) AS teamAvg,
+    salary - teamAvg AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamAvg─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  170000 │  20000 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  170000 │ -20000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  180000 │ -30000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  180000 │  15000 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
+```
+
+Comparez le salaire de chaque joueur au salaire le plus élevé de son équipe.
+
+```sql
+SELECT
+    player,
+    salary,
+    team,
+    max(salary) OVER (PARTITION BY team) AS teamMax,
+    salary - teamMax AS diff
+FROM salaries;
+```
+
+```text
+┌─player──────────┬─salary─┬─team──────────────────────┬─teamMax─┬───diff─┐
+│ Charles Juarez  │ 190000 │ New Coreystad Archdukes   │  190000 │      0 │
+│ Scott Harrison  │ 150000 │ New Coreystad Archdukes   │  190000 │ -40000 │
+│ Gary Chen       │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+│ Michael Stanley │ 150000 │ Port Elizabeth Barbarians │  195000 │ -45000 │
+│ Robert George   │ 195000 │ Port Elizabeth Barbarians │  195000 │      0 │
+└─────────────────┴────────┴───────────────────────────┴─────────┴────────┘
+```
+
+<div id="partitioning-by-column">
+  ### Partitionnement par colonne
+</div>
+
+```sql
+CREATE TABLE wf_partition
+(
+    `part_key` UInt64,
+    `value` UInt64,
+    `order` UInt64    
+)
+ENGINE = Memory;
+
+INSERT INTO wf_partition FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (2,0,0), (3,0,0);
+
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values
+FROM wf_partition
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3]      │   <┐   
+│        1 │     2 │     2 │ [1,2,3]      │    │  1-st group
+│        1 │     3 │     3 │ [1,2,3]      │   <┘ 
+│        2 │     0 │     0 │ [0]          │   <- 2-nd group
+│        3 │     0 │     0 │ [0]          │   <- 3-d group
+└──────────┴───────┴───────┴──────────────┘
+```
+
+<div id="frame-bounding">
+  ### Délimitation de la fenêtre
+</div>
+
+```sql
+CREATE TABLE wf_frame
+(
+    `part_key` UInt64,
+    `value` UInt64,
+    `order` UInt64
+)
+ENGINE = Memory;
+
+INSERT INTO wf_frame FORMAT Values
+   (1,1,1), (1,2,2), (1,3,3), (1,4,4), (1,5,5);
+```
+
+```sql
+-- Frame is bounded by bounds of a partition (BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+    
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- short form - no bound expression, no order by,
+-- an equalent of `ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key
+         ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     4 │     4 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
+```
+
+```sql
+-- frame is bounded by the beginning of a partition and the current row
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- short form (frame is bounded by the beginning of a partition and the current row)
+-- an equalent of `ORDER BY order ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW`
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC) AS frame_values_short,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order ASC
+       ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values_short─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]                │ [1]          │
+│        1 │     2 │     2 │ [1,2]              │ [1,2]        │
+│        1 │     3 │     3 │ [1,2,3]            │ [1,2,3]      │
+│        1 │     4 │     4 │ [1,2,3,4]          │ [1,2,3,4]    │
+│        1 │     5 │     5 │ [1,2,3,4,5]        │ [1,2,3,4,5]  │
+└──────────┴───────┴───────┴────────────────────┴──────────────┘
+```
+
+```sql
+-- frame is bounded by the beginning of a partition and the current row, but order is backward
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (PARTITION BY part_key ORDER BY order DESC) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │
+│        1 │     2 │     2 │ [5,4,3,2]    │
+│        1 │     3 │     3 │ [5,4,3]      │
+│        1 │     4 │     4 │ [5,4]        │
+│        1 │     5 │     5 │ [5]          │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- sliding frame - 1 PRECEDING ROW AND CURRENT ROW
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1]          │
+│        1 │     2 │     2 │ [1,2]        │
+│        1 │     3 │     3 │ [2,3]        │
+│        1 │     4 │     4 │ [3,4]        │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- sliding frame - ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING 
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER (
+        PARTITION BY part_key 
+        ORDER BY order ASC
+        ROWS BETWEEN 1 PRECEDING AND UNBOUNDED FOLLOWING
+    ) AS frame_values
+FROM wf_frame
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┐
+│        1 │     1 │     1 │ [1,2,3,4,5]  │
+│        1 │     2 │     2 │ [1,2,3,4,5]  │
+│        1 │     3 │     3 │ [2,3,4,5]    │
+│        1 │     4 │     4 │ [3,4,5]      │
+│        1 │     5 │     5 │ [4,5]        │
+└──────────┴───────┴───────┴──────────────┘
+```
+
+```sql
+-- row_number does not respect the frame, so rn_1 = rn_2 = rn_3 != rn_4
+SELECT
+    part_key,
+    value,
+    order,
+    groupArray(value) OVER w1 AS frame_values,
+    row_number() OVER w1 AS rn_1,
+    sum(1) OVER w1 AS rn_2,
+    row_number() OVER w2 AS rn_3,
+    sum(1) OVER w2 AS rn_4
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order DESC),
+    w2 AS (
+        PARTITION BY part_key 
+        ORDER BY order DESC 
+        ROWS BETWEEN 1 PRECEDING AND CURRENT ROW
+    )
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─part_key─┬─value─┬─order─┬─frame_values─┬─rn_1─┬─rn_2─┬─rn_3─┬─rn_4─┐
+│        1 │     1 │     1 │ [5,4,3,2,1]  │    5 │    5 │    5 │    2 │
+│        1 │     2 │     2 │ [5,4,3,2]    │    4 │    4 │    4 │    2 │
+│        1 │     3 │     3 │ [5,4,3]      │    3 │    3 │    3 │    2 │
+│        1 │     4 │     4 │ [5,4]        │    2 │    2 │    2 │    2 │
+│        1 │     5 │     5 │ [5]          │    1 │    1 │    1 │    1 │
+└──────────┴───────┴───────┴──────────────┴──────┴──────┴──────┴──────┘
+```
+
+```sql
+-- first_value and last_value respect the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    first_value(value) OVER w1 AS first_value_1,
+    last_value(value) OVER w1 AS last_value_1,
+    groupArray(value) OVER w2 AS frame_values_2,
+    first_value(value) OVER w2 AS first_value_2,
+    last_value(value) OVER w2 AS last_value_2
+FROM wf_frame
+WINDOW
+    w1 AS (PARTITION BY part_key ORDER BY order ASC),
+    w2 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─first_value_1─┬─last_value_1─┬─frame_values_2─┬─first_value_2─┬─last_value_2─┐
+│ [1]            │             1 │            1 │ [1]            │             1 │            1 │
+│ [1,2]          │             1 │            2 │ [1,2]          │             1 │            2 │
+│ [1,2,3]        │             1 │            3 │ [2,3]          │             2 │            3 │
+│ [1,2,3,4]      │             1 │            4 │ [3,4]          │             3 │            4 │
+│ [1,2,3,4,5]    │             1 │            5 │ [4,5]          │             4 │            5 │
+└────────────────┴───────────────┴──────────────┴────────────────┴───────────────┴──────────────┘
+```
+
+```sql
+-- second value within the frame
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(value, 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │            0 │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
+```
+
+```sql
+-- second value within the frame + Null for missing values
+SELECT
+    groupArray(value) OVER w1 AS frame_values_1,
+    nth_value(toNullable(value), 2) OVER w1 AS second_value
+FROM wf_frame
+WINDOW w1 AS (PARTITION BY part_key ORDER BY order ASC ROWS BETWEEN 3 PRECEDING AND CURRENT ROW)
+ORDER BY
+    part_key ASC,
+    value ASC;
+
+┌─frame_values_1─┬─second_value─┐
+│ [1]            │         ᴺᵁᴸᴸ │
+│ [1,2]          │            2 │
+│ [1,2,3]        │            2 │
+│ [1,2,3,4]      │            2 │
+│ [2,3,4,5]      │            3 │
+└────────────────┴──────────────┘
+```
+
+<div id="real-world-examples">
+  ## Exemples concrets
+</div>
+
+Les exemples suivants permettent de résoudre des problèmes courants rencontrés en situation réelle.
+
+<div id="maximumtotal-salary-per-department">
+  ### Salaire maximal/total par service
+</div>
+
+```sql
+CREATE TABLE employees
+(
+    `department` String,
+    `employee_name` String,
+    `salary` Float
+)
+ENGINE = Memory;
+
+INSERT INTO employees FORMAT Values
+   ('Finance', 'Jonh', 200),
+   ('Finance', 'Joan', 210),
+   ('Finance', 'Jean', 505),
+   ('IT', 'Tim', 200),
+   ('IT', 'Anna', 300),
+   ('IT', 'Elen', 500);
+```
+
+```sql
+SELECT
+    department,
+    employee_name AS emp,
+    salary,
+    max_salary_per_dep,
+    total_salary_per_dep,
+    round((salary / total_salary_per_dep) * 100, 2) AS `share_per_dep(%)`
+FROM
+(
+    SELECT
+        department,
+        employee_name,
+        salary,
+        max(salary) OVER wndw AS max_salary_per_dep,
+        sum(salary) OVER wndw AS total_salary_per_dep
+    FROM employees
+    WINDOW wndw AS (
+        PARTITION BY department
+        ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+    )
+    ORDER BY
+        department ASC,
+        employee_name ASC
+);
+
+┌─department─┬─emp──┬─salary─┬─max_salary_per_dep─┬─total_salary_per_dep─┬─share_per_dep(%)─┐
+│ Finance    │ Jean │    505 │                505 │                  915 │            55.19 │
+│ Finance    │ Joan │    210 │                505 │                  915 │            22.95 │
+│ Finance    │ Jonh │    200 │                505 │                  915 │            21.86 │
+│ IT         │ Anna │    300 │                500 │                 1000 │               30 │
+│ IT         │ Elen │    500 │                500 │                 1000 │               50 │
+│ IT         │ Tim  │    200 │                500 │                 1000 │               20 │
+└────────────┴──────┴────────┴────────────────────┴──────────────────────┴──────────────────┘
+```
+
+<div id="cumulative-sum">
+  ### Somme cumulée
+</div>
+
+```sql
+CREATE TABLE warehouse
+(
+    `item` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory
+
+INSERT INTO warehouse VALUES
+    ('sku38', '2020-01-01', 9),
+    ('sku38', '2020-02-01', 1),
+    ('sku38', '2020-03-01', -4),
+    ('sku1', '2020-01-01', 1),
+    ('sku1', '2020-02-01', 1),
+    ('sku1', '2020-03-01', 1);
+```
+
+```sql
+SELECT
+    item,
+    ts,
+    value,
+    sum(value) OVER (PARTITION BY item ORDER BY ts ASC) AS stock_balance
+FROM warehouse
+ORDER BY
+    item ASC,
+    ts ASC;
+
+┌─item──┬──────────────────ts─┬─value─┬─stock_balance─┐
+│ sku1  │ 2020-01-01 00:00:00 │     1 │             1 │
+│ sku1  │ 2020-02-01 00:00:00 │     1 │             2 │
+│ sku1  │ 2020-03-01 00:00:00 │     1 │             3 │
+│ sku38 │ 2020-01-01 00:00:00 │     9 │             9 │
+│ sku38 │ 2020-02-01 00:00:00 │     1 │            10 │
+│ sku38 │ 2020-03-01 00:00:00 │    -4 │             6 │
+└───────┴─────────────────────┴───────┴───────────────┘
+```
+
+<div id="moving--sliding-average-per-3-rows">
+  ### Moyenne mobile / glissante (sur 3 lignes)
+</div>
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('cpu_temp', '2020-01-01 00:00:00', 87),
+                          ('cpu_temp', '2020-01-01 00:00:01', 77),
+                          ('cpu_temp', '2020-01-01 00:00:02', 93),
+                          ('cpu_temp', '2020-01-01 00:00:03', 87),
+                          ('cpu_temp', '2020-01-01 00:00:04', 87),
+                          ('cpu_temp', '2020-01-01 00:00:05', 87),
+                          ('cpu_temp', '2020-01-01 00:00:06', 87),
+                          ('cpu_temp', '2020-01-01 00:00:07', 87);
+```
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER (
+        PARTITION BY metric 
+        ORDER BY ts ASC 
+        ROWS BETWEEN 2 PRECEDING AND CURRENT ROW
+    ) AS moving_avg_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───┬──────────────────ts─┬─value─┬───moving_avg_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:01 │    77 │                82 │
+│ cpu_temp │ 2020-01-01 00:00:02 │    93 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:03 │    87 │ 85.66666666666667 │
+│ cpu_temp │ 2020-01-01 00:00:04 │    87 │                89 │
+│ cpu_temp │ 2020-01-01 00:00:05 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:06 │    87 │                87 │
+│ cpu_temp │ 2020-01-01 00:00:07 │    87 │                87 │
+└──────────┴─────────────────────┴───────┴───────────────────┘
+```
+
+<div id="moving--sliding-average-per-10-seconds">
+  ### Moyenne mobile / glissante (par tranches de 10 secondes)
+</div>
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    avg(value) OVER (PARTITION BY metric ORDER BY ts
+      RANGE BETWEEN 10 PRECEDING AND CURRENT ROW) AS moving_avg_10_seconds_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+    
+┌─metric───┬──────────────────ts─┬─value─┬─moving_avg_10_seconds_temp─┐
+│ cpu_temp │ 2020-01-01 00:00:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:01:10 │    77 │                         77 │
+│ cpu_temp │ 2020-01-01 00:02:20 │    93 │                         93 │
+│ cpu_temp │ 2020-01-01 00:03:30 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:04:40 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:05:50 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:06:00 │    87 │                         87 │
+│ cpu_temp │ 2020-01-01 00:07:10 │    87 │                         87 │
+└──────────┴─────────────────────┴───────┴────────────────────────────┘
+```
+
+<div id="moving--sliding-average-per-10-days">
+  ### Moyenne mobile / glissante (sur 10 jours)
+</div>
+
+La température est stockée avec une précision à la seconde, mais en utilisant `Range` et `ORDER BY toDate(ts)`, nous formons un frame de 10 unités, et comme `toDate(ts)` est utilisé, l’unité est le jour.
+
+```sql
+CREATE TABLE sensors
+(
+    `metric` String,
+    `ts` DateTime,
+    `value` Float
+)
+ENGINE = Memory;
+
+insert into sensors values('ambient_temp', '2020-01-01 00:00:00', 16),
+                          ('ambient_temp', '2020-01-01 12:00:00', 16),
+                          ('ambient_temp', '2020-01-02 11:00:00', 9),
+                          ('ambient_temp', '2020-01-02 12:00:00', 9),                          
+                          ('ambient_temp', '2020-02-01 10:00:00', 10),
+                          ('ambient_temp', '2020-02-01 12:00:00', 10),
+                          ('ambient_temp', '2020-02-10 12:00:00', 12),                          
+                          ('ambient_temp', '2020-02-10 13:00:00', 12),
+                          ('ambient_temp', '2020-02-20 12:00:01', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16),
+                          ('ambient_temp', '2020-03-01 12:00:00', 16);
+```
+
+```sql
+SELECT
+    metric,
+    ts,
+    value,
+    round(avg(value) OVER (PARTITION BY metric ORDER BY toDate(ts) 
+       RANGE BETWEEN 10 PRECEDING AND CURRENT ROW),2) AS moving_avg_10_days_temp
+FROM sensors
+ORDER BY
+    metric ASC,
+    ts ASC;
+
+┌─metric───────┬──────────────────ts─┬─value─┬─moving_avg_10_days_temp─┐
+│ ambient_temp │ 2020-01-01 00:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-01-02 11:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-01-02 12:00:00 │     9 │                    12.5 │
+│ ambient_temp │ 2020-02-01 10:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-01 12:00:00 │    10 │                      10 │
+│ ambient_temp │ 2020-02-10 12:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-10 13:00:00 │    12 │                      11 │
+│ ambient_temp │ 2020-02-20 12:00:01 │    16 │                   13.33 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+│ ambient_temp │ 2020-03-01 12:00:00 │    16 │                      16 │
+└──────────────┴─────────────────────┴───────┴─────────────────────────┘
+```
+
+<div id="references">
+  ## Références
+</div>
+
+<div id="github-issues">
+  ### Issues GitHub
+</div>
+
+La feuille de route concernant la prise en charge initiale des fonctions de fenêtre est décrite [dans cette issue](https://github.com/ClickHouse/ClickHouse/issues/18097).
+
+Toutes les issues GitHub liées aux fonctions de fenêtre portent le label [comp-window-functions](https://github.com/ClickHouse/ClickHouse/labels/comp-window-functions).
+
+<div id="tests">
+  ### Tests
+</div>
+
+Ces tests contiennent des exemples de la grammaire actuellement prise en charge :
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/window&#95;functions.xml
+
+https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0&#95;stateless/01591&#95;window&#95;functions.sql
+
+<div id="postgres-docs">
+  ### Documentation de Postgres
+</div>
+
+https://www.postgresql.org/docs/current/sql-select.html#SQL-WINDOW
+
+https://www.postgresql.org/docs/devel/sql-expressions.html#SYNTAX-WINDOW-FUNCTIONS
+
+https://www.postgresql.org/docs/devel/functions-window.html
+
+https://www.postgresql.org/docs/devel/tutorial-window.html
+
+<div id="mysql-docs">
+  ### Documentation de MySQL
+</div>
+
+https://dev.mysql.com/doc/refman/8.0/en/window-function-descriptions.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-usage.html
+
+https://dev.mysql.com/doc/refman/8.0/en/window-functions-frames.html
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Travailler avec des données de séries temporelles dans ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* Blog : [Fonctions de fenêtre et fonctions Array pour les séquences de commits Git](https://clickhouse.com/blog/clickhouse-window-array-functions-git-commits)
+* Blog : [Importer des données dans ClickHouse - Partie 3 - Utiliser S3](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)

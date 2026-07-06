@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'guia de segurança de BYOC'
+slug: /cloud/security/audit-logging/byoc-security-playbook
+title: 'guia de segurança de BYOC'
+description: 'Esta página ilustra métodos que os clientes podem usar para identificar possíveis eventos de segurança'
+doc_type: 'guide'
+keywords: ['byoc', 'segurança', 'guia', 'boas práticas', 'conformidade']
+---
+
+A ClickHouse opera o Bring Your Own Cloud (BYOC) sob um modelo de responsabilidade compartilhada pela segurança, que pode ser baixado em nosso Trust Center em https://trust.clickhouse.com. As informações a seguir são fornecidas aos clientes de BYOC como exemplos de como identificar possíveis eventos de segurança. Os clientes devem considerar essas informações no contexto de seu programa de segurança para determinar se detecções e alertas adicionais podem ser úteis.
+
+<div id="compromised-clickhouse-credentials">
+  ## Credenciais do ClickHouse potencialmente comprometidas
+</div>
+
+Consulte a documentação do [log de auditoria do banco de dados](/pt-BR/products/cloud/guides/security/audit-logging/database-audit-log) para acessar consultas que detectam ataques com credenciais e consultas para investigar atividades maliciosas.
+
+<div id="application-layer-dos-attack">
+  ## Ataque de negação de serviço na camada de aplicação
+</div>
+
+Há várias formas de realizar um ataque de Negação de Serviço (DoS). Se o ataque tiver como objetivo derrubar a instância do ClickHouse por meio de um payload específico, restaure o sistema para que volte a ficar em execução ou reinicie-o e restrinja o acesso para retomar o controle. Use a consulta a seguir para examinar o [system.crash&#95;log](/pt-BR/reference/system-tables/crash_log) e obter mais informações sobre o ataque.
+
+```sql
+SELECT * 
+FROM clusterAllReplicas('default',system.crash_log)
+```
+
+<div id="compromised-clickhouse-created-aws-roles">
+  ## Roles da AWS criados pelo ClickHouse comprometidos
+</div>
+
+O ClickHouse utiliza roles criados previamente para habilitar funções do sistema. Esta seção pressupõe que o cliente esteja usando AWS com CloudTrail e tenha acesso aos logs do CloudTrail.
+
+Se um incidente puder ser resultado de um role comprometido, revise as atividades no CloudTrail e no CloudWatch relacionadas aos IAM roles e às ações do ClickHouse. Consulte a stack do [CloudFormation](/pt-BR/products/bring-your-own-cloud/reference/privilege#aws-iam-roles) ou o módulo Terraform fornecido como parte da configuração para obter uma lista de IAM roles.
+
+<div id="unauthorized-access-eks-cluster">
+  ## Acesso não autorizado ao cluster do EKS
+</div>
+
+O ClickHouse BYOC é executado no EKS. Esta seção pressupõe que o cliente esteja usando CloudTrail e CloudWatch na AWS e tenha acesso aos logs.
+
+Se um incidente puder ser resultado de um cluster do EKS comprometido, use as consultas abaixo nos logs do EKS no CloudWatch para identificar ameaças específicas.
+
+Liste o número de chamadas à API do Kubernetes por username
+
+```sql
+fields user.username
+| stats count(*) as count by user.username
+```
+
+Identifique se um usuário é engenheiro da ClickHouse
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter user.username like /clickhouse.com/
+| limit 10000
+```
+
+Revisar usuários com acesso a Secrets do Kubernetes, excluindo roles de serviço
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter requestURI like /secret/
+| filter verb="get"
+| filter ispresent(user.extra.sessionName.0)
+| filter user.username not like /ClickHouseManagementRole/
+| filter user.username not like /data-plane-mgmt/
+```

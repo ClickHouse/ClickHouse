@@ -1,0 +1,692 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-data
+title: 'Миграция данных из Elastic в ClickStack'
+sidebarTitle: 'Миграция данных'
+description: 'Миграция данных из Elastic в стек обсервабилити ClickHouse'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+<div id="parallel-operation-strategy">
+  ## Стратегия параллельной эксплуатации
+</div>
+
+При переходе с Elastic на ClickStack для задач обсервабилити мы рекомендуем использовать **параллельную эксплуатацию**, а не пытаться переносить исторические данные. У этой стратегии есть несколько преимуществ:
+
+1. **Минимальный риск**: при одновременной работе обеих систем вы сохраняете доступ к существующим данным и панелям мониторинга, пока проверяете ClickStack и знакомите пользователей с новой системой.
+2. **Естественное истечение срока хранения данных**: большинство данных обсервабилити хранятся ограниченное время (обычно 30 дней или меньше), что позволяет выполнить плавный переход по мере удаления данных из Elastic по истечении срока хранения.
+3. **Упрощённая миграция**: не нужны сложные инструменты или процессы для переноса исторических данных между системами.
+
+<br />
+
+<Info>
+  **Миграция данных**
+
+  В разделе [&quot;Миграция данных&quot;](#migrating-data) мы показываем подход к переносу важных данных из Elasticsearch в ClickHouse. Его не следует использовать для крупных наборов данных, так как он редко обеспечивает достаточную производительность: всё упирается в возможности Elasticsearch по эффективному экспорту, при этом поддерживается только формат JSON.
+</Info>
+
+<div id="implementation-steps">
+  ### Этапы реализации
+</div>
+
+<Steps>
+  <Step>
+    #### Настройте двойную ингестию
+
+    Настройте конвейер сбора данных так, чтобы он одновременно отправлял данные в Elastic и ClickStack.
+
+    Способ реализации зависит от того, какие агенты вы сейчас используете для сбора данных, — см. [&quot;Миграция агентов&quot;](/ru/clickstack/migration/elastic/migrating-agents).
+  </Step>
+
+  <Step>
+    #### Скорректируйте сроки хранения
+
+    Настройте параметры TTL в Elastic в соответствии с требуемым сроком хранения. Настройте [TTL](/ru/clickstack/managing/production#configure-ttl) в ClickStack так, чтобы данные хранились тот же период времени.
+  </Step>
+
+  <Step>
+    #### Проверьте и сравните
+
+    * Выполните запросы к обеим системам, чтобы убедиться в согласованности данных
+    * Сравните производительность запросов и их результаты
+    * Перенесите панели мониторинга и оповещения в ClickStack. Сейчас это делается вручную.
+    * Убедитесь, что все критически важные панели мониторинга и оповещения в ClickStack работают должным образом
+  </Step>
+
+  <Step>
+    #### Постепенный переход
+
+    * По мере естественного истечения срока хранения данных в Elastic вы будете всё больше полагаться на ClickStack
+    * Когда вы убедитесь в надёжности ClickStack, можно будет начать перенаправлять запросы и панели мониторинга
+  </Step>
+</Steps>
+
+<div id="long-term-retention">
+  ### Долгосрочное хранение
+</div>
+
+Для организаций, которым требуются более длительные сроки хранения:
+
+* Продолжайте использовать обе системы параллельно, пока в Elastic не истекут сроки хранения всех данных
+* Возможности [многоуровневого хранения](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) в ClickStack помогают эффективно управлять долгосрочным хранением данных.
+* Рассмотрите возможность использования [materialized views](/ru/concepts/features/materialized-views/incremental-materialized-view) для поддержки агрегированных или отфильтрованных исторических данных, позволяя при этом необработанным данным удаляться по истечении срока хранения.
+
+<div id="migration-timeline">
+  ### Сроки миграции
+</div>
+
+Сроки миграции зависят от ваших требований к сроку хранения данных:
+
+* **Хранение 30 дней**: миграцию можно завершить в течение месяца.
+* **Более длительное хранение**: продолжайте параллельную работу, пока данные не истекут в Elastic.
+* **Исторические данные**: если это действительно необходимо, воспользуйтесь разделом [Миграция данных](#migrating-data), чтобы импортировать нужные исторические данные.
+
+<div id="migration-settings">
+  ## Перенос настроек
+</div>
+
+При переходе с Elastic на ClickStack настройки индексирования и хранения нужно адаптировать к архитектуре ClickHouse. Если Elasticsearch для производительности и отказоустойчивости опирается на горизонтальное масштабирование и сегментирование данных, поэтому по умолчанию использует несколько сегментов, то ClickHouse оптимизирован для вертикального масштабирования и обычно лучше работает с меньшим числом сегментов.
+
+<div id="recommended-settings">
+  ### Рекомендуемые настройки
+</div>
+
+Мы рекомендуем начинать с **одного сегмента** и масштабироваться вертикально. Такая конфигурация подходит для большинства рабочих нагрузок обсервабилити и упрощает как управление, так и настройку производительности запросов.
+
+* **[ClickHouse Cloud](https://clickhouse.com/cloud)**: По умолчанию использует архитектуру с одним сегментом и несколькими репликами. Хранилище и вычислительные ресурсы масштабируются независимо, что делает её оптимальной для сценариев обсервабилити с непредсказуемым характером приёма данных и рабочими нагрузками с преобладанием чтения.
+* **ClickHouse OSS**: В самоуправляемых развертываниях мы рекомендуем:
+  * Начинать с одного сегмента
+  * Масштабироваться вертикально, добавляя CPU и оперативную память
+  * Использовать [многоуровневое хранение](/ru/guides/use-cases/observability/build-your-own/managing-data#storage-tiers), чтобы расширить локальный диск с помощью S3-совместимого объектного хранилища
+  * Использовать [`ReplicatedMergeTree`](/ru/reference/engines/table-engines/mergetree-family/replication), если требуется высокая доступность
+  * Для отказоустойчивости [одной реплики вашего сегмента](/ru/reference/engines/table-engines/mergetree-family/replication) обычно достаточно для рабочих нагрузок обсервабилити.
+
+<div id="when-to-shard">
+  ### Когда требуется сегментирование
+</div>
+
+Сегментирование может потребоваться, если:
+
+* Скорость приёма данных превышает возможности одного узла (обычно &gt;500K строк/с)
+* Вам нужна изоляция арендаторов или разделение данных по регионам
+* Общий объём данных слишком велик для одного сервера, даже с объектным хранилищем
+
+Если сегментирование всё же требуется, см. раздел [Горизонтальное масштабирование](/ru/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) с рекомендациями по ключам сегментирования и настройке distributed таблицы.
+
+<div id="retention-and-ttl">
+  ### Хранение данных и TTL
+</div>
+
+ClickHouse использует [предложения `TTL`](/ru/clickstack/managing/production#configure-ttl) в таблицах MergeTree для управления сроком хранения данных. Политики TTL позволяют:
+
+* Автоматически удалять устаревшие данные
+* Перемещать более старые данные в холодное Объектное хранилище
+* Хранить на быстром диске только свежие журналы, которые запрашиваются чаще всего
+
+Мы рекомендуем согласовать конфигурацию TTL в ClickHouse с вашими существующими политиками хранения данных в Elastic, чтобы сохранить единый жизненный цикл данных во время миграции. Примеры см. в разделе [настройка TTL ClickStack для production](/ru/clickstack/managing/production#configure-ttl).
+
+<div id="migrating-data">
+  ## Миграция данных
+</div>
+
+Хотя для большинства данных обсервабилити мы рекомендуем параллельную работу систем, в некоторых случаях может потребоваться прямая миграция данных из Elasticsearch в ClickHouse:
+
+* Небольшие справочные таблицы, используемые для обогащения данных (например, сопоставления пользователей, каталоги сервисов)
+* Бизнес-данные, хранящиеся в Elasticsearch, которые нужно коррелировать с данными обсервабилити; SQL-возможности ClickHouse и интеграции с Business Intelligence упрощают сопровождение этих данных и выполнение запросов к ним по сравнению с более ограниченными возможностями запросов в Elasticsearch.
+* Данные конфигурации, которые необходимо сохранить при миграции
+
+Этот подход применим только к наборам данных объёмом менее 10 миллионов строк, поскольку возможности экспорта в Elasticsearch ограничены JSON по HTTP и плохо масштабируются для более крупных наборов данных.
+
+Следующие шаги позволяют выполнить миграцию одного индекса Elasticsearch в ClickHouse.
+
+<Steps>
+  <Step>
+    ### Миграция схемы
+
+    Создайте таблицу в ClickHouse для индекса, переносимого из Elasticsearch. Вы можете сопоставить [типы Elasticsearch с их эквивалентами в ClickHouse](/ru/clickstack/migration/elastic/types). Либо можно воспользоваться типом данных JSON в ClickHouse, который будет динамически создавать столбцы соответствующего типа по мере вставки данных.
+
+    Рассмотрим следующий маппинг Elasticsearch для индекса, содержащего данные `syslog`:
+
+    <Accordion title="Маппинг Elasticsearch">
+      ```javascripton
+      GET .ds-logs-system.syslog-default-2025.06.03-000001/_mapping
+      {
+        ".ds-logs-system.syslog-default-2025.06.03-000001": {
+          "mappings": {
+            "_meta": {
+              "managed_by": "fleet",
+              "managed": true,
+              "package": {
+                "name": "system"
+              }
+            },
+            "_data_stream_timestamp": {
+              "enabled": true
+            },
+            "dynamic_templates": [],
+            "date_detection": false,
+            "properties": {
+              "@timestamp": {
+                "type": "date",
+                "ignore_malformed": false
+              },
+              "agent": {
+                "properties": {
+                  "ephemeral_id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "cloud": {
+                "properties": {
+                  "account": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "availability_zone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "image": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "instance": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "machine": {
+                    "properties": {
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "provider": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "region": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "service": {
+                    "properties": {
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "data_stream": {
+                "properties": {
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "namespace": {
+                    "type": "constant_keyword",
+                    "value": "default"
+                  },
+                  "type": {
+                    "type": "constant_keyword",
+                    "value": "logs"
+                  }
+                }
+              },
+              "ecs": {
+                "properties": {
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "elastic_agent": {
+                "properties": {
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "snapshot": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "event": {
+                "properties": {
+                  "agent_id_status": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "ingested": {
+                    "type": "date",
+                    "format": "strict_date_time_no_millis||strict_date_optional_time||epoch_millis",
+                    "ignore_malformed": false
+                  },
+                  "module": {
+                    "type": "constant_keyword",
+                    "value": "system"
+                  },
+                  "timezone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "host": {
+                "properties": {
+                  "architecture": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "containerized": {
+                    "type": "boolean"
+                  },
+                  "hostname": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "ip": {
+                    "type": "ip"
+                  },
+                  "mac": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "os": {
+                    "properties": {
+                      "build": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "codename": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "family": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "kernel": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      },
+                      "platform": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "version": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  }
+                }
+              },
+              "input": {
+                "properties": {
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "log": {
+                "properties": {
+                  "file": {
+                    "properties": {
+                      "path": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "offset": {
+                    "type": "long"
+                  }
+                }
+              },
+              "message": {
+                "type": "match_only_text"
+              },
+              "process": {
+                "properties": {
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "pid": {
+                    "type": "long"
+                  }
+                }
+              },
+              "system": {
+                "properties": {
+                  "syslog": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      ```
+    </Accordion>
+
+    Эквивалентная схема таблицы ClickHouse:
+
+    <Accordion title="Схема ClickHouse">
+      ```sql
+      SET enable_json_type = 1;
+
+      CREATE TABLE logs_system_syslog
+      (
+          `@timestamp` DateTime,
+          `agent` Tuple(
+              ephemeral_id String,
+              id String,
+              name String,
+              type String,
+              version String),
+          `cloud` Tuple(
+              account Tuple(
+                  id String),
+              availability_zone String,
+              image Tuple(
+                  id String),
+              instance Tuple(
+                  id String),
+              machine Tuple(
+                  type String),
+              provider String,
+              region String,
+              service Tuple(
+                  name String)),
+          `data_stream` Tuple(
+              dataset String,
+              namespace String,
+              type String),
+          `ecs` Tuple(
+              version String),
+          `elastic_agent` Tuple(
+              id String,
+              snapshot UInt8,
+              version String),
+          `event` Tuple(
+              agent_id_status String,
+              dataset String,
+              ingested DateTime,
+              module String,
+              timezone String),
+          `host` Tuple(
+              architecture String,
+              containerized UInt8,
+              hostname String,
+              id String,
+              ip Array(Variant(IPv4, IPv6)),
+              mac Array(String),
+              name String,
+              os Tuple(
+                  build String,
+                  codename String,
+                  family String,
+                  kernel String,
+                  name String,
+                  platform String,
+                  type String,
+                  version String)),
+          `input` Tuple(
+              type String),
+          `log` Tuple(
+              file Tuple(
+                  path String),
+              offset Int64),
+          `message` String,
+          `process` Tuple(
+              name String,
+              pid Int64),
+          `system` Tuple(
+              syslog JSON)
+      )
+      ENGINE = MergeTree
+      ORDER BY (`host.name`, `@timestamp`)
+      ```
+    </Accordion>
+
+    Обратите внимание:
+
+    * Для представления вложенных структур вместо точечной нотации используются Tuple
+    * Использованы подходящие типы ClickHouse в соответствии с сопоставлением:
+      * `keyword` → `String`
+      * `date` → `DateTime`
+      * `boolean` → `UInt8`
+      * `long` → `Int64`
+      * `ip` → `Array(Variant(IPv4, IPv6))`. Здесь мы используем [`Variant(IPv4, IPv6)`](/ru/reference/data-types/variant), поскольку поле содержит как значения [`IPv4`](/ru/reference/data-types/ipv4), так и [`IPv6`](/ru/reference/data-types/ipv6).
+      * `object` → `JSON` для объекта syslog, структура которого непредсказуема.
+    * Столбцы `host.ip` и `host.mac` имеют явно указанный тип `Array`, в отличие от Elasticsearch, где все типы представляют собой массивы.
+    * Для эффективных запросов по времени добавляется `ORDER BY` по временной метке и имени хоста
+    * `MergeTree`, оптимальный для данных логов, используется в качестве движка
+
+    **Такой подход — статическое определение схемы с избирательным использованием типа JSON там, где это необходимо, — [рекомендуется](/ru/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures).**
+
+    Эта строгая схема имеет ряд преимуществ:
+
+    * **Валидация данных** – применение строгой схемы позволяет избежать риска взрывного роста числа столбцов за пределами явно заданных структур.
+    * **Позволяет избежать риска лавинообразного роста числа столбцов**: хотя тип JSON масштабируется потенциально до тысяч столбцов, где подстолбцы хранятся как отдельные столбцы, это может привести к лавинообразному росту числа файлов столбцов: создаётся чрезмерное количество таких файлов, что сказывается на производительности. Чтобы уменьшить этот риск, используемый в JSON [тип Dynamic](/ru/reference/data-types/dynamic) поддерживает параметр [`max_dynamic_paths`](/ru/reference/data-types/newjson#reading-json-paths-as-sub-columns), который ограничивает число уникальных путей, сохраняемых в виде отдельных файлов столбцов. После достижения этого порога дополнительные пути сохраняются в общем файле столбца с использованием компактного кодированного формата, что позволяет сохранить производительность и эффективность хранения, одновременно поддерживая гибкую ингестию данных. Однако доступ к этому общему файлу столбца менее производителен. При этом JSON-столбец можно использовать с [подсказками типов](/ru/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths). Столбцы с &quot;подсказками&quot; обеспечивают ту же производительность, что и отдельные столбцы.
+    * **Более простая интроспекция путей и типов**: хотя тип JSON поддерживает [функции интроспекции](/ru/reference/data-types/newjson#introspection-functions), позволяющие определить выведенные типы и пути, статические структуры проще изучать, например, с помощью `DESCRIBE`.
+
+    <br />
+
+    Как вариант, можно просто создать таблицу с одним столбцом `JSON`.
+
+    ```sql
+    SET enable_json_type = 1;
+
+    CREATE TABLE syslog_json
+    (
+     `json` JSON(`host.name` String, `@timestamp` DateTime)
+    )
+    ENGINE = MergeTree
+    ORDER BY (`json.host.name`, `json.@timestamp`)
+    ```
+
+    <Note>
+      Мы указываем типы для столбцов `host.name` и `timestamp` в определении JSON, поскольку используем их в ключе сортировки/первичном ключе. Это помогает ClickHouse понять, что в этом столбце не может быть NULL, а также определить, какие подстолбцы нужно использовать (для каждого типа их может быть несколько, поэтому иначе возникает неоднозначность).
+    </Note>
+
+    Последний подход, хотя и более простой, лучше всего подходит для прототипирования и задач по работе с данными. В продакшене используйте `JSON` только для динамических вложенных структур там, где это необходимо.
+
+    Подробнее об использовании типа JSON в схемах и способах его эффективного применения см. в руководстве [&quot;Проектирование схемы&quot;](/ru/guides/clickhouse/data-formats/json/schema).
+  </Step>
+
+  <Step>
+    ### Установите `elasticdump`
+
+    Мы рекомендуем использовать [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) для экспорта данных из Elasticsearch. Для работы этого инструмента требуется `node`, поэтому его следует установить на машине, имеющей сетевую доступность и к Elasticsearch, и к ClickHouse. Для большинства задач экспорта мы рекомендуем выделенный сервер как минимум с 4 ядрами и 16 ГБ оперативной памяти.
+
+    ```shell
+    npm install elasticdump -g
+    ```
+
+    `elasticdump` имеет несколько преимуществ для миграции данных:
+
+    * Он напрямую взаимодействует с REST API Elasticsearch, обеспечивая корректный экспорт данных.
+    * Сохраняет согласованность данных в процессе экспорта с помощью API Point-in-Time (PIT), который создает согласованный снимок данных на определенный момент времени.
+    * Экспортирует данные напрямую в формате JSON, который можно передавать в клиент ClickHouse для вставки.
+
+    По возможности мы рекомендуем запускать ClickHouse, Elasticsearch и `elastic dump` в одной зоне доступности или в одном дата-центре, чтобы минимизировать исходящий сетевой трафик и добиться максимальной пропускной способности.
+  </Step>
+
+  <Step>
+    ### Установите клиент ClickHouse
+
+    Убедитесь, что ClickHouse [установлен на сервере](/ru/get-started/setup/install), где находится `elasticdump`. **Не запускайте сервер ClickHouse** — для выполнения этих шагов нужен только клиент.
+  </Step>
+
+  <Step>
+    ### Потоковая передача данных
+
+    Чтобы передавать данные между Elasticsearch и ClickHouse в потоковом режиме, используйте команду `elasticdump`, направляя вывод напрямую в клиент ClickHouse. Следующая команда вставляет данные в нашу хорошо организованную таблицу `logs_system_syslog`.
+
+    ```shell
+    # экспортировать url и учётные данные
+    export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
+    export ELASTICSEARCH_URL=
+    export ELASTICDUMP_INPUT_USERNAME=
+    export ELASTICDUMP_INPUT_PASSWORD=
+    export CLICKHOUSE_HOST=
+    export CLICKHOUSE_PASSWORD=
+    export CLICKHOUSE_USER=default
+
+    # команда для запуска - измените при необходимости
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
+    ```
+
+    Обратите внимание на использование следующих флагов для `elasticdump`:
+
+    * `type=data` — ограничивает ответ только содержимым документов в Elasticsearch.
+    * `input-index` — наш входной индекс Elasticsearch.
+    * `output=$` — перенаправляет все результаты в stdout.
+    * Флаг `sourceOnly` гарантирует, что поля метаданных будут исключены из ответа.
+    * Флаг `searchAfter` позволяет использовать API [`searchAfter`](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) для эффективной постраничной выборки результатов.
+    * `pit=true` — для обеспечения согласованности результатов между запросами с использованием [point in time API](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-open-point-in-time).
+
+    <br />
+
+    Параметры нашего клиента ClickHouse здесь (кроме учетных данных):
+
+    * `max_insert_block_size=1000` — клиент ClickHouse отправит данные, как только будет достигнуто это количество строк. Увеличение значения повышает пропускную способность ценой большего времени на формирование блока, а значит, и более позднего появления данных в ClickHouse.
+    * `min_insert_block_size_bytes=0` — отключает объединение блоков на сервере по размеру в байтах.
+    * `min_insert_block_size_rows=1000` — объединяет блоки от клиентов на стороне сервера. В данном случае мы задаем то же значение, что и для `max_insert_block_size`, чтобы строки появлялись сразу. Увеличьте его, чтобы повысить пропускную способность.
+    * `query="INSERT INTO logs_system_syslog FORMAT JSONAsRow"` — вставка данных в [формате JSONEachRow](/ru/guides/clickhouse/data-formats/json/formats). Это подходит для отправки данных в четко определенную схему, такую как `logs_system_syslog.`
+
+    <br />
+
+    **Ожидаемая пропускная способность — порядка тысяч строк в секунду.**
+
+    <Info>
+      **Вставка в одну JSON-строку**
+
+      Если выполняется вставка в один JSON-столбец (см. схему `syslog_json` выше), можно использовать ту же команду вставки. Однако вместо `JSONEachRow` необходимо указать формат `JSONAsObject`, например:
+
+      ```shell
+      elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+      clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+      --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONAsObject"
+      ```
+
+      Подробнее см. в разделе [&quot;Чтение JSON как объекта&quot;](/ru/guides/clickhouse/data-formats/json/formats#reading-json-as-an-object).
+    </Info>
+  </Step>
+
+  <Step>
+    ### Преобразование данных (необязательно)
+
+    Приведённые выше команды предполагают соответствие полей Elasticsearch столбцам ClickHouse в соотношении 1:1. Часто перед вставкой в ClickHouse данные Elasticsearch нужно отфильтровать и преобразовать.
+
+    Это можно сделать с помощью табличной функции [`input`](/ru/reference/functions/table-functions/input), которая позволяет выполнять любой запрос `SELECT` к stdout.
+
+    Предположим, мы хотим хранить только поля `timestamp` и `hostname` из ранее полученных данных. Схема ClickHouse:
+
+    ```sql
+    CREATE TABLE logs_system_syslog_v2
+    (
+        `timestamp` DateTime,
+        `hostname` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (hostname, timestamp)
+    ```
+
+    Чтобы выполнить вставку из `elasticdump` в эту таблицу, можно просто использовать табличную функцию `input`, чтобы с помощью типа JSON динамически определить и выбрать нужные столбцы. Обратите внимание: этот запрос `SELECT` также может легко содержать фильтр.
+
+    ```shell
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog_v2 SELECT json.\`@timestamp\` as timestamp, json.host.hostname as hostname FROM input('json JSON') FORMAT JSONAsObject"
+    ```
+
+    Обратите внимание, что имя поля `@timestamp` необходимо экранировать, а также использовать входной формат `JSONAsObject`.
+  </Step>
+</Steps>

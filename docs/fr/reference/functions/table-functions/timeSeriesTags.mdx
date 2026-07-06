@@ -1,0 +1,29 @@
+---
+description: "La fonction de table timeSeriesTags renvoie la table des tags utilisée par la table `db_name.time_series_table`
+  dont le moteur de table est [TimeSeries](/reference/engines/table-engines/integrations/time-series)."
+sidebarTitle: 'timeSeriesTags'
+slug: /sql-reference/table-functions/timeSeriesTags
+title: 'timeSeriesTags'
+doc_type: 'reference'
+---
+
+`timeSeriesTags(db_name.time_series_table)` - renvoie la [table des tags](/fr/reference/engines/table-engines/integrations/time-series#tags-table)
+utilisée par la table `db_name.time_series_table` dont le moteur de table est [TimeSeries](/fr/reference/engines/table-engines/integrations/time-series) :
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table
+```
+
+La fonction fonctionne également si la table *tags* est une table interne :
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+Les requêtes suivantes sont équivalentes :
+
+```sql
+SELECT * FROM timeSeriesTags(db_name.time_series_table);
+SELECT * FROM timeSeriesTags('db_name.time_series_table');
+SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
+```

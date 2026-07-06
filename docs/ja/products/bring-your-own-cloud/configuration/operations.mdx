@@ -1,0 +1,68 @@
+---
+title: 'BYOC の運用と保守'
+slug: /cloud/reference/byoc/operations
+sidebarTitle: '運用と保守'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud', '運用', '保守']
+description: 'お使いのクラウドインフラストラクチャに ClickHouse をデプロイ'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+ClickHouse Cloud は、お客様の BYOC デプロイメントのアップグレードとメンテナンスを管理し、サービスの安全性、性能、最新性を維持します。このページでは、BYOC インフラストラクチャの各コンポーネントにおけるアップグレードプロセスと、メンテナンスウィンドウの仕組みについて説明します。
+
+<div id="clickhouse-upgrade-process">
+  ## ClickHouse サービスのアップグレードプロセス
+</div>
+
+ClickHouse データベースは、バージョンアップグレード、バグ修正、パフォーマンス改善を含むアップグレードを定期的に実施しています。ClickHouse Cloud では、アップグレードに [&quot;make before break&quot; (MBB)](/ja/products/cloud/features/autoscaling/make-before-break) 方式を採用しており、古いレプリカを削除する前に更新済みのレプリカを追加することで、稼働中のワークロードへの影響を抑えた、よりシームレスなアップグレードを実現しています。
+
+BYOC の ClickHouse サービスのアップグレードは、標準の ClickHouse Cloud サービスと同じプロセスと運用パターンに従っており、リリースチャネル (Fast、Regular、Slow) と、あらかじめ設定されたメンテナンスウィンドウにも対応しています。Scale tier および Enterprise tier のすべての機能は、BYOC デプロイメントで利用できます。アップグレードのスケジュール、リリースチャネル、メンテナンスウィンドウの詳細については、[Upgrades documentation](/ja/products/cloud/features/admin-features/upgrades) を参照してください。
+
+<div id="cloud-upgrade-process">
+  ## Cloud サービスとリソースのアップグレードプロセス
+</div>
+
+ClickHouse Cloud では、セキュリティと信頼性を確保し、新機能を利用できるようにするため、Kubernetes 上で稼働する関連サービスや BYOC デプロイメント内のインフラストラクチャコンポーネントを定期的にアップグレードしています。これらの Cloud サービスのアップグレードはバックグラウンドで実行され、標準的な Cloud のリリーススケジュールに沿って行われます。すべての関連サービスは ArgoCD によって管理されており、アップグレードは無停止で実施できるよう設計されています。これらの更新によるサービス中断は想定されていません。
+
+アップグレード対象となるCloud サービスの例は次のとおりです。
+
+* **ClickHouse Operator**: ClickHouse クラスターを管理する Kubernetes オペレーター
+* **Istio Services**: イングレス ingress および agent コンポーネント
+* **Monitoring Stack**: Prometheus、Grafana、AlertManager、Thanos のコンポーネント
+
+<div id="k8s-upgrade-process">
+  ## Kubernetes クラスターのアップグレードプロセス
+</div>
+
+ClickHouse サービスをホストしている Kubernetes クラスター (AWS の EKS、GCP の GKE) は、セキュリティと互換性を維持し、新機能を利用できるようにするため、定期的なアップグレードが必要です。ClickHouse Cloud は、BYOC デプロイメント向けの Kubernetes クラスターのアップグレードをすべて管理し、クラスターがサポート対象バージョンの最新状態に保たれるようにします。
+
+<div id="cluster-upgrade-types">
+  ### クラスターのアップグレードの種類
+</div>
+
+**コントロールプレーンのアップグレード**: Kubernetes のコントロールプレーン コンポーネント (API サーバー、etcd、コントローラーマネージャー) は ClickHouse Cloud によってアップグレードされます。通常、これらのアップグレードはワークロードに対して透過的で、ポッドの再起動は必要ありません。
+
+**ノードグループのアップグレード**: ワーカーノードのアップグレードではノードの置き換えが必要になり、実行中のポッドに影響する可能性があります。ClickHouse Cloud は中断を最小限に抑えるため、make-before-break 方式でこれらのアップグレードを調整します:
+
+* 古いノードを削除する前に、更新後の Kubernetes バージョンを備えた新しいノードがプロビジョニングされます
+* ポッドは安全にドレインされ、新しいノードへ移行されます
+* 古いノードは、ポッドの移行が正常に完了した後にのみ終了されます
+
+<Note>
+  Kubernetes ノードのアップグレードでは、移行プロセス中にポッドが短時間再起動する場合があります。ClickHouse Cloud は、ワークロードへの影響を最小限に抑えるため、Pod Disruption Budget とグレースフルシャットダウンを使用します。
+</Note>
+
+<div id="upgrade-schedule">
+  ### アップグレード スケジュール
+</div>
+
+Kubernetesクラスターのアップグレードは、ClickHouse Supportを通じてお客様と調整のうえで実施日程を決定します。アップグレード計画は事前にご案内し、運用への影響を最小限に抑えられる適切なメンテナンスウィンドウをお客様とともに設定します。
+
+<div id="version-support">
+  ### バージョンサポート
+</div>
+
+ClickHouse Cloud は、クラウドサービスプロバイダー (AWS EKS または Google GKE) が定めるサポート対象のバージョン範囲内で Kubernetes クラスターを維持します。クラスターがプロバイダーの要件に適合した状態を保ちつつ、セキュリティパッチや機能アップデートにも継続的に対応できるようにしています。

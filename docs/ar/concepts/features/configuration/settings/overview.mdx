@@ -1,0 +1,64 @@
+---
+description: 'صفحة نظرة عامة على الإعدادات.'
+slug: /operations/settings/overview
+title: 'نظرة عامة على الإعدادات'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+<Note>
+  ملفات تعريف الإعدادات المستندة إلى XML و[ملفات التكوين](/ar/concepts/features/configuration/server-config/configuration-files) غير مدعومة حاليًا في ClickHouse Cloud. لتحديد الإعدادات لخدمة ClickHouse Cloud الخاصة بك، يجب استخدام [ملفات تعريف الإعدادات المعتمدة على SQL](/ar/concepts/features/security/access-rights#settings-profiles-management).
+</Note>
+
+فيما يلي المجموعات الرئيسية لإعدادات ClickHouse:
+
+* إعدادات الخادم العامة
+* إعدادات الجلسة
+* إعدادات الاستعلام
+* إعدادات العمليات الخلفية
+
+تُطبَّق الإعدادات العامة افتراضيًا ما لم يتم تجاوزها على مستويات أكثر تحديدًا. ويمكن تحديد إعدادات الجلسة عبر ملفات التعريف، وتكوين المستخدم، وأوامر SET. كما يمكن تمرير إعدادات الاستعلام عبر عبارة SETTINGS، وتُطبَّق على كل استعلام على حدة. أما إعدادات العمليات الخلفية، فتُطبَّق على عمليات Mutations وMerges، وربما على عمليات أخرى، وتُنفَّذ بشكل غير متزامن في الخلفية.
+
+<div id="see-non-default-settings">
+  ## عرض الإعدادات غير الافتراضية
+</div>
+
+لمعرفة الإعدادات التي تم تغييرها عن قيمتها الافتراضية، يمكنك الاستعلام عن
+جدول `system.settings`:
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+إذا لم تُجرَ أي تغييرات على الإعدادات مقارنةً بقيمها الافتراضية، فلن يُرجع ClickHouse
+أي شيء.
+
+للتحقق من قيمة إعداد معيّن، يمكنك تحديد `name` الخاص بهذا
+الإعداد في الاستعلام:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+وسيُرجع شيئًا مثل هذا:
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## قراءة إضافية
+</div>
+
+* راجع [إعدادات الخادم العامة](/ar/reference/settings/server-settings/settings) لمعرفة المزيد حول تهيئة خادم ClickHouse
+  على مستوى الخادم ككل.
+* راجع [إعدادات الجلسة](/ar/concepts/features/configuration/settings/settings-query-level) لمعرفة المزيد حول تهيئة خادم ClickHouse
+  على مستوى الجلسة.
+* راجع [التسلسل الهرمي للسياق](/ar/resources/develop-contribute/introduction/architecture#context) لمعرفة المزيد حول معالجة التهيئة في ClickHouse.

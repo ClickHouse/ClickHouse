@@ -1,0 +1,339 @@
+---
+sidebarTitle: 'AWS PrivateLink لـ ClickPipes'
+description: 'أنشئ اتصالًا آمنًا بين ClickPipes ومصدر بيانات باستخدام AWS PrivateLink.'
+slug: /integrations/clickpipes/aws-privatelink
+title: 'AWS PrivateLink لـ ClickPipes'
+doc_type: 'guide'
+keywords: ['aws privatelink', 'أمان ClickPipes', 'نقطة نهاية vpc', 'اتصال خاص', 'مورد vpc']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكنك استخدام [AWS PrivateLink](https://aws.amazon.com/privatelink/) لإنشاء اتصال آمن بين شبكات VPC،
+وخدمات AWS، وأنظمتك داخل بيئتك المحلية، وClickHouse Cloud، من دون تعريض حركة المرور إلى الإنترنت العام.
+
+توضح هذه الوثيقة وظيفة نقطة النهاية الخاصة العكسية في ClickPipes،
+التي تتيح إعداد نقطة نهاية VPC لـ AWS PrivateLink.
+
+<div id="supported-sources">
+  ## مصادر بيانات ClickPipes المدعومة
+</div>
+
+تقتصر ميزة نقطة نهاية خاصة عكسية في ClickPipes على أنواع
+مصادر البيانات التالية:
+
+* Kafka
+* Postgres
+* MySQL
+* MongoDB
+
+<Note>
+  بالنسبة إلى Kafka، يمكن الوصول إلى [سجل المخططات](/ar/integrations/clickpipes/kafka/schema-registries) عبر نقطة النهاية الخاصة العكسية نفسها التي تستخدمها الوسطاء — ولا يلزم أن يكون متاحًا عبر الإنترنت العام — شريطة أن يُحل اسم المضيف الخاص به إلى عناوين IP الخاصة بنقطة النهاية.
+</Note>
+
+<div id="aws-privatelink-endpoint-types">
+  ## أنواع نقاط نهاية AWS PrivateLink المدعومة
+</div>
+
+يمكن تهيئة نقطة نهاية خاصة عكسية في ClickPipes باستخدام أحد خيارات AWS PrivateLink التالية:
+
+* [مورد VPC](#vpc-resource)
+* [MSK multi-VPC connectivity for MSK ClickPipe](#msk-multi-vpc)
+* [VPC endpoint service](#vpc-endpoint-service)
+
+<div id="vpc-resource">
+  ### مورد VPC
+</div>
+
+<Info>
+  الاتصال بين المناطق غير مدعوم.
+</Info>
+
+يمكن الوصول إلى موارد VPC الخاصة بك في ClickPipes باستخدام [PrivateLink](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html). ولا يتطلب هذا الأسلوب إعداد موازن حمل أمام مصدر البيانات.
+
+يمكن أن تستهدف تهيئة المورد مضيفًا محددًا أو ARN لعنقود RDS.
+
+وهو الخيار المفضل لـ Postgres CDC عند استيعاب البيانات من عنقود RDS.
+
+لإعداد PrivateLink مع مورد VPC:
+
+1. أنشئ بوابة مورد
+2. أنشئ تهيئة مورد
+3. أنشئ مشاركة مورد
+
+<Steps>
+  <Step>
+    #### إنشاء بوابة موارد
+
+    بوابة الموارد هي النقطة التي تستقبل حركة المرور للموارد المحددة داخل VPC لديك.
+
+    <Note>
+      يُوصى بأن تتوفر في الشبكات الفرعية المرتبطة ببوابة الموارد لديك عناوين IP كافية.
+      كما يُوصى بأن يكون قناع الشبكة الفرعية لكل شبكة فرعية `/26` على الأقل.
+
+      لكل نقطة نهاية VPC (لكل Reverse Private Endpoint)، تتطلب AWS كتلة متتالية من 16 عنوان IP لكل شبكة فرعية. (قناع شبكة فرعية `/28`)
+      إذا لم يتم استيفاء هذا الشرط، فسوف ينتقل Reverse Private Endpoint إلى حالة فشل.
+    </Note>
+
+    يمكنك إنشاء بوابة موارد من [وحدة تحكم AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-gateway.html) أو باستخدام الأمر التالي:
+
+    ```bash
+    aws vpc-lattice create-resource-gateway \
+        --vpc-identifier <VPC_ID> \
+        --subnet-ids <SUBNET_IDS> \
+        --security-group-ids <SG_IDs> \
+        --name <RESOURCE_GATEWAY_NAME>
+    ```
+
+    سيشمل الناتج معرّفًا لـ resource gateway، وستحتاج إليه في الخطوة التالية.
+
+    قبل أن تتمكن من المتابعة، ستحتاج إلى الانتظار حتى تدخل resource gateway في الحالة `Active`. يمكنك التحقق من الحالة بتشغيل الأمر التالي:
+
+    ```bash
+    aws vpc-lattice get-resource-gateway \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID>
+    ```
+  </Step>
+
+  <Step>
+    #### إنشاء Resource-Configuration لمورد VPC
+
+    يتم ربط Resource-Configuration ببوابة المورد لإتاحة الوصول إلى موردك.
+
+    يمكنك إنشاء Resource-Configuration من [وحدة تحكم AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/create-resource-configuration.html) أو باستخدام الأمر التالي:
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --resource-gateway-identifier <RESOURCE_GATEWAY_ID> \
+        --type <RESOURCE_CONFIGURATION_TYPE> \
+        --resource-configuration-definition <RESOURCE_CONFIGURATION_DEFINITION> \
+        --name <RESOURCE_CONFIGURATION_NAME>
+    ```
+
+    أبسط [نوع من أنواع تهيئة المورد](https://docs.aws.amazon.com/vpc-lattice/latest/ug/resource-configuration.html#resource-configuration-types) هو Resource-Configuration واحدة. يمكنك التهيئة باستخدام ARN مباشرةً، أو مشاركة عنوان IP أو اسم نطاق يمكن حله علنًا.
+
+    على سبيل المثال، للتهيئة باستخدام ARN لعنقود RDS:
+
+    ```bash
+    aws vpc-lattice create-resource-configuration \
+        --name my-rds-cluster-config \
+        --type ARN \
+        --resource-gateway-identifier rgw-0bba03f3d56060135 \
+        --resource-configuration-definition 'arnResource={arn=arn:aws:rds:us-east-1:123456789012:cluster:my-rds-cluster}'
+    ```
+
+    <Note>
+      لا يمكنك إنشاء تهيئة مورد لعنقود متاح للوصول العام.
+      إذا كان عنقودك متاحًا للوصول العام، فيجب تعديل العنقود
+      ليصبح خاصًا قبل إنشاء تهيئة المورد
+      أو استخدام [قائمة السماح لعناوين IP](/ar/integrations/clickpipes/home#list-of-static-ips) بدلًا من ذلك.
+      لمزيد من المعلومات، راجع [وثائق AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/resource-configuration.html#resource-definition).
+    </Note>
+
+    سيحتوي الناتج على ARN لتهيئة المورد، وستحتاج إليه في الخطوة التالية. وسيحتوي أيضًا على معرّف تهيئة المورد، والذي ستحتاج إليه لإعداد اتصال ClickPipe باستخدام مورد VPC.
+  </Step>
+
+  <Step>
+    #### إنشاء Resource-Share
+
+    لمشاركة المورد الخاص بك، يلزم إنشاء Resource-Share. ويتم ذلك من خلال Resource Access Manager (RAM).
+
+    <Note>
+      لا يمكن استخدام Resource-Share إلا مع Reverse Private Endpoint واحد، ولا يمكن إعادة استخدامه.
+      إذا كنت بحاجة إلى استخدام Resource-Configuration نفسه مع عدة Reverse Private Endpoints،
+      فيجب إنشاء Resource-Share منفصل لكل endpoint.
+      يظل Resource-Share موجودًا في AWS account الخاص بك بعد حذف Reverse Private Endpoint،
+      ويجب إزالته يدويًا إذا لم تعد بحاجة إليه.
+    </Note>
+
+    يمكنك إضافة Resource-Configuration إلى Resource-Share عبر [AWS console](https://docs.aws.amazon.com/ram/latest/userguide/working-with-sharing-create.html) أو بتشغيل الأمر التالي باستخدام ClickPipes account ID `072088201116` (arn:aws:iam::072088201116:root):
+
+    ```bash
+    aws ram create-resource-share \
+        --principals 072088201116 \
+        --resource-arns <RESOURCE_CONFIGURATION_ARN> \
+        --name <RESOURCE_SHARE_NAME>
+    ```
+
+    سيحتوي الناتج على ARN لمشاركة المورد، وستحتاج إليه لإعداد اتصال ClickPipe باستخدام VPC resource.
+
+    أنت الآن جاهز [لإنشاء ClickPipe باستخدام Reverse private endpoint](#creating-clickpipe) مع VPC resource. ستحتاج إلى ما يلي:
+
+    * تعيين `VPC endpoint type` إلى `VPC Resource`.
+    * تعيين `Resource configuration ID` إلى معرّف Resource-Configuration الذي تم إنشاؤه في الخطوة 2.
+    * تعيين `Resource share ARN` إلى ARN الخاص بـ Resource-Share الذي تم إنشاؤه في الخطوة 3.
+
+    لمزيد من التفاصيل حول PrivateLink مع VPC resource، راجع [وثائق AWS](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-access-resources.html).
+  </Step>
+</Steps>
+
+<div id="msk-multi-vpc">
+  ### MSK multi-VPC connectivity
+</div>
+
+تُعد [Multi-VPC connectivity](https://docs.aws.amazon.com/msk/latest/developerguide/aws-access-mult-vpc.html) ميزة مضمّنة في AWS MSK تتيح لك ربط عدة شبكات VPC بعنقود MSK واحد.
+يتوفر دعم private DNS افتراضيًا ولا يتطلب أي إعداد إضافي.
+لا يتم دعم الاتصال عبر المناطق.
+
+يُوصى بهذا الخيار مع ClickPipes for MSK.
+راجع دليل [بدء الاستخدام](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-getting-started.html) لمزيد من التفاصيل.
+
+<Info>
+  حدّث سياسة عنقود MSK لديك، وأضف `072088201116` إلى الكيانات المسموح لها بالوصول إلى عنقود MSK.
+  راجع دليل AWS حول [إرفاق سياسة عنقود](https://docs.aws.amazon.com/msk/latest/developerguide/mvpc-cluster-owner-action-policy.html) لمزيد من التفاصيل.
+</Info>
+
+اتبع [دليل إعداد MSK لـ ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes) لمعرفة كيفية إعداد الاتصال.
+
+<div id="vpc-endpoint-service">
+  ### VPC endpoint service
+</div>
+
+تُعد [VPC endpoint service](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) طريقةً أخرى لمشاركة مصدر البيانات لديك مع ClickPipes.
+ويتطلب ذلك إعداد NLB ‏(Network Load Balancer) أمام مصدر البيانات لديك،
+وتهيئة VPC endpoint service لاستخدام NLB.
+
+يمكن [تهيئة VPC endpoint service باستخدام private DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html)، بحيث تكون متاحة داخل VPC الخاصة بـ ClickPipes.
+
+وهي الخيار المفضل في الحالات التالية:
+
+* أي إعداد Kafka محلي يتطلب دعم private DNS
+* [الاتصال عبر المناطق لـ Postgres CDC](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
+* الاتصال عبر المناطق لـ عنقود MSK. يُرجى التواصل مع فريق دعم ClickHouse للحصول على المساعدة.
+
+راجع دليل [البدء](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) لمزيد من التفاصيل.
+
+<Info>
+  أضِف معرّف حساب ClickPipes ‏`072088201116` إلى الجهات المسموح لها في VPC endpoint service الخاصة بك.
+  راجع دليل AWS بشأن [إدارة الأذونات](https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html#add-remove-permissions) لمزيد من التفاصيل.
+</Info>
+
+<Info>
+  يمكن تهيئة [الوصول عبر المناطق](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
+  لـ ClickPipes. أضِف [منطقة ClickPipe الخاصة بك](#aws-privatelink-regions) إلى المناطق المسموح بها في VPC endpoint service الخاصة بك.
+</Info>
+
+<div id="creating-clickpipe">
+  ## إنشاء ClickPipe باستخدام نقطة نهاية خاصة عكسية
+</div>
+
+1. انتقل إلى SQL Console الخاصة بـ ClickHouse Cloud Service.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="md" border />
+
+2. حدّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
+
+3. حدّد Kafka أو Postgres كمصدر بيانات.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="تحديد مصدر البيانات" size="lg" border />
+
+4. حدّد خيار `Reverse private endpoint`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
+
+5. حدّد أي نقطة نهاية خاصة عكسية موجودة أو أنشئ واحدة جديدة.
+
+<Info>
+  إذا كان الوصول عبر المناطق مطلوبًا لـ RDS، فستحتاج إلى إنشاء VPC endpoint service، ويمكن أن يكون
+  [هذا الدليل](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) نقطة بداية جيدة لإعدادها.
+
+  أما للوصول ضمن المنطقة نفسها، فإن إنشاء مورد VPC هو النهج الموصى به.
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
+
+6. أدخل المعلمات المطلوبة لنوع endpoint المحدد.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
+
+* بالنسبة إلى مورد VPC، أدخل configuration share ARN وconfiguration ID.
+  * بالنسبة إلى MSK multi-VPC، أدخل cluster ARN وطريقة المصادقة المستخدمة مع endpoint الذي أنشأته.
+  * بالنسبة إلى VPC endpoint service، أدخل اسم الخدمة.
+
+7. انقر على `Create` وانتظر حتى تصبح نقطة نهاية خاصة عكسية جاهزة.
+
+   إذا كنت تُنشئ endpoint جديدًا، فسيستغرق إعداده بعض الوقت.
+   ستُحدَّث الصفحة تلقائيًا بمجرد أن يصبح endpoint جاهزًا.
+   قد يتطلب VPC endpoint service قبول طلب الاتصال في وحدة تحكم AWS.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="تحديد نقطة نهاية خاصة عكسية" size="lg" border />
+
+8. بعد أن يصبح endpoint جاهزًا، يمكنك استخدام اسم DNS للاتصال بمصدر البيانات.
+
+   في قائمة endpoints، يمكنك رؤية اسم DNS الخاص بالـ endpoint المتاح.
+   وقد يكون هذا إما اسم DNS وفّرته ClickPipes داخليًا أو اسم DNS خاصًا توفّره خدمة PrivateLink.
+   اسم DNS ليس عنوان شبكة كاملًا.
+   أضف Port وفقًا لمصدر البيانات.
+
+   يمكن العثور على connection string الخاص بـ MSK في وحدة تحكم AWS.
+
+   للاطلاع على القائمة الكاملة لأسماء DNS، انتقل إليها من إعدادات الخدمة السحابية.
+
+<div id="managing-existing-endpoints">
+  ## إدارة نقاط النهاية الخاصة العكسية الحالية
+</div>
+
+يمكنك إدارة نقاط النهاية الخاصة العكسية الحالية في إعدادات خدمة ClickHouse Cloud:
+
+1. في الشريط الجانبي، ابحث عن زر `Settings` وانقر عليه.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="إعدادات ClickHouse Cloud" size="lg" border />
+
+2. انقر على `Reverse private endpoints` في قسم `ClickPipe reverse private endpoints`.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="إعدادات ClickHouse Cloud" size="md" border />
+
+   تُعرض المعلومات التفصيلية الخاصة بنقطة النهاية الخاصة العكسية في اللوحة المنبثقة.
+
+   يمكن إزالة نقطة النهاية من هنا. سيؤثر ذلك على أي ClickPipes تستخدم نقطة النهاية هذه.
+
+<div id="aws-privatelink-regions">
+  ## مناطق AWS المدعومة
+</div>
+
+يقتصر دعم AWS PrivateLink في ClickPipes على مناطق AWS محددة.
+يرجى الرجوع إلى [قائمة مناطق ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) للاطّلاع على المناطق المتاحة.
+
+لا ينطبق هذا القيد على VPC endpoint service عند تفعيل الاتصال عبر المناطق.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+لا يوجد ما يضمن أن نقاط نهاية AWS PrivateLink الخاصة بـ ClickPipes التي يتم إنشاؤها
+في ClickHouse Cloud ستُنشأ في منطقة AWS نفسها التي توجد فيها خدمة ClickHouse Cloud.
+
+حاليًا، خدمة VPC endpoint service وحدها هي التي تدعم
+الاتصال عبر المناطق.
+
+ترتبط نقاط النهاية الخاصة بخدمة ClickHouse محددة، ولا يمكن نقلها بين الخدمات.
+ويمكن لعدة ClickPipes ضمن خدمة ClickHouse واحدة إعادة استخدام نقطة النهاية نفسها.
+
+يدعم AWS MSK نقطة PrivateLink (VPC endpoint) واحدة فقط لكل عنقود MSK ولكل نوع authentication ‏(SASL&#95;IAM أو SASL&#95;SCRAM). ونتيجة لذلك، لا يمكن لعدة خدمات ClickHouse Cloud أو مؤسسات إنشاء اتصالات PrivateLink منفصلة إلى عنقود MSK نفسه باستخدام نوع authentication نفسه.
+
+<div id="automatic-cleanup">
+  ### التنظيف التلقائي لنقاط النهاية غير النشطة
+</div>
+
+تُزال نقاط النهاية الخاصة العكسية التي تبقى في حالة نهائية تلقائيًا بعد فترة سماح محددة.
+وهذا يضمن عدم بقاء نقاط النهاية غير المستخدمة أو المُعدّة بشكل غير صحيح إلى أجل غير مسمى.
+
+تُطبَّق فترات السماح التالية بحسب حالة نقطة النهاية:
+
+| الحالة             | فترة السماح | الوصف                                            |
+| ------------------ | ----------- | ------------------------------------------------ |
+| **فشل**            | 7 أيام      | واجهت نقطة النهاية خطأ أثناء التهيئة.            |
+| **بانتظار القبول** | يوم واحد    | لم يوافق مالك الخدمة بعد على اتصال نقطة النهاية. |
+| **مرفوض**          | يوم واحد    | رفض مالك الخدمة اتصال نقطة النهاية.              |
+| **منتهي الصلاحية** | فورًا       | انتهت صلاحية نقطة النهاية بالفعل وتُزال مباشرةً. |
+
+بمجرد انتهاء فترة السماح، تُحذف نقطة النهاية وجميع الموارد المرتبطة بها تلقائيًا.
+
+لمنع الإزالة التلقائية، عالِج المشكلة الأساسية قبل انتهاء فترة السماح.
+على سبيل المثال، وافق على طلب اتصال معلّق في AWS Console،
+أو أعد إنشاء نقطة النهاية إذا دخلت في حالة فشل.

@@ -1,0 +1,150 @@
+---
+slug: /native-protocol/basics
+title: 'الأساسيات'
+description: 'أساسيات البروتوكول الأصلي'
+keywords: ['البروتوكول الأصلي', 'بروتوكول TCP', 'أساسيات البروتوكول', 'البروتوكول الثنائي', 'اتصال العميل بالخادم']
+doc_type: 'guide'
+---
+
+<Note>
+  مرجع بروتوكول العميل قيد الإعداد.
+
+  معظم الأمثلة متاحة فقط بلغة Go.
+</Note>
+
+توضح هذه الوثيقة البروتوكول الثنائي لعملاء ClickHouse عبر بروتوكول TCP.
+
+<div id="varint">
+  ## Varint
+</div>
+
+بالنسبة إلى الأطوال، ورموز الحزم، والحالات الأخرى، يُستخدم ترميز *varint غير الموقّع*.
+استخدم [binary.PutUvarint](https://pkg.go.dev/encoding/binary#PutUvarint) و[binary.ReadUvarint](https://pkg.go.dev/encoding/binary#ReadUvarint).
+
+<Note>
+  لا يُستخدم *varint الموقّع*.
+</Note>
+
+<div id="string">
+  ## String
+</div>
+
+تُشفَّر السلاسل النصية متغيرة الطول على هيئة *(الطول، القيمة)*، حيث يكون *الطول* [varint](#varint) وتكون *القيمة* سلسلة UTF-8.
+
+<Warning>
+  تحقّق من الطول لتجنّب OOM:
+
+  `0 ≤ len < MAX`
+</Warning>
+
+<Tabs>
+  <Tab title="ترميز">
+    ```go
+    s := "Hello, world!"
+
+    // كتابة طول السلسلة النصية كـ uvarint.
+    buf := make([]byte, binary.MaxVarintLen64)
+    n := binary.PutUvarint(buf, uint64(len(s)))
+    buf = buf[:n]
+
+    // كتابة قيمة السلسلة النصية.
+    buf = append(buf, s...)
+    ```
+  </Tab>
+
+  <Tab title="فك الترميز">
+    ```go
+    r := bytes.NewReader([]byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    })
+
+    // قراءة الطول.
+    n, err := binary.ReadUvarint(r)
+    if err != nil {
+            panic(err)
+    }
+
+    // تحقّق من n لتجنّب OOM أو استثناء وقت التشغيل في make().
+    const maxSize = 1024 * 1024 * 10 // 10 MB
+    if n > maxSize || n < 0 {
+        panic("invalid n")
+    }
+
+    buf := make([]byte, n)
+    if _, err := io.ReadFull(r, buf); err != nil {
+            panic(err)
+    }
+
+    fmt.Println(string(buf))
+    // Hello, world!
+    ```
+  </Tab>
+</Tabs>
+
+<Tabs>
+  <Tab title="تفريغ سداسي عشري">
+    ```hexdump
+    00000000  0d 48 65 6c 6c 6f 2c 20  77 6f 72 6c 64 21        |.Hello, world!|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    DUhlbGxvLCB3b3JsZCE
+    ```
+  </Tab>
+
+  <Tab title="Go">
+    ```go
+    data := []byte{
+        0xd, 0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x2c,
+        0x20, 0x77, 0x6f, 0x72, 0x6c, 0x64, 0x21,
+    }
+    ```
+  </Tab>
+</Tabs>
+
+<div id="integers">
+  ## الأعداد الصحيحة
+</div>
+
+<Tip>
+  يستخدم ClickHouse ترتيب **Little Endian** للأعداد الصحيحة ذات الحجم الثابت.
+</Tip>
+
+<div id="int32">
+  ### Int32
+</div>
+
+```go
+v := int32(1000)
+
+// Encode.
+buf := make([]byte, 8)
+binary.LittleEndian.PutUint32(buf, uint32(v))
+
+// Decode.
+d := int32(binary.LittleEndian.Uint32(buf))
+fmt.Println(d) // 1000
+```
+
+<Tabs>
+  <Tab title="تفريغ سداسي عشري">
+    ```hexdump
+    00000000  e8 03 00 00 00 00 00 00                           |........|
+    ```
+  </Tab>
+
+  <Tab title="Base64">
+    ```text
+    6AMAAAAAAAA
+    ```
+  </Tab>
+</Tabs>
+
+<div id="boolean">
+  ## النوع المنطقي
+</div>
+
+يُمثَّل النوع المنطقي ببايت واحد؛ حيث إن `1` تعني `true` و`0` تعني `false`.
