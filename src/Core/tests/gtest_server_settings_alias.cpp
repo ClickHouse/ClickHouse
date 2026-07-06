@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include <Core/Field.h>
 #include <Core/ServerSettings.h>
 #include <Common/Exception.h>
@@ -60,4 +62,20 @@ TEST(ServerSettingsAlias, RejectBothCanonicalAndAlias)
 
     ServerSettings settings;
     ASSERT_THROW(settings.loadSettingsFromConfig(*config), Exception);
+}
+
+/// The alias must be enumerable and resolvable, so that user-facing surfaces (e.g. `system.documentation`)
+/// can render it as an alias of its canonical setting, consistently with `Settings` and `MergeTreeSettings`.
+TEST(ServerSettingsAlias, EnumeratedAndResolvable)
+{
+    ServerSettings settings;
+
+    const auto aliases = settings.getAllAliasNames();
+    ASSERT_NE(
+        std::find(aliases.begin(), aliases.end(), std::string_view{"total_memory_profiler_sample_probability"}),
+        aliases.end());
+
+    ASSERT_EQ(ServerSettings::resolveName("total_memory_profiler_sample_probability"), "total_memory_tracker_sample_probability");
+    /// A canonical (non-alias) name resolves to itself.
+    ASSERT_EQ(ServerSettings::resolveName("total_memory_tracker_sample_probability"), "total_memory_tracker_sample_probability");
 }

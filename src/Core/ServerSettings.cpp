@@ -1922,6 +1922,20 @@ std::vector<std::string_view> ServerSettings::getAllRegisteredNames() const
     return setting_names;
 }
 
+std::vector<std::string_view> ServerSettings::getAllAliasNames() const
+{
+    std::vector<std::string_view> alias_names;
+    const auto & settings_to_aliases = ServerSettingsTraits::settingsToAliases();
+    for (const auto & [_, aliases] : settings_to_aliases)
+        alias_names.insert(alias_names.end(), aliases.begin(), aliases.end());
+    return alias_names;
+}
+
+std::string_view ServerSettings::resolveName(std::string_view name)
+{
+    return ServerSettingsTraits::resolveName(name);
+}
+
 std::string_view ServerSettings::getDescription(std::string_view name) const
 {
     return impl->getDescription(name);
