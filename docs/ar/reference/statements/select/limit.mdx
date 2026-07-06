@@ -1,0 +1,168 @@
+---
+description: 'توثيق لعبارة LIMIT'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'عبارة LIMIT'
+doc_type: 'reference'
+---
+
+تتحكم عبارة `LIMIT` في عدد الصفوف المُعادة في نتائج الاستعلام.
+
+<div id="basic-syntax">
+  ## صياغة أساسية
+</div>
+
+**اختيار الصفوف الأولى:**
+
+```sql
+LIMIT m
+```
+
+يعيد أول `m` صفوف من النتيجة، أو كل السجلات إذا كان عددها أقل من `m`.
+
+**صياغة TOP البديلة (متوافقة مع MS SQL Server):**
+
+```sql
+-- SELECT TOP number|percent column_name(s) FROM table_name
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+وهذا يعادل `LIMIT m`، ويمكن استخدامه للتوافق مع استعلامات Microsoft SQL Server.
+
+**الاختيار مع الإزاحة:**
+
+```sql
+LIMIT m OFFSET n
+-- or equivalently:
+LIMIT n, m
+```
+
+يتجاوز أول `n` من الصفوف، ثم يعيد الصفوف `m` التالية.
+
+في كلتا الصيغتين، يجب أن يكون `n` و `m` عددين صحيحين غير سالبين.
+
+<div id="negative-limits">
+  ## الحدود السالبة
+</div>
+
+حدِّد الصفوف من *نهاية* مجموعة النتائج باستخدام قيم سالبة:
+
+| الصيغة               | النتيجة                            |
+| -------------------- | ---------------------------------- |
+| `LIMIT -m`           | آخر `m` صفوف                       |
+| `LIMIT -m OFFSET -n` | آخر `m` صفوف بعد تخطي آخر `n` صفوف |
+| `LIMIT m OFFSET -n`  | أول `m` صفوف بعد تخطي آخر `n` صفوف |
+| `LIMIT -m OFFSET n`  | آخر `m` صفوف بعد تخطي أول `n` صفوف |
+
+صيغة `LIMIT -n, -m` مكافئة لـ `LIMIT -m OFFSET -n`.
+
+<div id="fractional-limits">
+  ## حدود LIMIT الكسرية
+</div>
+
+استخدم قيمًا عشرية بين 0 و1 لتحديد نسبة مئوية من الصفوف:
+
+| الصياغة                 | النتيجة                                         |
+| ----------------------- | ----------------------------------------------- |
+| `LIMIT 0.1`             | أول 10% من الصفوف                               |
+| `LIMIT 1 OFFSET 0.5`    | الصف الوسيط                                     |
+| `LIMIT 0.25 OFFSET 0.5` | الربيع الثالث (25% من الصفوف بعد تجاوز أول 50%) |
+
+<Note>
+  * يجب أن تكون القيم الكسرية من النوع [Float64](/ar/reference/data-types/float)، وأكبر من 0 وأقل من 1.
+  * تُقرَّب أعداد الصفوف الكسرية إلى العدد الصحيح التالي.
+</Note>
+
+<div id="combining-limit-types">
+  ## الجمع بين أنواع LIMIT
+</div>
+
+يمكنك الجمع بين الأعداد الصحيحة العادية والإزاحات الكسرية أو السالبة:
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 10 rows starting from the halfway point
+LIMIT 10 OFFSET -20    -- 10 rows after skipping the last 20
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+يضمّ المعدِّل `WITH TIES` صفوفًا إضافية تحمل قيم `ORDER BY` نفسها التي يحملها الصف الأخير ضمن الحد.
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+عند استخدام `WITH TIES`، تُدرَج جميع الصفوف التي تطابق القيمة الأخيرة:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+يُدرج الصف 6 لأنه يحمل القيمة نفسها (`2`) التي في الصف 5.
+
+وينطبق الأمر نفسه عند تحديد الإزاحة باستخدام الكلمة المفتاحية `OFFSET`:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+يؤدي عادةً تخطي أول صفّين وأخذ 3 إلى إرجاع `1, 1, 2`، لكن أُدرِجت القيمة `2` الثانية أيضًا لأنها مساوية للصف الأخير.
+
+<Note>
+  `WITH TIES` غير مدعوم مع القيم السالبة في `LIMIT`.
+</Note>
+
+يمكن دمج هذا المُعدِّل مع المُعدِّل [`ORDER BY ... WITH FILL`](/ar/reference/statements/select/order-by#order-by-expr-with-fill-modifier).
+
+<div id="considerations">
+  ## اعتبارات
+</div>
+
+**نتائج غير حتمية:** من دون عبارة [`ORDER BY`](/ar/reference/statements/select/order-by)، قد تكون الصفوف المُعادة عشوائية وقد تختلف من تنفيذ استعلام إلى آخر.
+
+**حدّ على مستوى الخادم:** يمكن أيضًا أن يتأثر عدد الصفوف المُعادة بإعداد [limit](/ar/reference/settings/session-settings#limit).
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [LIMIT BY](/ar/reference/statements/select/limit-by) — يحدّ عدد الصفوف لكل مجموعة من القيم، وهو مفيد للحصول على أعلى N من النتائج ضمن كل فئة.

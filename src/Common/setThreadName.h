@@ -159,6 +159,7 @@ namespace DB
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
+    M(UDF_DRIVER, "UDFDriver") \
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \

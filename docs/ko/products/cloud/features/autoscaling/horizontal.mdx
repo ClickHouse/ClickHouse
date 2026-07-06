@@ -1,0 +1,56 @@
+---
+sidebarTitle: '수평 스케일링'
+slug: /cloud/features/autoscaling/horizontal
+description: 'ClickHouse Cloud의 수동 수평 스케일링'
+keywords: ['수평 스케일링', '스케일링', '레플리카', '수동 스케일링', '급증', '일시적 급증']
+title: '수평 스케일링'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<div id="manual-horizontal-scaling">
+  ## 수동 수평 스케일링
+</div>
+
+<ScalePlanFeatureBadge feature="Manual horizontal scaling" />
+
+ClickHouse Cloud [public APIs](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch)를 사용해 서비스의 스케일링 설정을 업데이트하여 서비스를 스케일링하거나, Cloud Console에서 레플리카 수를 조정할 수 있습니다.
+
+**Scale** 및 **Enterprise** 티어는 단일 레플리카 서비스도 지원합니다. 서비스를 한 번 스케일 아웃한 후에는 다시 최소 1개의 레플리카까지 스케일 인할 수 있습니다. 단일 레플리카 서비스는 가용성이 낮으므로 프로덕션 용도로는 권장되지 않습니다.
+
+<Note>
+  서비스는 수평으로 최대 20개의 레플리카까지 스케일링할 수 있습니다. 추가 레플리카가 필요하면 지원 팀에 문의하십시오.
+</Note>
+
+<div id="horizontal-scaling-via-api">
+  ### API를 통한 수평 스케일링
+</div>
+
+클러스터를 수평으로 스케일링하려면 API를 통해 `PATCH` 요청을 보내 레플리카 수를 조정하십시오. 아래 스크린샷은 `3`개 레플리카 클러스터를 `6`개 레플리카로 스케일 아웃하는 API 호출과 그에 대한 응답을 보여줍니다.
+
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="스케일링 PATCH 요청" border />
+
+*`numReplicas`를 업데이트하는 `PATCH` 요청*
+
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="스케일링 PATCH 응답" border />
+
+*`PATCH` 요청에 대한 응답*
+
+이미 스케일링이 진행 중인 상태에서 새 스케일링 요청을 보내거나 여러 요청을 연속으로 보내면, 스케일링 서비스는 중간 상태를 무시하고 최종 레플리카 수에 맞춰 조정됩니다.
+
+<div id="horizontal-scaling-via-ui">
+  ### UI를 통한 수평 스케일링
+</div>
+
+UI에서 서비스의 수평 스케일링을 하려면 **설정** 페이지에서 서비스의 레플리카 수를 조정하십시오.
+
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="스케일링 구성 설정" border />
+
+*ClickHouse Cloud 콘솔의 서비스 스케일링 설정*
+
+서비스 스케일링이 완료되면 Cloud Console의 메트릭 대시보드에 서비스에 올바르게 할당된 리소스가 표시되어야 합니다. 아래 스크린샷은 클러스터가 총 `96 GiB` 메모리로 스케일링된 상태를 보여줍니다. 즉, 각각 `16 GiB` 메모리가 할당된 `6`개의 레플리카로 구성되어 있습니다.
+
+<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="스케일링 메모리 할당" border />

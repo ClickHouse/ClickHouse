@@ -1,0 +1,2544 @@
+---
+title: Paramètres du serveur hors de la source
+---
+
+<div id="asynchronous_metric_log">
+  ## asynchronous_metric_log
+</div>
+
+Activé par défaut dans les déploiements ClickHouse Cloud.
+
+Si ce paramètre n’est pas activé par défaut dans votre environnement, vous pouvez, selon la façon dont ClickHouse a été installé, suivre les instructions ci-dessous pour l’activer ou le désactiver.
+
+**Activation**
+
+Pour activer manuellement la collecte de l’historique du journal des métriques asynchrones [`system.asynchronous_metric_log`](/fr/reference/system-tables/asynchronous_metric_log), créez `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml` avec le contenu suivant :
+
+```xml
+<clickhouse>
+     <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </asynchronous_metric_log>
+</clickhouse>
+```
+
+**Désactivation**
+
+Pour désactiver le paramètre `asynchronous_metric_log`, vous devez créer le fichier `/etc/clickhouse-server/config.d/disable_asynchronous_metric_log.xml` suivant avec le contenu suivant :
+
+```xml
+<clickhouse><asynchronous_metric_log remove="1" /></clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="auth_use_forwarded_address">
+  ## auth_use_forwarded_address
+</div>
+
+Utilise l’adresse d’origine pour authentifier les clients connectés via un proxy.
+
+<Note>
+  Ce paramètre doit être utilisé avec une extrême prudence, car les adresses transmises peuvent être facilement usurpées ; les serveurs qui acceptent ce mode d’authentification ne doivent pas être accessibles directement, mais uniquement via un proxy de confiance.
+</Note>
+
+<div id="backups">
+  ## sauvegardes
+</div>
+
+Paramètres de sauvegarde utilisés lors de l&#39;exécution des instructions [`BACKUP` and `RESTORE`](/fr/concepts/features/backup-restore/overview).
+
+Les paramètres suivants peuvent être configurés à l&#39;aide de sous-balises :
+
+{/* SQL
+  WITH settings AS (
+  SELECT arrayJoin([
+    ('allow_concurrent_backups', 'Bool','Détermine si plusieurs opérations de sauvegarde peuvent s’exécuter simultanément sur le même hôte.', 'true'),
+    ('allow_concurrent_restores', 'Bool', 'Détermine si plusieurs opérations de restauration peuvent s’exécuter simultanément sur le même hôte.', 'true'),
+    ('allowed_disk', 'String', 'Disque de destination de la sauvegarde lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
+    ('allowed_path', 'String', 'Chemin de destination de la sauvegarde lors de l’utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.', ''),
+    ('attempts_to_collect_metadata_before_sleep', 'UInt', 'Nombre de tentatives de collecte des métadonnées avant l’attente en cas d’incohérence après comparaison des métadonnées collectées.', '2'),
+    ('collect_metadata_timeout', 'UInt64', 'Délai d’expiration, en millisecondes, pour la collecte des métadonnées pendant la sauvegarde.', '600000'),
+    ('compare_collected_metadata', 'Bool', 'Si true, compare les métadonnées collectées aux métadonnées existantes afin de s’assurer qu’elles ne sont pas modifiées pendant la sauvegarde.', 'true'),
+    ('create_table_timeout', 'UInt64', 'Délai d’expiration, en millisecondes, pour la création des tables pendant la restauration.', '300000'),
+    ('max_attempts_after_bad_version', 'UInt64', 'Nombre maximal de tentatives après une erreur de version incorrecte lors d’une sauvegarde/restauration coordonnée.', '3'),
+    ('max_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente maximal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '100'),
+    ('min_sleep_before_next_attempt_to_collect_metadata', 'UInt64', 'Temps d’attente minimal, en millisecondes, avant la prochaine tentative de collecte des métadonnées.', '5000'),
+    ('remove_backup_files_after_failure', 'Bool', 'Si la commande `BACKUP` échoue, ClickHouse tentera de supprimer les fichiers déjà copiés dans la sauvegarde avant l’échec ; sinon, il laissera les fichiers copiés tels quels.', 'true'),
+    ('sync_period_ms', 'UInt64', 'Période de synchronisation, en millisecondes, pour la sauvegarde/restauration coordonnée.', '5000'),
+    ('test_inject_sleep', 'Bool', 'Attente liée aux tests', 'false'),
+    ('test_randomize_order', 'Bool', 'Si true, randomise l’ordre de certaines opérations à des fins de test.', 'false'),
+    ('zookeeper_path', 'String', 'Chemin dans ZooKeeper où sont stockées les métadonnées de sauvegarde et de restauration lors de l’utilisation de la clause `ON CLUSTER`.', '/clickhouse/backups')
+  ]) AS t )
+  SELECT concat('`', t.1, '`') AS Setting, t.2 AS Type, t.3 AS Description, concat('`', t.4, '`') AS Default FROM settings FORMAT Markdown
+  */}
+
+| Paramètre                                           | Type   | Description                                                                                                                                                                           | Par défaut            |
+| :-------------------------------------------------- | :----- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------- |
+| `allow_concurrent_backups`                          | Bool   | Détermine si plusieurs opérations de sauvegarde peuvent s&#39;exécuter simultanément sur le même hôte.                                                                                | `true`                |
+| `allow_concurrent_restores`                         | Bool   | Détermine si plusieurs opérations de restauration peuvent s&#39;exécuter simultanément sur le même hôte.                                                                              | `true`                |
+| `allowed_disk`                                      | String | Disque cible de la sauvegarde lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
+| `allowed_path`                                      | String | Chemin cible de la sauvegarde lors de l&#39;utilisation de `File()`. Ce paramètre doit être défini pour pouvoir utiliser `File`.                                                      | &#96;&#96;            |
+| `attempts_to_collect_metadata_before_sleep`         | UInt   | Nombre de tentatives de collecte des métadonnées avant une mise en attente en cas d&#39;incohérence après comparaison des métadonnées collectées.                                     | `2`                   |
+| `collect_metadata_timeout`                          | UInt64 | Délai d&#39;expiration, en millisecondes, pour la collecte des métadonnées pendant la sauvegarde.                                                                                     | `600000`              |
+| `compare_collected_metadata`                        | Bool   | Si la valeur est `true`, compare les métadonnées collectées aux métadonnées existantes pour vérifier qu&#39;elles ne changent pas pendant la sauvegarde.                              | `true`                |
+| `create_table_timeout`                              | UInt64 | Délai d&#39;expiration, en millisecondes, pour la création des tables pendant la restauration.                                                                                        | `300000`              |
+| `max_attempts_after_bad_version`                    | UInt64 | Nombre maximal de nouvelles tentatives après une erreur de mauvaise version lors d&#39;une sauvegarde/restauration coordonnée.                                                        | `3`                   |
+| `max_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente maximal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `100`                 |
+| `min_sleep_before_next_attempt_to_collect_metadata` | UInt64 | Temps d&#39;attente minimal, en millisecondes, avant la tentative suivante de collecte des métadonnées.                                                                               | `5000`                |
+| `remove_backup_files_after_failure`                 | Bool   | Si la commande `BACKUP` échoue, ClickHouse tentera de supprimer les fichiers déjà copiés dans la sauvegarde avant l&#39;échec ; sinon, il laissera les fichiers copiés en l&#39;état. | `true`                |
+| `sync_period_ms`                                    | UInt64 | Période de synchronisation, en millisecondes, pour la sauvegarde/restauration coordonnée.                                                                                             | `5000`                |
+| `test_inject_sleep`                                 | Bool   | Mise en attente liée aux tests                                                                                                                                                        | `false`               |
+| `test_randomize_order`                              | Bool   | Si la valeur est `true`, modifie aléatoirement l&#39;ordre de certaines opérations à des fins de test.                                                                                | `false`               |
+| `zookeeper_path`                                    | String | Chemin dans ZooKeeper où sont stockées les métadonnées de sauvegarde et de restauration lors de l&#39;utilisation de la clause `ON CLUSTER`.                                          | `/clickhouse/backups` |
+
+Ce paramètre est configuré par défaut comme suit :
+
+```xml
+<backups>
+    ....
+</backups>
+```
+
+<div id="background_schedule_pool_log">
+  ## background_schedule_pool_log
+</div>
+
+Contient des informations sur toutes les tâches d’arrière-plan exécutées par différents pools d’arrière-plan.
+
+```xml
+<background_schedule_pool_log>
+    <database>system</database>
+    <table>background_schedule_pool_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+    <!-- Only tasks longer than duration_threshold_milliseconds will be logged. Zero means log everything -->
+    <duration_threshold_milliseconds>0</duration_threshold_milliseconds>
+</background_schedule_pool_log>
+```
+
+<div id="bcrypt_workfactor">
+  ## bcrypt_workfactor
+</div>
+
+Facteur de coût du type d&#39;authentification `bcrypt_password`, qui utilise l&#39;[algorithme Bcrypt](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/).
+Le facteur de coût définit la quantité de calculs et le temps nécessaires pour calculer le hachage et vérifier le mot de passe.
+
+```xml
+<bcrypt_workfactor>12</bcrypt_workfactor>
+```
+
+<Warning>
+  Pour les applications nécessitant une authentification fréquente,
+  envisagez d’autres méthodes d’authentification en raison du
+  surcoût de calcul de bcrypt avec des facteurs de travail élevés.
+</Warning>
+
+<div id="table_engines_require_grant">
+  ## table_engines_require_grant
+</div>
+
+Si ce paramètre est défini sur true, les utilisateurs doivent disposer d&#39;un privilège pour créer une table avec un moteur spécifique, par ex. `GRANT TABLE ENGINE ON TinyLog to user`.
+
+<Note>
+  Par défaut, pour assurer la rétrocompatibilité, la création d&#39;une table avec un moteur de table spécifique ne tient pas compte du privilège, mais vous pouvez modifier ce comportement en définissant ce paramètre sur true.
+</Note>
+
+<div id="builtin_dictionaries_reload_interval">
+  ## builtin_dictionaries_reload_interval
+</div>
+
+Intervalle, en secondes, avant le rechargement des dictionnaires intégrés.
+
+ClickHouse recharge les dictionnaires intégrés toutes les x secondes. Cela permet de modifier les dictionnaires « à la volée » sans redémarrer le serveur.
+
+**Exemple**
+
+```xml
+<builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
+```
+
+<div id="compression">
+  ## compression
+</div>
+
+Paramètres de compression des données pour les tables utilisant le moteur [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+
+<Note>
+  Nous vous recommandons de ne pas modifier ces paramètres si vous débutez avec ClickHouse.
+</Note>
+
+**Modèle de configuration**:
+
+```xml
+<compression>
+    <case>
+      <min_part_size>...</min_part_size>
+      <min_part_size_ratio>...</min_part_size_ratio>
+      <method>...</method>
+      <level>...</level>
+    </case>
+    ...
+</compression>
+```
+
+**Champs `<case>`** :
+
+* `min_part_size` – Taille minimale d’une partie de données.
+* `min_part_size_ratio` – Ratio entre la taille de la partie de données et celle de la table.
+* `method` – Méthode de compression. Valeurs acceptées : `lz4`, `lz4hc`, `zstd`,`deflate_qpl`.
+* `level` – Niveau de compression. Voir [Codecs](/fr/reference/statements/create/table#general-purpose-codecs).
+
+<Note>
+  Vous pouvez configurer plusieurs sections `<case>`.
+</Note>
+
+**Actions lorsque les conditions sont remplies** :
+
+* Si une partie de données correspond à un jeu de conditions, ClickHouse utilise la méthode de compression spécifiée.
+* Si une partie de données correspond à plusieurs jeux de conditions, ClickHouse utilise le premier jeu de conditions correspondant.
+
+<Note>
+  Si aucune condition n’est remplie pour une partie de données, ClickHouse utilise la compression `lz4`.
+</Note>
+
+**Exemple**
+
+```xml
+<compression incl="clickhouse_compression">
+    <case>
+        <min_part_size>10000000000</min_part_size>
+        <min_part_size_ratio>0.01</min_part_size_ratio>
+        <method>zstd</method>
+        <level>1</level>
+    </case>
+</compression>
+```
+
+<div id="encryption">
+  ## chiffrement
+</div>
+
+Configure une commande permettant d&#39;obtenir une clé à utiliser avec les [codecs de chiffrement](/fr/reference/statements/create/table#encryption-codecs). La ou les clés doivent être écrites dans des variables d&#39;environnement ou définies dans le fichier de configuration.
+
+Les clés peuvent être hexadécimales ou prendre la forme de chaînes de 16 octets.
+
+**Exemple**
+
+Chargement depuis la configuration :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key>1234567812345678</key>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+<Note>
+  Il est déconseillé de stocker les clés dans le fichier de configuration. Ce n’est pas sûr. Vous pouvez déplacer les clés vers un fichier de configuration distinct sur un disque sécurisé, puis placer un lien symbolique vers ce fichier dans le dossier `config.d/`.
+</Note>
+
+Chargement depuis le fichier de configuration, lorsque la clé est au format hexadécimal :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex>00112233445566778899aabbccddeeff</key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Chargement de la clé à partir de la variable d’environnement :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex from_env="ENVVAR"></key_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Ici, `current_key_id` définit la clé actuellement utilisée pour le chiffrement, et toutes les clés indiquées peuvent servir au déchiffrement.
+
+Chacune de ces méthodes peut être appliquée à plusieurs clés :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+        <key_hex id="1" from_env="ENVVAR"></key_hex>
+        <current_key_id>1</current_key_id>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Ici, `current_key_id` indique la clé actuellement utilisée pour le chiffrement.
+
+Les utilisateurs peuvent également ajouter un nonce, qui doit faire 12 octets de long (par défaut, les processus de chiffrement et de déchiffrement utilisent un nonce composé d’octets nuls) :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce>012345678910</nonce>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+Ou il peut être indiqué en hexadécimal :
+
+```xml
+<encryption_codecs>
+    <aes_128_gcm_siv>
+        <nonce_hex>abcdefabcdef</nonce_hex>
+    </aes_128_gcm_siv>
+</encryption_codecs>
+```
+
+<Note>
+  Tout ce qui est mentionné ci-dessus s’applique à `aes_256_gcm_siv` (mais la clé doit comporter 32 octets).
+</Note>
+
+<div id="error_log">
+  ## error_log
+</div>
+
+Il est désactivé par défaut.
+
+**Activation**
+
+Pour activer manuellement la collecte de l’historique des erreurs [`system.error_log`](/fr/reference/system-tables/error_log), créez `/etc/clickhouse-server/config.d/error_log.xml` avec le contenu suivant :
+
+```xml
+<clickhouse>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </error_log>
+</clickhouse>
+```
+
+**Désactivation**
+
+Pour désactiver le paramètre `error_log`, créez le fichier suivant `/etc/clickhouse-server/config.d/disable_error_log.xml` avec le contenu ci-dessous :
+
+```xml
+<clickhouse>
+    <error_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="custom_settings_prefixes">
+  ## custom_settings_prefixes
+</div>
+
+Liste des préfixes utilisés pour les [paramètres personnalisés](/fr/concepts/features/configuration/settings/settings-query-level#custom_settings).
+Plusieurs préfixes doivent être séparés par des virgules.
+
+**Exemple**
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+**Voir aussi**
+
+* [Paramètres personnalisés](/fr/concepts/features/configuration/settings/settings-query-level#custom_settings)
+
+<div id="core_dump">
+  ## core_dump
+</div>
+
+Configure la limite souple de taille du fichier core dump.
+
+<Note>
+  La limite stricte se configure à l’aide des outils système
+</Note>
+
+**Exemple**
+
+```xml
+<core_dump>
+     <size_limit>1073741824</size_limit>
+</core_dump>
+```
+
+<div id="default_profile">
+  ## default_profile
+</div>
+
+Profil de paramètres par défaut. Les profils de paramètres figurent dans le fichier indiqué par le paramètre `user_config`.
+
+**Exemple**
+
+```xml
+<default_profile>default</default_profile>
+```
+
+<div id="dictionaries_config">
+  ## dictionaries_config
+</div>
+
+Chemin du fichier de configuration des dictionnaires.
+
+Chemin :
+
+* Indiquez le chemin absolu ou le chemin relatif au fichier de configuration du serveur.
+* Le chemin peut contenir les caractères génériques * et ?.
+
+Voir aussi :
+
+* &quot;[Dictionaries](/fr/reference/statements/create/dictionary)&quot;.
+
+**Exemple**
+
+```xml
+<dictionaries_config>*_dictionary.xml</dictionaries_config>
+```
+
+<div id="user_defined_executable_functions_config">
+  ## user_defined_executable_functions_config
+</div>
+
+Le chemin du fichier de configuration des fonctions utilisateur exécutables.
+
+Chemin :
+
+* Spécifiez le chemin absolu ou le chemin relatif au fichier de configuration du serveur.
+* Le chemin peut contenir les caractères génériques `*` et `?`.
+
+Voir aussi :
+
+* &quot;[Fonctions utilisateur exécutables](/fr/reference/functions/regular-functions/udf#executable-user-defined-functions).&quot;.
+
+**Exemple**
+
+```xml
+<user_defined_executable_functions_config>*_function.xml</user_defined_executable_functions_config>
+```
+
+<div id="graphite">
+  ## graphite
+</div>
+
+Envoi de données vers [Graphite](https://github.com/graphite-project).
+
+Paramètres :
+
+* `host` – Le serveur Graphite.
+* `port` – Le port du serveur Graphite.
+* `interval` – L’intervalle d’envoi, en secondes.
+* `timeout` – Le délai d’expiration pour l’envoi des données, en secondes.
+* `root_path` – Préfixe pour les clés.
+* `metrics` – Envoi de données depuis la table [system.metrics](/fr/reference/system-tables/metrics).
+* `events` – Envoi des données delta accumulées sur la période depuis la table [system.events](/fr/reference/system-tables/events).
+* `events_cumulative` – Envoi de données cumulées depuis la table [system.events](/fr/reference/system-tables/events).
+* `asynchronous_metrics` – Envoi de données depuis la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
+
+Vous pouvez configurer plusieurs sections `<graphite>`. Par exemple, vous pouvez les utiliser pour envoyer des données différentes à des intervalles différents.
+
+**Exemple**
+
+```xml
+<graphite>
+    <host>localhost</host>
+    <port>42000</port>
+    <timeout>0.1</timeout>
+    <interval>60</interval>
+    <root_path>one_min</root_path>
+    <metrics>true</metrics>
+    <events>true</events>
+    <events_cumulative>false</events_cumulative>
+    <asynchronous_metrics>true</asynchronous_metrics>
+</graphite>
+```
+
+<div id="graphite_rollup">
+  ## graphite_rollup
+</div>
+
+Paramètres de réduction des données pour Graphite.
+
+Pour plus de détails, consultez [GraphiteMergeTree](/fr/reference/engines/table-engines/mergetree-family/graphitemergetree).
+
+**Exemple**
+
+```xml
+<graphite_rollup_example>
+    <default>
+        <function>max</function>
+        <retention>
+            <age>0</age>
+            <precision>60</precision>
+        </retention>
+        <retention>
+            <age>3600</age>
+            <precision>300</precision>
+        </retention>
+        <retention>
+            <age>86400</age>
+            <precision>3600</precision>
+        </retention>
+    </default>
+</graphite_rollup_example>
+```
+
+<div id="http_handlers">
+  ## http_handlers
+</div>
+
+Permet d’utiliser des gestionnaires HTTP personnalisés.
+Pour ajouter un nouveau gestionnaire HTTP, ajoutez simplement une nouvelle balise `<rule>`.
+Les règles sont vérifiées de haut en bas dans l’ordre défini,
+et la première correspondance exécute le gestionnaire.
+
+Les paramètres suivants peuvent être configurés via des sous-balises :
+
+| Sous-balises         | Définition                                                                                                                                                                                                                                                                    |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                | Pour faire correspondre l’URL de la requête, vous pouvez utiliser le préfixe &#39;regex:&#39; pour effectuer une correspondance par expression régulière (facultatif)                                                                                                         |
+| `methods`            | Pour faire correspondre les méthodes de requête, vous pouvez utiliser des virgules pour séparer plusieurs méthodes (facultatif)                                                                                                                                               |
+| `headers`            | Pour faire correspondre les en-têtes de la requête, faites correspondre chaque élément enfant (le nom de l’élément enfant est le nom de l’en-tête) ; vous pouvez utiliser le préfixe &#39;regex:&#39; pour effectuer une correspondance par expression régulière (facultatif) |
+| `handler`            | Le gestionnaire de requête                                                                                                                                                                                                                                                    |
+| `empty_query_string` | Vérifie qu’il n’y a pas de query string dans l’URL                                                                                                                                                                                                                            |
+
+`handler` contient les paramètres suivants, qui peuvent être configurés via des sous-balises :
+
+| Sous-balises       | Définition                                                                                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`              | Une URL de redirection                                                                                                                                                                                                               |
+| `type`             | Types pris en charge : static, dynamic&#95;query&#95;handler, predefined&#95;query&#95;handler, redirect                                                                                                                             |
+| `status`           | À utiliser avec le type static : code d’état de la réponse                                                                                                                                                                           |
+| `query_param_name` | À utiliser avec le type dynamic&#95;query&#95;handler : extrait et exécute la valeur correspondant à `<query_param_name>` dans les params de la requête HTTP                                                                         |
+| `query`            | À utiliser avec le type predefined&#95;query&#95;handler : exécute la query lorsque le gestionnaire est appelé                                                                                                                       |
+| `content_type`     | À utiliser avec le type static : type de contenu de la réponse                                                                                                                                                                       |
+| `response_content` | À utiliser avec le type static : contenu de la réponse envoyé au client ; lors de l’utilisation du préfixe &#39;file://&#39; ou &#39;config://&#39;, récupère le contenu depuis le fichier ou la configuration et l’envoie au client |
+
+En plus d’une liste de règles, vous pouvez spécifier `<defaults/>`, ce qui permet d’activer tous les gestionnaires par défaut.
+
+Exemple :
+
+```xml
+<http_handlers>
+    <rule>
+        <url>/</url>
+        <methods>POST,GET</methods>
+        <headers><pragma>no-cache</pragma></headers>
+        <handler>
+            <type>dynamic_query_handler</type>
+            <query_param_name>query</query_param_name>
+        </handler>
+    </rule>
+
+    <rule>
+        <url>/predefined_query</url>
+        <methods>POST,GET</methods>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT * FROM system.settings</query>
+        </handler>
+    </rule>
+
+    <rule>
+        <handler>
+            <type>static</type>
+            <status>200</status>
+            <content_type>text/plain; charset=UTF-8</content_type>
+            <response_content>config://http_server_default_response</response_content>
+        </handler>
+    </rule>
+</http_handlers>
+```
+
+<div id="http_server_default_response">
+  ## http_server_default_response
+</div>
+
+La page affichée par défaut lorsque vous accédez au serveur HTTP(s) de ClickHouse.
+La valeur par défaut est &quot;Ok.&quot; (avec un caractère de saut de ligne à la fin)
+
+**Exemple**
+
+Ouvre `https://tabix.io/` lorsque vous accédez à `http://localhost: http_port`.
+
+```xml
+<http_server_default_response>
+  <![CDATA[<html ng-app="SMI2"><head><base href="http://ui.tabix.io/"></head><body><div ui-view="" class="content-ui"></div><script src="http://loader.tabix.io/master.js"></script></body></html>]]>
+</http_server_default_response>
+```
+
+<div id="http_options_response">
+  ## http_options_response
+</div>
+
+Utilisé pour ajouter des en-têtes à la réponse d’une requête HTTP `OPTIONS`.
+La méthode `OPTIONS` est utilisée lors de l’envoi de requêtes CORS preflight.
+
+Pour plus d’informations, consultez [OPTIONS](https://developer.mozilla.org/en-US/docs/Web/HTTP/Methods/OPTIONS).
+
+Exemple :
+
+```xml
+<http_options_response>
+     <header>
+            <name>Access-Control-Allow-Origin</name>
+            <value>*</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Headers</name>
+          <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, Authorization</value>
+     </header>
+     <header>
+          <name>Access-Control-Allow-Methods</name>
+          <value>POST, GET, OPTIONS</value>
+     </header>
+     <header>
+          <name>Access-Control-Max-Age</name>
+          <value>86400</value>
+     </header>
+</http_options_response>
+```
+
+<div id="hsts_max_age">
+  ## hsts_max_age
+</div>
+
+Durée d’expiration de HSTS, en secondes.
+
+<Note>
+  Une valeur de `0` signifie que ClickHouse désactive HSTS. Si vous définissez une valeur positive, HSTS sera activé et `max-age` correspondra à la valeur définie.
+</Note>
+
+**Exemple**
+
+```xml
+<hsts_max_age>600000</hsts_max_age>
+```
+
+<div id="interserver_listen_host">
+  ## interserver_listen_host
+</div>
+
+Restriction des hôtes autorisés à échanger des données entre les serveurs ClickHouse.
+Si Keeper est utilisé, la même restriction s&#39;applique à la communication entre différentes instances de Keeper.
+
+<Note>
+  Par défaut, la valeur est celle du paramètre [`listen_host`](#listen_host).
+</Note>
+
+**Exemple**
+
+```xml
+<interserver_listen_host>::ffff:a00:1</interserver_listen_host>
+<interserver_listen_host>10.0.0.1</interserver_listen_host>
+```
+
+Type :
+
+Valeur par défaut :
+
+<div id="interserver_http_credentials">
+  ## interserver_http_credentials
+</div>
+
+Un nom d’utilisateur et un mot de passe utilisés pour se connecter à d’autres serveurs lors de la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication). De plus, le serveur authentifie les autres répliques à l’aide de ces identifiants.
+`interserver_http_credentials` doit donc être identique pour toutes les répliques d’un cluster.
+
+<Note>
+  * Par défaut, si la section `interserver_http_credentials` est omise, l’authentification n’est pas utilisée lors de la réplication.
+  * Les paramètres `interserver_http_credentials` ne sont pas liés à la [configuration](/fr/concepts/features/interfaces/client#configuration_files) des identifiants du client ClickHouse.
+  * Ces identifiants sont communs à la réplication via `HTTP` et `HTTPS`.
+</Note>
+
+Les paramètres suivants peuvent être configurés à l’aide de sous-balises :
+
+* `user` — Nom d’utilisateur.
+* `password` — Mot de passe.
+* `allow_empty` — Si `true`, les autres répliques sont autorisées à se connecter sans authentification, même si des identifiants sont définis. Si `false`, les connexions sans authentification sont refusées. Valeur par défaut : `false`.
+* `old` — Contient les anciens `user` et `password` utilisés lors de la rotation des identifiants. Plusieurs sections `old` peuvent être spécifiées.
+
+**Rotation des identifiants**
+
+ClickHouse prend en charge la rotation dynamique des identifiants interserveurs sans devoir arrêter toutes les répliques en même temps pour mettre à jour leur configuration. Les identifiants peuvent être modifiés en plusieurs étapes.
+
+Pour activer l’authentification, définissez `interserver_http_credentials.allow_empty` sur `true` et ajoutez des identifiants. Cela autorise les connexions avec ou sans authentification.
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>111</password>
+    <allow_empty>true</allow_empty>
+</interserver_http_credentials>
+```
+
+Après avoir configuré toutes les répliques, définissez `allow_empty` sur `false` ou supprimez ce paramètre. Cela rend obligatoire l’authentification avec les nouveaux identifiants.
+
+Pour modifier les identifiants existants, déplacez le nom d’utilisateur et le mot de passe dans la section `interserver_http_credentials.old`, puis mettez à jour `user` et `password` avec les nouvelles valeurs. À ce stade, le serveur utilise les nouveaux identifiants pour se connecter aux autres répliques et accepte les connexions avec les anciens comme avec les nouveaux identifiants.
+
+```xml
+<interserver_http_credentials>
+    <user>admin</user>
+    <password>222</password>
+    <old>
+        <user>admin</user>
+        <password>111</password>
+    </old>
+    <old>
+        <user>temp</user>
+        <password>000</password>
+    </old>
+</interserver_http_credentials>
+```
+
+Lorsque les nouveaux identifiants ont été appliqués à toutes les répliques, les anciens peuvent être supprimés.
+
+<div id="ldap_servers">
+  ## ldap_servers
+</div>
+
+Indiquez ici les serveurs LDAP avec leurs paramètres de connexion afin de :
+
+* les utiliser comme mécanismes d&#39;authentification pour des utilisateurs locaux dédiés, pour lesquels le mécanisme d&#39;authentification `ldap` est spécifié au lieu de `password`
+* les utiliser comme répertoires d&#39;utilisateurs distants.
+
+Les paramètres suivants peuvent être configurés à l&#39;aide de sous-balises :
+
+| Setting                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bind_dn`                      | Modèle utilisé pour construire le DN à utiliser pour l&#39;opération de bind. Le DN résultant est construit en remplaçant toutes les sous-chaînes `\{user_name\}` du modèle par le nom d&#39;utilisateur réel à chaque tentative d&#39;authentification.                                                                                                                                                                                                                                                                                                                            |
+| `enable_tls`                   | Indicateur qui active l&#39;utilisation d&#39;une connexion sécurisée au serveur LDAP. Spécifiez `no` pour le protocole en texte brut (`ldap://`) (non recommandé). Spécifiez `yes` pour le protocole LDAP sur SSL/TLS (`ldaps://`) (recommandé, valeur par défaut). Spécifiez `starttls` pour le protocole StartTLS legacy (protocole en texte brut (`ldap://`), mis à niveau vers TLS).                                                                                                                                                                                           |
+| `host`                         | Nom d&#39;hôte ou adresse IP du serveur LDAP ; ce paramètre est obligatoire et ne peut pas être vide.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `port`                         | Port du serveur LDAP ; la valeur par défaut est 636 si `enable_tls` est défini sur true, sinon `389`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `tls_ca_cert_dir`              | chemin vers le répertoire contenant les certificats de CA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `tls_ca_cert_file`             | chemin vers le fichier de certificat de CA.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `tls_cert_file`                | chemin vers le fichier de certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `tls_cipher_suite`             | suite de chiffrement autorisée (notation OpenSSL).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `tls_key_file`                 | chemin vers le fichier de clé du certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `tls_minimum_protocol_version` | Version minimale du protocole SSL/TLS. Les valeurs acceptées sont : `ssl2`, `ssl3`, `tls1.0`, `tls1.1`, `tls1.2` (valeur par défaut).                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `tls_require_cert`             | Comportement de la vérification du certificat du pair SSL/TLS. Les valeurs acceptées sont : `never`, `allow`, `try`, `demand` (valeur par défaut).                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `user_dn_detection`            | Section contenant les paramètres de recherche LDAP permettant de détecter le DN utilisateur réel de l&#39;utilisateur lié. Cela est principalement utilisé dans les filtres de recherche pour un mappage de rôles ultérieur lorsque le serveur est Active Directory. Le DN utilisateur résultant sera utilisé lors du remplacement des sous-chaînes `\{user_dn\}` partout où elles sont autorisées. Par défaut, le DN utilisateur est défini comme étant égal au bind DN, mais une fois la recherche effectuée, il sera mis à jour avec la valeur réelle du DN utilisateur détecté. |
+| `verification_cooldown`        | Période, en secondes, après une tentative de bind réussie, pendant laquelle un utilisateur est considéré comme authentifié avec succès pour toutes les requêtes consécutives sans contacter le serveur LDAP. Spécifiez `0` (valeur par défaut) pour désactiver la mise en cache et forcer le contact avec le serveur LDAP pour chaque requête d&#39;authentification.                                                                                                                                                                                                               |
+
+Le paramètre `user_dn_detection` peut être configuré avec des sous-balises :
+
+| Setting         | Description                                                                                                                                                                                                                                                                                                                                                                          |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `base_dn`       | modèle utilisé pour construire le base DN pour la recherche LDAP. Le DN résultant sera construit en remplaçant toutes les sous-chaînes `\{user_name\}` et `\{bind_dn\}` du modèle par le nom d&#39;utilisateur réel et le bind DN pendant la recherche LDAP.                                                                                                                         |
+| `scope`         | portée de la recherche LDAP. Les valeurs acceptées sont : `base`, `one_level`, `children`, `subtree` (valeur par défaut).                                                                                                                                                                                                                                                            |
+| `search_filter` | modèle utilisé pour construire le filtre de recherche pour la recherche LDAP. Le filtre résultant sera construit en remplaçant toutes les sous-chaînes `\{user_name\}`, `\{bind_dn\}` et `\{base_dn\}` du modèle par le nom d&#39;utilisateur réel, le bind DN et le base DN pendant la recherche LDAP. Notez que les caractères spéciaux doivent être correctement échappés en XML. |
+
+Exemple :
+
+```xml
+<my_ldap_server>
+    <host>localhost</host>
+    <port>636</port>
+    <bind_dn>uid={user_name},ou=users,dc=example,dc=com</bind_dn>
+    <verification_cooldown>300</verification_cooldown>
+    <enable_tls>yes</enable_tls>
+    <tls_minimum_protocol_version>tls1.2</tls_minimum_protocol_version>
+    <tls_require_cert>demand</tls_require_cert>
+    <tls_cert_file>/path/to/tls_cert_file</tls_cert_file>
+    <tls_key_file>/path/to/tls_key_file</tls_key_file>
+    <tls_ca_cert_file>/path/to/tls_ca_cert_file</tls_ca_cert_file>
+    <tls_ca_cert_dir>/path/to/tls_ca_cert_dir</tls_ca_cert_dir>
+    <tls_cipher_suite>ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:AES256-GCM-SHA384</tls_cipher_suite>
+</my_ldap_server>
+```
+
+Exemple (cas typique d’Active Directory avec détection configurée du DN utilisateur en vue d’un mappage ultérieur des rôles) :
+
+```xml
+<my_ad_server>
+    <host>localhost</host>
+    <port>389</port>
+    <bind_dn>EXAMPLE\{user_name}</bind_dn>
+    <user_dn_detection>
+        <base_dn>CN=Users,DC=example,DC=com</base_dn>
+        <search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+    </user_dn_detection>
+    <enable_tls>no</enable_tls>
+</my_ad_server>
+```
+
+<div id="listen_host">
+  ## listen_host
+</div>
+
+Restriction sur les hôtes à partir desquels les requêtes peuvent être envoyées. Si vous voulez que le server réponde à tous, indiquez `::`.
+
+Exemples :
+
+```xml
+<listen_host>::1</listen_host>
+<listen_host>127.0.0.1</listen_host>
+```
+
+<div id="logger">
+  ## logger
+</div>
+
+L’emplacement et le format des messages de log.
+
+**Clés**:
+
+| Clé                          | Description                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `async`                      | Lorsque `true` (par défaut), la journalisation s’effectue de manière asynchrone (un thread d’arrière-plan par canal de sortie). Sinon, elle s’effectue dans le thread qui appelle LOG                                                                                                                                                                                           |
+| `async_queue_max_size`       | En cas de journalisation asynchrone, nombre maximal de messages conservés dans la file d’attente avant leur flush. Les messages supplémentaires sont ignorés                                                                                                                                                                                                                    |
+| `console`                    | Active la journalisation vers la console. Définissez cette valeur sur `1` ou `true` pour l’activer. La valeur par défaut est `1` si ClickHouse ne s’exécute pas en mode daemon, `0` sinon.                                                                                                                                                                                      |
+| `console_log_level`          | Niveau de log pour la sortie console. La valeur par défaut est `level`.                                                                                                                                                                                                                                                                                                         |
+| `console_shutdown_log_level` | Le Shutdown level est utilisé pour définir le niveau de log de la console lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                           |
+| `console_startup_log_level`  | Le Startup level est utilisé pour définir le niveau de log de la console au démarrage du serveur. Après le démarrage, le niveau de log revient au paramètre `console_log_level`                                                                                                                                                                                                 |
+| `count`                      | Politique de rotation : nombre maximal de fichiers de log historiques conservés par ClickHouse.                                                                                                                                                                                                                                                                                 |
+| `errorlog`                   | Chemin vers le fichier de log des erreurs.                                                                                                                                                                                                                                                                                                                                      |
+| `formatting.type`            | Format de log pour la sortie console. Actuellement, seul `json` est pris en charge                                                                                                                                                                                                                                                                                              |
+| `level`                      | Niveau de log. Valeurs acceptées : `none` (désactive la journalisation), `fatal`, `critical`, `error`, `warning`, `notice`, `information`,`debug`, `trace`, `test`                                                                                                                                                                                                              |
+| `log`                        | Chemin vers le fichier de log.                                                                                                                                                                                                                                                                                                                                                  |
+| `rotation`                   | Politique de rotation : contrôle quand les fichiers de log sont pivotés. La rotation peut être basée sur la taille, le temps ou une combinaison des deux. Exemples : 100M, daily, 100M,daily. Une fois que le fichier de log dépasse la taille spécifiée ou que l’intervalle de temps spécifié est atteint, il est renommé et archivé, puis un nouveau fichier de log est créé. |
+| `shutdown_level`             | Le Shutdown level est utilisé pour définir le niveau du logger racine lors de l’arrêt du serveur.                                                                                                                                                                                                                                                                               |
+| `size`                       | Politique de rotation : taille maximale des fichiers de log en octets. Une fois que la taille du fichier de log dépasse ce seuil, il est renommé et archivé, puis un nouveau fichier de log est créé.                                                                                                                                                                           |
+| `startup_level`              | Le Startup level est utilisé pour définir le niveau du logger racine au démarrage du serveur. Après le démarrage, le niveau de log revient au paramètre `level`                                                                                                                                                                                                                 |
+| `stream_compress`            | Compresse les messages de log avec LZ4. Définissez cette valeur sur `1` ou `true` pour l’activer.                                                                                                                                                                                                                                                                               |
+| `syslog_level`               | Niveau de log pour la journalisation vers syslog.                                                                                                                                                                                                                                                                                                                               |
+| `use_syslog`                 | Transfère également la sortie des logs vers syslog.                                                                                                                                                                                                                                                                                                                             |
+
+**Spécificateurs de format de log**
+
+Les noms de fichiers dans les chemins `log` et `errorLog` prennent en charge les spécificateurs de format ci-dessous pour le nom de fichier résultant (la partie répertoire ne les prend pas en charge).
+
+La colonne « Example » montre la sortie à `2023-07-06 18:32:07`.
+
+| Spécificateur | Description                                                                                                                                                                                                   | Exemple                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `%%`          | % littéral                                                                                                                                                                                                    | `%`                        |
+| `%n`          | Caractère de retour à la ligne                                                                                                                                                                                |                            |
+| `%t`          | Caractère de tabulation horizontale                                                                                                                                                                           |                            |
+| `%Y`          | Année sous forme de nombre décimal, p. ex. 2017                                                                                                                                                               | `2023`                     |
+| `%y`          | 2 derniers chiffres de l&#39;année sous forme de nombre décimal (plage [00,99])                                                                                                                               | `23`                       |
+| `%C`          | 2 premiers chiffres de l&#39;année sous forme de nombre décimal (plage [00,99])                                                                                                                               | `20`                       |
+| `%G`          | [Année ISO 8601 basée sur les semaines](https://en.wikipedia.org/wiki/ISO_8601#Week_dates) sur quatre chiffres, c.-à-d. l&#39;année qui contient la semaine indiquée. Généralement utile uniquement avec `%V` | `2023`                     |
+| `%g`          | 2 derniers chiffres de l&#39;[année ISO 8601 basée sur les semaines](https://en.wikipedia.org/wiki/ISO_8601#Week_dates), c.-à-d. l&#39;année qui contient la semaine indiquée.                                | `23`                       |
+| `%b`          | Nom du mois abrégé, p. ex. Oct (selon la locale)                                                                                                                                                              | `Jul`                      |
+| `%h`          | Synonyme de %b                                                                                                                                                                                                | `Jul`                      |
+| `%B`          | Nom complet du mois, p. ex. October (selon la locale)                                                                                                                                                         | `July`                     |
+| `%m`          | Mois sous forme de nombre décimal (plage [01,12])                                                                                                                                                             | `07`                       |
+| `%U`          | Semaine de l&#39;année sous forme de nombre décimal (le dimanche est le premier jour de la semaine) (plage [00,53])                                                                                           | `27`                       |
+| `%W`          | Semaine de l&#39;année sous forme de nombre décimal (le lundi est le premier jour de la semaine) (plage [00,53])                                                                                              | `27`                       |
+| `%V`          | Numéro de semaine ISO 8601 (plage [01,53])                                                                                                                                                                    | `27`                       |
+| `%j`          | Jour de l&#39;année sous forme de nombre décimal (plage [001,366])                                                                                                                                            | `187`                      |
+| `%d`          | Jour du mois sous forme de nombre décimal complété par des zéros (plage [01,31]). Un nombre à un seul chiffre est précédé d&#39;un zéro.                                                                      | `06`                       |
+| `%e`          | Jour du mois sous forme de nombre décimal complété par des espaces (plage [1,31]). Un nombre à un seul chiffre est précédé d&#39;un espace.                                                                   | `&nbsp; 6`                 |
+| `%a`          | Nom abrégé du jour de la semaine, p. ex. Fri (selon la locale)                                                                                                                                                | `Thu`                      |
+| `%A`          | Nom complet du jour de la semaine, p. ex. Friday (selon la locale)                                                                                                                                            | `Thursday`                 |
+| `%w`          | Jour de la semaine sous forme de nombre entier, avec le dimanche égal à 0 (plage [0-6])                                                                                                                       | `4`                        |
+| `%u`          | Jour de la semaine sous forme de nombre décimal, où le lundi vaut 1 (format ISO 8601) (plage [1-7])                                                                                                           | `4`                        |
+| `%H`          | Heure sous forme de nombre décimal, horloge sur 24 heures (plage [00-23])                                                                                                                                     | `18`                       |
+| `%I`          | Heure sous forme de nombre décimal, horloge sur 12 heures (plage [01,12])                                                                                                                                     | `06`                       |
+| `%M`          | Minute sous forme de nombre décimal (plage [00,59])                                                                                                                                                           | `32`                       |
+| `%S`          | Seconde sous forme de nombre décimal (plage [00,60])                                                                                                                                                          | `07`                       |
+| `%c`          | Chaîne standard de date et d&#39;heure, p. ex. Sun Oct 17 04:41:13 2010 (selon la locale)                                                                                                                     | `Thu Jul  6 18:32:07 2023` |
+| `%x`          | Représentation localisée de la date (selon la locale)                                                                                                                                                         | `07/06/23`                 |
+| `%X`          | Représentation localisée de l&#39;heure, p. ex. 18:40:20 ou 6:40:20 PM (selon la locale)                                                                                                                      | `18:32:07`                 |
+| `%D`          | Date courte au format MM/DD/YY, équivalente à %m/%d/%y                                                                                                                                                        | `07/06/23`                 |
+| `%F`          | Date courte au format AAAA-MM-JJ, équivalente à %Y-%m-%d                                                                                                                                                      | `2023-07-06`               |
+| `%r`          | Heure locale au format 12 heures (selon les paramètres régionaux)                                                                                                                                             | `06:32:07 PM`              |
+| `%R`          | Équivalent à &quot;%H:%M&quot;                                                                                                                                                                                | `18:32`                    |
+| `%T`          | Équivalent à &quot;%H:%M:%S&quot; (format d&#39;heure ISO 8601)                                                                                                                                               | `18:32:07`                 |
+| `%p`          | Indication locale a.m. ou p.m. (selon les paramètres régionaux)                                                                                                                                               | `PM`                       |
+| `%z`          | Décalage par rapport à l&#39;UTC au format ISO 8601 (par ex. -0430), ou aucun caractère si les informations de fuseau horaire ne sont pas disponibles                                                         | `+0800`                    |
+| `%Z`          | Nom ou abréviation du fuseau horaire selon les paramètres régionaux, ou aucun caractère si les informations de fuseau horaire ne sont pas disponibles                                                         | `Z AWST `                  |
+
+**Exemple**
+
+```xml
+<logger>
+    <level>trace</level>
+    <log>/var/log/clickhouse-server/clickhouse-server-%F-%T.log</log>
+    <errorlog>/var/log/clickhouse-server/clickhouse-server-%F-%T.err.log</errorlog>
+    <size>1000M</size>
+    <count>10</count>
+    <stream_compress>true</stream_compress>
+</logger>
+```
+
+Pour afficher uniquement les messages de log dans la console :
+
+```xml
+<logger>
+    <level>information</level>
+    <console>true</console>
+</logger>
+```
+
+**Redéfinitions par niveau**
+
+Le niveau de log de chaque logger peut être redéfini. Par exemple, pour désactiver tous les messages des loggers &quot;Backup&quot; et &quot;RBAC&quot;.
+
+```xml
+<logger>
+    <levels>
+        <logger>
+            <name>Backup</name>
+            <level>none</level>
+        </logger>
+        <logger>
+            <name>RBAC</name>
+            <level>none</level>
+        </logger>
+    </levels>
+</logger>
+```
+
+**syslog**
+
+Pour envoyer également les messages de log à syslog :
+
+```xml
+<logger>
+    <use_syslog>1</use_syslog>
+    <syslog>
+        <address>syslog.remote:10514</address>
+        <hostname>myhost.local</hostname>
+        <facility>LOG_LOCAL6</facility>
+        <format>syslog</format>
+    </syslog>
+</logger>
+```
+
+Clés pour `<syslog>` :
+
+| Clé        | Description                                                                                                                                                                                                                                                                                     |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `address`  | L’adresse de syslog au format `host\[:port\]`. Si elle est omise, le démon local est utilisé.                                                                                                                                                                                                   |
+| `hostname` | Le nom de l’hôte à partir duquel les logs sont envoyés (facultatif).                                                                                                                                                                                                                            |
+| `facility` | Le [mot-clé facility](https://en.wikipedia.org/wiki/Syslog#Facility) de syslog. Il doit être indiqué en majuscules avec le préfixe &quot;LOG&#95;&quot;, par exemple `LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, etc. Valeur par défaut : `LOG_USER` si `address` est spécifié, `LOG_DAEMON` sinon. |
+| `format`   | Format du message de log. Valeurs possibles : `bsd` et `syslog.`                                                                                                                                                                                                                                |
+
+**Formats de logs**
+
+Vous pouvez spécifier le format de log qui sera affiché dans les logs de la console. Actuellement, seul JSON est pris en charge.
+
+**Exemple**
+
+Voici un exemple de log JSON en sortie :
+
+```json
+{
+  "date_time_utc": "2024-11-06T09:06:09Z",
+  "date_time": "1650918987.180175",
+  "thread_name": "#1",
+  "thread_id": "254545",
+  "level": "Trace",
+  "query_id": "",
+  "logger_name": "BaseDaemon",
+  "message": "Received signal 2",
+  "source_file": "../base/daemon/BaseDaemon.cpp; virtual void SignalListener::run()",
+  "source_line": "192"
+}
+```
+
+Pour activer la prise en charge de la journalisation au format JSON, utilisez l&#39;extrait suivant :
+
+```xml
+<logger>
+    <formatting>
+        <type>json</type>
+        <!-- Can be configured on a per-channel basis (log, errorlog, console, syslog), or globally for all channels (then just omit it). -->
+        <!-- <channel></channel> -->
+        <names>
+            <date_time>date_time</date_time>
+            <thread_name>thread_name</thread_name>
+            <thread_id>thread_id</thread_id>
+            <level>level</level>
+            <query_id>query_id</query_id>
+            <logger_name>logger_name</logger_name>
+            <message>message</message>
+            <source_file>source_file</source_file>
+            <source_line>source_line</source_line>
+        </names>
+    </formatting>
+</logger>
+```
+
+**Renommer les clés des logs JSON**
+
+Les noms de clés peuvent être modifiés en changeant les valeurs des balises à l’intérieur de la balise `<names>`. Par exemple, pour remplacer `DATE_TIME` par `MY_DATE_TIME`, vous pouvez utiliser `<date_time>MY_DATE_TIME</date_time>`.
+
+**Omettre des clés dans les logs JSON**
+
+Les propriétés des logs peuvent être omises en les mettant en commentaire. Par exemple, si vous ne voulez pas que votre log affiche `query_id`, vous pouvez mettre la balise `<query_id>` en commentaire.
+
+<div id="send_crash_reports">
+  ## send_crash_reports
+</div>
+
+Paramètres d’envoi des rapports de plantage à l’équipe de développement du cœur de ClickHouse.
+
+L’activer, en particulier dans les environnements de préproduction, est vivement apprécié.
+
+Clés :
+
+| Clé                   | Description                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`             | Indicateur booléen permettant d’activer la fonctionnalité, `true` par défaut. Définissez-le sur `false` pour éviter l’envoi de rapports de plantage.                  |
+| `endpoint`            | Vous pouvez redéfinir l’URL du point de terminaison utilisée pour envoyer les rapports de plantage.                                                                   |
+| `send_logical_errors` | `LOGICAL_ERROR` est comparable à un `assert` : il s’agit d’un bug dans ClickHouse. Cet indicateur booléen permet d’envoyer ce type d’exception (par défaut : `true`). |
+
+**Utilisation recommandée**
+
+```xml
+<send_crash_reports>
+    <enabled>true</enabled>
+</send_crash_reports>
+```
+
+<div id="ssh_server">
+  ## ssh_server
+</div>
+
+La partie publique de la clé d’hôte sera écrite dans le fichier known&#95;hosts
+côté client SSH lors de la première connexion.
+
+Les configurations de clé d’hôte sont désactivées par défaut.
+Décommentez-les et indiquez le chemin vers la clé SSH correspondante pour les activer :
+
+Exemple :
+
+```xml
+<ssh_server>
+    <host_rsa_key>path_to_the_ssh_key</host_rsa_key>
+    <host_ecdsa_key>path_to_the_ssh_key</host_ecdsa_key>
+    <host_ed25519_key>path_to_the_ssh_key</host_ed25519_key>
+</ssh_server>
+```
+
+<div id="tcp_ssh_port">
+  ## tcp_ssh_port
+</div>
+
+Port du serveur SSH qui permet à l’utilisateur de se connecter et d’exécuter des requêtes de façon interactive à l’aide du client intégré via le PTY.
+
+Exemple :
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+```
+
+<div id="storage_configuration">
+  ## storage_configuration
+</div>
+
+Permet de configurer le stockage sur plusieurs disques.
+
+La configuration du stockage a la structure suivante :
+
+```xml
+<storage_configuration>
+    <disks>
+        <!-- configuration -->
+    </disks>
+    <policies>
+        <!-- configuration -->
+    </policies>
+</storage_configuration>
+```
+
+<div id="configuration-of-disks">
+  ### Configuration de `disks`
+</div>
+
+La configuration de `disks` suit la structure ci-dessous :
+
+```xml
+<storage_configuration>
+    <disks>
+        <disk_name_1>
+            <path>/mnt/fast_ssd/clickhouse/</path>
+        </disk_name_1>
+        <disk_name_2>
+            <path>/mnt/hdd1/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_2>
+        <disk_name_3>
+            <path>/mnt/hdd2/clickhouse/</path>
+            <keep_free_space_bytes>10485760</keep_free_space_bytes>
+        </disk_name_3>
+        ...
+    </disks>
+</storage_configuration>
+```
+
+Les sous-balises ci-dessus définissent les paramètres suivants pour `disks` :
+
+| Setting                 | Description                                                                                                       |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `<disk_name_N>`         | Le nom du disque, qui doit être unique.                                                                           |
+| `path`                  | Le chemin où seront stockées les données du serveur (répertoires `data` et `shadow`). Il doit se terminer par `/` |
+| `keep_free_space_bytes` | Taille de l’espace libre réservé sur le disque.                                                                   |
+
+<Note>
+  L’ordre des disques n’a pas d’importance.
+</Note>
+
+<div id="configuration-of-policies">
+  ### Configuration des politiques
+</div>
+
+Les sous-balises ci-dessus définissent les paramètres suivants pour `policies` :
+
+| Setting                      | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `policy_name_N`              | Nom de la politique. Les noms de politique doivent être uniques.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `volume_name_N`              | Nom du volume. Les noms de volume doivent être uniques.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `disk`                       | Le disque situé dans le volume.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `max_data_part_size_bytes`   | Taille maximale d&#39;un fragment de données pouvant résider sur l&#39;un des disques de ce volume. Si une fusion produit un fragment dont la taille prévue dépasse `max_data_part_size_bytes`, ce fragment sera écrit sur le volume suivant. En pratique, cette fonctionnalité vous permet de stocker les nouveaux petits fragments sur un volume chaud (SSD), puis de les déplacer vers un volume froid (HDD) lorsqu&#39;ils deviennent volumineux. N&#39;utilisez pas cette option si la politique ne comporte qu&#39;un seul volume.                                                                                               |
+| `move_factor`                | La part d&#39;espace libre disponible sur le volume. Si l&#39;espace disponible passe en dessous de cette valeur, les données commenceront à être transférées vers le volume suivant, s&#39;il y en a un. Pour ce transfert, les fragments sont triés par taille, du plus grand au plus petit (ordre décroissant), puis les fragments dont la taille cumulée suffit à satisfaire la condition `move_factor` sont sélectionnés. Si la taille totale de tous les fragments est insuffisante, tous les fragments seront déplacés.                                                                                                         |
+| `perform_ttl_move_on_insert` | Désactive le déplacement, lors de l&#39;insertion, des données dont le TTL a expiré. Par défaut (si cette option est activée), si des données déjà expirées selon la règle de déplacement basée sur la durée de vie sont insérées, elles sont immédiatement déplacées vers le volume / disque spécifié par cette règle. Cela peut considérablement ralentir l&#39;insertion si le volume / disque cible est lent (par exemple S3). Si cette option est désactivée, la partie expirée des données est d&#39;abord écrite sur le volume par défaut, puis immédiatement déplacée vers le volume spécifié par la règle pour le TTL expiré. |
+| `load_balancing`             | Politique d&#39;équilibrage des disques : `round_robin` ou `least_used`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `least_used_ttl_ms`          | Définit le délai d&#39;expiration (en millisecondes) pour la mise à jour de l&#39;espace disponible sur tous les disques (`0` - toujours mettre à jour, `-1` - ne jamais mettre à jour, la valeur par défaut est `60000`). Notez que si le disque est utilisé uniquement par ClickHouse et ne fait pas l&#39;objet d&#39;un redimensionnement du système de fichiers à chaud, vous pouvez utiliser la valeur `-1`. Dans tous les autres cas, cela n&#39;est pas recommandé, car cela finira par entraîner une allocation incorrecte de l&#39;espace.                                                                                   |
+| `prefer_not_to_merge`        | Désactive la fusion des parties de données sur ce volume. Remarque : cela peut être préjudiciable et entraîner des ralentissements. Lorsque ce paramètre est activé (ne faites pas cela), la fusion des données sur ce volume est interdite (ce qui est déconseillé). Cela permet de contrôler la manière dont ClickHouse interagit avec les disques lents. Nous recommandons de ne pas utiliser ce paramètre.                                                                                                                                                                                                                         |
+| `volume_priority`            | Définit la priorité (l&#39;ordre) de remplissage des volumes. Plus la valeur est petite, plus la priorité est élevée. Les valeurs du paramètre doivent être des nombres naturels et couvrir la plage de 1 à N (N étant la plus grande valeur de paramètre spécifiée) sans lacunes.                                                                                                                                                                                                                                                                                                                                                     |
+
+Pour `volume_priority` :
+
+* Si tous les volumes ont ce paramètre, ils sont priorisés dans l&#39;ordre spécifié.
+* Si seuls *certains* volumes l&#39;ont, les volumes qui ne l&#39;ont pas ont la priorité la plus basse. Ceux qui l&#39;ont sont priorisés selon la valeur de la balise, tandis que la priorité des autres est déterminée par leur ordre de description dans le fichier de configuration.
+* Si *aucun* volume ne reçoit ce paramètre, leur ordre est déterminé par l&#39;ordre de leur description dans le fichier de configuration.
+* La priorité des volumes ne peut pas être identique.
+
+<div id="macros">
+  ## macros
+</div>
+
+Substitutions de paramètres pour les tables répliquées.
+
+Peut être omis si les tables répliquées ne sont pas utilisées.
+
+Pour plus d’informations, voir la section [Création de tables répliquées](/fr/reference/engines/table-engines/mergetree-family/replication#creating-replicated-tables).
+
+**Exemple**
+
+```xml
+<macros incl="macros" optional="true" />
+```
+
+<div id="replica_group_name">
+  ## replica_group_name
+</div>
+
+Nom du groupe de répliques pour la base de données Replicated.
+
+Le cluster créé par la base de données Replicated sera constitué de répliques appartenant au même groupe.
+Les requêtes DDL n&#39;attendront que les répliques du même groupe.
+
+Valeur vide par défaut.
+
+**Exemple**
+
+```xml
+<replica_group_name>backups</replica_group_name>
+```
+
+<div id="max_session_timeout">
+  ## max_session_timeout
+</div>
+
+Délai d’expiration maximal de la session, en secondes.
+
+Exemple :
+
+```xml
+<max_session_timeout>3600</max_session_timeout>
+```
+
+<div id="merge_tree">
+  ## merge_tree
+</div>
+
+Paramétrage fin des tables du [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+
+Pour plus d’informations, consultez le fichier d’en-tête MergeTreeSettings.h.
+
+**Exemple**
+
+```xml
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+<div id="metric_log">
+  ## metric_log
+</div>
+
+Il est désactivé par défaut.
+
+**Activation**
+
+Pour activer manuellement la collecte de l&#39;historique des metrics [`system.metric_log`](/fr/reference/system-tables/metric_log), créez `/etc/clickhouse-server/config.d/metric_log.xml` avec le contenu suivant :
+
+```xml
+<clickhouse>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </metric_log>
+</clickhouse>
+```
+
+**Désactivation**
+
+Pour désactiver le paramètre `metric_log`, créez le fichier suivant `/etc/clickhouse-server/config.d/disable_metric_log.xml` avec le contenu ci-dessous :
+
+```xml
+<clickhouse>
+    <metric_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="replicated_merge_tree">
+  ## replicated_merge_tree
+</div>
+
+Ajustement fin pour les tables [ReplicatedMergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Ce paramètre est prioritaire.
+
+Pour plus d&#39;informations, consultez le fichier d&#39;en-tête MergeTreeSettings.h.
+
+**Exemple**
+
+```xml
+<replicated_merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</replicated_merge_tree>
+```
+
+<div id="opentelemetry_span_log">
+  ## opentelemetry_span_log
+</div>
+
+Paramètres de la table système [`opentelemetry_span_log`](/fr/reference/system-tables/opentelemetry_span_log).
+
+<SystemLogParameters />
+
+Exemple :
+
+```xml
+<opentelemetry_span_log>
+    <engine>
+        engine MergeTree
+        partition by toYYYYMM(finish_date)
+        order by (finish_date, finish_time_us, trace_id)
+    </engine>
+    <database>system</database>
+    <table>opentelemetry_span_log</table>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</opentelemetry_span_log>
+```
+
+<div id="openSSL">
+  ## openSSL
+</div>
+
+Configuration SSL côté client et serveur.
+
+La prise en charge de SSL est assurée par la bibliothèque `libpoco`. Les options de configuration disponibles sont décrites dans [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h). Les valeurs par défaut se trouvent dans [SSLManager.cpp](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/src/SSLManager.cpp).
+
+Clés des paramètres côté serveur et client :
+
+| Option                        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Valeur par défaut                                                                          |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `cacheSessions`               | Active ou désactive la mise en cache des sessions. À utiliser en combinaison avec `sessionIdContext`. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                              | `false`                                                                                    |
+| `caConfig`                    | Chemin d’accès vers le fichier ou le répertoire contenant les certificats de CA de confiance. S’il s’agit d’un fichier, il doit être au format PEM et peut contenir plusieurs certificats de CA. S’il s’agit d’un répertoire, il doit contenir un fichier .pem par certificat de CA. Les noms de fichiers sont recherchés à partir de la valeur de hachage du nom de sujet de la CA. Pour plus de détails, consultez la page de manuel de [SSL&#95;CTX&#95;load&#95;verify&#95;locations](https://www.openssl.org/docs/man3.0/man3/SSL_CTX_load_verify_locations.html). |                                                                                            |
+| `certificateFile`             | Chemin du fichier de certificat client/serveur au format PEM. Vous pouvez ne pas l’indiquer si `privateKeyFile` contient le certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                 |                                                                                            |
+| `cipherList`                  | Suites de chiffrement OpenSSL prises en charge.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `ALL:!ADH:!LOW:!EXP:!MD5:!3DES:@STRENGTH`                                                  |
+| `disableProtocols`            | Protocoles dont l’utilisation est interdite.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |                                                                                            |
+| `extendedVerification`        | Si cette option est activée, vérifiez que le CN ou le SAN du certificat correspond au nom d’hôte du pair.                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `false`                                                                                    |
+| `fips`                        | Active le mode FIPS d’OpenSSL. Pris en charge si la version d’OpenSSL de la bibliothèque prend en charge FIPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `false`                                                                                    |
+| `invalidCertificateHandler`   | Classe (une sous-classe de CertificateHandler) utilisée pour vérifier les certificats non valides. Par exemple : `<invalidCertificateHandler> <name>RejectCertificateHandler</name> </invalidCertificateHandler>` .                                                                                                                                                                                                                                                                                                                                                     | `RejectCertificateHandler`                                                                 |
+| `loadDefaultCAFile`           | Indique si les certificats de CA intégrés d’OpenSSL seront utilisés. ClickHouse suppose que les certificats de CA intégrés se trouvent dans le fichier `/etc/ssl/cert.pem` (resp. le répertoire `/etc/ssl/certs`) ou dans le fichier (resp. le répertoire) spécifié par la variable d’environnement `SSL_CERT_FILE` (resp. `SSL_CERT_DIR`).                                                                                                                                                                                                                             | `true`                                                                                     |
+| `preferServerCiphers`         | Suites de chiffrement du serveur privilégiées par le client.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `false`                                                                                    |
+| `privateKeyFile`              | Chemin vers le fichier contenant la clé privée du certificat PEM. Le fichier peut contenir à la fois une clé et un certificat.                                                                                                                                                                                                                                                                                                                                                                                                                                          |                                                                                            |
+| `privateKeyPassphraseHandler` | Classe (sous-classe de PrivateKeyPassphraseHandler) qui demande la phrase de passe pour accéder à la clé privée. Par exemple : `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.                                                                                                                                                                                                                                                                                        | `KeyConsoleHandler`                                                                        |
+| `requireTLSv1`                | Nécessite une connexion TLSv1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `false`                                                                                    |
+| `requireTLSv1_1`              | Exige une connexion TLSv1.1. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
+| `requireTLSv1_2`              | Exige une connexion TLSv1.2. Valeurs acceptées : `true`, `false`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | `false`                                                                                    |
+| `sessionCacheSize`            | Le nombre maximal de sessions mises en cache par le serveur. Une valeur de `0` signifie un nombre illimité de sessions.                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [1024*20](https://github.com/ClickHouse/boringssl/blob/master/include/openssl/ssl.h#L1978) |
+| `sessionIdContext`            | Une suite unique de caractères aléatoires que le serveur ajoute à chaque identifiant généré. La longueur de la chaîne ne doit pas dépasser `SSL_MAX_SSL_SESSION_ID_LENGTH`. Ce paramètre est toujours recommandé, car il permet d&#39;éviter des problèmes, que le serveur mette la session en cache ou que le client ait demandé une mise en cache.                                                                                                                                                                                                                    | `$\{application.name\}`                                                                    |
+| `sessionTimeout`              | Durée de mise en cache de la session sur le serveur, en heures.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `2`                                                                                        |
+| `verificationDepth`           | Longueur maximale de la chaîne de vérification. La vérification échoue si la longueur de la chaîne de certificats dépasse la valeur définie.                                                                                                                                                                                                                                                                                                                                                                                                                            | `9`                                                                                        |
+| `verificationMode`            | La méthode de vérification des certificats du nœud. Pour plus de détails, consultez la description de la classe [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h). Valeurs possibles : `none`, `relaxed`, `strict`, `once`.                                                                                                                                                                                                                                                                                    | `relaxed`                                                                                  |
+
+**Exemple de paramètres :**
+
+```xml
+<openSSL>
+    <server>
+        <!-- openssl req -subj "/CN=localhost" -new -newkey rsa:2048 -days 365 -nodes -x509 -keyout /etc/clickhouse-server/server.key -out /etc/clickhouse-server/server.crt -->
+        <certificateFile>/etc/clickhouse-server/server.crt</certificateFile>
+        <privateKeyFile>/etc/clickhouse-server/server.key</privateKeyFile>
+        <!-- openssl dhparam -out /etc/clickhouse-server/dhparam.pem 4096 -->
+        <dhParamsFile>/etc/clickhouse-server/dhparam.pem</dhParamsFile>
+        <verificationMode>none</verificationMode>
+        <loadDefaultCAFile>true</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+    </server>
+    <client>
+        <loadDefaultCAFile>true</loadDefaultCAFile>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <!-- Use for self-signed: <verificationMode>none</verificationMode> -->
+        <invalidCertificateHandler>
+            <!-- Use for self-signed: <name>AcceptCertificateHandler</name> -->
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="part_log">
+  ## part_log
+</div>
+
+Journal des événements associés à [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Par exemple, l’ajout ou la fusion de données. Vous pouvez utiliser ce journal pour simuler des algorithmes de fusion et comparer leurs caractéristiques. Vous pouvez visualiser le processus de fusion.
+
+Les requêtes sont consignées dans la table [system.part&#95;log](/fr/reference/system-tables/part_log), et non dans un fichier distinct. Vous pouvez configurer le nom de cette table à l’aide du paramètre `table` (voir ci-dessous).
+
+<SystemLogParameters />
+
+**Exemple**
+
+```xml
+<part_log>
+    <database>system</database>
+    <table>part_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</part_log>
+```
+
+<div id="processors_profile_log">
+  ## processors_profile_log
+</div>
+
+Paramètres de la table système [`processors_profile_log`](/fr/reference/system-tables/processors_profile_log).
+
+<SystemLogParameters />
+
+Les réglages par défaut sont :
+
+```xml
+<processors_profile_log>
+    <database>system</database>
+    <table>processors_profile_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</processors_profile_log>
+```
+
+<div id="prometheus">
+  ## prometheus
+</div>
+
+Exposition des données de métriques pour la collecte par [Prometheus](https://prometheus.io).
+
+Paramètres :
+
+* `endpoint` – endpoint HTTP de collecte des métriques par le serveur Prometheus. Doit commencer par &#39;/&#39;.
+* `port` – Port de `endpoint`.
+* `metrics` – Expose les métriques de la table [system.metrics](/fr/reference/system-tables/metrics).
+* `events` – Expose les métriques de la table [system.events](/fr/reference/system-tables/events).
+* `asynchronous_metrics` – Expose les valeurs actuelles des métriques de la table [system.asynchronous&#95;metrics](/fr/reference/system-tables/asynchronous_metrics).
+* `errors` - Expose le nombre d’erreurs par code d’erreur survenues depuis le dernier redémarrage du serveur. Ces informations peuvent également être obtenues à partir de [system.errors](/fr/reference/system-tables/errors).
+
+**Exemple**
+
+```xml highlight={5-12}
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+        <errors>true</errors>
+    </prometheus>
+</clickhouse>
+```
+
+Vérifiez (remplacez `127.0.0.1` par l’adresse IP ou le nom d’hôte de votre serveur ClickHouse) :
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+<div id="query_log">
+  ## query_log
+</div>
+
+Paramètre de journalisation des requêtes reçues lorsque le paramètre [log&#95;queries=1](/fr/reference/settings/session-settings) est activé.
+
+Les requêtes sont consignées dans la table [system.query&#95;log](/fr/reference/system-tables/query_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
+
+<SystemLogParameters />
+
+Si la table n&#39;existe pas, ClickHouse la crée. Si la structure du journal des requêtes a changé lors de la mise à jour du serveur ClickHouse, la table utilisant l&#39;ancienne structure est renommée, et une nouvelle table est créée automatiquement.
+
+**Exemple**
+
+```xml
+<query_log>
+    <database>system</database>
+    <table>query_log</table>
+    <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_log>
+```
+
+<div id="query_metric_log">
+  ## query_metric_log
+</div>
+
+Il est désactivé par défaut.
+
+**Activation**
+
+Pour activer manuellement la collecte de l’historique des métriques dans [`system.query_metric_log`](/fr/reference/system-tables/query_metric_log), créez `/etc/clickhouse-server/config.d/query_metric_log.xml` avec le contenu suivant :
+
+```xml
+<clickhouse>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_metric_log>
+</clickhouse>
+```
+
+**Désactivation**
+
+Pour désactiver le paramètre `query_metric_log`, créez le fichier suivant `/etc/clickhouse-server/config.d/disable_query_metric_log.xml` avec le contenu ci-dessous :
+
+```xml
+<clickhouse>
+    <query_metric_log remove="1" />
+</clickhouse>
+```
+
+<SystemLogParameters />
+
+<div id="query_cache">
+  ## query_cache
+</div>
+
+Configuration du [cache de requêtes](/fr/concepts/features/performance/caches/query-cache).
+
+Les paramètres suivants sont disponibles :
+
+| Paramètre                 | Description                                                                                                              | Valeur par défaut |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ----------------- |
+| `max_entries`             | Le nombre maximal de résultats de requêtes `SELECT` stockés dans le cache.                                               | `1024`            |
+| `max_entry_size_in_bytes` | La taille maximale, en octets, des résultats de requêtes `SELECT` pouvant être enregistrés dans le cache.                | `1048576`         |
+| `max_entry_size_in_rows`  | Le nombre maximal de lignes que les résultats de requêtes `SELECT` peuvent contenir pour être enregistrés dans le cache. | `30000000`        |
+| `max_size_in_bytes`       | La taille maximale du cache, en octets. `0` signifie que le cache de requêtes est désactivé.                             | `1073741824`      |
+
+<Note>
+  * Les paramètres modifiés prennent effet immédiatement.
+  * Les données du cache de requêtes sont allouées en DRAM. Si la mémoire est limitée, veillez à définir une faible valeur pour `max_size_in_bytes` ou à désactiver complètement le cache de requêtes.
+</Note>
+
+**Exemple**
+
+```xml
+<query_cache>
+    <max_size_in_bytes>1073741824</max_size_in_bytes>
+    <max_entries>1024</max_entries>
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+</query_cache>
+```
+
+<div id="query_thread_log">
+  ## query_thread_log
+</div>
+
+Paramètre de journalisation des threads des requêtes reçues lorsque le paramètre [log&#95;query&#95;threads=1](/fr/reference/settings/session-settings#log_query_threads) est activé.
+
+Les requêtes sont consignées dans la table [system.query&#95;thread&#95;log](/fr/reference/system-tables/query_thread_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table via le paramètre `table` (voir ci-dessous).
+
+<SystemLogParameters />
+
+Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des threads de requête a changé lors de la mise à jour du serveur ClickHouse, la table utilisant l’ancienne structure est renommée, et une nouvelle table est créée automatiquement.
+
+**Exemple**
+
+```xml
+<query_thread_log>
+    <database>system</database>
+    <table>query_thread_log</table>
+    <partition_by>toMonday(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_thread_log>
+```
+
+<div id="query_views_log">
+  ## query_views_log
+</div>
+
+Paramètre de journalisation des vues (en direct, matérialisées, etc.) en fonction des requêtes reçues avec le paramètre [log&#95;query&#95;views=1](/fr/reference/settings/session-settings#log_query_views).
+
+Les requêtes sont consignées dans la table [system.query&#95;views&#95;log](/fr/reference/system-tables/query_views_log), et non dans un fichier distinct. Vous pouvez modifier le nom de la table à l’aide du paramètre `table` (voir ci-dessous).
+
+<SystemLogParameters />
+
+Si la table n’existe pas, ClickHouse la crée. Si la structure du journal des vues de requête a changé lors de la mise à jour du serveur ClickHouse, la table ayant l’ancienne structure est renommée, et une nouvelle table est créée automatiquement.
+
+**Exemple**
+
+```xml
+<query_views_log>
+    <database>system</database>
+    <table>query_views_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</query_views_log>
+```
+
+<div id="text_log">
+  ## text_log
+</div>
+
+Paramètres de la [table système text&#95;log](/fr/reference/system-tables/text_log) pour consigner les messages texte.
+
+<SystemLogParameters />
+
+En outre :
+
+| Paramètre | Description                                                                   | Valeur par défaut |
+| --------- | ----------------------------------------------------------------------------- | ----------------- |
+| `level`   | Niveau de message maximal (par défaut `Trace`) qui sera stocké dans la table. | `Trace`           |
+
+**Exemple**
+
+```xml
+<clickhouse>
+    <text_log>
+        <level>notice</level>
+        <database>system</database>
+        <table>text_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>event_date</partition_by> -->
+        <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine>
+    </text_log>
+</clickhouse>
+```
+
+<div id="trace_log">
+  ## trace_log
+</div>
+
+Paramètres de fonctionnement de la table système [trace&#95;log](/fr/reference/system-tables/trace_log).
+
+<SystemLogParameters />
+
+Le fichier de configuration du serveur par défaut `config.xml` contient la section de paramètres suivante :
+
+```xml
+<trace_log>
+    <database>system</database>
+    <table>trace_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1048576</max_size_rows>
+    <reserved_size_rows>8192</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+    <symbolize>false</symbolize>
+</trace_log>
+```
+
+<div id="asynchronous_insert_log">
+  ## asynchronous_insert_log
+</div>
+
+Paramètres de la table système [asynchronous&#95;insert&#95;log](/fr/reference/system-tables/asynchronous_insert_log) pour la journalisation des async inserts.
+
+<SystemLogParameters />
+
+**Exemple**
+
+```xml
+<clickhouse>
+    <asynchronous_insert_log>
+        <database>system</database>
+        <table>asynchronous_insert_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </asynchronous_insert_log>
+</clickhouse>
+```
+
+<div id="crash_log">
+  ## crash_log
+</div>
+
+Paramètres de fonctionnement de la table système [crash&#95;log](/fr/reference/system-tables/crash_log).
+
+Les paramètres suivants peuvent être configurés via des sous-balises :
+
+| Paramètre                          | Description                                                                                                                                                               | Valeur par défaut   | Note                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `buffer_size_rows_flush_threshold` | Seuil du nombre de lignes. Si ce seuil est atteint, l’écriture des logs sur le disque est lancée en arrière-plan.                                                         | `max_size_rows / 2` |                                                                                                                                     |
+| `database`                         | Nom de la base de données.                                                                                                                                                |                     |                                                                                                                                     |
+| `engine`                           | [Définition du moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) pour une table système.             |                     | Ne peut pas être utilisé si `partition_by` ou `order_by` est défini. Si rien n’est spécifié, `MergeTree` est sélectionné par défaut |
+| `flush_interval_milliseconds`      | Intervalle d’écriture des données du tampon en mémoire vers la table.                                                                                                     | `7500`              |                                                                                                                                     |
+| `flush_on_crash`                   | Indique si les logs doivent être écrits sur le disque en cas de crash.                                                                                                    | `false`             |                                                                                                                                     |
+| `max_size_rows`                    | Taille maximale des logs, en lignes. Lorsque le nombre de logs non écrits atteint `max_size_rows`, les logs sont écrits sur le disque.                                    | `1024`              |                                                                                                                                     |
+| `order_by`                         | [Clé de tri personnalisée](/fr/reference/engines/table-engines/mergetree-family/mergetree#order_by) pour une table système. Ne peut pas être utilisé si `engine` est défini. |                     | Si `engine` est spécifié pour une table système, le paramètre `order_by` doit être indiqué directement dans &#39;engine&#39;        |
+| `partition_by`                     | [Clé de partitionnement personnalisée](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key) pour une table système.                                 |                     | Si `engine` est spécifié pour une table système, le paramètre `partition_by` doit être indiqué directement dans &#39;engine&#39;    |
+| `reserved_size_rows`               | Taille de mémoire préallouée pour les logs, en lignes.                                                                                                                    | `1024`              |                                                                                                                                     |
+| `settings`                         | [Paramètres supplémentaires](/fr/reference/engines/table-engines/mergetree-family/mergetree#settings) qui contrôlent le comportement de MergeTree (facultatif).              |                     | Si `engine` est spécifié pour une table système, le paramètre `settings` doit être indiqué directement dans &#39;engine&#39;        |
+| `storage_policy`                   | Nom de la stratégie de stockage à utiliser pour la table (facultatif).                                                                                                    |                     | Si `engine` est spécifié pour une table système, le paramètre `storage_policy` doit être indiqué directement dans &#39;engine&#39;  |
+| `table`                            | Nom de la table système.                                                                                                                                                  |                     |                                                                                                                                     |
+| `ttl`                              | Spécifie le [TTL](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de la table.                                                    |                     | Si `engine` est spécifié pour une table système, le paramètre `ttl` doit être indiqué directement dans &#39;engine&#39;             |
+
+Le fichier de configuration du serveur `config.xml` par défaut contient la section de paramètres suivante :
+
+```xml
+<crash_log>
+    <database>system</database>
+    <table>crash_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    <max_size_rows>1024</max_size_rows>
+    <reserved_size_rows>1024</reserved_size_rows>
+    <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
+    <flush_on_crash>false</flush_on_crash>
+</crash_log>
+```
+
+<div id="custom_cached_disks_base_directory">
+  ## custom_cached_disks_base_directory
+</div>
+
+Ce paramètre spécifie le chemin du cache pour les disques personnalisés avec cache (créés à partir de SQL).
+`custom_cached_disks_base_directory` est prioritaire sur `filesystem_caches_path` pour les disques personnalisés (défini dans `filesystem_caches_path.xml`),
+qui est utilisé si le premier n’est pas présent.
+Le chemin du paramètre de cache du système de fichiers doit se trouver dans ce répertoire,
+sinon une exception sera levée, empêchant la création du disque.
+
+<Note>
+  Cela n’affecte pas les disques créés avec une ancienne version avant la mise à niveau du serveur.
+  Dans ce cas, aucune exception ne sera levée, afin de permettre au serveur de démarrer correctement.
+</Note>
+
+Exemple :
+
+```xml
+<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+```
+
+<div id="backup_log">
+  ## backup_log
+</div>
+
+Paramètres de la [table système backup&#95;log](/fr/reference/system-tables/backup_log) servant à journaliser les opérations `BACKUP` et `RESTORE`.
+
+<SystemLogParameters />
+
+**Exemple**
+
+```xml
+<clickhouse>
+    <backup_log>
+        <database>system</database>
+        <table>backup_log</table>
+        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+        <!-- <engine>Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + INTERVAL 30 day</engine> -->
+    </backup_log>
+</clickhouse>
+```
+
+<div id="blob_storage_log">
+  ## blob_storage_log
+</div>
+
+Paramètres de la table système [`blob_storage_log`](/fr/reference/system-tables/blob_storage_log).
+
+<SystemLogParameters />
+
+Exemple :
+
+```xml
+<blob_storage_log>
+    <database>system</database
+    <table>blob_storage_log</table
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds
+    <ttl>event_date + INTERVAL 30 DAY</ttl>
+</blob_storage_log>
+```
+
+<div id="query_masking_rules">
+  ## query_masking_rules
+</div>
+
+Règles fondées sur des expressions régulières, appliquées aux requêtes ainsi qu’à tous les messages de journalisation avant leur enregistrement dans les journaux du serveur,
+les tables [`system.query_log`](/fr/reference/system-tables/query_log), [`system.text_log`](/fr/reference/system-tables/text_log), [`system.processes`](/fr/reference/system-tables/processes), ainsi que dans les journaux envoyés au client. Cela permet d’éviter
+la divulgation de données sensibles issues de requêtes SQL, telles que des noms, des adresses e-mail, des identifiants personnels ou des numéros de carte de crédit, dans les journaux.
+
+**Exemple**
+
+```xml
+<query_masking_rules>
+    <rule>
+        <name>hide SSN</name>
+        <regexp>(^|\D)\d{3}-\d{2}-\d{4}($|\D)</regexp>
+        <replace>000-00-0000</replace>
+    </rule>
+</query_masking_rules>
+```
+
+**Champs de configuration**:
+
+| Paramètre | Description                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `name`    | nom de la règle (facultatif)                                                                 |
+| `regexp`  | expression régulière compatible avec RE2 (obligatoire)                                       |
+| `replace` | chaîne de substitution pour les données sensibles (facultatif, par défaut : six astérisques) |
+
+Les règles de masquage s’appliquent à l’ensemble de la requête (afin d’éviter toute fuite de données sensibles provenant de requêtes malformées / impossibles à analyser).
+
+La table [`system.events`](/fr/reference/system-tables/events) comporte le compteur `QueryMaskingRulesMatch`, qui indique le nombre total de correspondances avec les règles de masquage des requêtes.
+
+Pour les requêtes distribuées, chaque serveur doit être configuré séparément, sinon les sous-requêtes transmises à d’autres
+nœuds seront stockées sans masquage.
+
+<div id="remote_servers">
+  ## remote_servers
+</div>
+
+Configuration des clusters utilisés par le moteur de table [Distributed](/fr/reference/engines/table-engines/special/distributed) et par la fonction de table `cluster`.
+
+**Exemple**
+
+```xml
+<remote_servers incl="clickhouse_remote_servers" />
+```
+
+Pour la valeur de l’attribut `incl`, consultez la section &quot;[Fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files)&quot;.
+
+**Voir aussi**
+
+* [skip&#95;unavailable&#95;shards](/fr/reference/settings/session-settings#skip_unavailable_shards)
+* [Découverte du cluster](/fr/guides/oss/deployment-and-scaling/cluster-discovery)
+* [Moteur de base de données Replicated](/fr/reference/engines/database-engines/replicated)
+
+<div id="remote_url_allow_hosts">
+  ## remote_url_allow_hosts
+</div>
+
+Liste des hôtes autorisés à être utilisés dans les moteurs de stockage et les fonctions de table liés aux URL.
+
+Lors de l’ajout d’un hôte avec la balise XML `\<host\>` :
+
+* il doit être indiqué exactement comme dans l’URL, car le nom est vérifié avant la résolution DNS. Par exemple : `<host>clickhouse.com</host>`
+* si le port est explicitement indiqué dans l’URL, alors `host:port` est vérifié dans son ensemble. Par exemple : `<host>clickhouse.com:80</host>`
+* si l’hôte est indiqué sans port, alors tous les ports de cet hôte sont autorisés. Par exemple : si `<host>clickhouse.com</host>` est indiqué, alors `clickhouse.com:20` (FTP), `clickhouse.com:80` (HTTP), `clickhouse.com:443` (HTTPS), etc. sont autorisés.
+* si l’hôte est indiqué sous la forme d’une adresse IP, alors il est vérifié tel qu’il apparaît dans l’URL. Par exemple : `[2a02:6b8:a::a]`.
+* s’il y a des redirections et que leur prise en charge est activée, alors chaque redirection (le champ `location`) est vérifiée.
+
+Par exemple :
+
+```sql
+<remote_url_allow_hosts>
+    <host>clickhouse.com</host>
+</remote_url_allow_hosts>
+```
+
+<div id="timezone">
+  ## timezone
+</div>
+
+Le fuseau horaire du serveur.
+
+Il est spécifié sous la forme d’un identifiant IANA du fuseau UTC ou d’un lieu géographique (par exemple, Africa/Abidjan).
+
+Le fuseau horaire est nécessaire pour les conversions entre les formats String et DateTime lorsque des champs DateTime sont affichés au format texte (à l’écran ou dans un fichier), ainsi que lors de la conversion d’une chaîne en DateTime. En outre, il est utilisé dans les fonctions qui manipulent l’heure et la date si elles n’ont pas reçu de fuseau horaire dans les paramètres d’entrée.
+
+**Exemple**
+
+```xml
+<timezone>Asia/Istanbul</timezone>
+```
+
+**Voir aussi**
+
+* [session&#95;timezone](/fr/reference/settings/session-settings#session_timezone)
+
+<div id="tcp_port">
+  ## tcp_port
+</div>
+
+Port de communication avec les clients via le protocole TCP.
+
+**Exemple**
+
+```xml
+<tcp_port>9000</tcp_port>
+```
+
+<div id="tcp_port_secure">
+  ## tcp_port_secure
+</div>
+
+Port TCP utilisé pour les communications sécurisées avec les clients. À utiliser avec les paramètres [OpenSSL](#openssl).
+
+**Valeur par défaut**
+
+```xml
+<tcp_port_secure>9440</tcp_port_secure>
+```
+
+<div id="mysql_port">
+  ## mysql_port
+</div>
+
+Port utilisé pour communiquer avec les clients via le protocole MySQL.
+
+<Note>
+  * Les entiers positifs indiquent le numéro de port sur lequel écouter
+  * Des valeurs vides permettent de désactiver la communication avec les clients via le protocole MySQL.
+</Note>
+
+**Exemple**
+
+```xml
+<mysql_port>9004</mysql_port>
+```
+
+<div id="postgresql_port">
+  ## postgresql_port
+</div>
+
+Port utilisé pour communiquer avec les clients via le protocole PostgreSQL.
+
+<Note>
+  * Les entiers positifs indiquent le numéro du port sur lequel écouter
+  * Les valeurs vides servent à désactiver la communication avec les clients via le protocole PostgreSQL.
+</Note>
+
+**Exemple**
+
+```xml
+<postgresql_port>9005</postgresql_port>
+```
+
+<div id="url_scheme_mappers">
+  ## url_scheme_mappers
+</div>
+
+Configuration permettant de convertir des préfixes d’URL abrégés ou symboliques en URL complètes.
+
+Exemple :
+
+```xml
+<url_scheme_mappers>
+    <s3>
+        <to>https://{bucket}.s3.amazonaws.com</to>
+    </s3>
+    <gs>
+        <to>https://storage.googleapis.com/{bucket}</to>
+    </gs>
+    <oss>
+        <to>https://{bucket}.oss.aliyuncs.com</to>
+    </oss>
+</url_scheme_mappers>
+```
+
+<div id="user_defined_path">
+  ## user_defined_path
+</div>
+
+Le répertoire des fichiers définis par l’utilisateur. Utilisé pour les fonctions définies par l’utilisateur en SQL [Fonctions définies par l’utilisateur en SQL](/fr/reference/functions/regular-functions/udf).
+
+**Exemple**
+
+```xml
+<user_defined_path>/var/lib/clickhouse/user_defined/</user_defined_path>
+```
+
+<div id="users_config">
+  ## users_config
+</div>
+
+Chemin vers le fichier qui contient :
+
+* Les configurations des utilisateurs.
+* Les droits d&#39;accès.
+* Les profils de paramètres.
+* Les paramètres de quota.
+
+**Exemple**
+
+```xml
+<users_config>users.xml</users_config>
+```
+
+<div id="access_control_improvements">
+  ## access_control_improvements
+</div>
+
+Paramètres des améliorations facultatives du système de contrôle d’accès.
+
+| Setting                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Default |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `on_cluster_queries_require_cluster_grant`      | Définit si les requêtes `ON CLUSTER` nécessitent le privilège `CLUSTER`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | `true`  |
+| `role_cache_expiration_time_seconds`            | Définit le nombre de secondes après le dernier accès pendant lesquelles un rôle est conservé dans le cache des rôles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `600`   |
+| `select_from_information_schema_requires_grant` | Définit si `SELECT * FROM information_schema.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON information_schema.<table>`, comme pour les tables ordinaires.                                                                                                                                                                                                                                                                                                   | `true`  |
+| `select_from_system_db_requires_grant`          | Définit si `SELECT * FROM system.<table>` nécessite des privilèges ou peut être exécuté par n’importe quel utilisateur. Si cette valeur est définie sur true, cette requête nécessite alors `GRANT SELECT ON system.<table>`, comme pour les tables non système. Exceptions : quelques tables système (`tables`, `columns`, `databases` et certaines tables constantes comme `one`, `contributors`) restent accessibles à tous ; et si un privilège `SHOW` (par exemple `SHOW USERS`) a été accordé, alors la table système correspondante (c’est-à-dire `system.users`) sera accessible. | `true`  |
+| `settings_constraints_replace_previous`         | Définit si une contrainte dans un profil de paramètres, pour un paramètre donné, annule les effets de la contrainte précédente (définie dans d’autres profils) pour ce paramètre, y compris pour les champs qui ne sont pas définis par la nouvelle contrainte. Cela active également le type de contrainte `changeable_in_readonly`.                                                                                                                                                                                                                                                     | `true`  |
+| `table_engines_require_grant`                   | Définit si la création d’une table avec un moteur de table spécifique nécessite un privilège.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `false` |
+| `throw_on_unmatched_row_policies`               | Définit si la lecture d’une table doit lever une exception lorsque la table possède des politiques de ligne, mais qu’aucune d’entre elles ne concerne l’utilisateur courant                                                                                                                                                                                                                                                                                                                                                                                                               | `false` |
+| `users_without_row_policies_can_read_rows`      | Définit si les utilisateurs sans politiques de ligne permissives peuvent tout de même lire des lignes à l’aide d’une requête `SELECT`. Par exemple, s’il existe deux utilisateurs A et B et qu’une politique de ligne est définie uniquement pour A, alors si ce paramètre vaut true, l’utilisateur B verra toutes les lignes. Si ce paramètre vaut false, l’utilisateur B ne verra aucune ligne.                                                                                                                                                                                         | `true`  |
+
+Exemple :
+
+```xml
+<access_control_improvements>
+    <throw_on_unmatched_row_policies>true</throw_on_unmatched_row_policies>
+    <users_without_row_policies_can_read_rows>true</users_without_row_policies_can_read_rows>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+    <select_from_system_db_requires_grant>true</select_from_system_db_requires_grant>
+    <select_from_information_schema_requires_grant>true</select_from_information_schema_requires_grant>
+    <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
+    <table_engines_require_grant>false</table_engines_require_grant>
+    <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+</access_control_improvements>
+```
+
+<div id="s3queue_log">
+  ## s3queue_log
+</div>
+
+Paramètres de la table système `s3queue_log`.
+
+<SystemLogParameters />
+
+Les réglages par défaut sont :
+
+```xml
+<s3queue_log>
+    <database>system</database>
+    <table>s3queue_log</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</s3queue_log>
+```
+
+<div id="dead_letter_queue">
+  ## dead_letter_queue
+</div>
+
+Paramètre de la table système &#39;dead&#95;letter&#95;queue&#39;.
+
+<SystemLogParameters />
+
+Les paramètres par défaut sont :
+
+```xml
+<dead_letter_queue>
+    <database>system</database>
+    <table>dead_letter</table>
+    <partition_by>toYYYYMM(event_date)</partition_by>
+    <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+</dead_letter_queue>
+```
+
+<div id="zookeeper">
+  ## zookeeper
+</div>
+
+Contient des paramètres permettant à ClickHouse d&#39;interagir avec un cluster [ZooKeeper](http://zookeeper.apache.org/). ClickHouse utilise ZooKeeper pour stocker les métadonnées des répliques lors de l&#39;utilisation de tables répliquées. Si vous n&#39;utilisez pas de tables répliquées, cette section de paramètres peut être omise.
+
+Les paramètres suivants peuvent être configurés via des sous-balises :
+
+| Paramètre                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node`                                            | Point de terminaison ZooKeeper. Vous pouvez définir plusieurs endpoints. Ex. `<node index="1"><host>example_host</host><port>2181</port></node>`. L&#39;attribut `index` indique l&#39;ordre des nœuds lors des tentatives de connexion au cluster ZooKeeper.                                                                                                                                                                      |
+| `operation_timeout_ms`                            | Délai d&#39;expiration maximal pour une opération, en millisecondes.                                                                                                                                                                                                                                                                                                                                                               |
+| `session_timeout_ms`                              | Délai d&#39;expiration maximal pour la session du client, en millisecondes.                                                                                                                                                                                                                                                                                                                                                        |
+| `root` (facultatif)                               | Le znode utilisé comme racine pour les znodes employés par le serveur ClickHouse.                                                                                                                                                                                                                                                                                                                                                  |
+| `fallback_session_lifetime.min` (facultatif)      | Limite minimale de la durée de vie d&#39;une session ZooKeeper vers le nœud de secours lorsque le primaire n&#39;est pas disponible (équilibrage de charge). Exprimée en secondes. Par défaut : 3 heures.                                                                                                                                                                                                                          |
+| `fallback_session_lifetime.max` (facultatif)      | Limite maximale de la durée de vie d&#39;une session ZooKeeper vers le nœud de secours lorsque le primaire n&#39;est pas disponible (équilibrage de charge). Exprimée en secondes. Par défaut : 6 heures.                                                                                                                                                                                                                          |
+| `identity` (facultatif)                           | Utilisateur et mot de passe requis par ZooKeeper pour accéder aux znodes demandés.                                                                                                                                                                                                                                                                                                                                                 |
+| `use_compression` (facultatif)                    | Active la compression dans le protocole Keeper si défini sur `true`.                                                                                                                                                                                                                                                                                                                                                               |
+| `use_xid_64` (facultatif)                         | Active les identifiants de transaction 64 bits. Définissez `true` pour activer le format étendu d&#39;identifiant de transaction. Par défaut : `false`.                                                                                                                                                                                                                                                                            |
+| `pass_opentelemetry_tracing_context` (facultatif) | Active la propagation du contexte de tracing OpenTelemetry vers les requêtes Keeper. Lorsqu&#39;elle est activée, des spans de tracing sont créés pour les opérations Keeper, ce qui permet un traçage distribué entre ClickHouse et Keeper. Voir [Tracing ClickHouse Keeper Requests](/fr/guides/oss/deployment-and-scaling/monitoring/opentelemetry#tracing-clickhouse-keeper-requests) pour plus de détails. Par défaut : `false`. |
+
+Il existe également le paramètre `zookeeper_load_balancing` (facultatif), qui permet de sélectionner l&#39;algorithme de sélection des nœuds ZooKeeper :
+
+| Nom de l&#39;algorithme         | Description                                                                                                                                        |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `random`                        | sélectionne aléatoirement l&#39;un des nœuds ZooKeeper.                                                                                            |
+| `in_order`                      | sélectionne le premier nœud ZooKeeper ; s&#39;il n&#39;est pas disponible, le deuxième, et ainsi de suite.                                         |
+| `nearest_hostname`              | sélectionne un nœud ZooKeeper dont le nom d&#39;hôte est le plus proche de celui du serveur, en comparant le préfixe du nom d&#39;hôte.            |
+| `hostname_levenshtein_distance` | identique à nearest&#95;hostname, mais compare les noms d&#39;hôte selon la distance de Levenshtein.                                               |
+| `first_or_random`               | sélectionne le premier nœud ZooKeeper ; s&#39;il n&#39;est pas disponible, en sélectionne ensuite un autre aléatoirement parmi les nœuds restants. |
+| `round_robin`                   | sélectionne le premier nœud ZooKeeper, puis, en cas de reconnexion, sélectionne le suivant.                                                        |
+
+**Exemple de configuration**
+
+```xml
+<zookeeper>
+    <node>
+        <host>example1</host>
+        <port>2181</port>
+    </node>
+    <node>
+        <host>example2</host>
+        <port>2181</port>
+    </node>
+    <session_timeout_ms>30000</session_timeout_ms>
+    <operation_timeout_ms>10000</operation_timeout_ms>
+    <!-- Optional. Chroot suffix. Should exist. -->
+    <root>/path/to/zookeeper/node</root>
+    <!-- Optional. Zookeeper digest ACL string. -->
+    <identity>user:password</identity>
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <zookeeper_load_balancing>random</zookeeper_load_balancing>
+    <!-- Optional. Enable 64-bit transaction IDs. -->
+    <use_xid_64>false</use_xid_64>
+    <!-- Optional. Enable OpenTelemetry tracing context propagation. -->
+    <pass_opentelemetry_tracing_context>false</pass_opentelemetry_tracing_context>
+</zookeeper>
+```
+
+**Voir aussi**
+
+* [Réplication](/fr/reference/engines/table-engines/mergetree-family/replication)
+* [Guide du programmeur de ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+* [Communication sécurisée optionnelle entre ClickHouse et ZooKeeper](/fr/guides/oss/deployment-and-scaling/keeper/ssl-zookeeper)
+
+<div id="use_minimalistic_part_header_in_zookeeper">
+  ## use_minimalistic_part_header_in_zookeeper
+</div>
+
+Méthode de stockage des en-têtes des fragments de données dans ZooKeeper. Ce paramètre s&#39;applique uniquement à la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/index). Il peut être défini :
+
+**Globalement dans la section [merge&#95;tree](#merge_tree) du fichier `config.xml`**
+
+ClickHouse utilise ce paramètre pour toutes les tables du serveur. Vous pouvez le modifier à tout moment. Les tables existantes changent de comportement lorsque ce paramètre est modifié.
+
+**Pour chaque table**
+
+Lors de la création d&#39;une table, spécifiez le [paramètre de moteur](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) correspondant. Le comportement d&#39;une table existante avec ce paramètre ne change pas, même si le paramètre global est modifié.
+
+**Valeurs possibles**
+
+* `0` — La fonctionnalité est désactivée.
+* `1` — La fonctionnalité est activée.
+
+Si [`use_minimalistic_part_header_in_zookeeper = 1`](#use_minimalistic_part_header_in_zookeeper), les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication) stockent les en-têtes des fragments de données de façon compacte à l&#39;aide d&#39;un seul `znode`. Si la table contient de nombreuses colonnes, cette méthode de stockage réduit considérablement le volume de données stockées dans ZooKeeper.
+
+<Note>
+  Après avoir appliqué `use_minimalistic_part_header_in_zookeeper = 1`, vous ne pouvez pas rétrograder le serveur ClickHouse vers une version qui ne prend pas en charge ce paramètre. Soyez prudent lors de la mise à niveau de ClickHouse sur les serveurs d&#39;un cluster. Ne mettez pas à niveau tous les serveurs en même temps. Il est plus sûr de tester les nouvelles versions de ClickHouse dans un environnement de test, ou sur seulement quelques serveurs du cluster.
+
+  Les en-têtes de fragments de données déjà stockés avec ce paramètre ne peuvent pas être restaurés dans leur représentation précédente (non compacte).
+</Note>
+
+<div id="distributed_ddl">
+  ## distributed_ddl
+</div>
+
+Gère l’exécution des [requêtes DDL distribuées](/fr/reference/statements/distributed-ddl) (`CREATE`, `DROP`, `ALTER`, `RENAME`) sur le cluster.
+Fonctionne uniquement si [ZooKeeper](/fr/reference/settings/server-settings/settings#zookeeper) est activé.
+
+Les paramètres configurables dans `<distributed_ddl>` comprennent :
+
+| Paramètre              | Description                                                                                                                                                          | Valeur par défaut                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| `cleanup_delay_period` | le nettoyage démarre après la réception d’un événement de nouveau nœud si le dernier nettoyage n’a pas été effectué il y a moins de `cleanup_delay_period` secondes. | `60` secondes                                |
+| `max_tasks_in_queue`   | le nombre maximal de tâches pouvant se trouver dans la file d’attente.                                                                                               | `1,000`                                      |
+| `path`                 | le chemin dans Keeper pour la `task_queue` des requêtes DDL                                                                                                          |                                              |
+| `pool_size`            | le nombre de requêtes `ON CLUSTER` pouvant être exécutées simultanément                                                                                              |                                              |
+| `profile`              | le profil utilisé pour exécuter les requêtes DDL                                                                                                                     |                                              |
+| `task_max_lifetime`    | supprime le nœud si son ancienneté dépasse cette valeur.                                                                                                             | `7 * 24 * 60 * 60` (une semaine en secondes) |
+
+**Exemple**
+
+```xml
+<distributed_ddl>
+    <!-- Path in ZooKeeper to queue with DDL queries -->
+    <path>/clickhouse/task_queue/ddl</path>
+
+    <!-- Settings from this profile will be used to execute DDL queries -->
+    <profile>default</profile>
+
+    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+    <pool_size>1</pool_size>
+
+    <!--
+         Cleanup settings (active tasks will not be removed)
+    -->
+
+    <!-- Controls task TTL (default 1 week) -->
+    <task_max_lifetime>604800</task_max_lifetime>
+
+    <!-- Controls how often cleanup should be performed (in seconds) -->
+    <cleanup_delay_period>60</cleanup_delay_period>
+
+    <!-- Controls how many tasks could be in the queue -->
+    <max_tasks_in_queue>1000</max_tasks_in_queue>
+</distributed_ddl>
+```
+
+<div id="access_control_path">
+  ## access_control_path
+</div>
+
+Chemin du dossier dans lequel un serveur ClickHouse stocke les configurations des utilisateurs et des rôles créées par des commandes SQL.
+
+**Voir aussi**
+
+* [Contrôle d&#39;accès et gestion des comptes](/fr/concepts/features/security/access-rights#access-control-usage)
+
+<div id="allow_plaintext_password">
+  ## allow_plaintext_password
+</div>
+
+Indique si les types de mot de passe en clair (non sécurisés) sont autorisés ou non.
+
+```xml
+<allow_plaintext_password>1</allow_plaintext_password>
+```
+
+<div id="allow_no_password">
+  ## allow_no_password
+</div>
+
+Indique si le type de mot de passe non sécurisé no&#95;password est autorisé ou non.
+
+```xml
+<allow_no_password>1</allow_no_password>
+```
+
+<div id="allow_implicit_no_password">
+  ## allow_implicit_no_password
+</div>
+
+Interdit de créer un utilisateur sans mot de passe, sauf si &#39;IDENTIFIED WITH no&#95;password&#39; est explicitement spécifié.
+
+```xml
+<allow_implicit_no_password>1</allow_implicit_no_password>
+```
+
+<div id="default_session_timeout">
+  ## default_session_timeout
+</div>
+
+Délai d’expiration par défaut de la session, en secondes.
+
+```xml
+<default_session_timeout>60</default_session_timeout>
+```
+
+<div id="default_password_type">
+  ## default_password_type
+</div>
+
+Définit le type de mot de passe à appliquer automatiquement dans les requêtes du type `CREATE USER u IDENTIFIED BY 'p'`.
+
+Les valeurs acceptées sont :
+
+* `plaintext_password`
+* `sha256_password`
+* `double_sha1_password`
+* `bcrypt_password`
+
+```xml
+<default_password_type>sha256_password</default_password_type>
+```
+
+<div id="user_directories">
+  ## user_directories
+</div>
+
+Section du fichier de configuration contenant les paramètres suivants :
+
+* chemin d’accès au fichier de configuration contenant les utilisateurs prédéfinis ;
+* chemin d’accès au dossier où sont stockés les utilisateurs créés par des commandes SQL ;
+* chemin du nœud ZooKeeper où sont stockés et répliqués les utilisateurs créés par des commandes SQL.
+
+Si cette section est spécifiée, les chemins de [users&#95;config](/fr/reference/settings/server-settings/settings#users_config) et de [access&#95;control&#95;path](/fr/reference/settings/server-settings/settings#access_control_path) ne seront pas utilisés.
+
+La section `user_directories` peut contenir un nombre quelconque d’éléments ; l’ordre des éléments détermine leur priorité (plus un élément est placé haut, plus sa priorité est élevée).
+
+**Exemples**
+
+```xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <local_directory>
+        <path>/var/lib/clickhouse/access/</path>
+    </local_directory>
+</user_directories>
+```
+
+Les utilisateurs, les rôles, les politiques de lignes, les quotas et les profils peuvent également être stockés dans ZooKeeper :
+
+```xml
+<user_directories>
+    <users_xml>
+        <path>/etc/clickhouse-server/users.xml</path>
+    </users_xml>
+    <replicated>
+        <zookeeper_path>/clickhouse/access/</zookeeper_path>
+    </replicated>
+</user_directories>
+```
+
+Vous pouvez également définir les sections `memory` — c’est-à-dire stocker les informations uniquement en mémoire, sans les écrire sur disque — et `ldap` — c’est-à-dire stocker les informations sur un serveur LDAP.
+
+Pour ajouter un serveur LDAP comme répertoire distant pour les utilisateurs qui ne sont pas définis localement, définissez une unique section `ldap` avec les paramètres suivants :
+
+| Paramètre | Description                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `roles`   | section contenant une liste de rôles définis localement qui seront attribués à chaque utilisateur récupéré sur le serveur LDAP. Si aucun rôle n’est spécifié, l’utilisateur ne pourra effectuer aucune action après l’authentification. Si l’un des rôles listés n’est pas défini localement au moment de l’authentification, la tentative d’authentification échouera comme si le mot de passe fourni était incorrect. |
+| `server`  | l’un des noms de serveurs LDAP définis dans la section de configuration `ldap_servers`. Ce paramètre est obligatoire et ne peut pas être vide.                                                                                                                                                                                                                                                                          |
+
+**Exemple**
+
+```xml
+<ldap>
+    <server>my_ldap_server</server>
+        <roles>
+            <my_local_role1 />
+            <my_local_role2 />
+        </roles>
+</ldap>
+```
+
+<div id="top_level_domains_list">
+  ## top_level_domains_list
+</div>
+
+Définit une liste de domaines de premier niveau personnalisés à ajouter, chaque entrée devant être au format `<name>/path/to/file</name>`.
+
+Par exemple :
+
+```xml
+<top_level_domains_lists>
+    <public_suffix_list>/path/to/public_suffix_list.dat</public_suffix_list>
+</top_level_domains_lists>
+```
+
+Voir aussi :
+
+* la fonction [`cutToFirstSignificantSubdomainCustom`](/fr/reference/functions/regular-functions/url-functions#cutToFirstSignificantSubdomainCustom) et ses variantes,
+  qui accepte un nom de liste TLD personnalisée et renvoie la partie du domaine comprenant les sous-domaines de plus haut niveau jusqu&#39;au premier sous-domaine significatif.
+
+<div id="proxy">
+  ## proxy
+</div>
+
+Définissez des serveurs proxy pour les requêtes HTTP et HTTPS, actuellement pris en charge par le stockage S3, les fonctions de table S3 et les fonctions URL.
+
+Il existe trois façons de définir des serveurs proxy :
+
+* variables d’environnement
+* listes de proxy
+* résolveurs de proxy distants.
+
+Le contournement des serveurs proxy pour des hôtes spécifiques est également pris en charge à l’aide de `no_proxy`.
+
+**Variables d’environnement**
+
+Les variables d’environnement `http_proxy` et `https_proxy` vous permettent de spécifier un
+serveur proxy pour un protocole donné. Si elles sont définies sur votre système, cela devrait fonctionner sans problème.
+
+Il s’agit de l’approche la plus simple si un protocole donné n’a
+qu’un seul serveur proxy et que ce serveur proxy ne change pas.
+
+**Listes de proxy**
+
+Cette approche vous permet de spécifier un ou plusieurs
+serveurs proxy pour un protocole. Si plusieurs serveurs proxy sont définis,
+ClickHouse utilise les différents proxy selon une méthode round-robin, en répartissant la
+charge entre les serveurs. Il s’agit de l’approche la plus simple s’il existe plusieurs
+serveurs proxy pour un protocole et que la liste des serveurs proxy ne change pas.
+
+**Modèle de configuration**
+
+```xml
+<proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+Sélectionnez un champ parent dans les onglets ci-dessous pour afficher les champs enfants correspondants :
+
+<Tabs>
+  <Tab title="<proxy>">
+    | Champ     | Description                                 |
+    | --------- | ------------------------------------------- |
+    | `<http>`  | Une liste d&#39;un ou plusieurs proxy HTTP  |
+    | `<https>` | Une liste d&#39;un ou plusieurs proxy HTTPS |
+  </Tab>
+
+  <Tab title="<http> et <https>">
+    | Champ   | Description        |
+    | ------- | ------------------ |
+    | `<uri>` | L&#39;URI du proxy |
+  </Tab>
+</Tabs>
+
+**Résolveurs de proxy distants**
+
+Il est possible que les serveurs proxy changent dynamiquement. Dans ce
+cas, vous pouvez définir l&#39;endpoint d&#39;un résolveur. ClickHouse envoie
+une requête GET vide à cet endpoint, et le résolveur distant doit renvoyer l&#39;hôte du proxy.
+ClickHouse l&#39;utilisera pour construire l&#39;URI du proxy à l&#39;aide du modèle suivant : `\{proxy_scheme\}://\{proxy_host\}:{proxy_port}`
+
+**Modèle de configuration**
+
+```xml
+<proxy>
+    <http>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>80</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </http>
+
+    <https>
+        <resolver>
+            <endpoint>http://resolver:8080/hostname</endpoint>
+            <proxy_scheme>http</proxy_scheme>
+            <proxy_port>3128</proxy_port>
+            <proxy_cache_time>10</proxy_cache_time>
+        </resolver>
+    </https>
+
+</proxy>
+```
+
+Sélectionnez un champ parent dans les onglets ci-dessous pour afficher ses champs enfants :
+
+<Tabs>
+  <Tab title="<proxy>">
+    | Champ     | Description                                     |
+    | --------- | ----------------------------------------------- |
+    | `<http>`  | Une liste d&#39;un ou plusieurs résolveurs* |
+    | `<https>` | Une liste d&#39;un ou plusieurs résolveurs* |
+  </Tab>
+
+  <Tab title="<http> et <https>">
+    | Champ        | Description                                             |
+    | ------------ | ------------------------------------------------------- |
+    | `<resolver>` | L&#39;endpoint et d&#39;autres détails sur un résolveur |
+
+    <Note>
+      Vous pouvez avoir plusieurs éléments `<resolver>`, mais seul le premier
+      `<resolver>` pour un protocole donné est utilisé. Tous les autres éléments `<resolver>`
+      de ce protocole sont ignorés. Cela signifie que l&#39;équilibrage de charge
+      (si nécessaire) doit être implémenté par le résolveur distant.
+    </Note>
+  </Tab>
+
+  <Tab title="<resolver>">
+    | Champ                | Description                                                                                                                                                                                                            |
+    | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | `<endpoint>`         | L&#39;URI du résolveur de proxy                                                                                                                                                                                        |
+    | `<proxy_scheme>`     | Le protocole de l&#39;URI finale du proxy. Il peut s&#39;agir de `http` ou de `https`.                                                                                                                                 |
+    | `<proxy_port>`       | Le numéro de port du résolveur de proxy                                                                                                                                                                                |
+    | `<proxy_cache_time>` | La durée, en secondes, pendant laquelle les valeurs du résolveur doivent être mises en cache par ClickHouse. Définir cette valeur sur `0` amène ClickHouse à contacter le résolveur pour chaque requête HTTP ou HTTPS. |
+  </Tab>
+</Tabs>
+
+**Priorité**
+
+Les paramètres de proxy sont déterminés dans l&#39;ordre suivant :
+
+| Ordre | Paramètre                     |
+| ----- | ----------------------------- |
+| 1.    | Résolveurs de proxy distants  |
+| 2.    | Listes de proxy               |
+| 3.    | Variables d&#39;environnement |
+
+ClickHouse vérifiera le type de résolveur ayant la plus haute priorité pour le protocole de la requête. S&#39;il n&#39;est pas défini,
+il vérifiera alors le type de résolveur ayant la priorité immédiatement inférieure, jusqu&#39;à atteindre le résolveur d&#39;environnement.
+Cela permet également d&#39;utiliser une combinaison de types de résolveur.
+
+<div id="disable_tunneling_for_https_requests_over_http_proxy">
+  ## disable_tunneling_for_https_requests_over_http_proxy
+</div>
+
+Par défaut, le tunneling (c.-à-d. `HTTP CONNECT`) est utilisé pour effectuer des requêtes `HTTPS` via un proxy `HTTP`. Ce paramètre permet de le désactiver.
+
+**no&#95;proxy**
+
+Par défaut, toutes les requêtes passent par le proxy. Pour le désactiver pour des hôtes spécifiques, la variable `no_proxy` doit être définie.
+Elle peut être définie dans la clause `<proxy>` pour les résolveurs de liste et distants, et comme variable d’environnement pour le résolveur d’environnement.
+Elle prend en charge les adresses IP, les domaines, les sous-domaines et le caractère générique `'*'` pour un contournement complet. Les points initiaux sont supprimés, comme avec curl.
+
+**Example**
+
+La configuration ci-dessous contourne le proxy pour les requêtes vers `clickhouse.cloud` et tous ses sous-domaines (par ex., `auth.clickhouse.cloud`).
+Il en va de même pour GitLab, même s’il comporte un point initial. `gitlab.com` et `about.gitlab.com` contourneraient tous deux le proxy.
+
+```xml
+<proxy>
+    <no_proxy>clickhouse.cloud,.gitlab.com</no_proxy>
+    <http>
+        <uri>http://proxy1</uri>
+        <uri>http://proxy2:3128</uri>
+    </http>
+    <https>
+        <uri>http://proxy1:3128</uri>
+    </https>
+</proxy>
+```
+
+<div id="workload_path">
+  ## workload_path
+</div>
+
+Répertoire utilisé pour stocker toutes les requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`. Par défaut, le dossier `/workload/` situé dans le répertoire de travail du serveur est utilisé.
+
+**Exemple**
+
+```xml
+<workload_path>/var/lib/clickhouse/workload/</workload_path>
+```
+
+**Voir aussi**
+
+* [Hiérarchie des workloads](/fr/concepts/features/configuration/server-config/workload-scheduling#workloads)
+* [workload&#95;zookeeper&#95;path](#workload_zookeeper_path)
+
+<div id="workload_zookeeper_path">
+  ## workload_zookeeper_path
+</div>
+
+Le chemin vers un nœud ZooKeeper, utilisé comme stockage pour toutes les requêtes `CREATE WORKLOAD` et `CREATE RESOURCE`. Pour des raisons de cohérence, toutes les définitions SQL sont stockées comme valeur de cet unique znode. Par défaut, ZooKeeper n&#39;est pas utilisé et les définitions sont stockées sur le [disk](#workload_path).
+
+**Exemple**
+
+```xml
+<workload_zookeeper_path>/clickhouse/workload/definitions.sql</workload_zookeeper_path>
+```
+
+**Voir aussi**
+
+* [workload](/fr/concepts/features/configuration/server-config/workload-scheduling#workloads)
+* [workload&#95;path](#workload_path)
+
+<div id="zookeeper_log">
+  ## zookeeper_log
+</div>
+
+Paramètres de la [table système `zookeeper_log`](/fr/reference/system-tables/zookeeper_log).
+
+Les paramètres suivants peuvent être configurés via des sous-balises :
+
+<SystemLogParameters />
+
+**Exemple**
+
+```xml
+<clickhouse>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 1 WEEK DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>
+```

@@ -1,0 +1,83 @@
+---
+description: 'توثيق Clickhouse-disks'
+sidebarTitle: 'clickhouse-disks'
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
+---
+
+أداة توفّر عمليات على أقراص ClickHouse شبيهة بعمليات نظام الملفات. ويمكنها العمل في الوضعين التفاعلي وغير التفاعلي.
+
+<div id="program-wide-options">
+  ## خيارات عامة للبرنامج
+</div>
+
+* `--config-file, -C` -- مسار إعدادات ClickHouse، والقيمة الافتراضية هي `/etc/clickhouse-server/config.xml`.
+* `--save-logs` -- يسجّل تقدّم الأوامر المستدعاة في `/var/log/clickhouse-server/clickhouse-disks.log`.
+* `--log-level` -- [نوع](/ar/reference/settings/server-settings/settings#logger) الأحداث المطلوب تسجيلها، والقيمة الافتراضية هي `none`.
+* `--disk` -- وحدة التخزين المستخدمة لأوامر `mkdir, move, read, write, remove`. القيمة الافتراضية هي `default`.
+* `--query, -q` -- استعلام واحد يمكن تنفيذه دون تشغيل الوضع التفاعلي
+* `--help, -h` -- عرض جميع الخيارات والأوامر مع الوصف
+
+<div id="lazy-initialization">
+  ## التهيئة الكسولة
+</div>
+
+تُهيَّأ جميع الأقراص المتاحة في إعدادات تهيئةً كسولة. وهذا يعني أن الكائن المرتبط بالقرص لا يُهيَّأ إلا عند استخدام ذلك القرص في أحد الأوامر. ويُجرى ذلك لجعل الأداة أكثر متانةً وتجنّب التعامل مع الأقراص الموصوفة في إعدادات ولكن غير المستخدمة من قِبل المستخدم، والتي قد تفشل أثناء التهيئة. ومع ذلك، يجب أن يكون هناك قرص يُهيَّأ عند تشغيل clickhouse-disks. ويُحدَّد هذا القرص باستخدام المعلَمة `--disk` عبر سطر الأوامر (القيمة الافتراضية هي `default`).
+
+<div id="default-disks">
+  ## الأقراص الافتراضية
+</div>
+
+بعد بدء التشغيل، يتوفر قرصان غير محددين في التهيئة ولكن يمكن تهيئتهما.
+
+1. **قرص `local`**: صُمم هذا القرص لمحاكاة نظام الملفات المحلي الذي شُغّلت منه الأداة `clickhouse-disks`. ويكون مساره الأولي هو الدليل الذي بدأت منه `clickhouse-disks`، ويكون مربوطًا بدليل الجذر لنظام الملفات.
+
+2. **قرص `default`**: يكون هذا القرص مربوطًا بنظام الملفات المحلي في الدليل المحدد بواسطة المعلمة `clickhouse/path` في التهيئة (القيمة الافتراضية هي `/var/lib/clickhouse`). ويُضبط مساره الأولي على `/`.
+
+<div id="clickhouse-disks-state">
+  ## حالة Clickhouse-disks
+</div>
+
+بالنسبة إلى كل قرص مُضاف، تحتفظ الأداة بالدليل الحالي (كما هو الحال في نظام ملفات اعتيادي). ويمكن للمستخدم تغيير الدليل الحالي والتبديل بين الأقراص.
+
+تظهر الحالة في موجّه الأوامر بالشكل &quot;`disk_name`:`path_name`&quot;
+
+<div id="commands">
+  ## الأوامر
+</div>
+
+في ملف التوثيق هذا، يُشار إلى جميع الوسيطات الموضعية الإلزامية بصيغة `<parameter>`، ويُشار إلى الوسيطات المُسمّاة بصيغة `[--parameter value]`. ويمكن أيضًا الإشارة إلى جميع المعلمات الموضعية كمعلمات مُسمّاة باستخدام الاسم المقابل.
+
+* `cd (change-dir, change_dir) [--disk disk] <path>`
+  غيّر الدليل إلى المسار `path` على القرص `disk` (القيمة الافتراضية هي القرص الحالي). ولا يحدث أي تبديل للقرص.
+* `copy (cp) [--disk-from disk_1] [--disk-to disk_2] <path-from> <path-to>`.
+  انسخ البيانات بشكل تكراري من `path-from` على القرص `disk_1` (القيمة الافتراضية هي القرص الحالي (المعلمة `disk` في الوضع غير التفاعلي))
+  إلى `path-to` على القرص `disk_2` (القيمة الافتراضية هي القرص الحالي (المعلمة `disk` في الوضع غير التفاعلي)).
+* `current_disk_with_path (current, current_disk, current_path)`
+  اطبع الحالة الحالية بالتنسيق:
+  `Disk: "current_disk" Path: "current path on current disk"`
+* `help [<command>]`
+  اطبع رسالة المساعدة الخاصة بالأمر `command`. وإذا لم يتم تحديد `command`، فاطبع معلومات عن جميع الأوامر.
+* `move (mv) <path-from> <path-to>`.
+  انقل ملفًا أو دليلًا من `path-from` إلى `path-to` داخل القرص الحالي.
+* `remove (rm, delete) <path>`.
+  احذف `path` بشكل تكراري على القرص الحالي.
+* `link (ln) <path-from> <path-to>`.
+  أنشئ رابطًا صلبًا من `path-from` إلى `path-to` على القرص الحالي.
+* `list (ls) [--recursive] <path>`
+  اعرض الملفات في `path` على القرص الحالي. والوضع الافتراضي غير تكراري.
+* `list-disks (list_disks, ls-disks, ls_disks)`.
+  اعرض أسماء الأقراص.
+* `mkdir [--recursive] <path>` على القرص الحالي.
+  أنشئ دليلًا. والوضع الافتراضي غير تكراري.
+* `read (r) <path-from> [--path-to path]`
+  اقرأ ملفًا من `path-from` إلى `path` (`stdout` إذا لم يتم توفيره).
+* `read-bitmap <path-from> [--values]`
+  افحص ملف `delete-bitmap` الجانبي (`.rbm`) في `path-from`. يطبع الأمر القيمة السحرية والإصدار وصلاحية CRC والكاردينالية (عدد الصفوف المحذوفة) ونطاق الصفوف. ومع `--values`، يفرغ أيضًا جميع البتات المضبوطة (إزاحات الصفوف المحذوفة) بترتيب تصاعدي.
+* `read-checksums <path>`
+  اقرأ ملف `checksums.txt` الخاص بـ `MergeTree` data part على القرص الحالي واطبعه إلى `stdout` كجدول مفصول بعلامات جدولة ومقروء بشريًا، بالأعمدة `name` و`file_size` و`file_hash` و`uncompressed_size` و`uncompressed_hash`. ويظهر العمودان الأخيران فقط للملفات المضغوطة.
+* `switch-disk [--path path] <disk>`
+  بدّل إلى القرص `disk` على المسار `path` (إذا لم يتم تحديد `path`، فالقيمة الافتراضية هي المسار السابق على القرص `disk`).
+* `write (w) [--path-from path] <path-to>`.
+  اكتب ملفًا من `path` (`stdin` إذا لم يتم توفير `path`، ويجب إنهاء الإدخال عبر Ctrl+D) إلى `path-to`.
