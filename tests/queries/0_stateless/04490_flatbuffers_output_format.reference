@@ -1,5 +1,10 @@
+[42, -7, 0.1, str:hello, [10, 20, 30], null, blob:7b000000000000000000000000000000]
+[0, str:0]
+[1, str:1]
+[2, str:2]
 1
 1
 1
+rows=0
 1
 is not supported for Flatbuffers output format
