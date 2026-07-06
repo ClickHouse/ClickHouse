@@ -691,14 +691,14 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
-static bool isFunctionDeterministic(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
+static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
 {
     if (auto function_base = function_node.getFunctionBase())
-        return function_base->isDeterministic();
+        return function_base->isDeterministicInScopeOfQuery();
 
     /// For an AST-based tree there is no resolved function, so look it up by name
     auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
-    return function_resolver && function_resolver->isDeterministic();
+    return function_resolver && function_resolver->isDeterministicInScopeOfQuery();
 }
 
 bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
@@ -707,8 +707,9 @@ bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNod
     {
         auto function_node = node.toFunctionNode();
 
-        /// non-deterministic functions can give different results for row versions of the same key
-        if (!isFunctionDeterministic(function_node, context))
+        /// functions like rand can give different results for row versions of the same key,
+        /// query-scoped-stable ones (e.g. runtime filters) are fine to evaluate before the merge
+        if (!isFunctionDeterministicInScopeOfQuery(function_node, context))
             return false;
 
         size_t arguments_size = function_node.getArgumentsSize();

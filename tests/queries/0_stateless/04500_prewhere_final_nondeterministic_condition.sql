@@ -36,3 +36,23 @@ INSERT INTO t_prewhere_final_now SELECT toDateTime('2026-01-01 00:00:00') - INTE
 SELECT count() > 0 FROM (EXPLAIN actions=1 SELECT * FROM t_prewhere_final_now FINAL WHERE ts >= now() - INTERVAL 1 DAY) WHERE explain LIKE '%Prewhere filter%';
 
 DROP TABLE t_prewhere_final_now;
+
+-- runtime filters are stable within a query, so they are still eligible for PREWHERE under FINAL
+SELECT '= join runtime filter on the sorting key is still moved =';
+
+DROP TABLE IF EXISTS t_prewhere_final_rf;
+DROP TABLE IF EXISTS t_prewhere_final_rf_right;
+
+CREATE TABLE t_prewhere_final_rf (k Int32, data String, v UInt64) ENGINE = ReplacingMergeTree(v) ORDER BY k;
+CREATE TABLE t_prewhere_final_rf_right (k Int32) ENGINE = MergeTree ORDER BY k;
+
+INSERT INTO t_prewhere_final_rf SELECT number, 'x', 1 FROM numbers(100000);
+INSERT INTO t_prewhere_final_rf_right SELECT number * 100 FROM numbers(100);
+
+SET enable_join_runtime_filters = 1;
+SET query_plan_join_swap_table = false;
+
+SELECT count() FROM (EXPLAIN actions=1 SELECT t_prewhere_final_rf.data FROM t_prewhere_final_rf FINAL INNER JOIN t_prewhere_final_rf_right ON t_prewhere_final_rf.k = t_prewhere_final_rf_right.k) WHERE explain LIKE '%Prewhere filter column: __applyFilter%';
+
+DROP TABLE t_prewhere_final_rf;
+DROP TABLE t_prewhere_final_rf_right;
