@@ -79,6 +79,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool enable_streaming_queries;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
     extern const SettingsBool asterisk_include_alias_columns;
@@ -5572,6 +5573,20 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     const auto & storage = table_node->getStorage();
     const auto * view = typeid_cast<const StorageView *>(storage.get());
     if (!view || view->isParameterizedView())
+        return;
+
+    /// The `eval` table function builds its inner view from a generated query that may carry its own
+    /// `SETTINGS enable_analyzer = ...`, captured in the view's inner query context. The non-inlined
+    /// read path (`StorageView::readImpl`) honors that setting when choosing the interpreter, and the
+    /// table structure is inferred from the same inner context in `TableFunctionEval::getActualTableStructure`.
+    /// Inlining, however, rebuilds and re-resolves the view with the new analyzer using the outer scope's
+    /// settings, ignoring the inner analyzer mode. When the two differ, the inlined result becomes
+    /// inconsistent with the inferred structure (for example, an aliased expression resolves to a different
+    /// column name between the two analyzers). In that case, fall back to the non-inlined read path.
+    if (auto inner_query_context = view->getInnerQueryContext();
+        inner_query_context
+        && inner_query_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+            != scope.context->getSettingsRef()[Setting::allow_experimental_analyzer])
         return;
 
     /// Do not inline views with FINAL/SAMPLE modifiers for now.
