@@ -54,7 +54,7 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
 /// constant-folded COLUMN nodes that hold a `ColumnConst<ColumnFunction>` (e.g. when all captured
 /// arguments are constants and `removeUnusedActions` collapsed the FUNCTION into a COLUMN).
 void appendLambdaColumnName(
-    const LambdaCapture & capture,
+    const Names & argument_names,
     ActionsDAG capture_dag,
     WriteBuffer & out,
     const ContextPtr & context,
@@ -63,13 +63,13 @@ void appendLambdaColumnName(
 {
     writeString("lambda(tuple(", out);
     bool first = true;
-    for (const auto & arg : capture.lambda_arguments)
+    for (const auto & arg_name : argument_names)
     {
         if (!first)
             writeCString(", ", out);
         first = false;
 
-        writeString(arg.name, out);
+        writeString(arg_name, out);
     }
     writeString("), ", out);
 
@@ -89,47 +89,11 @@ bool tryAppendConstantFunctionColumnName(
     bool use_analyzer,
     bool legacy)
 {
-    const auto * column_const = node.column.get();
-    if (!column_const)
+    auto lambda_body = tryExtractLambdaBodyDAG(node);
+    if (!lambda_body)
         return false;
 
-    const auto * column_function = typeid_cast<const ColumnFunction *>(&column_const->getDataColumn());
-    if (!column_function)
-        return false;
-
-    const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
-    if (!function_expression)
-        return false;
-
-    const auto & capture = function_expression->getCapture();
-    auto capture_dag = function_expression->getAcionsDAG().clone();
-
-    /// Stitch the captured constant columns into the body DAG so the body's input nodes
-    /// are resolved to actual constants. After `ActionsDAGWithInversionPushDown` rewrites
-    /// the constant column names to their AST form, the resulting name will match the one
-    /// produced for the index sample block (which was built via the old analyzer).
-    const auto & captured_columns = column_function->getCapturedColumns();
-    if (!captured_columns.empty())
-    {
-        if (captured_columns.size() != capture.captured_names.size())
-            return false;
-
-        ActionsDAG captured_columns_dag;
-        auto & outputs = captured_columns_dag.getOutputs();
-        outputs.reserve(captured_columns.size());
-        for (size_t i = 0; i < captured_columns.size(); ++i)
-        {
-            const auto & captured = captured_columns[i];
-            auto captured_column_const = assert_cast<const ColumnConst &>(*captured.column).getPtr();
-            const auto & captured_node = captured_columns_dag.addColumn(std::move(captured_column_const), captured.type, captured.name);
-            const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture.captured_names[i]);
-            outputs.push_back(&alias_node);
-        }
-
-        capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
-    }
-
-    appendLambdaColumnName(capture, std::move(capture_dag), out, context, use_analyzer, legacy);
+    appendLambdaColumnName(lambda_body->argument_names, std::move(lambda_body->actions), out, context, use_analyzer, legacy);
     return true;
 }
 
@@ -167,21 +131,9 @@ void appendColumnNameWithoutAlias(const ActionsDAG::Node & node, WriteBuffer & o
             break;
         case ActionsDAG::ActionType::FUNCTION:
         {
-            if (const auto * func_capture = typeid_cast<const ExecutableFunctionCapture *>(node.function.get()))
+            if (auto lambda_body = tryExtractLambdaBodyDAG(node))
             {
-                const auto & capture = func_capture->getCapture();
-                auto capture_dag = func_capture->getActions()->getActionsDAG().clone();
-                if (!node.children.empty())
-                {
-                    auto captured_columns_dag = ActionsDAG::cloneSubDAG(node.children, false);
-                    auto & outputs = captured_columns_dag.getOutputs();
-                    for (size_t i = 0; i < capture->captured_names.size(); ++i)
-                        outputs[i] = &captured_columns_dag.addAlias(*outputs[i], capture->captured_names[i]);
-
-                    capture_dag = ActionsDAG::merge(std::move(captured_columns_dag), std::move(capture_dag));
-                }
-
-                appendLambdaColumnName(*capture, std::move(capture_dag), out, context, use_analyzer, legacy);
+                appendLambdaColumnName(lambda_body->argument_names, std::move(lambda_body->actions), out, context, use_analyzer, legacy);
                 break;
             }
             else
@@ -221,6 +173,8 @@ String getColumnNameWithoutAlias(const ActionsDAG::Node & node, const ContextPtr
     return std::move(out.str());
 }
 
+}
+
 const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
 {
     const ActionsDAG::Node * result = node;
@@ -231,6 +185,87 @@ const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node)
     return result;
 }
 
+std::optional<DAGLambdaBody> tryExtractLambdaBodyDAG(const ActionsDAG::Node & node)
+{
+    const auto * node_without_alias = getNodeWithoutAlias(&node);
+
+    const LambdaCapture * capture = nullptr;
+    std::optional<ActionsDAG> actions;
+
+    if (node_without_alias->type == ActionsDAG::ActionType::FUNCTION)
+    {
+        const auto * function_capture = typeid_cast<const ExecutableFunctionCapture *>(node_without_alias->function.get());
+        if (!function_capture)
+            return std::nullopt;
+
+        capture = function_capture->getCapture().get();
+        actions = function_capture->getActions()->getActionsDAG().clone();
+
+        if (!node_without_alias->children.empty())
+        {
+            if (node_without_alias->children.size() != capture->captured_names.size())
+                return std::nullopt;
+
+            auto captured_columns_dag = ActionsDAG::cloneSubDAG(node_without_alias->children, false);
+            auto & outputs = captured_columns_dag.getOutputs();
+            for (size_t i = 0; i < capture->captured_names.size(); ++i)
+                outputs[i] = &captured_columns_dag.addAlias(*outputs[i], capture->captured_names[i]);
+
+            actions = ActionsDAG::merge(std::move(captured_columns_dag), std::move(*actions));
+        }
+    }
+    else if (node_without_alias->type == ActionsDAG::ActionType::COLUMN && node_without_alias->column)
+    {
+        const auto * column_function = typeid_cast<const ColumnFunction *>(&node_without_alias->column->getDataColumn());
+        if (!column_function)
+            return std::nullopt;
+
+        const auto * function_expression = typeid_cast<const FunctionExpression *>(column_function->getFunction().get());
+        if (!function_expression)
+            return std::nullopt;
+
+        capture = &function_expression->getCapture();
+        actions = function_expression->getAcionsDAG().clone();
+
+        /// Stitch the captured constant columns into the body DAG so the body's input nodes
+        /// are resolved to actual constants. After `ActionsDAGWithInversionPushDown` rewrites
+        /// the constant column names to their AST form, the resulting name will match the one
+        /// produced for the index sample block (which was built via the old analyzer).
+        const auto & captured_columns = column_function->getCapturedColumns();
+        if (!captured_columns.empty())
+        {
+            if (captured_columns.size() != capture->captured_names.size())
+                return std::nullopt;
+
+            ActionsDAG captured_columns_dag;
+            auto & outputs = captured_columns_dag.getOutputs();
+            outputs.reserve(captured_columns.size());
+            for (size_t i = 0; i < captured_columns.size(); ++i)
+            {
+                const auto & captured = captured_columns[i];
+                const auto * captured_column_const = typeid_cast<const ColumnConst *>(captured.column.get());
+                if (!captured_column_const)
+                    return std::nullopt;
+
+                const auto & captured_node = captured_columns_dag.addColumn(captured_column_const->getPtr(), captured.type, captured.name);
+                const auto & alias_node = captured_columns_dag.addAlias(captured_node, capture->captured_names[i]);
+                outputs.push_back(&alias_node);
+            }
+
+            actions = ActionsDAG::merge(std::move(captured_columns_dag), std::move(*actions));
+        }
+    }
+    else
+    {
+        return std::nullopt;
+    }
+
+    Names argument_names;
+    argument_names.reserve(capture->lambda_arguments.size());
+    for (const auto & lambda_argument : capture->lambda_arguments)
+        argument_names.push_back(lambda_argument.name);
+
+    return DAGLambdaBody{std::move(argument_names), std::move(*actions)};
 }
 
 RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_)

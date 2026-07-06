@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
+
 #include <Core/Block.h>
+#include <Core/Names.h>
 
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
@@ -66,6 +69,26 @@ private:
     /// Valid only for AST tree
     PreparedSetsPtr prepared_sets;
 };
+
+/// A lambda body extracted from an `ActionsDAG` node.
+struct DAGLambdaBody
+{
+    /// Lambda arguments in declaration order.
+    Names argument_names;
+    /// Body DAG with captured expressions stitched into its inputs under their captured
+    /// names; the first output is the body result.
+    ActionsDAG actions;
+};
+
+/// Recognizes a lambda in both of its DAG representations:
+///  - a FUNCTION node wrapping `ExecutableFunctionCapture` (captured expressions are the node children);
+///  - a constant-folded COLUMN node holding `ColumnConst` of `ColumnFunction`.
+/// Aliases are unwrapped first. Returns std::nullopt if the node is not a lambda or its
+/// representation is inconsistent.
+std::optional<DAGLambdaBody> tryExtractLambdaBodyDAG(const ActionsDAG::Node & node);
+
+/// Unwraps ALIAS nodes, returning the first non-ALIAS node underneath.
+const ActionsDAG::Node * getNodeWithoutAlias(const ActionsDAG::Node * node);
 
 class RPNBuilderFunctionTreeNode;
 
