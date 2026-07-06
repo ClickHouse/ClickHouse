@@ -12,6 +12,7 @@
 #include <xxhash.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CacheBase.h>
@@ -71,16 +72,11 @@ using Box = bg::model::box<Point>;
 using PointInPolygonWithGridF64 = PointInPolygonWithGrid<Float64>;
 using PointInMultiPolygonRTreeWithGrid = PointInMultiPolygonRTree<PointInPolygonWithGridF64>;
 
-template <typename G>
-concept PolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::polygon_tag>;
-
-template <typename G>
-concept MultiPolygonGeometry = std::is_same_v<typename bg::traits::tag<G>::type, bg::multi_polygon_tag>;
-
 /** Constant polygons are preprocessed into data structures that allow fast matching
   * (see PointInPolygonWithGrid and PointInMultiPolygonRTree). Preprocessing can be
   * computationally heavy and the result can take megabytes of memory, so preprocessed
-  * polygons are cached and shared, keyed by a hash of the polygon content.
+  * polygons are cached and shared, keyed by a hash of the raw constant arguments
+  * (see hashConstPolygonArguments).
   *
   * A preprocessed polygon is immutable after construction and matching (contains) is
   * read-only and thread-safe, so all concurrent queries share a single instance.
@@ -120,60 +116,89 @@ PreprocessedPolygonsCache<PolygonImpl, MultiPolygonImpl> & preprocessedPolygonsC
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
-template <class Ring>
-void updateHashWithRing(XXH3_state_t & state, const Ring & ring)
+/// Feed a string into an in-progress XXH3 state, length-prefixed so concatenations are unambiguous.
+void updateHashWithString(XXH3_state_t & state, std::string_view s)
 {
-    static_assert(
-        std::contiguous_iterator<decltype(ring.data())>,
-        "updateHashWithRing expects a container with contiguous storage (e.g. std::vector).");
-
-    UInt32 size = static_cast<UInt32>(ring.size());
+    UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
-    XXH_INLINE_XXH3_128bits_update(&state, ring.data(), size * sizeof(ring[0]));
+    XXH_INLINE_XXH3_128bits_update(&state, s.data(), s.size());
 }
 
-template <PolygonGeometry Polygon>
-void updateHashWithPolygon(XXH3_state_t & state, const Polygon & polygon)
+/// Hash a column's contents into an in-progress XXH3 state, descending into Array/Tuple/Const and
+/// feeding contiguous leaf buffers in bulk (the same structural walk as updateHashFast, but XXH3).
+/// The structure is mixed in (array offsets, tuple arity) so distinct shapes that share leaf bytes
+/// cannot collide.
+void updateHashWithColumn(XXH3_state_t & state, const IColumn & column)
 {
-    updateHashWithRing(state, polygon.outer());
-
-    const auto & inners = polygon.inners();
-    UInt32 inners_size = static_cast<UInt32>(inners.size());
-    XXH_INLINE_XXH3_128bits_update(&state, &inners_size, sizeof(inners_size));
-    for (const auto & inner_ring : inners)
-        updateHashWithRing(state, inner_ring);
+    if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
+    {
+        updateHashWithColumn(state, column_const->getDataColumn());
+    }
+    else if (const auto * column_array = checkAndGetColumn<ColumnArray>(&column))
+    {
+        const auto & offsets = column_array->getOffsets();
+        UInt64 size = offsets.size();
+        XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
+        XXH_INLINE_XXH3_128bits_update(&state, offsets.data(), size * sizeof(offsets[0]));
+        updateHashWithColumn(state, column_array->getData());
+    }
+    else if (const auto * column_tuple = checkAndGetColumn<ColumnTuple>(&column))
+    {
+        UInt64 size = column_tuple->tupleSize();
+        XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
+        for (size_t i = 0; i < column_tuple->tupleSize(); ++i)
+            updateHashWithColumn(state, column_tuple->getColumn(i));
+    }
+    else if (column.isFixedAndContiguous())
+    {
+        std::string_view raw = column.getRawData();
+        XXH_INLINE_XXH3_128bits_update(&state, raw.data(), raw.size());
+    }
+    else
+    {
+        /// Polygon arguments are validated in getReturnTypeImpl to be (nested) arrays of tuples of
+        /// native numbers, so the recursion above always reaches contiguous numeric leaves. Hash any
+        /// other shape element by element as a safe, correct fallback.
+        for (size_t row = 0; row < column.size(); ++row)
+        {
+            std::string_view value = column.getDataAt(row);
+            updateHashWithString(state, value);
+        }
+    }
 }
 
-template <PolygonGeometry Polygon>
-UInt128 hash128(const Polygon & polygon)
+/// Cache key for a constant polygon, computed directly from the raw constant column values
+/// instead of from the parsed boost::geometry object. Keying on the raw input lets repeated
+/// invocations (one per input block) hit the cache without re-parsing and re-hashing the
+/// (potentially huge) polygon every time; parsing runs only on a cache miss, inside the load
+/// function. This removes the per-block parse that the previous content hash required.
+///
+/// The key folds in everything that changes how the same raw bytes are interpreted:
+///  - discriminator: polygons and multipolygons share one cache, so a leading byte separates
+///    their key spaces (matches the previous content-hash scheme);
+///  - the type name of every polygon argument: parsing casts coordinates to Float64, so the
+///    same raw bytes under a different declared type would parse to different coordinates
+///    (the raw-value hash hashes value bytes only and does not disambiguate the type);
+///  - the validate_polygons flag: parsing (and its validity check) only runs on a miss, so
+///    without it an entry built with validate_polygons = 0 would satisfy a validate_polygons = 1
+///    lookup and skip the validation that would otherwise raise an exception.
+UInt128 hashConstPolygonArguments(const ColumnsWithTypeAndName & arguments, bool validate, UInt8 discriminator)
 {
     XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
-    /// Polygons and multipolygons share one cache; the leading byte separates their key spaces.
-    UInt8 discriminator = 0;
     XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
+    UInt8 validate_byte = validate;
+    XXH_INLINE_XXH3_128bits_update(&state, &validate_byte, sizeof(validate_byte));
+    UInt64 arguments_size = arguments.size();
+    XXH_INLINE_XXH3_128bits_update(&state, &arguments_size, sizeof(arguments_size));
 
-    updateHashWithPolygon(state, polygon);
-
-    auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
-    return {hash.low64, hash.high64};
-}
-
-template <MultiPolygonGeometry MultiPolygon>
-UInt128 hash128(const MultiPolygon & multi_polygon)
-{
-    XXH3_state_t state;
-    XXH_INLINE_XXH3_128bits_reset(&state);
-
-    UInt8 discriminator = 1;
-    XXH_INLINE_XXH3_128bits_update(&state, &discriminator, sizeof(discriminator));
-
-    UInt32 size = static_cast<UInt32>(multi_polygon.size());
-    XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
-
-    for (const auto & component : multi_polygon)
-        updateHashWithPolygon(state, component);
+    for (size_t arg_pos = 1; arg_pos < arguments.size(); ++arg_pos)
+    {
+        updateHashWithString(state, arguments[arg_pos].type->getName());
+        /// All polygon arguments are constant here, so the single value is the whole column.
+        updateHashWithColumn(state, *arguments[arg_pos].column);
+    }
 
     auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
     return {hash.low64, hash.high64};
@@ -368,17 +393,23 @@ public:
 
             if (is_const_multi_polygon)
             {
-                MultiPolygon multi_polygon;
-                parseConstMultiPolygon(arguments, multi_polygon);
-
                 /// Polygons are preprocessed and saved in cache.
                 /// Preprocessing can be computationally heavy but dramatically speeds up matching.
+                ///
+                /// The cache key is computed from the raw constant column values, so cache hits
+                /// avoid re-parsing and re-hashing the (potentially huge) multipolygon on every
+                /// input block. Parsing runs only on a cache miss, inside the load function;
+                /// getOrSet inserts the entry only on a successful load, so a parse/validation
+                /// failure leaves the cache unchanged.
 
                 using Cache = PreprocessedPolygonsCache<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>;
                 auto & known_polygons = preprocessedPolygonsCache<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>();
 
-                auto load = [&multi_polygon]
+                auto load = [this, &arguments]
                 {
+                    MultiPolygon multi_polygon;
+                    parseConstMultiPolygon(arguments, multi_polygon);
+
                     ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
 
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstMultiPolygonImpl>, multi_polygon);
@@ -386,7 +417,7 @@ public:
                     return ptr;
                 };
 
-                auto entry = known_polygons.getOrSet(hash128(multi_polygon), load).first;
+                auto entry = known_polygons.getOrSet(hashConstPolygonArguments(arguments, validate, /*discriminator=*/1), load).first;
                 const auto & impl = std::get<PointInConstMultiPolygonImpl>(*entry);
 
                 if (point_is_const)
@@ -399,14 +430,17 @@ public:
             }
             else // Kept for easier readability
             {
-                Polygon polygon;
-                parseConstPolygon(arguments, polygon);
+                /// See the comment in the multipolygon branch above: the cache key is computed
+                /// from the raw constant column values, and parsing happens only on a cache miss.
 
                 using Cache = PreprocessedPolygonsCache<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>;
                 auto & known_polygons = preprocessedPolygonsCache<PointInConstPolygonImpl, PointInConstMultiPolygonImpl>();
 
-                auto load = [&polygon]
+                auto load = [this, &arguments]
                 {
+                    Polygon polygon;
+                    parseConstPolygon(arguments, polygon);
+
                     ScopedJemallocThreadArena arena_scope(JemallocCacheArena::getArenaIndex());
 
                     auto ptr = std::make_shared<typename Cache::Mapped>(std::in_place_type<PointInConstPolygonImpl>, polygon);
@@ -414,7 +448,7 @@ public:
                     return ptr;
                 };
 
-                auto entry = known_polygons.getOrSet(hash128(polygon), load).first;
+                auto entry = known_polygons.getOrSet(hashConstPolygonArguments(arguments, validate, /*discriminator=*/0), load).first;
                 const auto & impl = std::get<PointInConstPolygonImpl>(*entry);
 
                 if (point_is_const)

@@ -1,0 +1,139 @@
+---
+sidebarTitle: '업그레이드'
+slug: /manage/updates
+title: '업그레이드'
+description: 'ClickHouse Cloud를 사용하면 패치와 업그레이드에 대해 걱정할 필요가 없습니다. 수정 사항, 새로운 기능, 성능 개선이 포함된 업그레이드가 정기적으로 배포됩니다.'
+doc_type: 'guide'
+keywords: ['업그레이드', '버전 관리', 'Cloud 기능', '유지 관리', '업데이트']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+ClickHouse Cloud를 사용하면 패치와 업그레이드를 따로 걱정할 필요가 없습니다. 수정 사항, 새로운 기능, 성능 개선이 포함된 업그레이드를 정기적으로 배포합니다. ClickHouse의 새로운 변경 사항 전체 목록은 [Cloud changelog](/ko/resources/changelogs/cloud/2026)에서 확인하십시오.
+
+<Note>
+  현재 &quot;make before break&quot;(또는 MBB)라고 부르는 새로운 업그레이드 메커니즘을 도입하고 있습니다. 이 새로운 방식에서는 업그레이드 작업 중 기존 레플리카를 제거하기 전에 업데이트된 레플리카를 먼저 추가합니다. 그 결과, 실행 중인 워크로드에 미치는 영향이 더 적고 한층 더 원활한 업그레이드가 가능합니다.
+
+  이 변경의 일환으로 업그레이드 이벤트와 관련된 과거 시스템 테이블(system table) 데이터는 최대 30일까지 유지됩니다. 또한 새로운 organization tiers로 마이그레이션하는 과정에서 AWS 또는 GCP의 서비스는 2024년 12월 19일보다 오래된 데이터가, Azure의 서비스는 2025년 1월 14일보다 오래된 데이터가 유지되지 않습니다.
+</Note>
+
+<div id="version-compatibility">
+  ## 버전 호환성
+</div>
+
+서비스를 생성하면 [`compatibility`](/ko/reference/settings/session-settings#compatibility) 설정은 서비스가 처음 프로비저닝될 당시 ClickHouse Cloud에서 제공되는 최신 ClickHouse 버전으로 설정됩니다.
+
+`compatibility` 설정을 사용하면 이전 버전의 설정 기본값을 사용할 수 있습니다. 서비스가 새 버전으로 업그레이드되어도 `compatibility` 설정에 지정된 버전은 변경되지 않습니다. 즉, 서비스를 처음 생성했을 때 존재했던 설정의 기본값은 바뀌지 않습니다(이미 해당 기본값을 재정의한 경우에는 그 값이 업그레이드 후에도 유지됩니다).
+
+서비스 수준의 기본 `compatibility` 설정은 직접 관리할 수 없습니다. 서비스의 기본 `compatibility` 설정에 지정된 버전을 변경하려면 [지원팀에 문의하십시오](https://clickhouse.com/support/program). 하지만 세션에서 `SET compatibility = '22.3'`를 사용하거나 쿼리에서 `SETTINGS compatibility = '22.3'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할, 프로필, 쿼리 또는 세션 수준에서 `compatibility` 설정을 재정의할 수 있습니다.
+
+<div id="maintenance-mode">
+  ## 유지 관리 모드
+</div>
+
+경우에 따라 서비스를 업데이트해야 할 수 있으며, 이때 스케일링이나 유휴 상태 전환과 같은 일부 기능을 비활성화해야 할 수 있습니다. 드물게는 문제가 발생한 서비스를 정상 상태로 복구하기 위해 조치가 필요할 수도 있습니다. 이러한 유지 관리가 진행되는 동안 서비스 페이지에는 *&quot;유지 관리 진행 중&quot;* 이라는 배너가 표시됩니다. 이 시간 동안에도 서비스에서 쿼리를 사용할 수는 있습니다.
+
+서비스가 유지 관리 중인 시간에 대해서는 요금이 청구되지 않습니다. *유지 관리 모드* 는 드물게 발생하며, 일반적인 서비스 업그레이드와 혼동해서는 안 됩니다.
+
+<div id="release-channels-upgrade-schedule">
+  ## 릴리스 채널(업그레이드 일정)
+</div>
+
+사용자는 특정 릴리스 채널을 구독하여 ClickHouse Cloud 서비스의 업그레이드 일정을 지정할 수 있습니다. 릴리스 채널은 3가지이며, **예약된 업그레이드** 기능을 사용해 업그레이드를 수행할 요일과 시간을 설정할 수 있습니다.
+
+세 가지 릴리스 채널은 다음과 같습니다.
+
+* 업그레이드를 먼저 사용할 수 있는 [**빠른 릴리스 채널**](#fast-release-channel-early-upgrades)
+* [**정기 릴리스 채널**](#regular-release-channel)은 기본 채널이며, 이 채널의 업그레이드는 빠른 릴리스 채널 업그레이드가 시작된 후 2주 뒤에 시작됩니다. Scale 및 Enterprise 티어 서비스에 릴리스 채널이 설정되어 있지 않으면 기본적으로 정기 릴리스 채널이 적용됩니다.
+* [**느린 릴리스 채널**](#slow-release-channel-deferred-upgrades)은 릴리스를 늦추기 위한 채널입니다. 이 채널의 업그레이드는 정기 릴리스 채널 업그레이드가 시작된 후 2주 뒤에 진행됩니다.
+
+<Note>
+  Basic 티어 서비스는 자동으로 빠른 릴리스 채널에 등록됩니다
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### 빠른 릴리스 채널(조기 업그레이드)
+</div>
+
+<ScalePlanFeatureBadge feature="The fast release channel" />
+
+일반 업그레이드 일정 외에도, 서비스가 일반 릴리스 일정보다 먼저 업데이트를 받도록 하려는 경우 **빠른 릴리스** 채널을 제공합니다.
+
+구체적으로 서비스는 다음과 같습니다:
+
+* 최신 ClickHouse 릴리스를 받습니다
+* 새 릴리스가 테스트되면 더 자주 업그레이드됩니다
+
+아래와 같이 Cloud Console에서 서비스의 릴리스 일정을 변경할 수 있습니다:
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="릴리스 채널 유형 선택" border />
+</div>
+
+<br />
+
+이 **빠른 릴리스** 채널은 중요하지 않은 환경에서 새로운 기능을 테스트하는 데 적합합니다. **엄격한 가동 시간과 안정성 요구 사항이 있는 프로덕션 워크로드에는 권장되지 않습니다.**
+
+<div id="regular-release-channel">
+  ### 정기 릴리스 채널
+</div>
+
+릴리스 채널이나 업그레이드 일정이 구성되지 않은 모든 Scale 및 Enterprise 티어 서비스는 정기 릴리스 채널 릴리스의 일부로 업그레이드됩니다. 이 방식은 프로덕션 환경에 권장됩니다.
+
+정기 릴리스 채널 업그레이드는 일반적으로 **빠른 릴리스 채널** 이후 2주 후에 수행됩니다.
+
+<Note>
+  Basic 티어 서비스는 빠른 릴리스 채널 직후 업그레이드됩니다.
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### 느린 릴리스 채널(업그레이드 지연)
+</div>
+
+<EnterprisePlanFeatureBadge feature="느린 릴리스 채널" />
+
+서비스가 정기 릴리스 일정 이후에 업그레이드를 받도록 하려는 경우 **느린 릴리스** 채널을 제공합니다.
+
+구체적으로 다음과 같습니다:
+
+* 빠른 및 정기 릴리스 채널의 롤아웃이 완료된 후 업그레이드됩니다
+* 정기 릴리스 후 약 2주 뒤에 ClickHouse 릴리스를 받습니다
+* 프로덕션 업그레이드 전에 비프로덕션 환경에서 ClickHouse 릴리스를 테스트할 추가 시간이 필요한 고객을 위한 채널입니다. 비프로덕션 환경은 테스트 및 검증을 위해 빠른 또는 정기 릴리스 채널에서 업그레이드를 받을 수 있습니다.
+
+<Note>
+  릴리스 채널은 언제든지 변경할 수 있습니다. 다만, 경우에 따라 변경 사항은 이후 릴리스에만 적용됩니다.
+
+  * 더 빠른 채널로 이동하면 서비스가 즉시 업그레이드됩니다. 예: Slow에서 Regular로, Regular에서 Fast로
+  * 서비스가 [예약된 업그레이드](#scheduled-upgrades)를 사용 중인 경우에는 다음 예약된 업그레이드 시점에 업그레이드가 수행됩니다.
+  * 더 느린 채널로 이동해도 서비스가 다운그레이드되지는 않으며, 해당 채널에서 더 새로운 버전을 사용할 수 있을 때까지 현재 버전을 유지합니다. 예: Regular에서 Slow로, Fast에서 Regular 또는 Slow로
+</Note>
+
+<div id="scheduled-upgrades">
+  ## 예약된 업그레이드
+</div>
+
+<EnterprisePlanFeatureBadge feature="예약된 업그레이드" linking_verb_are="true" />
+
+Enterprise tier의 서비스에 대해 업그레이드 시간대를 구성할 수 있습니다.
+
+업그레이드 일정을 지정할 서비스를 선택한 다음, 왼쪽 메뉴에서 `Settings`를 선택하십시오. 그런 다음 `Scheduled upgrades`까지 스크롤하십시오.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="예약된 업그레이드" border />
+</div>
+
+<br />
+
+이 옵션을 선택하면 데이터베이스 및 Cloud 업그레이드에 적용할 요일과 시간대를 선택할 수 있습니다.
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="예약된 업그레이드 시간대" border />
+</div>
+
+<br />
+
+<Note>
+  예약된 업그레이드는 설정된 일정에 따라 진행되지만, 중요한 보안 패치 및 취약점 수정에는 예외가 적용되며, 데이터 손상이나 데이터 유실로 이어질 수 있는 잠재적 문제가 있는 경우에도 예외가 적용됩니다. 긴급한 보안 문제가 확인되면 예약된 시간대 외에 업그레이드가 수행될 수 있습니다. 이러한 예외 사항이 발생하는 경우 필요에 따라 고객에게 알립니다.
+</Note>

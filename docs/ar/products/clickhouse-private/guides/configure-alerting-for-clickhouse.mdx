@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "تهيئة التنبيهات لـ ClickHouse"
+sidebarTitle: "تهيئة التنبيهات"
+description: "إعداد أهداف استخلاص في Prometheus والتنبيهات لـ ClickHouse Server وKeeper والمشغّل."
+---
+
+إعداد أهداف استخلاص في Prometheus والتنبيهات لـ ClickHouse Server وKeeper والمشغّل.
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## إعداد أهداف الاستخلاص في Prometheus لخادم ClickHouse
+</div>
+
+تتضمن بودات خادم ClickHouse تعليقات توضيحية `prometheus.io/*` تعرض المقاييس الأساسية. للحصول على المجموعة الكاملة من المقاييس (بما في ذلك `ClickHouse_CustomMetrics_*`)، اضبط نقطة النهاية `:8123/metrics` كهدف استخلاص في Prometheus لكل بود خادم باستخدام PodMonitor أو ما يعادله.
+
+تتطلب نقطة النهاية هذه **المصادقة**. استخدم مستخدمًا مخصصًا لديه امتيازات للقراءة فقط للمصادقة.
+
+<div id="set-up-podmonitor-for-keeper">
+  ## إعداد PodMonitor لـ Keeper
+</div>
+
+أنشئ PodMonitor يستهدف نقطة النهاية `:8001/metrics` على وحدات بود الخاصة بـ Keeper لالتقاط مقاييس Keeper.
+
+<div id="alert-rules">
+  ## قواعد التنبيهات
+</div>
+
+للاطّلاع على القائمة الكاملة لتعريفات التنبيهات الموصى بها (تعبيرات Prometheus، والعتبات، والإجراءات)، راجع [reference/metrics-and-alerts.md](/ar/products/clickhouse-private/reference/metrics-and-alerts-reference).
+
+تشمل التنبيهات الرئيسية ما يلي:
+
+| التنبيه                         | المقياس                                                | الغرض                                           |
+| ------------------------------- | ------------------------------------------------------ | ----------------------------------------------- |
+| المشغّل لا يُجري المواءمة       | `last_cluster_reconcile`                               | لم يُجرِ المشغّل المواءمة ضمن المهلة المتوقعة   |
+| أخطاء مواءمة المشغّل            | `controller_runtime_reconcile_errors_total`            | يتجاوز معدل الأخطاء 5% من محاولات المواءمة      |
+| الأجزاء المنفصلة التالفة        | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | أكثر من 100 جزء منفصل تالف لمدة تتجاوز 60 دقيقة |
+| فقدان البيانات                  | `ClickHouse_CustomMetric_LostPartCount`                | تم رصد أجزاء مفقودة (احتمال فقدان بيانات)       |
+| الخادم عالق أثناء إيقاف التشغيل | `ClickHouseMetrics_IsServerShuttingDown`               | الخادم في طور إيقاف التشغيل منذ أكثر من ساعة    |
+| نسخ الجدول في وضع القراءة فقط   | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | الجدول في وضع القراءة فقط منذ أكثر من ساعة      |
+
+<div id="standard-kubernetes-alerts">
+  ## تنبيهات Kubernetes القياسية
+</div>
+
+بالإضافة إلى التنبيهات الخاصة بـ ClickHouse، أضِف تنبيهات Kubernetes القياسية لما يلي:
+
+* البودات التي تدخل في حلقة تعطل وإعادة تشغيل
+* البودات غير القابلة للجدولة
+* المشكلات الأخرى المتعلقة بالبنية التحتية والخاصة ببيئتك
