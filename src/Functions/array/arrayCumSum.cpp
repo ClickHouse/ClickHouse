@@ -17,13 +17,11 @@ namespace ErrorCodes
 
 struct ArrayCumSumImpl
 {
-    /// Documentation-only — array of cumulative sums; the result element
-    /// type widens to fit the running total (e.g. `Array(UInt8)` →
-    /// `Array(UInt64)`). The widening rule isn't expressible in the current
-    /// DSL, so legacy `getReturnType` stays authoritative.
-    static constexpr auto signature_documentation =
-        "(Function((Any, ...), Number), Array(Number), ...) -> Array(Number)"
-        " OR (Array(Number)) -> Array(Number)";
+    /// Authoritative — array of cumulative sums; the result element type widens to fit the
+    /// running total (e.g. `Array(UInt8)` → `Array(UInt64)`) via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
 
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }

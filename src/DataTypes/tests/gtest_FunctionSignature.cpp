@@ -86,6 +86,32 @@ GTEST_TEST(FunctionSignature, TypeFunctions)
         "Array(String)");
 }
 
+/// The `arraySumResult` / `arrayDifferenceResult` widening type functions used by
+/// `arraySum` / `arrayCumSum*` / `arrayDifference`.
+GTEST_TEST(FunctionSignature, ArrayWideningTypeFunctions)
+{
+    const String sum = "f(Array(T : Number)) -> arraySumResult(T)";
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(UInt8)")}), "UInt64");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(Int8)")}), "Int64");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(Int128)")}), "Int128");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(UInt256)")}), "UInt256");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(Float32)")}), "Float64");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(Decimal(9, 3))")}), "Decimal(38, 3)");
+    EXPECT_EQ(checkSignature(sum, {makeColumn("Array(Decimal(76, 5))")}), "Decimal(76, 5)");
+    EXPECT_THAT(checkSignature(sum, {makeColumn("Array(String)")}), ::testing::StartsWith("FAIL:"));
+
+    const String diff = "f(Array(T : Number | DateOrDateTime)) -> Array(arrayDifferenceResult(T))";
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(UInt8)")}), "Array(Int16)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(UInt16)")}), "Array(Int32)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(UInt32)")}), "Array(Int64)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(Int128)")}), "Array(Int128)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(Float32)")}), "Array(Float64)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(Decimal(9, 3))")}), "Array(Decimal(9, 3))");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(Date)")}), "Array(Int32)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(DateTime)")}), "Array(Int64)");
+    EXPECT_EQ(checkSignature(diff, {makeColumn("Array(DateTime64(3))")}), "Array(Decimal(18, 3))");
+}
+
 GTEST_TEST(FunctionSignature, ConstArguments)
 {
     EXPECT_EQ(

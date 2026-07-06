@@ -94,14 +94,20 @@ using ArrayAggregateResult = typename ArrayAggregateResultImpl<ArrayElement, ope
 template<AggregateOperation aggregate_operation>
 struct ArrayAggregateImpl
 {
-    /// Documentation-only — reduces the array (optionally transformed by a
-    /// lambda) with the aggregate operation. `min` / `max` preserve the
-    /// element type; `average` / `product` widen to `Float64`; `sum` widens
-    /// to fit the running total. The widening rule isn't expressible in the
-    /// current DSL, so legacy `getReturnType` stays authoritative.
-    static constexpr auto signature_documentation =
-        "(Function((Any, ...), Number), Array(Number), ...) -> Number"
-        " OR (Array(Number)) -> Number";
+    /// Authoritative declarative signature — reduces the array (optionally transformed by a
+    /// lambda) with the aggregate operation. `min` / `max` preserve the (possibly lambda-mapped)
+    /// element type for any orderable type; `average` / `product` always widen to `Float64`
+    /// (numeric input only); `sum` widens the running total via the `arraySumResult` type function.
+    static constexpr const char * chooseSignature()
+    {
+        if constexpr (aggregate_operation == AggregateOperation::min || aggregate_operation == AggregateOperation::max)
+            return "(Function((Any, ...), R : Any), Array, ...) -> R OR (Array(T : Any)) -> T";
+        else if constexpr (aggregate_operation == AggregateOperation::average || aggregate_operation == AggregateOperation::product)
+            return "(Function((Any, ...), Number), Array, ...) -> Float64 OR (Array(Number)) -> Float64";
+        else
+            return "(Function((Any, ...), T : Number), Array, ...) -> arraySumResult(T) OR (Array(T : Number)) -> arraySumResult(T)";
+    }
+    static constexpr auto signature = chooseSignature();
 
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }

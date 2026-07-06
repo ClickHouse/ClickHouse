@@ -21,16 +21,13 @@ namespace ErrorCodes
   */
 struct ArrayDifferenceImpl
 {
-    /// Documentation-only — array of consecutive differences. The result
-    /// element type widens to fit a signed difference (e.g. `Array(UInt8)`
-    /// → `Array(Int16)`, `Array(UInt32)` → `Array(Int64)`). Decimal /
-    /// DateTime64 inputs keep their scale but widen to signed Decimal64.
-    /// The widening rule isn't expressible in the current DSL, so legacy
-    /// `getReturnType` below stays authoritative; this string is surfaced
-    /// via `system.functions`.
-    static constexpr auto signature_documentation =
-        "(Function((Any, ...), Number), Array(Number), ...) -> Array(Number)"
-        " OR (Array(Number)) -> Array(Number)";
+    /// Authoritative — array of consecutive differences. The result element type widens to fit a
+    /// signed difference (e.g. `Array(UInt8)` → `Array(Int16)`, `Array(UInt32)` → `Array(Int64)`);
+    /// `Decimal` keeps its type and `DateTime64` widens to a signed `Decimal64` of the same scale.
+    /// See the `arrayDifferenceResult` type function. `Date`/`DateTime` inputs are accepted too.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number | DateOrDateTime), Array, ...) -> Array(arrayDifferenceResult(T))"
+        " OR (Array(T : Number | DateOrDateTime)) -> Array(arrayDifferenceResult(T))";
 
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }

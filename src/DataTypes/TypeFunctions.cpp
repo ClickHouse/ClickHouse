@@ -15,6 +15,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/NumberTraits.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/getMostSubtype.h>
@@ -493,6 +494,96 @@ public:
     }
 
     std::string name() const override { return "additionMultiplicationResult"; }
+};
+
+/// `arraySumResult(T)` — the element type of `arraySum` / `arrayCumSum` /
+/// `arrayCumSumNonNegative` over an array of `T`. Mirrors
+/// `ArrayAggregateResultImpl<T, sum>` in `arrayAggregation.cpp`: native unsigned → `UInt64`,
+/// native signed → `Int64`, big integers keep their width, floating (incl. `BFloat16`) → `Float64`,
+/// `Decimal32`/`64`/`128` → `Decimal128` and `Decimal256` → `Decimal256` (each at maximum precision,
+/// preserving the input scale). Anything else raises a clean `ILLEGAL_TYPE_OF_ARGUMENT`.
+class TypeFunctionArraySumResult : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function arraySumResult");
+
+        const DataTypePtr & type = args.front().type();
+        WhichDataType which(type);
+
+        DataTypePtr res;
+        if (which.isNativeUInt())
+            res = std::make_shared<DataTypeUInt64>();
+        else if (which.isNativeInt())
+            res = std::make_shared<DataTypeInt64>();
+        else if (which.isUInt128())
+            res = std::make_shared<DataTypeUInt128>();
+        else if (which.isInt128())
+            res = std::make_shared<DataTypeInt128>();
+        else if (which.isUInt256())
+            res = std::make_shared<DataTypeUInt256>();
+        else if (which.isInt256())
+            res = std::make_shared<DataTypeInt256>();
+        else if (which.isFloat())
+            res = std::make_shared<DataTypeFloat64>();
+        else if (which.isDecimal256())
+            res = std::make_shared<DataTypeDecimal<Decimal256>>(DecimalUtils::max_precision<Decimal256>, getDecimalScale(*type));
+        else if (which.isDecimal())
+            res = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::max_precision<Decimal128>, getDecimalScale(*type));
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type function arraySumResult does not support type {}", type->getName());
+
+        return Value(res);
+    }
+
+    std::string name() const override { return "arraySumResult"; }
+};
+
+/// `arrayDifferenceResult(T)` — the element type of `arrayDifference` over an array of `T`.
+/// Mirrors `ArrayDifferenceImpl::getReturnType` in `arrayDifference.cpp`: the type widens to hold a
+/// signed difference (`UInt8`/`Int8` → `Int16`, `UInt16`/`Int16`/`Date` → `Int32`,
+/// `UInt32`/`UInt64`/`Int32`/`Int64`/`Date32`/`DateTime` → `Int64`, big integers → `Int128`/`Int256`),
+/// native floating types → `Float64`, `Decimal` keeps its type, and `DateTime64` becomes a signed
+/// `Decimal64` of the same precision and scale. Anything else raises `ILLEGAL_TYPE_OF_ARGUMENT`.
+class TypeFunctionArrayDifferenceResult : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function arrayDifferenceResult");
+
+        const DataTypePtr & type = args.front().type();
+        WhichDataType which(type);
+
+        DataTypePtr res;
+        if (which.isUInt8() || which.isInt8())
+            res = std::make_shared<DataTypeInt16>();
+        else if (which.isUInt16() || which.isInt16() || which.isDate())
+            res = std::make_shared<DataTypeInt32>();
+        else if (which.isUInt32() || which.isUInt64() || which.isInt32() || which.isInt64() || which.isDate32() || which.isDateTime())
+            res = std::make_shared<DataTypeInt64>();
+        else if (which.isUInt128() || which.isInt128())
+            res = std::make_shared<DataTypeInt128>();
+        else if (which.isUInt256() || which.isInt256())
+            res = std::make_shared<DataTypeInt256>();
+        else if (which.isFloat32() || which.isFloat64())
+            res = std::make_shared<DataTypeFloat64>();
+        else if (which.isDecimal())
+            res = type;
+        else if (which.isDateTime64())
+            res = std::make_shared<DataTypeDecimal<Decimal64>>(getDecimalPrecision(*type), getDecimalScale(*type));
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type function arrayDifferenceResult does not support type {}", type->getName());
+
+        return Value(res);
+    }
+
+    std::string name() const override { return "arrayDifferenceResult"; }
 };
 
 /// If the type was already Nullable, return it as is.
@@ -1263,6 +1354,8 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionMax>();
     factory.registerElement<TypeFunctionDifference>();
     factory.registerElement<TypeFunctionAdditionMultiplicationResult>();
+    factory.registerElement<TypeFunctionArraySumResult>();
+    factory.registerElement<TypeFunctionArrayDifferenceResult>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();

@@ -19,12 +19,11 @@ namespace ErrorCodes
   */
 struct ArrayCumSumNonNegativeImpl
 {
-    /// Documentation-only — like `arrayCumSum` but the running total is
-    /// clamped to zero. The widening rule isn't expressible in the current
-    /// DSL, so legacy `getReturnType` stays authoritative.
-    static constexpr auto signature_documentation =
-        "(Function((Any, ...), Number), Array(Number), ...) -> Array(Number)"
-        " OR (Array(Number)) -> Array(Number)";
+    /// Authoritative — like `arrayCumSum` but the running total is clamped to zero; the result
+    /// element type widens the same way, via the `arraySumResult` type function.
+    static constexpr auto signature =
+        "(Function((Any, ...), T : Number), Array, ...) -> Array(arraySumResult(T))"
+        " OR (Array(T : Number)) -> Array(arraySumResult(T))";
 
     static bool needBoolean() { return false; }
     static bool needExpression() { return false; }
