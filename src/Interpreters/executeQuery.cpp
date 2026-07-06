@@ -12,6 +12,7 @@
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
+#include <Common/Stopwatch.h>
 
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
@@ -69,6 +70,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Parsers/ASTSystemQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <QueryPipeline/printPipeline.h>
 #include <IO/Progress.h>
 #include <Parsers/ASTIdentifier_fwd.h>
@@ -1037,6 +1039,34 @@ static void validateAnalyzerSettings(ASTPtr ast, bool context_value)
                 nodes_to_process.push_back(std::move(child));
         }
     }
+}
+
+/// Remove the resource-limit settings that executeASTFuzzerQueries pins on the fuzz context from the
+/// query-level SETTINGS carriers of the fuzzed AST. These caps (row/time/memory/result/block-size
+/// limits) keep a single fuzzed query from running away. They are applied to the fuzz context up front, but
+/// executeQueryImpl re-applies the query's own SETTINGS on top of the context
+/// (InterpreterSetQuery::applySettingsFromQuery), so a seed or fuzzed `SETTINGS max_rows_to_read = 0`
+/// (or `= DEFAULT`, which resets the cap back to its unbounded default), including from a BACKUP or
+/// CREATE clause, would otherwise silently lift the guard. Stripping them from the AST before
+/// formatting makes the fuzz-context values authoritative.
+/// removeSettingsFromQuery covers exactly the carriers applySettingsFromQuery reads, and also prunes
+/// any SETTINGS clause that becomes empty, so a clause holding only these caps does not re-serialize
+/// to a bare `SETTINGS` keyword (which would throw on re-parse and make the fuzzer silently skip the
+/// query instead of running it under the caps).
+static void stripFuzzerSafetyLimitSettings(const ASTPtr & ast)
+{
+    static constexpr std::string_view limit_settings[] = {
+        "max_rows_to_read",
+        "read_overflow_mode",
+        "max_execution_time",
+        "max_memory_usage",
+        "max_result_rows",
+        "max_result_bytes",
+        "max_block_size",
+        "min_insert_block_size_rows",
+    };
+
+    removeSettingsFromQuery(ast, limit_settings);
 }
 
 class ImplicitTransactionControlExecutor
@@ -2090,6 +2120,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             continue;
         }
 
+        /// Drop any SETTINGS that would override the fuzz-context resource caps below; otherwise a
+        /// seed/fuzzed `SETTINGS max_rows_to_read = 0` (etc.) lets the heavy query run unbounded.
+        stripFuzzerSafetyLimitSettings(fuzzed_ast);
+
         /// The fuzzer can produce structurally invalid ASTs (e.g. mismatched children counts)
         /// that cause crashes during formatting. Catch and skip those.
         String fuzzed_query;
@@ -2150,6 +2184,26 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->setSetting("max_result_rows", Field(UInt64(1000)));
             fuzz_context->setSetting("max_result_bytes", Field(UInt64(10 * 1024 * 1024)));  /// 10 MiB
 
+            /// The fuzzer rewrites numeric literals to boundary values (1 MiB +/- 1, INT_MAX, ...),
+            /// so a seed `numbers(100)` can become `numbers(1048576)` and the resulting INSERT grinds
+            /// through ~1M rows of fuzzer-generated columns in the part writer (minutes under
+            /// sanitizers). max_execution_time only fires between pipeline tasks, so a single heavy
+            /// block can blow past it. Bound the read side instead: stop reading (break, do not throw)
+            /// after enough rows to keep exercising the query structure without a runaway data volume.
+            fuzz_context->setSetting("max_rows_to_read", Field(UInt64(100000)));
+            fuzz_context->setSetting("read_overflow_mode", Field("break"));
+
+            /// max_rows_to_read is only checked after a source emits a chunk, so it bounds the number of
+            /// chunks but not the size of the first one. A trivial INSERT ... SELECT into a table that
+            /// prefers large blocks copies min_insert_block_size_rows into the SELECT's max_block_size
+            /// (InterpreterInsertQuery::applyTrivialInsertSelectOptimization), and the default is
+            /// ~1M rows, so a single ~1M-row chunk can still reach the part writer and spend minutes in
+            /// one pipeline task before read_overflow_mode = break cancels further reads. The cancel
+            /// callback only runs between tasks, so it cannot interrupt that block. Pin both block-forming
+            /// settings small so the first emitted chunk is bounded too.
+            fuzz_context->setSetting("max_block_size", Field(UInt64(65409)));
+            fuzz_context->setSetting("min_insert_block_size_rows", Field(UInt64(65409)));
+
             fuzz_context->setCurrentQueryId("");
             if (!fuzzed_query_params.empty())
                 fuzz_context->setQueryParameters(fuzzed_query_params);
@@ -2170,6 +2224,23 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         result.second.pipeline.complete(std::make_shared<NullOutputFormat>(std::make_shared<const Block>(result.second.pipeline.getHeader())));
                     }
                     CompletedPipelineExecutor executor(result.second.pipeline);
+
+                    /// A single in-flight fuzzed query (e.g. a heavy INSERT) only checks its own
+                    /// time limit between pipeline tasks, so without a cancel callback it ignores the
+                    /// outer query's KILL/timeout and server shutdown and can run for minutes, tripping
+                    /// the stress test hung check. Poll the same conditions the loop guard uses, plus a
+                    /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
+                    Stopwatch fuzzed_query_watch;
+                    executor.setCancelCallback(
+                        [&fuzzed_query_watch, &process_list_element]()
+                        {
+                            if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
+                                return true;
+                            if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                return true;
+                            return fuzzed_query_watch.elapsedMilliseconds() > 30000;
+                        },
+                        /*interactive_timeout_ms=*/100);
                     executor.execute();
                 }
             }
@@ -2604,42 +2675,54 @@ void executeQuery(
         throw;
     }
 
-    /// We release the query slot here to make sure the client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    /// Only the query slot is released here, not the memory reservation: pipeline threads still hold raw pointers to it,
-    /// so it is released later by `streams.onFinish()` after the pipeline has been finalized.
-    context->releaseQuerySlot();
-
-    /// The order is important here:
-    /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
-    /// - then we flush the progress (to flush result_rows/result_bytes)
-    /// - then call the query_finish_callback() - right now the only purpose is to flush the data over HTTP
-    /// - then call onFinish() that will create entry in query_log/opentelemetry_span_log
-    ///
-    /// That way we have:
-    /// - correct finish time of the query (regardless of how long does the query_finish_callback() takes)
-    /// - correct progress for HTTP (X-ClickHouse-Summary requires result_rows/result_bytes)
-    /// - correct NetworkSendElapsedMicroseconds/NetworkSendBytes in query_log
-    const auto finish_time = std::chrono::system_clock::now();
-    std::exception_ptr exception_ptr;
+    QueryFinishCallback finish_callback;
     if (query_finish_callback)
     {
-        /// Dump result_rows/result_bytes, since query_finish_callback() will send final http header.
-        flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+        finish_callback = [&]()
+        {
+            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+            /// so the X-ClickHouse-Summary header is correct.
+            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+            query_finish_callback();
+        };
+    }
 
+    finishExecutedQuery(streams, finish_callback);
+}
+
+void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)
+{
+    /// Release the query slot now so the client can safely reuse it for its next query, otherwise it would be
+    /// released too late by BlockIO. Only the query slot is released here, not the memory reservation: pipeline
+    /// threads still hold raw pointers to it until io.onFinish() finalizes the pipeline, so releasing it here
+    /// would be a data race.
+    io.releaseQuerySlot();
+
+    /// The order is important here:
+    /// - first we save finish_time, used for query_log/opentelemetry_span_log.finish_time_us;
+    /// - then we call query_finish_callback() - right now its only purpose is to flush the data over HTTP;
+    /// - then we call onFinish() that creates the entry in query_log/opentelemetry_span_log.
+    /// That way finish_time is the correct finish time of the query regardless of how long query_finish_callback()
+    /// takes. If the callback throws, we still run onFinish() and rethrow the callback's exception afterwards, so
+    /// onFinish()'s own exceptions propagate normally.
+    const auto finish_time = std::chrono::system_clock::now();
+    std::exception_ptr callback_exception;
+    if (query_finish_callback)
+    {
         try
         {
             query_finish_callback();
         }
         catch (...)
         {
-            exception_ptr = std::current_exception();
+            callback_exception = std::current_exception();
         }
     }
 
-    streams.onFinish(finish_time);
+    io.onFinish(finish_time);
 
-    if (exception_ptr)
-        std::rethrow_exception(exception_ptr);
+    if (callback_exception)
+        std::rethrow_exception(callback_exception);
 }
 
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)

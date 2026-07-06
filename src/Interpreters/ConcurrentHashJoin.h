@@ -110,6 +110,11 @@ public:
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+
+        /// Snapshot of the total rows and bytes held by the hash join. This is updated during
+        /// `addBlockToJoin` and is used to track the whole join state without locking.
+        std::atomic<size_t> total_rows{0};
+        std::atomic<size_t> total_bytes{0};
     };
 
     friend class NotJoinedHash;

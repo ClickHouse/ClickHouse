@@ -1,7 +1,8 @@
 -- Tests delayed materialization of statistics in merge instead of during insert (setting 'materialize_statistics_on_insert = 0').
 -- (The concrete statistics type, column data type and predicate type don't matter)
-
 -- Checks by the predicate evaluation order in EXPLAIN. This is quite fragile, a better approach would be helpful (maybe 'send_logs_level'?)
+
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
@@ -18,7 +19,7 @@ CREATE TABLE tab
     a Int64 STATISTICS(tdigest),
     b Int16 STATISTICS(tdigest),
 ) ENGINE = MergeTree() ORDER BY tuple()
-SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0; -- TODO: there is a bug in vertical merge with statistics.
+SETTINGS min_bytes_for_wide_part = 0, enable_vertical_merge_algorithm = 0, default_compression_codec = 'LZ4'; -- TODO: there is a bug in vertical merge with statistics. (codec pinned: randomized server-side, affects statistics-based prewhere cost)
 
 INSERT INTO tab SELECT number, -number FROM system.numbers LIMIT 10000;
 SELECT 'After insert';
@@ -46,7 +47,7 @@ CREATE TABLE tab_basic (
     id UInt64,
     value Nullable(Int64)
 ) ENGINE = MergeTree() ORDER BY id
-SETTINGS auto_statistics_types = '';
+SETTINGS auto_statistics_types = '', default_compression_codec = 'LZ4';
 
 SET materialize_statistics_on_insert = 0;
 INSERT INTO tab_basic SELECT number, if(number % 2 = 0, NULL, number) FROM numbers(100);

@@ -1071,9 +1071,9 @@ void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTrackin
     nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
 }
 
-void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end)
+void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns)
 {
-    getNestedColumn().fillFromRowRefsWithRowStoreAndNullMap(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, getNullMapData());
+    getNestedColumn().fillFromRowRefsWithRowStoreAndNullMap(removeNullable(type), source_field_offset, source_field_size, row_refs_begin, row_refs_end, stored_columns, getNullMapData());
 }
 
 void ColumnNullable::fillFromRowStorePtrs(const DataTypePtr & type, const PaddedPODArray<const char *> & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count)

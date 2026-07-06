@@ -59,6 +59,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -217,6 +218,7 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
     extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsString allowed_disks_for_table_engines;
     extern const ServerSettingsUInt32 listen_backlog;
@@ -551,6 +553,12 @@ void LocalServer::tryInitPath()
 
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
+
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
 
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
@@ -1162,7 +1170,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {
@@ -1386,6 +1400,7 @@ void LocalServer::processConfig()
             .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
             .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
             .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+            .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
             .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
                 ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
                 : 0.0,
