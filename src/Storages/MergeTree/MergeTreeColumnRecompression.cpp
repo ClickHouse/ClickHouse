@@ -73,6 +73,12 @@ public:
         if (consumed == 0)
             return 0;
 
+        /// Some codecs (LZ4) decompress in wide copies that legitimately overrun the exact end of the
+        /// output by up to `getAdditionalSizeAtTheEndOfBuffer` bytes, so the destination must have that
+        /// much extra capacity (mirrors `CompressedReadBuffer::nextImpl`). Keep the logical size at the
+        /// exact decompressed size -- callers use `decompressed.size()` as the block's decompressed length.
+        const size_t additional_size = codec->getAdditionalSizeAtTheEndOfBuffer();
+        decompressed.reserve(size_decompressed + additional_size);
         decompressed.resize(size_decompressed);
         decompressTo(decompressed.data(), size_decompressed, size_compressed_without_checksum);
         return consumed;

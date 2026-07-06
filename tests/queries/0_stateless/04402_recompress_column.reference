@@ -10,3 +10,11 @@ compact part	Compact
 compact before	1000	1000
 compact after	1000	1000
 1
+inherited part	Wide
+inherited none is large	1
+inherited after	100000	100000	100000
+inherited zstd is small	1
+1
+lz4 source after	100000	100000	100000
+lz4 source point	1
+1

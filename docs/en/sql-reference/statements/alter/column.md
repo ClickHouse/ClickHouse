@@ -365,9 +365,11 @@ Re-compresses the existing data of a column with the column's current compressio
 
 Changing a column's codec with `ALTER TABLE ... MODIFY COLUMN col CODEC(...)` only updates the metadata: the new codec applies to newly written data, while data already stored in existing parts keeps its old codec until the parts are merged. `RECOMPRESS COLUMN` rewrites the data of `col` in existing parts so that it is compressed with the codec currently set in the table metadata.
 
-Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole.
+Because the compression codec does not change the serialized representation of the data, for `Wide` parts the recompression is performed by decompressing and re-compressing the raw data blocks, without deserializing the column values. `Compact` parts are re-serialized as a whole. A column that has no explicit `CODEC(...)` and inherits the table's `default_compression_codec` is also re-serialized as a whole, so that a later change of the default codec is applied correctly.
 
 Implemented as a [mutation](/sql-reference/statements/alter/index.md#mutations).
+
+`RECOMPRESS COLUMN` is not supported on tables with a `UNIQUE KEY`.
 
 Syntax:
 

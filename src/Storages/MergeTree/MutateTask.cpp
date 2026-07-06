@@ -210,7 +210,28 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    /// The wide-part fast path can only honor a column's *explicit* `CODEC(...)`. A column that
+    /// inherits the table's default codec is recompressed with the part's stored default codec
+    /// (`source_part->default_codec`), which is not updated when the table's `default_compression_codec`
+    /// setting changes -- so the fast path would silently do nothing after such a change. Route those
+    /// columns through the whole-part rewrite, which re-serializes every column with the *current*
+    /// effective codec (`getCompressionCodecForPart`) and rewrites `default_compression_codec.txt`.
+    bool recompress_needs_full_rewrite = false;
+    for (const auto & command : commands)
+    {
+        if (command.type == MutationCommand::Type::RECOMPRESS_COLUMN && part_columns.has(command.column_name))
+        {
+            const auto * column_desc = table_columns.tryGet(command.column_name);
+            if (!column_desc || !column_desc->codec)
+            {
+                recompress_needs_full_rewrite = true;
+                break;
+            }
+        }
+    }
+
+    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage())
+        || recompress_needs_full_rewrite)
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
