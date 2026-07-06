@@ -1,0 +1,40 @@
+arrayExists with LIKE uses the text index
+1
+3
+5
+2
+5
+0
+the index prunes granules
+Granules: 1/6
+captured constants are recognized
+1
+3
+5
+the original arrayExists predicate is still applied after the index hint
+arrayExists with equals uses the text index
+4
+4
+arrayExists with hasToken uses the text index when the index matches hasToken semantics
+1
+3
+5
+negated arrayExists stays correct
+2
+4
+6
+non-constant lambda predicates do not use the index
+1
+2
+3
+4
+unsupported lambda shapes do not use the index
+token-semantics functions are rejected when the index tokenizer differs from theirs
+1
+1
+2
+LIKE and match prune granules on the ngrams index
+Granules: 1/2
+Granules: 1/2
+token-semantics functions are rejected when the index has a preprocessor
+1

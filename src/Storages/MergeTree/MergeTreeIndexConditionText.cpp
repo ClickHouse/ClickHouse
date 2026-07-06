@@ -54,6 +54,22 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
+namespace
+{
+
+bool isLambdaArgumentReference(const RPNBuilderTreeNode & node, std::string_view lambda_argument_name)
+{
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return false;
+
+    dag_node = getNodeWithoutAlias(dag_node);
+    return dag_node->type == ActionsDAG::ActionType::INPUT
+        && dag_node->result_name == lambda_argument_name;
+}
+
+}
+
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)
@@ -531,6 +547,9 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         if (traverseJSONSubcolumnKeyNode(function, out))
             return true;
 
+        if (function_name == "arrayExists" && traverseArrayExistsNode(function, out))
+            return true;
+
         if (function_arguments_size != 2)
             return false;
 
@@ -559,6 +578,90 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
                     return true;
             }
         }
+    }
+
+    return false;
+}
+
+bool MergeTreeIndexConditionText::traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
+{
+    if (function_node.getArgumentsSize() != 2)
+        return false;
+
+    const auto * lambda_dag_node = function_node.getArgumentAt(0).getDAGNode();
+    const auto index_column_argument = function_node.getArgumentAt(1);
+
+    if (!lambda_dag_node)
+        return false;
+
+    auto lambda_body = tryExtractLambdaBodyDAG(*lambda_dag_node);
+    if (!lambda_body || lambda_body->argument_names.size() != 1 || lambda_body->actions.getOutputs().size() != 1)
+        return false;
+
+    const auto & lambda_argument_name = lambda_body->argument_names.front();
+
+    RPNBuilderTreeContext lambda_tree_context(getContext());
+    RPNBuilderTreeNode body_node(lambda_body->actions.getOutputs().front(), lambda_tree_context);
+    if (!body_node.isFunction())
+        return false;
+
+    const auto body_function = body_node.toFunctionNode();
+    const auto function_name = body_function.getFunctionName();
+    if (!isSupportedFunction(function_name) || body_function.getArgumentsSize() != 2)
+        return false;
+
+    /// Functions whose row-level result depends on the tokenizer, preprocessor or postprocessor of
+    /// the index. For plain predicates `optimizeDirectReadFromTextIndex` rewrites the call (injecting
+    /// the tokenizer and processors) so that the row-scan result agrees with the index analysis. That
+    /// rewrite does not reach inside a lambda, so allow these functions only when the index tokenizes
+    /// exactly the way the functions do by default (`splitByNonAlpha`, no processors). The remaining
+    /// supported functions (`equals`, `like`, `startsWith`, ...) derive only a necessary token
+    /// condition from the constant, which holds for any matching element.
+    const bool depends_on_index_transforms = function_name == "hasToken"
+        || function_name == "hasTokenOrNull"
+        || function_name == "hasAnyTokens"
+        || function_name == "hasAllTokens"
+        || function_name == "hasPhrase";
+
+    if (depends_on_index_transforms
+        && (tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha || has_preprocessor || has_postprocessor))
+        return false;
+
+    const auto lhs_argument = body_function.getArgumentAt(0);
+    const auto rhs_argument = body_function.getArgumentAt(1);
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    auto finish = [&]
+    {
+        /// The derived predicate is a safe granule-level condition, but the direct-read virtual
+        /// column is built for the inner text-search predicate, not for the `arrayExists` wrapper.
+        /// Keep the original predicate on the row-scan path: cap the direct read mode at a hint
+        /// so the predicate is never replaced exactly, and preserve `None` where the inner
+        /// function would not use direct read for a plain column either.
+        for (auto & query : out.text_search_queries)
+        {
+            if (query->direct_read_mode != TextIndexDirectReadMode::None)
+                query->direct_read_mode = getHintOrNoneMode();
+        }
+
+        return true;
+    };
+
+    if (isLambdaArgumentReference(lhs_argument, lambda_argument_name)
+        && rhs_argument.tryGetConstant(const_value, const_type)
+        && traverseFunctionNode(body_function, index_column_argument, const_type, const_value, out))
+    {
+        return finish();
+    }
+
+    if (function_name == "equals"
+        && isLambdaArgumentReference(rhs_argument, lambda_argument_name)
+        && lhs_argument.tryGetConstant(const_value, const_type)
+        && traverseFunctionNode(body_function, index_column_argument, const_type, const_value, out))
+    {
+        return finish();
     }
 
     return false;
