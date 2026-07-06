@@ -248,12 +248,19 @@ function stop_server()
     else
       echo -e "Warning: server did not stop yet$OK" >> /test_output/test_results.tsv
     fi
+    # Record the intentional hard-kill marker only if the server is actually still alive right
+    # before the forced SIGKILL. A forced kill of a live server makes the watchdog emit a
+    # " <Fatal> ... terminated by signal 9" line (same as a real OOM), which stress_job.py
+    # subtracts from signal9_count. If the server has already exited on its own -- during the
+    # up-to-30m gdb backtrace above, or before `clickhouse stop --do-not-kill` failed -- the
+    # forced stop emits no such line, so recording it would wrongly cancel a real OOM elsewhere
+    # in the run and could let that OOM-masked failure come back OK.
+    local server_was_alive=false
+    kill -s 0 "$pid" 2>/dev/null && server_was_alive=true
     clickhouse stop --force
-    # A forced hard-kill makes the watchdog SIGKILL the server, emitting the same
-    # " <Fatal> ... terminated by signal 9" line as a real OOM. Record it so stress_job.py's
-    # OOM detection does not misread this intentional kill as an OOM (which would wrongly
-    # downgrade an unrelated failure to an allowed OOM).
-    echo "$pid" >> /test_output/stress_intentional_server_kills.log
+    if [ "$server_was_alive" = true ]; then
+        echo "$pid" >> /test_output/stress_intentional_server_kills.log
+    fi
 }
 
 function wait_server_port_free()

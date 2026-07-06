@@ -454,10 +454,18 @@ class RandomMinIORestarter(RandomRestarter):
                 env=env,
             )
         if ret.returncode != 0:
+            # setup_minio.sh does more than start the daemon: it re-applies the alias/user/policy
+            # setup and re-uploads data_minio. If any of those post-start steps fails, later S3
+            # errors are harness-induced, so fail the whole restart cycle here rather than keying
+            # off bucket listability alone -- `mc ls clickminio/test` can succeed while the setup
+            # is incomplete, which would leave `_recovery_failures` at 0 and let the stress result
+            # come back OK despite the harness having broken object storage.
             logging.error(
-                "%s: setup_minio.sh failed (rc=%d), see %s",
+                "%s: setup_minio.sh failed (rc=%d), see %s -- treating restart as a recovery failure",
                 self.NAME, ret.returncode, log_file,
             )
+            self._recovery_failures += 1
+            return
 
         if self._wait_minio_up():
             logging.info("%s: MinIO back up", self.NAME)
