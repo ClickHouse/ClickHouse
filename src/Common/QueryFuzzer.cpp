@@ -146,7 +146,7 @@ bool isNumericLikeString(const std::string & s)
     if (s.empty())
         return false;
     ReadBufferFromString buf(s);
-    Float64 v;
+    Float64 v = 0;
     return tryReadFloatText(v, buf) && buf.eof();
 }
 
