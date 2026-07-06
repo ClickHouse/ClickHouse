@@ -156,17 +156,10 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
-    void
-    checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
-
-    bool checkImpl(
-        const Settings & current_settings,
-        SettingChange & change,
-        ReactionOnViolation reaction,
-        SettingSource source,
-        bool ignore_unchanged_settings = false) const;
+    bool checkImpl(const Settings & current_settings,
+                  SettingChange & change,
+                  ReactionOnViolation reaction,
+                  SettingSource source) const;
 
     bool checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const;
 

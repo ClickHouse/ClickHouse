@@ -11,9 +11,10 @@
 
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 
 #include <Common/Exception.h>
-#include <Common/ErrnoException.h>
 #include <base/defines.h>
 #include <base/types.h>
 

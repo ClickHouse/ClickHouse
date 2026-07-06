@@ -3,7 +3,6 @@ description: 'Documentation for uniqTheta Functions'
 sidebar_label: 'uniqTheta'
 slug: /sql-reference/functions/uniqtheta-functions
 title: 'uniqTheta Functions'
-doc_type: 'reference'
 ---
 
 # uniqTheta functions
@@ -13,7 +12,7 @@ uniqTheta functions work for two uniqThetaSketch objects to do set operation cal
 A uniqThetaSketch object is to be constructed by aggregation function uniqTheta with -State.
 
 UniqThetaSketch is a data structure storage of approximate values set.
-For more information, see: [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketches.html#theta-sketch-framework).
+For more information on RoaringBitmap, see: [Theta Sketch Framework](https://datasketches.apache.org/docs/Theta/ThetaSketchFramework.html).
 
 ## uniqThetaUnion {#uniqthetaunion}
 

@@ -3,8 +3,6 @@
 #include <Columns/IColumn.h>
 #include <Processors/Port.h>
 
-#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
-
 namespace DB
 {
 
@@ -14,21 +12,13 @@ namespace ErrorCodes
 }
 
 LimitTransform::LimitTransform(
-    SharedHeader header_,
-    UInt64 limit_,
-    UInt64 offset_,
-    size_t num_streams,
-    bool always_read_till_end_,
-    bool with_ties_,
-    SortDescription description_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header_, UInt64 limit_, UInt64 offset_, size_t num_streams,
+    bool always_read_till_end_, bool with_ties_,
+    SortDescription description_)
     : IProcessor(InputPorts(num_streams, header_), OutputPorts(num_streams, header_))
-    , limit(limit_)
-    , offset(offset_)
+    , limit(limit_), offset(offset_)
     , always_read_till_end(always_read_till_end_)
-    , with_ties(with_ties_)
-    , description(std::move(description_))
-    , updater(std::move(updater_))
+    , with_ties(with_ties_), description(std::move(description_))
 {
     if (num_streams != 1 && with_ties)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot use LimitTransform with multiple ports and ties");
@@ -152,10 +142,8 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (output.isFinished())
     {
         output_finished = true;
-        if (!always_read_till_end || rows_read == 0)
+        if (!always_read_till_end)
         {
-            /// The rows_read == 0 is a corner case. If no rows were read before the output is closed,
-            /// do not read data even with always_read_till_end to avoid Not-ready Set (sets might not be built).
             input.close();
             return Status::Finished;
         }
@@ -252,8 +240,6 @@ LimitTransform::Status LimitTransform::preparePair(PortsData & data)
     if (!always_read_till_end && !limit_is_unreachable && rows_read >= offset + limit && !may_need_more_data_for_ties)
         input.close();
 
-    if (updater)
-        updater->recordOutputChunk(data.current_chunk, output.getHeader());
     output.push(std::move(data.current_chunk));
 
     return Status::PortFull;

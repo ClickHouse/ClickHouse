@@ -20,7 +20,6 @@ public:
     void updateHashImpl(SipHash & hash) const override;
 
     MutableColumnPtr createColumn() const override;
-    MutableColumnPtr createUninitializedColumnWithSize(size_t size) const override;
 
     Field getDefault() const override;
 
@@ -45,18 +44,14 @@ public:
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
     ColumnPtr createColumnConst(size_t size, const Field & field) const override;
     bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
-    bool hasDynamicStructure() const override { return nested_data_type->hasDynamicStructure(); }
-    std::unique_ptr<SubstreamData>
-    getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const override;
-    bool supportsSparseSerialization() const override { return nested_data_type->supportsSparseSerialization(); }
-    bool canBeInsideSparseColumns() const override { return nested_data_type->canBeInsideSparseColumns(); }
+    std::unique_ptr<SubstreamData> getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, bool throw_if_null) const override;
 
     const DataTypePtr & getNestedType() const { return nested_data_type; }
 
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
-    SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 
     DataTypePtr nested_data_type;
 };

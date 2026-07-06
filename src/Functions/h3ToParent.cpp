@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -9,6 +9,10 @@
 #include <Common/typeid_cast.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
+
 
 namespace DB
 {
@@ -27,11 +31,7 @@ class FunctionH3ToParent : public IFunction
 public:
     static constexpr auto name = "h3ToParent";
 
-    H3Validator validator;
-
-    explicit FunctionH3ToParent(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ToParent>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ToParent>(); }
 
     std::string getName() const override { return name; }
 
@@ -108,13 +108,7 @@ public:
                     getName(),
                     toString(MAX_H3_RES));
 
-            UInt64 res = 0;
-            if (validator.validateCell(hindex))
-            {
-                H3Index parent = 0;
-                if (!cellToParent(hindex, resolution, &parent))
-                    res = parent;
-            }
+            UInt64 res = cellToParent(hindex, resolution);
 
             dst_data[row] = res;
         }
@@ -127,33 +121,7 @@ public:
 
 REGISTER_FUNCTION(H3ToParent)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the parent (coarser) [H3](#h3-index) index containing the given H3 index at the specified resolution.
-    )";
-    FunctionDocumentation::Syntax syntax = "h3ToParent(index, resolution)";
-    FunctionDocumentation::Arguments arguments = {
-        {"index", "Child H3 index.", {"UInt64"}},
-        {"resolution", "Resolution of the parent index with range `[0, 15]`.", {"UInt8"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the parent H3 index at the specified resolution.",
-        {"UInt64"}
-    };
-    FunctionDocumentation::Examples examples = {
-        {
-            "Get parent index at resolution 3",
-            "SELECT h3ToParent(599405990164561919, 3) AS parent",
-            R"(
-┌─────────────parent─┐
-│ 590398848891879423 │
-└────────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {20, 3};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3ToParent>(documentation);
+    factory.registerFunction<FunctionH3ToParent>();
 }
 
 }

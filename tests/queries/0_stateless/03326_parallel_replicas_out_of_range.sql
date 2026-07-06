@@ -10,5 +10,4 @@ SELECT
     hostName() AS hostName
 FROM system.query_log AS a
 INNER JOIN system.processes AS b ON (type = toFixedString(toNullable('QueryStart'), 10)) AND (dateDiff('second', event_time, now()) > 5) AND (current_database = currentDatabase())
-WHERE event_date >= yesterday() AND event_time >= now() - 600
 FORMAT `Null`;

@@ -1,6 +1,4 @@
-#include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h>
@@ -12,7 +10,6 @@
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
-#include <fmt/format.h>
 
 namespace DB
 {
@@ -25,36 +22,20 @@ namespace ErrorCodes
 namespace
 {
 
-std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join, bool pretty = false)
+std::vector<std::pair<String, String>> describeJoinActions(const JoinPtr & join)
 {
     std::vector<std::pair<String, String>> description;
     const auto & table_join = join->getTableJoin();
 
-    auto to_lower = [](String & s)
-    {
-        std::transform(s.begin(), s.end(), s.begin(),
-            [](unsigned char c) { return std::tolower(c); });
-    };
-
-    String kind = toString(table_join.kind());
-    String strictness = toString(table_join.strictness());
-
-    if (pretty)
-    {
-        to_lower(kind);
-        to_lower(strictness);
-    }
-
-    description.emplace_back("Type", kind);
-    description.emplace_back("Strictness", strictness);
+    description.emplace_back("Type", toString(table_join.kind()));
+    description.emplace_back("Strictness", toString(table_join.strictness()));
     description.emplace_back("Algorithm", join->getName());
 
     if (table_join.strictness() == JoinStrictness::Asof)
         description.emplace_back("ASOF inequality", toString(table_join.getAsofInequality()));
 
-    std::string_view join_conditions_label = pretty ? "Join conditions" : "Clauses";
     if (!table_join.getClauses().empty())
-        description.emplace_back(join_conditions_label, TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
+        description.emplace_back("Clauses", TableJoin::formatClauses(table_join.getClauses(), true /*short_format*/));
 
     if (const auto & mixed_expression = table_join.getMixedJoinExpression())
         description.emplace_back("Residual filter", mixed_expression->getSampleBlock().dumpNames());
@@ -105,8 +86,7 @@ JoinStep::JoinStep(
     size_t max_streams_,
     NameSet required_output_,
     bool keep_left_read_in_order_,
-    bool use_new_analyzer_,
-    bool use_join_disjunctions_push_down_)
+    bool use_new_analyzer_)
     : join(std::move(join_))
     , max_block_size(max_block_size_)
     , min_block_size_rows(min_block_size_rows_)
@@ -115,8 +95,6 @@ JoinStep::JoinStep(
     , required_output(std::move(required_output_))
     , keep_left_read_in_order(keep_left_read_in_order_)
     , use_new_analyzer(use_new_analyzer_)
-    , use_join_disjunctions_push_down(use_join_disjunctions_push_down_)
-    , disjunctions_optimization_applied(false)
 {
     updateInputHeaders({left_header_, right_header_});
 }
@@ -133,11 +111,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         std::swap(pipelines[0], pipelines[1]);
 
     std::unique_ptr<QueryPipelineBuilder> joined_pipeline;
-    /// Sharding requires both pipelines to have the same number of streams.
-    /// When stream counts don't match, fall back to the
-    /// regular join pipeline which handles different stream counts
-    bool use_sharding = !primary_key_sharding.empty() && pipelines[0]->getNumStreams() == pipelines[1]->getNumStreams();
-    if (!use_sharding)
+    if (primary_key_sharding.empty())
     {
         if (join->pipelineType() == JoinPipelineType::YShaped)
         {
@@ -191,7 +165,7 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
         });
     }
 
-    if (join->supportParallelJoin() && (min_block_size_rows > 0 || min_block_size_bytes > 0))
+    if (join->supportParallelJoin())
     {
         joined_pipeline->addSimpleTransform(
             [&](const SharedHeader & header)
@@ -214,16 +188,6 @@ bool JoinStep::allowPushDownToRight() const
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
 }
 
-void JoinStep::keepLeftPipelineInOrder(bool disable_squashing)
-{
-    if (disable_squashing)
-    {
-        min_block_size_rows = 0;
-        min_block_size_bytes = 0;
-    }
-    keep_left_read_in_order = true;
-}
-
 void JoinStep::describePipeline(FormatSettings & settings) const
 {
     IQueryPlanStep::describePipeline(processors, settings);
@@ -231,39 +195,10 @@ void JoinStep::describePipeline(FormatSettings & settings) const
 
 void JoinStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
-    auto description = describeJoinActions(join, settings.pretty);
-    const size_t inline_count = settings.pretty ? 3 : 0;
-
-    if (settings.pretty)
-    {
-        if (!join_readable_relation_name.empty())
-            settings.out << prefix << join_readable_relation_name << '\n';
-
-        settings.out << prefix;
-        for (size_t i = 0; i < inline_count; ++i)
-        {
-            if (i > 0)
-                settings.out << " | ";
-            auto [name, value] = description[i];
-            settings.out << name << ": " << value;
-        }
-        settings.out << '\n';
-
-        if (result_rows_estimation)
-            settings.out << prefix << "Result rows: " << toString(*result_rows_estimation) << '\n';
-
-        if (locality != JoinLocality::Unspecified)
-            settings.out << prefix << "Locality: " << toString(locality) << '\n';
-    }
-
-    for (size_t i = inline_count; i < description.size(); ++i)
-    {
-        const auto & [name, value] = description[i];
+    for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';
-    }
-
     if (swap_streams)
         settings.out << prefix << "Swapped: true\n";
     if (!primary_key_sharding.empty())
@@ -281,9 +216,6 @@ void JoinStep::describeActions(FormatSettings & settings) const
 
         settings.out << "]\n";
     }
-
-    if (settings.pretty)
-        QueryPlanFormat::formatJoinOutputColumns(settings.out, *this, prefix);
 }
 
 void JoinStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -314,13 +246,6 @@ void JoinStep::setJoin(JoinPtr join_, bool swap_streams_)
     updateOutputHeader();
 }
 
-void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
-{
-    join_readable_relation_name = std::move(logical_join_info.readable_relation_name);
-    result_rows_estimation = logical_join_info.result_rows_estimation;
-    locality = logical_join_info.locality;
-}
-
 void JoinStep::updateOutputHeader()
 {
     if (join_algorithm_header && !join_algorithm_header->empty())
@@ -333,7 +258,7 @@ void JoinStep::updateOutputHeader()
     if (!use_new_analyzer)
     {
         if (swap_streams)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without the analyzer");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot swap streams without new analyzer");
         output_header = join_algorithm_header;
         return;
     }
@@ -398,7 +323,7 @@ void FilledJoinStep::updateOutputHeader()
 
 void FilledJoinStep::describeActions(FormatSettings & settings) const
 {
-    const String & prefix = settings.detail_prefix;
+    String prefix(settings.offset, ' ');
 
     for (const auto & [name, value] : describeJoinActions(join))
         settings.out << prefix << name << ": " << value << '\n';

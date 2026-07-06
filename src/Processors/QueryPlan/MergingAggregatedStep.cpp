@@ -145,7 +145,7 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
                                  : max_threads;
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(pipeline.getSharedHeader(), std::move(params), final);
-        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads, should_produce_results_in_order_of_bucket_number);
+        pipeline.addMergingAggregatedMemoryEfficientTransform(transform_params, num_merge_threads);
     }
 
     pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
@@ -153,10 +153,10 @@ void MergingAggregatedStep::transformPipeline(QueryPipelineBuilder & pipeline, c
 
 void MergingAggregatedStep::describeActions(FormatSettings & settings) const
 {
-    params.explain(settings.out, settings.detail_prefix);
+    params.explain(settings.out, settings.offset);
     if (!group_by_sort_description.empty())
     {
-        const String & prefix = settings.detail_prefix;
+        String prefix(settings.offset, settings.indent_char);
         settings.out << prefix << "Order: " << dumpSortDescription(group_by_sort_description) << '\n';
     }
 }
@@ -240,7 +240,7 @@ void MergingAggregatedStep::serialize(Serialization & ctx) const
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
 }
 
-QueryPlanStepPtr MergingAggregatedStep::deserialize(Deserialization & ctx)
+std::unique_ptr<IQueryPlanStep> MergingAggregatedStep::deserialize(Deserialization & ctx)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "MergingAggregatedStep must have one input stream");

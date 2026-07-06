@@ -40,8 +40,6 @@ public:
 
     String getName() const override { return "Hive"; }
 
-    bool isExternalDatabase() const override { return true; }
-
     bool supportsSubcolumns() const override { return true; }
 
     void read(

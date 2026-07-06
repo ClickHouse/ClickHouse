@@ -6,7 +6,6 @@ slug: /sql-reference/aggregate-functions/reference/
 title: 'Aggregate Functions'
 toc_folder_title: 'Reference'
 toc_hidden: true
-doc_type: 'landing-page'
 ---
 
 # Aggregate functions

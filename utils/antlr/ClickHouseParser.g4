@@ -98,6 +98,7 @@ checkStmt: CHECK TABLE tableIdentifier partitionClause?;
 createStmt
     : (ATTACH | CREATE) DATABASE (IF NOT EXISTS)? databaseIdentifier clusterClause? engineExpr?                                                                                       # CreateDatabaseStmt
     | (ATTACH | CREATE (OR REPLACE)? | REPLACE) DICTIONARY (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? dictionarySchemaClause dictionaryEngineClause                                          # CreateDictionaryStmt
+    | (ATTACH | CREATE) LIVE VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? (WITH TIMEOUT DECIMAL_LITERAL?)? destinationClause? tableSchemaClause? subqueryClause   # CreateLiveViewStmt
     | (ATTACH | CREATE) MATERIALIZED VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? (destinationClause | engineClause POPULATE?) subqueryClause  # CreateMaterializedViewStmt
     | (ATTACH | CREATE (OR REPLACE)? | REPLACE) TEMPORARY? TABLE (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? engineClause? subqueryClause?                                 # CreateTableStmt
     | (ATTACH | CREATE) (OR REPLACE)? VIEW (IF NOT EXISTS)? tableIdentifier uuidClause? clusterClause? tableSchemaClause? subqueryClause                                              # CreateViewStmt
@@ -212,7 +213,7 @@ insertStmt: INSERT INTO TABLE? (tableIdentifier | FUNCTION tableFunctionExpr) co
 columnsClause: LPAREN nestedIdentifier (COMMA nestedIdentifier)* RPAREN;
 dataClause
     : FORMAT identifier                                                         # DataClauseFormat
-    | VALUES assignmentValues (COMMA assignmentValues)*                         # DataClauseValues
+    | VALUES  assignmentValues (COMMA assignmentValues)*                       # DataClauseValues
     | selectUnionStmt SEMICOLON? EOF                                            # DataClauseSelect
     ;
 
@@ -252,13 +253,7 @@ optimizeStmt: OPTIMIZE TABLE tableIdentifier clusterClause? partitionClause? FIN
 
 // RENAME statement
 
-renameStmt: RENAME renameEntityClause clusterClause?;
-
-renameEntityClause
-    : TABLE? tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)*
-    | DATABASE databaseIdentifier TO databaseIdentifier (COMMA databaseIdentifier TO databaseIdentifier)*
-    | DICTIONARY dictionaryIdentifier TO dictionaryIdentifier (COMMA dictionaryIdentifier TO dictionaryIdentifier)*
-    ;
+renameStmt: RENAME TABLE tableIdentifier TO tableIdentifier (COMMA tableIdentifier TO tableIdentifier)* clusterClause?;
 
 // PROJECTION SELECT statement
 
@@ -531,10 +526,6 @@ tableArgExpr
 // Databases
 
 databaseIdentifier: identifier;
-
-// Dictionaries
-
-dictionaryIdentifier: (databaseIdentifier DOT)? identifier;
 
 // Basics
 

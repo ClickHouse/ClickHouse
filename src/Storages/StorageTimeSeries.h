@@ -3,7 +3,7 @@
 #include <Parsers/ASTViewTargets.h>
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 
 
 namespace DB
@@ -28,7 +28,7 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ///    DATA ENGINE = ReplicatedMergeTree('zkpath', 'replica'), ...
 ///
-class StorageTimeSeries final : public StorageWithCommonVirtualColumns, WithContext
+class StorageTimeSeries final : public IStorage, WithContext
 {
 public:
     /// Adds missing columns and reorder columns, and also adds inner table engines if they aren't specified.
@@ -47,7 +47,10 @@ public:
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
 
-    void readImpl(
+    void startup() override;
+    void shutdown(bool is_drop) override;
+
+    void read(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -56,8 +59,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    static VirtualColumnsDescription createVirtuals();
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 

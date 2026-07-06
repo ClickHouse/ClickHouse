@@ -26,10 +26,7 @@ struct ServerSettingsImpl;
     M(CLASS_NAME, Seconds) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, UInt32) \
-    M(CLASS_NAME, UInt64) \
-    M(CLASS_NAME, UInt64Auto) \
-    M(CLASS_NAME, InsertDeduplicationVersions) \
-
+    M(CLASS_NAME, UInt64)
 
 SERVER_SETTINGS_SUPPORTED_TYPES(ServerSettings, DECLARE_SETTING_TRAIT)
 
