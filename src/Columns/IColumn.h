@@ -35,6 +35,7 @@ class IDataType;
 class Block;
 class ReadBuffer;
 struct StoredBlock;
+class RowDataStore;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -754,10 +755,10 @@ public:
         const ColumnReplicated * const * block_replicated);
 
     /// Fills column values from row-store referenced by a RowRefList
-    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns);
+    virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores);
 
     /// Nullable variant of `fillFromRowRefsWithRowStore`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
-    virtual void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns, PaddedPODArray<UInt8> & null_map);
+    virtual void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -1061,10 +1062,10 @@ private:
         const ColumnReplicated * const * block_replicated) override;
 
     /// Fills column values from row-store referenced by a RowRefList
-    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns) override;
+    void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores) override;
 
     /// Nullable variant of `fillFromRowRefsWithRowStore`: the null byte is written into `null_map` and the value bytes are inserted into the nested column
-    void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns, PaddedPODArray<UInt8> & null_map) override;
+    void fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value

@@ -21,28 +21,8 @@ namespace DB
 
 class Block;
 class ColumnReplicated;
+class RowDataStore;
 struct StoredBlock;
-struct ColumnAccessIndex
-{
-    enum Type : uint8_t { Columns, RowStore };
-
-    ColumnAccessIndex(Type type_, size_t index_, size_t field_offset_ = 0, size_t field_size_ = 0, bool is_nullable_ = false)
-        : type(type_), index(index_), field_offset(field_offset_), field_size(field_size_), is_nullable(is_nullable_)
-    {
-    }
-
-    Type type;
-    size_t index;
-
-    /// Valid only when type is RowStore.
-    size_t field_offset;
-    size_t field_size;
-    bool is_nullable;
-
-    bool operator==(const ColumnAccessIndex &) const = default;
-};
-
-using ColumnAccessIndexes = std::vector<ColumnAccessIndex>;
 
 /// Thrown by the RowRef constructor when a block or row number does not fit in its 32-bit field.
 [[noreturn]] void throwRowRefOutOfRange(size_t block_no, size_t row_no);
@@ -470,6 +450,9 @@ public:
     /// Raw pointer for hot decode loops. Must not be called before the build phase is finished.
     const StoredBlock * const * blocksData() const { return blocks.data(); }
 
+    /// Per-block row store base pointers (block_no -> RowDataStore*). A block without a row store stores nullptr.
+    const RowDataStore * const * rowStoresData() const { return row_stores.data(); }
+
     const StoredBlock * at(UInt32 block_no) const
     {
         chassert(block_no < blocks.size());
@@ -501,6 +484,8 @@ private:
     /// One entry per stored block (data-proportional): use the throwing memory tracker so a huge build
     /// fails the query at the limit instead of letting the process get OOM-killed.
     VectorWithMemoryTracking<const StoredBlock *> blocks;
+    /// The per-block row store (or nullptr).
+    VectorWithMemoryTracking<const RowDataStore *> row_stores;
 
     /// Built by `resolveEmitColumns`; indexed by saved-block position, nullptr for not-yet-requested ones.
     std::vector<std::unique_ptr<EmitColumn>> emit_columns;

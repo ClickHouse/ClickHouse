@@ -244,7 +244,7 @@ void StoredBlock::rebuildReplicatedColumns()
 
 bool StoredBlock::hasRowStore() const { return row_store != nullptr; }
 
-size_t StoredBlock::rows() const
+size_t StoredBlock::blockRows() const
 {
     if (!columns.empty())
         return columns.at(0)->size();
@@ -253,16 +253,16 @@ size_t StoredBlock::rows() const
 
 size_t StoredBlock::allocatedBytes() const
 {
+    size_t row_nums = blockRows();
+    if (row_nums == 0)
+        return 0;
+    
     size_t allocated_bytes = 0;
     if (hasRowStore())
         allocated_bytes = row_store->allocatedBytes();
 
     for (const auto & column : columns)
         allocated_bytes += column->allocatedBytes();
-
-    size_t row_nums = rows();
-    if (row_nums == 0)
-        return 0;
 
     return allocated_bytes * selector.size() / row_nums;
 }
@@ -288,6 +288,7 @@ UInt32 StoredColumnsIndex::add(const StoredBlock * block)
     if (blocks.size() > RowRef::BLOCK_NO_MASK)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Too many stored blocks in HashJoin: {}", blocks.size());
     blocks.push_back(block);
+    row_stores.push_back(block->row_store.get());
     ++blocks_generation; /// Invalidate any previously built emit table (StorageJoin can insert between joins).
     return static_cast<UInt32>(blocks.size() - 1);
 }
@@ -297,6 +298,7 @@ void StoredColumnsIndex::clearEntry(UInt32 block_no)
     std::lock_guard guard(mutex);
     chassert(block_no < blocks.size());
     blocks[block_no] = nullptr;
+    row_stores[block_no] = nullptr;
     ++blocks_generation;
 }
 

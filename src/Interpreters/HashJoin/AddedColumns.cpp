@@ -89,7 +89,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
         auto & col = columns[dst_idx];
         col->reserve(col->size() + size_to_reserve);
         if (access_index.type == ColumnAccessIndex::Type::RowStore)
-            col->fillFromRowRefsWithRowStore(type_name[dst_idx].type, access_index.field_offset, access_index.field_size, row_refs_begin, row_refs_end, stored_columns);
+            col->fillFromRowRefsWithRowStore(type_name[dst_idx].type, access_index.field_offset, access_index.field_size, row_refs_begin, row_refs_end, block_row_stores);
         else
             col->fillFromRowRefs(type_name[dst_idx].type, row_refs_begin, row_refs_end, join_data_sorted, emit_block_columns[dst_idx], emit_block_replicated[dst_idx]);
     }
@@ -172,8 +172,15 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                     continue;
                 }
 
-                const auto * block = stored_columns[refWordBlockNo(ref_word)];
+                const UInt32 block_no = refWordBlockNo(ref_word);
                 const size_t row_num = refWordRowNo(ref_word);
+
+                [[maybe_unused]] const StoredBlock * block = nullptr;
+                [[maybe_unused]] const RowDataStore * row_store = nullptr;
+                if constexpr (from_columns)
+                    block = stored_columns[block_no];
+                if constexpr (from_row_store)
+                    row_store = block_row_stores[block_no];
 
                 if (bytes_limit)
                 {
@@ -185,7 +192,7 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
 
                     /// Add size of right matched rows
                     if constexpr (from_row_store)
-                        total_byte_size += block->row_store->byteSizeAt(row_num);
+                        total_byte_size += row_store->byteSizeAt(row_num);
                     if constexpr (from_columns)
                         for (const auto & col : block->columns)
                             total_byte_size += col->byteSizeAt(row_num);
@@ -201,9 +208,9 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
                 }
                 if constexpr (from_row_store)
                 {
-                    row_store_ptrs.emplace_back(block->row_store->getRowAt(row_num));
+                    row_store_ptrs.emplace_back(row_store->getRowAt(row_num));
                     if (!row_store_batch_size)
-                        row_store_batch_size = block->row_store->getBatchSize();
+                        row_store_batch_size = row_store->getBatchSize();
                 }
 
                 if (bytes_limit && total_byte_size > bytes_limit)
@@ -256,42 +263,19 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
     if constexpr (from_row_store)
         row_store_ptrs.reserve(size_to_reserve);
 
-    auto collect = [&](const UInt64 * row_ref_i)
+    auto collect = [&](const UInt64 row_ref_i)
     {
-        if constexpr (from_row_list)
+        if constexpr (from_columns)
         {
-            for (const UInt64 ref_word : refsOf(*row_ref_i))
-            {
-                if constexpr (from_columns)
-                {
-                    many_columns.emplace_back(stored_columns[refWordBlockNo(ref_word)]);
-                    row_nums.emplace_back(refWordRowNo(ref_word));
-                }
-                if constexpr (from_row_store)
-                {
-                    const auto & row_store = stored_columns[refWordBlockNo(ref_word)]->row_store;
-                    row_store_ptrs.emplace_back(row_store->getRowAt(refWordRowNo(ref_word)));
-                    if (!row_store_batch_size)
-                        row_store_batch_size = row_store->getBatchSize();
-                }
-            }
+            many_columns.emplace_back(stored_columns[refWordBlockNo(row_ref_i)]);
+            row_nums.emplace_back(refWordRowNo(row_ref_i));
         }
-        else
+        if constexpr (from_row_store)
         {
-            /// A single inline ref word (a unique-key match or an ASOF match).
-            chassert(refWordIsInline(*row_ref_i));
-            if constexpr (from_columns)
-            {
-                many_columns.emplace_back(stored_columns[refWordBlockNo(*row_ref_i)]);
-                row_nums.emplace_back(refWordRowNo(*row_ref_i));
-            }
-            if constexpr (from_row_store)
-            {
-                const auto & row_store = stored_columns[refWordBlockNo(*row_ref_i)]->row_store;
-                row_store_ptrs.emplace_back(row_store->getRowAt(refWordRowNo(*row_ref_i)));
-                if (!row_store_batch_size)
-                    row_store_batch_size = row_store->getBatchSize();
-            }
+            const auto & row_store = block_row_stores[refWordBlockNo(row_ref_i)];
+            row_store_ptrs.emplace_back(row_store->getRowAt(refWordRowNo(row_ref_i)));
+            if (!row_store_batch_size)
+                row_store_batch_size = row_store->getBatchSize();
         }
     };
 
@@ -314,7 +298,17 @@ void LazyOutput::buildOutputFromBlocks(size_t size_to_reserve, MutableColumns & 
             continue;
         }
 
-        collect(row_ref_i);
+        if constexpr (from_row_list)
+        {
+            for (const UInt64 ref_word : refsOf(*row_ref_i))
+                collect(ref_word);
+        }
+        else
+        {
+            /// A single inline ref word (a unique-key match or an ASOF match).
+            chassert(refWordIsInline(*row_ref_i));
+            collect(*row_ref_i);
+        }
     }
 
     fillJoinOutputColumns</*with_defaults=*/ true>(columns, output_access_indexes, row_store_ptrs, row_store_batch_size, columns_with_row_numbers, type_name);

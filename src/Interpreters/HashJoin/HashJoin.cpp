@@ -1023,7 +1023,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
 
                         if (flag_per_row)
                             used_flags->reinit<kind_, strictness_, std::is_same_v<std::decay_t<decltype(map)>, MapsAll>>(
-                                stored_columns->block_no, stored_columns->rows(), stored_columns->selector);
+                                stored_columns->block_no, stored_columns->blockRows(), stored_columns->selector);
                     });
             }
 
@@ -1615,7 +1615,8 @@ struct CollectorNonJoined
     template <bool with_row_store, bool with_columns>
     static void collect(
         const Mapped & mapped,
-        const StoredBlock * const * stored_columns,
+        [[maybe_unused]] const StoredBlock * const * stored_columns,
+        [[maybe_unused]] const RowDataStore * const * block_row_stores,
         VectorWithMemoryTracking<const StoredBlock *> & blocks,
         VectorWithMemoryTracking<UInt32> & row_numbers,
         PaddedPODArray<const char *> & row_store_ptrs,
@@ -1633,9 +1634,10 @@ struct CollectorNonJoined
             }
             if constexpr (with_row_store)
             {
-                row_store_ptrs.emplace_back(stored_columns[block_no]->row_store->getRowAt(row_no));
+                const auto * row_store = block_row_stores[block_no];
+                row_store_ptrs.emplace_back(row_store->getRowAt(row_no));
                 if (!row_store_batch_size)
-                    row_store_batch_size = stored_columns[block_no]->row_store->getBatchSize();
+                    row_store_batch_size = row_store->getBatchSize();
             }
         };
 
@@ -1879,7 +1881,7 @@ private:
             {
                 const auto & mapped_block = *it;
 
-                size_t rows = mapped_block.rows();
+                size_t rows = mapped_block.blockRows();
 
                 for (size_t row = 0; row < rows; ++row)
                 {
@@ -1892,9 +1894,10 @@ private:
                         }
                         if constexpr (with_row_store)
                         {
-                            row_store_ptrs.emplace_back(mapped_block.row_store->getRowAt(row));
+                            const auto & row_store = mapped_block.row_store;
+                            row_store_ptrs.emplace_back(row_store->getRowAt(row));
                             if (!row_store_batch_size)
-                                row_store_batch_size = mapped_block.row_store->getBatchSize();
+                                row_store_batch_size = row_store->getBatchSize();
                         }
                     }
                 }
@@ -1912,6 +1915,7 @@ private:
             Iterator & it = std::any_cast<Iterator &>(position);
             auto end = map.end();
             const StoredBlock * const * stored_columns = parent.data->stored_columns_index->blocksData();
+            const RowDataStore * const * block_row_stores = parent.data->stored_columns_index->rowStoresData();
 
             /// case: two-level hash tables with parallel iteration
             if constexpr (requires { it.getBucket(); map.NUM_BUCKETS; })
@@ -1940,7 +1944,7 @@ private:
                     if (!parent.isUsed(offset))
                     {
                         const Mapped & mapped = it->getMapped();
-                        CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
+                        CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, block_row_stores, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
                     }
 
                     ++it;
@@ -1960,7 +1964,7 @@ private:
                         continue;
 
                     const Mapped & mapped = it->getMapped();
-                    CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
+                    CollectorNonJoined<Mapped>::template collect<with_row_store, with_columns>(mapped, stored_columns, block_row_stores, many_columns, row_nums, row_store_ptrs, row_store_batch_size);
 
                     if (collected() >= max_block_size)
                     {
@@ -2028,9 +2032,10 @@ private:
                     }
                     if constexpr (with_row_store)
                     {
-                        row_store_ptrs.emplace_back(columns->row_store->getRowAt(row));
+                        const auto & row_store = columns->row_store;
+                        row_store_ptrs.emplace_back(row_store->getRowAt(row));
                         if (!row_store_batch_size)
-                            row_store_batch_size = columns->row_store->getBatchSize();
+                            row_store_batch_size = row_store->getBatchSize();
                     }
                 }
             }
@@ -2139,7 +2144,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
 
         Columns columnar_columns;
         columnar_columns.reserve(stored_block.columns.size());
-        if (selector.size() == stored_block.rows())
+        if (selector.size() == stored_block.blockRows())
             columnar_columns = stored_block.columns;
         else if (selector.isContinuousRange())
         {

@@ -702,7 +702,7 @@ void IColumnHelper<Derived, Parent>::fillFromRowRefs(
 }
 
 template <typename ColumnType, bool with_null_map>
-static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns, PaddedPODArray<UInt8> * null_map = nullptr)
+static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map = nullptr)
 {
     size_t value_offset = with_null_map ? source_field_offset + 1 : source_field_offset;
     size_t value_size = with_null_map ? source_field_size - 1 : source_field_size;
@@ -713,7 +713,7 @@ static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePt
         {
             for (const UInt64 ref_word : refsOf(*row_ref))
             {
-                const char * row_data = stored_columns[refWordBlockNo(ref_word)]->row_store->getRowAt(refWordRowNo(ref_word));
+                const char * row_data = block_row_stores[refWordBlockNo(ref_word)]->getRowAt(refWordRowNo(ref_word));
                 if constexpr (with_null_map)
                     null_map->push_back(*reinterpret_cast<const UInt8 *>(row_data + source_field_offset));
                 col->insertData(row_data + value_offset, value_size);
@@ -728,28 +728,28 @@ static void fillColumnFromRowRefsWithRowStore(ColumnType * col, const DataTypePt
     }
 }
 
-void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns)
+void IColumn::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
 {
-    fillColumnFromRowRefsWithRowStore<IColumn, false>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, stored_columns);
+    fillColumnFromRowRefsWithRowStore<IColumn, false>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns)
+void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, stored_columns);
+    fillColumnFromRowRefsWithRowStore<Derived, false>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores);
 }
 
-void IColumn::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns, PaddedPODArray<UInt8> & null_map)
+void IColumn::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map)
 {
-    fillColumnFromRowRefsWithRowStore<IColumn, true>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, stored_columns, &null_map);
+    fillColumnFromRowRefsWithRowStore<IColumn, true>(this, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &null_map);
 }
 
 template <typename Derived, typename Parent>
-void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const StoredBlock * const * stored_columns, PaddedPODArray<UInt8> & null_map)
+void IColumnHelper<Derived, Parent>::fillFromRowRefsWithRowStoreAndNullMap(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> & null_map)
 {
     auto & self = static_cast<Derived &>(*this);
-    fillColumnFromRowRefsWithRowStore<Derived, true>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, stored_columns, &null_map);
+    fillColumnFromRowRefsWithRowStore<Derived, true>(&self, type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, &null_map);
 }
 
 /// Fills column values from list of blocks and row numbers

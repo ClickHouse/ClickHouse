@@ -2,6 +2,7 @@
 
 #include <Columns/IColumn.h>
 #include <Core/NamesAndTypes.h>
+#include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/RowRefs.h>
 
 #include <optional>

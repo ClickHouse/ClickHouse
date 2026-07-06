@@ -59,6 +59,10 @@ struct LazyOutput
     /// dispatch (`buildJoinGetOutput`), and feeding `ColumnsWithRowNumbers` (`buildOutputFromBlocks`).
     const StoredBlock * const * stored_columns = nullptr;
 
+    /// Per-block row store base pointers (block_no -> RowDataStore*), from StoredColumnsIndex::rowStoresData().
+    /// Shared by all row-store columns of a block; a specific column is a field_offset/field_size slice.
+    const RowDataStore * const * block_row_stores = nullptr;
+
     /// Per output column (parallel to `right_indexes`): the StoredColumnsIndex emit table base pointers,
     /// i.e. the resolved source `const IColumn *` per block and its `ColumnReplicated *` counterpart.
     /// Filled in the AddedColumns ctor for the hot `fillFromRowRefs` path; empty for joinGet / ASOF.
@@ -70,7 +74,7 @@ struct LazyOutput
     bool join_data_sorted = false;
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
-    size_t join_data_avg_perkey_rows = 0;
+    // size_t join_data_avg_perkey_rows = 0;
 
     ColumnAccessIndexes output_access_indexes;
     bool has_row_store = false;
@@ -170,6 +174,7 @@ public:
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
         lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
         lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
+        lazy_output.block_row_stores = join.getJoinedData()->stored_columns_index->rowStoresData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
