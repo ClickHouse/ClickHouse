@@ -685,6 +685,35 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return true;
     }
 
+    /// Handle `arrayJoin(indexed_array_column) IN (set)` by mapping it to the same granule test as
+    /// `hasAny(indexed_array_column, set_elements)`. `arrayJoin` only multiplies rows, so a granule
+    /// can produce a row matching the IN predicate only if at least one array element in the granule
+    /// belongs to the set — exactly what the bloom filter already evaluates for `hasAny`.
+    /// Only plain `in`/`globalIn` are supported: for `notIn` a granule containing a set element can
+    /// still yield rows whose arrayJoined value is outside the set, so no granule can be skipped.
+    if ((function_name == "in" || function_name == "globalIn") && column)
+    {
+        if (auto array_join_argument = key_node.getArrayJoinArgument())
+        {
+            auto array_column_name = array_join_argument->getColumnName();
+            if (header.has(array_column_name))
+            {
+                size_t position = header.getPositionByName(array_column_name);
+                const DataTypePtr & index_type = header.getByPosition(position).type;
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get()))
+                {
+                    size_t row_size = column->size();
+                    const auto & array_nested_type = array_type->getNestedType();
+                    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
+                    out.predicate.emplace_back(std::make_pair(
+                        position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+                    out.function = RPNElement::FUNCTION_HAS_ANY;
+                    return true;
+                }
+            }
+        }
+    }
+
     return false;
 }
 
