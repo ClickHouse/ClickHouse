@@ -1,0 +1,45 @@
+---
+description: 'Documentação da cláusula INTO OUTFILE'
+sidebarTitle: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'Cláusula INTO OUTFILE'
+doc_type: 'reference'
+---
+
+A cláusula `INTO OUTFILE` redireciona o resultado de uma consulta `SELECT` para um arquivo no lado do **cliente**.
+
+Arquivos compactados são compatíveis. O tipo de compressão é detectado pela extensão do nome do arquivo (o modo `'auto'` é usado por padrão). Como alternativa, ele pode ser especificado explicitamente em uma cláusula `COMPRESSION`. O nível de compressão de um determinado tipo de compressão pode ser especificado em uma cláusula `LEVEL`.
+
+**Sintaxe**
+
+```sql
+SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMPRESSION type [LEVEL level]]
+```
+
+`file_name` e `type` são literais de string. Os tipos de compressão suportados são: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+`level` é um literal numérico. Há suporte para inteiros positivos nos seguintes intervalos: `1-12` para o tipo `lz4`, `1-22` para o tipo `zstd` e `1-9` para os demais tipos de compressão.
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+* Esta funcionalidade está disponível no [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client) e no [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local). Portanto, uma consulta enviada pela [interface HTTP](/pt-BR/concepts/features/interfaces/http) falhará.
+* A consulta falhará se já existir um arquivo com o mesmo nome.
+* O [formato de saída](/pt-BR/reference/formats/index) padrão é `TabSeparated` (como no modo batch do cliente de linha de comando). Use a cláusula [FORMAT](/pt-BR/reference/statements/select/format) para alterá-lo.
+* Se `AND STDOUT` for mencionado na consulta, a saída gravada no arquivo também será exibida na saída padrão. Se usado com compressão, o conteúdo sem compressão será exibido na saída padrão.
+* Se `APPEND` for mencionado na consulta, a saída será acrescentada a um arquivo existente. Se a compressão for usada, `APPEND` não poderá ser usado.
+* Ao gravar em um arquivo que já existe, é obrigatório usar `APPEND` ou `TRUNCATE`.
+
+**Exemplo**
+
+Execute a consulta a seguir usando o [cliente de linha de comando](/pt-BR/concepts/features/interfaces/client):
+
+```bash title="Query"
+clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
+zcat select.gz 
+```
+
+```text title="Response"
+1,"ABC"
+```

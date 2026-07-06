@@ -846,6 +846,10 @@ String extractZooKeeperName(const String & path);
 
 String extractZooKeeperPath(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
 
+/// Like extractZooKeeperPath, but collapses ALL trailing slashes (not just one) into a canonical form,
+/// so that "/a", "/a/" and "/a//" compare equal. Use when comparing keeper paths for equality.
+String extractZooKeeperPathAndCollapseTrailingSlashes(const String & path, bool check_starts_with_slash, LoggerPtr log = nullptr);
+
 String getSequentialNodeName(const String & prefix, UInt64 number);
 
 void validateZooKeeperConfig(const Poco::Util::AbstractConfiguration & config);

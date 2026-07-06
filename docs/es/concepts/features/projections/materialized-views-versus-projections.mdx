@@ -1,0 +1,105 @@
+---
+slug: /managing-data/materialized-views-versus-projections
+sidebarTitle: 'Vistas materializadas vs. proyecciones'
+title: 'Vistas materializadas frente a proyecciones'
+hide_title: false
+description: 'Artículo que compara las vistas materializadas y las proyecciones en ClickHouse, incluidos sus casos de uso, rendimiento y limitaciones.'
+doc_type: 'reference'
+keywords: ['vistas materializadas', 'proyecciones', 'diferencias']
+---
+
+> Una pregunta habitual entre los usuarios es cuándo deben usar vistas materializadas frente a
+> proyecciones. En este artículo exploraremos las principales diferencias entre ambas y por qué
+> puede convenir elegir una u otra en determinados escenarios.
+
+<div id="key-differences">
+  ## Resumen de las diferencias clave
+</div>
+
+La siguiente tabla resume las diferencias clave entre las vistas materializadas y las proyecciones en varios aspectos importantes.
+
+| Aspecto                                                                                 | Vistas materializadas                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Proyecciones                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Almacenamiento y ubicación de los datos                                                 | Almacenan sus resultados en una **tabla de destino independiente y explícita** y actúan como desencadenadores de inserción al insertar en una tabla de origen.                                                                                                                                                                                                                                                                                                                   | Las proyecciones crean diseños de datos optimizados que se **almacenan físicamente junto con los datos de la tabla principal** y son invisibles para el usuario.                                                                                                                                                               |
+| Mecanismo de actualización                                                              | Funcionan de forma **sincrónica** con `INSERT` en la tabla de origen (en el caso de las vistas materializadas incrementales). Nota: también pueden **programarse** mediante vistas materializadas actualizables.                                                                                                                                                                                                                                                                 | Actualizaciones **asíncronas** en segundo plano tras un `INSERT` en la tabla principal.                                                                                                                                                                                                                                        |
+| Interacción con consultas                                                               | Trabajar con vistas materializadas requiere consultar la **tabla de destino directamente**, lo que significa que debes tener en cuenta la existencia de las vistas materializadas al escribir consultas.                                                                                                                                                                                                                                                                         | Las proyecciones son **seleccionadas automáticamente** por el optimizador de consultas de ClickHouse y son transparentes, en el sentido de que el usuario no tiene que modificar sus consultas sobre la tabla con la proyección para aprovecharla. Desde la versión 25.6 también es posible filtrar por más de una proyección. |
+| Manejo de `UPDATE` / `DELETE`                                                           | **No reaccionan automáticamente** a las operaciones `UPDATE` o `DELETE` en la tabla de origen, ya que las vistas materializadas no tienen conocimiento de la tabla de origen y actúan únicamente como desencadenadores de inserción *sobre* una tabla de origen. Esto puede dar lugar a datos desactualizados entre las tablas de origen y de destino y requiere soluciones alternativas o una actualización completa periódica (mediante una vista materializada actualizable). | De forma predeterminada, son **incompatibles con las filas `DELETED`** (especialmente con las eliminaciones ligeras). `lightweight_mutation_projection_mode` (v24.7+) puede habilitar la compatibilidad.                                                                                                                       |
+| Compatibilidad con `JOIN`                                                               | Sí. Las vistas materializadas actualizables pueden utilizarse para una desnormalización compleja. Las vistas materializadas incrementales solo se activan con inserciones en la tabla situada más a la izquierda.                                                                                                                                                                                                                                                                | No. Las operaciones `JOIN` no son compatibles dentro de las definiciones de proyección para filtrar los datos materializados. Sin embargo, las consultas que unen tablas con proyecciones funcionan con normalidad; las proyecciones optimizan el acceso a cada tabla individual.                                              |
+| Cláusula `WHERE` en la definición                                                       | Sí. Se pueden incluir cláusulas `WHERE` para filtrar los datos antes de la materialización.                                                                                                                                                                                                                                                                                                                                                                                      | No. Las cláusulas `WHERE` no son compatibles dentro de las definiciones de proyección para filtrar los datos materializados.                                                                                                                                                                                                   |
+| Capacidades de encadenamiento                                                           | Sí, la tabla de destino de una vista materializada puede ser el origen de otra vista materializada, lo que permite pipelines de varias etapas.                                                                                                                                                                                                                                                                                                                                   | No. Las proyecciones no se pueden encadenar.                                                                                                                                                                                                                                                                                   |
+| Motores de tabla aplicables                                                             | Pueden utilizarse con varios motores de tabla de origen, pero las tablas de destino suelen ser de la familia `MergeTree`.                                                                                                                                                                                                                                                                                                                                                        | **Solo disponibles** para motores de tabla de la familia `MergeTree`.                                                                                                                                                                                                                                                          |
+| Manejo de fallos                                                                        | Un fallo durante la inserción de datos implica que los datos se pierden en la tabla de destino, lo que puede provocar inconsistencias.                                                                                                                                                                                                                                                                                                                                           | Los fallos se gestionan **silenciosamente** en segundo plano. Las consultas pueden combinar sin problemas partes materializadas y no materializadas.                                                                                                                                                                           |
+| Sobrecarga operativa                                                                    | Requiere crear explícitamente la tabla de destino y, a menudo, realizar backfilling manual. Gestionar la consistencia con `UPDATE`/`DELETE` aumenta la complejidad.                                                                                                                                                                                                                                                                                                              | Las proyecciones se mantienen y se sincronizan automáticamente y, por lo general, suponen una menor carga operativa.                                                                                                                                                                                                           |
+| Compatibilidad con consultas `FINAL`                                                    | Generalmente compatibles, pero a menudo requieren `GROUP BY` en la tabla de destino.                                                                                                                                                                                                                                                                                                                                                                                             | **No funcionan** con consultas `FINAL`.                                                                                                                                                                                                                                                                                        |
+| Materialización diferida                                                                | Sí.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Supervisa los problemas de compatibilidad de las proyecciones al usar funciones de materialización. Puede que necesites establecer `query_plan_optimize_lazy_materialization = false`                                                                                                                                          |
+| Réplicas paralelas                                                                      | Sí.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | No.                                                                                                                                                                                                                                                                                                                            |
+| [`optimize_read_in_order`](/es/reference/settings/session-settings#optimize_read_in_order) | Sí.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Sí.                                                                                                                                                                                                                                                                                                                            |
+| Actualizaciones y eliminaciones ligeras                                                 | Sí.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | No.                                                                                                                                                                                                                                                                                                                            |
+
+<div id="choose-between">
+  ## Comparación entre vistas materializadas y proyecciones
+</div>
+
+<div id="choosing-materialized-views">
+  ### Cuándo elegir vistas materializadas
+</div>
+
+Debería considerar el uso de vistas materializadas cuando:
+
+* Trabaja con **ETL en tiempo real y canalización de datos multietapa:** necesita realizar transformaciones complejas, agregaciones o enrutar datos a medida que llegan, incluso a través de varias etapas mediante el encadenamiento de vistas.
+* Requiere **desnormalización compleja**: necesita unir de antemano datos de varias fuentes (tablas, subconsultas o diccionarios) en una sola tabla optimizada para consultas, especialmente si resultan aceptables las actualizaciones completas periódicas mediante vistas materializadas actualizables.
+* Quiere **control explícito del esquema**: necesita una tabla de destino independiente y diferenciada, con su propio esquema y engine para los resultados precalculados, lo que ofrece mayor flexibilidad para el modelado de datos.
+* Quiere **filtrar durante la ingestión**: necesita filtrar los datos *antes* de materializarlos, reduciendo el volumen de datos escrito en la tabla de destino.
+
+<div id="avoid-materialized-views">
+  ### Cuándo evitar las vistas materializadas
+</div>
+
+Conviene evitar el uso de vistas materializadas cuando:
+
+* **Los datos de origen se actualizan o eliminan con frecuencia**: Sin estrategias adicionales para mantener la consistencia entre las tablas de origen y de destino, las vistas materializadas incrementales pueden quedar desactualizadas y perder consistencia.
+* **Se prefiere la simplicidad y la optimización automática**: Si quieres evitar tener que gestionar tablas de destino independientes.
+
+<div id="choosing-projections">
+  ### Cuándo elegir proyecciones
+</div>
+
+Deberías considerar el uso de proyecciones cuando:
+
+* **Optimizar consultas para una sola tabla**: tu objetivo principal es acelerar las consultas en una única tabla base mediante órdenes de clasificación alternativas, optimizando filtros en columnas que no forman parte de la clave primaria o precalculando agregaciones para una sola tabla.
+* Quieres **transparencia en las consultas**: quieres que las consultas se ejecuten sobre la tabla original sin modificaciones, dejando que ClickHouse elija la mejor disposición de los datos para una consulta determinada.
+
+<div id="avoid-projections">
+  ### Cuándo evitar las proyecciones
+</div>
+
+Conviene evitar el uso de proyecciones cuando:
+
+* **Se requieren transformaciones de datos complejas o ETL de varias etapas**: Las definiciones de proyecciones no admiten operaciones `JOIN`, no pueden encadenarse para crear canalizaciones de varios pasos y no permiten algunas funcionalidades de SQL, como las funciones de ventana o las sentencias `CASE` complejas. Aunque las consultas sobre tablas con proyecciones pueden usar joins sin restricciones, las proyecciones en sí no son adecuadas para transformaciones de datos complejas.
+* **Se necesita filtrar explícitamente los datos materializados**: Las proyecciones no admiten cláusulas `WHERE` en su definición para filtrar los datos que se materializan en la propia proyección.
+* **Se usan motores de tabla que no pertenecen a la familia MergeTree**: Las proyecciones solo están disponibles para tablas que usan la familia de motores `MergeTree`.
+* Las consultas `FINAL` son esenciales: Las proyecciones no funcionan con consultas `FINAL`, que a veces se usan para la deduplicación.
+* Necesitas [réplicas paralelas](/es/products/cloud/features/infrastructure/parallel-replicas), ya que no son compatibles con las proyecciones.
+
+<div id="summary">
+  ## Resumen
+</div>
+
+Las vistas materializadas y las proyecciones son dos herramientas muy potentes para
+optimizar consultas y transformar datos y, en general, recomendamos no plantear
+su uso como una elección excluyente. En su lugar, pueden utilizarse de forma complementaria
+para sacar el máximo partido a sus consultas. Por tanto, la elección entre vistas materializadas
+y proyecciones en ClickHouse depende realmente de su caso de uso específico y de sus
+patrones de acceso.
+
+Como regla general, debería plantearse usar vistas materializadas cuando
+necesite agregar datos de una o más tablas de origen en una tabla de destino o
+realizar transformaciones complejas a gran escala. Las vistas materializadas son excelentes para trasladar
+el trabajo de agregaciones costosas del tiempo de consulta al tiempo de inserción. Son una
+gran opción para rollups diarios o mensuales, dashboards en tiempo real o resúmenes de datos.
+
+Por otro lado, debería usar proyecciones cuando necesite optimizar consultas
+que filtran por columnas distintas de las que se usan en la clave primaria
+de la tabla, que determina el orden físico de los datos en disco. Son especialmente
+útiles cuando ya no es posible cambiar la clave primaria de una tabla, o cuando
+sus patrones de acceso son más diversos de lo que la clave primaria puede abarcar.

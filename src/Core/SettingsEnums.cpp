@@ -64,6 +64,7 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
      {"dpsize",             JoinOrderAlgorithm::DPSIZE},
+     {"dpsub",              JoinOrderAlgorithm::DPSUB},
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
@@ -385,6 +386,13 @@ IMPLEMENT_SETTING_ENUM(
     ErrorCodes::BAD_ARGUMENTS,
     {{"lat_lon", GeoToH3ArgumentOrder::LAT_LON},
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
+
+IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,

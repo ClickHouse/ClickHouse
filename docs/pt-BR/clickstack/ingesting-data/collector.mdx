@@ -1,0 +1,634 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/otel-collector
+description: 'OpenTelemetry collector para ClickStack - a stack de observabilidade do ClickHouse'
+sidebarTitle: 'OpenTelemetry collector'
+title: 'ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', 'OpenTelemetry collector', 'observabilidade do ClickHouse', 'configuração do OTel collector', 'OpenTelemetry ClickHouse']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import ExtendingConfig from '/snippets/pt-BR/_extending_config.mdx';
+
+<Tip>
+  **Experimente o OTel FYI - documentação do OTel collector de forma simples**
+
+  [OTel FYI](https://otel.fyi) oferece documentação clara e concisa sobre o OpenTelemetry Collector, cobrindo receivers, processors, exporters e pipelines. É um ótimo recurso complementar para configurar seu ClickStack OTel collector.
+</Tip>
+
+Esta página inclui detalhes sobre a configuração do OTel collector oficial do ClickStack.
+
+<div id="collector-roles">
+  ## Funções do collector
+</div>
+
+Os OpenTelemetry collectors podem ser implantados em duas funções principais:
+
+* **Agent** - As instâncias de agent coletam dados na borda, por exemplo, em servidores ou nós do Kubernetes, ou recebem eventos diretamente de aplicações instrumentadas com um SDK do OpenTelemetry. Neste último caso, a instância de agent é executada junto com a aplicação ou no mesmo host da aplicação (como um sidecar ou um Conjunto de Daemon). Os agents podem enviar seus dados diretamente para o ClickHouse ou para uma instância de gateway. Quando isso ocorre no primeiro caso, ele é chamado de [padrão de implantação de Agent](https://opentelemetry.io/docs/collector/deployment/agent/).
+
+* **Gateway** - As instâncias de gateway fornecem um serviço independente (por exemplo, uma Implantação no Kubernetes), normalmente por cluster, por data center ou por região. Elas recebem eventos de aplicações (ou de outros collectors atuando como agents) por meio de um único endpoint OTLP. Normalmente, um conjunto de instâncias de gateway é implantado, com um balanceador de carga pronto para uso sendo utilizado para distribuir a carga entre elas. Se todos os agents e aplicações enviarem seus sinais para esse único endpoint, isso costuma ser chamado de [padrão de implantação de Gateway](https://opentelemetry.io/docs/collector/deployment/gateway/).
+
+**Importante: o collector, inclusive nas distribuições padrão do ClickStack, assume a [função de gateway descrita abaixo](#collector-roles), recebendo dados de agents ou SDKs.**
+
+Os usuários que implantam OTel collectors na função de agent normalmente usam a [distribuição contrib padrão do collector](https://github.com/open-telemetry/opentelemetry-collector-contrib), e não a versão do ClickStack, mas podem usar outras tecnologias compatíveis com OTLP, como [Fluentd](https://www.fluentd.org/) e [Vector](https://vector.dev/).
+
+<div id="configuring-the-collector">
+  ## Implantação do collector
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    Recomendamos [usar a distribuição oficial do coletor do ClickStack](/pt-BR/clickstack/deployment/hyperdx-only#otel-collector) na função de gateway ao enviar para o Managed ClickStack, sempre que possível. Se você optar por trazer o seu próprio, certifique-se de que ele inclua o [exportador ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+
+    O collector pode ser implantado via Helm (recomendado para Kubernetes) ou via Docker. O [chart do Helm do ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) oficial incorpora o [chart do Helm do OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts) upstream como um subchart com a imagem da distribuição ClickStack pré-configurada — consulte o [guia de implantação do ClickStack via Helm](/pt-BR/clickstack/deployment/helm) se quiser instalar a stack completa, incluindo o HyperDX. Para uma implantação standalone do collector, o chart upstream pode ser usado diretamente com a imagem do ClickStack, conforme mostrado abaixo.
+
+    <Tabs>
+      <Tab title="Helm">
+        Adicione o repositório upstream do Helm do OpenTelemetry:
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        Crie um `values.yaml` para configurar a imagem do ClickStack e as credenciais do Managed ClickStack:
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "https://your-instance.clickhouse.cloud:8443"
+          - name: CLICKHOUSE_USER
+            value: "default"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+        ```
+
+        Instale o chart:
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        Para implantações em produção, recomendamos armazenar `CLICKHOUSE_PASSWORD` em um Secret do Kubernetes e referenciá-lo via `extraEnvsFrom`, em vez de inserir o valor diretamente.
+      </Tab>
+
+      <Tab title="Docker">
+        Para implantar a distribuição ClickStack do coletor OTel em modo independente, execute o seguinte comando Docker:
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **Atualização do nome da imagem**
+
+          As imagens do ClickStack agora são publicadas como `clickhouse/clickstack-*` (antes `docker.hyperdx.io/hyperdx/*`).
+        </Info>
+      </Tab>
+    </Tabs>
+
+    A instância de destino do ClickHouse é configurada por meio das variáveis de ambiente `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` e `CLICKHOUSE_PASSWORD`. O `CLICKHOUSE_ENDPOINT` deve ser o endpoint HTTP completo do ClickHouse Cloud, incluindo o protocolo e a porta — por exemplo, `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`.
+
+    Para obter detalhes sobre como recuperar suas credenciais do Managed ClickStack, consulte [aqui](/pt-BR/products/cloud/guides/sql-console/connection-details).
+
+    <Info>
+      **Usuário de produção**
+
+      Você deve usar um usuário com as [credenciais adequadas](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user) em produção.
+    </Info>
+
+    ### Modificando a configuração
+
+    #### Configuração da instância Managed ClickStack
+
+    O OpenTelemetry collector pode ser configurado para usar uma instância do Managed ClickStack por meio das variáveis de ambiente `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` e `CLICKHOUSE_PASSWORD`. A forma como essas variáveis são definidas depende do método de implantação utilizado:
+
+    <Tabs>
+      <Tab title="Helm">
+        Sobrescreva as entradas relevantes em `extraEnvs` no seu `values.yaml` e, em seguida, atualize o lançamento:
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        Todas as imagens Docker que incluem o coletor OpenTelemetry podem ser configuradas por meio de variáveis de ambiente. Por exemplo, a imagem all-in-one:
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    Com o Docker Compose, modifique a configuração do collector usando as mesmas variáveis de ambiente mencionadas acima:
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          CUSTOM_OTELCOL_CONFIG_FILE: '/etc/otelcol-contrib/custom.config.yaml'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        volumes:
+          - ./custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    Se você estiver gerenciando seu próprio OpenTelemetry collector em uma implantação standalone — como ao usar a distribuição exclusiva do HyperDX — [recomendamos utilizar a distribuição oficial do ClickStack do collector](/pt-BR/clickstack/deployment/hyperdx-only#otel-collector) para a função de gateway sempre que possível. Caso opte por usar o seu próprio, certifique-se de que ele inclua o [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+
+    O collector pode ser implantado via Helm (recomendado para Kubernetes) ou via Docker. O [chart do Helm do ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) oficial incorpora o [chart do Helm do OpenTelemetry Collector](https://github.com/open-telemetry/opentelemetry-helm-charts) upstream como um subchart e configura automaticamente o endpoint OpAMP, a imagem do ClickStack e a API key do HyperDX por meio de um ConfigMap `clickstack-config` e um Secret `clickstack-secret` compartilhados — consulte o [guia de implantação do ClickStack via Helm](/pt-BR/clickstack/deployment/helm) se quiser instalar a stack completa incluindo o HyperDX. Para uma implantação standalone do collector que se conecta a um HyperDX existente, o chart upstream pode ser usado diretamente com a imagem do ClickStack, conforme mostrado abaixo.
+
+    <Tabs>
+      <Tab title="Helm">
+        Adicione o repositório Helm oficial do OpenTelemetry:
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        Crie um `values.yaml` configurando a imagem do ClickStack, as credenciais do ClickHouse e o endpoint do OpAMP da sua implantação do HyperDX:
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "tcp://clickhouse.your-namespace.svc.cluster.local:9000?dial_timeout=10s"
+          - name: CLICKHOUSE_USER
+            value: "otelcollector"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+          - name: OPAMP_SERVER_URL
+            value: "http://hyperdx.your-namespace.svc.cluster.local:4320"
+          - name: HYPERDX_API_KEY
+            value: "<your-ingestion-api-key>"
+        ```
+
+        Instale o chart:
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        O `OPAMP_SERVER_URL` deve resolver para o seu serviço HyperDX. Quando o HyperDX e o collector rodam no mesmo cluster, use o nome DNS interno do serviço (por exemplo, `http://hyperdx.your-namespace.svc.cluster.local:4320`). O HyperDX expõe a API OpAMP em `/v1/opamp` na porta `4320` por padrão.
+
+        Para implantações em produção, recomendamos armazenar `CLICKHOUSE_PASSWORD` e `HYPERDX_API_KEY` em um Secret do Kubernetes e referenciá-los via `extraEnvsFrom`, em vez de definir os valores inline.
+      </Tab>
+
+      <Tab title="Docker">
+        Para implantar a distribuição ClickStack do collector OTel em modo standalone, execute o seguinte comando Docker:
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **Atualização do nome da imagem**
+
+          As imagens do ClickStack agora são publicadas como `clickhouse/clickstack-*` (anteriormente `docker.hyperdx.io/hyperdx/*`).
+        </Info>
+
+        O `OPAMP_SERVER_URL` deve apontar para a sua implantação do HyperDX, por exemplo, `http://localhost:4320`. O HyperDX expõe um servidor OpAMP (Open Agent Management Protocol) em `/v1/opamp` na porta `4320` por padrão. Certifique-se de expor essa porta no container que executa o HyperDX (por exemplo, usando `-p 4320:4320`).
+
+        <Info>
+          **Expondo e conectando à porta OpAMP**
+
+          Para que o collector se conecte à porta OpAMP, ela precisa ser exposta pelo container do HyperDX, por exemplo, com `-p 4320:4320`. Para testes locais, usuários de OSX podem definir `OPAMP_SERVER_URL=http://host.docker.internal:4320`. Usuários de Linux podem iniciar o container do collector com `--network=host`.
+        </Info>
+      </Tab>
+    </Tabs>
+
+    A instância de destino do ClickHouse é configurada por meio das variáveis de ambiente `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` e `CLICKHOUSE_PASSWORD`. O `CLICKHOUSE_ENDPOINT` deve ser o endpoint HTTP completo do ClickHouse, incluindo o protocolo e a porta — por exemplo, `http://localhost:8123`.
+
+    **Essas variáveis de ambiente podem ser usadas com qualquer uma das distribuições Docker que incluem o conector.**
+
+    <Info>
+      **Usuário de produção**
+
+      Você deve usar um usuário com as [credenciais adequadas](/pt-BR/clickstack/ingesting-data/collector#creating-an-ingestion-user) em produção.
+    </Info>
+
+    ### Modificando a configuração
+
+    #### Configurando a instância do ClickHouse
+
+    O OpenTelemetry collector pode ser configurado para usar uma instância do ClickHouse por meio das variáveis de ambiente `OPAMP_SERVER_URL`, `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` e `CLICKHOUSE_PASSWORD`. A forma como essas variáveis são definidas depende do método de implantação escolhido:
+
+    <Tabs>
+      <Tab title="Helm">
+        Sobrescreva as entradas relevantes em `extraEnvs` no seu `values.yaml` e, em seguida, faça upgrade da release:
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OPAMP_SERVER_URL
+            value: "<OPAMP_SERVER_URL>"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        Todas as imagens Docker que incluem o OpenTelemetry collector podem ser configuradas com variáveis de ambiente. Por exemplo, a imagem all-in-one:
+
+        ```shell
+        export OPAMP_SERVER_URL=<OPAMP_SERVER_URL>
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    Com o Docker Compose, modifique a configuração do collector usando as mesmas variáveis de ambiente mencionadas acima:
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+</Tabs>
+
+<div id="securing-the-collector">
+  ## Proteção do collector
+</div>
+
+<Tabs>
+  <Tab title="ClickStack gerenciado">
+    Por padrão, o ClickStack OpenTelemetry collector não fica protegido quando implantado fora das distribuições open source e não exige autenticação em suas portas OTLP.
+
+    Para proteger a ingestão, especifique um token de autenticação ao implantar o collector usando a variável de ambiente `OTLP_AUTH_TOKEN`. A forma de configurar isso depende do seu método de implantação:
+
+    <Tabs>
+      <Tab title="Helm">
+        Adicione `OTLP_AUTH_TOKEN` a `extraEnvs` no seu `values.yaml` e, em seguida, atualize a release:
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OTLP_AUTH_TOKEN
+            value: "a_very_secure_string"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        Para implantações em produção, recomendamos armazenar `OTLP_AUTH_TOKEN` e `CLICKHOUSE_PASSWORD` em um Secret do Kubernetes e referenciá-los por meio de `extraEnvsFrom`.
+      </Tab>
+
+      <Tab title="Docker">
+        ```sh
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+        docker run \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    Além disso, recomendamos:
+
+    * Configurar o collector para se comunicar com o ClickHouse via HTTPS.
+    * Criar um usuário dedicado para ingestão com permissões limitadas — veja abaixo.
+    * Habilitar TLS para o endpoint OTLP, garantindo comunicação criptografada entre SDKs/agentes e o collector. Isso pode ser configurado por meio de uma [configuração personalizada do collector](#extending-collector-config).
+
+    ### Criando um usuário de ingestão
+
+    Recomendamos criar um banco de dados e um usuário dedicados para o OTel collector para ingestão no Managed ClickStack. Esse usuário deve ter permissão para criar e inserir nas [tabelas criadas e usadas pelo ClickStack](/pt-BR/clickstack/ingesting-data/schemas).
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    Isso pressupõe que o collector tenha sido configurado para usar o banco de dados `otel`. Isso pode ser controlado pela variável de ambiente `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`. Passe essa variável para o collector [de forma semelhante às outras variáveis de ambiente](#modifying-otel-collector-configuration).
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    A distribuição ClickStack do OTel collector inclui suporte nativo a OpAMP (Open Agent Management Protocol), que ela usa para configurar e gerenciar com segurança o endpoint OTLP. Na inicialização, você deve fornecer a variável de ambiente `OPAMP_SERVER_URL` — ela deve apontar para o app HyperDX, que hospeda a API OpAMP em `/v1/opamp`.
+
+    Essa integração garante que o endpoint OTLP seja protegido com uma API key de ingestão gerada automaticamente, criada quando o app HyperDX é implantado. Todos os dados de telemetria enviados ao OTel collector devem incluir essa API key para autenticação. Você pode encontrar a chave no app HyperDX em `Team Settings → API Keys`.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Chaves de ingestão" size="lg" />
+
+    Para reforçar a segurança da sua implantação, recomendamos:
+
+    * Configurar o OTel collector para se comunicar com o ClickHouse via HTTPS.
+    * Criar um usuário dedicado para ingestão com permissões limitadas — veja abaixo.
+    * Habilitar TLS para o endpoint OTLP, garantindo comunicação criptografada entre SDKs/agents e o OTel collector. Isso pode ser configurado por meio de uma [configuração personalizada do collector](#extending-collector-config).
+
+    ### Criando um usuário de ingestão
+
+    Recomendamos criar um banco de dados e um usuário dedicados para o OTel collector realizar a ingestão no ClickHouse. Eles devem ter permissão para criar e inserir nas [tabelas criadas e usadas pelo ClickStack](/pt-BR/clickstack/ingesting-data/schemas).
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    Isso pressupõe que o collector tenha sido configurado para usar o banco de dados `otel`. Isso pode ser controlado por meio da variável de ambiente `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`. Passe essa variável para a imagem que hospeda o collector [assim como outras variáveis de ambiente](#modifying-otel-collector-configuration).
+  </Tab>
+</Tabs>
+
+<div id="processing-filtering-transforming-enriching">
+  ## Processamento - filtragem, transformação e enriquecimento
+</div>
+
+Os usuários invariavelmente vão querer filtrar, transformar e enriquecer mensagens de evento durante a ingestão. Como a configuração do conector do ClickStack não pode ser modificada, recomendamos que os usuários que precisem de filtragem e processamento adicionais de eventos adotem uma das seguintes opções:
+
+* Implantar sua própria versão do OTel collector para realizar filtragem e processamento, enviando eventos para o ClickStack collector via OTLP para ingestão no ClickHouse.
+* Implantar sua própria versão do OTel collector e enviar eventos diretamente ao ClickHouse usando o ClickHouse exporter.
+
+Se o processamento for feito usando o OTel collector, recomendamos realizar as transformações nas instâncias de gateway e minimizar qualquer trabalho feito nas instâncias de agent. Isso garantirá que os recursos exigidos pelos agents na borda, executados em servidores, sejam os menores possíveis. Normalmente, vemos usuários realizando apenas filtragem (para minimizar o uso desnecessário da rede), definição de timestamp (via operators) e enriquecimento, que exige contexto nos agents. Por exemplo, se as instâncias de gateway estiverem em um cluster Kubernetes diferente, o enriquecimento de k8s precisará ocorrer no agent.
+
+O OpenTelemetry oferece suporte aos seguintes recursos de processamento e filtragem que você pode aproveitar:
+
+* **Processors** - Os processors recebem os dados coletados pelos [receivers e os modificam ou transformam](https://opentelemetry.io/docs/collector/transforming-telemetry/) antes de enviá-los aos exporters. Os processors são aplicados na ordem configurada na seção `processors` da configuração do collector. Eles são opcionais, mas o conjunto mínimo [normalmente é recomendado](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors). Ao usar um OTel collector com o ClickHouse, recomendamos limitar os processors a:
+
+* Um [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md) é usado para evitar situações de falta de memória no collector. Consulte [Estimating Resources](#estimating-resources) para recomendações.
+
+* Qualquer processor que faça enriquecimento com base em contexto. Por exemplo, o [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor) permite definir automaticamente atributos de resource de spans, metrics e logs com metadados de k8s, por exemplo, enriquecendo eventos com o ID do pod de origem.
+
+* [Tail ou head sampling](https://opentelemetry.io/docs/concepts/sampling/), se necessário para traces.
+
+* [Filtragem básica](https://opentelemetry.io/docs/collector/transforming-telemetry/) - descarte de eventos desnecessários, se isso não puder ser feito via operator (veja abaixo).
+
+* [Batching](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - essencial ao trabalhar com o ClickHouse para garantir que os dados sejam enviados em batches. Consulte [&quot;Optimizing inserts&quot;](#optimizing-inserts).
+
+* **Operators** - [Operators](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md) fornecem a unidade mais básica de processamento disponível no receiver. Há suporte a parsing básico, permitindo definir campos como Severity e Timestamp. Também há suporte a parsing de JSON e regex, além de filtragem de eventos e transformações básicas. Recomendamos realizar a filtragem de eventos aqui.
+
+Recomendamos que os usuários evitem fazer processamento excessivo de eventos usando operators ou [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md). Eles podem gerar uma sobrecarga considerável de memória e CPU, especialmente o parsing de JSON. É possível fazer todo o processamento no ClickHouse no momento do insert com visões materializadas e colunas, com algumas exceções — especificamente, enriquecimento sensível a contexto, por exemplo, a adição de metadados de k8s. Para mais detalhes, consulte [Extracting structure with SQL](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql).
+
+<div id="example-processing">
+  ### Exemplo
+</div>
+
+A configuração a seguir mostra a coleta deste [arquivo de log não estruturado](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz). Essa configuração poderia ser usada por um collector no papel de agent, enviando dados para o gateway do ClickStack.
+
+Observe o uso de operadores para extrair a estrutura das linhas de log (`regex_parser`) e filtrar eventos, além de um processor para agrupar eventos e limitar o uso de memória.
+
+```yaml file=code_snippets/ClickStack/config-unstructured-logs-with-processor.yaml
+receivers:
+  filelog:
+    include:
+      - /opt/data/logs/access-unstructured.log
+    start_at: beginning
+    operators:
+      - type: regex_parser
+        regex: '^(?P<ip>[\d.]+)\s+-\s+-\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>[A-Z]+)\s+(?P<url>[^\s]+)\s+HTTP/[^\s]+"\s+(?P<status>\d+)\s+(?P<size>\d+)\s+"(?P<referrer>[^"]*)"\s+"(?P<user_agent>[^"]*)"'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%d/%b/%Y:%H:%M:%S %z'
+          #22/Jan/2019:03:56:14 +0330
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 10000
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 2048
+    spike_limit_mib: 256
+exporters:
+  # Configuração HTTP
+  otlphttp/hdx:
+    endpoint: 'http://localhost:4318'
+    headers:
+      authorization: <YOUR_INGESTION_API_KEY>
+    compression: gzip
+
+  # Configuração gRPC (alternativa)
+  otlp/hdx:
+    endpoint: 'localhost:4317'
+    headers:
+      authorization: <YOUR_API_INGESTION_KEY>
+    compression: gzip
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:9888 # Modificado pois há 2 collectors em execução no mesmo host
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [otlphttp/hdx]
+
+```
+
+Observe que é necessário incluir um [header de autorização contendo sua API key de ingestão](#securing-the-collector) em qualquer comunicação OTLP.
+
+Para configurações mais avançadas, recomendamos a [documentação do OpenTelemetry Collector](https://opentelemetry.io/docs/collector/).
+
+<div id="optimizing-inserts">
+  ## Otimizando inserções
+</div>
+
+Para obter alto desempenho nas inserções sem abrir mão de fortes garantias de consistência, você deve seguir regras simples ao inserir dados de observabilidade no ClickHouse por meio do ClickStack collector. Com a configuração correta do OTel collector, as regras a seguir devem ser fáceis de aplicar. Isso também evita [problemas comuns](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse) que os usuários encontram ao usar o ClickHouse pela primeira vez.
+
+<div id="batching">
+  ### Agrupamento em lotes
+</div>
+
+Por padrão, cada inserção enviada ao ClickHouse faz com que o ClickHouse crie imediatamente uma parte de armazenamento contendo os dados da inserção, junto com outros metadados que precisam ser armazenados. Portanto, enviar um número menor de inserções, cada uma contendo mais dados, em vez de um número maior de inserções, cada uma contendo menos dados, reduz o número de gravações necessárias. Recomendamos inserir dados em lotes razoavelmente grandes, de pelo menos 1.000 linhas por vez. Mais detalhes [aqui](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance).
+
+Por padrão, as inserções no ClickHouse são síncronas e idempotentes quando idênticas. Para tabelas da família de engines MergeTree, o ClickHouse, por padrão, [faz a desduplicação das inserções](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time) automaticamente. Isso significa que as inserções toleram casos como os seguintes:
+
+* (1) Se o nó que recebe os dados tiver problemas, a consulta de inserção atingirá o tempo limite (ou retornará um erro mais específico), e o remetente não receberá uma confirmação.
+* (2) Se os dados tiverem sido gravados pelo nó, mas a confirmação não puder ser retornada ao remetente da consulta devido a interrupções de rede, o remetente receberá um timeout ou um erro de rede.
+
+Na perspectiva do OTel collector, pode ser difícil distinguir entre (1) e (2). No entanto, em ambos os casos, a inserção sem confirmação pode simplesmente ser tentada novamente imediatamente. Desde que a consulta de inserção repetida contenha os mesmos dados na mesma ordem, o ClickHouse ignorará automaticamente a nova tentativa se a inserção original (sem confirmação) tiver sido bem-sucedida.
+
+Por esse motivo, a distribuição ClickStack do OTel collector usa o [batch processor](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md). Isso garante que as inserções sejam enviadas como lotes consistentes de linhas que atendem aos requisitos acima. Se for esperado que um OTel collector tenha alta taxa de transferência (eventos por segundo), e pelo menos 10.000 eventos puderem ser enviados em cada inserção, normalmente esse é o único agrupamento em lotes necessário no pipeline. Valores de até 100.000 podem ser usados se a memória permitir. Nesse caso, o OTel collector fará o flush dos lotes antes que o `timeout` do batch processor seja atingido, garantindo que a latência de ponta a ponta do pipeline permaneça baixa e que os lotes tenham um tamanho consistente.
+
+<div id="use-asynchronous-inserts">
+  ### Use inserções assíncronas
+</div>
+
+Normalmente, os usuários precisam enviar lotes menores quando o throughput de um collector é baixo, mas ainda esperam que os dados cheguem ao ClickHouse com a menor latência fim a fim possível. Nesse caso, pequenos lotes são enviados quando o `timeout` do batch processor expira. Isso pode causar problemas e é nesses casos que as inserções assíncronas se tornam necessárias. Esse problema é raro se você estiver enviando dados para o ClickStack collector atuando como gateway — como ele agrega os dados, esse problema é mitigado. Consulte [Funções do collector](#collector-roles).
+
+Se não for possível garantir lotes grandes, você pode delegar o batching ao ClickHouse usando [Inserções assíncronas](/pt-BR/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Com inserções assíncronas, os dados são inseridos primeiro em um buffer e depois gravados no armazenamento do banco de dados posteriormente, de forma assíncrona.
+
+<Image img="/images/use-cases/observability/observability-6.webp" alt="Inserções assíncronas" size="md" />
+
+Com [inserções assíncronas habilitadas](/pt-BR/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), quando o ClickHouse ① recebe uma consulta de INSERT, os dados da consulta são ② gravados imediatamente em um buffer na memória. Quando ③ ocorre o próximo flush do buffer, os dados do buffer são [ordenados](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) e gravados como uma parte no armazenamento do banco de dados. Observe que os dados não podem ser consultados antes de serem gravados no armazenamento do banco de dados; o flush do buffer é [configurável](/pt-BR/concepts/features/operations/insert/asyncinserts).
+
+Para habilitar inserções assíncronas para o collector, adicione `async_insert=1` à string de conexão. Recomendamos que os usuários usem `wait_for_async_insert=1` (o padrão) para obter garantias de entrega — consulte [aqui](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) para mais detalhes.
+
+Os dados de uma inserção assíncrona são inseridos quando o buffer do ClickHouse é descarregado. Isso ocorre quando [`async_insert_max_data_size`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size) é excedido ou após [`async_insert_busy_timeout_ms`](/pt-BR/reference/settings/session-settings#async_insert_max_data_size) milissegundos desde a primeira consulta de INSERT. Se `async_insert_stale_timeout_ms` estiver definido com um valor diferente de zero, os dados serão inseridos após `async_insert_stale_timeout_ms milissegundos` desde a última consulta. Você pode ajustar essas configurações para controlar a latência fim a fim do pipeline. Outras configurações que podem ser usadas para ajustar o flush do buffer estão documentadas [aqui](/pt-BR/reference/settings/session-settings#async_insert). Em geral, os valores padrão são adequados.
+
+<Info>
+  **Considere inserções assíncronas adaptativas**
+
+  Nos casos em que há poucos agents em uso, com baixo throughput, mas requisitos rigorosos de latência fim a fim, [inserções assíncronas adaptativas](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts) podem ser úteis. Em geral, elas não se aplicam a casos de uso de observabilidade com alto throughput, como os vistos no ClickHouse.
+</Info>
+
+Por fim, o comportamento anterior de desduplicação associado a inserções síncronas no ClickHouse não é habilitado por padrão ao usar inserções assíncronas. Se necessário, consulte a configuração [`async_insert_deduplicate`](/pt-BR/reference/settings/session-settings#async_insert_deduplicate).
+
+Os detalhes completos sobre como configurar esse recurso podem ser encontrados nesta [página da documentação](/pt-BR/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) ou neste [post de blog](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse) com uma análise aprofundada.
+
+<div id="scaling">
+  ## Escalonamento
+</div>
+
+O ClickStack OTel collector atua como uma instância de gateway - consulte [Funções do collector](#collector-roles). Essas instâncias fornecem um serviço independente, normalmente por data center ou por região. Elas recebem eventos de aplicações (ou de outros collectors na função de agent) por meio de um único endpoint OTLP. Normalmente, um conjunto de instâncias de collector é implantado, com um balanceador de carga pronto para uso distribuindo a carga entre elas.
+
+<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="Escalonamento com gateways" size="lg" />
+
+O objetivo desta arquitetura é tirar dos agents o processamento computacionalmente intensivo, minimizando assim o uso de recursos. Esses gateways do ClickStack podem executar tarefas de transformação que, de outra forma, precisariam ser realizadas pelos agents. Além disso, ao agregar eventos de muitos agents, os gateways podem garantir o envio de grandes lotes ao ClickHouse, permitindo uma inserção eficiente. Esses collectors gateway podem ser facilmente escalados à medida que mais agents e fontes de SDK são adicionados e o throughput de eventos aumenta.
+
+<div id="adding-kafka">
+  ### Adicionando Kafka
+</div>
+
+Os leitores podem notar que as arquiteturas acima não usam Kafka como fila de mensagens.
+
+Usar uma fila do Kafka como buffer de mensagens é um padrão de arquitetura popular em arquiteturas de logging e foi popularizado pela stack ELK. Isso oferece alguns benefícios: principalmente, ajuda a garantir entregas de mensagens mais confiáveis e a lidar com backpressure. As mensagens são enviadas dos agents de coleta para o Kafka e gravadas em disco. Em teoria, uma instância de Kafka em cluster deve fornecer um buffer de mensagens de alto throughput, já que gravar dados linearmente em disco exige menos sobrecarga computacional do que analisar e processar uma mensagem. No Elastic, por exemplo, a tokenização e a indexação geram uma sobrecarga significativa. Ao afastar os dados dos agents, você também reduz o risco de perder mensagens como resultado da rotação de logs na origem. Por fim, ele oferece recursos de replay de mensagens e replicação entre regiões, o que pode ser atraente em alguns casos de uso.
+
+No entanto, o ClickHouse consegue inserir dados muito rapidamente — milhões de linhas por segundo em hardware moderado. Backpressure no ClickHouse é raro. Muitas vezes, usar uma fila do Kafka significa mais complexidade arquitetural e mais custo. Se você puder adotar o princípio de que logs não precisam das mesmas garantias de entrega que transações bancárias e outros dados de missão crítica, recomendamos evitar a complexidade do Kafka.
+
+No entanto, se você precisa de altas garantias de entrega ou da capacidade de reprocessar dados (potencialmente para várias fontes), o Kafka pode ser uma adição arquitetural útil.
+
+<Image img="/images/use-cases/observability/observability-8.webp" alt="Adicionando kafka" size="lg" />
+
+Nesse caso, os agents OTel podem ser configurados para enviar dados ao Kafka por meio do [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). As instâncias de gateway, por sua vez, consomem mensagens usando o [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). Recomendamos a documentação da Confluent e do OTel para mais detalhes.
+
+<Info>
+  **Configuração do OTel collector**
+
+  A distribuição do ClickStack OpenTelemetry collector pode ser configurada com Kafka usando a [configuração personalizada do collector](#extending-collector-config).
+</Info>
+
+<div id="estimating-resources">
+  ## Estimando recursos
+</div>
+
+Os requisitos de recursos para o OTel collector dependem da taxa de eventos, do tamanho das mensagens e da quantidade de processamento realizada. O projeto OpenTelemetry mantém [benchmarks que os usuários](https://opentelemetry.io/docs/collector/benchmarks/) podem usar para estimar esses requisitos.
+
+[Na nossa experiência](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog#architectural-overview), uma instância gateway do ClickStack com 3 núcleos e 12 GB de RAM pode processar cerca de 60 mil eventos por segundo. Isso pressupõe um pipeline de processamento mínimo, responsável por renomear campos e sem uso de expressões regulares.
+
+Para instâncias agent responsáveis por enviar eventos a um gateway e apenas definir o timestamp do evento, recomendamos que os usuários dimensionem os recursos com base no volume esperado de logs por segundo. Os valores a seguir são aproximados e podem ser usados como ponto de partida:
+
+| Taxa de logs | Recursos para o collector agent |
+| ------------ | ------------------------------- |
+| 1k/segundo   | 0.2CPU, 0.2GiB                  |
+| 5k/segundo   | 0.5 CPU, 0.5GiB                 |
+| 10k/segundo  | 1 CPU, 1GiB                     |
+
+<div id="schema-choice">
+  ## Escolha de esquema: Map vs JSON
+</div>
+
+O collector do ClickStack cria tabelas que armazenam atributos em colunas `Map(LowCardinality(String), String)` por padrão. Esse é o esquema recomendado para workloads de observabilidade. Um esquema do tipo `JSON` está disponível em beta para avaliação em workloads com um conjunto pequeno e estável de chaves de atributo.
+
+Para ver a comparação completa, quando cada um é mais apropriado, as variáveis de ambiente necessárias para habilitar o esquema do tipo JSON e o passo a passo da migração, consulte [Map vs JSON type](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).

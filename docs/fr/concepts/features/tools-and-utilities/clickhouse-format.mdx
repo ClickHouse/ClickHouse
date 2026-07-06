@@ -1,0 +1,105 @@
+---
+description: 'Guide d’utilisation de l’utilitaire de formatage pour travailler avec les formats de données ClickHouse'
+slug: /operations/utilities/clickhouse-format
+title: 'clickhouse-format'
+doc_type: 'référence'
+---
+
+Permet de formater les requêtes d’entrée.
+
+Options :
+
+* `--help` ou `-h` — Affiche le message d’aide.
+* `--query` — Formate des requêtes de toute longueur et complexité.
+* `--hilite` ou `--highlight` — Ajoute une coloration syntaxique avec des séquences d’échappement ANSI du terminal.
+* `--oneline` — Formate sur une seule ligne.
+* `--max_line_length` — Formate sur une seule ligne les requêtes dont la longueur est inférieure à la valeur spécifiée.
+* `--comments` — Conserve les commentaires dans la sortie.
+* `--quiet` ou `-q` — Vérifie uniquement la syntaxe, sans sortie en cas de succès.
+* `--multiquery` ou `-n` — Autorise plusieurs requêtes dans le même fichier.
+* `--obfuscate` — Obfusque au lieu de formater.
+* `--seed <string>` — Chaîne arbitraire servant de graine et déterminant le résultat de l’obfuscation.
+* `--backslash` — Ajoute une barre oblique inverse à la fin de chaque ligne de la requête formatée. Cela peut être utile lorsque vous copiez une requête depuis le Web ou ailleurs sur plusieurs lignes et souhaitez l’exécuter en ligne de commande.
+* `--semicolons_inline` — En mode multiquery, écrit les points-virgules sur la dernière ligne de la requête plutôt que sur une nouvelle ligne.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+1. Mise en forme d’une requête :
+
+```bash title="Query"
+$ clickhouse-format --query "select number from numbers(10) where number%2 order by number desc;"
+```
+
+```bash title="Response"
+SELECT number
+FROM numbers(10)
+WHERE number % 2
+ORDER BY number DESC
+```
+
+2. Surlignage et affichage sur une seule ligne :
+
+```bash title="Query"
+$ clickhouse-format --oneline --hilite <<< "SELECT sum(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT sum(number) FROM numbers(5)
+```
+
+3. Requêtes multiples :
+
+```bash title="Query"
+$ clickhouse-format -n <<< "SELECT min(number) FROM numbers(5); SELECT max(number) FROM numbers(5);"
+```
+
+```sql title="Response"
+SELECT min(number)
+FROM numbers(5)
+;
+
+SELECT max(number)
+FROM numbers(5)
+;
+
+```
+
+4. Obfuscation :
+
+```bash title="Query"
+$ clickhouse-format --seed Hello --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT treasury_mammoth_hazelnut BETWEEN nutmeg AND span, CASE WHEN chive >= 116 THEN switching ELSE ANYTHING END;
+```
+
+Même requête, avec une autre chaîne d’initialisation :
+
+```bash title="Query"
+$ clickhouse-format --seed World --obfuscate <<< "SELECT cost_first_screen BETWEEN a AND b, CASE WHEN x >= 123 THEN y ELSE NULL END;"
+```
+
+```sql title="Response"
+SELECT horse_tape_summer BETWEEN folklore AND moccasins, CASE WHEN intestine >= 116 THEN nonconformist ELSE FORESTRY END;
+```
+
+5. Ajout d’une barre oblique inverse :
+
+```bash title="Query"
+$ clickhouse-format --backslash <<< "SELECT * FROM (SELECT 1 AS x UNION ALL SELECT 1 UNION DISTINCT SELECT 3);"
+```
+
+```sql title="Response"
+SELECT * \
+FROM  \
+( \
+    SELECT 1 AS x \
+    UNION ALL \
+    SELECT 1 \
+    UNION DISTINCT \
+    SELECT 3 \
+)
+```

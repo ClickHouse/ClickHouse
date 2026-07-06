@@ -1,0 +1,64 @@
+---
+title: 'Bring Your Own Cloud'
+slug: /docs/products/bring-your-own-cloud
+sidebarTitle: '概要'
+keywords: ['BYOC', 'クラウド', 'Bring Your Own Cloud']
+description: '自社のCloudインフラストラクチャにClickHouseをデプロイ'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+BYOC (Bring Your Own Cloud) を使用すると、お客様ご自身のクラウドインフラストラクチャ上に ClickHouse Cloud をデプロイできます。これは、ClickHouse Cloud のマネージドサービスを利用できない特定の要件や制約がある場合に有用です。
+
+> **アクセスをご希望の場合は、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。** 詳細は、[Terms of Service](https://clickhouse.com/legal/agreements/terms-of-service)を参照してください。
+
+現在、BYOC は AWS でのみサポートされています。GCP と Azure のウェイトリストには[こちら](https://clickhouse.com/cloud/bring-your-own-cloud)から参加できます。
+
+<Note>
+  BYOC は大規模なデプロイメント向けに設計されており、お客様にはコミットメント契約の締結が必要です。
+</Note>
+
+<div id="glossary">
+  ## 用語集
+</div>
+
+* **ClickHouse VPC:** ClickHouse Cloud が所有する VPC。
+* **Customer BYOC VPC:** 顧客のクラウドアカウントが所有する VPC で、ClickHouse Cloud によってプロビジョニングおよび管理され、ClickHouse Cloud BYOC デプロイメント専用に使用されます。
+* **Customer VPC** Customer BYOC VPC への接続が必要なアプリケーションで使用される、顧客のクラウドアカウントが所有するその他の VPC。
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="supported-features">
+  ### サポートされている機能
+</div>
+
+* **SharedMergeTree**: ClickHouse Cloud と BYOC は同じバイナリと設定を使用します。そのため、SharedMergeTree を含む ClickHouse コアのすべての機能が BYOC でもサポートされます。
+* **サービス状態を管理するためのコンソールアクセス**:
+  * 起動、停止、終了などの操作をサポートします。
+  * サービスとそのステータスを表示できます。
+* **バックアップと復元。**
+* **手動による垂直および水平スケーリング。**
+* **アイドリング。**
+* **Warehouses**: コンピュート-コンピュート分離
+* **Tailscale を介したゼロトラストネットワーク。**
+* **監視**:
+  * Cloud コンソールには、サービスの健全性を監視するための組み込みのヘルスダッシュボードが用意されています。
+  * Prometheus、Grafana、Datadog を使用した一元的な監視に向けて、Prometheus スクレイピングに対応しています。設定手順については、[Prometheus ドキュメント](/ja/products/cloud/features/monitoring/prometheus)を参照してください。
+* **VPC ピアリング。**
+* **インテグレーション**: 完全な一覧は[こちらのページ](/ja/integrations/home)を参照してください。
+* **セキュアな S3。**
+* **[AWS PrivateLink](https://aws.amazon.com/privatelink/)。**
+
+<div id="planned-features-currently-unsupported">
+  ### 今後追加予定の機能 (現時点では未サポート)
+</div>
+
+* [AWS KMS](https://aws.amazon.com/kms/) (別名 CMEK (顧客管理暗号化キー) )
+* データ取り込み用の ClickPipes
+* オートスケーリング
+* MySQL インターフェイス

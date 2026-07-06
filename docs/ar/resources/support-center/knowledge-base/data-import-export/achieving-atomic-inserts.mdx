@@ -1,0 +1,167 @@
+---
+title: تحقيق الإدراج الذري والاتساق بين جداول متعددة في ClickHouse Cloud
+description: كيفية تحميل البيانات بصورة ذرية والحفاظ على الاتساق بين جداول متعددة في ClickHouse Cloud من دون معاملات متعددة العبارات، باستخدام الجداول المرحلية والعمليات على مستوى الأقسام.
+date: 2026-06-01
+tags: ['إدخال البيانات', 'أفضل الممارسات']
+keywords: ['إدراج ذري', 'جدول مرحلي', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', 'اتساق بين جداول متعددة']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## المشكلة
+</div>
+
+لا يدعم ClickHouse Cloud المعاملات متعددة العبارات بالمعنى التقليدي المتعارف عليه في أنظمة RDBMS.
+ويؤدي ذلك إلى تحديين شائعين:
+
+1. الذرّية على مستوى جدول واحد في التحميلات المجمّعة: يتمثل أحد الأساليب الشائعة في الإدراج في مفاتيح جزئية مؤقتة، ثم نسخ السجلات إلى المفتاح الفعلي وحذف السجلات المؤقتة. لكن هذا الأسلوب ضعيف الأداء — ولا سيما خطوة الحذف، التي قد تستهلك أكثر من 90% من إجمالي وقت العملية.
+2. الاتساق عبر جداول متعددة: عندما يحمّل خط المعالجة Table A بنجاح لكنه يفشل في Table B، تكون تغييرات Table A قد اعتُمِدت بالفعل ولا يمكن التراجع عنها. وعند الاستعلام عبر الجدولين، يرى المحللون بيانات غير متزامنة.
+
+<div id="background">
+  ## الخلفية
+</div>
+
+يضمن ClickHouse الخاصية الذرية على مستوى عملية `INSERT` واحدة وقسم واحد: فإذا نجحت عملية `INSERT`، تصبح جميع الصفوف في تلك الكتلة مرئية؛ وإذا فشلت، فلا يصبح أيٌّ منها مرئيًا. ومع ذلك، لا توجد آلية مضمّنة لاعتماد البيانات ذريًا عبر عدة عمليات إدراج أو عدة جداول.
+
+تعمل أوامر معالجة الأقسام ([`MOVE PARTITION TO TABLE`](/ar/reference/statements/alter/partition#move-partition-to-table)، [`REPLACE PARTITION`](/ar/reference/statements/alter/partition#replace-partition)، [`ATTACH PARTITION FROM`](/ar/reference/statements/alter/partition#attach-partition-from)) على مستوى البيانات الوصفية عندما يشترك الجدولان المصدر والوجهة في سياسة التخزين نفسها.
+
+وهذا يعني أنها تُنفَّذ بشكل شبه فوري بغض النظر عن حجم البيانات، مما يجعلها لبنات بناء مثالية لأنماط التبديل الذري.
+
+<div id="recommended-solution">
+  ## الحل الموصى به
+</div>
+
+بدلًا من الإدراج مباشرةً في جداول الإنتاج ومحاولة المعالجة عند الإخفاق، استخدم جداول مرحلية مخصصة كمنطقة استقبال. بعد التحقق من صحة البيانات، استخدم عمليات على مستوى الأقسام لنقل البيانات إلى الإنتاج نقلاً ذريًا.
+
+<div id="step-by-step">
+  ## شرح خطوة بخطوة لتحقيق الذرية لجدول واحد
+</div>
+
+<Steps>
+  <Step>
+    ### أنشئ جدولًا مرحليًا
+
+    استخدم المخطط نفسه، ومفتاح التقسيم، و`ORDER BY`، وسياسة التخزين نفسها كما في جدول الإنتاج.
+
+    ```sql
+    CREATE TABLE my_table_staging AS my_table_prod;
+    ```
+  </Step>
+
+  <Step>
+    ### أدرِج البيانات في الجدول المرحلي
+
+    نفّذ عملية `insert` على الجدول المرحلي بدلًا من جدول الإنتاج.
+
+    ```sql
+    INSERT INTO my_table_staging SELECT ... FROM source;
+    ```
+  </Step>
+
+  <Step>
+    ### إذا فشل الإدراج، فنفّذ TRUNCATE وأعد المحاولة
+
+    نفّذ TRUNCATE للجدول المرحلي ثم أعد تشغيل التحميل. لن تتأثر أي بيانات في الإنتاج.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+
+  <Step>
+    ### إذا نجح الإدراج، فانقل الأقسام إلى الإنتاج
+
+    لنقل البيانات إلى الإنتاج وإزالتها من الجدول المرحلي، استخدم `MOVE PARTITION`.
+
+    ```sql
+    ALTER TABLE my_table_staging MOVE PARTITION <partition_expr> TO TABLE my_table_prod;
+    ```
+
+    بدلًا من ذلك، انسخ البيانات إلى قسم موجود في الإنتاج باستخدام `ATTACH PARTITION`.
+
+    ```sql
+    ALTER TABLE my_table_prod ATTACH PARTITION tuple() FROM my_table_staging;
+    ```
+
+    كلتا العمليتين هما تغييران على مستوى البيانات الوصفية ضمن سياسة التخزين نفسها، ويكتملان بشكل شبه فوري.
+  </Step>
+
+  <Step>
+    ### نظّف الجدول المرحلي
+
+    بعد نقل جميع الأقسام، نفّذ TRUNCATE للجدول المرحلي ليبقى فارغًا لعملية التحميل التالية.
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+</Steps>
+
+<div id="multi-table-consistency">
+  ## الاتساق عبر جداول متعددة
+</div>
+
+يعالج النهج نفسه مسارات المعالجة التي تتطلب تحميل جدولين أو أكثر بالكامل قبل أن يصبح أيٌّ منها مرئيًا للمحللين. حمِّل بيانات كل جدول إلى جدول مرحلي خاص به، وتحقّق منها جميعًا، ثم نفِّذ عمليات نقل الأقسام معًا. ولأن كل عملية نقل هي عملية بيانات وصفية شبه فورية، فإن الفترة التي تكون فيها الجداول غير متسقة تتقلص من مدة التحميل الكامل إلى الوقت اللازم لتبديل الأقسام.
+
+<div id="requirements-and-constraints">
+  ## المتطلبات والقيود
+</div>
+
+بالنسبة إلى `MOVE PARTITION TO TABLE` و`REPLACE PARTITION` و`ATTACH PARTITION FROM`، يجب أن يتطابق جدولَا المصدر والوجهة في ما يلي:
+
+* بنية الأعمدة نفسها
+* مفتاح قسم نفسه، ومفتاح `ORDER BY` نفسه، والمفتاح الأساسي نفسه
+* سياسة التخزين نفسها
+* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في جدول المصدر
+
+<div id="example">
+  ## مثال
+</div>
+
+يمكنك تجربة المثال أدناه بشكل تفاعلي باستخدام [fiddle](https://fiddle.clickhouse.com/7ef9ed84-ac14-4f2c-9ca5-d5913089769a):
+
+```sql
+CREATE TABLE prod
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+CREATE TABLE staging
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+-- Initial data
+INSERT INTO prod VALUES (123, 'John', 33);
+INSERT INTO prod VALUES (456, 'Ksenia', 48);
+-- Load data
+INSERT INTO staging VALUES (8811, 'Alice', 50);
+INSERT INTO staging VALUES (8812, 'Bob', 23);
+
+-- Validate import
+SELECT 'Staging count:', COUNT() FROM staging;
+-- Move partition
+ALTER TABLE staging MOVE PARTITION tuple() TO TABLE prod; -- atomic op
+
+-- Check data
+SELECT 'Prod count:', COUNT() FROM prod;
+SELECT * FROM prod;
+```
+
+<div id="references">
+  ## المراجع
+</div>
+
+* [**إدارة التقسيمات والأجزاء**](/ar/reference/statements/alter/partition)
+* لمزيد من المعلومات حول هذه الاستراتيجية، راجع تدوينة المدونة [**تعزيز عمليات تحميل بيانات ClickHouse الكبيرة لديك - الجزء 3: جعل عمليات تحميل البيانات الكبيرة أكثر متانة**](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
