@@ -1,0 +1,110 @@
+---
+slug: /use-cases/data-lake/biglake-catalog
+sidebarTitle: 'BigLake 메타스토어'
+title: 'Lakehouse 런타임 카탈로그 (BigLake 메타스토어)'
+description: '이 가이드에서는 ClickHouse와 Lakehouse 런타임 카탈로그(BigLake 메타스토어)를 사용해 Google Cloud Storage에 있는 데이터를 쿼리하는 방법을 단계별로 안내합니다.'
+keywords: ['BigLake', 'GCS', '데이터 레이크', 'Iceberg', 'Google Cloud', 'Lakehouse 런타임 카탈로그']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse는 여러 카탈로그(Unity, Glue, Polaris 등)와의 통합을 지원합니다. 이 가이드에서는 ClickHouse를 통해 [Lakehouse 런타임 카탈로그(BigLake 메타스토어라고도 함)](https://docs.cloud.google.com/biglake/docs/)의 Iceberg 테이블을 쿼리하는 방법을 안내합니다.
+
+<Note>
+  이 기능은 베타이므로 다음을 사용하여 활성화해야 합니다:
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+ClickHouse에서 Lakehouse 런타임 카탈로그(BigLake 메타스토어)로 연결을 생성하기 전에 다음 사항을 준비하십시오:
+
+* Lakehouse 런타임 카탈로그가 활성화된 **Google Cloud 프로젝트**
+* [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)을 통해 애플리케이션용으로 생성한 **Application Default 자격 증명**(OAuth client ID 및 client secret)
+* 적절한 범위(예: `https://www.googleapis.com/auth/bigquery` 및 GCS용 storage 범위)로 OAuth 흐름을 완료해 획득한 **refresh token**
+* 테이블이 저장된 GCS 버킷(및 선택적 prefix)을 가리키는 **warehouse** 경로(예: `gs://your-bucket` 또는 `gs://your-bucket/prefix`)
+
+<div id="creating-a-connection">
+  ## Lakehouse 런타임 카탈로그와 ClickHouse 간 연결 생성
+</div>
+
+OAuth 자격 증명이 준비되면 [DataLakeCatalog](/ko/reference/engines/database-engines/datalake) 데이터베이스 엔진을 사용하는 데이터베이스를 ClickHouse에 생성하십시오:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_adc_client_id = '<client-id>',
+    google_adc_client_secret = '<client-secret>',
+    google_adc_refresh_token = '<refresh-token>',
+    google_adc_quota_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+<div id="querying-lakehouse-runtime-tables">
+  ## ClickHouse를 사용하여 Lakehouse 런타임 카탈로그 테이블 쿼리하기
+</div>
+
+연결이 생성되면 Lakehouse 런타임 카탈로그에 등록된 테이블을 쿼리할 수 있습니다.
+
+```sql
+USE LAKEHOUSE_RUNTIME_CATALOG;
+
+SHOW TABLES;
+```
+
+출력 예시:
+
+```response
+┌─name──────────────────────────────────────┐
+│lakehouse_runtime_catalog.my_iceberg_table │   
+└───────────────────────────────────────────┘
+```
+
+```sql
+SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<Info>
+  **백틱이 필요합니다**
+
+  ClickHouse는 네임스페이스를 1개만 지원하므로 백틱이 필요합니다.
+</Info>
+
+테이블 정의를 확인하려면 다음과 같이 하십시오:
+
+```sql
+SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<div id="loading-data-into-clickhouse">
+  ## Lakehouse에서 ClickHouse로 데이터 로드하기
+</div>
+
+반복 실행되는 쿼리를 더 빠르게 처리하기 위해 Lakehouse 런타임 카탈로그 테이블의 데이터를 로컬 ClickHouse 테이블로 로드하려면 MergeTree 테이블을 생성한 다음 카탈로그에서 데이터를 삽입합니다:
+
+```sql
+CREATE TABLE clickhouse_table
+(
+    `id` Int64,
+    `event_time` DateTime64(3),
+    `user_id` String,
+    `payload` String
+)
+ENGINE = MergeTree
+ORDER BY (event_time, id);
+
+INSERT INTO local_events
+SELECT * FROM lakehouse_runtime_catalog.`icebench.my_iceberg_table`;
+```
+
+초기 적재 후에는 지연 시간을 줄이기 위해 `clickhouse_table`을 쿼리하십시오. 필요할 때 BigLake의 데이터를 갱신하려면 `INSERT INTO ... SELECT`를 다시 실행하십시오.

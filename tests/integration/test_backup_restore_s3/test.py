@@ -139,7 +139,7 @@ def setup_minio_users(cluster):
 )
 def setup_cluster(request):
     cluster = ClickHouseCluster(__file__)
-    node = cluster.add_instance(
+    cluster.add_instance(
         "node",
         main_configs=[
             "configs/disk_s3.xml",
@@ -484,16 +484,6 @@ def test_backup_to_s3_multipart(cluster):
         "SELECT * FROM system.blob_storage_log FORMAT PrettyCompactMonoBlock"
     )
 
-    s3_backup_events = (
-        "WriteBufferFromS3Microseconds",
-        "WriteBufferFromS3Bytes",
-        "WriteBufferFromS3RequestsErrors",
-    )
-    s3_restore_events = (
-        "ReadBufferFromS3Microseconds",
-        "ReadBufferFromS3Bytes",
-        "ReadBufferFromS3RequestsErrors",
-    )
 
     objects = node.cluster.minio_client.list_objects(
         "root", f"data/backups/multipart/{backup_name}/"
@@ -1078,15 +1068,13 @@ def test_backup_restore_system_tables_with_plain_rewritable_disk(cluster):
 
 
 def test_backup_restore_s3_plain(cluster):
-    storage_policy = "policy_s3"
-    to_disk = "disk_s3_plain"
     instance = cluster.instances["node"]
     backup_name = new_backup_name()
 
     backup_destination = f"S3('http://minio1:9001/root/data/backups/{backup_name}', 'minio', '{minio_secret_key}')"
 
     instance.query(
-        f"""
+        """
     DROP TABLE IF EXISTS sample SYNC;
     CREATE TABLE sample (key Int, value String)
     ENGINE = MergeTree() ORDER BY tuple()
@@ -1098,7 +1086,7 @@ def test_backup_restore_s3_plain(cluster):
 
     assert instance.query("SELECT count(*) FROM sample") == "100\n"
 
-    table_data_path = instance.query(f"SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
+    table_data_path = instance.query("SELECT data_paths[1] FROM system.tables WHERE name='sample' and database='default'").strip().replace("/var/lib/clickhouse/", "").strip("/")
     minio = cluster.minio_client
     local_path = os.path.join(instance.path, "database")
     source_table_path = f"{local_path}/{table_data_path}"
@@ -1109,7 +1097,7 @@ def test_backup_restore_s3_plain(cluster):
         minio, cluster.minio_bucket, source_table_path, remote_blob_path, use_relpath=True
     )
 
-    table_uuid = instance.query(f"SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
+    table_uuid = instance.query("SELECT uuid FROM system.tables WHERE name='sample' and database='default'").strip()
     instance.query(
         f"""
         DROP TABLE sample SYNC;

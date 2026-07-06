@@ -1409,7 +1409,6 @@ class Targeting:
         using KEYWORD_FALLBACK_WIDTH so they always rank below any direct or
         sibling hit.
         """
-        import glob as _glob
 
         if not changed_src_files:
             return []
@@ -2070,7 +2069,6 @@ if __name__ == "__main__":
     # get_changed_lines_from_diff and get_most_relevant_tests read from the file
     # rather than fetching the diff.
     if args.diff_file:
-        import types
         diff_text = Path(args.diff_file).read_text()
         targeting._diff_text = diff_text
 

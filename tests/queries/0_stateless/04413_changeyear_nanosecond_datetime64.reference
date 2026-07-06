@@ -1,0 +1,54 @@
+-- changeYear with DateTime64 scale=9 (the original bug)
+2025-01-01 00:00:00.000000000
+2000-06-15 12:30:45.123456789
+1970-06-15 12:30:45.123456789
+-- changeYear with DateTime64 scale=9, out-of-bounds year (should clamp to max)
+2262-04-11 23:47:16.854775807
+1900-01-01 00:00:00.000000000
+-- changeMonth with DateTime64 scale=9
+2024-06-15 10:20:30.123456789
+2024-12-15 10:20:30.123456789
+1900-01-01 00:00:00.000000000
+-- changeDay with DateTime64 scale=9
+2024-01-15 10:20:30.123456789
+2024-01-31 10:20:30.123456789
+1900-01-01 00:00:00.000000000
+-- changeHour with DateTime64 scale=9
+2024-01-01 23:20:30.123456789
+1900-01-01 00:00:00.000000000
+-- changeMinute with DateTime64 scale=9
+2024-01-01 10:59:30.123456789
+1900-01-01 00:00:00.000000000
+-- changeSecond with DateTime64 scale=9
+2024-01-01 10:20:59.123456789
+1900-01-01 00:00:00.000000000
+-- Regression test: scale=3 and scale=6 still work
+2025-01-01 00:00:00.000
+2025-01-01 00:00:00.000000
+-- Regression test: scale=3 and scale=6 out-of-bounds still work
+2299-12-31 23:59:59.999
+2299-12-31 23:59:59.999999
+-- Verify fractional seconds are preserved
+2023-03-15 08:30:45.999999999
+2024-07-15 08:30:45.999999999
+-- In-range year past the representable scale=9 boundary (2262-04-11 23:47:16.854775807) must clamp, not overflow
+2262-04-11 23:47:16.854775807
+2262-04-11 23:47:16.854775807
+2262-01-01 00:00:00.000000000
+-- Component change moving a representable scale=9 value past the boundary must clamp, not overflow
+2262-04-11 23:47:16.854775807
+2262-04-11 23:47:16.854775807
+2262-04-10 00:00:00.000000000
+-- Pre-epoch sub-second values: the whole-second part must round toward negative infinity, not truncate toward zero
+1969-12-31 23:59:59.500
+1965-12-31 23:59:59.500
+1969-03-30 23:59:59.500
+1969-12-15 23:59:59.500
+1969-12-31 10:59:59.500
+1969-12-31 23:45:59.500
+1969-06-15 12:30:30.500
+-- Pre-epoch sub-second values at scale=9
+1969-12-31 23:59:59.999999999
+1969-12-31 23:59:00.999999999
+-- Pre-epoch value exactly on a whole second is unaffected
+1968-12-31 23:59:59.000

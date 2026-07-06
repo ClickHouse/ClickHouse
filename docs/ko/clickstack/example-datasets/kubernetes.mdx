@@ -1,0 +1,506 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/kubernetes
+title: 'Kubernetes 모니터링'
+description: 'ClickStack 시작하기와 Kubernetes 모니터링'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', '로그', '관측성', '컨테이너 모니터링']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import DemoArchitecture from '/snippets/ko/_demo.mdx';
+
+이 가이드에서는 Kubernetes 시스템에서 로그와 메트릭을 수집해 **ClickStack**으로 전송하고, 이를 시각화하고 분석할 수 있습니다. 데모 데이터로는 공식 OpenTelemetry 데모의 ClickStack 포크를 선택적으로 사용할 수 있습니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/winI7256Ejk?si=TRThhzCJdq87xg_x" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+이 가이드를 진행하려면 다음이 필요합니다:
+
+* ClickHouse용으로 하나의 노드에서 최소 32GiB의 RAM과 100GB 이상의 디스크 공간을 사용할 수 있는 **Kubernetes 클러스터**(v1.20+ 권장)
+* **[Helm](https://helm.sh/)** v3+
+* 클러스터와 상호 작용하도록 구성된 **`kubectl`**
+
+<div id="deployment-options">
+  ## 배포 옵션
+</div>
+
+다음 배포 옵션 중 하나를 사용해 이 가이드를 진행할 수 있습니다:
+
+* **Open Source ClickStack**: 다음 구성 요소를 포함하여 Kubernetes 클러스터 내에 ClickStack 전체를 배포합니다:
+  * ClickHouse
+  * HyperDX
+  * MongoDB (대시보드 상태 및 구성에 사용)
+
+* **Managed ClickStack**: ClickHouse와 ClickStack UI(HyperDX)를 ClickHouse Cloud에서 관리합니다. 이 경우 클러스터 내에서 ClickHouse나 HyperDX를 실행할 필요가 없습니다.
+
+애플리케이션 트래픽을 시뮬레이션하려면 [**OpenTelemetry Demo Application**](https://github.com/ClickHouse/opentelemetry-demo)의 ClickStack 포크를 선택적으로 배포할 수 있습니다. 이렇게 하면 로그, 메트릭, 트레이스를 포함한 텔레메트리 데이터가 생성됩니다. 이미 클러스터에서 워크로드를 실행 중이라면 이 단계는 건너뛰고 기존 파드, 노드, 컨테이너를 모니터링할 수 있습니다.
+
+<Steps>
+  <Step>
+    ### cert-manager 설치(선택 사항)
+
+    설정에 TLS 인증서가 필요하면 Helm을 사용해 [cert-manager](https://cert-manager.io/)를 설치하십시오:
+
+    ```shell
+    # Cert manager 저장소 추가 
+
+    helm repo add jetstack https://charts.jetstack.io 
+
+    helm install cert-manager jetstack/cert-manager --namespace cert-manager --create-namespace --set startupapicheck.timeout=5m --set installCRDs=true --set global.leaderElection.namespace=cert-manager
+    ```
+  </Step>
+
+  <Step>
+    ### OpenTelemetry Demo 배포(선택 사항)
+
+    이 **단계는 선택 사항이며, 모니터링할 기존 파드가 없는 경우에 사용합니다**. Kubernetes 환경에 이미 배포된 서비스가 있다면 이 단계는 건너뛸 수 있지만, 이 데모에는 트레이스와 세션 리플레이 데이터를 생성하는 계측된 마이크로서비스가 포함되어 있어 ClickStack의 모든 기능을 살펴볼 수 있습니다.
+
+    다음은 관측성 테스트 및 계측 시연에 맞게 조정된 ClickStack 포크의 OpenTelemetry Demo Application 스택을 Kubernetes 클러스터에 배포하는 과정입니다. 여기에는 백엔드 마이크로서비스, 부하 생성기, 텔레메트리 파이프라인, 지원 인프라(Kafka, Redis 등), 그리고 ClickStack과의 SDK 통합이 포함됩니다.
+
+    모든 서비스는 `otel-demo` 네임스페이스에 배포됩니다. 각 배포에는 다음이 포함됩니다.
+
+    * 트레이스, 메트릭, 로그를 위한 OTel 및 ClickStack SDKS를 사용한 자동 계측.
+    * 모든 서비스는 계측 데이터를 `my-hyperdx-hdx-oss-v2-otel-collector` OpenTelemetry Collector(배포되지 않음)로 전송합니다.
+    * 환경 변수 `OTEL_RESOURCE_ATTRIBUTES`를 통해 로그, 메트릭, 트레이스를 연관시킬 수 있도록 하는 [리소스 태그 전달](/ko/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods).
+
+    ```shell
+    ## 데모 Kubernetes 매니페스트 파일 다운로드
+    curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+    # wget 대체 명령어
+    # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
+    kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
+    ```
+
+    데모를 배포한 후 모든 파드가 정상적으로 생성되었으며 `Running` 상태인지 확인하십시오.
+
+    ```shell
+    kubectl get pods -n=otel-demo
+
+    NAME                                 READY   STATUS    RESTARTS   AGE
+    accounting-fd44f4996-fcl4k           1/1     Running   0          13m
+    ad-769f968468-qq8mw                  1/1     Running   0          13m
+    artillery-loadgen-7bc4bdf47d-5sb96   1/1     Running   0          13m
+    cart-5b4c98bd8-xm7m2                 1/1     Running   0          13m
+    checkout-784f69b785-cnlpp            1/1     Running   0          13m
+    currency-fd7775b9c-rf6cr             1/1     Running   0          13m
+    email-5c54598f99-2td8s               1/1     Running   0          13m
+    flagd-5466775df7-zjb4x               2/2     Running   0          13m
+    fraud-detection-5769fdf75f-cjvgh     1/1     Running   0          13m
+    frontend-6dcb696646-fmcdz            1/1     Running   0          13m
+    frontend-proxy-7b8f6cd957-s25qj      1/1     Running   0          13m
+    image-provider-5fdb455756-fs4xv      1/1     Running   0          13m
+    kafka-7b6666866d-xfzn6               1/1     Running   0          13m
+    load-generator-57cbb7dfc9-ncxcf      1/1     Running   0          13m
+    payment-6d96f9bcbd-j8tj6             1/1     Running   0          13m
+    product-catalog-7fb77f9c78-49bhj     1/1     Running   0          13m
+    quote-576c557cdf-qn6pr               1/1     Running   0          13m
+    recommendation-546cc68fdf-8x5mm      1/1     Running   0          13m
+    shipping-7fc69f7fd7-zxrx6            1/1     Running   0          13m
+    valkey-cart-5f7b667bb7-gl5v4         1/1     Running   0          13m
+    ```
+
+    <DemoArchitecture />
+  </Step>
+
+  <Step>
+    ### ClickStack Helm 차트 리포지토리 추가
+
+    ClickStack을 배포하려면 [공식 Helm 차트](/ko/clickstack/deployment/helm)를 사용합니다.
+
+    이를 위해 HyperDX Helm 리포지토리를 추가해야 합니다:
+
+    ```shell
+    helm repo add hyperdx https://hyperdxio.github.io/helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### ClickStack 배포
+
+    Helm 차트가 설치되면 클러스터에 ClickStack을 배포할 수 있습니다. Kubernetes 환경 내에서 ClickHouse와 HyperDX를 포함한 모든 구성 요소를 실행할 수도 있고, collector만 배포한 뒤 ClickHouse와 HyperDX UI는 Managed ClickStack을 사용할 수도 있습니다.
+
+    <br />
+
+    <Accordion title="ClickStack Open Source (자가 관리형)">
+      다음 명령은 `otel-demo` 네임스페이스에 ClickStack을 설치합니다. helm 차트는 다음 구성 요소를 배포합니다.
+
+      * ClickHouse 인스턴스
+      * HyperDX
+      * ClickStack 배포판의 OTel collector
+      * HyperDX 애플리케이션 상태를 저장하기 위한 MongoDB
+
+      <Note>
+        Kubernetes 클러스터 구성에 맞게 `storageClassName`을 조정해야 할 수 있습니다.
+      </Note>
+
+      OTel 데모를 배포하지 않는 경우, 적절한 네임스페이스를 선택하도록 이 값을 수정할 수 있습니다.
+
+      ```shell
+      helm install my-hyperdx hyperdx/hdx-oss-v2   --set clickhouse.persistence.dataSize=100Gi --set global.storageClassName="standard-rwo" -n otel-demo
+      ```
+
+      <Warning>
+        **프로덕션 환경의 ClickStack**
+
+        이 차트는 ClickHouse와 OTel collector도 함께 설치합니다. 프로덕션 환경에서는 clickhouse 및 OTel collector 연산자를 사용하거나 Managed ClickStack을 사용하는 것이 좋습니다.
+
+        clickhouse와 OTel collector를 비활성화하려면 다음 값을 설정하세요.
+
+        ```shell
+        helm install myrelease <chart-name-or-path> --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.enabled=false
+        ```
+      </Warning>
+    </Accordion>
+
+    <Accordion title="Managed ClickStack">
+      Managed ClickStack을 사용하려는 경우 ClickStack을 배포하고 [포함된 ClickHouse를 비활성화](/ko/clickstack/deployment/helm#using-clickhouse-cloud)할 수 있습니다.
+
+      <Note>
+        현재 이 차트는 항상 HyperDX와 MongoDB를 모두 배포합니다. 이러한 구성 요소는 대체 액세스 경로를 제공하지만 ClickHouse Cloud 인증과 통합되지는 않습니다. 이 배포 모델에서 이러한 구성 요소는 배포된 OTel collector를 통해 데이터를 수집하는 데 필요한 [보안 수집 키](#retrieve-ingestion-api-key)에 대한 액세스를 제공하는 관리자용이며, 최종 사용자에게 노출해서는 안 됩니다.
+      </Note>
+
+      ```shell
+      # ClickHouse Cloud 자격 증명 지정
+      export CLICKHOUSE_URL=<CLICKHOUSE_CLOUD_URL> # 전체 https URL
+      export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+      export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+      helm install my-hyperdx hyperdx/hdx-oss-v2  --set clickhouse.enabled=false --set clickhouse.persistence.enabled=false --set otel.clickhouseEndpoint=${CLICKHOUSE_URL} --set clickhouse.config.users.otelUserName=${CLICKHOUSE_USER} --set clickhouse.config.users.otelUserPassword=${CLICKHOUSE_PASSWORD} --set global.storageClassName="standard-rwo" -n otel-demo
+      ```
+    </Accordion>
+
+    배포 상태를 확인하려면 다음 명령을 실행한 뒤 모든 구성 요소가 `Running` 상태인지 확인하세요. Managed ClickStack을 사용하는 경우 ClickHouse는 표시되지 않습니다.
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=hdx-oss-v2" -n otel-demo
+
+    NAME                                                    READY   STATUS    RESTARTS   AGE
+    my-hyperdx-hdx-oss-v2-app-78876d79bb-565tb              1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-clickhouse-57975fcd6-ggnz2        1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-mongodb-984845f96-czb6m           1/1     Running   0          14m
+    my-hyperdx-hdx-oss-v2-otel-collector-64cf698f5c-8s7qj   1/1     Running   0          14m
+    ```
+  </Step>
+
+  <Step>
+    ### HyperDX UI에 접속하기
+
+    <Note>
+      Managed ClickStack을 사용하는 경우에도 Kubernetes 클러스터에 배포된 로컬 HyperDX 인스턴스는 여전히 필요합니다. 이 인스턴스는 HyperDX에 번들로 포함된 OpAMP 서버가 관리하는 수집 키를 제공하며, 배포된 OTel collector를 통해 수집을 안전하게 수행할 수 있도록 합니다. 이 기능은 현재 Managed ClickStack에서는 사용할 수 없습니다.
+    </Note>
+
+    보안을 위해 이 서비스는 `ClusterIP`를 사용하며, 기본적으로 외부에 노출되지 않습니다.
+
+    HyperDX UI에 접속하려면 3000번 포트에서 로컬 8080번 포트로 포트 포워딩하십시오.
+
+    ```shell
+    kubectl port-forward \
+     pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+      8080:3000 \
+     -n otel-demo
+    ```
+
+    HyperDX UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)로 이동하세요.
+
+    복잡성 요구 사항을 충족하는 사용자 이름과 비밀번호를 지정하여 사용자를 생성하세요.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+  </Step>
+
+  <Step>
+    ### 수집 API key 가져오기
+
+    ClickStack collector가 배포한 OTel collector로의 수집은 수집 키로 보호됩니다.
+
+    [`Team Settings`](http://localhost:8080/team)로 이동한 다음 `API Keys` 섹션에서 `Ingestion API Key`를 복사하세요. 이 API key는 OpenTelemetry collector를 통한 데이터 수집을 안전하게 보호합니다.
+
+    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="API key 복사" size="lg" />
+  </Step>
+
+  <Step>
+    ### API Key용 Kubernetes 시크릿 생성
+
+    수집 API Key를 담은 새 Kubernetes 시크릿과 ClickStack Helm 차트로 배포된 OTel collector의 위치를 포함하는 구성 맵을 생성합니다. 이후 구성 요소는 이를 사용하여 ClickStack Helm 차트로 배포된 collector로 데이터를 수집할 수 있습니다:
+
+    ```shell
+    # 수집 API key로 시크릿 생성
+    kubectl create secret generic hyperdx-secret \
+    --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
+    -n otel-demo
+
+    # 위에서 배포한 ClickStack OTel collector를 가리키는 ConfigMap 생성
+    kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
+    ```
+
+    수집 API key를 적용하려면 OpenTelemetry Demo Application 파드를 다시 시작하세요.
+
+    ```shell
+    kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=opentelemetry-demo
+    ```
+
+    이제 데모 서비스의 트레이스 및 로그 데이터가 HyperDX로 유입되기 시작합니다.
+
+    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes 데이터" size="lg" />
+  </Step>
+
+  <Step>
+    ### OpenTelemetry Helm 저장소 추가
+
+    Kubernetes 메트릭을 수집하기 위해 표준 OTel collector를 배포하고, 앞서 생성한 수집 API key를 사용해 데이터를 ClickStack collector로 안전하게 전송하도록 구성합니다.
+
+    이를 위해 OpenTelemetry Helm 저장소를 설치해야 합니다:
+
+    ```shell
+    # OTel Helm repo 추가
+    helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
+    ```
+  </Step>
+
+  <Step>
+    ### Kubernetes collector 컴포넌트 배포
+
+    클러스터 자체와 각 노드에서 로그와 메트릭을 수집하려면, 각각 별도의 매니페스트를 사용하는 두 개의 OpenTelemetry Collector를 배포해야 합니다. 제공되는 두 매니페스트인 `k8s_deployment.yaml`과 `k8s_daemonset.yaml`은 함께 동작하여 Kubernetes 클러스터의 포괄적인 텔레메트리 데이터를 수집합니다.
+
+    * `k8s_deployment.yaml`은 **클러스터 전반의 이벤트와 메타데이터**를 수집하는 **단일 OpenTelemetry Collector 인스턴스**를 배포합니다. 이 collector는 Kubernetes 이벤트와 클러스터 메트릭을 수집하고, 파드 레이블과 어노테이션을 사용해 텔레메트리 데이터를 보강합니다. 중복 데이터를 방지하기 위해 이 collector는 단일 레플리카를 사용하는 독립형 배포로 실행됩니다.
+
+    * `k8s_daemonset.yaml`은 클러스터의 모든 노드에서 실행되는 **데몬셋 기반 collector**를 배포합니다. `kubeletstats`, `hostmetrics`, Kubernetes Attribute Processor와 같은 구성 요소를 사용해 **노드 수준 및 파드 수준 메트릭**과 컨테이너 로그를 수집합니다. 이러한 collector는 로그에 메타데이터를 추가해 보강하고, OTLP exporter를 사용해 HyperDX로 전송합니다.
+
+    이 매니페스트들을 함께 사용하면 인프라부터 애플리케이션 수준의 텔레메트리에 이르기까지 클러스터 전반의 풀스택 관측성을 확보하고, 보강된 데이터를 ClickStack으로 전송하여 중앙 집중식 분석을 수행할 수 있습니다.
+
+    먼저, collector를 배포(Deployment)로 설치하십시오:
+
+    ```shell
+    # 매니페스트 파일 다운로드
+    curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
+    # Helm 차트 설치
+    helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
+    ```
+
+    <Accordion title="k8s_deployment.yaml">
+      ```yaml
+      # k8s_deployment.yaml
+      mode: deployment
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+       
+      # 이 collector는 하나만 필요합니다 - 더 많으면 중복 데이터가 생성됩니다
+      replicaCount: 1
+       
+      presets:
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 레이블을 추출하여 리소스 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 프로세서가 연결된 파드의 모든 어노테이션을 추출하여 리소스 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # Kubernetes 이벤트를 수집하도록 collector를 구성합니다.
+        # 로그 파이프라인에 k8sobject receiver를 추가하고 기본적으로 Kubernetes 이벤트를 수집합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        kubernetesEvents:
+          enabled: true
+        # 클러스터 수준 메트릭을 수집하도록 Kubernetes Cluster Receiver를 구성합니다.
+        # 메트릭 파이프라인에 k8s_cluster receiver를 추가하고 ClusterRole에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        clusterMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+       
+      config:
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+
+    다음으로, 노드 및 파드 수준의 메트릭과 로그를 수집하기 위해 collector를 데몬셋으로 배포하세요:
+
+    ```shell
+    # 매니페스트 파일 다운로드
+    curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
+    # Helm 차트 설치
+    helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
+    ```
+
+    <Accordion title="k8s_daemonset.yaml">
+      ```yaml
+      # k8s_daemonset.yaml
+      mode: daemonset
+
+      image:
+        repository: otel/opentelemetry-collector-contrib
+        tag: 0.123.0
+         
+      # kubeletstats cpu/memory 사용률 메트릭을 사용하는 데 필요합니다
+      clusterRole:
+        create: true
+        rules:
+          - apiGroups:
+              - ''
+            resources:
+              - nodes/proxy
+            verbs:
+              - get
+       
+      presets:
+        logsCollection:
+          enabled: true
+        hostMetrics:
+          enabled: true
+        # Kubernetes 메타데이터를 추가하도록 Kubernetes Processor를 구성합니다.
+        # 모든 파이프라인에 k8sattributes processor를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        kubernetesAttributes:
+          enabled: true
+          # 활성화하면 processor가 연결된 파드의 모든 레이블을 추출하여 리소스 속성으로 추가합니다.
+          # 레이블의 정확한 이름이 키가 됩니다.
+          extractAllPodLabels: true
+          # 활성화하면 processor가 연결된 파드의 모든 어노테이션을 추출하여 리소스 속성으로 추가합니다.
+          # 어노테이션의 정확한 이름이 키가 됩니다.
+          extractAllPodAnnotations: true
+        # 큐블릿의 API 서버에서 노드, 파드, 컨테이너 메트릭을 수집하도록 collector를 구성합니다.
+        # 메트릭 파이프라인에 kubeletstats 수신기를 추가하고 클러스터 역할에 필요한 규칙을 추가합니다.
+        # 자세한 정보: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        kubeletMetrics:
+          enabled: true
+
+      extraEnvs:
+        - name: HYPERDX_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: hyperdx-secret
+              key: HYPERDX_API_KEY
+              optional: true
+        - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: otel-config-vars
+              key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+      config:
+        receivers:
+          # 추가 큐블릿 메트릭을 구성합니다
+          kubeletstats:
+            collection_interval: 20s
+            auth_type: 'serviceAccount'
+            endpoint: '${env:K8S_NODE_NAME}:10250'
+            insecure_skip_verify: true
+            metrics:
+              k8s.pod.cpu_limit_utilization:
+                enabled: true
+              k8s.pod.cpu_request_utilization:
+                enabled: true
+              k8s.pod.memory_limit_utilization:
+                enabled: true
+              k8s.pod.memory_request_utilization:
+                enabled: true
+              k8s.pod.uptime:
+                enabled: true
+              k8s.node.uptime:
+                enabled: true
+              k8s.container.cpu_limit_utilization:
+                enabled: true
+              k8s.container.cpu_request_utilization:
+                enabled: true
+              k8s.container.memory_limit_utilization:
+                enabled: true
+              k8s.container.memory_request_utilization:
+                enabled: true
+              container.uptime:
+                enabled: true
+       
+        exporters:
+          otlphttp:
+            endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+            compression: gzip
+            headers:
+              authorization: "${env:HYPERDX_API_KEY}"
+       
+        service:
+          pipelines:
+            logs:
+              exporters:
+                - otlphttp
+            metrics:
+              exporters:
+                - otlphttp
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ### HyperDX에서 Kubernetes 데이터 살펴보기
+
+    Kubernetes에 배포한 인스턴스 또는 Managed ClickStack을 통해 HyperDX UI로 이동합니다.
+
+    <p />
+
+    <Accordion title="Managed ClickStack">
+      Managed ClickStack을 사용하는 경우 ClickHouse Cloud 서비스에 로그인한 다음, 왼쪽 메뉴에서 &quot;ClickStack&quot;을 선택하면 됩니다. 자동으로 인증되므로 별도 사용자를 생성할 필요가 없습니다.
+
+      로그, 메트릭, 트레이스용 데이터 소스가 미리 생성되어 있습니다.
+    </Accordion>
+
+    <Accordion title="ClickStack Open Source">
+      로컬에 배포된 HyperDX에 액세스하려면 다음 로컬 명령으로 포트 포워딩한 후 [http://localhost:8080](http://localhost:8080)에서 HyperDX에 접속할 수 있습니다.
+
+      ```shell
+      kubectl port-forward \
+       pod/$(kubectl get pod -l app.kubernetes.io/name=hdx-oss-v2 -o jsonpath='{.items[0].metadata.name}' -n otel-demo) \
+        8080:3000 \
+       -n otel-demo
+      ```
+
+      <Info>
+        **프로덕션 환경의 ClickStack**
+
+        프로덕션 환경에서 Managed ClickStack을 사용하지 않는 경우, TLS가 적용된 인그레스를 사용하는 것이 좋습니다. 예시는 다음과 같습니다.
+
+        ```shell
+        helm upgrade my-hyperdx hyperdx/hdx-oss-v2 \
+        --set hyperdx.ingress.enabled=true \
+        --set hyperdx.ingress.host=your-domain.com \
+        --set hyperdx.ingress.tls.enabled=true
+        ```
+      </Info>
+    </Accordion>
+
+    Kubernetes 데이터를 살펴보려면 `/kubernetes`의 전용 대시보드로 이동하십시오. 예: [http://localhost:8080/kubernetes](http://localhost:8080/kubernetes).
+
+    Pods, Nodes, Namespaces 각 탭에 데이터가 표시되어야 합니다.
+  </Step>
+</Steps>
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="Kubernetes용 ClickHouse" size="lg" />

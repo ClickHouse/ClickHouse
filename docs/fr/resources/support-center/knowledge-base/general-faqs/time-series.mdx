@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/time-series
+title: 'Puis-je utiliser ClickHouse comme base de données de séries temporelles ?'
+toc_hidden: true
+toc_priority: 101
+description: 'Page expliquant comment utiliser ClickHouse comme base de données de séries temporelles'
+doc_type: 'guide'
+keywords: ['séries temporelles', 'données temporelles', 'cas d’usage', 'analyse temporelle', 'timeseries']
+---
+
+*Remarque : veuillez consulter le billet de blog [Working with Time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse) pour voir d’autres exemples d’utilisation de ClickHouse pour l’analyse de séries temporelles.*
+
+ClickHouse est une solution générique de stockage de données pour les charges de travail [OLAP](/fr/resources/support-center/knowledge-base/general-faqs/olap), alors qu’il existe de nombreux [systèmes de gestion de bases de données de séries temporelles](https://clickhouse.com/engineering-resources/what-is-time-series-database) spécialisés. Néanmoins, l’[accent mis par ClickHouse sur la vitesse d’exécution des requêtes](/fr/get-started/about/why-clickhouse-is-so-fast) lui permet de surpasser les systèmes spécialisés dans de nombreux cas. Il existe de nombreux benchmarks indépendants sur ce sujet, nous n’allons donc pas en présenter un ici. Concentrons-nous plutôt sur les fonctionnalités de ClickHouse importantes pour ce cas d’usage.
+
+Tout d’abord, il existe des **[codecs spécialisés](/fr/reference/statements/create/table#specialized-codecs)** qui conviennent aux séries temporelles classiques, qu’il s’agisse d’algorithmes courants comme `DoubleDelta` et `Gorilla` ou d’algorithmes propres à ClickHouse comme `T64`.
+
+Deuxièmement, les requêtes sur des séries temporelles n’accèdent souvent qu’aux données récentes, par exemple d’un jour ou d’une semaine. Il est donc judicieux d’utiliser des serveurs disposant à la fois de disques NVMe/SSD rapides et de disques HDD de grande capacité. La fonctionnalité [TTL](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de ClickHouse permet de conserver les données récentes et fréquemment consultées sur des disques rapides, puis de les déplacer progressivement vers des disques plus lents à mesure qu’elles vieillissent. L’agrégation progressive ou la suppression de données encore plus anciennes est également possible si vos contraintes l’exigent.
+
+Même si cela va à l’encontre de la philosophie de ClickHouse, qui consiste à stocker et traiter des données brutes, vous pouvez utiliser des [vues matérialisées](/fr/reference/statements/create/view) pour répondre à des exigences encore plus strictes en matière de latence ou de coûts.

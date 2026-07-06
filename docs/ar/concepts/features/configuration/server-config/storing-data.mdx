@@ -1,0 +1,1129 @@
+---
+description: 'توثيق highlight-next-line'
+sidebarTitle: 'الأقراص الخارجية لتخزين البيانات'
+slug: /operations/storing-data
+title: 'الأقراص الخارجية لتخزين البيانات'
+doc_type: 'guide'
+---
+
+تُخزَّن البيانات التي تُعالَج في ClickHouse عادةً في نظام الملفات المحلي
+للجهاز الذي يعمل عليه خادم ClickHouse. ويتطلب ذلك أقراصًا كبيرة السعة،
+وقد تكون مكلفة. ولتجنّب تخزين البيانات محليًا، تتوفر خيارات تخزين متعددة:
+
+1. تخزين الكائنات [Amazon S3](https://aws.amazon.com/s3/).
+2. [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
+3. غير مدعوم: نظام ملفات Hadoop الموزّع ([HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html))
+
+<br />
+
+<Note>
+  يدعم ClickHouse أيضًا محركات الجداول الخارجية، وهي تختلف عن
+  خيار التخزين الخارجي الموصوف في هذه الصفحة، لأنها تتيح قراءة البيانات
+  المخزّنة بتنسيقات ملفات عامة (مثل Parquet). في هذه الصفحة، نصف
+  إعدادات التخزين لعائلة جداول `MergeTree` أو لعائلة جداول `Log`.
+
+  1. للعمل مع البيانات المخزّنة على أقراص `Amazon S3`، استخدم محرك الجداول [S3](/ar/reference/engines/table-engines/integrations/s3).
+  2. للعمل مع البيانات المخزّنة في Azure Blob Storage، استخدم محرك الجداول [AzureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage).
+  3. للعمل مع البيانات الموجودة في نظام ملفات Hadoop الموزّع (غير مدعوم)، استخدم محرك الجداول [HDFS](/ar/reference/engines/table-engines/integrations/hdfs).
+</Note>
+
+<div id="configuring-external-storage">
+  ## تهيئة التخزين الخارجي
+</div>
+
+يمكن لمحركات الجداول من عائلتي [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`Log`](/ar/reference/engines/table-engines/log-family/log)
+تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` (غير مدعوم) باستخدام قرص من الأنواع `s3`،
+و`azure_blob_storage` و`hdfs` (غير مدعوم) على التوالي.
+
+يتطلب إعداد القرص ما يلي:
+
+1. قسم `type`، وتكون قيمته إحدى القيم `s3` أو `azure_blob_storage` أو `hdfs` (غير مدعوم) أو `local_blob_storage` أو `web`.
+2. تهيئة نوع محدد من التخزين الخارجي.
+
+بدءًا من إصدار ClickHouse 24.1، أصبح من الممكن استخدام خيار تهيئة جديد.
+ويتطلب ذلك تحديد:
+
+1. قيمة `type` مساوية لـ `object_storage`
+2. `object_storage_type`، وتكون قيمته إحدى القيم `s3` أو `azure_blob_storage` (أو فقط `azure` بدءًا من `24.3`) أو `hdfs` (غير مدعوم) أو `local_blob_storage` (أو فقط `local` بدءًا من `24.3`) أو `web`.
+
+<br />
+
+يمكن اختياريًا تحديد `metadata_type` (وتكون قيمته `local` افتراضيًا)، كما يمكن أيضًا ضبطه على `plain` و`web` وبدءًا من `24.4` على `plain_rewritable`.
+يُشرح استخدام نوع البيانات الوصفية `plain` في [قسم التخزين البسيط](/ar/concepts/features/configuration/server-config/storing-data#plain-storage)، ولا يمكن استخدام نوع البيانات الوصفية `web` إلا مع نوع تخزين الكائنات `web`، بينما يخزن نوع البيانات الوصفية `local` ملفات البيانات الوصفية محليًا (يحتوي كل ملف بيانات وصفية على ربط بالملفات في تخزين الكائنات، إلى جانب بعض المعلومات الوصفية الإضافية عنها).
+
+على سبيل المثال:
+
+```xml
+<s3>
+    <type>s3</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+يعادل التكوين التالي (بدءًا من الإصدار `24.1`):
+
+```xml
+<s3>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>local</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3>
+```
+
+التهيئة التالية:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+يساوي:
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+سيكون مثال على إعداد التخزين الكامل كما يلي:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+اعتبارًا من الإصدار 24.1، يمكن أن يكون أيضًا على النحو التالي:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+                <use_environment_credentials>1</use_environment_credentials>
+            </s3>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+لجعل نوع محدد من التخزين الخيار الافتراضي لجميع جداول `MergeTree`،
+أضِف القسم التالي إلى ملف التهيئة:
+
+```xml
+<clickhouse>
+    <merge_tree>
+        <storage_policy>s3</storage_policy>
+    </merge_tree>
+</clickhouse>
+```
+
+إذا كنت تريد تعيين سياسة تخزين محددة لجدول معيّن،
+فيمكنك تحديدها في الإعدادات عند إنشاء الجدول:
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS storage_policy = 's3';
+```
+
+يمكنك أيضًا استخدام `disk` بدلًا من `storage_policy`. في هذه الحالة، لا حاجة إلى
+وجود قسم `storage_policy` في ملف الإعدادات، ويكفي وجود قسم
+`disk`.
+
+```sql
+CREATE TABLE test (a Int32, b String)
+ENGINE = MergeTree() ORDER BY a
+SETTINGS disk = 's3';
+```
+
+<div id="refresh-parts-interval-and-table-disk">
+  ## refresh_parts_interval and table_disk
+</div>
+
+هذا الإعداد مخصّص لجداول MergeTree غير المكررة، حيث قد تُكتب الأجزاء خارجيًا ويستلزم الأمر تحديث اكتشاف البيانات الوصفية من التخزين.
+
+يتيح إعداد MergeTree `refresh_parts_interval` تحديثًا دوريًا لقائمة أجزاء البيانات من التخزين الأساسي (على سبيل المثال، لاكتشاف الأجزاء المكتوبة خارجيًا). والتمييز المهم هنا هو بين **البيانات الوصفية المشتركة بين النسخ المتماثلة** و**البيانات الوصفية المحلية لكل نسخة متماثلة** (مثل S3 مع بيانات وصفية محلية لكل نسخة): فقط عندما تكون البيانات الوصفية مشتركة تصبح الأجزاء الجديدة مرئية لجميع النسخ المتماثلة. ولا يعني استخدام تخزين الكائنات وحده بالضرورة وجود بيانات وصفية مشتركة.
+
+* **تخزين الكائنات (مثل `disk = 's3'`) لا يعني بالضرورة وجود بيانات وصفية مشتركة.** عندما تُخزَّن البيانات الوصفية محليًا لكل نسخة متماثلة (وهو الوضع الافتراضي)، تدير كل نسخة بشكل مستقل مؤشراتِها إلى الكائنات في تخزين الكائنات. ولا تكون التغييرات التي تُجرى على إحدى النسخ مرئية للنسخ الأخرى. وفي هذه الحالة، لا يجعل `refresh_parts_interval` الأجزاء الجديدة مرئية عبر النسخ المتماثلة، لأن البيانات الوصفية التي تقرؤها كل نسخة محلية لتلك النسخة.
+
+* **يتطلب التحديث التلقائي للأجزاء أن تكون البيانات الوصفية لنظام الملفات مشتركة** (أو أن يستخدم الجدول بيانات وصفية يملكها الجدول ومضبوطة للقراءة فقط بحيث يكون التحديث قابلًا للتطبيق). ويُعد ضبط `table_disk = true` مع قرص محلي على مستوى الجدول (مثل `SETTINGS disk = disk(type=object_storage, ...), table_disk = true`) إحدى طرق الحصول على السلوك الصحيح: إذ يتحكم الجدول في دورة حياة البيانات الوصفية، ويُتعامل مع التخزين على أنه للقراءة فقط، لذا يعمل `refresh_parts_interval` ويمكن اكتشاف الأجزاء المضافة خارجيًا.
+
+* **عند استخدام قرص معرّف على مستوى عام** (مثل `disk = 's3'` في `storage_configuration`) مع البيانات الوصفية المحلية الافتراضية، تكون لكل نسخة متماثلة حالتها الخاصة من البيانات الوصفية. وحتى إذا كانت الكائنات موجودة في S3، فلا يُعدّ التخزين مشتركًا لأغراض `refresh_parts_interval`، ولن تُكتشف الأجزاء الجديدة التي أُنشئت خارج ClickHouse أو على نسخة متماثلة أخرى.
+
+لتمكين التحديث التلقائي للأجزاء، تأكد من أن البيانات الوصفية مشتركة، أو استخدم قرصًا على مستوى الجدول مع `table_disk = true` كما هو موضح أعلاه. أما الاعتماد على `refresh_parts_interval` وحده مع بيانات وصفية محلية لكل نسخة متماثلة، فلن يؤدي إلى تحديث الأجزاء كما هو متوقع.
+
+<Note>
+  لا يُستخدم `refresh_parts_interval` مع جداول ReplicatedMergeTree.
+  فالجداول المكررة تزامن الأجزاء بالفعل عبر آلية النسخ المتماثل.
+  ولا ينطبق هذا الإعداد إلا على جداول MergeTree غير المكررة التي تُكتب أجزاؤها خارجيًا ويكون فيها تحديث البيانات الوصفية مطلوبًا.
+</Note>
+
+<div id="dynamic-configuration">
+  ## التهيئة الديناميكية
+</div>
+
+يمكن أيضًا تحديد تهيئة التخزين من دون قرص مُعرَّف مسبقًا في ملف التهيئة، على أن تُضبط ضمن إعدادات استعلام `CREATE`/`ATTACH`.
+
+يعتمد استعلام المثال التالي على تهيئة القرص الديناميكية المذكورة أعلاه، ويوضح كيفية استخدام قرص محلي لتخزين بيانات جدول مخزَّن على URL مؤقتًا.
+
+```sql highlight={20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=web,
+    endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+  );
+```
+
+يضيف المثال أدناه ذاكرةً مؤقتةً إلى التخزين الخارجي.
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+في الإعدادات المميزة أدناه، لاحظ أن القرص ذي `type=web` متداخل داخل
+القرص ذي `type=cache`.
+
+<Note>
+  يستخدم المثال `type=web`، لكن يمكن تهيئة أي نوع قرص ليكون ديناميكيًا،
+  بما في ذلك القرص المحلي. تتطلب الأقراص المحلية أن تكون وسيطة path ضمن
+  معامل config الخاص بالخادم `custom_local_disks_base_directory`، والذي لا
+  يملك قيمة افتراضية، لذا اضبطه أيضًا عند استخدام القرص المحلي.
+</Note>
+
+كما يمكن أيضًا الجمع بين إعدادات تستند إلى config وإعدادات
+مُعرّفة باستخدام SQL:
+
+```sql highlight={20-28}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+    type=cache,
+    max_size='1Gi',
+    path='/var/lib/clickhouse/custom_disk_cache/',
+    disk=disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      )
+  );
+```
+
+حيث إن `web` وارد في ملف تهيئة الخادم:
+
+```xml
+<storage_configuration>
+    <disks>
+        <web>
+            <type>web</type>
+            <endpoint>'https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'</endpoint>
+        </web>
+    </disks>
+</storage_configuration>
+```
+
+<div id="s3-storage">
+  ### استخدام S3 للتخزين
+</div>
+
+<div id="required-parameters-s3">
+  #### المعلمات المطلوبة
+</div>
+
+| المعلمة             | الوصف                                                                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `endpoint`          | عنوان URL لنقطة نهاية S3 بنمط `path` أو `virtual hosted` [الأنماط](https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html). يجب أن يتضمن الحاوية والمسار الجذر لتخزين البيانات. |
+| `access_key_id`     | معرّف مفتاح الوصول إلى S3 المستخدم للمصادقة.                                                                                                                                                 |
+| `secret_access_key` | مفتاح الوصول السري إلى S3 المستخدم للمصادقة.                                                                                                                                                 |
+
+<div id="optional-parameters-s3">
+  #### المعلمات الاختيارية
+</div>
+
+| Parameter                                       | Description                                                                                                                                                                                                                                                                                                              | Default Value                            |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `region`                                        | اسم Region الخاصة بـ S3.                                                                                                                                                                                                                                                                                                 | -                                        |
+| `support_batch_delete`                          | يحدد ما إذا كان يجب التحقق من دعم الحذف على دفعات. اضبطه على `false` عند استخدام Google Cloud Storage ‏(GCS)، لأن GCS لا يدعم الحذف على دفعات.                                                                                                                                                                           | `true`                                   |
+| `use_environment_credentials`                   | يقرأ بيانات الاعتماد الخاصة بـ AWS من متغيرات البيئة: `AWS_ACCESS_KEY_ID` و`AWS_SECRET_ACCESS_KEY` و`AWS_SESSION_TOKEN` إذا كانت موجودة. ملاحظة: تتم مشاركة بيانات اعتماد البيئة بين جميع أقراص S3. لاستخدام بيانات اعتماد مختلفة لأقراص مختلفة، حدِّد بدلًا من ذلك `access_key_id` و`secret_access_key` صراحةً لكل قرص. | `false`                                  |
+| `use_insecure_imds_request`                     | إذا كانت القيمة `true`، يستخدم طلب IMDS غير آمن عند الحصول على بيانات الاعتماد من EC2 metadata الخاصة بـ Amazon.                                                                                                                                                                                                         | `false`                                  |
+| `expiration_window_seconds`                     | فترة سماح (بالثواني) للتحقق مما إذا كانت بيانات الاعتماد المعتمدة على انتهاء الصلاحية قد انتهت.                                                                                                                                                                                                                          | `120`                                    |
+| `proxy`                                         | إعداد proxy لنقطة نهاية S3. يجب أن يحتوي كل عنصر `uri` داخل كتلة `proxy` على عنوان URL للـ proxy.                                                                                                                                                                                                                        | -                                        |
+| `connect_timeout_ms`                            | مهلة اتصال socket بالمللي ثانية.                                                                                                                                                                                                                                                                                         | `10000` (10 ثوانٍ)                       |
+| `request_timeout_ms`                            | مهلة الطلب بالمللي ثانية.                                                                                                                                                                                                                                                                                                | `5000` (5 ثوانٍ)                         |
+| `retry_attempts`                                | عدد محاولات إعادة المحاولة للطلبات الفاشلة.                                                                                                                                                                                                                                                                              | `10`                                     |
+| `single_read_retries`                           | عدد محاولات إعادة المحاولة عند انقطاع الاتصال أثناء القراءة.                                                                                                                                                                                                                                                             | `4`                                      |
+| `min_bytes_for_seek`                            | الحد الأدنى لعدد البايتات لاستخدام عملية seek بدلًا من القراءة التسلسلية.                                                                                                                                                                                                                                                | `1 MB`                                   |
+| `metadata_path`                                 | مسار نظام الملفات المحلي لتخزين ملفات metadata الخاصة بـ S3.                                                                                                                                                                                                                                                            | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`                             | إذا كانت القيمة `true`، يتخطى فحوصات الوصول إلى القرص أثناء بدء التشغيل.                                                                                                                                                                                                                                                | `false`                                  |
+| `header`                                        | يضيف HTTP header المحدد إلى الطلبات. ويمكن تحديده عدة مرات.                                                                                                                                                                                                                                                              | -                                        |
+| `server_side_encryption_customer_key_base64`    | الترويسات المطلوبة للوصول إلى كائنات S3 المشفرة باستخدام SSE-C.                                                                                                                                                                                                                                                          | -                                        |
+| `server_side_encryption_kms_key_id`             | الترويسات المطلوبة للوصول إلى كائنات S3 باستخدام [تشفير SSE-KMS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html). تؤدي السلسلة الفارغة إلى استخدام مفتاح S3 المُدار من AWS.                                                                                                               | -                                        |
+| `server_side_encryption_kms_encryption_context` | ترويسة سياق التشفير لـ SSE-KMS (تُستخدم مع `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                         | -                                        |
+| `server_side_encryption_kms_bucket_key_enabled` | يفعّل مفاتيح S3 bucket لـ SSE-KMS (يُستخدم مع `server_side_encryption_kms_key_id`).                                                                                                                                                                                                                                      | يطابق الإعداد على مستوى bucket           |
+| `s3_max_put_rps`                                | الحد الأقصى لطلبات PUT في الثانية قبل تطبيق throttling.                                                                                                                                                                                                                                                                  | `0` (غير محدود)                          |
+| `s3_max_put_burst`                              | الحد الأقصى لطلبات PUT المتزامنة قبل بلوغ حد RPS.                                                                                                                                                                                                                                                                        | مثل `s3_max_put_rps`                     |
+| `s3_max_get_rps`                                | الحد الأقصى لطلبات GET في الثانية قبل تطبيق throttling.                                                                                                                                                                                                                                                                  | `0` (غير محدود)                          |
+| `s3_max_get_burst`                              | الحد الأقصى لطلبات GET المتزامنة قبل بلوغ حد RPS.                                                                                                                                                                                                                                                                        | مثل `s3_max_get_rps`                     |
+| `read_resource`                                 | اسم المورد لطلبات القراءة الخاصة بـ [scheduling](/ar/concepts/features/configuration/server-config/workload-scheduling).                                                                                                                                                                                                    | سلسلة فارغة (معطّل)                      |
+| `write_resource`                                | اسم المورد لطلبات الكتابة الخاصة بـ [scheduling](/ar/concepts/features/configuration/server-config/workload-scheduling).                                                                                                                                                                                                    | سلسلة فارغة (معطّل)                      |
+| `key_template`                                  | يحدد تنسيق إنشاء مفتاح الكائن باستخدام صياغة [re2](https://github.com/google/re2/wiki/Syntax). ويتطلب العلامة `storage_metadata_write_full_object_key`. وهو غير متوافق مع `root path` في `endpoint`. كما يتطلب `key_compatibility_prefix`.                                                                               | -                                        |
+| `key_compatibility_prefix`                      | مطلوب مع `key_template`. يحدد `root path` السابق من `endpoint` لقراءة إصدارات metadata الأقدم.                                                                                                                                                                                                                           | -                                        |
+| `read_only`                                     | يتيح القراءة من القرص فقط.                                                                                                                                                                                                                                                                                                | -                                        |
+
+<Note>
+  يُدعَم أيضًا Google Cloud Storage ‏(GCS) باستخدام النوع `s3`. راجع [GCS backed MergeTree](/ar/integrations/connectors/data-sources/gcs).
+</Note>
+
+<div id="plain-storage">
+  ### استخدام التخزين البسيط
+</div>
+
+في `22.10` أُضيف نوع قرص جديد `s3_plain` يوفّر تخزينًا للكتابة مرة واحدة.
+ومَعلَمات التهيئة الخاصة به هي نفسها الخاصة بنوع القرص `s3`.
+وعلى خلاف نوع القرص `s3`، فإنه يخزّن البيانات كما هي. وبعبارة أخرى،
+فبدلًا من استخدام أسماء `blob` مُولَّدة عشوائيًا، يستخدم أسماء ملفات عادية
+(بالطريقة نفسها التي يخزّن بها ClickHouse الملفات على القرص المحلي)، ولا يخزّن أي
+بيانات وصفية محليًا. فعلى سبيل المثال، تُستخلص البيانات الوصفية من البيانات الموجودة على `s3`.
+
+يتيح نوع القرص هذا الاحتفاظ بإصدار ثابت من الجدول، لأنه لا
+يسمح بتنفيذ عمليات الدمج على البيانات الموجودة، كما لا يسمح بإدراج بيانات
+جديدة. ومن حالات الاستخدام لهذا النوع من الأقراص إنشاء نسخ احتياطية عليه، ويمكن تنفيذ ذلك
+عبر `BACKUP TABLE data TO Disk('plain_disk_name', 'backup_name')`. بعد ذلك،
+يمكنك تنفيذ `RESTORE TABLE data AS data_restored FROM Disk('plain_disk_name', 'backup_name')`
+أو استخدام `ATTACH TABLE data (...) ENGINE = MergeTree() SETTINGS disk = 'plain_disk_name'`.
+
+التهيئة:
+
+```xml
+<s3_plain>
+    <type>s3_plain</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+اعتبارًا من الإصدار `24.1`، أصبح من الممكن تهيئة أي قرص تخزين كائني (`s3`, `azure`, `hdfs` (غير مدعوم), `local`) باستخدام
+نوع البيانات الوصفية `plain`.
+
+التهيئة:
+
+```xml
+<s3_plain>
+    <type>object_storage</type>
+    <object_storage_type>azure</object_storage_type>
+    <metadata_type>plain</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain>
+```
+
+<div id="s3-plain-rewritable-storage">
+  ### استخدام تخزين S3 Plain Rewritable
+</div>
+
+تم تقديم نوع القرص `s3_plain_rewritable` في `24.4`.
+وكما هو الحال مع نوع القرص `s3_plain`، فإنه لا يتطلب مساحة تخزين إضافية لملفات
+البيانات الوصفية. وبدلًا من ذلك، تُخزَّن البيانات الوصفية في S3.
+وعلى عكس نوع القرص `s3_plain`، يتيح `s3_plain_rewritable` تنفيذ عمليات الدمج
+ويدعم عمليات `INSERT`.
+[عمليات التعديل](/ar/reference/statements/alter/index#mutations) ونسخ الجداول متماثلًا غير مدعومين.
+
+من حالات الاستخدام المناسبة لهذا النوع من الأقراص جداول `MergeTree` غير المُكرَّرة. ومع أن
+نوع القرص `s3` مناسب لجداول `MergeTree` غير المُكرَّرة، فقد تختار
+نوع القرص `s3_plain_rewritable` إذا كنت لا تحتاج إلى بيانات وصفية محلية
+للجدول، وكنت مستعدًا لقبول مجموعة محدودة من العمليات. وقد يكون هذا
+مفيدًا، على سبيل المثال، لجداول النظام.
+
+التهيئة:
+
+```xml
+<s3_plain_rewritable>
+    <type>s3_plain_rewritable</type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+يساوي
+
+```xml
+<s3_plain_rewritable>
+    <type>object_storage</type>
+    <object_storage_type>s3</object_storage_type>
+    <metadata_type>plain_rewritable</metadata_type>
+    <endpoint>https://s3.eu-west-1.amazonaws.com/clickhouse-eu-west-1.clickhouse.com/data/</endpoint>
+    <use_environment_credentials>1</use_environment_credentials>
+</s3_plain_rewritable>
+```
+
+اعتبارًا من `24.5`، أصبح بالإمكان إعداد أي قرص تخزين كائني
+(`s3`, `azure`, `local`) باستخدام نوع البيانات الوصفية `plain_rewritable`.
+
+<div id="azure-blob-storage">
+  ### استخدام Azure Blob Storage
+</div>
+
+يمكن لمحركات الجداول من عائلة `MergeTree` تخزين البيانات في [Azure Blob Storage](https://azure.microsoft.com/en-us/services/storage/blobs/)
+باستخدام قرص من النوع `azure_blob_storage`.
+
+بنية التهيئة:
+
+```xml
+<storage_configuration>
+    ...
+    <disks>
+        <blob_storage_disk>
+            <type>azure_blob_storage</type>
+            <storage_account_url>http://account.blob.core.windows.net</storage_account_url>
+            <container_name>container</container_name>
+            <account_name>account</account_name>
+            <account_key>pass123</account_key>
+            <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            <cache_path>/var/lib/clickhouse/disks/blob_storage_disk/cache/</cache_path>
+            <skip_access_check>false</skip_access_check>
+        </blob_storage_disk>
+    </disks>
+    ...
+</storage_configuration>
+```
+
+<div id="azure-blob-storage-connection-parameters">
+  #### معلمات الاتصال
+</div>
+
+| المعلمة                       | الوصف                                                                                                                                                                             | القيمة الافتراضية   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `storage_account_url` (مطلوب) | عنوان URL لحساب Azure Blob Storage. أمثلة: `http://account.blob.core.windows.net` أو `http://azurite1:10000/devstoreaccount1`.                                                    | -                   |
+| `container_name`              | اسم الحاوية الهدف.                                                                                                                                                                | `default-container` |
+| `container_already_exists`    | يتحكم في سلوك إنشاء الحاوية: <br />- `false`: ينشئ حاوية جديدة <br />- `true`: يتصل مباشرةً بحاوية موجودة <br />- غير معيّن: يتحقق مما إذا كانت الحاوية موجودة وينشئها عند الحاجة | -                   |
+
+معلمات المصادقة (سيحاول القرص جميع الطرق المتاحة **بالإضافة إلى** Managed Identity Credential):
+
+| المعلمة             | الوصف                                                     |
+| ------------------- | --------------------------------------------------------- |
+| `connection_string` | للمصادقة باستخدام سلسلة اتصال.                            |
+| `account_name`      | للمصادقة باستخدام Shared Key (تُستخدم مع `account_key`).  |
+| `account_key`       | للمصادقة باستخدام Shared Key (تُستخدم مع `account_name`). |
+
+<div id="azure-blob-storage-limit-parameters">
+  #### معلمات الحد
+</div>
+
+| المعلمة                              | الوصف                                                                  |
+| ------------------------------------ | ---------------------------------------------------------------------- |
+| `s3_max_single_part_upload_size`     | الحد الأقصى لحجم رفع كتلة واحدة إلى Blob Storage.                      |
+| `min_bytes_for_seek`                 | الحد الأدنى لحجم نطاق يمكن إجراء seek داخله.                           |
+| `max_single_read_retries`            | الحد الأقصى لعدد محاولات قراءة جزء من البيانات من Blob Storage.        |
+| `max_single_download_retries`        | الحد الأقصى لعدد محاولات تنزيل مخزن مؤقت قابل للقراءة من Blob Storage. |
+| `thread_pool_size`                   | الحد الأقصى لعدد سلاسل التنفيذ اللازمة لإنشاء مثيلات `IDiskRemote`.    |
+| `s3_max_inflight_parts_for_one_file` | الحد الأقصى لعدد طلبات PUT المتزامنة لكائن واحد.                       |
+
+<div id="azure-blob-storage-other-parameters">
+  #### معلمات أخرى
+</div>
+
+| المعلمة                          | الوصف                                                                                                              | القيمة الافتراضية                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| `metadata_path`                  | مسار في نظام الملفات المحلي لتخزين ملفات البيانات الوصفية الخاصة بـ Blob Storage.                                  | `/var/lib/clickhouse/disks/<disk_name>/` |
+| `skip_access_check`              | إذا كانت القيمة `true`، يتم تخطي عمليات التحقق من الوصول إلى القرص أثناء بدء التشغيل.                              | `false`                                  |
+| `read_resource`                  | اسم المورد لطلبات القراءة الخاصة بـ [الجدولة](/ar/concepts/features/configuration/server-config/workload-scheduling). | سلسلة فارغة (معطّل)                      |
+| `write_resource`                 | اسم المورد لطلبات الكتابة الخاصة بـ [الجدولة](/ar/concepts/features/configuration/server-config/workload-scheduling). | سلسلة فارغة (معطّل)                      |
+| `metadata_keep_free_space_bytes` | مقدار المساحة الحرة المطلوب حجزها على قرص البيانات الوصفية.                                                        | -                                        |
+
+يمكن العثور على أمثلة لإعدادات صالحة في دليل اختبارات التكامل (انظر مثلًا [test&#95;merge&#95;tree&#95;azure&#95;blob&#95;storage](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_merge_tree_azure_blob_storage/configs/config.d/storage_conf.xml) أو [test&#95;azure&#95;blob&#95;storage&#95;zero&#95;copy&#95;replication](https://github.com/ClickHouse/ClickHouse/blob/master/tests/integration/test_azure_blob_storage_zero_copy_replication/configs/config.d/storage_conf.xml)).
+
+<Info>
+  **النسخ المتماثل من دون نسخ ليس جاهزًا لبيئات الإنتاج**
+
+  يكون النسخ المتماثل من دون نسخ معطّلًا افتراضيًا في ClickHouse الإصدار 22.8 وما بعده. لا يُنصح باستخدام هذه الميزة في بيئات الإنتاج.
+</Info>
+
+<div id="using-hdfs-storage-unsupported">
+  ## استخدام مساحة تخزين HDFS (غير مدعوم)
+</div>
+
+في هذا الإعداد النموذجي:
+
+* القرص من النوع `hdfs` (غير مدعوم)
+* توجد البيانات في `hdfs://hdfs1:9000/clickhouse/`
+
+للعلم، HDFS غير مدعوم، لذلك قد تواجه بعض المشكلات عند استخدامه. إذا ظهرت أي مشكلة، فلا تتردد في تقديم طلب سحب يتضمن الإصلاح.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <hdfs>
+                <type>hdfs</type>
+                <endpoint>hdfs://hdfs1:9000/clickhouse/</endpoint>
+                <skip_access_check>true</skip_access_check>
+            </hdfs>
+            <hdd>
+                <type>local</type>
+                <path>/</path>
+            </hdd>
+        </disks>
+        <policies>
+            <hdfs>
+                <volumes>
+                    <main>
+                        <disk>hdfs</disk>
+                    </main>
+                    <external>
+                        <disk>hdd</disk>
+                    </external>
+                </volumes>
+            </hdfs>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+ضع في اعتبارك أن HDFS قد لا يعمل في بعض الحالات النادرة.
+
+<div id="encrypted-virtual-file-system">
+  ### استخدام تشفير البيانات
+</div>
+
+يمكنك تشفير البيانات المخزنة على الأقراص الخارجية [S3](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)، أو [HDFS](#using-hdfs-storage-unsupported) (غير مدعوم)، أو على قرص محلي. لتفعيل وضع التشفير، يجب عليك في ملف الإعدادات تعريف قرص من النوع `encrypted` واختيار القرص الذي ستُحفَظ عليه البيانات. يقوم قرص `encrypted` بتشفير جميع الملفات المكتوبة لحظيًا، وعند قراءة الملفات من قرص `encrypted` يفك تشفيرها تلقائيًا. لذلك يمكنك التعامل مع قرص `encrypted` كما لو كان قرصًا عاديًا.
+
+مثال على إعدادات القرص:
+
+```xml
+<disks>
+  <disk1>
+    <type>local</type>
+    <path>/path1/</path>
+  </disk1>
+  <disk2>
+    <type>encrypted</type>
+    <disk>disk1</disk>
+    <path>path2/</path>
+    <key>_16_ascii_chars_</key>
+  </disk2>
+</disks>
+```
+
+على سبيل المثال، عندما يكتب ClickHouse البيانات من أحد الجداول إلى الملف `store/all_1_1_0/data.bin` على `disk1`، فإن هذا الملف سيُكتَب فعليًا على القرص الفعلي في المسار `/path1/store/all_1_1_0/data.bin`.
+
+وعند كتابة الملف نفسه على `disk2`، فسيُكتَب فعليًا على القرص الفعلي في المسار `/path1/path2/store/all_1_1_0/data.bin` بصيغة مشفّرة.
+
+<div id="required-parameters-encrypted-disk">
+  ### المعلمات المطلوبة
+</div>
+
+| المعلمة | النوع  | الوصف                                                                                                                                |
+| ------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `type`  | String | يجب ضبطه على `encrypted` لإنشاء قرص مُشفَّر.                                                                                         |
+| `disk`  | String | نوع القرص المستخدم في طبقة التخزين الأساسية.                                                                                         |
+| `key`   | Uint64 | المفتاح المستخدم للتشفير وفك التشفير. يمكن تحديده بصيغة سداسية عشرية باستخدام `key_hex`. ويمكن تحديد عدة مفاتيح باستخدام السمة `id`. |
+
+<div id="optional-parameters-encrypted-disk">
+  ### المعلمات الاختيارية
+</div>
+
+| المعلمة          | النوع  | الافتراضي     | الوصف                                                                                                                                                        |
+| ---------------- | ------ | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`           | String | الدليل الجذر  | المسار على القرص الذي ستُحفَظ فيه البيانات.                                                                                                                  |
+| `current_key_id` | String | -             | معرّف المفتاح المستخدم للتشفير. ويمكن استخدام جميع المفاتيح المحددة لفك التشفير.                                                                             |
+| `algorithm`      | Enum   | `AES_128_CTR` | خوارزمية التشفير. الخيارات: <br />- `AES_128_CTR` (مفتاح بحجم 16 بايت) <br />- `AES_192_CTR` (مفتاح بحجم 24 بايت) <br />- `AES_256_CTR` (مفتاح بحجم 32 بايت) |
+
+مثال على تهيئة القرص:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <disk_s3>
+                <type>s3</type>
+                <endpoint>...
+            </disk_s3>
+            <disk_s3_encrypted>
+                <type>encrypted</type>
+                <disk>disk_s3</disk>
+                <algorithm>AES_128_CTR</algorithm>
+                <key_hex id="0">00112233445566778899aabbccddeeff</key_hex>
+                <key_hex id="1">ffeeddccbbaa99887766554433221100</key_hex>
+                <current_key_id>1</current_key_id>
+            </disk_s3_encrypted>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+<div id="using-local-cache">
+  ### استخدام ذاكرة التخزين المؤقت المحلية
+</div>
+
+يمكن تهيئة ذاكرة تخزين مؤقت محلية فوق الأقراص في إعدادات التخزين بدءًا من الإصدار 22.3.
+بالنسبة إلى الإصدارات من 22.3 إلى 22.7، لا تكون ذاكرة التخزين المؤقت مدعومة إلا لنوع القرص `s3`. وبالنسبة إلى الإصدارات &gt;= 22.8، تكون ذاكرة التخزين المؤقت مدعومة لأي نوع من الأقراص: S3 وAzure وLocal وEncrypted وغيرها.
+بالنسبة إلى الإصدارات &gt;= 23.5، لا تكون ذاكرة التخزين المؤقت مدعومة إلا لأنواع الأقراص البعيدة: S3 وAzure وHDFS (غير مدعوم).
+تستخدم ذاكرة التخزين المؤقت سياسة `LRU`.
+
+مثال على الإعداد للإصدارات الأحدث من 22.8 أو المساوية له:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+            </s3>
+            <cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/s3_cache/</path>
+                <max_size>10Gi</max_size>
+            </cache>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>cache</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+مثال على إعدادات الإصدارات الأقدم من 22.8:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3>
+                <type>s3</type>
+                <endpoint>...</endpoint>
+                ... s3 configuration ...
+                <data_cache_enabled>1</data_cache_enabled>
+                <data_cache_max_size>10737418240</data_cache_max_size>
+            </s3>
+        </disks>
+        <policies>
+            <s3_cache>
+                <volumes>
+                    <main>
+                        <disk>s3</disk>
+                    </main>
+                </volumes>
+            </s3_cache>
+        <policies>
+    </storage_configuration>
+```
+
+إعدادات **تهيئة القرص** لـ File Cache:
+
+يجب تعريف هذه الإعدادات في قسم تهيئة القرص.
+
+| المعلمة                               | النوع   | القيمة الافتراضية | الوصف                                                                                                                                                                          |
+| ------------------------------------- | ------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `path`                                | String  | -                 | **مطلوب**. المسار إلى الدليل الذي سيُخزَّن فيه التخزين المؤقت.                                                                                                                 |
+| `max_size`                            | Size    | -                 | **مطلوب**. الحجم الأقصى للتخزين المؤقت بالبايت أو بصيغة مقروءة (مثل `10Gi`). تُزال الملفات وفق سياسة LRU عند بلوغ الحد الأقصى. ويدعم التنسيقات `ki` و`Mi` و`Gi` (منذ v22.10).  |
+| `cache_on_write_operations`           | Boolean | `false`           | يفعّل التخزين المؤقت بالكتابة المباشرة لاستعلامات `INSERT` وعمليات الدمج في الخلفية. ويمكن تجاوز هذا الإعداد لكل query باستخدام `enable_filesystem_cache_on_write_operations`. |
+| `enable_filesystem_query_cache_limit` | Boolean | `false`           | يفعّل حدود حجم التخزين المؤقت لكل query استنادًا إلى `max_query_cache_size`.                                                                                                   |
+| `enable_cache_hits_threshold`         | Boolean | `false`           | عند تفعيله، لا تُخزَّن البيانات مؤقتًا إلا بعد قراءتها عدة مرات.                                                                                                               |
+| `cache_hits_threshold`                | Integer | `0`               | عدد عمليات القراءة المطلوبة قبل تخزين البيانات مؤقتًا (يتطلب `enable_cache_hits_threshold`).                                                                                   |
+| `enable_bypass_cache_with_threshold`  | Boolean | `false`           | يتجاوز التخزين المؤقت لنطاقات القراءة الكبيرة.                                                                                                                                 |
+| `bypass_cache_threshold`              | Size    | `256Mi`           | حجم نطاق القراءة الذي يؤدي إلى تجاوز التخزين المؤقت (يتطلب `enable_bypass_cache_with_threshold`).                                                                              |
+| `max_file_segment_size`               | Size    | `8Mi`             | الحجم الأقصى لملف تخزين مؤقت واحد بالبايت أو بصيغة مقروءة.                                                                                                                     |
+| `max_elements`                        | Integer | `10000000`        | الحد الأقصى لعدد ملفات التخزين المؤقت.                                                                                                                                         |
+| `load_metadata_threads`               | Integer | `16`              | عدد الخيوط المستخدمة لتحميل البيانات الوصفية للتخزين المؤقت عند بدء التشغيل.                                                                                                   |
+| `use_split_cache`                     | Boolean | `false`           | يستخدم فصل الملفات إلى system/data.                                                                                                                                            |
+| `split_cache_ratio`                   | Double  | `0.1`             | نسبة مقطع النظام إلى الحجم الإجمالي للتخزين المؤقت في split&#95;cache.                                                                                                         |
+
+> **ملاحظة**: تدعم قيم الحجم وحدات مثل `ki` و`Mi` و`Gi` وغيرها (مثل `10Gi`).
+
+<div id="file-cache-query-profile-settings">
+  ## إعدادات الاستعلام/الملف التعريفي لـ File Cache
+</div>
+
+| الإعداد                                                                 | النوع   | القيمة الافتراضية       | الوصف                                                                                                                                                          |
+| ----------------------------------------------------------------------- | ------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enable_filesystem_cache`                                               | Boolean | `true`                  | يفعّل/يعطّل استخدام ذاكرة التخزين المؤقت لكل استعلام، حتى عند استخدام نوع القرص `cache`.                                                                       |
+| `read_from_filesystem_cache_if_exists_otherwise_bypass_cache`           | Boolean | `false`                 | عند تفعيله، تُستخدم ذاكرة التخزين المؤقت فقط إذا كانت البيانات موجودة؛ أما البيانات الجديدة فلن تُخزَّن مؤقتًا.                                                |
+| `enable_filesystem_cache_on_write_operations`                           | Boolean | `false` (Cloud: `true`) | يفعّل التخزين المؤقت بالكتابة المباشرة. ويتطلب `cache_on_write_operations` في إعدادات `cache`.                                                                 |
+| `enable_filesystem_cache_log`                                           | Boolean | `false`                 | يفعّل تسجيلًا تفصيليًا لاستخدام ذاكرة التخزين المؤقت في `system.filesystem_cache_log`.                                                                         |
+| `filesystem_cache_allow_background_download`                            | Boolean | `true`                  | يسمح بإكمال المقاطع التي نُزِّلت جزئيًا في الخلفية. عطّله للإبقاء على التنزيلات ضمن الاستعلام/الجلسة الحالية بدلًا من متابعتها في الخلفية.                     |
+| `max_query_cache_size`                                                  | Size    | `false`                 | الحد الأقصى لحجم ذاكرة التخزين المؤقت لكل استعلام. ويتطلب `enable_filesystem_query_cache_limit` في إعدادات `cache`.                                            |
+| `filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit` | Boolean | `true`                  | يحدد السلوك عند بلوغ `max_query_cache_size`: <br />- `true`: يوقف تنزيل البيانات الجديدة <br />- `false`: يزيل البيانات القديمة لإفساح المجال للبيانات الجديدة |
+
+<Warning>
+  تتوافق إعدادات تهيئة `cache` وإعدادات استعلام `cache` مع أحدث إصدار من ClickHouse،
+  وقد لا تكون بعض هذه الميزات مدعومة في الإصدارات الأقدم.
+</Warning>
+
+<div id="cache-system-tables-file-cache">
+  #### جداول النظام لذاكرة التخزين المؤقت لنظام الملفات
+</div>
+
+| اسم الجدول                    | الوصف                                                             | المتطلبات                                  |
+| ----------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
+| `system.filesystem_cache`     | يعرض الحالة الحالية لذاكرة التخزين المؤقت لنظام الملفات.          | لا توجد                                    |
+| `system.filesystem_cache_log` | يوفّر إحصاءات مفصّلة عن استخدام ذاكرة التخزين المؤقت لكل استعلام. | يتطلب `enable_filesystem_cache_log = true` |
+
+<div id="cache-commands-file-cache">
+  #### أوامر ذاكرة التخزين المؤقت
+</div>
+
+<div id="system-clear-filesystem-cache-on-cluster">
+  ##### `SYSTEM CLEAR|DROP FILESYSTEM CACHE (<cache_name>) (ON CLUSTER)` -- `ON CLUSTER`
+</div>
+
+هذا الأمر مدعوم فقط عند عدم تحديد `<cache_name>`
+
+<div id="show-filesystem-caches">
+  ##### `SHOW FILESYSTEM CACHES`
+</div>
+
+اعرض قائمة بذاكرات التخزين المؤقت لنظام الملفات التي تم إعدادها على الخادم.
+(في الإصدارات الأقدم من `22.8` أو المساوية له، يكون اسم الأمر `SHOW CACHES`)
+
+```sql title="Query"
+SHOW FILESYSTEM CACHES
+```
+
+```text title="Response"
+┌─Caches────┐
+│ s3_cache  │
+└───────────┘
+```
+
+<div id="describe-filesystem-cache">
+  ##### `DESCRIBE FILESYSTEM CACHE '<cache_name>'`
+</div>
+
+اعرض إعدادات ذاكرة التخزين المؤقت لنظام الملفات وبعض الإحصاءات العامة لذاكرة تخزين مؤقت محددة.
+يمكن أخذ اسم ذاكرة التخزين المؤقت من الأمر `SHOW FILESYSTEM CACHES`. (بالنسبة إلى الإصدارات الأقدم
+أو المساوية لـ `22.8`، يُسمّى الأمر `DESCRIBE CACHE`)
+
+```sql title="Query"
+DESCRIBE FILESYSTEM CACHE 's3_cache'
+```
+
+```text title="Response"
+┌────max_size─┬─max_elements─┬─max_file_segment_size─┬─boundary_alignment─┬─cache_on_write_operations─┬─cache_hits_threshold─┬─current_size─┬─current_elements─┬─path───────┬─background_download_threads─┬─enable_bypass_cache_with_threshold─┐
+│ 10000000000 │      1048576 │             104857600 │            4194304 │                         1 │                    0 │         3276 │               54 │ /s3_cache/ │                           2 │                                  0 │
+└─────────────┴──────────────┴───────────────────────┴────────────────────┴───────────────────────────┴──────────────────────┴──────────────┴──────────────────┴────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+| مقاييس ذاكرة التخزين المؤقت الحالية | مقاييس ذاكرة التخزين المؤقت غير المتزامنة | أحداث profile لذاكرة التخزين المؤقت                                                       |
+| ----------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `FilesystemCacheSize`               | `FilesystemCacheBytes`                    | `CachedReadBufferReadFromSourceBytes`, `CachedReadBufferReadFromCacheBytes`               |
+| `FilesystemCacheElements`           | `FilesystemCacheFiles`                    | `CachedReadBufferReadFromSourceMicroseconds`, `CachedReadBufferReadFromCacheMicroseconds` |
+|                                     |                                           | `CachedReadBufferCacheWriteBytes`, `CachedReadBufferCacheWriteMicroseconds`               |
+|                                     |                                           | `CachedWriteBufferCacheWriteBytes`, `CachedWriteBufferCacheWriteMicroseconds`             |
+
+<div id="web-storage">
+  ### استخدام تخزين Web الثابت (للقراءة فقط)
+</div>
+
+هذا قرص للقراءة فقط. تُقرأ بياناته فقط ولا تُعدَّل مطلقًا. يُحمَّل جدول جديد
+إلى هذا القرص عبر استعلام `ATTACH TABLE` (انظر المثال أدناه). ولا يُستخدم القرص المحلي
+فعليًا، إذ يؤدي كل استعلام `SELECT` إلى طلب `http`
+لجلب البيانات المطلوبة. وسيؤدي أي تعديل في بيانات الجدول إلى
+استثناء، أي إن الأنواع التالية من الاستعلامات غير مسموح بها: [`CREATE TABLE`](/ar/reference/statements/create/table),
+[`ALTER TABLE`](/ar/reference/statements/alter/index), [`RENAME TABLE`](/ar/reference/statements/rename#rename-table),
+[`DETACH TABLE`](/ar/reference/statements/detach) و[`TRUNCATE TABLE`](/ar/reference/statements/truncate).
+يمكن استخدام تخزين Web لأغراض القراءة فقط. ومن أمثلة استخدامه استضافة
+بيانات نموذجية أو ترحيل البيانات. توجد أداة باسم `clickhouse-static-files-uploader`،
+تُعِدّ دليل بيانات لجدول معيّن (`SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+ولكل جدول تحتاج إليه، ستحصل على دليل من الملفات. ويمكن رفع هذه الملفات
+إلى، على سبيل المثال، خادم ويب يقدّم ملفات ثابتة. بعد هذا الإعداد،
+يمكنك تحميل هذا الجدول إلى أي خادم ClickHouse باستخدام `DiskWeb`.
+
+في هذا الإعداد النموذجي:
+
+* القرص من النوع `web`
+* تُستضاف البيانات على `http://nginx:80/test1/`
+* يُستخدم cache على التخزين المحلي
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>http://nginx:80/test1/</endpoint>
+            </web>
+            <cached_web>
+                <type>cache</type>
+                <disk>web</disk>
+                <path>cached_web_cache/</path>
+                <max_size>100000000</max_size>
+            </cached_web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+            <cached_web>
+                <volumes>
+                    <main>
+                        <disk>cached_web</disk>
+                    </main>
+                </volumes>
+            </cached_web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+<Tip>
+  يمكن أيضًا تهيئة التخزين مؤقتًا داخل استعلام، إذا لم يكن من المتوقّع استخدام مجموعة بيانات الويب
+  بشكل معتاد، فراجع [التهيئة الديناميكية](#dynamic-configuration) وتجاوز
+  تحرير ملف التكوين.
+
+  تتم استضافة [مجموعة بيانات تجريبية](https://github.com/ClickHouse/web-tables-demo) على GitHub. ولإعداد جداولك الخاصة لتخزين الويب،
+  راجع الأداة [clickhouse-static-files-uploader](/ar/concepts/features/tools-and-utilities/static-files-disk-uploader)
+</Tip>
+
+في استعلام `ATTACH TABLE` هذا، يطابق `UUID` المقدَّم اسم دليل البيانات، وتكون نقطة النهاية هي URL الخاص بمحتوى GitHub الخام.
+
+```sql highlight={1,20-23}
+ATTACH TABLE uk_price_paid UUID 'cf712b4f-2ca8-435c-ac23-c4393efe52f7'
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('other' = 0, 'terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4),
+    is_new UInt8,
+    duration Enum8('unknown' = 0, 'freehold' = 1, 'leasehold' = 2),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2)
+  SETTINGS disk = disk(
+      type=web,
+      endpoint='https://raw.githubusercontent.com/ClickHouse/web-tables-demo/main/web/'
+      );
+```
+
+مثال اختبار جاهز. تحتاج إلى إضافة هذا الإعداد إلى config:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <web>
+                <type>web</type>
+                <endpoint>https://clickhouse-datasets.s3.yandex.net/disk-with-static-files-tests/test-hits/</endpoint>
+            </web>
+        </disks>
+        <policies>
+            <web>
+                <volumes>
+                    <main>
+                        <disk>web</disk>
+                    </main>
+                </volumes>
+            </web>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+ثم نفّذ الاستعلام التالي:
+
+```sql
+ATTACH TABLE test_hits UUID '1ae36516-d62d-4218-9ae3-6516d62da218'
+(
+    WatchID UInt64,
+    JavaEnable UInt8,
+    Title String,
+    GoodEvent Int16,
+    EventTime DateTime,
+    EventDate Date,
+    CounterID UInt32,
+    ClientIP UInt32,
+    ClientIP6 FixedString(16),
+    RegionID UInt32,
+    UserID UInt64,
+    CounterClass Int8,
+    OS UInt8,
+    UserAgent UInt8,
+    URL String,
+    Referer String,
+    URLDomain String,
+    RefererDomain String,
+    Refresh UInt8,
+    IsRobot UInt8,
+    RefererCategories Array(UInt16),
+    URLCategories Array(UInt16),
+    URLRegions Array(UInt32),
+    RefererRegions Array(UInt32),
+    ResolutionWidth UInt16,
+    ResolutionHeight UInt16,
+    ResolutionDepth UInt8,
+    FlashMajor UInt8,
+    FlashMinor UInt8,
+    FlashMinor2 String,
+    NetMajor UInt8,
+    NetMinor UInt8,
+    UserAgentMajor UInt16,
+    UserAgentMinor FixedString(2),
+    CookieEnable UInt8,
+    JavascriptEnable UInt8,
+    IsMobile UInt8,
+    MobilePhone UInt8,
+    MobilePhoneModel String,
+    Params String,
+    IPNetworkID UInt32,
+    TraficSourceID Int8,
+    SearchEngineID UInt16,
+    SearchPhrase String,
+    AdvEngineID UInt8,
+    IsArtifical UInt8,
+    WindowClientWidth UInt16,
+    WindowClientHeight UInt16,
+    ClientTimeZone Int16,
+    ClientEventTime DateTime,
+    SilverlightVersion1 UInt8,
+    SilverlightVersion2 UInt8,
+    SilverlightVersion3 UInt32,
+    SilverlightVersion4 UInt16,
+    PageCharset String,
+    CodeVersion UInt32,
+    IsLink UInt8,
+    IsDownload UInt8,
+    IsNotBounce UInt8,
+    FUniqID UInt64,
+    HID UInt32,
+    IsOldCounter UInt8,
+    IsEvent UInt8,
+    IsParameter UInt8,
+    DontCountHits UInt8,
+    WithHash UInt8,
+    HitColor FixedString(1),
+    UTCEventTime DateTime,
+    Age UInt8,
+    Sex UInt8,
+    Income UInt8,
+    Interests UInt16,
+    Robotness UInt8,
+    GeneralInterests Array(UInt16),
+    RemoteIP UInt32,
+    RemoteIP6 FixedString(16),
+    WindowName Int32,
+    OpenerName Int32,
+    HistoryLength Int16,
+    BrowserLanguage FixedString(2),
+    BrowserCountry FixedString(2),
+    SocialNetwork String,
+    SocialAction String,
+    HTTPError UInt16,
+    SendTiming Int32,
+    DNSTiming Int32,
+    ConnectTiming Int32,
+    ResponseStartTiming Int32,
+    ResponseEndTiming Int32,
+    FetchTiming Int32,
+    RedirectTiming Int32,
+    DOMInteractiveTiming Int32,
+    DOMContentLoadedTiming Int32,
+    DOMCompleteTiming Int32,
+    LoadEventStartTiming Int32,
+    LoadEventEndTiming Int32,
+    NSToDOMContentLoadedTiming Int32,
+    FirstPaintTiming Int32,
+    RedirectCount Int8,
+    SocialSourceNetworkID UInt8,
+    SocialSourcePage String,
+    ParamPrice Int64,
+    ParamOrderID String,
+    ParamCurrency FixedString(3),
+    ParamCurrencyID UInt16,
+    GoalsReached Array(UInt32),
+    OpenstatServiceName String,
+    OpenstatCampaignID String,
+    OpenstatAdID String,
+    OpenstatSourceID String,
+    UTMSource String,
+    UTMMedium String,
+    UTMCampaign String,
+    UTMContent String,
+    UTMTerm String,
+    FromTag String,
+    HasGCLID UInt8,
+    RefererHash UInt64,
+    URLHash UInt64,
+    CLID UInt32,
+    YCLID UInt64,
+    ShareService String,
+    ShareURL String,
+    ShareTitle String,
+    ParsedParams Nested(
+        Key1 String,
+        Key2 String,
+        Key3 String,
+        Key4 String,
+        Key5 String,
+        ValueDouble Float64),
+    IslandID FixedString(16),
+    RequestNum UInt32,
+    RequestTry UInt8
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS storage_policy='web';
+```
+
+<div id="required-parameters-s3">
+  #### المعلمات المطلوبة
+</div>
+
+| Parameter  | Description                                                                                                            |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `type`     | `web`. وإلا فلن يتم إنشاء القرص.                                                                                       |
+| `endpoint` | عنوان URL لنقطة النهاية بتنسيق `path`. ويجب أن يتضمن عنوان URL لنقطة النهاية مسار جذر لتخزين البيانات التي رُفعت إليه. |
+
+<div id="optional-parameters-s3">
+  #### المعلمات الاختيارية
+</div>
+
+| المعلمة                             | الوصف                                                                    | القيمة الافتراضية |
+| ----------------------------------- | ------------------------------------------------------------------------ | ----------------- |
+| `min_bytes_for_seek`                | الحد الأدنى لعدد البايتات لاستخدام عملية seek بدلًا من القراءة التسلسلية | `1` MB            |
+| `remote_fs_read_backoff_threashold` | الحد الأقصى لوقت الانتظار عند محاولة قراءة البيانات من القرص البعيد      | `10000` ثانية     |
+| `remote_fs_read_backoff_max_tries`  | الحد الأقصى لعدد محاولات القراءة باستخدام backoff                        | `5`               |
+
+إذا فشل استعلام مع الاستثناء `DB:Exception Unreachable URL`، فيمكنك محاولة ضبط الإعدادات التالية: [http&#95;connection&#95;timeout](/ar/reference/settings/session-settings#http_connection_timeout)، و[http&#95;receive&#95;timeout](/ar/reference/settings/session-settings#http_receive_timeout)، و[keep&#95;alive&#95;timeout](/ar/reference/settings/server-settings/settings#keep_alive_timeout).
+
+للحصول على الملفات المراد رفعها، شغّل:
+`clickhouse static-files-disk-uploader --metadata-path <path> --output-dir <dir>` (يمكن العثور على `--metadata-path` في الاستعلام `SELECT data_paths FROM system.tables WHERE name = 'table_name'`).
+
+عند تحميل الملفات عبر `endpoint`، يجب تحميلها إلى المسار `<endpoint>/store/`، لكن يجب أن يحتوي config على `endpoint` فقط.
+
+إذا تعذر الوصول إلى URL عند تحميل القرص أثناء بدء الخادم للجداول، فستُلتقط جميع الأخطاء. وإذا حدثت أخطاء في هذه الحالة، فيمكن إعادة تحميل الجداول (لتصبح مرئية) عبر `DETACH TABLE table_name` -&gt; `ATTACH TABLE table_name`. وإذا جرى تحميل البيانات الوصفية بنجاح عند بدء تشغيل الخادم، فستكون الجداول متاحة مباشرةً.
+
+استخدم الإعداد [http&#95;max&#95;single&#95;read&#95;retries](/ar/concepts/features/configuration/server-config/storing-data#web-storage) لتقييد الحد الأقصى لعدد retries أثناء عملية قراءة HTTP واحدة.
+
+<div id="zero-copy">
+  ### النسخ المتماثل دون نسخ (غير جاهز لبيئة الإنتاج)
+</div>
+
+يمكن استخدام النسخ المتماثل دون نسخ، لكنه غير موصى به، مع الأقراص `S3` و`HDFS` (غير مدعومة). ويعني النسخ المتماثل دون نسخ أنه إذا كانت البيانات مخزنة عن بُعد على عدة أجهزة وتحتاج إلى المزامنة، فلا تُنسخ متماثلًا إلا البيانات الوصفية (مسارات أجزاء البيانات)، وليس البيانات نفسها.
+
+<Info>
+  **النسخ المتماثل دون نسخ غير جاهز لبيئة الإنتاج**
+
+  يُعطَّل النسخ المتماثل دون نسخ افتراضيًا في ClickHouse الإصدار 22.8 والإصدارات الأحدث. هذه الميزة غير موصى بها للاستخدام في بيئة الإنتاج.
+</Info>

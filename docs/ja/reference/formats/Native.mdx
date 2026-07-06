@@ -1,0 +1,499 @@
+---
+alias: []
+description: 'Nativeフォーマットのドキュメント'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | 別名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 説明
+</div>
+
+`Native` フォーマットの完全な公式仕様は [こちら](/ja/reference/interfaces/specs/NativeFormat) で公開されており、それに対応する `Native` プロトコル — これを伝送する TCP wire protocol — の仕様は [こちら](/ja/reference/interfaces/specs/NativeProtocol) で公開されています。
+
+<Note>
+  両方の仕様は、ClickHouse のソースコードをもとに LLM によって生成されたものです。コードが引き続き主要な正しい情報源であり、仕様とコードに食い違いがある場合は、コードが正しいものとします。
+</Note>
+
+`Native` フォーマットは、カラムを行に変換しない真の「列指向」フォーマットであるため、ClickHouse で最も効率的なフォーマットです。
+
+このフォーマットでは、データはバイナリフォーマットで [ブロック](/ja/resources/develop-contribute/introduction/architecture#block) 単位に読み書きされます。
+各ブロックについて、行数、カラム数、カラム名と型、さらにブロック内の各カラムのデータ部分が順に記録されます。
+
+これは、サーバー間のやり取りに使われるネイティブインターフェイス、コマンドラインクライアント、C++ クライアントで使用されるフォーマットです。
+
+<Tip>
+  このフォーマットを使うと、ClickHouse DBMS でのみ読み取れるダンプをすばやく生成できます。
+  ただし、このフォーマットを直接扱うのはあまり現実的ではないかもしれません。
+</Tip>
+
+<div id="data-types-wire-format">
+  ## データ型のワイヤ形式
+</div>
+
+データはワイヤ上で列指向フォーマットで送信されます。つまり、各カラムは個別に送信され、
+1 つのカラム内のすべての値が単一の配列としてまとめて送信されます。
+
+ブロック内の各カラムには、[RowBinaryWithNamesAndTypes](/ja/reference/formats/RowBinary/RowBinaryWithNamesAndTypes) と同様のヘッダーがあります。
+
+<Note>
+  ネイティブ TCP バイナリプロトコルを使用する場合 (または HTTP エンドポイントが `?client_protocol_version=<n>` を受信する場合) 、
+  カラム数と行数の前に `BlockInfo` 構造体が書き込まれます。このセクションの例では、
+  プロトコルバージョンを指定しない通常の HTTP インターフェイスを使用しているため、`BlockInfo` は省略されます。
+</Note>
+
+<div id="block-structure">
+  ### ブロック構造
+</div>
+
+次のクエリは、`number` と `str` の 2 つのカラムを持つ 3 行を返します:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3" > out.bin
+```
+
+出力データは1つのClickHouseブロックに収まり、次のようになります：
+
+```js
+const data = new Uint8Array([
+  // --- ブロックヘッダー ---
+  0x02,                   // カラム数: 2
+  0x03,                   // 行数: 3
+  // -- カラム1ヘッダー --
+  0x06,                   // LEB128 - カラム名 'number' は6バイト
+  0x6e, 0x75, 0x6d,       
+  0x62, 0x65, 0x72,       // カラム名: 'number'
+  0x06,                   // LEB128 - カラム型 'UInt64' は6バイト
+  0x55, 0x49, 0x6e,
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64値: 0
+  0x01, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64値: 1
+  0x02, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64値: 2
+  0x03,                   // LEB128 - カラム名 'str' は3バイト
+  0x73, 0x74, 0x72,       // カラム名: 'str'
+  0x06,                   // LEB128 - カラム型 'String' は6バイト
+  0x53, 0x74, 0x72, 
+  0x69, 0x6e, 0x67,       // 'String'
+  0x01,                   // LEB128 - 文字列は1バイト
+  0x30,                   // String値: '0'
+  0x01,                   // LEB128 - 文字列は1バイト
+  0x31,                   // String値: '1'
+  0x01,                   // LEB128 - 文字列は1バイト
+  0x32,                   // String値: '2'
+])
+```
+
+<div id="multiple-blocks">
+  ### 複数のブロック
+</div>
+
+ただし、多くの場合、データは1つのブロックには収まらず、ClickHouse は複数のブロックに分けて送信します。
+データが1ブロックにつき1行に分割されるよう、ブロックサイズを小さくして2行を取得する次のクエリを見てみましょう。
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str                FROM system.numbers LIMIT 2                 SETTINGS max_block_size=1" \  > out.bin
+```
+
+出力:
+
+```js
+const data = new Uint8Array([
+ 
+  // ----- ブロック 1 ----- 
+  0x02,                   // カラム数: 2
+  0x01,                   // 行数: 1
+  0x06,                   // LEB128 - カラム名 'number' は 6 バイト
+  0x6E, 0x75, 0x6D, 
+  0x62, 0x65, 0x72,       // カラム名: 'number' 
+  0x06,                   // LEB128 - カラム型 'UInt64' は 6 バイト
+  0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34,       // 'UInt64' 
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // UInt64 としての 0
+  0x03,                   // LEB128 - カラム名 'str' は 3 バイト
+  0x73, 0x74, 0x72,       // カラム名: 'str'
+  0x06,                   // LEB128 - カラム型 'String' は 6 バイト
+  0x53, 0x74, 0x72, 
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - 文字列は 1 バイト
+  0x30,                   // String としての '0'
+  
+  // ----- ブロック 2 -----
+  0x02,                   // カラム数: 2
+  0x01,                   // 行数: 1
+  0x06,                   // LEB128 - カラム名 'number' は 6 バイト
+  0x6E, 0x75, 0x6D,  
+  0x62, 0x65, 0x72,       // カラム名: 'number'
+  0x06,                   // LEB128 - カラム型 'UInt64' は 6 バイト
+  0x55, 0x49, 0x6E,  
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x01, 0x00, 0x00, 0x00,  
+  0x00, 0x00, 0x00, 0x00, // UInt64 としての 1
+  0x03,                   // LEB128 - カラム名 'str' は 3 バイト
+  0x73, 0x74, 0x72,       // カラム名: 'str'
+  0x06,                   // LEB128 - カラム型 'String' は 6 バイト
+  0x53, 0x74, 0x72,  
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - 文字列は 1 バイト
+  0x31,                   // String としての '1'
+]);
+```
+
+<div id="simple-data-types">
+  ### 単純なデータ型
+</div>
+
+これらの比較的単純なデータ型における個々の値のワイヤ形式は、`RowBinary`/`RowBinaryWithNamesAndTypes` と似ています。
+この説明に該当する型の一覧は次のとおりです。
+
+* (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+* Float32, Float64
+* Bool
+* String
+* FixedString(N)
+* Date
+* Date32
+* DateTime
+* DateTime64
+* IPv4
+* IPv6
+* UUID
+
+詳細については、[&quot;RowBinary data types wire format&quot;](/ja/reference/formats/RowBinary/RowBinary#data-types-wire-format) にある上記の型の説明を参照してください。
+
+<div id="complex-data-types">
+  ### 複合データ型
+</div>
+
+以下の型のエンコーディングは、`RowBinary` および `RowBinaryWithNamesAndTypes` のものとは異なります。
+
+* Nullable
+* LowCardinality
+* Array
+* Map
+* Variant
+* Dynamic
+* JSON
+
+<div id="nullable">
+  #### Nullable
+</div>
+
+`Native`フォーマットでは、Nullableカラムでは実際のデータの前に、ブロック内の行数と同じだけのバイト列が置かれます。各バイトは、その値が `NULL` かどうかを示します。たとえば、このクエリでは、代わりに各奇数が `NULL` になります。
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, number, NULL) :: Nullable(UInt64) AS maybe_null                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+出力は次のようになります。
+
+```js
+const data = new Uint8Array([
+  // --- ブロックヘッダー ---
+  0x01,                         // LEB128 - カラム数: 1
+  0x05,                         // LEB128 - 行数: 5
+  
+  // -- カラムヘッダー --
+  0x0A,                         // LEB128 - カラム名: 10バイト
+  0x6D, 0x61, 0x79, 0x62, 0x65, 
+  0x5F, 0x6E, 0x75, 0x6C, 0x6C, // カラム名: 'maybe_null'
+  
+  0x10,                         // LEB128 - カラム型: 16バイト
+  0x4E, 0x75, 0x6C, 0x6C, 
+  0x61, 0x62, 0x6C, 0x65, 
+  0x28, 0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34, 0x29,       // カラム型: 'Nullable(UInt64)'
+  
+  // -- Nullableマスク --
+  0x00,                         // 行0: NOT NULL
+  0x01,                         // 行1: NULL
+  0x00,                         // 行2: NOT NULL
+  0x01,                         // 行3: NULL
+  0x00,                         // 行4: NOT NULL
+  
+  // -- UInt64の値 --
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 行0: 0（UInt64）
+
+  // ブロック内にこの数値の実際の値が格納されていても、
+  // ユーザーにはNULLとして返される！
+  0x01, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // 行#1: NULL
+  
+  0x02, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // 行#2: 2（UInt64）
+  
+  0x03, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 行#3: NULL（行#1と同様）
+  
+  0x04, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // 行#4: 4（UInt64）
+]);
+```
+
+`Nullable(String)` でも同様です。null インジケーターは常に nullable のマスクバイトで決まり、
+マスク値が `0x01` の場合は、文字列の内容に関係なくその行は `NULL` になります。`NULL` の行では、
+実際の文字列は空文字列として格納されます (LEB128 の長さは `0`) 。なお、`NULL` ではない空
+文字列も LEB128 の長さは `0` なので、この 2 つのケースを区別できるのはマスクバイトだけです。たとえば、次のクエリです。
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, toString(number), NULL) :: Nullable(String) AS maybe_str                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+出力は以下のようになります。
+
+```js
+const data = new Uint8Array([
+  // --- ブロックヘッダー ---
+  0x01, // LEB128 - 1カラム
+  0x05, // LEB128 - 5行
+
+  // -- カラムヘッダー --
+  0x09, // LEB128 - カラム名は9バイト
+  0x6d,
+  0x61,
+  0x79,
+  0x62,
+  0x65,
+  0x5f,
+  0x73,
+  0x74,
+  0x72, // カラム名: 'maybe_str'
+
+  0x10, // LEB128 - カラム型は16バイト
+  0x4e,
+  0x75,
+  0x6c,
+  0x6c,
+  0x61,
+  0x62,
+  0x6c,
+  0x65,
+  0x28,
+  0x53,
+  0x74,
+  0x72,
+  0x69,
+  0x6e,
+  0x67,
+  0x29, // カラム型: 'Nullable(String)'
+
+  // -- Nullableマスク --
+  0x00, // 行0はNOT NULL
+  0x01, // 行1はNULL
+  0x00, // 行2はNOT NULL
+  0x01, // 行3はNULL
+  0x00, // 行4はNOT NULL
+
+  // -- String値 --
+  0x01,
+  0x30, // 行0: LEB128 == 1, '0' as String
+  0x00, // 行1: LEB128 == 0, NULL
+  0x01,
+  0x32, // 行2: LEB128 == 1, '2' as String
+  0x00, // 行3: LEB128 == 0, NULL
+  0x01,
+  0x34, // 行4: LEB128 == 1, '4' as String
+])
+```
+
+<div id="lowcardinality">
+  #### LowCardinality
+</div>
+
+`LowCardinality` が透過的に扱われる [RowBinary](/ja/reference/formats/RowBinary/RowBinary#lowcardinality) とは異なり、Nativeフォーマット では辞書ベースの列指向エンコーディングを使用します。カラムは、バージョンプレフィックス、一意な値の辞書、その辞書を参照する整数の索引の Array としてエンコードされます。
+
+<Note>
+  カラムは `LowCardinality(Nullable(T))` として定義できますが、`Nullable(LowCardinality(T))` として定義することはできません。常にサーバーエラーになります。
+</Note>
+
+バージョンプレフィックスは値 `1` の `UInt64(LE)` で、カラムごとに 1 回書き込まれます。続いて、ブロック ごとに次の内容が書き込まれます。
+
+* `UInt64(LE)` — `IndexesSerializationType` のビットフィールド。ビット 0–7 は索引の幅を表します (0 = UInt8、1 = UInt16、2 = UInt32、3 = UInt64) 。ビット 8 (`NeedGlobalDictionaryBit`) は Nativeフォーマット では決して設定されません (これが現れた場合、サーバーは例外をスローします) 。ビット 9 は追加の辞書キーが存在することを示します。ビット 10 は辞書をリセットする必要があることを示します。
+* `UInt64(LE)` — 辞書キー数。続いて、キーが内部型のエンコーディングを使って一括シリアライゼーションされます。
+* `UInt64(LE)` — 行数。続いて、索引値が適切な UInt 幅を使って一括シリアライゼーションされます。
+
+辞書には常に、索引 0 にデフォルト値が含まれます (たとえば `String` では空文字列、数値型では 0) 。`LowCardinality(Nullable(T))` の場合、索引 0 は `NULL` を表し、キーは `Nullable` ラッパーなしでシリアライゼーションされます。
+
+たとえば、5 行 `['foo', 'bar', 'baz', 'foo', 'bar']` を持つ `LowCardinality(String)` は次のように表されます。
+
+```text
+// バージョンプレフィックス
+01 00 00 00 00 00 00 00    // UInt64(LE) = 1
+
+// IndexesSerializationType: UInt8 索引、辞書キーあり、辞書を更新
+00 06 00 00 00 00 00 00    // UInt64(LE) = 0x0600
+
+04 00 00 00 00 00 00 00    // 辞書キー 4 個
+00                          // 辞書キー 0: ""（デフォルト）
+03 66 6f 6f                 // 辞書キー 1: "foo"
+03 62 61 72                 // 辞書キー 2: "bar"
+03 62 61 7a                 // 辞書キー 3: "baz"
+
+05 00 00 00 00 00 00 00    // 5 行
+01 02 03 01 02              // 索引 → "foo", "bar", "baz", "foo", "bar"
+```
+
+`LowCardinality(Nullable(String))` では、索引 0 は `NULL` になります:
+
+```text
+01 00 00 00 00 00 00 00    // バージョン
+00 06 00 00 00 00 00 00    // IndexesSerializationType
+03 00 00 00 00 00 00 00    // キー数: 3
+00                          // キー 0: NULL
+00                          // キー 1: "" (デフォルト)
+03 79 65 73                 // キー 2: "yes"
+05 00 00 00 00 00 00 00    // 5 行
+02 00 02 00 02              // 索引 → "yes", NULL, "yes", NULL, "yes"
+```
+
+<div id="array">
+  #### Array
+</div>
+
+各配列の先頭に LEB128 形式の要素数が付く [RowBinary](/ja/reference/formats/RowBinary/RowBinary#array) とは異なり、Nativeフォーマットでは、配列は次の 2 つの列指向サブストリームとしてエンコードされます。
+
+* 累積 `UInt64` オフセットが N 個 (リトルエンディアン、各 8 バイト) 。行 `i` の要素数は `offset[i] - offset[i-1]` で、`offset[-1]` は暗黙的に 0 とみなされます。
+* 全行にわたるすべてのネスト要素を、連続した領域にまとめて一括シリアライズします。
+
+たとえば、3 行 `[[0, 10], [1, 11], [2, 12]]` を持つ `Array(UInt32)` の場合:
+
+```text
+// オフセット
+02 00 00 00 00 00 00 00    // 2 (行 0: 要素数 2)
+04 00 00 00 00 00 00 00    // 4 (行 1: 要素数 2)
+06 00 00 00 00 00 00 00    // 6 (行 2: 要素数 2)
+
+// ネストされた UInt32 値（合計 6 個）
+00 00 00 00                 // 0
+0a 00 00 00                 // 10
+01 00 00 00                 // 1
+0b 00 00 00                 // 11
+02 00 00 00                 // 2
+0c 00 00 00                 // 12
+```
+
+空の配列のオフセットは、前の行と同じです。たとえば、4 行の `Array(String)` `[[], ['0'], ['0','1'], ['0','1','2']]` の場合:
+
+```text
+00 00 00 00 00 00 00 00    // 0 (空)
+01 00 00 00 00 00 00 00    // 1
+03 00 00 00 00 00 00 00    // 3
+06 00 00 00 00 00 00 00    // 6
+01 30                       // "0"
+01 30                       // "0"
+01 31                       // "1"
+01 30                       // "0"
+01 31                       // "1"
+01 32                       // "2"
+```
+
+<div id="map">
+  #### Map
+</div>
+
+`Map(K, V)` は `Array(Tuple(K, V))` としてエンコードされます。つまり、配列オフセットの後にすべてのキーが並び、その後にすべての値が並びます。これは、各エントリごとにキーと値が交互に格納される [RowBinary](/ja/reference/formats/RowBinary/RowBinary#map) とは異なります。
+
+たとえば、3 行の `Map(String, UInt64)` `[{'a':0,'b':10}, {'a':1,'b':11}, {'a':2,'b':12}]` は次のようにエンコードされます。
+
+```text
+// Arrayのオフセット
+02 00 00 00 00 00 00 00    // 2
+04 00 00 00 00 00 00 00    // 4
+06 00 00 00 00 00 00 00    // 6
+
+// すべてのキー（6つのString）
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+
+// すべての値（6つのUInt64）
+00 00 00 00 00 00 00 00    // 0
+0a 00 00 00 00 00 00 00    // 10
+01 00 00 00 00 00 00 00    // 1
+0b 00 00 00 00 00 00 00    // 11
+02 00 00 00 00 00 00 00    // 2
+0c 00 00 00 00 00 00 00    // 12
+```
+
+<div id="variant">
+  #### Variant
+</div>
+
+各行がそれぞれ自身の discriminant バイトを持ち、その直後に値がインラインで続く [RowBinary](/ja/reference/formats/RowBinary/RowBinary#variant) とは異なり、Nativeフォーマット では discriminant とデータが分離されています。
+
+<Warning>
+  RowBinary と同様に、定義内の型は常にアルファベット順にソートされ、discriminant はそのソート済みリスト内の索引です。`0xFF` (255) は `NULL` を表します。
+</Warning>
+
+`Variant` カラムは次のようにエンコードされます。
+
+* `UInt64(LE)` の discriminator モード prefix (`0` = BASIC、`1` = COMPACT) 。Nativeフォーマット の出力では通常 BASIC (`0`) が使用されます。COMPACT モードは、`use_compact_variant_discriminators_serialization` を有効にして保存されたデータを読み取る際に現れることがあります。
+* N 個の `UInt8` discriminant。各行に 1 つずつ対応します。
+* 各 Variant 型のデータは、それに一致する行だけを含む個別のバルクカラムとして、discriminant の順に格納されます。
+
+たとえば、5 行 `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` を持つ `Variant(String, UInt32)` の場合 (ソート順: `String` = 0、`UInt32` = 1) :
+
+```text
+00 00 00 00 00 00 00 00    // 識別子モード = BASIC
+01 00 ff 01 00              // UInt32、String、NULL、UInt32、String
+
+// String（値2個、行1と4）
+05 68 65 6c 6c 6f          // "hello"
+05 68 65 6c 6c 6f          // "hello"
+
+// UInt32（値2個、行0と3）
+00 00 00 00                 // 0
+03 00 00 00                 // 3
+```
+
+<div id="dynamic">
+  #### Dynamic
+</div>
+
+各値が自己記述的 (型プレフィックス + 値) である [RowBinary](/ja/reference/formats/RowBinary/RowBinary#dynamic) とは異なり、Nativeフォーマット では `Dynamic` は構造プレフィックスに続く [Variant](#variant) カラムとしてシリアライズされます。
+
+構造プレフィックスには、`UInt64(LE)` のシリアル化バージョン、動的型の数 (VarUInt として) 、続いて文字列としての型名が含まれます。バージョン V1 では、互換性のため型の数が 2 回書き込まれます。後続のデータは `Variant` カラムで、その型リストは動的型に内部 `SharedVariant` 型を加えたものをアルファベット順に並べたものです。
+
+たとえば、5 行の `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` を持つ `Dynamic` の場合:
+
+```text
+// 構造プレフィックス (V1)
+01 00 00 00 00 00 00 00    // バージョン = V1
+02                          // 型の数 (V1 は互換性のため2回書き込む)
+02                          // 型の数
+06 53 74 72 69 6e 67       // "String"
+06 55 49 6e 74 33 32       // "UInt32"
+
+// Variant データ: Variant(SharedVariant, String, UInt32)
+// discriminant: SharedVariant=0, String=1, UInt32=2
+00 00 00 00 00 00 00 00    // discriminator モード = BASIC
+02 01 ff 02 01              // UInt32, String, NULL, UInt32, String
+// SharedVariant: 0 件
+05 68 65 6c 6c 6f          // String: "hello"
+05 68 65 6c 6c 6f          // String: "hello"
+00 00 00 00                 // UInt32: 0
+03 00 00 00                 // UInt32: 3
+```
+
+<div id="json">
+  #### JSON
+</div>
+
+各行がパス名と値を含み自己記述的である [RowBinary](/ja/reference/formats/RowBinary/RowBinary#json) とは異なり、Nativeフォーマット では `JSON` は列指向の構造でシリアライズされます。このエンコーディングは複雑で、バージョンにも依存します。具体的には、シリアル化バージョン、動的パス名、共有データレイアウトを含む構造プレフィックスに続いて、型付きパス (それぞれをバルクカラムとして格納) 、動的パス (それぞれを [Dynamic](#dynamic) カラムとして格納) 、さらにオーバーフローパス用の共有データで構成されます。
+
+より簡単に相互運用できるようにするには、`JSON` カラムを通常の JSON テキスト文字列 (各行につき 1 つの `String`) としてシリアライズする設定 `output_format_native_write_json_as_string=1` の使用を検討してください。

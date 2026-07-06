@@ -1,0 +1,1609 @@
+---
+sidebarTitle: 'conector nativo do Spark'
+slug: /integrations/apache-spark/spark-native-connector
+description: 'Introdução ao Apache Spark com ClickHouse'
+keywords: ['clickhouse', 'Apache Spark', 'migração', 'dados']
+title: conector do Spark
+doc_type: 'guide'
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Este conector aproveita otimizações específicas do ClickHouse, como particionamento avançado e pushdown de predicados, para
+melhorar o desempenho das consultas e o processamento de dados.
+O conector é baseado no [conector JDBC oficial do ClickHouse](https://github.com/ClickHouse/clickhouse-java) e
+gerencia seu próprio catálogo.
+
+Antes do Spark 3.0, o Spark não tinha um conceito nativo de catálogo, então os usuários normalmente dependiam de sistemas de catálogo externos, como
+Hive Metastore ou AWS Glue.
+Com essas soluções externas, os usuários precisavam registrar manualmente as tabelas da fonte de dados antes de acessá-las no Spark.
+No entanto, com a introdução do conceito de catálogo no Spark 3.0, o Spark agora pode descobrir tabelas automaticamente ao registrar
+plugins de catálogo.
+
+O catálogo padrão do Spark é `spark_catalog`, e as tabelas são identificadas por `{catalog name}.{database}.{table}`. Com o novo
+recurso de catálogo, agora é possível adicionar e trabalhar com vários catálogos em uma única aplicação Spark.
+
+<div id="choosing-between-apis">
+  ## Escolhendo entre a Catalog API e a TableProvider API
+</div>
+
+O ClickHouse Spark connector oferece suporte a dois padrões de acesso: a **Catalog API** e a **TableProvider API** (acesso baseado em formato). Entender as diferenças ajuda a escolher a abordagem certa para seu caso de uso.
+
+<div id="catalog-vs-tableprovider-comparison">
+  ### Catalog API vs TableProvider API
+</div>
+
+| Funcionalidade               | Catalog API                                                    | TableProvider API                               |
+| ---------------------------- | -------------------------------------------------------------- | ----------------------------------------------- |
+| **Configuração**             | Centralizada via configuração do Spark                         | Por operação, via opções                        |
+| **Descoberta de tabelas**    | Automática via catálogo                                        | Especificação manual da tabela                  |
+| **Operações DDL**            | Suporte completo (CREATE, DROP, ALTER)                         | Limitado (apenas criação automática de tabelas) |
+| **Integração com Spark SQL** | Nativa (`clickhouse.database.table`)                           | Requer especificação do formato                 |
+| **Caso de uso**              | Conexões estáveis de longo prazo com configuração centralizada | Acesso ad hoc, dinâmico ou temporário           |
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+* Java 8 ou 17 (Java 17+ é necessário para o Spark 4.0)
+* Scala 2.12 ou 2.13 (o Spark 4.0 oferece suporte somente ao Scala 2.13)
+* Apache Spark 3.3, 3.4, 3.5 ou 4.0
+
+<div id="compatibility-matrix">
+  ## Matriz de compatibilidade
+</div>
+
+| Versão | Versões compatíveis do Spark | Versão do ClickHouse JDBC |
+| ------ | ---------------------------- | ------------------------- |
+| main   | Spark 3.3, 3.4, 3.5, 4.0     | 0.9.4                     |
+| 0.10.0 | Spark 3.3, 3.4, 3.5, 4.0     | 0.9.5                     |
+| 0.9.0  | Spark 3.3, 3.4, 3.5, 4.0     | 0.9.4                     |
+| 0.8.1  | Spark 3.3, 3.4, 3.5          | 0.6.3                     |
+| 0.7.3  | Spark 3.3, 3.4               | 0.4.6                     |
+| 0.6.0  | Spark 3.3                    | 0.3.2-patch11             |
+| 0.5.0  | Spark 3.2, 3.3               | 0.3.2-patch11             |
+| 0.4.0  | Spark 3.2, 3.3               | Não depende               |
+| 0.3.0  | Spark 3.2, 3.3               | Não depende               |
+| 0.2.1  | Spark 3.2                    | Não depende               |
+| 0.1.2  | Spark 3.2                    | Não depende               |
+
+<div id="installation--setup">
+  ## Instalação e configuração
+</div>
+
+Para integrar o ClickHouse ao Spark, há várias opções de instalação que se adaptam a diferentes configurações de projeto.
+Você pode adicionar o ClickHouse Spark connector como dependência diretamente no arquivo de build do seu projeto (como em `pom.xml`
+para Maven ou `build.sbt` para SBT).
+Como alternativa, você pode colocar os arquivos JAR necessários na pasta `$SPARK_HOME/jars/` ou passá-los diretamente como uma
+opção do Spark usando a flag `--jars` no comando `spark-submit`.
+Ambas as abordagens garantem que o conector do ClickHouse esteja disponível no seu ambiente Spark.
+
+<div id="import-as-a-dependency">
+  ### Importar como dependência
+</div>
+
+<Tabs>
+  <Tab title="Maven">
+    ```maven
+    <dependency>
+      <groupId>com.clickhouse.spark</groupId>
+      <artifactId>clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}</artifactId>
+      <version>{{ stable_version }}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.clickhouse</groupId>
+      <artifactId>clickhouse-jdbc</artifactId>
+      <classifier>all</classifier>
+      <version>{{ clickhouse_jdbc_version }}</version>
+      <exclusions>
+        <exclusion>
+          <groupId>*</groupId>
+          <artifactId>*</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    ```
+
+    Adicione o repositório abaixo se quiser usar a versão SNAPSHOT.
+
+    ```maven
+    <repositories>
+      <repository>
+        <id>sonatype-oss-snapshots</id>
+        <name>Sonatype OSS Snapshots Repository</name>
+        <url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
+      </repository>
+    </repositories>
+    ```
+  </Tab>
+
+  <Tab title="Gradle">
+    ```gradle
+    dependencies {
+      implementation("com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}")
+      implementation("com.clickhouse:clickhouse-jdbc:{{ clickhouse_jdbc_version }}:all") { transitive = false }
+    }
+    ```
+
+    Adicione o repositório abaixo se quiser usar a versão SNAPSHOT:
+
+    ```gradle
+    repositries {
+      maven { url = "https://s01.oss.sonatype.org/content/repositories/snapshots" }
+    }
+    ```
+  </Tab>
+
+  <Tab title="SBT">
+    ```sbt
+    libraryDependencies += "com.clickhouse" % "clickhouse-jdbc" % {{ clickhouse_jdbc_version }} classifier "all"
+    libraryDependencies += "com.clickhouse.spark" %% clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }} % {{ stable_version }}
+    ```
+  </Tab>
+
+  <Tab title="Spark SQL/Shell CLI">
+    Ao trabalhar com as opções de shell do Spark (Spark SQL CLI, Spark Shell CLI e o comando Spark Submit), as dependências podem ser
+    registradas informando os JARs necessários:
+
+    ```text
+    $SPARK_HOME/bin/spark-sql \
+      --jars /path/clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}.jar,/path/clickhouse-jdbc-{{ clickhouse_jdbc_version }}-all.jar
+    ```
+
+    Se quiser evitar copiar os arquivos JAR para o nó cliente do Spark, use o seguinte em vez disso:
+
+    ```text
+      --repositories https://{maven-central-mirror or private-nexus-repo} \
+      --packages com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }},com.clickhouse:clickhouse-jdbc:{{ clickhouse_jdbc_version }}
+    ```
+
+    Observação: para casos de uso apenas com SQL, o [Apache Kyuubi](https://github.com/apache/kyuubi) é recomendado
+    para produção.
+  </Tab>
+</Tabs>
+
+<div id="download-the-library">
+  ### Baixe a biblioteca
+</div>
+
+O padrão de nomenclatura do JAR binário é:
+
+```bash
+clickhouse-spark-runtime-${spark_binary_version}_${scala_binary_version}-${version}.jar
+```
+
+Você pode encontrar todos os arquivos JAR de versões lançadas disponíveis
+no [Maven Central Repository](https://repo1.maven.org/maven2/com/clickhouse/spark/)
+e todos os arquivos JAR SNAPSHOT de builds diárias no [Sonatype OSS Snapshots Repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/clickhouse/).
+
+<Warning>
+  É essencial incluir o [JAR do clickhouse-jdbc](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
+  com o classificador &quot;all&quot;,
+  pois o connector depende de [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client)
+  e [clickhouse-client](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-client) — ambos já vêm incluídos
+  em clickhouse-jdbc:all.
+  Como alternativa, você pode adicionar [o JAR do clickhouse-client](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-client)
+  e [clickhouse-http](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client) separadamente, caso
+  prefira não usar o pacote JDBC completo.
+
+  Em qualquer caso, verifique se as versões dos pacotes são compatíveis de acordo com
+  a [Compatibility Matrix](#compatibility-matrix).
+</Warning>
+
+<div id="register-the-catalog-required">
+  ## Registrar o catálogo (obrigatório)
+</div>
+
+Para acessar suas tabelas do ClickHouse, você deve configurar um novo catálogo do Spark com as seguintes configurações:
+
+| Propriedade                                  | Valor                                    | Valor padrão   | Obrigatório |
+| -------------------------------------------- | ---------------------------------------- | -------------- | ----------- |
+| `spark.sql.catalog.<catalog_name>`           | `com.clickhouse.spark.ClickHouseCatalog` | N/A            | Sim         |
+| `spark.sql.catalog.<catalog_name>.host`      | `<clickhouse_host>`                      | `localhost`    | Não         |
+| `spark.sql.catalog.<catalog_name>.protocol`  | `http`                                   | `http`         | Não         |
+| `spark.sql.catalog.<catalog_name>.http_port` | `<clickhouse_port>`                      | `8123`         | Não         |
+| `spark.sql.catalog.<catalog_name>.user`      | `<clickhouse_username>`                  | `default`      | Não         |
+| `spark.sql.catalog.<catalog_name>.password`  | `<clickhouse_password>`                  | (string vazia) | Não         |
+| `spark.sql.catalog.<catalog_name>.database`  | `<database>`                             | `default`      | Não         |
+| `spark.<catalog_name>.write.format`          | `json`                                   | `arrow`        | Não         |
+
+Essas configurações podem ser definidas de uma das seguintes maneiras:
+
+* Editar/criar `spark-defaults.conf`.
+* Passar a configuração para o comando `spark-submit` (ou para os comandos CLI `spark-shell`/`spark-sql`).
+* Adicionar a configuração ao inicializar seu contexto.
+
+<Warning>
+  Ao trabalhar com um cluster do ClickHouse, você precisa definir um nome de catálogo exclusivo para cada instância.
+  Por exemplo:
+
+  ```text
+  spark.sql.catalog.clickhouse1                com.clickhouse.spark.ClickHouseCatalog
+  spark.sql.catalog.clickhouse1.host           10.0.0.1
+  spark.sql.catalog.clickhouse1.protocol       https
+  spark.sql.catalog.clickhouse1.http_port      8443
+  spark.sql.catalog.clickhouse1.user           default
+  spark.sql.catalog.clickhouse1.password
+  spark.sql.catalog.clickhouse1.database       default
+  spark.sql.catalog.clickhouse1.option.ssl     true
+
+  spark.sql.catalog.clickhouse2                com.clickhouse.spark.ClickHouseCatalog
+  spark.sql.catalog.clickhouse2.host           10.0.0.2
+  spark.sql.catalog.clickhouse2.protocol       https
+  spark.sql.catalog.clickhouse2.http_port      8443
+  spark.sql.catalog.clickhouse2.user           default
+  spark.sql.catalog.clickhouse2.password
+  spark.sql.catalog.clickhouse2.database       default
+  spark.sql.catalog.clickhouse2.option.ssl     true
+  ```
+
+  Dessa forma, você poderá acessar a tabela clickhouse1 `<ck_db>.<ck_table>` no Spark SQL por meio de
+  `clickhouse1.<ck_db>.<ck_table>` e acessar a tabela clickhouse2 `<ck_db>.<ck_table>` por meio de `clickhouse2.<ck_db>.<ck_table>`.
+</Warning>
+
+<div id="using-the-tableprovider-api">
+  ## Usando a TableProvider API (Acesso baseado em formato)
+</div>
+
+Além da abordagem baseada em catálogo, o ClickHouse Spark connector oferece suporte a um **padrão de acesso baseado em formato** por meio da TableProvider API.
+
+<div id="format-based-read">
+  ### Exemplo de leitura com base em formato
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    from pyspark.sql import SparkSession
+
+    spark = SparkSession.builder.getOrCreate()
+
+    # Leitura do ClickHouse usando a API de formato
+    df = spark.read \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-host") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "your_table") \
+        .option("user", "default") \
+        .option("password", "your_password") \
+        .option("ssl", "true") \
+        .load()
+
+    df.show()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    val df = spark.read
+      .format("clickhouse")
+      .option("host", "your-clickhouse-host")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "your_table")
+      .option("user", "default")
+      .option("password", "your_password")
+      .option("ssl", "true")
+      .load()
+
+    df.show()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    Dataset<Row> df = spark.read()
+        .format("clickhouse")
+        .option("host", "your-clickhouse-host")
+        .option("protocol", "https")
+        .option("http_port", "8443")
+        .option("database", "default")
+        .option("table", "your_table")
+        .option("user", "default")
+        .option("password", "your_password")
+        .option("ssl", "true")
+        .load();
+
+    df.show();
+    ```
+  </Tab>
+</Tabs>
+
+<div id="format-based-write">
+  ### Exemplo de gravação baseado em formato
+</div>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Grava no ClickHouse usando a API baseada em formato
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-clickhouse-host") \
+        .option("protocol", "https") \
+        .option("http_port", "8443") \
+        .option("database", "default") \
+        .option("table", "your_table") \
+        .option("user", "default") \
+        .option("password", "your_password") \
+        .option("ssl", "true") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    df.write
+      .format("clickhouse")
+      .option("host", "your-clickhouse-host")
+      .option("protocol", "https")
+      .option("http_port", "8443")
+      .option("database", "default")
+      .option("table", "your_table")
+      .option("user", "default")
+      .option("password", "your_password")
+      .option("ssl", "true")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    df.write()
+        .format("clickhouse")
+        .option("host", "your-clickhouse-host")
+        .option("protocol", "https")
+        .option("http_port", "8443")
+        .option("database", "default")
+        .option("table", "your_table")
+        .option("user", "default")
+        .option("password", "your_password")
+        .option("ssl", "true")
+        .mode("append")
+        .save();
+    ```
+  </Tab>
+</Tabs>
+
+<div id="tableprovider-features">
+  ### Recursos do TableProvider
+</div>
+
+A API TableProvider oferece vários recursos avançados:
+
+<div id="automatic-table-creation">
+  #### Criação automática de tabela
+</div>
+
+Ao gravar em uma tabela que não existe, o conector cria automaticamente a tabela com um esquema apropriado. O conector fornece valores padrão inteligentes:
+
+* **Engine**: Usa `MergeTree()` por padrão, se nenhum for especificado. Você pode especificar um engine diferente usando a opção `engine` (por exemplo, `ReplacingMergeTree()`, `SummingMergeTree()`, etc.)
+* **ORDER BY**: **Obrigatório** - Você deve especificar explicitamente a opção `order_by` ao criar uma nova tabela. O conector valida se todas as colunas especificadas existem no esquema.
+* **Suporte a chave Nullable**: Adiciona automaticamente `settings.allow_nullable_key=1` se o ORDER BY contiver colunas Nullable
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # A tabela será criada automaticamente com ORDER BY explícito (obrigatório)
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-host") \
+        .option("database", "default") \
+        .option("table", "new_table") \
+        .option("order_by", "id") \
+        .mode("append") \
+        .save()
+
+    # Especifique opções de criação da tabela com engine personalizado
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-host") \
+        .option("database", "default") \
+        .option("table", "new_table") \
+        .option("order_by", "id, timestamp") \
+        .option("engine", "ReplacingMergeTree()") \
+        .option("settings.allow_nullable_key", "1") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    // A tabela será criada automaticamente com ORDER BY explícito (obrigatório)
+    df.write
+      .format("clickhouse")
+      .option("host", "your-host")
+      .option("database", "default")
+      .option("table", "new_table")
+      .option("order_by", "id")
+      .mode("append")
+      .save()
+
+    // Com opções explícitas de criação da tabela e engine personalizado
+    df.write
+      .format("clickhouse")
+      .option("host", "your-host")
+      .option("database", "default")
+      .option("table", "new_table")
+      .option("order_by", "id, timestamp")
+      .option("engine", "ReplacingMergeTree()")
+      .option("settings.allow_nullable_key", "1")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    // A tabela será criada automaticamente com ORDER BY explícito (obrigatório)
+    df.write()
+        .format("clickhouse")
+        .option("host", "your-host")
+        .option("database", "default")
+        .option("table", "new_table")
+        .option("order_by", "id")
+        .mode("append")
+        .save();
+
+    // Com opções explícitas de criação da tabela e engine personalizado
+    df.write()
+        .format("clickhouse")
+        .option("host", "your-host")
+        .option("database", "default")
+        .option("table", "new_table")
+        .option("order_by", "id, timestamp")
+        .option("engine", "ReplacingMergeTree()")
+        .option("settings.allow_nullable_key", "1")
+        .mode("append")
+        .save();
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  **ORDER BY obrigatório**: A opção `order_by` é **obrigatória** ao criar uma nova tabela por meio da TableProvider API. Você deve especificar explicitamente quais colunas usar na cláusula ORDER BY. O conector valida se todas as colunas especificadas existem no esquema e gerará um erro se alguma coluna estiver ausente.
+
+  **Seleção de engine**: O engine padrão é `MergeTree()`, mas você pode especificar qualquer engine de tabela do ClickHouse usando a opção `engine` (por exemplo, `ReplacingMergeTree()`, `SummingMergeTree()`, `AggregatingMergeTree()`, etc.).
+</Warning>
+
+<div id="tableprovider-connection-options">
+  ### Opções de conexão do TableProvider
+</div>
+
+Ao usar a API baseada em formatos, as seguintes opções de conexão estão disponíveis:
+
+<div id="connection-options">
+  #### Opções de conexão
+</div>
+
+| Opção       | Descrição                                | Valor padrão | Obrigatório |
+| ----------- | ---------------------------------------- | ------------ | ----------- |
+| `host`      | Hostname do servidor ClickHouse          | `localhost`  | Sim         |
+| `protocol`  | Protocolo de conexão (`http` ou `https`) | `http`       | Não         |
+| `http_port` | Porta HTTP/HTTPS                         | `8123`       | Não         |
+| `database`  | Nome do banco de dados                   | `default`    | Sim         |
+| `table`     | Nome da tabela                           | N/A          | Sim         |
+| `user`      | Nome de usuário para autenticação        | `default`    | Não         |
+| `password`  | Senha para autenticação                  | (vazio)      | Não         |
+| `ssl`       | Habilita a conexão SSL                   | `false`      | Não         |
+| `ssl_mode`  | Modo SSL (`NONE`, `STRICT` etc.)         | `STRICT`     | Não         |
+| `timezone`  | Fuso horário para operações de data/hora | `server`     | Não         |
+
+<div id="table-creation-options">
+  #### Opções de criação de tabela
+</div>
+
+Estas opções são usadas quando a tabela não existe e precisa ser criada:
+
+| Opção                                    | Descrição                                                                                                                                                                                                            | Valor padrão                | Obrigatório |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ----------- |
+| `order_by`                               | Colunas a serem usadas na cláusula ORDER BY. Separe por vírgulas no caso de múltiplas colunas                                                                                                                        | N/A                         | **Sim**     |
+| `engine`                                 | engine de tabela do ClickHouse (por exemplo, `MergeTree()`, `ReplacingMergeTree()`, `SummingMergeTree()`, etc.)                                                                                                      | `MergeTree()`               | Não         |
+| `settings.allow_nullable_key`            | Habilita chaves Nullable no ORDER BY (para ClickHouse Cloud)                                                                                                                                                         | Detectado automaticamente** | Não         |
+| `settings.<key>`                         | Qualquer configuração de tabela do ClickHouse                                                                                                                                                                        | N/A                         | Não         |
+| `cluster`                                | Nome do cluster para tabelas Distributed                                                                                                                                                                             | N/A                         | Não         |
+| `clickhouse.column.<name>.variant_types` | Lista separada por vírgulas de tipos do ClickHouse para colunas Variant (por exemplo, `String, Int64, Bool, JSON`). Os nomes dos tipos diferenciam maiúsculas de minúsculas. Espaços após as vírgulas são opcionais. | N/A                         | Não         |
+
+* A opção `order_by` é obrigatória ao criar uma nova tabela. Todas as colunas especificadas devem existir no esquema.
+** Definido automaticamente como `1` se o ORDER BY contiver colunas Nullable e não for fornecido explicitamente.
+
+<Tip>
+  **Melhor prática**: no ClickHouse Cloud, defina explicitamente `settings.allow_nullable_key=1` se as colunas do ORDER BY puderem ser Nullable, pois o ClickHouse Cloud exige essa configuração.
+</Tip>
+
+<div id="writing-modes">
+  #### Modos de gravação
+</div>
+
+O conector do Spark (tanto a TableProvider API quanto a Catalog API) oferece suporte aos seguintes modos de gravação do Spark:
+
+* **`append`**: Adiciona dados à tabela existente
+* **`overwrite`**: Substitui todos os dados da tabela (trunca a tabela)
+
+<Warning>
+  **Sobrescrita de partição sem suporte**: No momento, o connector não oferece suporte a operações de sobrescrita no nível da partição (por exemplo, modo `overwrite` com `partitionBy`). Esse recurso está em desenvolvimento. Consulte a [issue #34 no GitHub](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34) para acompanhar o progresso desse recurso.
+</Warning>
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    # Modo overwrite (primeiro trunca a tabela)
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-host") \
+        .option("database", "default") \
+        .option("table", "my_table") \
+        .mode("overwrite") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    // Modo overwrite (primeiro trunca a tabela)
+    df.write
+      .format("clickhouse")
+      .option("host", "your-host")
+      .option("database", "default")
+      .option("table", "my_table")
+      .mode("overwrite")
+      .save()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    // Modo overwrite (primeiro trunca a tabela)
+    df.write()
+        .format("clickhouse")
+        .option("host", "your-host")
+        .option("database", "default")
+        .option("table", "my_table")
+        .mode("overwrite")
+        .save();
+    ```
+  </Tab>
+</Tabs>
+
+<div id="configuring-clickhouse-options">
+  ## Configurando opções do ClickHouse
+</div>
+
+Tanto a Catalog API quanto a TableProvider API permitem configurar opções específicas do ClickHouse (não opções do conector). Essas opções são repassadas ao ClickHouse ao criar tabelas ou executar consultas.
+
+As opções do ClickHouse permitem configurar definições específicas, como `allow_nullable_key`, `index_granularity` e outras configurações no nível da tabela ou da consulta. Elas são diferentes das opções do conector (como `host`, `database`, `table`), que controlam como o conector se conecta ao ClickHouse.
+
+<div id="using-tableprovider-api-options">
+  ### Usando a TableProvider API
+</div>
+
+Com a TableProvider API, use o formato de opção `settings.<key>`:
+
+<Tabs>
+  <Tab title="Python">
+    ```python
+    df.write \
+        .format("clickhouse") \
+        .option("host", "your-host") \
+        .option("database", "default") \
+        .option("table", "my_table") \
+        .option("order_by", "id") \
+        .option("settings.allow_nullable_key", "1") \
+        .option("settings.index_granularity", "8192") \
+        .mode("append") \
+        .save()
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```scala
+    df.write
+      .format("clickhouse")
+      .option("host", "your-host")
+      .option("database", "default")
+      .option("table", "my_table")
+      .option("order_by", "id")
+      .option("settings.allow_nullable_key", "1")
+      .option("settings.index_granularity", "8192")
+      .mode("append")
+      .save()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    df.write()
+        .format("clickhouse")
+        .option("host", "your-host")
+        .option("database", "default")
+        .option("table", "my_table")
+        .option("order_by", "id")
+        .option("settings.allow_nullable_key", "1")
+        .option("settings.index_granularity", "8192")
+        .mode("append")
+        .save();
+    ```
+  </Tab>
+</Tabs>
+
+<div id="using-catalog-api-options">
+  ### Usando a Catalog API
+</div>
+
+Com a Catalog API, use o formato `spark.sql.catalog.<catalog_name>.option.<key>` na configuração do Spark:
+
+```text
+spark.sql.catalog.clickhouse.option.allow_nullable_key 1
+spark.sql.catalog.clickhouse.option.index_granularity 8192
+```
+
+Ou defina essas configurações ao criar tabelas via Spark SQL:
+
+```sql
+CREATE TABLE clickhouse.default.my_table (
+  id INT,
+  name STRING
+) USING ClickHouse
+TBLPROPERTIES (
+  engine = 'MergeTree()',
+  order_by = 'id',
+  'settings.allow_nullable_key' = '1',
+  'settings.index_granularity' = '8192'
+)
+```
+
+<div id="clickhouse-cloud-settings">
+  ## Configurações do ClickHouse Cloud
+</div>
+
+Ao se conectar ao [ClickHouse Cloud](https://clickhouse.com), certifique-se de habilitar o SSL e definir o modo de SSL adequado. Por exemplo:
+
+```text
+spark.sql.catalog.clickhouse.option.ssl        true
+spark.sql.catalog.clickhouse.option.ssl_mode   NONE
+```
+
+<div id="read-data">
+  ## Ler dados
+</div>
+
+<Tabs>
+  <Tab title="Java">
+    ```java
+    public static void main(String[] args) {
+            // Criar uma sessão do Spark
+            SparkSession spark = SparkSession.builder()
+                    .appName("example")
+                    .master("local[*]")
+                    .config("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+                    .config("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+                    .config("spark.sql.catalog.clickhouse.protocol", "http")
+                    .config("spark.sql.catalog.clickhouse.http_port", "8123")
+                    .config("spark.sql.catalog.clickhouse.user", "default")
+                    .config("spark.sql.catalog.clickhouse.password", "123456")
+                    .config("spark.sql.catalog.clickhouse.database", "default")
+                    .config("spark.clickhouse.write.format", "json")
+                    .getOrCreate();
+
+            Dataset<Row> df = spark.sql("select * from clickhouse.default.example_table");
+
+            df.show();
+
+            spark.stop();
+        }
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```java
+    object NativeSparkRead extends App {
+      val spark = SparkSession.builder
+        .appName("example")
+        .master("local[*]")
+        .config("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+        .config("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+        .config("spark.sql.catalog.clickhouse.protocol", "http")
+        .config("spark.sql.catalog.clickhouse.http_port", "8123")
+        .config("spark.sql.catalog.clickhouse.user", "default")
+        .config("spark.sql.catalog.clickhouse.password", "123456")
+        .config("spark.sql.catalog.clickhouse.database", "default")
+        .config("spark.clickhouse.write.format", "json")
+        .getOrCreate
+
+      val df = spark.sql("select * from clickhouse.default.example_table")
+
+      df.show()
+
+      spark.stop()
+    }
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    from pyspark.sql import SparkSession
+
+    packages = [
+        "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.8.0",
+        "com.clickhouse:clickhouse-client:0.7.0",
+        "com.clickhouse:clickhouse-http-client:0.7.0",
+        "org.apache.httpcomponents.client5:httpclient5:5.2.1"
+
+    ]
+
+    spark = (SparkSession.builder
+             .config("spark.jars.packages", ",".join(packages))
+             .getOrCreate())
+
+    spark.conf.set("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+    spark.conf.set("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+    spark.conf.set("spark.sql.catalog.clickhouse.protocol", "http")
+    spark.conf.set("spark.sql.catalog.clickhouse.http_port", "8123")
+    spark.conf.set("spark.sql.catalog.clickhouse.user", "default")
+    spark.conf.set("spark.sql.catalog.clickhouse.password", "123456")
+    spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
+    spark.conf.set("spark.clickhouse.write.format", "json")
+
+    df = spark.sql("select * from clickhouse.default.example_table")
+    df.show()
+
+    ```
+  </Tab>
+
+  <Tab title="Spark SQL">
+    ```sql
+       CREATE TEMPORARY VIEW jdbcTable
+               USING org.apache.spark.sql.jdbc
+               OPTIONS (
+                       url "jdbc:ch://localhost:8123/default", 
+                       dbtable "schema.tablename",
+                       user "username",
+                       password "password",
+                       driver "com.clickhouse.jdbc.ClickHouseDriver" 
+               );
+               
+       SELECT * FROM jdbcTable;
+    ```
+  </Tab>
+</Tabs>
+
+<div id="write-data">
+  ## Gravar dados
+</div>
+
+<Warning>
+  **Sobrescrita de partição sem suporte**: Atualmente, a Catalog API não oferece suporte a operações de sobrescrita em nível de partição (por exemplo, o modo `overwrite` com `partitionBy`). Esse recurso está sendo desenvolvido. Consulte a [issue #34 no GitHub](https://github.com/ClickHouse/spark-clickhouse-connector/issues/34) para acompanhar o andamento desse recurso.
+</Warning>
+
+<Tabs>
+  <Tab title="Java">
+    ```java
+     public static void main(String[] args) throws AnalysisException {
+
+            // Criar uma sessão do Spark
+            SparkSession spark = SparkSession.builder()
+                    .appName("example")
+                    .master("local[*]")
+                    .config("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+                    .config("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+                    .config("spark.sql.catalog.clickhouse.protocol", "http")
+                    .config("spark.sql.catalog.clickhouse.http_port", "8123")
+                    .config("spark.sql.catalog.clickhouse.user", "default")
+                    .config("spark.sql.catalog.clickhouse.password", "123456")
+                    .config("spark.sql.catalog.clickhouse.database", "default")
+                    .config("spark.clickhouse.write.format", "json")
+                    .getOrCreate();
+
+            // Definir o esquema do DataFrame
+            StructType schema = new StructType(new StructField[]{
+                    DataTypes.createStructField("id", DataTypes.IntegerType, false),
+                    DataTypes.createStructField("name", DataTypes.StringType, false),
+            });
+
+            List<Row> data = Arrays.asList(
+                    RowFactory.create(1, "Alice"),
+                    RowFactory.create(2, "Bob")
+            );
+
+            // Criar um DataFrame
+            Dataset<Row> df = spark.createDataFrame(data, schema);
+
+            df.writeTo("clickhouse.default.example_table").append();
+
+            spark.stop();
+        }
+    ```
+  </Tab>
+
+  <Tab title="Scala">
+    ```java
+    object NativeSparkWrite extends App {
+      // Criar uma sessão do Spark
+      val spark: SparkSession = SparkSession.builder
+        .appName("example")
+        .master("local[*]")
+        .config("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+        .config("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+        .config("spark.sql.catalog.clickhouse.protocol", "http")
+        .config("spark.sql.catalog.clickhouse.http_port", "8123")
+        .config("spark.sql.catalog.clickhouse.user", "default")
+        .config("spark.sql.catalog.clickhouse.password", "123456")
+        .config("spark.sql.catalog.clickhouse.database", "default")
+        .config("spark.clickhouse.write.format", "json")
+        .getOrCreate
+
+      // Definir o esquema do DataFrame
+      val rows = Seq(Row(1, "John"), Row(2, "Doe"))
+
+      val schema = List(
+        StructField("id", DataTypes.IntegerType, nullable = false),
+        StructField("name", StringType, nullable = true)
+      )
+      // Criar o df
+      val df: DataFrame = spark.createDataFrame(
+        spark.sparkContext.parallelize(rows),
+        StructType(schema)
+      )
+
+      df.writeTo("clickhouse.default.example_table").append()
+
+      spark.stop()
+    }
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    from pyspark.sql import SparkSession
+    from pyspark.sql import Row
+
+    # Você pode usar qualquer outra combinação de pacotes que atenda à Matriz de Compatibilidade fornecida acima.
+    packages = [
+        "com.clickhouse.spark:clickhouse-spark-runtime-3.4_2.12:0.8.0",
+        "com.clickhouse:clickhouse-client:0.7.0",
+        "com.clickhouse:clickhouse-http-client:0.7.0",
+        "org.apache.httpcomponents.client5:httpclient5:5.2.1"
+
+    ]
+
+    spark = (SparkSession.builder
+             .config("spark.jars.packages", ",".join(packages))
+             .getOrCreate())
+
+    spark.conf.set("spark.sql.catalog.clickhouse", "com.clickhouse.spark.ClickHouseCatalog")
+    spark.conf.set("spark.sql.catalog.clickhouse.host", "127.0.0.1")
+    spark.conf.set("spark.sql.catalog.clickhouse.protocol", "http")
+    spark.conf.set("spark.sql.catalog.clickhouse.http_port", "8123")
+    spark.conf.set("spark.sql.catalog.clickhouse.user", "default")
+    spark.conf.set("spark.sql.catalog.clickhouse.password", "123456")
+    spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
+    spark.conf.set("spark.clickhouse.write.format", "json")
+
+    # Criar o DataFrame
+    data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
+    df = spark.createDataFrame(data)
+
+    # Gravar o DataFrame no ClickHouse
+    df.writeTo("clickhouse.default.example_table").append()
+
+    ```
+  </Tab>
+
+  <Tab title="Spark SQL">
+    ```sql
+        -- resultTable é o df intermediário do Spark que queremos inserir em clickhouse.default.example_table
+       INSERT INTO TABLE clickhouse.default.example_table
+                    SELECT * FROM resultTable;
+                    
+    ```
+  </Tab>
+</Tabs>
+
+<div id="ddl-operations">
+  ## Operações DDL
+</div>
+
+Você pode executar operações DDL na sua instância do ClickHouse usando o Spark SQL, com todas as alterações sendo persistidas imediatamente no
+ClickHouse.
+O Spark SQL permite escrever consultas exatamente como no ClickHouse,
+para que você possa executar diretamente comandos como CREATE TABLE, TRUNCATE e outros, sem nenhuma modificação, por exemplo:
+
+<Note>
+  Ao usar o Spark SQL, apenas uma instrução pode ser executada por vez.
+</Note>
+
+```sql
+USE clickhouse; 
+```
+
+```sql
+
+CREATE TABLE test_db.tbl_sql (
+  create_time TIMESTAMP NOT NULL,
+  m           INT       NOT NULL COMMENT 'part key',
+  id          BIGINT    NOT NULL COMMENT 'sort key',
+  value       STRING
+) USING ClickHouse
+PARTITIONED BY (m)
+TBLPROPERTIES (
+  engine = 'MergeTree()',
+  order_by = 'id',
+  settings.index_granularity = 8192
+);
+```
+
+Os exemplos acima demonstram consultas em Spark SQL, que você pode executar no seu aplicativo usando qualquer API — Java, Scala,
+PySpark ou shell.
+
+<div id="working-with-varianttype">
+  ## Trabalhando com VariantType
+</div>
+
+<Note>
+  O suporte a VariantType está disponível no Spark 4.0+ e requer o ClickHouse 25.3+ com os tipos JSON/Variant experimentais habilitados.
+</Note>
+
+O conector oferece suporte ao `VariantType` do Spark para trabalhar com dados semiestruturados. O VariantType é mapeado para os tipos `JSON` e `Variant` do ClickHouse, permitindo armazenar e consultar com eficiência dados com esquema flexível.
+
+<Note>
+  Esta seção se concentra especificamente no mapeamento e uso do VariantType. Para uma visão geral completa de todos os tipos de dados compatíveis, consulte a seção [Tipos de dados compatíveis](#supported-data-types).
+</Note>
+
+<div id="clickhouse-type-mapping">
+  ### Mapeamento de tipos do ClickHouse
+</div>
+
+| Tipo do ClickHouse     | Tipo do Spark | Descrição                                                        |
+| ---------------------- | ------------- | ---------------------------------------------------------------- |
+| `JSON`                 | `VariantType` | Armazena apenas objetos JSON (deve começar com `{`)              |
+| `Variant(T1, T2, ...)` | `VariantType` | Armazena vários tipos, incluindo tipos primitivos, arrays e JSON |
+
+<div id="reading-varianttype-data">
+  ### Lendo dados do VariantType
+</div>
+
+Ao ler do ClickHouse, as colunas `JSON` e `Variant` são mapeadas automaticamente para o `VariantType` do Spark:
+
+<Tabs>
+  <Tab title="Scala">
+    ```scala
+    // Ler coluna JSON como VariantType
+    val df = spark.sql("SELECT id, data FROM clickhouse.default.json_table")
+
+    // Acessar dados Variant
+    df.show()
+
+    // Converter Variant em string JSON para inspeção
+    import org.apache.spark.sql.functions._
+    df.select(
+      col("id"),
+      to_json(col("data")).as("data_json")
+    ).show()
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    # Ler coluna JSON como VariantType
+    df = spark.sql("SELECT id, data FROM clickhouse.default.json_table")
+
+    # Acessar dados Variant
+    df.show()
+
+    # Converter Variant em string JSON para inspeção
+    from pyspark.sql.functions import to_json
+    df.select(
+        "id",
+        to_json("data").alias("data_json")
+    ).show()
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    // Ler coluna JSON como VariantType
+    Dataset<Row> df = spark.sql("SELECT id, data FROM clickhouse.default.json_table");
+
+    // Acessar dados Variant
+    df.show();
+
+    // Converter Variant em string JSON para inspeção
+    import static org.apache.spark.sql.functions.*;
+    df.select(
+        col("id"),
+        to_json(col("data")).as("data_json")
+    ).show();
+    ```
+  </Tab>
+</Tabs>
+
+<div id="writing-varianttype-data">
+  ### Gravando dados VariantType
+</div>
+
+Você pode gravar dados VariantType no ClickHouse usando tipos de coluna JSON ou Variant:
+
+<Tabs>
+  <Tab title="Scala">
+    ```scala
+    import org.apache.spark.sql.functions._
+
+    // Criar DataFrame com dados JSON
+    val jsonData = Seq(
+      (1, """{"name": "Alice", "age": 30}"""),
+      (2, """{"name": "Bob", "age": 25}"""),
+      (3, """{"name": "Charlie", "city": "NYC"}""")
+    ).toDF("id", "json_string")
+
+    // Converter strings JSON em VariantType
+    val variantDF = jsonData.select(
+      col("id"),
+      parse_json(col("json_string")).as("data")
+    )
+
+    // Gravar no ClickHouse com o tipo JSON (somente objetos JSON)
+    variantDF.writeTo("clickhouse.default.user_data").create()
+
+    // Ou especificar Variant com vários tipos
+    spark.sql("""
+      CREATE TABLE clickhouse.default.mixed_data (
+        id INT,
+        data VARIANT
+      ) USING clickhouse
+      TBLPROPERTIES (
+        'clickhouse.column.data.variant_types' = 'String, Int64, Bool, JSON',
+        'engine' = 'MergeTree()',
+        'order_by' = 'id'
+      )
+    """)
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    from pyspark.sql.functions import parse_json
+
+    # Criar DataFrame com dados JSON
+    json_data = [
+        (1, '{"name": "Alice", "age": 30}'),
+        (2, '{"name": "Bob", "age": 25}'),
+        (3, '{"name": "Charlie", "city": "NYC"}')
+    ]
+    df = spark.createDataFrame(json_data, ["id", "json_string"])
+
+    # Converter strings JSON em VariantType
+    variant_df = df.select(
+        "id",
+        parse_json("json_string").alias("data")
+    )
+
+    # Gravar no ClickHouse com o tipo JSON
+    variant_df.writeTo("clickhouse.default.user_data").create()
+
+    # Ou especificar Variant com vários tipos
+    spark.sql("""
+      CREATE TABLE clickhouse.default.mixed_data (
+        id INT,
+        data VARIANT
+      ) USING clickhouse
+      TBLPROPERTIES (
+        'clickhouse.column.data.variant_types' = 'String, Int64, Bool, JSON',
+        'engine' = 'MergeTree()',
+        'order_by' = 'id'
+      )
+    """)
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    import static org.apache.spark.sql.functions.*;
+
+    // Criar DataFrame com dados JSON
+    List<Row> jsonData = Arrays.asList(
+        RowFactory.create(1, "{\"name\": \"Alice\", \"age\": 30}"),
+        RowFactory.create(2, "{\"name\": \"Bob\", \"age\": 25}"),
+        RowFactory.create(3, "{\"name\": \"Charlie\", \"city\": \"NYC\"}")
+    );
+    StructType schema = new StructType(new StructField[]{
+        DataTypes.createStructField("id", DataTypes.IntegerType, false),
+        DataTypes.createStructField("json_string", DataTypes.StringType, false)
+    });
+    Dataset<Row> jsonDF = spark.createDataFrame(jsonData, schema);
+
+    // Converter strings JSON em VariantType
+    Dataset<Row> variantDF = jsonDF.select(
+        col("id"),
+        parse_json(col("json_string")).as("data")
+    );
+
+    // Gravar no ClickHouse com o tipo JSON (somente objetos JSON)
+    variantDF.writeTo("clickhouse.default.user_data").create();
+
+    // Ou especificar Variant com vários tipos
+    spark.sql("CREATE TABLE clickhouse.default.mixed_data (" +
+        "id INT, " +
+        "data VARIANT" +
+        ") USING clickhouse " +
+        "TBLPROPERTIES (" +
+        "'clickhouse.column.data.variant_types' = 'String, Int64, Bool, JSON', " +
+        "'engine' = 'MergeTree()', " +
+        "'order_by' = 'id'" +
+        ")");
+    ```
+  </Tab>
+</Tabs>
+
+<div id="creating-varianttype-tables-spark-sql">
+  ### Criando tabelas do tipo VariantType com Spark SQL
+</div>
+
+Você pode criar tabelas do tipo VariantType usando DDL do Spark SQL:
+
+```sql
+-- Criar tabela com tipo JSON (padrão)
+CREATE TABLE clickhouse.default.json_table (
+  id INT,
+  data VARIANT
+) USING clickhouse
+TBLPROPERTIES (
+  'engine' = 'MergeTree()',
+  'order_by' = 'id'
+)
+```
+
+```sql
+-- Criar tabela com tipo Variant suportando múltiplos tipos
+CREATE TABLE clickhouse.default.flexible_data (
+  id INT,
+  data VARIANT
+) USING clickhouse
+TBLPROPERTIES (
+  'clickhouse.column.data.variant_types' = 'String, Int64, Float64, Bool, Array(String), JSON',
+  'engine' = 'MergeTree()',
+  'order_by' = 'id'
+)
+```
+
+<div id="configuring-variant-types">
+  ### Configurando os tipos Variant
+</div>
+
+Ao criar tabelas com colunas `VariantType`, você pode especificar quais tipos do ClickHouse devem ser usados:
+
+<div id="json-type-default">
+  #### Tipo JSON (padrão)
+</div>
+
+Se nenhuma propriedade `variant_types` for especificada, a coluna usará, por padrão, o tipo `JSON` do ClickHouse, que aceita apenas objetos JSON:
+
+```sql
+CREATE TABLE clickhouse.default.json_table (
+  id INT,
+  data VARIANT
+) USING clickhouse
+TBLPROPERTIES (
+  'engine' = 'MergeTree()',
+  'order_by' = 'id'
+)
+```
+
+Isso cria a seguinte consulta do ClickHouse:
+
+```sql
+CREATE TABLE json_table (id Int32, data JSON) ENGINE = MergeTree() ORDER BY id
+```
+
+<div id="variant-type-multiple-types">
+  #### Tipo Variant com múltiplos tipos
+</div>
+
+Para dar suporte a primitivos, arrays e objetos JSON, especifique os tipos na propriedade `variant_types`:
+
+```sql
+CREATE TABLE clickhouse.default.flexible_data (
+  id INT,
+  data VARIANT
+) USING clickhouse
+TBLPROPERTIES (
+  'clickhouse.column.data.variant_types' = 'String, Int64, Float64, Bool, Array(String), JSON',
+  'engine' = 'MergeTree()',
+  'order_by' = 'id'
+)
+```
+
+Isso cria a seguinte consulta do ClickHouse:
+
+```sql
+CREATE TABLE flexible_data (
+  id Int32, 
+  data Variant(String, Int64, Float64, Bool, Array(String), JSON)
+) ENGINE = MergeTree() ORDER BY id
+```
+
+<div id="supported-variant-types">
+  ### Tipos de Variant compatíveis
+</div>
+
+Os seguintes tipos do ClickHouse podem ser usados em `Variant()`:
+
+* **Primitivos**: `String`, `Int8`, `Int16`, `Int32`, `Int64`, `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Float32`, `Float64`, `Bool`
+* **Arrays**: `Array(T)`, em que T é qualquer tipo compatível, incluindo arrays aninhados
+* **JSON**: `JSON` para armazenar objetos JSON
+
+<div id="read-format-configuration">
+  ### Configuração do formato de leitura
+</div>
+
+Por padrão, as colunas JSON e Variant são lidas como `VariantType`. Você pode alterar esse comportamento para lê-las como strings:
+
+<Tabs>
+  <Tab title="Scala">
+    ```scala
+    // Lê JSON/Variant como strings em vez de VariantType
+    spark.conf.set("spark.clickhouse.read.jsonAs", "string")
+
+    val df = spark.sql("SELECT id, data FROM clickhouse.default.json_table")
+    // a coluna data será do tipo StringType e conterá strings JSON
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    # Lê JSON/Variant como strings em vez de VariantType
+    spark.conf.set("spark.clickhouse.read.jsonAs", "string")
+
+    df = spark.sql("SELECT id, data FROM clickhouse.default.json_table")
+    # a coluna data será do tipo StringType e conterá strings JSON
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    // Lê JSON/Variant como strings em vez de VariantType
+    spark.conf().set("spark.clickhouse.read.jsonAs", "string");
+
+    Dataset<Row> df = spark.sql("SELECT id, data FROM clickhouse.default.json_table");
+    // a coluna data será do tipo StringType e conterá strings JSON
+    ```
+  </Tab>
+</Tabs>
+
+<div id="write-format-support">
+  ### Suporte ao formato de gravação
+</div>
+
+O suporte à gravação para VariantType varia de acordo com o formato:
+
+| Formato | Suporte    | Observações                                                                                                                                                                                                    |
+| ------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| JSON    | ✅ Completo | Oferece suporte aos tipos `JSON` e `Variant`. Recomendado para dados VariantType                                                                                                                               |
+| Arrow   | ⚠️ Parcial | Oferece suporte à gravação no tipo `JSON` do ClickHouse. Não oferece suporte ao tipo `Variant` do ClickHouse. O suporte completo depende da resolução de https://github.com/ClickHouse/ClickHouse/issues/92752 |
+
+Configure o formato de gravação:
+
+```scala
+spark.conf.set("spark.clickhouse.write.format", "json")  // Recomendado para tipos Variant
+```
+
+<Tip>
+  Se você precisar gravar em um tipo `Variant` do ClickHouse, use o formato JSON. O formato Arrow só oferece suporte à gravação apenas no tipo `JSON`.
+</Tip>
+
+<div id="varianttype-best-practices">
+  ### Melhores práticas
+</div>
+
+1. **Use o tipo JSON para dados exclusivamente em JSON**: Se você armazena apenas objetos JSON, use o tipo JSON padrão (sem a propriedade `variant_types`)
+2. **Especifique os tipos explicitamente**: Ao usar `Variant()`, liste explicitamente todos os tipos que você pretende armazenar
+3. **Habilite recursos experimentais**: Verifique se o ClickHouse está com `allow_experimental_json_type = 1` habilitado
+4. **Use o formato JSON para escritas**: O formato JSON é recomendado para dados do VariantType, por oferecer melhor compatibilidade
+5. **Considere os padrões de consulta**: Os tipos JSON/Variant oferecem suporte às consultas de caminho JSON do ClickHouse para uma filtragem eficiente
+6. **Column hints para desempenho**: Ao usar campos JSON no ClickHouse, adicionar column hints melhora o desempenho da consulta. No momento, não há suporte para adicionar column hints via Spark. Consulte a [GitHub issue #497](https://github.com/ClickHouse/spark-clickhouse-connector/issues/497) para acompanhar esse recurso.
+
+<div id="varianttype-example-workflow">
+  ### Exemplo: Fluxo de trabalho completo
+</div>
+
+<Tabs>
+  <Tab title="Scala">
+    ```scala
+    import org.apache.spark.sql.functions._
+
+    // Habilitar o tipo JSON experimental no ClickHouse
+    spark.sql("SET allow_experimental_json_type = 1")
+
+    // Criar tabela com coluna Variant
+    spark.sql("""
+      CREATE TABLE clickhouse.default.events (
+        event_id BIGINT,
+        event_time TIMESTAMP,
+        event_data VARIANT
+      ) USING clickhouse
+      TBLPROPERTIES (
+        'clickhouse.column.event_data.variant_types' = 'String, Int64, Bool, JSON',
+        'engine' = 'MergeTree()',
+        'order_by' = 'event_time'
+      )
+    """)
+
+    // Preparar dados com tipos mistos
+    val events = Seq(
+      (1L, "2024-01-01 10:00:00", """{"action": "login", "user_id": 123}"""),
+      (2L, "2024-01-01 10:05:00", """{"action": "purchase", "amount": 99.99}"""),
+      (3L, "2024-01-01 10:10:00", """{"action": "logout", "duration": 600}""")
+    ).toDF("event_id", "event_time", "json_data")
+
+    // Converter para VariantType e gravar
+    val variantEvents = events.select(
+      col("event_id"),
+      to_timestamp(col("event_time")).as("event_time"),
+      parse_json(col("json_data")).as("event_data")
+    )
+
+    variantEvents.writeTo("clickhouse.default.events").append()
+
+    // Ler e consultar
+    val result = spark.sql("""
+      SELECT event_id, event_time, event_data
+      FROM clickhouse.default.events
+      WHERE event_time >= '2024-01-01'
+      ORDER BY event_time
+    """)
+
+    result.show(false)
+    ```
+  </Tab>
+
+  <Tab title="Python">
+    ```python
+    from pyspark.sql.functions import parse_json, to_timestamp
+
+    # Habilitar o tipo JSON experimental no ClickHouse
+    spark.sql("SET allow_experimental_json_type = 1")
+
+    # Criar tabela com coluna Variant
+    spark.sql("""
+      CREATE TABLE clickhouse.default.events (
+        event_id BIGINT,
+        event_time TIMESTAMP,
+        event_data VARIANT
+      ) USING clickhouse
+      TBLPROPERTIES (
+        'clickhouse.column.event_data.variant_types' = 'String, Int64, Bool, JSON',
+        'engine' = 'MergeTree()',
+        'order_by' = 'event_time'
+      )
+    """)
+
+    # Preparar dados com tipos mistos
+    events = [
+        (1, "2024-01-01 10:00:00", '{"action": "login", "user_id": 123}'),
+        (2, "2024-01-01 10:05:00", '{"action": "purchase", "amount": 99.99}'),
+        (3, "2024-01-01 10:10:00", '{"action": "logout", "duration": 600}')
+    ]
+    df = spark.createDataFrame(events, ["event_id", "event_time", "json_data"])
+
+    # Converter para VariantType e gravar
+    variant_events = df.select(
+        "event_id",
+        to_timestamp("event_time").alias("event_time"),
+        parse_json("json_data").alias("event_data")
+    )
+
+    variant_events.writeTo("clickhouse.default.events").append()
+
+    # Ler e consultar
+    result = spark.sql("""
+      SELECT event_id, event_time, event_data
+      FROM clickhouse.default.events
+      WHERE event_time >= '2024-01-01'
+      ORDER BY event_time
+    """)
+
+    result.show(truncate=False)
+    ```
+  </Tab>
+
+  <Tab title="Java">
+    ```java
+    import static org.apache.spark.sql.functions.*;
+
+    // Habilitar o tipo JSON experimental no ClickHouse
+    spark.sql("SET allow_experimental_json_type = 1");
+
+    // Criar tabela com coluna Variant
+    spark.sql("CREATE TABLE clickhouse.default.events (" +
+        "event_id BIGINT, " +
+        "event_time TIMESTAMP, " +
+        "event_data VARIANT" +
+        ") USING clickhouse " +
+        "TBLPROPERTIES (" +
+        "'clickhouse.column.event_data.variant_types' = 'String, Int64, Bool, JSON', " +
+        "'engine' = 'MergeTree()', " +
+        "'order_by' = 'event_time'" +
+        ")");
+
+    // Preparar dados com tipos mistos
+    List<Row> events = Arrays.asList(
+        RowFactory.create(1L, "2024-01-01 10:00:00", "{\"action\": \"login\", \"user_id\": 123}"),
+        RowFactory.create(2L, "2024-01-01 10:05:00", "{\"action\": \"purchase\", \"amount\": 99.99}"),
+        RowFactory.create(3L, "2024-01-01 10:10:00", "{\"action\": \"logout\", \"duration\": 600}")
+    );
+    StructType eventSchema = new StructType(new StructField[]{
+        DataTypes.createStructField("event_id", DataTypes.LongType, false),
+        DataTypes.createStructField("event_time", DataTypes.StringType, false),
+        DataTypes.createStructField("json_data", DataTypes.StringType, false)
+    });
+    Dataset<Row> eventsDF = spark.createDataFrame(events, eventSchema);
+
+    // Converter para VariantType e gravar
+    Dataset<Row> variantEvents = eventsDF.select(
+        col("event_id"),
+        to_timestamp(col("event_time")).as("event_time"),
+        parse_json(col("json_data")).as("event_data")
+    );
+
+    variantEvents.writeTo("clickhouse.default.events").append();
+
+    // Ler e consultar
+    Dataset<Row> result = spark.sql("SELECT event_id, event_time, event_data " +
+        "FROM clickhouse.default.events " +
+        "WHERE event_time >= '2024-01-01' " +
+        "ORDER BY event_time");
+
+    result.show(false);
+    ```
+  </Tab>
+</Tabs>
+
+<div id="configurations">
+  ## Configurações
+</div>
+
+A seguir estão as configurações ajustáveis disponíveis no conector.
+
+<Note>
+  **Uso das configurações**: estas são opções de configuração no nível do Spark que se aplicam tanto à Catalog API quanto à TableProvider API. Elas podem ser definidas de duas formas:
+
+  1. **Configuração global do Spark** (aplica-se a todas as operações):
+     ```python
+     spark.conf.set("spark.clickhouse.write.batchSize", "20000")
+     spark.conf.set("spark.clickhouse.write.compression.codec", "lz4")
+     ```
+
+  2. **Substituição por operação** (somente na TableProvider API — pode sobrescrever as configurações globais):
+     ```python
+     df.write \
+         .format("clickhouse") \
+         .option("host", "your-host") \
+         .option("database", "default") \
+         .option("table", "my_table") \
+         .option("spark.clickhouse.write.batchSize", "20000") \
+         .option("spark.clickhouse.write.compression.codec", "lz4") \
+         .mode("append") \
+         .save()
+     ```
+
+  Como alternativa, defina essas opções em `spark-defaults.conf` ou ao criar a sessão do Spark.
+</Note>
+
+<br />
+
+| Chave                                                                    | Padrão                                                 | Descrição                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Desde  |
+| ------------------------------------------------------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| spark.clickhouse.ignoreUnsupportedTransform                              | true                                                   | O ClickHouse oferece suporte ao uso de expressões complexas como chaves de sharding ou valores de partição, por exemplo, `cityHash64(col_1, col_2)`, mas atualmente o Spark não consegue oferecer suporte a isso. Se `true`, ignora as expressões sem suporte e registra um aviso; caso contrário, falha imediatamente com uma exceção. **Aviso**: quando `spark.clickhouse.write.distributed.convertLocal=true`, ignorar chaves de sharding sem suporte pode corromper os dados. O connector valida isso e gera um erro por padrão. Para permitir esse comportamento, defina explicitamente `spark.clickhouse.write.distributed.convertLocal.allowUnsupportedSharding=true`. | 0.4.0  |
+| spark.clickhouse.read.compression.codec                                  | lz4                                                    | O codec usado para descomprimir os dados para leitura. Codecs compatíveis: none, lz4.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0.5.0  |
+| spark.clickhouse.read.distributed.convertLocal                           | true                                                   | Ao ler uma tabela Distributed, leia a tabela local em vez da própria tabela Distributed. Se `true`, ignore `spark.clickhouse.read.distributed.useClusterNodes`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 0.1.0  |
+| spark.clickhouse.read.fixedStringAs                                      | binary                                                 | Lê o tipo FixedString do ClickHouse como o tipo de dados do Spark especificado. Tipos compatíveis: binary, string                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 0.8.0  |
+| spark.clickhouse.read.format                                             | json                                                   | Formato de serialização para leitura. Formatos suportados: json, binary                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 0.6.0  |
+| spark.clickhouse.read.runtimeFilter.enabled                              | false                                                  | Habilita o filtro em tempo de execução para leitura.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | 0.8.0  |
+| spark.clickhouse.read.splitByPartitionId                                 | true                                                   | Se `true`, constrói o filtro da partição de entrada pela coluna virtual `_partition_id`, em vez do valor da partição. Há problemas conhecidos na construção de predicados SQL com base no valor da partição. Este recurso requer o ClickHouse Server v21.6+                                                                                                                                                                                                                                                                                                                                                                                                                   | 0.4.0  |
+| spark.clickhouse.useNullableQuerySchema                                  | false                                                  | Se `true`, marque todos os campos do esquema da consulta como anuláveis ao criar a tabela com `CREATE/REPLACE TABLE ... AS SELECT ...`. Observe que essa configuração requer o SPARK-43390 (disponível no Spark 3.5); sem esse patch, ela sempre se comporta como `true`.                                                                                                                                                                                                                                                                                                                                                                                                     | 0.8.0  |
+| spark.clickhouse.write.batchSize                                         | 10000                                                  | O número de registros por Batch ao gravar no ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 0.1.0  |
+| spark.clickhouse.write.compression.codec                                 | lz4                                                    | O codec usado para compactar os dados durante a gravação. Codecs compatíveis: none, lz4.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 0.3.0  |
+| spark.clickhouse.write.distributed.convertLocal                          | false                                                  | Ao gravar em uma tabela Distributed, grave na tabela local em vez da própria tabela Distributed. Se estiver como `true`, ignore `spark.clickhouse.write.distributed.useClusterNodes`. Isso contorna o roteamento nativo do ClickHouse, fazendo com que o Spark precise avaliar a chave de sharding. Ao usar expressões de sharding não suportadas, defina `spark.clickhouse.ignoreUnsupportedTransform` como `false` para evitar erros silenciosos na distribuição de dados.                                                                                                                                                                                                  | 0.1.0  |
+| spark.clickhouse.write.distributed.convertLocal.allowUnsupportedSharding | false                                                  | Permite gravar em tabelas Distributed com `convertLocal=true` e `ignoreUnsupportedTransform=true` quando a chave de sharding não é suportada. Isso é perigoso e pode causar corrupção de dados devido a sharding incorreto. Quando definido como `true`, você deve garantir que seus dados estejam devidamente ordenados/distribuídos entre shards antes da gravação, pois o Spark não consegue avaliar a expressão de sharding não suportada. Defina como `true` somente se você compreender os riscos e tiver verificado a distribuição dos seus dados. Por padrão, essa combinação gerará um erro para evitar corrupção silenciosa de dados.                               | 0.10.0 |
+| spark.clickhouse.write.distributed.useClusterNodes                       | true                                                   | Grava em todos os nós do cluster ao gravar em uma tabela Distributed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | 0.1.0  |
+| spark.clickhouse.write.format                                            | arrow                                                  | Formato de serialização para gravação. Formatos compatíveis: json, arrow                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 0.4.0  |
+| spark.clickhouse.write.localSortByKey                                    | true                                                   | Se `true`, realiza a ordenação local pelas chaves de ordenação antes da gravação.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 0.3.0  |
+| spark.clickhouse.write.localSortByPartition                              | valor de spark.clickhouse.write.repartitionByPartition | Se `true`, faz a ordenação local por partição antes da gravação. Se não for definido, é igual a `spark.clickhouse.write.repartitionByPartition`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | 0.3.0  |
+| spark.clickhouse.write.maxRetry                                          | 3                                                      | O número máximo de tentativas de gravação para uma única gravação em lote que falhou com códigos passíveis de retry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | 0.1.0  |
+| spark.clickhouse.write.repartitionByPartition                            | true                                                   | Se os dados devem ser reparticionados com base nas chaves de partição do ClickHouse para corresponder à distribuição da tabela do ClickHouse antes da gravação.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 0.3.0  |
+| spark.clickhouse.write.repartitionNum                                    | 0                                                      | É necessário reparticionar os dados para que correspondam à distribuição da tabela do ClickHouse antes da gravação; use esta configuração para especificar o número de repartições; valores menores que 1 significam que não há necessidade de reparticionamento.                                                                                                                                                                                                                                                                                                                                                                                                             | 0.1.0  |
+| spark.clickhouse.write.repartitionStrictly                               | false                                                  | Se `true`, o Spark distribuirá rigorosamente os registros de entrada entre as partições para atender à distribuição exigida antes de gravar os registros na tabela da fonte de dados. Caso contrário, o Spark poderá aplicar certas otimizações para acelerar a consulta, mas violar o requisito de distribuição. Observe que esta configuração requer o SPARK-37523 (disponível no Spark 3.4); sem esse patch, ela sempre se comporta como `true`.                                                                                                                                                                                                                           | 0.3.0  |
+| spark.clickhouse.write.retryInterval                                     | 10s                                                    | O intervalo, em segundos, entre tentativas de gravação.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | 0.1.0  |
+| spark.clickhouse.write.retryableErrorCodes                               | 241                                                    | Os códigos de erro retornados pelo servidor ClickHouse que permitem nova tentativa quando a gravação falha.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 0.1.0  |
+
+<div id="supported-data-types">
+  ## Tipos de dados compatíveis
+</div>
+
+Esta seção apresenta o mapeamento dos tipos de dados entre o Spark e o ClickHouse. As tabelas abaixo servem como referência rápida
+para a conversão de tipos de dados ao ler dados do ClickHouse no Spark e ao inserir dados do Spark no ClickHouse.
+
+<div id="reading-data-from-clickhouse-into-spark">
+  ### Lendo dados do ClickHouse no Spark
+</div>
+
+| Tipo de dados do ClickHouse                                       | Tipo de dados do Spark         | Suportado | É primitivo | Observações                                                                                                                                                                               |
+| ----------------------------------------------------------------- | ------------------------------ | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Nothing`                                                         | `NullType`                     | ✅         | Sim         |                                                                                                                                                                                           |
+| `Bool`                                                            | `BooleanType`                  | ✅         | Sim         |                                                                                                                                                                                           |
+| `UInt8`, `Int16`                                                  | `ShortType`                    | ✅         | Sim         |                                                                                                                                                                                           |
+| `Int8`                                                            | `ByteType`                     | ✅         | Sim         |                                                                                                                                                                                           |
+| `UInt16`,`Int32`                                                  | `IntegerType`                  | ✅         | Sim         |                                                                                                                                                                                           |
+| `UInt32`,`Int64`, `UInt64`                                        | `LongType`                     | ✅         | Sim         |                                                                                                                                                                                           |
+| `Int128`,`UInt128`, `Int256`, `UInt256`                           | `DecimalType(38, 0)`           | ✅         | Sim         |                                                                                                                                                                                           |
+| `Float32`                                                         | `FloatType`                    | ✅         | Sim         |                                                                                                                                                                                           |
+| `Float64`                                                         | `DoubleType`                   | ✅         | Sim         |                                                                                                                                                                                           |
+| `String`, `UUID`, `Enum8`, `Enum16`, `IPv4`, `IPv6`               | `StringType`                   | ✅         | Sim         |                                                                                                                                                                                           |
+| `FixedString`                                                     | `BinaryType`, `StringType`     | ✅         | Sim         | Controlado pela configuração `READ_FIXED_STRING_AS`                                                                                                                                       |
+| `Decimal`                                                         | `DecimalType`                  | ✅         | Sim         | Precisão e escala de até `Decimal128`                                                                                                                                                     |
+| `Decimal32`                                                       | `DecimalType(9, scale)`        | ✅         | Sim         |                                                                                                                                                                                           |
+| `Decimal64`                                                       | `DecimalType(18, scale)`       | ✅         | Sim         |                                                                                                                                                                                           |
+| `Decimal128`                                                      | `DecimalType(38, scale)`       | ✅         | Sim         |                                                                                                                                                                                           |
+| `Date`, `Date32`                                                  | `DateType`                     | ✅         | Sim         |                                                                                                                                                                                           |
+| `DateTime`, `DateTime32`, `DateTime64`                            | `TimestampType`                | ✅         | Sim         |                                                                                                                                                                                           |
+| `Array`                                                           | `ArrayType`                    | ✅         | Não         | O tipo de elemento do Array também é convertido                                                                                                                                           |
+| `Map`                                                             | `MapType`                      | ✅         | Não         | As chaves são limitadas a `StringType`                                                                                                                                                    |
+| `IntervalYear`                                                    | `YearMonthIntervalType(Year)`  | ✅         | Sim         |                                                                                                                                                                                           |
+| `IntervalMonth`                                                   | `YearMonthIntervalType(Month)` | ✅         | Sim         |                                                                                                                                                                                           |
+| `IntervalDay`, `IntervalHour`, `IntervalMinute`, `IntervalSecond` | `DayTimeIntervalType`          | ✅         | Não         | O tipo de intervalo específico é usado                                                                                                                                                    |
+| `JSON`, `Variant`                                                 | `VariantType`                  | ✅         | Não         | Requer Spark 4.0+ e ClickHouse 25.3+. Pode ser lido como `StringType` com `spark.clickhouse.read.jsonAs=string`                                                                           |
+| `Object`                                                          |                                | ❌         |             |                                                                                                                                                                                           |
+| `Nested`                                                          |                                | ❌         |             |                                                                                                                                                                                           |
+| `Tuple`                                                           | `StructType`                   | ✅         | Não         | Suporta Tuples nomeadas e não nomeadas. As Tuples nomeadas são mapeadas para campos da struct pelo nome; as não nomeadas usam `_1`, `_2` etc. Suporta structs aninhadas e campos Nullable |
+| `Point`                                                           |                                | ❌         |             |                                                                                                                                                                                           |
+| `Polygon`                                                         |                                | ❌         |             |                                                                                                                                                                                           |
+| `MultiPolygon`                                                    |                                | ❌         |             |                                                                                                                                                                                           |
+| `Ring`                                                            |                                | ❌         |             |                                                                                                                                                                                           |
+| `IntervalQuarter`                                                 |                                | ❌         |             |                                                                                                                                                                                           |
+| `IntervalWeek`                                                    |                                | ❌         |             |                                                                                                                                                                                           |
+| `Decimal256`                                                      |                                | ❌         |             |                                                                                                                                                                                           |
+| `AggregateFunction`                                               |                                | ❌         |             |                                                                                                                                                                                           |
+| `SimpleAggregateFunction`                                         |                                | ❌         |             |                                                                                                                                                                                           |
+
+<div id="inserting-data-from-spark-into-clickhouse">
+  ### Inserindo dados do Spark no ClickHouse
+</div>
+
+| Tipo de dado do Spark               | Tipo de dado do ClickHouse | Suportado | É primitivo | Observações                                                                                                                                                             |
+| ----------------------------------- | -------------------------- | --------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BooleanType`                       | `Bool`                     | ✅         | Sim         | Mapeado para o tipo `Bool` (e não `UInt8`) desde a versão 0.9.0                                                                                                         |
+| `ByteType`                          | `Int8`                     | ✅         | Sim         |                                                                                                                                                                         |
+| `ShortType`                         | `Int16`                    | ✅         | Sim         |                                                                                                                                                                         |
+| `IntegerType`                       | `Int32`                    | ✅         | Sim         |                                                                                                                                                                         |
+| `LongType`                          | `Int64`                    | ✅         | Sim         |                                                                                                                                                                         |
+| `FloatType`                         | `Float32`                  | ✅         | Sim         |                                                                                                                                                                         |
+| `DoubleType`                        | `Float64`                  | ✅         | Sim         |                                                                                                                                                                         |
+| `StringType`                        | `String`                   | ✅         | Sim         |                                                                                                                                                                         |
+| `VarcharType`                       | `String`                   | ✅         | Sim         |                                                                                                                                                                         |
+| `CharType`                          | `String`                   | ✅         | Sim         |                                                                                                                                                                         |
+| `DecimalType`                       | `Decimal(p, s)`            | ✅         | Sim         | Precisão e scale até `Decimal128`                                                                                                                                       |
+| `DateType`                          | `Date`                     | ✅         | Sim         |                                                                                                                                                                         |
+| `TimestampType`                     | `DateTime`                 | ✅         | Sim         |                                                                                                                                                                         |
+| `ArrayType` (lista, tupla ou array) | `Array`                    | ✅         | Não         | O element type do array também é convertido                                                                                                                             |
+| `MapType`                           | `Map`                      | ✅         | Não         | As chaves são limitadas a `StringType`                                                                                                                                  |
+| `StructType`                        | `Tuple`                    | ✅         | Não         | Convertido em `Tuple` nomeada com nomes de field.                                                                                                                       |
+| `VariantType`                       | `JSON` ou `Variant`        | ✅         | Não         | Requer Spark 4.0+ e ClickHouse 25.3+. O padrão é o tipo `JSON`. Use a propriedade `clickhouse.column.<name>.variant_types` para especificar `Variant` com vários tipos. |
+| `Object`                            |                            | ❌         |             |                                                                                                                                                                         |
+| `Nested`                            |                            | ❌         |             |                                                                                                                                                                         |
+
+<div id="contributing-and-support">
+  ## Contribuições e suporte
+</div>
+
+Se você quiser contribuir com o projeto ou relatar algum problema, ficaremos felizes com sua colaboração!
+Visite nosso [repositório no GitHub](https://github.com/ClickHouse/spark-clickhouse-connector) para abrir uma issue, sugerir
+melhorias ou enviar um pull request.
+Contribuições são bem-vindas! Consulte as diretrizes de contribuição no repositório antes de começar.
+Agradecemos por ajudar a melhorar nosso ClickHouse Spark connector!

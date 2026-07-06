@@ -1,0 +1,114 @@
+---
+title: كيفية تصفية جدول ClickHouse باستخدام عمود مصفوفي؟
+description: "مقالة في قاعدة المعرفة حول كيفية تصفية جدول ClickHouse باستخدام عمود مصفوفي."
+date: 2024-12-17
+tags: ['نمذجة البيانات', 'الدوال']
+keywords: ['تصفية', 'عمود مصفوفي']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## المقدمة
+</div>
+
+تُعدّ تصفية جدول ClickHouse استنادًا إلى عمود مصفوفي مهمة شائعة، ويوفّر المنتج الكثير من [الدوال](/ar/reference/functions/regular-functions/array-functions) للتعامل مع الأعمدة المصفوفية.
+
+في هذه المقالة، سنركّز على تصفية جدول استنادًا إلى عمود مصفوفي، لكن الفيديو أدناه يغطّي أيضًا العديد من الدوال الأخرى المرتبطة بالمصفوفات:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/JKHAdCFtYDg?si=OqS3ry1LFrOlF8Iy" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="example">
+  ## مثال
+</div>
+
+سنستخدم مثالًا لجدول يضم عمودين `tags_string` و`tags_int` يحتويان، على الترتيب، على مصفوفة من السلاسل النصية ومصفوفة من الأعداد الصحيحة.
+
+* أنشئ قاعدة بيانات وجدولًا تجريبيين.
+
+```sql
+CREATE DATABASE db1;
+```
+
+* أنشئ جدولًا تجريبيًا
+
+```sql
+CREATE TABLE db1.tags_table
+(
+    `id` UInt64,
+    `tags_string` Array(String),
+    `tags_int` Array(UInt64),
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+* أدرِج بعض البيانات التجريبية في الجدول.
+
+```sql
+INSERT INTO db1.tags_table VALUES (1, ['tag1', 'tag2', 'tag3'], [1, 2, 3]), (2, ['tag2', 'tag3', 'tag4'], [2, 3, 4]), (3, ['tag1', 'tag3', 'tag5'], [1, 3, 5]);
+```
+
+صفِّ الجدول باستخدام الدالة `has(arr, elem)` لإرجاع الصفوف التي تحتوي فيها المصفوفة `arr` على العنصر `elem`.
+
+صفِّ الجدول لإرجاع الصفوف التي تحتوي فيها المصفوفة `tags_string` على العنصر `tag1`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE has(tags_string, 'tag1');
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+استخدم الدالة `hasAll(arr, elems)` لإرجاع الصفوف التي تكون فيها جميع عناصر المصفوفة `elems` موجودة في المصفوفة `arr`.
+
+صفِّ الجدول لإرجاع الصفوف التي تكون فيها جميع عناصر المصفوفة `tags_string` موجودة في المصفوفة `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAll(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+└────┴────────────────────────┴──────────┘
+```
+
+استخدم الدالة `hasAny(arr, elems)` لإرجاع الصفوف التي تحتوي فيها المصفوفة `arr` على عنصر واحد على الأقل من المصفوفة `elems`.
+
+قم بتصفية الجدول لإرجاع الصفوف التي تحتوي فيها المصفوفة `tags_string` على عنصر واحد على الأقل من المصفوفة `['tag1', 'tag2']`.
+
+```sql
+SELECT * FROM db1.tags_table WHERE hasAny(tags_string, ['tag1', 'tag2']);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  1 │ ['tag1','tag2','tag3'] │ [1,2,3]  │
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```
+
+يمكننا استخدام دالة لامبدا لتصفية الجدول عبر الدالة `arrayExists(lambda, arr)`.
+
+صفِّ الجدول بحيث يُرجِع الصفوف التي تكون فيها قيمة عنصر واحد على الأقل في المصفوفة `tags_int` أكبر من 3.
+
+```sql
+SELECT * FROM db1.tags_table WHERE arrayExists(x -> x > 3, tags_int);
+```
+
+```text
+┌─id─┬─tags_string────────────┬─tags_int─┐
+│  2 │ ['tag2','tag3','tag4'] │ [2,3,4]  │
+│  3 │ ['tag1','tag3','tag5'] │ [1,3,5]  │
+└────┴────────────────────────┴──────────┘
+```

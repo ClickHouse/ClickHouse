@@ -3,6 +3,7 @@ import pytest
 from contextlib import contextmanager
 
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 
 
 @pytest.fixture(scope="module")
@@ -311,3 +312,179 @@ def test_new_unified_hash_self_deduplication_variable_length(cluster):
         # Two identical inserts combined in one flush must self-deduplicate to a single row.
         result = node_new.query("SELECT key, s, a FROM test_unified_self_dedup ORDER BY key")
         assert result == "1\tone line\t[10,20]\n"
+
+
+def test_cleanup_consistent_across_directories_compatible(cluster):
+    # Under `compatible_double_hashes` a sync insert writes its deduplication id to BOTH the legacy
+    # `blocks` directory (old per-part hash) and the unified `deduplication_hashes` directory. The
+    # cleanup thread must evict from both consistently under `replicated_deduplication_window`.
+    # Functional test 04005 covers the same invariant for the default `new_unified_hash`, which uses
+    # only `deduplication_hashes`; this pins the dual-directory mode, selectable only via a server
+    # setting, so the cross-directory cleanup stays regression-tested after the default flip.
+    node = cluster.instances["node_compatible"]
+
+    create_table_query = \
+"""
+    DROP TABLE IF EXISTS dedup_cleanup_compatible SYNC;
+
+    CREATE TABLE dedup_cleanup_compatible (date Date, id UInt32, value String)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/dedup_cleanup_compatible', '{replica}')
+    PARTITION BY date ORDER BY id
+    SETTINGS replicated_deduplication_window = 2, cleanup_delay_period = 1,
+             cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0
+"""
+
+    drop_table_query = "DROP TABLE IF EXISTS dedup_cleanup_compatible SYNC"
+
+    with with_tables(
+        nodes=[node],
+        create_query=create_table_query,
+        drop_query=drop_table_query,
+    ):
+        zk_path = node.query(
+            "SELECT zookeeper_path FROM system.replicas "
+            "WHERE database = currentDatabase() AND table = 'dedup_cleanup_compatible'"
+        ).strip().rstrip("/")
+
+        def dir_count_query(directory):
+            return f"SELECT count() FROM system.zookeeper WHERE path = '{zk_path}/{directory}'"
+
+        def wait_both_dirs_cleaned_to(expected):
+            # The legacy `blocks` and unified `deduplication_hashes` directories share the sync
+            # window, so both must settle to the same count.
+            assert_eq_with_retry(node, dir_count_query("blocks"), str(expected), retry_count=60, sleep_time=1)
+            assert_eq_with_retry(node, dir_count_query("deduplication_hashes"), str(expected), retry_count=60, sleep_time=1)
+
+        # Three distinct sync inserts (async_insert = 0, so ids land in the SYNC `blocks` directory
+        # rather than `async_blocks`); each also lands in the unified `deduplication_hashes`.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 1, 'a')")
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 3, 'c')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "3"
+
+        # Window is 2, so both directories must be trimmed to 2 entries together.
+        wait_both_dirs_cleaned_to(2)
+
+        # The first row's ids were evicted from both directories, so re-inserting it is not deduplicated.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 1, 'a')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "4"
+        wait_both_dirs_cleaned_to(2)
+
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "5"
+        wait_both_dirs_cleaned_to(2)
+
+        # A retry of the most recent insert, still inside the window, is deduplicated.
+        node.query("INSERT INTO dedup_cleanup_compatible SETTINGS async_insert = 0 VALUES (toDate('2024-01-01'), 2, 'b')")
+        assert node.query("SELECT count() FROM dedup_cleanup_compatible").strip() == "5"
+
+
+def test_new_unified_async_enable_follows_sync_window(cluster):
+    # Under new_unified_hash the async-insert enable gate follows the unified window
+    # (replicated_deduplication_window), not the legacy replicated_deduplication_window_for_async_inserts.
+    # So _for_async_inserts = 0 no longer disables async deduplication, and replicated_deduplication_window = 0 does.
+    node = cluster.instances["node_new"]
+
+    def two_identical_async_inserts(table):
+        for _ in range(2):
+            node.query(
+                f"INSERT INTO {table} "
+                f"SETTINGS async_insert = 1, wait_for_async_insert = 1, deduplicate_insert = 'enable' VALUES (1)"
+            )
+
+    # Legacy async window is 0 but the unified window is non-zero: async dedup stays ENABLED, so the
+    # two identical inserts collapse to one row.
+    create_legacy_zero = \
+"""
+    DROP TABLE IF EXISTS t_async_enable_legacy_zero SYNC;
+
+    CREATE TABLE t_async_enable_legacy_zero (key UInt32)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/t_async_enable_legacy_zero', '{replica}')
+    ORDER BY key
+    SETTINGS replicated_deduplication_window_for_async_inserts = 0
+"""
+    with with_tables(
+        nodes=[node],
+        create_query=create_legacy_zero,
+        drop_query="DROP TABLE IF EXISTS t_async_enable_legacy_zero SYNC",
+    ):
+        two_identical_async_inserts("t_async_enable_legacy_zero")
+        assert node.query("SELECT count() FROM t_async_enable_legacy_zero").strip() == "1"
+
+    # Unified window is 0: async dedup is DISABLED, so both identical inserts land.
+    create_unified_zero = \
+"""
+    DROP TABLE IF EXISTS t_async_enable_unified_zero SYNC;
+
+    CREATE TABLE t_async_enable_unified_zero (key UInt32)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/t_async_enable_unified_zero', '{replica}')
+    ORDER BY key
+    SETTINGS replicated_deduplication_window = 0
+"""
+    with with_tables(
+        nodes=[node],
+        create_query=create_unified_zero,
+        drop_query="DROP TABLE IF EXISTS t_async_enable_unified_zero SYNC",
+    ):
+        two_identical_async_inserts("t_async_enable_unified_zero")
+        assert node.query("SELECT count() FROM t_async_enable_unified_zero").strip() == "2"
+
+
+def test_alias_async_insert_uses_async_window_compatible(cluster):
+    # Functional test 04204 (Part 2) checks that an async insert routed through an Alias engine uses
+    # the ASYNC deduplication window like a direct insert. It distinguishes the async path from the
+    # sync path by disabling the sync window (replicated_deduplication_window = 0) and enabling only
+    # the async one (replicated_deduplication_window_for_async_inserts = 10000) - a distinction that
+    # exists only while the legacy per-source async window is honored. Under the default new_unified_hash
+    # both paths share the sync window, so 04204 can no longer tell whether the Alias sink kept
+    # async_insert = true. This pins the scenario to compatible_double_hashes (node_compatible), where
+    # the async window is still used and the regression - the Alias sink built as a sync insert - is
+    # observable again.
+    node = cluster.instances["node_compatible"]
+
+    create_tables = \
+"""
+    DROP TABLE IF EXISTS alias_async_direct SYNC;
+    DROP TABLE IF EXISTS alias_async_target SYNC;
+    DROP TABLE IF EXISTS alias_async_alias SYNC;
+
+    CREATE TABLE alias_async_direct (a UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/alias_async_direct', '{replica}')
+    ORDER BY a
+    SETTINGS replicated_deduplication_window = 0, replicated_deduplication_window_for_async_inserts = 10000;
+
+    CREATE TABLE alias_async_target (a UInt64)
+    ENGINE=ReplicatedMergeTree('/clickhouse/tables/alias_async_target', '{replica}')
+    ORDER BY a
+    SETTINGS replicated_deduplication_window = 0, replicated_deduplication_window_for_async_inserts = 10000;
+
+    CREATE TABLE alias_async_alias ENGINE = Alias(currentDatabase(), 'alias_async_target')
+"""
+
+    drop_tables = \
+"""
+    DROP TABLE IF EXISTS alias_async_alias SYNC;
+    DROP TABLE IF EXISTS alias_async_target SYNC;
+    DROP TABLE IF EXISTS alias_async_direct SYNC
+"""
+
+    def two_identical_async_batches(table):
+        for _ in range(2):
+            node.query(
+                f"INSERT INTO {table} "
+                f"SETTINGS async_insert = 1, wait_for_async_insert = 1, deduplicate_insert = 'enable' VALUES (1), (2), (3)"
+            )
+
+    with with_tables(
+        nodes=[node],
+        create_query=create_tables,
+        drop_query=drop_tables,
+    ):
+        two_identical_async_batches("alias_async_direct")
+        two_identical_async_batches("alias_async_alias")
+
+        # The async window deduplicates the repeated batch for a direct insert (3 rows). The Alias must
+        # behave identically; the unfixed Alias sink ran with async_insert = false, took the sync window
+        # (= 0, no dedup) and kept both batches (6 rows).
+        assert node.query("SELECT count() FROM alias_async_direct").strip() == "3"
+        assert node.query("SELECT count() FROM alias_async_alias").strip() == "3"

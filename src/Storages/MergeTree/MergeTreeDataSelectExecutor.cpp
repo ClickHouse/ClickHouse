@@ -3,6 +3,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <unordered_set>
+#include <boost/functional/hash.hpp>
 #include <boost/rational.hpp> /// For calculations related to sampling coefficients.
 
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
@@ -12,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/KeyCondition.h>
-#include <Storages/MergeTree/MergeTreeDataPartUUID.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
@@ -79,7 +79,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool per_part_index_stats;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsString force_data_skipping_indices;
     extern const SettingsBool force_index_by_date;
@@ -90,6 +89,7 @@ namespace Setting
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
+    extern const SettingsBool use_lightweight_primary_key_index_analysis;
     extern const SettingsUInt64 parallel_replica_offset;
     extern const SettingsUInt64 parallel_replicas_count;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
@@ -101,6 +101,7 @@ namespace Setting
     extern const SettingsBool vector_search_with_rescoring;
     extern const SettingsBool use_skip_indexes_for_top_k;
     extern const SettingsBool use_statistics_for_part_pruning;
+    extern const SettingsBool use_partition_minmax_for_primary_key_pruning;
     extern const SettingsUInt64 max_rows_to_read_leaf;
     extern const SettingsOverflowMode read_overflow_mode_leaf;
 }
@@ -114,10 +115,10 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_PARSE_TEXT;
     extern const int TOO_MANY_ROWS;
-    extern const int DUPLICATED_PART_UUIDS;
     extern const int INCORRECT_DATA;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int ILLEGAL_STREAM;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -126,6 +127,37 @@ MergeTreeDataSelectExecutor::MergeTreeDataSelectExecutor(const MergeTreeData & d
     , data_settings(data.getSettings(projection ? &projection->settings_changes : nullptr))
     , log(getLogger(data.getLogName() + " (SelectExecutor)"))
 {
+    /// Reading a projection part bypasses the parent table's delete-bitmap filter, so
+    /// logically-deleted rows would resurface. This is the single point every projection
+    /// read passes through (optimizer estimate/read and the explicit projection table
+    /// function), so fail closed here regardless of how the combination came to exist
+    /// (CREATE/ALTER reject it, but SECONDARY_CREATE/ATTACH still load it).
+    if (projection)
+    {
+        auto metadata_snapshot = data.getInMemoryMetadataPtr(nullptr, /*bypass_metadata_cache=*/true);
+        if (metadata_snapshot->hasUniqueKey())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "UNIQUE KEY tables do not support reading via projections");
+    }
+}
+
+/// Maps each primary-key column position to the slot of the matching column in a part's partition
+/// minmax index (nullopt when the primary-key column is not a partition-minmax column).
+static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
+    const StorageMetadataPtr & metadata_snapshot, const MergeTreeSettingsPtr & data_settings)
+{
+    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto minmax_names = MergeTreeData::getMinMaxColumns(
+        metadata_snapshot->getPartitionKey(), data_settings, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY).getNames();
+
+    std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
+    for (size_t i = 0; i < primary_key.column_names.size(); ++i)
+    {
+        auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
+        if (it != minmax_names.end())
+            mapping[i] = static_cast<size_t>(it - minmax_names.begin());
+    }
+    return mapping;
 }
 
 size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
@@ -140,10 +172,15 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: {}", key_condition.toString());
 
+    std::vector<std::optional<size_t>> pk_to_minmax_slot;
+    if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts.empty())
+        pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
+    const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
     MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, {}, {}, &exact_ranges, pk_to_minmax_slot_ptr, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
@@ -642,32 +679,18 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             fmt::join(partition_columns_names, ", "));
     }
 
-    auto query_context = context->hasQueryContext() ? context->getQueryContext() : context;
     QueryStatusPtr query_status = context->getProcessListElement();
 
     PartFilterCounters part_filter_counters;
-    if (query_context->getSettingsRef()[Setting::allow_experimental_query_deduplication])
-        res = selectPartsToReadWithUUIDFilter(
-            parts,
-            part_values,
-            data.getPinnedPartUUIDs(),
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            query_context,
-            part_filter_counters,
-            log);
-    else
-        res = selectPartsToRead(
-            parts,
-            part_values,
-            minmax_idx_condition,
-            minmax_columns_types,
-            partition_pruner,
-            max_block_numbers_to_read,
-            part_filter_counters,
-            query_status);
+    res = selectPartsToRead(
+        parts,
+        part_values,
+        minmax_idx_condition,
+        minmax_columns_types,
+        partition_pruner,
+        max_block_numbers_to_read,
+        part_filter_counters,
+        query_status);
 
     index_stats.emplace_back(ReadFromMergeTree::IndexStat{
         .type = ReadFromMergeTree::IndexType::None,
@@ -987,6 +1010,13 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         auto [limits, leaf_limits] = getRowLimits(settings, query_info);
         std::atomic<size_t> total_rows{0};
 
+        /// Precompute the part-independent PK-position -> partition-minmax-slot mapping once for all parts.
+        std::vector<std::optional<size_t>> pk_to_minmax_slot;
+        if (settings[Setting::use_partition_minmax_for_primary_key_pruning] && !parts_with_ranges.empty())
+            pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(
+                metadata_snapshot, parts_with_ranges.front().data_part->storage.getSettings());
+        const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
+
         auto process_part = [&](size_t part_index)
         {
             if (query_status)
@@ -1010,6 +1040,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     part_offset_condition,
                     total_offset_condition,
                     find_exact_ranges ? &ranges.exact_ranges : nullptr,
+                    pk_to_minmax_slot_ptr,
                     settings,
                     log);
 
@@ -1373,6 +1404,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     RangesInDataParts & parts_with_ranges,
     const SelectQueryInfo & select_query_info,
     const std::optional<VectorSearchParameters> & vector_search_parameters,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     LoggerPtr log)
@@ -1394,9 +1426,21 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
-    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag)
+    auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
-        UInt64 condition_hash = dag->getHash();
+        /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
+        /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
+        size_t condition_hash = dag->getHash();
+
+        /// Mirror the salting done by `updateQueryConditionCache` on the WHERE write path: when the
+        /// read goes through a TopK filter, the cached granule decisions are valid only for the same
+        /// TopK plan, so the WHERE cache key must be partitioned by the TopK parameters. The PREWHERE
+        /// write path in `MergeTreeSelectProcessor::read` does not (yet) apply this salt, so we must
+        /// not apply it on the PREWHERE read path either — otherwise the keys diverge and the lookup
+        /// always misses.
+        if (apply_top_k_salt && top_k_filter_info)
+            boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
+
         Stats stats;
         for (auto it = parts_with_ranges.begin(); it != parts_with_ranges.end();)
         {
@@ -1489,7 +1533,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         {
             if (outputs->result_name == prewhere_info->prewhere_column_name)
             {
-                auto stats = drop_mark_ranges(outputs);
+                auto stats = drop_mark_ranges(outputs, /*apply_top_k_salt=*/ false);
                 LOG_DEBUG(log,
                         "Query condition cache has dropped {}/{} granules for PREWHERE condition {}.",
                         stats.granules_dropped,
@@ -1503,7 +1547,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
     if (const auto & filter_actions_dag = select_query_info.filter_actions_dag)
     {
         const auto * output = filter_actions_dag->getOutputs().front();
-        auto stats = drop_mark_ranges(output);
+        auto stats = drop_mark_ranges(output, /*apply_top_k_salt=*/ true);
         LOG_DEBUG(log,
                 "Query condition cache has dropped {}/{} granules for WHERE condition {}.",
                 stats.granules_dropped,
@@ -1647,6 +1691,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const std::optional<KeyCondition> & part_offset_condition,
     const std::optional<KeyCondition> & total_offset_condition,
     MarkRanges * exact_ranges,
+    const std::vector<std::optional<size_t>> * pk_to_minmax_slot,
     const Settings & settings,
     LoggerPtr log)
 {
@@ -1674,27 +1719,160 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     const auto & sorting_key = metadata_snapshot->getSortingKey();
     auto index_columns = std::make_shared<ColumnsWithTypeAndName>();
     std::vector<bool> reverse_flags;
-    size_t num_key_columns = key_condition.getNumKeyColumns();
+
+    const auto index = part->getIndex();
+    const bool use_sparse_pk_representation
+        = settings[Setting::use_lightweight_primary_key_index_analysis];
+
+    /// If until index 4 of PK key columns is used in the filter, then used_key_prefix_size would be 5.
+    /// There is no need to process later key columns.
+    const size_t used_key_prefix_size = key_condition.getUsedKeyPrefixSize();
+
+    /// Do not touch the part's minmax index unless some key column the filter uses has a partition-minmax
+    /// bound to consume: `getMinMaxIndex` may lazy-load `minmax_*.idx` from disk, and a bound at a key
+    /// position the filter never references cannot affect the analysis. The minmax index may also be
+    /// absent or uninitialized (e.g. for projection parts); such a part has no usable bounds either.
+    const bool partition_bound_usable = pk_to_minmax_slot
+        && std::any_of(pk_to_minmax_slot->begin(),
+                       pk_to_minmax_slot->begin() + std::min(pk_to_minmax_slot->size(), used_key_prefix_size),
+                       [](const auto & slot) { return slot.has_value(); });
+    const auto part_minmax_index = partition_bound_usable ? part->getMinMaxIndex() : nullptr;
+    const bool part_has_minmax_index = part_minmax_index && part_minmax_index->initialized;
+
+    /// Number of leading primary key columns covered by the index analysis (`index_bounds` has one entry
+    /// per such column). For the sparse representation this is the in-memory index prefix extended to the
+    /// deepest used column with a partition-minmax bound; for the non-sparse one it is all key columns of
+    /// the condition.
+    size_t num_analyzed_key_columns = 0;
+
+    /// Non-sparse representation that includes all columns whether Filter needs or not
     DataTypes key_types;
-    if (num_key_columns > 0)
+    size_t used_key_size = 0;
+    std::vector<FieldRef> index_left;
+    std::vector<FieldRef> index_right;
+
+    /// Sparse representation that includes only columns that Filter needs
+    std::vector<size_t> used_key_indices;
+    size_t sparse_keys_size = 0;
+
+    /// The part of the filter's used key prefix that is loaded in the in-memory index, i.e. the leading key
+    /// columns with per-mark values (`index_columns` holds exactly these; `equal_boundaries_mask` covers
+    /// exactly these). Key columns in [num_used_prefix_key_columns_loaded_in_memory, num_analyzed_key_columns)
+    /// have no per-mark values: they are analysed via their partition-minmax bound (see `index_bounds` below)
+    /// as constant coordinates.
+    size_t num_used_prefix_key_columns_loaded_in_memory = 0;
+
+    /// Number of leading `used_key_indices` entries that refer to key columns loaded in the in-memory index;
+    /// only these get per-mark values in `sparse_key_left`/`sparse_key_right`.
+    size_t num_sparse_keys_loaded_in_memory = 0;
+    std::vector<FieldRef> sparse_key_left;
+    std::vector<FieldRef> sparse_key_right;
+    DataTypes sparse_key_types;
+    std::vector<UInt8> equal_boundaries_mask;
+
+    if (use_sparse_pk_representation)
     {
-        const auto index = part->getIndex();
+        /// If earlier columns have high cardinality, then later columns may not be loaded
+        const size_t num_index_columns_loaded = index->size();
 
-        for (size_t i = 0; i < num_key_columns; ++i)
+        /// Do not process more columns than needed
+        num_used_prefix_key_columns_loaded_in_memory = std::min(used_key_prefix_size, num_index_columns_loaded);
+
+        //// Get PK columns potentially used in `KeyCondition` Filter
+        used_key_indices = key_condition.getUsedColumnsInOrder();
+
+        const auto has_partition_bound = [&](size_t idx)
         {
-            if (i < index->size())
-            {
-                index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
-                reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
-            }
-            else
-            {
-                index_columns->emplace_back(); /// The column of the primary key was not loaded in memory - we'll skip it.
-                reverse_flags.push_back(false);
-            }
+            chassert(!pk_to_minmax_slot || idx < pk_to_minmax_slot->size());
+            return part_has_minmax_index && (*pk_to_minmax_slot)[idx].has_value();
+        };
 
-            key_types.emplace_back(primary_key.data_types[i]);
+        /// A key column used by the filter that is not loaded in the in-memory index but is bounded by the part's
+        /// partition minmax can still be analysed: it becomes a constant coordinate whose range is that bound (see
+        /// `index_bounds` below). Cover the deepest such column so the bound is not lost. `used_key_indices` is
+        /// ascending, so the last match is the deepest; it never exceeds `used_key_prefix_size` because the column
+        /// is, by definition, referenced by the filter.
+        size_t partition_bounded_prefix = 0;
+        for (size_t used_column : used_key_indices)
+            if (has_partition_bound(used_column))
+                partition_bounded_prefix = used_column + 1;
+
+        num_analyzed_key_columns = std::max(partition_bounded_prefix, num_used_prefix_key_columns_loaded_in_memory);
+
+        for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
+        {
+            chassert(i < index->size());
+            chassert(index->at(i));
+            index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+            reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
         }
+
+        /// Keep used_key_indices entries that are loaded, plus unloaded ones covered by a partition-minmax bound.
+        used_key_indices.erase(
+            std::remove_if(
+                used_key_indices.begin(),
+                used_key_indices.end(),
+                [&](size_t idx) { return idx >= num_used_prefix_key_columns_loaded_in_memory && !has_partition_bound(idx); }),
+            used_key_indices.end());
+
+        /// Now we create sparse arrays for efficient processing in `KeyCondition`. The goal is to only send the information
+        /// that is needed and avoid creation of `FieldRef`, `Range` both of which under the hood uses Field which are very slow.
+        /// In the event of long PK, this can become extremely slow.
+        /// So in the sparse form, we only have keys which are used in `KeyCondition` by some RPN element and are
+        /// either loaded into memory or bounded by the part's partition minmax.
+        sparse_keys_size = used_key_indices.size();
+
+        /// Only the loaded sparse columns (a leading subsequence, since `used_key_indices` is ascending) have
+        /// per-mark boundary values. The trailing constant-coordinate columns are handled inside `KeyCondition`
+        /// via `index_bounds`, so nothing is written for them per mark range.
+        num_sparse_keys_loaded_in_memory = static_cast<size_t>(
+            std::lower_bound(used_key_indices.begin(), used_key_indices.end(), num_used_prefix_key_columns_loaded_in_memory)
+            - used_key_indices.begin());
+
+        sparse_key_left.resize(num_sparse_keys_loaded_in_memory);
+        sparse_key_right.resize(num_sparse_keys_loaded_in_memory);
+
+        /// Datatypes are always same regardless of `MarkRange`, so we construct it only once.
+        sparse_key_types.reserve(sparse_keys_size);
+        for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        {
+            size_t key_col = used_key_indices[sparse_pos];
+            sparse_key_types.emplace_back(primary_key.data_types[key_col]);
+        }
+
+        /// Equality bitmap for the key columns present in the in-memory index (not only sparse):
+        /// `equal_boundaries_mask[i] = (left_key_i == right_key_i)`
+        /// For intermediate key columns that are not used by KeyCondition, we still need to know if their left and right
+        /// marks are the same or not to properly construct all hyperrectangles. However, this is extremely fast because
+        /// for intermediate columns we never create `Range`, `FieldRef`, or `Field` in `KeyCondition`.
+        equal_boundaries_mask.resize(num_used_prefix_key_columns_loaded_in_memory);
+    }
+    else
+    {
+        num_analyzed_key_columns = key_condition.getNumKeyColumns();
+        if (num_analyzed_key_columns > 0)
+        {
+            for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+            {
+                if (i < index->size())
+                {
+                    index_columns->emplace_back(index->at(i), primary_key.data_types[i], primary_key.column_names[i]);
+                    reverse_flags.push_back(!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i]);
+                }
+                else
+                {
+                    /// The column of the primary key was not loaded in memory - we'll skip it.
+                    index_columns->emplace_back();
+                    reverse_flags.push_back(false);
+                }
+
+                key_types.emplace_back(primary_key.data_types[i]);
+            }
+        }
+
+        used_key_size = num_analyzed_key_columns;
+        index_left.resize(used_key_size);
+        index_right.resize(used_key_size);
     }
 
     /// If there are no monotonic functions, there is no need to save block reference.
@@ -1714,6 +1892,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     {
         create_field_ref = [index_columns](size_t row, size_t column, FieldRef & field)
         {
+            chassert((*index_columns)[column].column);
             (*index_columns)[column].column->get(row, field);
             // NULL_LAST
             if (field.isNull())
@@ -1721,10 +1900,29 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         };
     }
 
-    /// NOTE Creating temporary Field objects to pass to KeyCondition.
-    size_t used_key_size = num_key_columns;
-    std::vector<FieldRef> index_left(used_key_size);
-    std::vector<FieldRef> index_right(used_key_size);
+    /// For index columns that are also covered by the part's partition minmax index, use minmax bounds
+    /// instead of (-inf, +inf). The same bounds are consulted by the full and the sparse key representation.
+    /// Indexed by full primary key position (not by sparse position), so the sparse path can look up the
+    /// bound of a key column by its key index. For key columns without per-mark values (not loaded in the
+    /// in-memory index) these bounds are the only information: `KeyCondition` analyses them as constant
+    /// coordinates whose range is the bound.
+    /// Partition minmax index is always stored in value-ascending order, so we do not need to consider reverse_flags here.
+    Hyperrectangle index_bounds;
+    index_bounds.reserve(num_analyzed_key_columns);
+    for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+        index_bounds.push_back(Range::createWholeUniverseTypeAware(primary_key.data_types[i]));
+
+    /// pk_to_minmax_slot maps each PK column to its slot in the part's partition-minmax index.
+    if (part_has_minmax_index)
+    {
+        const auto & hyperrectangle = part_minmax_index->hyperrectangle;
+        for (size_t i = 0; i < num_analyzed_key_columns; ++i)
+        {
+            const auto slot = (*pk_to_minmax_slot)[i];
+            if (slot)
+                index_bounds[i] = hyperrectangle[*slot];
+        }
+    }
 
     /// For _part_offset and _part virtual columns
     DataTypes part_offset_types
@@ -1734,8 +1932,79 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
-        auto check_key_condition = [&]()
+        auto check_key_condition = [&]() -> BoolMask
         {
+            if (!key_condition_useful)
+                return BoolMask(true, true);
+
+            if (use_sparse_pk_representation)
+            {
+                /// Nothing can be inferred from empty ranges
+                if (sparse_keys_size == 0)
+                    return BoolMask(true, true);
+
+                if (range.end == marks_count)
+                {
+                    /// Last mark: the right boundary of every loaded key column is +inf. The left and right
+                    /// boundaries are equal only when the left boundary value is also +inf, i.e. when the
+                    /// value at range.begin is NULL (create_field_ref maps NULL to +inf for NULL_LAST
+                    /// ordering). A non-nullable column is never NULL, so its boundaries are never equal.
+                    for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
+                    {
+                        const auto & col = (*index_columns)[i].column;
+                        chassert(col);
+                        equal_boundaries_mask[i] = col->isNullAt(range.begin);
+                    }
+
+                    for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
+                    {
+                        const size_t key_col = used_key_indices[sparse_pos];
+
+                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
+
+                        create_field_ref(range.begin, key_col, left);
+
+                        right = POSITIVE_INFINITY;
+                    }
+                }
+                else
+                {
+                    /// Non-final mark: compare PK index values at range.begin and range.end for all loaded key columns.
+                    for (size_t i = 0; i < num_used_prefix_key_columns_loaded_in_memory; ++i)
+                    {
+                        const auto & col = (*index_columns)[i].column;
+
+                        chassert(col);
+
+                        equal_boundaries_mask[i] = (col->compareAt(range.begin, range.end, *col, 1) == 0);
+                    }
+
+                    /// Build left/right boundaries only for used loaded key columns. The trailing
+                    /// constant-coordinate columns need no per-range values: `KeyCondition` takes their
+                    /// range from `index_bounds` once per call.
+                    for (size_t sparse_pos = 0; sparse_pos < num_sparse_keys_loaded_in_memory; ++sparse_pos)
+                    {
+                        const size_t key_col = used_key_indices[sparse_pos];
+
+                        auto & left = reverse_flags[key_col] ? sparse_key_right[sparse_pos] : sparse_key_left[sparse_pos];
+                        auto & right = reverse_flags[key_col] ? sparse_key_left[sparse_pos] : sparse_key_right[sparse_pos];
+
+                        create_field_ref(range.begin, key_col, left);
+                        create_field_ref(range.end, key_col, right);
+                    }
+                }
+
+                return key_condition.checkInRange(
+                    used_key_indices,
+                    sparse_key_left.data(),
+                    sparse_key_right.data(),
+                    sparse_key_types,
+                    equal_boundaries_mask,
+                    initial_mask,
+                    &index_bounds);
+            }
+
             if (range.end == marks_count)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
@@ -1745,9 +2014,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     if ((*index_columns)[i].column)
                         create_field_ref(range.begin, i, left);
                     else
-                        left = NEGATIVE_INFINITY;
+                        left = index_bounds[i].left;
 
-                    right = POSITIVE_INFINITY;
+                    right = index_bounds[i].right;
                 }
             }
             else
@@ -1763,13 +2032,12 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                     else
                     {
-                        /// If the PK column was not loaded in memory - exclude it from the analysis.
-                        left = NEGATIVE_INFINITY;
-                        right = POSITIVE_INFINITY;
+                        left = index_bounds[i].left;
+                        right = index_bounds[i].right;
                     }
                 }
             }
-            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask);
+            return key_condition.checkInRange(used_key_size, index_left.data(), index_right.data(), key_types, initial_mask, &index_bounds);
         };
 
         auto check_part_offset_condition = [&]()
@@ -1975,10 +2243,44 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                         if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                         {
                             /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous. Something's broken.
+                            /// range doesn't seem to be continuous. Something's broken - most likely a
+                            /// function reported inaccurate monotonicity (see the issue below).
+                            ///
+                            /// Log every participating condition (the key condition as well as the optional
+                            /// _part_offset and total-offset conditions), the part and the offending mark ranges
+                            /// before throwing, so the occurrence (typically found by a stress test or the fuzzer)
+                            /// is actionable. check_in_range combines all useful conditions, so any of them could
+                            /// be the culprit - in particular, a bad _part_offset / total-offset condition can trip
+                            /// this branch while the primary key_condition is empty or unrelated.
+                            /// The thrown message is deliberately kept constant: CI derives the failure's name
+                            /// from the exception's format string, so the details go to the log instead of the
+                            /// message to keep failures grouped under a single stable name.
                             /// TODO: Remove the #ifndef and always throw after
                             ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
+                            auto describe_condition = [](const KeyCondition & condition)
+                            {
+                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
+                            };
+
+                            String conditions_description = fmt::format(
+                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
+                            if (part_offset_condition_useful)
+                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
+                            if (total_offset_condition_useful)
+                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
+
+                            LOG_ERROR(
+                                log,
+                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                                "Participating conditions: {}",
+                                result_range.begin, result_range.end,
+                                result_exact_range.begin, result_exact_range.end,
+                                part_name,
+                                conditions_description);
                             throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
 #endif
                         }
@@ -2093,7 +2395,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
-        reader.read(0, condition.get(), granule);
+        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         for (const auto & range : ranges)
@@ -2187,7 +2489,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
-                    reader.read(index_mark, condition.get(), granule);
+                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
                 }
 
                 if (index_helper->isVectorSimilarityIndex())
@@ -2306,116 +2608,6 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         res_parts.push_back(prev_part);
     }
     return res_parts;
-}
-
-RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToReadWithUUIDFilter(
-    const RangesInDataParts & parts,
-    const std::optional<std::unordered_set<String>> & part_values,
-    MergeTreeData::PinnedPartUUIDsPtr pinned_part_uuids,
-    const std::optional<KeyCondition> & minmax_idx_condition,
-    const DataTypes & minmax_columns_types,
-    const std::optional<PartitionPruner> & partition_pruner,
-    const PartitionIdToMaxBlock * max_block_numbers_to_read,
-    ContextPtr query_context,
-    PartFilterCounters & counters,
-    LoggerPtr log)
-{
-    /// process_parts prepare parts that have to be read for the query,
-    /// returns false if duplicated parts' UUID have been met
-    auto select_parts = [&](const RangesInDataParts & in_parts, RangesInDataParts & selected_parts) -> bool
-    {
-        auto ignored_part_uuids = query_context->getIgnoredPartUUIDs();
-        std::unordered_set<UUID> temp_part_uuids;
-
-        for (const auto & prev_part : in_parts)
-        {
-            const auto & part_or_projection = prev_part.data_part;
-            const auto * part = part_or_projection->isProjectionPart() ? part_or_projection->getParentPart() : part_or_projection.get();
-            size_t num_granules = part_or_projection->index_granularity->getMarksCountWithoutFinal();
-
-            if (part_values && !part_values->contains(part->name))
-                continue;
-
-            if (part->isEmpty())
-                continue;
-
-            if (max_block_numbers_to_read)
-            {
-                auto blocks_iterator = max_block_numbers_to_read->find(part->info.getPartitionId());
-                if (blocks_iterator == max_block_numbers_to_read->end() || part->info.max_block > blocks_iterator->second)
-                    continue;
-            }
-
-            /// Skip the part if its uuid is meant to be excluded
-            if (part->uuid != UUIDHelpers::Nil && ignored_part_uuids->has(part->uuid))
-                continue;
-
-            counters.num_initial_selected_parts += 1;
-            counters.num_initial_selected_granules += num_granules;
-
-            /// hyperrectangle must come from the part whose metadata built the condition.
-            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
-                continue;
-
-            counters.num_parts_after_minmax += 1;
-            counters.num_granules_after_minmax += num_granules;
-
-            if (partition_pruner)
-            {
-                if (partition_pruner->canBePruned(*part))
-                    continue;
-            }
-
-            counters.num_parts_after_partition_pruner += 1;
-            counters.num_granules_after_partition_pruner += num_granules;
-
-            /// populate UUIDs and exclude ignored parts if enabled
-            if (part->uuid != UUIDHelpers::Nil && pinned_part_uuids->contains(part->uuid))
-            {
-                auto result = temp_part_uuids.insert(part->uuid);
-                if (!result.second)
-                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Found a part with the same UUID on the same replica.");
-            }
-
-            selected_parts.push_back(prev_part);
-        }
-
-        if (!temp_part_uuids.empty())
-        {
-            auto duplicates = query_context->getPartUUIDs()->add(std::vector<UUID>{temp_part_uuids.begin(), temp_part_uuids.end()});
-            if (!duplicates.empty())
-            {
-                /// on a local replica with prefer_localhost_replica=1 if any duplicates appeared during the first pass,
-                /// adding them to the exclusion, so they will be skipped on second pass
-                query_context->getIgnoredPartUUIDs()->add(duplicates);
-                return false;
-            }
-        }
-
-        return true;
-    };
-
-    /// Process parts that have to be read for a query.
-    RangesInDataParts filtered_parts = {};
-    auto needs_retry = !select_parts(parts, filtered_parts);
-
-    /// If any duplicated part UUIDs met during the first step, try to ignore them in second pass.
-    /// This may happen when `prefer_localhost_replica` is set and "distributed" stage runs in the same process with "remote" stage.
-    if (needs_retry)
-    {
-        LOG_DEBUG(log, "Found duplicate uuids locally, will retry part selection without them");
-
-        counters = PartFilterCounters();
-
-        auto initial_filtered_parts = filtered_parts;
-        filtered_parts = {};
-
-        /// Second attempt didn't help, throw an exception
-        if (!select_parts(initial_filtered_parts, filtered_parts))
-            throw Exception(ErrorCodes::DUPLICATED_PART_UUIDS, "Found duplicate UUIDs while processing query.");
-    }
-
-    return filtered_parts;
 }
 
 /// Read and return index granules from a minmax index.

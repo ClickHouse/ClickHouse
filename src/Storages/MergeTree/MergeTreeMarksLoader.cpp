@@ -108,6 +108,8 @@ MergeTreeMarksGetterPtr MergeTreeMarksLoader::loadMarks()
 {
     OpenTelemetry::SpanHolder span("MergeTreeMarksLoader::loadMarks");
 
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarks");
+
     std::lock_guard lock(load_mutex);
 
     if (marks)
