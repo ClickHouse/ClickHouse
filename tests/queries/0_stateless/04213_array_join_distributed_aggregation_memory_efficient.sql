@@ -1,11 +1,11 @@
+-- Tags: shard
+
 -- Regression test for #104289: with ARRAY JOIN over a remote source the new analyzer
 -- used to drop the bucket-aware memory-efficient merge and fall back to a single
 -- MergingAggregatedTransform on the coordinator (causing OOM at production scale).
 -- The trigger was that ARRAY JOIN adds a second entry to PlannerContext's
 -- table_expression_node_to_data, so addMergingAggregatedStep's `size() == 1` gate
 -- skipped the is_remote_storage detection.
-
--- Tags: shard
 
 DROP TABLE IF EXISTS t_array_join_remote_agg;
 CREATE TABLE t_array_join_remote_agg
@@ -20,6 +20,13 @@ SET allow_experimental_analyzer = 1;
 SET distributed_aggregation_memory_efficient = 1;
 SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
+
+-- MergingAggregatedBucketTransform can also be introduced by the aggregation-in-order
+-- and memory-bound merging paths (both settings are randomized by the test harness),
+-- which would let the assertion below pass even without the fix. Pin them off so the
+-- processor can only come from the memory-efficient merging of a remote source.
+SET optimize_aggregation_in_order = 0;
+SET enable_memory_bound_merging_of_aggregation_results = 0;
 
 -- Bucket-aware merging must engage for a remote source even when the query has ARRAY JOIN.
 SELECT count() > 0
