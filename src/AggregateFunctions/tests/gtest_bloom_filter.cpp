@@ -32,7 +32,7 @@ Array bloomFilterParameters()
     return {Field(UInt64(64)), Field(UInt64(3))};
 }
 
-AggregateFunctionPtr createGroupBloomFilterAggregate(const DataTypePtr & value_type)
+AggregateFunctionPtr createGroupBloomFilterAggregate(const DataTypePtr & value_type, const Array & parameters)
 {
     tryRegisterAggregateFunctions();
 
@@ -41,8 +41,13 @@ AggregateFunctionPtr createGroupBloomFilterAggregate(const DataTypePtr & value_t
         AggregateFunctionGroupBloomFilterData::name,
         NullsAction::EMPTY,
         {value_type},
-        bloomFilterParameters(),
+        parameters,
         properties);
+}
+
+AggregateFunctionPtr createGroupBloomFilterAggregate(const DataTypePtr & value_type)
+{
+    return createGroupBloomFilterAggregate(value_type, bloomFilterParameters());
 }
 
 DataTypePtr createAggregateStateType(const AggregateFunctionPtr & aggregate_function, const DataTypePtr & value_type)
@@ -275,6 +280,42 @@ TEST(BloomFilterAggregateFunction, DoesNotAllocateMemoryInArena)
     const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
 
     EXPECT_FALSE(aggregate_function->allocatesMemoryInArena());
+}
+
+TEST(BloomFilterAggregateFunction, PreservesFactoryParameters)
+{
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+
+    const Array expected_elements{Field(UInt64(1000))};
+    const auto by_expected_elements = createGroupBloomFilterAggregate(value_type, expected_elements);
+    EXPECT_EQ(by_expected_elements->getParameters(), expected_elements);
+
+    const Array direct_without_seed{Field(UInt64(4096)), Field(UInt64(5))};
+    const auto by_direct_without_seed = createGroupBloomFilterAggregate(value_type, direct_without_seed);
+    EXPECT_EQ(by_direct_without_seed->getParameters(), direct_without_seed);
+
+    const Array direct_with_seed{Field(UInt64(4096)), Field(UInt64(5)), Field(UInt64(0))};
+    const auto by_direct_with_seed = createGroupBloomFilterAggregate(value_type, direct_with_seed);
+    EXPECT_EQ(by_direct_with_seed->getParameters(), direct_with_seed);
+}
+
+TEST(BloomFilterAggregateFunction, EquivalentParametersHaveSameStateRepresentation)
+{
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+
+    const auto direct_without_seed = createGroupBloomFilterAggregate(value_type, {Field(UInt64(4096)), Field(UInt64(5))});
+    const auto direct_with_seed = createGroupBloomFilterAggregate(value_type, {Field(UInt64(4096)), Field(UInt64(5)), Field(UInt64(0))});
+    EXPECT_TRUE(direct_without_seed->haveSameStateRepresentation(*direct_with_seed));
+    EXPECT_TRUE(direct_without_seed->getNormalizedStateType()->equals(*direct_with_seed->getNormalizedStateType()));
+
+    const auto default_parameters = createGroupBloomFilterAggregate(value_type, {});
+    const auto explicit_default_parameters = createGroupBloomFilterAggregate(
+        value_type, {Field(UInt64(10000)), Field(0.025), Field(UInt64(0))});
+    EXPECT_TRUE(default_parameters->haveSameStateRepresentation(*explicit_default_parameters));
+    EXPECT_TRUE(default_parameters->getNormalizedStateType()->equals(*explicit_default_parameters->getNormalizedStateType()));
+
+    const auto different_seed = createGroupBloomFilterAggregate(value_type, {Field(UInt64(4096)), Field(UInt64(5)), Field(UInt64(42))});
+    EXPECT_FALSE(direct_without_seed->haveSameStateRepresentation(*different_seed));
 }
 
 TEST(BloomFilterContains, WrongNumericBloomColumnThrowsAfterTypeValidation)

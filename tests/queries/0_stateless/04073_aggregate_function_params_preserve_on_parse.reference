@@ -1,0 +1,1 @@
+AggregateFunction(groupArrayMovingSum(2), UInt64)
