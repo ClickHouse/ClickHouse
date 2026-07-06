@@ -49,3 +49,7 @@ async insert rejection
 nested union settings rejection
 returning query cache rejection
 1
+returning query cache session rejection
+1
+returning query cache insert settings rejection
+1

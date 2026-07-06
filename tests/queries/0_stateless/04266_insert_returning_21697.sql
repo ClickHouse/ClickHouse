@@ -170,5 +170,19 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS use_query_cache=1) VALUES (206, 'query_cache'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_query_cache FROM t_insert_returning WHERE id = 206;
 
+-- Query-cache enablement via session setting is rejected too (without this, it is silently ineffective on delayed RETURNING)
+SELECT 'returning query cache session rejection';
+TRUNCATE TABLE t_insert_returning;
+SET use_query_cache = 1;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1) VALUES (207, 'query_cache_session'); -- { serverError NOT_IMPLEMENTED }
+SET use_query_cache = 0;
+SELECT count() AS inserted_after_returning_query_cache_session FROM t_insert_returning WHERE id = 207;
+
+-- Query-cache enablement via outer INSERT SETTINGS is rejected too
+SELECT 'returning query cache insert settings rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) SETTINGS use_query_cache=1 RETURNING (SELECT 1) VALUES (208, 'query_cache_insert'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_query_cache_insert FROM t_insert_returning WHERE id = 208;
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;

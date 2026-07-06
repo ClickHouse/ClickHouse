@@ -38,8 +38,24 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace Setting
+{
+    extern const SettingsBool use_query_cache;
+}
+
 namespace
 {
+    void rejectUnsupportedReturningContextSettings(const Settings & settings)
+    {
+        /// Query-result-cache probe/write wrappers are wired in `executeQueryImpl` for regular `SELECT`.
+        /// `INSERT ... RETURNING` builds the delayed subquery pipeline directly here, so `use_query_cache`
+        /// enabled via session/outer INSERT settings would be silently ineffective unless rejected.
+        if (settings[Setting::use_query_cache])
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Setting 'use_query_cache' is not supported for INSERT ... RETURNING");
+    }
+
     /// The INSERT and RETURNING phases share one query, one `ProcessListElement`, one thread-group `MemoryTracker`,
     /// one query/user `TemporaryDataOnDiskScope`, the user/all-user network throttlers and the per-query read/write
     /// throttlers, all established once from the outer INSERT-phase settings: the admission, memory, temporary-data and
@@ -203,6 +219,7 @@ QueryPipeline buildReturningSelectPipeline(
     rejectUnsupportedReturningSettings(returning_select);
     rejectInputInReturning(returning_select);
     auto returning_context = makeReturningSelectContext(returning_select, context, source_select_settings_restore_ast);
+    rejectUnsupportedReturningContextSettings(returning_context->getSettingsRef());
 
     /// `executeQueryImpl` detaches the RETURNING subquery from the INSERT before running the global AST visitors, so
     /// they do not normalize it with the outer INSERT settings. Run the same normalization passes here using the
