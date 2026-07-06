@@ -2971,12 +2971,25 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 if (!disk->existsDirectory(part_path))
                     continue;
 
-                /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
-                if (disk->existsFile(txn_file))
+                /// Remove the committed metadata file (`txn_version.txt`) and any leftover
+                /// temporary file (`txn_version.txt.tmp`). A `.tmp` file can legitimately linger
+                /// on a part (for example, hardlinked onto a mutated part from its source during
+                /// a merge/mutation race on object storage). If it is left behind here, the part
+                /// is later misread as a rolled-back transaction (see
+                /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
+                /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
+                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
+                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
+                /// committed part) rather than the dangerous tmp-only state described above.
+                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
+                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
-                    disk->removeFile(txn_file);
-                    total_removed++;
+                    String txn_file = fs::path(part_path) / file_name;
+                    if (disk->existsFile(txn_file))
+                    {
+                        disk->removeFile(txn_file);
+                        total_removed++;
+                    }
                 }
             }
         }
