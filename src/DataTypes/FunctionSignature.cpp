@@ -760,10 +760,19 @@ public:
 
     size_t getIndex() const override
     {
+        /// A subexpression that itself absorbs an ellipsis (a null child) produces a single
+        /// value whose size does not depend on `ellipsis_size` — so it is NOT a repeatable unit
+        /// and reports index 0 (constant-like). This also lets such a node enumerate arguments
+        /// carrying different indices, e.g. `anyNullable(A1, A2, ...)` where `A1`/`A2` are the two
+        /// mandatory positions of a "two or more" variadic: folding their distinct indices with
+        /// `getCommonIndex` would otherwise raise "Different indices of variables in subexpression".
+        for (const auto & child : children)
+            if (!child)
+                return 0;
+
         size_t res = 0;
         for (const auto & child : children)
-            if (child)
-                res = getCommonIndex(res, child->getIndex());
+            res = getCommonIndex(res, child->getIndex());
         return res;
     }
 

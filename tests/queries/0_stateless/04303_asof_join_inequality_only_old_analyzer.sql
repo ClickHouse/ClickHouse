@@ -27,7 +27,7 @@ SELECT * FROM t0_04303 ASOF LEFT JOIN t1_04303 ON and((t0_04303.y > t1_04303.y))
 -- Comparison of queries with enabled analyzer.
 
 SELECT * FROM t0_04303 ASOF LEFT JOIN t1_04303 ON t0_04303.y > t1_04303.y SETTINGS enable_analyzer = 1; -- { serverError NOT_IMPLEMENTED }
-SELECT * FROM t0_04303 ASOF LEFT JOIN t1_04303 ON and((t0_04303.y > t1_04303.y)) SETTINGS enable_analyzer = 1; -- { serverError TOO_FEW_ARGUMENTS_FOR_FUNCTION }
+SELECT * FROM t0_04303 ASOF LEFT JOIN t1_04303 ON and((t0_04303.y > t1_04303.y)) SETTINGS enable_analyzer = 1; -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 
 DROP TABLE t0_04303;
 DROP TABLE t1_04303;

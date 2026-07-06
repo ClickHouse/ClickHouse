@@ -113,6 +113,63 @@ GTEST_TEST(FunctionSignature, Ellipsis)
         "UInt32");
 }
 
+/// A bare (suffix-less) capture variable carries index 0. When the ellipsis follows a fixed
+/// group ending in such a variable, the walk-back takes only the single rightmost element as
+/// the repeated unit, so `(T, T, ...)` means "at least two, any count" — NOT "even count only".
+/// (Even/pair repetition happens only with numerically-suffixed variables sharing a suffix,
+/// e.g. `(K1, V1, ...)` for `map`.)
+GTEST_TEST(FunctionSignature, MinimumArityAnyCount)
+{
+    /// --- Arity isolated from the return expansion (return does not reference the ellipsis). ---
+
+    /// `(T, T, ...)` bare: two mandatory of the SAME type (both are the one variable `T`), any count more.
+    const String same = "f(T, T, ...) -> UInt8";
+    EXPECT_THAT(checkSignature(same, {makeColumn("UInt32")}), ::testing::StartsWith("FAIL:")); // 1 arg: too few
+    EXPECT_EQ(checkSignature(same, {makeColumn("UInt32"), makeColumn("UInt32")}), "UInt8");    // 2 args
+    EXPECT_EQ(checkSignature(same, {makeColumn("UInt32"), makeColumn("UInt32"), makeColumn("UInt32")}), "UInt8"); // 3 args (odd!)
+    EXPECT_EQ(checkSignature(same, {makeColumn("UInt32"), makeColumn("UInt32"), makeColumn("UInt32"), makeColumn("UInt32")}), "UInt8"); // 4 args
+    /// The two bare `T`s are the same variable, so the first two args must share a type.
+    EXPECT_THAT(checkSignature(same, {makeColumn("UInt32"), makeColumn("Int8")}), ::testing::StartsWith("FAIL:"));
+
+    /// Suffixed distinct names: min two, any count, INDEPENDENT types.
+    const String arity = "f(A1 : Number, A2 : Number, ...) -> UInt8";
+    EXPECT_THAT(checkSignature(arity, {makeColumn("Float64")}), ::testing::StartsWith("FAIL:")); // 1 arg: too few
+    EXPECT_EQ(checkSignature(arity, {makeColumn("Float64"), makeColumn("Int8")}), "UInt8");       // 2 args, mixed
+    EXPECT_EQ(checkSignature(arity, {makeColumn("UInt8"), makeColumn("Int8"), makeColumn("UInt16")}), "UInt8"); // 3 args, mixed
+
+    /// A non-capturing matcher used twice behaves the same (min two, any count).
+    const String noncapture = "f(Number, Number, ...) -> UInt8";
+    EXPECT_THAT(checkSignature(noncapture, {makeColumn("Float64")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_EQ(checkSignature(noncapture, {makeColumn("Float64"), makeColumn("Int8")}), "UInt8");
+    EXPECT_EQ(checkSignature(noncapture, {makeColumn("Float64"), makeColumn("Int8"), makeColumn("UInt16")}), "UInt8");
+}
+
+/// The return type must be able to reference EVERY argument of a "min two, any count" variadic.
+/// This exercises the interaction between the arg-side ellipsis capture and the return-side
+/// ellipsis expansion for the several candidate idioms.
+GTEST_TEST(FunctionSignature, MinimumArityReturnReferencesAllArgs)
+{
+    /// Suffixed idiom `(A1, A2, ...)`: does `leastSupertype(A1, A2, ...)` see all args?
+    const String suffixed = "f(A1 : Any, A2 : Any, ...) -> leastSupertype(A1, A2, ...)";
+    EXPECT_EQ(checkSignature(suffixed, {makeColumn("UInt8"), makeColumn("Int8")}), "Int16");
+    EXPECT_EQ(checkSignature(suffixed, {makeColumn("UInt8"), makeColumn("Int8"), makeColumn("UInt16")}), "Int32");
+    EXPECT_EQ(checkSignature(suffixed, {makeColumn("UInt8"), makeColumn("Int8"), makeColumn("UInt16"), makeColumn("Int64")}), "Int64");
+
+    /// Mixed idiom `(A1, T, ...)`: leading suffixed + trailing bare repeated unit.
+    const String mixed = "f(A1 : Any, T : Any, ...) -> leastSupertype(A1, T, ...)";
+    EXPECT_EQ(checkSignature(mixed, {makeColumn("UInt8"), makeColumn("Int8")}), "Int16");
+    EXPECT_EQ(checkSignature(mixed, {makeColumn("UInt8"), makeColumn("Int8"), makeColumn("UInt16")}), "Int32");
+
+    /// A `(A1, A2, ...)` enumeration NESTED inside another type-function must not raise
+    /// "Different indices of variables in subexpression": an ellipsis-absorbing subexpression
+    /// reports index 0. This mirrors the `and`/`or`/`xor` return shape.
+    const String nested =
+        "f(A1 : Any, A2 : Any, ...) -> selectIf(anyNullable(A1, A2, ...), Nullable(leastSupertype(A1, A2, ...)), leastSupertype(A1, A2, ...))";
+    EXPECT_EQ(checkSignature(nested, {makeColumn("UInt8"), makeColumn("Int8")}), "Int16");
+    EXPECT_EQ(checkSignature(nested, {makeColumn("UInt8"), makeColumn("Int8"), makeColumn("UInt16")}), "Int32");
+    EXPECT_EQ(checkSignature(nested, {makeColumn("UInt8"), makeColumn("Nullable(Int8)"), makeColumn("UInt16")}), "Nullable(Int32)");
+}
+
 GTEST_TEST(FunctionSignature, OptionalGroup)
 {
     EXPECT_EQ(
