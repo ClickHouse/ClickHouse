@@ -232,6 +232,14 @@ void GCSObjectStorage::applyNewSettings(
     ContextPtr context,
     const ApplyNewSettingsOptions & options)
 {
+    /// The object storage table engine and table function (e.g. `gcs(...)`) construct the storage with
+    /// all settings already derived from the URL and query arguments; there is no disk configuration
+    /// section to reload from. Only the `object_storage_type = gcs` disk path has an `endpoint` entry
+    /// under `config_prefix`. Without this guard `loadFromConfig` would read a non-existent
+    /// `<config_prefix>.endpoint` key (for the table function it is `gcs..endpoint`) and throw.
+    if (!config.has(config_prefix + ".endpoint"))
+        return;
+
     auto new_settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
 
     if (new_settings.bucket != bucket)
