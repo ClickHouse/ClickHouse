@@ -356,6 +356,31 @@ void QueryAnalyzer::resolveConstantExpression(QueryTreeNodePtr & node, const Que
     validateCorrelatedSubqueries(node);
 }
 
+/** Append the immediate child table expressions of a join-tree internal node to `children`.
+  * Internal nodes are `JOIN` (left, right), `CROSS JOIN` (all operands) and `ARRAY JOIN` (its
+  * wrapped table expression). Leaf table expressions (table, table function, subquery, ...) add
+  * nothing. This is the single place that enumerates join-tree node types, so that every traversal
+  * (subtree membership, SEMI/ANTI side checks, ...) stays consistent when a new node type appears.
+  * Keep in sync with the join-tree node types handled by `initializeQueryJoinTreeNode`.
+  */
+static void collectJoinTreeChildTableExpressions(const IQueryTreeNode * node, std::vector<const IQueryTreeNode *> & children)
+{
+    if (const auto * join_node = node->as<JoinNode>())
+    {
+        children.push_back(join_node->getLeftTableExpression().get());
+        children.push_back(join_node->getRightTableExpression().get());
+    }
+    else if (const auto * cross_join_node = node->as<CrossJoinNode>())
+    {
+        for (const auto & table_expression : cross_join_node->getTableExpressions())
+            children.push_back(table_expression.get());
+    }
+    else if (const auto * array_join_node = node->as<ArrayJoinNode>())
+    {
+        children.push_back(array_join_node->getTableExpression().get());
+    }
+}
+
 static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeNode * tree_node)
 {
     if (node_source == tree_node)
@@ -372,16 +397,10 @@ static bool isFromJoinTree(const IQueryTreeNode * node_source, const IQueryTreeN
         if (node_source == current)
             return true;
 
-        if (const auto * child_join_node = current->as<JoinNode>())
-        {
-            stack.push(child_join_node->getLeftTableExpression().get());
-            stack.push(child_join_node->getRightTableExpression().get());
-        }
-
-        if (const auto * child_join_node = current->as<CrossJoinNode>())
-        {
-            stack.push_range(child_join_node->getTableExpressions() | std::views::transform(&QueryTreeNodePtr::get));
-        }
+        std::vector<const IQueryTreeNode *> children;
+        collectJoinTreeChildTableExpressions(current, children);
+        for (const auto * child : children)
+            stack.push(child);
     }
     return false;
 }
@@ -1949,44 +1968,42 @@ static void checkSemiAntiJoinTableAccess(
         const auto * current = stack.top();
         stack.pop();
 
-        if (const auto * cross_join_node = const_cast<IQueryTreeNode *>(current)->as<CrossJoinNode>())
+        /// A JOIN node imposes a per-side restriction: determine which side contains the table
+        /// expression, check access if it is a SEMI/ANTI JOIN, then descend only into that side.
+        if (const auto * join_node = current->as<JoinNode>())
         {
-            for (const auto & table_expression : cross_join_node->getTableExpressions())
+            bool is_from_left = isFromJoinTree(table_expression_node.get(), join_node->getLeftTableExpression().get());
+            bool is_from_right = !is_from_left && isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
+
+            if (!is_from_left && !is_from_right)
+                continue;
+
+            if (join_node->getStrictness() == JoinStrictness::Semi || join_node->getStrictness() == JoinStrictness::Anti)
             {
-                if (isFromJoinTree(table_expression_node.get(), table_expression.get()))
-                    stack.push(table_expression.get());
+                SemiAntiJoinSideChecker checker(
+                    *join_node,
+                    join_node->getStrictness(),
+                    join_node->getKind(),
+                    scope.context,
+                    scope.resolving_join_on_expression);
+                JoinTableSide side = is_from_left ? JoinTableSide::Left : JoinTableSide::Right;
+                checker.throwIfTableAccessDenied(side, *node_for_error_message, *scope.scope_node);
             }
+
+            stack.push(is_from_left ? join_node->getLeftTableExpression().get() : join_node->getRightTableExpression().get());
             continue;
         }
 
-        const auto * join_node = const_cast<IQueryTreeNode *>(current)->as<JoinNode>();
-        if (!join_node)
-            continue;
-
-        bool is_from_left = isFromJoinTree(table_expression_node.get(), join_node->getLeftTableExpression().get());
-        bool is_from_right = !is_from_left && isFromJoinTree(table_expression_node.get(), join_node->getRightTableExpression().get());
-
-        if (!is_from_left && !is_from_right)
-            continue;
-
-        /// This join contains the table expression; check access if it is a SEMI/ANTI JOIN.
-        if (join_node->getStrictness() == JoinStrictness::Semi || join_node->getStrictness() == JoinStrictness::Anti)
+        /// Other join-tree nodes (CROSS JOIN, ARRAY JOIN, ...) impose no per-side restriction on
+        /// their own; descend into whichever children contain the table expression so that any
+        /// SEMI/ANTI JOIN nested below (e.g. wrapped by ARRAY JOIN) is still reached and checked.
+        std::vector<const IQueryTreeNode *> children;
+        collectJoinTreeChildTableExpressions(current, children);
+        for (const auto * child : children)
         {
-            SemiAntiJoinSideChecker checker(
-                *join_node,
-                join_node->getStrictness(),
-                join_node->getKind(),
-                scope.context,
-                scope.resolving_join_on_expression);
-            JoinTableSide side = is_from_left ? JoinTableSide::Left : JoinTableSide::Right;
-            checker.throwIfTableAccessDenied(side, *node_for_error_message, *scope.scope_node);
+            if (isFromJoinTree(table_expression_node.get(), child))
+                stack.push(child);
         }
-
-        /// Descend only into the branch that actually contains the table expression.
-        if (is_from_left)
-            stack.push(join_node->getLeftTableExpression().get());
-        else
-            stack.push(join_node->getRightTableExpression().get());
     }
 }
 

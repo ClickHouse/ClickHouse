@@ -134,6 +134,14 @@ SELECT t2.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CR
 -- t1 is preserved by the inner LEFT SEMI JOIN and should remain accessible.
 SELECT t1.* FROM (SELECT 1 AS a) t1 LEFT SEMI JOIN (SELECT 1 AS b) t2 ON true CROSS JOIN (SELECT 1 AS c) t3;
 
+-- (t1 LEFT SEMI JOIN t2) wrapped by ARRAY JOIN at the root: the traversal must descend through the
+-- ARRAY JOIN node to reach the inner SEMI JOIN, so t2 stays non-preserved and inaccessible.
+SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true ARRAY JOIN arr; -- { serverError UNKNOWN_IDENTIFIER }
+-- t1 is preserved by the inner LEFT SEMI JOIN and should remain accessible under the ARRAY JOIN.
+SELECT t1.a FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT SEMI JOIN (SELECT 2 AS b) t2 ON true ARRAY JOIN arr;
+-- Same for ANTI JOIN under ARRAY JOIN.
+SELECT t2.* FROM (SELECT [1] AS arr, 1 AS a) t1 LEFT ANTI JOIN (SELECT 2 AS b) t2 ON false ARRAY JOIN arr; -- { serverError UNKNOWN_IDENTIFIER }
+
 -- Additional clause coverage: PREWHERE, GROUP BY, HAVING, QUALIFY, LIMIT BY, and ORDER BY
 
 -- 'PREWHERE';
