@@ -2630,6 +2630,10 @@ private:
         /// without deserializing the values. This must happen after the source checksums are copied
         /// above (so the recompressed files' checksums replace the stale ones) and after the
         /// hardlink loop (their files were excluded via files_to_skip and are written fresh here).
+        /// `recompressed_streams` is shared across the columns so that a stream shared by several of
+        /// them (the offsets stream of `Nested` siblings under `share_nested_offsets`) is rewritten
+        /// exactly once, by the first column that reaches it.
+        NameSet recompressed_streams;
         for (const auto & column : ctx->columns_to_recompress)
         {
             recompressColumnStreams(
@@ -2641,6 +2645,7 @@ private:
                 *ctx->data->getSettings(),
                 ctx->context->getReadSettings(),
                 ctx->context->getWriteSettings(),
+                recompressed_streams,
                 ctx->new_data_part->checksums);
         }
 

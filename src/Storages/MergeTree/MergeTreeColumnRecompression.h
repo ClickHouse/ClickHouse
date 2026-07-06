@@ -36,6 +36,13 @@ NameSet getColumnDataStreamFileNames(
 /// checksums are added to `checksums` (replacing any pre-existing entries). All other files of the
 /// part are expected to be hardlinked by the caller.
 ///
+/// A single on-disk stream can be shared by several columns -- most notably the offsets stream of
+/// `Nested` siblings when `share_nested_offsets` is enabled (`n.a`/`n.b` share `n.size0`). Such a
+/// stream must be rewritten exactly once across the whole mutation, otherwise the shared file would
+/// be written several times and the codec of the last writer would silently win. The caller passes a
+/// `recompressed_streams` set that is shared across the calls for all recompressed columns; the first
+/// call that reaches a stream rewrites it, later calls skip it.
+///
 /// Only wide parts with full (local) storage are supported; the caller must guarantee that.
 void recompressColumnStreams(
     const IMergeTreeDataPart & source_part,
@@ -46,6 +53,7 @@ void recompressColumnStreams(
     const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    NameSet & recompressed_streams,
     MergeTreeDataPartChecksums & checksums);
 
 }

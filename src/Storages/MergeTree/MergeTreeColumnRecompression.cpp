@@ -304,6 +304,7 @@ void recompressColumnStreams(
     const MergeTreeSettings & storage_settings,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings,
+    NameSet & recompressed_streams,
     MergeTreeDataPartChecksums & checksums)
 {
     /// Resolve the column's effective codec exactly as the wide-part writer does
@@ -338,6 +339,14 @@ void recompressColumnStreams(
 
     forEachColumnStream(source_part, column, storage_settings, [&](const String & stream_name, const ISerialization::SubstreamPath & substream_path)
     {
+        /// A stream shared by several recompressed columns (the offsets stream of `Nested` siblings
+        /// with `share_nested_offsets`, where `n.a`/`n.b` share `n.size0`) must be rewritten exactly
+        /// once. The first column to reach it rewrites it; the rest skip it, mirroring the wide-part
+        /// writer, which also writes a shared offsets stream only once. Skipping here also leaves the
+        /// checksums this stream already produced untouched.
+        if (!recompressed_streams.insert(stream_name).second)
+            return;
+
         const String bin_name = stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION;
 
         const auto & subtype = substream_path.back().data.type;
