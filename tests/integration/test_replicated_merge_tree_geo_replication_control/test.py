@@ -38,7 +38,7 @@ def test_follower_only_fetch_from_leader(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
-                + f" SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 60"
             )
             time.sleep(1)
 
@@ -94,7 +94,7 @@ def test_follower_fetch_from_leader_timeout(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key "
-                + f"SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 2;"
+                + "SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 2;"
             )
             time.sleep(1)
 
@@ -124,8 +124,8 @@ def test_all_nodes_have_data_when_zookeeper_restart(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
-                + f" SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, geo_replication_control_leader_election_period_ms = 1000,"
-                + f" fetch_covered_part_within_region_only = 1"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, geo_replication_control_leader_election_period_ms = 1000,"
+                + " fetch_covered_part_within_region_only = 1"
             )
             time.sleep(1)
 
@@ -187,7 +187,7 @@ def test_merged_cannot_fetch_across_regions(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
-                + f" SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, fetch_merged_part_within_region_only = 1,"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100, fetch_merged_part_within_region_only = 1,"
                 + " always_fetch_merged_part = {}".format(int(node != apac1))
             )
             time.sleep(1)
@@ -254,7 +254,7 @@ def test_only_fetch_covered_part_from_same_region(start_cluster):
         ):  # apac1 will become leader of APAC
             node.query(
                 f"CREATE TABLE us_table(key UInt64, data String) ENGINE = ReplicatedMergeTree('/clickhouse/tables/us_table', '{i}') ORDER BY tuple() PARTITION BY key"
-                + f" SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100"
+                + " SETTINGS geo_replication_control_leader_wait = 1, geo_replication_control_leader_wait_timeout = 100"
             )
             time.sleep(1)
 
@@ -290,11 +290,12 @@ def test_only_fetch_covered_part_from_same_region(start_cluster):
                 )
 
         num_part1 = int(
-            apac2.query(
+            apac1.query(
                 "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'us_table' AND active"
             )
         )
 
+        apac2.query("SYSTEM SYNC REPLICA us_table")
         num_part2 = int(
             apac2.query(
                 "SELECT count() FROM system.parts WHERE database = 'default' AND table = 'us_table' AND active"

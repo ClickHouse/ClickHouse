@@ -219,6 +219,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat fault_probability_before_part_commit;
     extern const MergeTreeSettingsBool fetch_covered_part_within_region_only;
     extern const MergeTreeSettingsBool fsync_after_insert;
+    extern const MergeTreeSettingsSeconds geo_replication_control_leader_wait;
     extern const MergeTreeSettingsSeconds geo_replication_control_leader_wait_timeout;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
@@ -2791,28 +2792,36 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                     /// For GET_PART and ATTACH_PART, if wait long enough then loosen the constrains
                     if (entry.type == LogEntry::GET_PART || entry.type == LogEntry::ATTACH_PART)
                     {
-                        auto total_waited_seconds = time(nullptr) - entry.create_time;
-                        if (total_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
+                        /// Measure how long *this replica* has actually been deferring this entry for same-region
+                        /// fetching, derived from the number of defers (the queue postpones each attempt by
+                        /// `geo_replication_control_leader_wait`). We deliberately do not use `entry.create_time`:
+                        /// a replica recovering from a backlog can pick up a `GET_PART`/`ATTACH_PART` whose creation
+                        /// time is already older than the timeout and would then immediately fetch from any region,
+                        /// recreating the cross-region fan-out this feature is meant to avoid.
+                        auto same_region_waited_seconds
+                            = static_cast<Int64>(entry.wait_for_fetching_from_same_region)
+                            * (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait].totalSeconds();
+                        if (same_region_waited_seconds < (*getSettings())[MergeTreeSetting::geo_replication_control_leader_wait_timeout].totalSeconds())
                         {
                             entry.wait_for_fetching_from_same_region++;
                             LOG_TRACE(
                                 log,
-                                "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, waited for total {} "
+                                "Region {} doesn't have part {} or covering part yet, will defer executing {} : {}, deferred for total {} "
                                 "seconds)",
                                 geo_replication_controller.getRegion(),
                                 entry.new_part_name,
                                 entry.znode_name,
                                 entry.getDescriptionForLogs(format_version),
-                                total_waited_seconds);
+                                same_region_waited_seconds);
                         }
                         else
                         {
                             entry.wait_for_fetching_from_same_region = -1;
                             LOG_INFO(
                                 log,
-                                "Entry {} waited for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
+                                "Entry {} deferred for too long ({} seconds) to fetch from a replica in region {}, stop waiting and fetch from anywhere",
                                 entry.getDescriptionForLogs(format_version),
-                                total_waited_seconds,
+                                same_region_waited_seconds,
                                 geo_replication_controller.getRegion());
                         }
                     }
@@ -8202,7 +8211,8 @@ void StorageReplicatedMergeTree::fetchPartition(
             std::partition(replicas.begin(), replicas.end(), [&](const auto & replica)
             {
                 String region;
-                zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
+                /// `replicas` were enumerated from `from`, so read their region metadata from `from` as well.
+                zookeeper->tryGet(fs::path(from) / "replicas" / replica / "region", region);
                 return region == geo_replication_controller.getRegion();
             });
         }
@@ -8279,7 +8289,8 @@ void StorageReplicatedMergeTree::fetchPartition(
             std::partition(active_replicas.begin(), active_replicas.end(), [&](const auto & replica)
             {
                 String region;
-                zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
+                /// `active_replicas` were enumerated from `from`, so read their region metadata from `from` as well.
+                zookeeper->tryGet(fs::path(from) / "replicas" / replica / "region", region);
                 return region == geo_replication_controller.getRegion();
             });
         }
@@ -11922,7 +11933,9 @@ StorageReplicatedMergeTree::GetReplicasResult StorageReplicatedMergeTree::getAll
         it = std::partition(res.all_replicas.begin(), res.all_replicas.end(), [&](const auto & replica)
         {
             String region;
-            zookeeper->tryGet(fs::path(zookeeper_path) / "replicas" / replica / "region", region);
+            /// Region metadata must be read from the same path the replicas were enumerated from (`zk_path`).
+            /// Callers such as fetch-from-shard pass a `zk_path` that differs from this table's `zookeeper_path`.
+            zookeeper->tryGet(fs::path(zk_path) / "replicas" / replica / "region", region);
             return region == geo_replication_controller.getRegion();
         });
     }

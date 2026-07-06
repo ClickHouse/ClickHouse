@@ -1,5 +1,6 @@
-#include "ReplicatedMergeTreeGeoReplicationController.h"
+#include <Storages/MergeTree/ReplicatedMergeTreeGeoReplicationController.h>
 #include <optional>
+#include <Interpreters/Context.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -25,7 +26,7 @@ ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationCo
     if (!region.empty())
     {
         log_name = storage.getStorageID().getFullTableName() + " (StorageReplicatedMergeTree::GeoReplicationController)";
-        task = storage.getContext()->getSchedulePool().createTask(log_name, [this]{ threadFunction(); });
+        task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this]{ threadFunction(); });
         task->deactivate();
     }
 }
@@ -77,14 +78,20 @@ void ReplicatedMergeTreeGeoReplicationController::stop()
     shutdown = true;
     if (task)
         task->deactivate();
+    /// The task is deactivated above, so no one is touching these holders now.
+    /// Release them explicitly, otherwise this replica keeps publishing its region membership and holding the
+    /// leader lease while its replication queues are stopped, preventing another replica from becoming leader.
+    resetPreviousTerm();
     initialized = false;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::start()
 {
+    /// Clear `shutdown` before scheduling: otherwise a task scheduled below can run before we reset the flag
+    /// and observe a stale `shutdown == true`, returning early without ever setting `initialized`.
+    shutdown = false;
     if (task)
         task->activateAndSchedule();
-    shutdown = false;
 }
 
 void ReplicatedMergeTreeGeoReplicationController::threadFunction()
@@ -163,7 +170,7 @@ public:
         , log_name("LeaderElection (" + path + ")")
         , log(&Poco::Logger::get(log_name))
     {
-        task = pool.createTask(log_name, [this] { threadFunction(); });
+        task = pool.createTask(DB::StorageID::createEmpty(), log_name, [this] { threadFunction(); });
         createNode();
     }
 
@@ -226,8 +233,6 @@ private:
             auto my_node_it = std::lower_bound(children.begin(), children.end(), node_name);
             if (my_node_it == children.end() || *my_node_it != node_name)
                 throw Poco::Exception("Assertion failed in LeaderElection");
-
-            String value = zookeeper.get(path + "/" + children.front());
 
             if (my_node_it == children.begin())
             {
