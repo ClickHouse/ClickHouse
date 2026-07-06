@@ -6,7 +6,13 @@ from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV, tsv_close_to
 import requests
 
-from .prometheus_test_utils import *
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    execute_range_query_via_http_api,
+    http_api_response_close_to,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)
