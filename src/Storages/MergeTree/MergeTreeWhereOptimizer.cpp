@@ -703,7 +703,7 @@ static bool isFunctionDeterministicInScopeOfQuery(const RPNBuilderFunctionTreeNo
     const auto function_name = function_node.getFunctionName();
 
     /// executable UDFs are never stable within a query
-    if (UserDefinedExecutableFunctionFactory::instance().has(function_name, context))
+    if (UserDefinedExecutableFunctionFactory::has(function_name, context))
         return false;
 
     /// WASM UDFs are stable only when declared deterministic, plain SQL UDFs are inlined before this point
