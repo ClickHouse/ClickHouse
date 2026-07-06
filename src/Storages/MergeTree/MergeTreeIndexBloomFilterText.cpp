@@ -375,6 +375,9 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
             }
         }
 
+        if (function_name == "arrayExists" && traverseArrayExistsNode(function_node, out))
+            return true;
+
         if (arguments_size != 2)
             return false;
 
@@ -430,6 +433,75 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
                     return true;
             }
         }
+    }
+
+    return false;
+}
+
+bool MergeTreeConditionBloomFilterText::traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out)
+{
+    if (function_node.getArgumentsSize() != 2)
+        return false;
+
+    const auto * lambda_dag_node = function_node.getArgumentAt(0).getDAGNode();
+    const auto index_column_argument = function_node.getArgumentAt(1);
+
+    if (!lambda_dag_node)
+        return false;
+
+    auto lambda_body = tryExtractLambdaBodyDAG(*lambda_dag_node);
+    if (!lambda_body || lambda_body->argument_names.size() != 1 || lambda_body->actions.getOutputs().size() != 1)
+        return false;
+
+    const auto & lambda_argument_name = lambda_body->argument_names.front();
+
+    RPNBuilderTreeContext lambda_tree_context(function_node.getTreeContext().getQueryContext());
+    RPNBuilderTreeNode body_node(lambda_body->actions.getOutputs().front(), lambda_tree_context);
+    if (!body_node.isFunction())
+        return false;
+
+    const auto body_function = body_node.toFunctionNode();
+    const auto function_name = body_function.getFunctionName();
+
+    /// Only functions that derive a necessary token condition from the constant are allowed: a
+    /// row-level element match implies that the derived tokens are present in the granule bloom
+    /// filter, because the aggregator feeds tokens of every array element into it. Negative
+    /// functions (`notEquals`, `notLike`) are excluded: their granule condition claims that if
+    /// the tokens are absent, `arrayExists` is true for every row, which fails for empty arrays.
+    /// Functions that expect an array or map lambda argument (`has`, `hasAny`, `mapContains`, ...)
+    /// are excluded because `traverseTreeEquals` would misinterpret them as applied to the outer
+    /// column.
+    const bool is_supported_function = function_name == "equals"
+        || function_name == "like"
+        || function_name == "startsWith"
+        || function_name == "endsWith"
+        || function_name == "multiSearchAny"
+        || function_name == "match"
+        || function_name == "hasToken"
+        || function_name == "hasTokenOrNull";
+
+    if (!is_supported_function || body_function.getArgumentsSize() != 2)
+        return false;
+
+    const auto lhs_argument = body_function.getArgumentAt(0);
+    const auto rhs_argument = body_function.getArgumentAt(1);
+
+    Field const_value;
+    DataTypePtr const_type;
+
+    if (isLambdaArgumentReference(lhs_argument, lambda_argument_name)
+        && rhs_argument.tryGetConstant(const_value, const_type)
+        && traverseTreeEquals(function_name, index_column_argument, const_type, const_value, out))
+    {
+        return true;
+    }
+
+    if (function_name == "equals"
+        && isLambdaArgumentReference(rhs_argument, lambda_argument_name)
+        && lhs_argument.tryGetConstant(const_value, const_type)
+        && traverseTreeEquals(function_name, index_column_argument, const_type, const_value, out))
+    {
+        return true;
     }
 
     return false;

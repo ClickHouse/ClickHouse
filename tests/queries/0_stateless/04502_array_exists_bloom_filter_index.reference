@@ -1,0 +1,46 @@
+arrayExists with LIKE uses the token bloom filter index
+1
+3
+5
+0
+the index prunes granules
+Granules: 1/6
+captured constants are recognized
+1
+3
+5
+the original arrayExists predicate is still applied after the index check
+arrayExists with equals uses the index (both operand orders)
+4
+4
+arrayExists with hasToken, startsWith, multiSearchAny and match uses the index
+1
+3
+5
+4
+3
+4
+3
+4
+negated arrayExists stays correct (empty arrays match)
+1
+2
+4
+6
+negative functions inside the lambda do not use the index (empty arrays would be pruned wrongly)
+1
+2
+3
+4
+5
+non-constant lambda predicates do not use the index
+1
+2
+3
+4
+unsupported lambda shapes do not use the index
+ngram bloom filter index works through arrayExists too
+1
+1
+LIKE prunes granules on the ngram index
+Granules: 1/3

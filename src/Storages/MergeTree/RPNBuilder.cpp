@@ -268,6 +268,17 @@ std::optional<DAGLambdaBody> tryExtractLambdaBodyDAG(const ActionsDAG::Node & no
     return DAGLambdaBody{std::move(argument_names), std::move(*actions)};
 }
 
+bool isLambdaArgumentReference(const RPNBuilderTreeNode & node, std::string_view lambda_argument_name)
+{
+    const auto * dag_node = node.getDAGNode();
+    if (!dag_node)
+        return false;
+
+    dag_node = getNodeWithoutAlias(dag_node);
+    return dag_node->type == ActionsDAG::ActionType::INPUT
+        && dag_node->result_name == lambda_argument_name;
+}
+
 RPNBuilderTreeContext::RPNBuilderTreeContext(ContextPtr query_context_)
     : query_context(std::move(query_context_))
 {}

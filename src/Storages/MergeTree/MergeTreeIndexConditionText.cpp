@@ -54,22 +54,6 @@ namespace Setting
     extern const SettingsBool reject_expensive_hyperscan_regexps;
 }
 
-namespace
-{
-
-bool isLambdaArgumentReference(const RPNBuilderTreeNode & node, std::string_view lambda_argument_name)
-{
-    const auto * dag_node = node.getDAGNode();
-    if (!dag_node)
-        return false;
-
-    dag_node = getNodeWithoutAlias(dag_node);
-    return dag_node->type == ActionsDAG::ActionType::INPUT
-        && dag_node->result_name == lambda_argument_name;
-}
-
-}
-
 TextSearchQuery::TextSearchQuery(String function_name_, TextSearchMode search_mode_, TextIndexDirectReadMode direct_read_mode_, VectorWithMemoryTracking<String> tokens_, std::vector<OptimizedRegularExpression> patterns_)
     : function_name(std::move(function_name_))
     , search_mode(search_mode_)

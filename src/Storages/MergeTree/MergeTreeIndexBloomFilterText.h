@@ -131,6 +131,8 @@ private:
 
     bool extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out);
 
+    bool traverseArrayExistsNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out);
+
     bool traverseTreeEquals(
         const String & function_name,
         const RPNBuilderTreeNode & key_node,

@@ -171,6 +171,10 @@ protected:
     RPNBuilderTreeContext & tree_context;
 };
 
+/// Whether `node` is a reference to the lambda argument with the given name
+/// (an INPUT node, possibly under aliases).
+bool isLambdaArgumentReference(const RPNBuilderTreeNode & node, std::string_view lambda_argument_name);
+
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
   * It provide additional functionality that is specific for function.
   */
