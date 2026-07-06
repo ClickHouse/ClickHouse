@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -304,16 +305,31 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         if (!with_expression_list || !target_select)
             return;
 
-        auto * select_with_union = target_select->as<ASTSelectWithUnionQuery>();
-        if (!select_with_union || !select_with_union->list_of_selects)
-            return;
-
-        const auto & children = select_with_union->list_of_selects->children;
-        for (const auto & child : children)
+        auto propagate_impl = [&](auto && self, ASTPtr & current) -> void
         {
-            auto * child_select = child->as<ASTSelectQuery>();
+            if (!current)
+                return;
+
+            if (auto * select_with_union = current->as<ASTSelectWithUnionQuery>())
+            {
+                if (!select_with_union->list_of_selects)
+                    return;
+                for (auto & child : select_with_union->list_of_selects->children)
+                    self(self, child);
+                return;
+            }
+
+            if (auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
+            {
+                auto children = intersect_except->getListOfSelects();
+                for (auto & child : children)
+                    self(self, child);
+                return;
+            }
+
+            auto * child_select = current->as<ASTSelectQuery>();
             if (!child_select)
-                continue;
+                return;
 
             if (child_select->getExpression(ASTSelectQuery::Expression::WITH, false))
                 throw Exception(
@@ -324,7 +340,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             child_select->setExpression(ASTSelectQuery::Expression::WITH, with_expression_list->clone());
             /// WITH was appended after SELECT/TABLES; normalize back to canonical order.
             child_select->normalizeChildrenOrder();
-        }
+        };
+
+        propagate_impl(propagate_impl, target_select);
     };
 
     propagate_with_clause(select, "SELECT");
