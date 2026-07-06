@@ -17,39 +17,47 @@ source /repo/tests/docker_scripts/stress_tests.lib
 install_packages package_folder
 
 # Thread Fuzzer allows to check more permutations of possible thread scheduling
-# and find more potential issues.
-# Probabilities are randomized per CI run so that different runs explore
-# different regions of the scheduling space.
+# and find more potential issues. Its randomized sleep injection is exported
+# later (just before the stress workload starts), not here: with an aggressive
+# roll (high SLEEP_PROBABILITY and SLEEP_TIME_US_MAX) the injected sleeps slow
+# every server start, and the setup-phase `start_server` below only allows the
+# default ~70s startup budget, so the server can miss it and report a false
+# "Cannot start clickhouse-server". See `setup_thread_fuzzer` below.
 pick_random() {
     local choices=("$@")
     echo "${choices[$((RANDOM % ${#choices[@]}))]}"
 }
 
-export THREAD_FUZZER_CPU_TIME_PERIOD_US=$(pick_random 500 1000 2000 5000)
-export THREAD_FUZZER_SLEEP_PROBABILITY=$(pick_random 0.001 0.005 0.01 0.05 0.1)
-export THREAD_FUZZER_SLEEP_TIME_US_MAX=$(pick_random 10000 50000 100000 200000 500000)
+# Randomize the Thread Fuzzer probabilities per CI run so that different runs
+# explore different regions of the scheduling space. Only exports the env; call
+# it right before the server start whose process should run with the fuzzer.
+setup_thread_fuzzer() {
+    export THREAD_FUZZER_CPU_TIME_PERIOD_US=$(pick_random 500 1000 2000 5000)
+    export THREAD_FUZZER_SLEEP_PROBABILITY=$(pick_random 0.001 0.005 0.01 0.05 0.1)
+    export THREAD_FUZZER_SLEEP_TIME_US_MAX=$(pick_random 10000 50000 100000 200000 500000)
 
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_MIGRATE_PROBABILITY=$(pick_random 0.5 0.75 1)
 
-MUTEX_SLEEP_PROB=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=$MUTEX_SLEEP_PROB
+    local mutex_sleep_prob=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_PROBABILITY=$mutex_sleep_prob
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_PROBABILITY=$mutex_sleep_prob
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_PROBABILITY=$mutex_sleep_prob
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_PROBABILITY=$mutex_sleep_prob
 
-MUTEX_SLEEP_TIME=$(pick_random 1000 5000 10000 50000 100000)
-export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
-export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
-export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
-export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=$MUTEX_SLEEP_TIME
+    local mutex_sleep_time=$(pick_random 1000 5000 10000 50000 100000)
+    export THREAD_FUZZER_pthread_mutex_lock_BEFORE_SLEEP_TIME_US_MAX=$mutex_sleep_time
+    export THREAD_FUZZER_pthread_mutex_lock_AFTER_SLEEP_TIME_US_MAX=$mutex_sleep_time
+    export THREAD_FUZZER_pthread_mutex_unlock_BEFORE_SLEEP_TIME_US_MAX=$mutex_sleep_time
+    export THREAD_FUZZER_pthread_mutex_unlock_AFTER_SLEEP_TIME_US_MAX=$mutex_sleep_time
 
-export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
-export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+    export THREAD_FUZZER_EXPLICIT_SLEEP_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
+    export THREAD_FUZZER_EXPLICIT_MEMORY_EXCEPTION_PROBABILITY=$(pick_random 0.0001 0.0005 0.001 0.005 0.01)
 
-echo "Thread Fuzzer config: CPU_PERIOD=${THREAD_FUZZER_CPU_TIME_PERIOD_US}us SLEEP_PROB=${THREAD_FUZZER_SLEEP_PROBABILITY} SLEEP_MAX=${THREAD_FUZZER_SLEEP_TIME_US_MAX}us MUTEX_SLEEP_PROB=${MUTEX_SLEEP_PROB} MUTEX_SLEEP_TIME=${MUTEX_SLEEP_TIME}us"
+    echo "Thread Fuzzer config: CPU_PERIOD=${THREAD_FUZZER_CPU_TIME_PERIOD_US}us SLEEP_PROB=${THREAD_FUZZER_SLEEP_PROBABILITY} SLEEP_MAX=${THREAD_FUZZER_SLEEP_TIME_US_MAX}us MUTEX_SLEEP_PROB=${mutex_sleep_prob} MUTEX_SLEEP_TIME=${mutex_sleep_time}us"
+}
 
 export USE_ENCRYPTED_STORAGE=$((RANDOM % 2))
 
@@ -103,8 +111,6 @@ if [ "$cache_policy" = "SLRU" ]; then
 fi
 
 start_server || { echo "Failed to start server"; exit 1; }
-
-clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
 
 clickhouse-client --query "SHOW TABLES FROM datasets"
 clickhouse-client --query "SHOW TABLES FROM tpcds"
@@ -296,6 +302,12 @@ if [ $((RANDOM % 2)) -eq 1 ]; then
     sudo echo "<clickhouse><concurrent_threads_scheduler>fair_round_robin</concurrent_threads_scheduler></clickhouse>" \
         > /etc/clickhouse-server/config.d/enable_max_min_fair_scheduler.xml
 fi
+
+# Enable the Thread Fuzzer only now, for the server that runs the actual stress
+# workload. The earlier setup-phase server starts ran without it, so their
+# limited startup budget is not spent fighting the injected sleeps. The env is
+# unset again before the post-stress restart below.
+setup_thread_fuzzer
 
 start_server 10 || { echo "Failed to start server"; exit 1; }
 
