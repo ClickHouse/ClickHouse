@@ -78,6 +78,7 @@ workflow = Workflow.Config(
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[1].set_allow_failure(),
+        *[j.set_allow_failure() for j in JobConfigs.ast_fuzzer_oracle_jobs],
         *JobConfigs.stateless_tests_flaky_pr_jobs,
         *JobConfigs.integration_test_asan_flaky_pr_jobs,
         # Per-arch Bugfix Validation Checks (functional + integration tests on
