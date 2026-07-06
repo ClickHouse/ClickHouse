@@ -177,8 +177,8 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     auto * read_from_merge_tree_step = typeid_cast<ReadFromMergeTree *>(child_node->step.get());
 
-    /// If PREWHERE is deferred after FINAL, moving conditions cannot save any reads, and conditions moved
-    /// here would escape the already-made deferral decision and run before a deferred row policy.
+    /// If PREWHERE is deferred after FINAL, moving conditions cannot save any reads, and the moved conditions
+    /// would escape the already-made deferral decision and run before a deferred row policy
     if (is_final && read_from_merge_tree_step && read_from_merge_tree_step->isPrewhereDeferredAfterFinal())
         return;
 

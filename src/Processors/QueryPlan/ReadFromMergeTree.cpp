@@ -2428,7 +2428,7 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
     if (!isQueryWithFinal())
         return false;
 
-    /// PREWHERE must always be executed after the row policy, so a deferred row policy defers PREWHERE too.
+    /// PREWHERE must run after the row policy, so a deferred row policy defers PREWHERE as well
     return context->getSettingsRef()[Setting::apply_prewhere_after_final] || isRowPolicyDeferredAfterFinal();
 }
 

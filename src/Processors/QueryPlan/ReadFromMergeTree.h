@@ -424,7 +424,7 @@ public:
 
     void deferFiltersAfterFinalIfNeeded();
 
-    /// Whether PREWHERE (present or moved from WHERE later) would be applied after FINAL instead of during reading.
+    /// Whether PREWHERE (present or moved from WHERE later) is applied after FINAL instead of during reading
     bool isPrewhereDeferredAfterFinal() const;
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }

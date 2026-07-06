@@ -1,5 +1,5 @@
--- When PREWHERE is applied after FINAL, moving WHERE conditions to PREWHERE must be skipped:
--- moved conditions would escape the deferral and run before a deferred row policy.
+-- When PREWHERE is applied after FINAL, moving WHERE conditions to PREWHERE must be skipped,
+-- otherwise they escape the deferral and run before a deferred row policy
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
