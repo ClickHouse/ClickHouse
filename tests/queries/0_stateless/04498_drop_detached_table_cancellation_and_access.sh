@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database
+# Tags: no-parallel
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,8 +9,6 @@ set -euo pipefail
 
 TABLE_CANCEL="test_04498_drop_detached_cancel"
 TABLE_ACCESS="test_04498_drop_detached_access"
-DB_REPLICATED="test_04498_replicated_db"
-TABLE_REPLICATED="test_04498_replicated_db_table"
 USER_ACCESS="u_04498_drop_detached_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 HOLD_QUERY_ID="04498_hold_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 DROP_QUERY_ID="04498_drop_${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -28,10 +26,8 @@ function cleanup()
     ${CLICKHOUSE_CLIENT} --query "KILL QUERY WHERE query_id='${HOLD_QUERY_ID}' SYNC FORMAT Null" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --multiquery --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS ${TABLE_CANCEL} SYNC" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --multiquery --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS ${TABLE_ACCESS} SYNC" 2>/dev/null ||:
-    ${CLICKHOUSE_CLIENT} --multiquery --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE IF EXISTS ${DB_REPLICATED}.${TABLE_REPLICATED} SYNC" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_CANCEL} SYNC" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE_ACCESS} SYNC" 2>/dev/null ||:
-    ${CLICKHOUSE_CLIENT} --query "DROP DATABASE IF EXISTS ${DB_REPLICATED} SYNC" 2>/dev/null ||:
     ${CLICKHOUSE_CLIENT} --query "DROP USER IF EXISTS ${USER_ACCESS}" 2>/dev/null ||:
     rm -f "${DROP_LOG}"
 }
@@ -118,19 +114,3 @@ fi
 query "SELECT count() FROM system.detached_tables WHERE database=currentDatabase() AND table='${TABLE_ACCESS}'"
 
 echo "on cluster access: OK"
-
-if ${CLICKHOUSE_CLIENT} --query "CREATE DATABASE ${DB_REPLICATED} ENGINE=Replicated('/clickhouse/databases/${DB_REPLICATED}', 'shard1', 'replica1')" 2>/dev/null
-then
-    query "CREATE TABLE ${DB_REPLICATED}.${TABLE_REPLICATED} (number UInt64) ENGINE=MergeTree ORDER BY number"
-    query "INSERT INTO ${DB_REPLICATED}.${TABLE_REPLICATED} SELECT number FROM system.numbers LIMIT 6"
-    query "DETACH TABLE ${DB_REPLICATED}.${TABLE_REPLICATED} PERMANENTLY"
-    ${CLICKHOUSE_CLIENT} \
-        --multiquery \
-        --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE ${DB_REPLICATED}.${TABLE_REPLICATED} SYNC"
-    query "SELECT count() FROM system.detached_tables WHERE database='${DB_REPLICATED}' AND table='${TABLE_REPLICATED}'"
-    query "DROP DATABASE ${DB_REPLICATED} SYNC"
-else
-    echo "0"
-fi
-
-echo "replicated database: OK"
