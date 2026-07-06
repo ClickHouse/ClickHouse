@@ -203,7 +203,7 @@ REGISTER_FUNCTION(CutURLParameter)
 {
     /// cutURLParameter documentation
     FunctionDocumentation::Description description_cutURLParameter = R"(
-Removes the `name` parameter from a URL, if present.
+Removes the first occurrence of each requested `name` parameter from a URL, if present.
 This function does not encode or decode characters in parameter names, e.g. `Client ID` and `Client%20ID` are treated as different parameter names.
     )";
     FunctionDocumentation::Syntax syntax_cutURLParameter = "cutURLParameter(url, name)";
