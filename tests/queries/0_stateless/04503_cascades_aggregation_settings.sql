@@ -34,6 +34,11 @@ SELECT sum(s) >= 0 FROM (SELECT k, sum(v) AS s FROM t_agg_settings GROUP BY k)
 SELECT sum(s) >= 0 FROM (SELECT k, sum(v) AS s FROM t_agg_settings GROUP BY k)
   SETTINGS distributed_aggregation_memory_efficient = 0, log_comment = '04503_memory_efficient_off';
 
+-- The log introspection below is not the subject of the test; a distributed read of the
+-- constantly merging system log tables can fail on parts replaced after planning.
+SET make_distributed_plan = 0;
+SET enable_cascades_optimizer = 0;
+
 SYSTEM FLUSH LOGS processors_profile_log, query_log;
 
 SELECT 'memory_efficient=1:', countIf(name = 'GroupingAggregatedTransform') > 0
