@@ -8,7 +8,7 @@
 namespace DB
 {
 
-class FunctionGenerateRandomStructure : public IFunction
+class FunctionGenerateRandomStructure final : public IFunction
 {
 public:
     static constexpr auto name = "generateRandomStructure";

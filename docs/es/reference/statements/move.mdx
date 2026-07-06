@@ -1,0 +1,33 @@
+---
+description: 'Documentación de la sentencia MOVE para entidades de acceso'
+sidebarTitle: 'MOVE'
+slug: /sql-reference/statements/move
+title: 'Sentencia MOVE para entidades de acceso'
+doc_type: 'reference'
+---
+
+Esta sentencia permite mover una entidad de acceso de un almacenamiento de acceso a otro.
+
+Sintaxis:
+
+```sql
+MOVE {USER, ROLE, QUOTA, SETTINGS PROFILE, ROW POLICY} name1 [, name2, ...] TO access_storage_type
+```
+
+Actualmente, ClickHouse tiene cinco almacenamientos de acceso:
+
+* `local_directory`
+* `memory`
+* `replicated`
+* `users_xml` (ro)
+* `ldap` (ro)
+
+Ejemplos:
+
+```sql
+MOVE USER test TO local_directory
+```
+
+```sql
+MOVE ROLE test TO memory
+```

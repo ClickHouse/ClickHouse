@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/PatchParts/SourcePartsSetForPatch.h>
 #include <Storages/MergeTree/PatchParts/applyPatches.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
@@ -296,7 +297,7 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 
 void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPtr & metadata_snapshot)
 {
-    UInt8 version;
+    UInt8 version = 0;
     readBinaryLittleEndian(version, in);
 
     if (version > MAX_SUPPORTED_FORMAT_VERSION)
@@ -310,7 +311,7 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in, const StorageMetadataPt
         sorting_key_prefix_description = buildSortingKeyPrefixDescription(metadata_snapshot, sorting_key_prefix_size);
     }
 
-    UInt64 num_parts;
+    UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
 
     for (size_t i = 0; i < num_parts; ++i)

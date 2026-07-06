@@ -97,15 +97,43 @@ def test_parallel_replicas_with_view(start_cluster):
     result = nodes[1].query("SELECT sum(value) FROM v", settings=settings)
     assert result.strip() == expected
 
-    def run_and_check(extra_settings, expected_unavailable, expected_used):
-        """Run query from new node, verify result and that old replicas are unavailable."""
+    def run_and_check(extra_settings, expected_unavailable, expected_used, *, strict_unavailable=False):
+        """Run query from new node, verify result and that old replicas are filtered out.
+
+        ``strict_unavailable=True`` requires `ParallelReplicasUnavailableCount` to equal
+        `expected_unavailable` exactly. Use it for deterministic configurations
+        (`parallel_replicas_local_plan = 0`). For racy configurations
+        (`parallel_replicas_local_plan = 1`, default), the count is upper-bounded:
+        see comment below.
+        """
         merged = {**settings, **extra_settings}
         qid = f"test_pr_protocol_with_stream_id_{uuid.uuid4()}"
         result = nodes[2].query("SELECT sum(value) FROM v", settings=merged, query_id=qid)
         assert result.strip() == expected, f"Wrong result with settings {extra_settings}"
 
         # node2 is the new node, nodes 0 and 1 are old (no stream_id support).
-        # Old replicas should be filtered out at connection time and marked unavailable.
+        # Old replicas are filtered out at connection time inside `RemoteQueryExecutor`'s
+        # `create_connections` lambda: the version check disconnects entries whose
+        # `parallel_replicas_version` is below `DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID`.
+        # The `ParallelReplicasUnavailableCount` ProfileEvent is incremented later in
+        # `RemoteQueryExecutor::sendQueryUnlocked` when it observes the empty
+        # `MultiplexedConnections`. However, when `parallel_replicas_local_plan = 1`,
+        # the local plan can serve all required data quickly and cancel the pipeline,
+        # in which case the `RemoteSource` for some old replicas may be cancelled
+        # BEFORE `tryGenerate` ever calls `sendQuery` (see `RemoteSource::prepare`
+        # short-circuit on `isCancelled`). For those replicas the version check never
+        # runs and `ParallelReplicasUnavailableCount` is not incremented.
+        # Hence with `parallel_replicas_local_plan = 1` (default) the count is bounded
+        # above by `expected_unavailable` but can be smaller (down to 0) due to this
+        # dispatch race; we accept any value in that range. With
+        # `parallel_replicas_local_plan = 0` there is no local plan to short-circuit
+        # the pipeline, so `sendQuery` always runs the version check and the count is
+        # deterministic — strict equality is enforced via `strict_unavailable=True`.
+        # `ParallelReplicasUsedCount` reflects how many task assignments the
+        # coordinator handed out and remains deterministic in both cases — it must
+        # equal `expected_used` (the number of new replicas times the number of
+        # sub-queries). The query result is the primary correctness check; if any old
+        # replica were ever used, the sum would also be wrong.
         nodes[2].query("SYSTEM FLUSH LOGS")
         profile_events = nodes[2].query(
             f"""
@@ -118,14 +146,37 @@ def test_parallel_replicas_with_view(start_cluster):
             SETTINGS enable_parallel_replicas = 0
             """
         )
-        assert profile_events.strip() == f"{expected_unavailable}\t{expected_used}", \
-            f"Wrong profile events with settings {extra_settings}: {profile_events.strip()}"
+        unavail_str, used_str = profile_events.strip().split("\t")
+        unavail = int(unavail_str)
+        used = int(used_str)
+        assert used == expected_used, (
+            f"Wrong ParallelReplicasUsedCount with settings {extra_settings}: "
+            f"got {used}, expected {expected_used}"
+        )
+        if strict_unavailable:
+            assert unavail == expected_unavailable, (
+                f"Wrong ParallelReplicasUnavailableCount with settings {extra_settings}: "
+                f"got {unavail}, expected {expected_unavailable} (deterministic)"
+            )
+        else:
+            assert 0 <= unavail <= expected_unavailable, (
+                f"Wrong ParallelReplicasUnavailableCount with settings {extra_settings}: "
+                f"got {unavail}, expected 0..{expected_unavailable}"
+            )
 
+    # `parallel_replicas_local_plan` defaults to 1 — racy path, upper-bounded check.
     run_and_check({"parallel_replicas_allow_view_over_mergetree": 1}, 2, 1)
     run_and_check({"parallel_replicas_allow_view_over_mergetree": 1, "parallel_replicas_local_plan": 1}, 2, 1)
-    run_and_check({"parallel_replicas_allow_view_over_mergetree": 1, "parallel_replicas_local_plan": 0}, 2, 1)
+    # `parallel_replicas_local_plan = 0` — no local plan, no early cancel, deterministic count.
+    run_and_check(
+        {"parallel_replicas_allow_view_over_mergetree": 1, "parallel_replicas_local_plan": 0},
+        2,
+        1,
+        strict_unavailable=True,
+    )
     # With view-over-MergeTree disabled, the view is expanded into two separate
     # sub-queries (one per underlying table), each with its own set of replicas.
+    # `parallel_replicas_local_plan` defaults to 1 — racy path, upper-bounded check.
     run_and_check({"parallel_replicas_allow_view_over_mergetree": 0}, 4, 2)
 
     for node in nodes:

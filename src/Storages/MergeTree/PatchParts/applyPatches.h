@@ -13,7 +13,7 @@ struct KeyDescription;
 struct PatchToApply
 {
     /// Blocks with data from patch parts.
-    std::vector<Block> patch_blocks;
+    Blocks patch_blocks;
     /// Index of row to update in the result block.
     PaddedPODArray<UInt64> result_row_indices;
     /// Index of patch block to take the updated row from.

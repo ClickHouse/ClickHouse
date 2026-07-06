@@ -6,9 +6,12 @@
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX)
 #include <sys/epoll.h>
+#elif defined(OS_DARWIN)
+#include <Common/Epoll.h> /// EPOLLIN/EPOLLERR compatibility flags for the kqueue-backed Epoll
 #endif
 
 
@@ -62,16 +65,16 @@ int IProcessor::schedule()
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'schedule' is not implemented for {} processor", getName());
 }
 
-#ifdef OS_LINUX
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 std::pair<int, uint32_t> IProcessor::scheduleForEvent()
 {
     return {schedule(), EPOLLIN | EPOLLERR};
 }
 #endif
 
-Processors IProcessor::expandPipeline()
+IProcessor::PipelineUpdate IProcessor::updatePipeline()
 {
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'expandPipeline' is not implemented for {} processor", getName());
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'updatePipeline' is not implemented for {} processor", getName());
 }
 
 void IProcessor::cancel(IProcessor::CancelReason reason) noexcept
@@ -226,8 +229,8 @@ std::string IProcessor::statusToName(std::optional<Status> status)
             return "Ready";
         case Status::Async:
             return "Async";
-        case Status::ExpandPipeline:
-            return "ExpandPipeline";
+        case Status::UpdatePipeline:
+            return "UpdatePipeline";
     }
 }
 

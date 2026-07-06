@@ -15,7 +15,7 @@ if __name__ == "__main__":
             result = process_data(value)
             print(result)
             sys.stdout.flush()
-        except Exception as e:
+        except Exception:
             # Print full exception with traceback to stderr
             import traceback
             traceback.print_exc(file=sys.stderr)

@@ -8,8 +8,6 @@ title: 'hdfsCluster'
 doc_type: 'reference'
 ---
 
-# hdfsCluster Table Function
-
 Allows processing files from HDFS in parallel from many nodes in a specified cluster. On initiator it creates a connection to all nodes in the cluster, discloses asterisks in HDFS file path, and dispatches each file dynamically. On the worker node it asks the initiator about the next task to process and processes it. This is repeated until all tasks are finished.
 
 ## Syntax {#syntax}

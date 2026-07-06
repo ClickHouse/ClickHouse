@@ -92,16 +92,12 @@ There can be other clauses after the `ENGINE` clause in the query. See detailed 
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory AS SELECT 1;
 SELECT x, toTypeName(x) FROM t1;
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─x─┬─toTypeName(x)─┐
 │ 1 │ String        │
 └───┴───────────────┘
@@ -314,6 +310,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
 
+Existing constraints across all tables can be inspected via the [`system.constraints`](/operations/system-tables/constraints) table.
+
 ### ASSUME {#assume}
 
 The `ASSUME` clause is used to define a `CONSTRAINT` on a table that is assumed to be true. This constraint can then be used by the optimizer to enhance the performance of SQL queries.
@@ -439,7 +437,13 @@ These codecs are designed to make compression more effective by exploiting speci
 
 <ExperimentalBadge/>
 
-`ALP()` — Adaptive lossless compression for floating-point data based on decimal scaling. ALP attempts to represent each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Values that cannot be represented exactly are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, currency). Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+`ALP(variant)` — Adaptive lossless compression for floating-point data. Supports `Float32` and `Float64`. For details, see [ALP: Adaptive lossless floating-point compression](https://ir.cwi.nl/pub/33334).
+
+The codec accepts an optional variant argument:
+
+- `ALP()` or `ALP(AUTO)` (default) — Uses STD and falls back to RD based on the estimated compressed size.
+- `ALP(STD)` — Standard ALP variant. Represents each value as an exact scaled integer using decimal powers, then compresses the resulting integers with Frame-of-Reference and bit-packing. Non-representable values are stored as raw exceptions. Works best for numbers originating from decimals (e.g., measurements, prices).
+- `ALP(RD)` — Real Doubles variant. Reinterprets each value's bit pattern and splits it into a high part (sign + exponent + top mantissa bits) and a low part. High parts are dictionary-encoded (up to 8 entries), low parts are bit-packed. Works best when many values share the same high bits.
 
 :::note
 This codec is experimental and requires `SET allow_experimental_codecs = 1` to use.
@@ -738,16 +742,12 @@ This means the correct clause order is:
 
 **Example**
 
-Query:
-
-```sql
+```sql title="Query"
 CREATE TABLE t1 (x String) ENGINE = Memory COMMENT 'The temporary table';
 SELECT name, comment FROM system.tables WHERE name = 't1';
 ```
 
-Result:
-
-```text
+```text title="Response"
 ┌─name─┬─comment─────────────┐
 │ t1   │ The temporary table │
 └──────┴─────────────────────┘

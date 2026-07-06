@@ -10,6 +10,7 @@
 #include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -46,15 +47,15 @@ PrometheusHTTPProtocolAPI::~PrometheusHTTPProtocolAPI() = default;
 
 void PrometheusHTTPProtocolAPI::executePromQLQuery(
     WriteBuffer & response,
-    const Params & params)
+    const Params & params,
+    QueryFinishCallback query_finish_callback)
 {
     PrometheusQueryEvaluationSettings evaluation_settings;
-    auto data_table_metadata = time_series_storage->getTargetTable(ViewTarget::Data, getContext())->getInMemoryMetadataPtr(getContext(), false);
     evaluation_settings.time_series_storage_id = time_series_storage->getStorageID();
-    auto timestamp_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Timestamp).type;
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
-    evaluation_settings.timestamp_data_type = timestamp_data_type;
-    evaluation_settings.scalar_data_type = data_table_metadata->columns.get(TimeSeriesColumnNames::Value).type;
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
+    std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
+        = splitTimeSeriesType(time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
+    UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
     query_tree->parse(params.promql_query, timestamp_scale);
@@ -89,25 +90,51 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
-    PullingPipelineExecutor executor(io.pipeline);
+    try
+    {
+        PullingPipelineExecutor executor(io.pipeline);
 
-    /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
-    writeQueryResponse(response, executor, converter.getResultType());
+        /// Mind using the getResultType() method from PrometheusQueryToSQL::Converter, not from the PrometheusQueryTree.
+        writeQueryResponse(response, executor, converter.getResultType());
+    }
+    catch (...)
+    {
+        io.onException();
+        throw;
+    }
+
+    /// Release the query slot early so a slow client draining the response does not keep occupying it,
+    /// then flush the response (query_finish_callback) and record QueryFinish.
+    finishExecutedQuery(io, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::writeQueryResponse(
     WriteBuffer & response, PullingPipelineExecutor & pulling_executor, PrometheusQueryResultType result_type)
 {
+    /// Pull until the first non-empty block is ready before writing the header
+    /// because pulling_executor.pull() can throw an exception and it's better to catch it early and write
+    /// the correct error header {"status":"error", ...} in PrometheusRequestHandler::QueryImpl.
+    bool has_output = false;
+    Block block;
+    while (pulling_executor.pull(block))
+    {
+        if (block.rows() > 0)
+        {
+            has_output = true;
+            break;
+        }
+    }
+
     writeQueryResponseHeader(response, result_type);
 
-    Block result_block;
-    bool first = true;
-
-    while (pulling_executor.pull(result_block))
+    if (has_output)
     {
-        if (result_block.rows() > 0)
-        {   writeQueryResponseBlock(response, result_type, result_block, first);
-            first = false;
+        writeQueryResponseBlock(response, result_type, block, /*first=*/ true);
+
+        while (pulling_executor.pull(block))
+        {
+            if (block.rows() > 0)
+                writeQueryResponseBlock(response, result_type, block, /*first=*/ false);
         }
     }
 

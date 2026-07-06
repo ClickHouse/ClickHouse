@@ -37,6 +37,7 @@ FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_row_exists' AND active AND startsWith(name, 'patch');
 
 SYSTEM START MERGES t_lwu_deletes_3;
+SYSTEM SYNC REPLICA t_lwu_deletes_3 PULL;
 OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-59b7611c2f54436e293b58112d725550-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge patch';
@@ -46,6 +47,7 @@ SELECT count(), uniqExact(partition_id), sum(rows)
 FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_row_exists' AND active AND startsWith(name, 'patch');
 
+SYSTEM SYNC REPLICA t_lwu_deletes_3 PULL;
 OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge main';

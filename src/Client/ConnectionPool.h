@@ -54,6 +54,7 @@ protected:
 
 using ConnectionPoolPtr = std::shared_ptr<IConnectionPool>;
 using ConnectionPoolPtrs = std::vector<ConnectionPoolPtr>;
+using ConnectionPoolEntries = std::vector<IConnectionPool::Entry>;
 
 /** A common connection pool, without fault tolerance.
   */

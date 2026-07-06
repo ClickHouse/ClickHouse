@@ -39,19 +39,15 @@ def delete_if_exists(file_path):
         (
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet "
-            "SETTINGS output_format_parquet_use_custom_encoder = false, "
-            "output_format_parquet_write_page_index = true;",
+            "SETTINGS output_format_parquet_write_page_index = true;",
             True,
         ),
         (
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet "
-            "SETTINGS output_format_parquet_use_custom_encoder = false, "
-            "output_format_parquet_write_page_index = false;",
+            "SETTINGS output_format_parquet_write_page_index = false;",
             False,
         ),
-        # # default settings:
-        # # output_format_parquet_use_custom_encoder = true
         (
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
             "INTO OUTFILE '{file_name}' FORMAT Parquet;",
@@ -76,19 +72,15 @@ def test_parquet_page_index_select_into_outfile(query, expected_result, start_cl
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
-            "SETTINGS output_format_parquet_use_custom_encoder=false, "
-            "output_format_parquet_write_page_index=true FORMAT Parquet",
+            "SETTINGS output_format_parquet_write_page_index=true FORMAT Parquet",
             True,
         ),
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
             "SELECT number, number+1 FROM system.numbers LIMIT 100 "
-            "SETTINGS output_format_parquet_use_custom_encoder=false, "
-            "output_format_parquet_write_page_index=false FORMAT Parquet",
+            "SETTINGS output_format_parquet_write_page_index=false FORMAT Parquet",
             False,
         ),
-        # # default settings:
-        # # output_format_parquet_use_custom_encoder = true
         (
             "INSERT INTO TABLE FUNCTION file('{file_name}') "
             "SELECT number, number+1 FROM system.numbers LIMIT 100 FORMAT Parquet",

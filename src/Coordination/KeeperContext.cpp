@@ -14,6 +14,7 @@
 #include <Poco/Util/JSONConfiguration.h>
 #include <Coordination/KeeperConstants.h>
 #include <Server/CloudPlacementInfo.h>
+#include <Common/ZooKeeper/ZooKeeperConstants.h>
 #include <Common/ZooKeeper/KeeperFeatureFlags.h>
 #include <Disks/DiskSelector.h>
 #include <Common/logger_useful.h>
@@ -22,14 +23,6 @@
 
 #include <boost/algorithm/string.hpp>
 
-#include "config.h"
-#if USE_ROCKSDB
-#include <rocksdb/table.h>
-#include <rocksdb/convenience.h>
-#include <rocksdb/statistics.h>
-#include <rocksdb/utilities/db_ttl.h>
-#endif
-
 namespace DB
 {
 
@@ -37,14 +30,13 @@ namespace ErrorCodes
 {
 
 extern const int BAD_ARGUMENTS;
-extern const int LOGICAL_ERROR;
-extern const int ROCKSDB_ERROR;
 
 }
 
 namespace CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 write_snapshot_version;
+    extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
 }
 
 struct CachedCoordinationSettings
@@ -96,94 +88,6 @@ KeeperContext::KeeperContext(bool standalone_keeper_, CoordinationSettingsPtr co
     system_nodes_with_data[keeper_api_version_path] = toString(static_cast<uint8_t>(KeeperApiVersion::WITH_MULTI_READ));
 }
 
-#if USE_ROCKSDB
-using RocksDBOptions = std::unordered_map<std::string, std::string>;
-
-static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfiguration & config, const std::string & path)
-{
-    RocksDBOptions options;
-
-    Poco::Util::AbstractConfiguration::Keys keys;
-    config.keys(path, keys);
-
-    for (const auto & key : keys)
-    {
-        const String key_path = path + "." + key;
-        options[key] = config.getString(key_path);
-    }
-
-    return options;
-}
-
-static rocksdb::Options getRocksDBOptionsFromConfig(const Poco::Util::AbstractConfiguration & config)
-{
-    rocksdb::Status status;
-    rocksdb::Options base;
-
-    base.create_if_missing = true;
-    base.compression = rocksdb::CompressionType::kZSTD;
-    base.statistics = rocksdb::CreateDBStatistics();
-    /// It is too verbose by default, and in fact we don't care about rocksdb logs at all.
-    base.info_log_level = rocksdb::ERROR_LEVEL;
-
-    rocksdb::Options merged = base;
-    rocksdb::BlockBasedTableOptions table_options;
-
-    if (config.has("keeper_server.rocksdb.options"))
-    {
-        auto config_options = getOptionsFromConfig(config, "keeper_server.rocksdb.options");
-        status = rocksdb::GetDBOptionsFromMap({}, merged, config_options, &merged);
-        if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.options' : {}",
-                status.ToString());
-        }
-    }
-    if (config.has("rocksdb.column_family_options"))
-    {
-        auto column_family_options = getOptionsFromConfig(config, "rocksdb.column_family_options");
-        status = rocksdb::GetColumnFamilyOptionsFromMap({}, merged, column_family_options, &merged);
-        if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.column_family_options' at: {}", status.ToString());
-        }
-    }
-    if (config.has("rocksdb.block_based_table_options"))
-    {
-        auto block_based_table_options = getOptionsFromConfig(config, "rocksdb.block_based_table_options");
-        status = rocksdb::GetBlockBasedTableOptionsFromMap({}, table_options, block_based_table_options, &table_options);
-        if (!status.ok())
-        {
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "Fail to merge rocksdb options from 'rocksdb.block_based_table_options' at: {}", status.ToString());
-        }
-    }
-
-    merged.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
-    return merged;
-}
-#endif
-
-KeeperContext::Storage KeeperContext::getRocksDBPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
-{
-    const auto create_local_disk = [](const auto & path)
-    {
-        if (fs::exists(path))
-            fs::remove_all(path);
-        fs::create_directories(path);
-
-        return std::make_shared<DiskLocal>("LocalRocksDBDisk", path);
-    };
-    if (config.has("keeper_server.rocksdb_path"))
-        return create_local_disk(config.getString("keeper_server.rocksdb_path"));
-
-    if (config.has("keeper_server.storage_path"))
-        return create_local_disk(std::filesystem::path{config.getString("keeper_server.storage_path")} / "rocksdb");
-
-    if (standalone_keeper)
-        return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "rocksdb");
-    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/rocksdb");
-}
-
 void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config, KeeperDispatcher * dispatcher_)
 {
     dispatcher = dispatcher_;
@@ -203,14 +107,6 @@ void KeeperContext::initialize(const Poco::Util::AbstractConfiguration & config,
 
     initializeFeatureFlags(config);
     initializeDisks(config);
-
-    #if USE_ROCKSDB
-    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
-    {
-        rocksdb_options = std::make_shared<rocksdb::Options>(getRocksDBOptionsFromConfig(config));
-        digest_enabled = false; /// TODO: support digest
-    }
-    #endif
 
     if (config.has("keeper_server.precommit_sleep_ms_for_testing"))
         precommit_sleep_ms_for_testing = config.getInt64("keeper_server.precommit_sleep_ms_for_testing");
@@ -253,13 +149,6 @@ bool diskValidator(const Poco::Util::AbstractConfiguration & config, const std::
 void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & config)
 {
     disk_selector->initialize(config, "storage_configuration.disks", Context::getGlobalContextInstance(), diskValidator);
-
-    #if USE_ROCKSDB
-    if (config.getBool("keeper_server.coordination_settings.experimental_use_rocksdb", false))
-    {
-        rocksdb_storage = getRocksDBPathFromConfig(config);
-    }
-    #endif
 
     log_storage = getLogsPathFromConfig(config);
 
@@ -385,6 +274,11 @@ void KeeperContext::setSnapshotDisk(DiskPtr disk)
     latest_snapshot_storage = snapshot_storage;
 }
 
+void KeeperContext::setLatestSnapshotDisk(DiskPtr disk)
+{
+    latest_snapshot_storage = std::move(disk);
+}
+
 DiskPtr KeeperContext::getStateFileDisk() const
 {
     return getDisk(state_file_storage);
@@ -442,37 +336,6 @@ void KeeperContext::dumpConfiguration(WriteBufferFromOwnString & buf) const
     {
         auto snapshot_disk = getDisk(snapshot_storage);
         dump_disk_info("snapshot_storage", *snapshot_disk);
-    }
-}
-
-
-void KeeperContext::setRocksDBDisk(DiskPtr disk)
-{
-    rocksdb_storage = std::move(disk);
-}
-
-DiskPtr KeeperContext::getTemporaryRocksDBDisk() const
-{
-    DiskPtr rocksdb_disk = getDisk(rocksdb_storage);
-    if (!rocksdb_disk)
-    {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "rocksdb storage is not initialized");
-    }
-    auto uuid_str = formatUUID(UUIDHelpers::generateV4());
-    String path_to_create = "rocks_" + std::string(uuid_str.data(), uuid_str.size());
-    rocksdb_disk->createDirectory(path_to_create);
-    return std::make_shared<DiskLocal>("LocalTmpRocksDBDisk", fullPath(rocksdb_disk, path_to_create));
-}
-
-void KeeperContext::setRocksDBOptions(std::shared_ptr<rocksdb::Options> rocksdb_options_)
-{
-    if (rocksdb_options_ != nullptr)
-        rocksdb_options = rocksdb_options_;
-    else
-    {
-        #if USE_ROCKSDB
-        rocksdb_options = std::make_shared<rocksdb::Options>(getRocksDBOptionsFromConfig(Poco::Util::JSONConfiguration()));
-        #endif
     }
 }
 
@@ -590,33 +453,50 @@ void KeeperContext::initializeFeatureFlags(const Poco::Util::AbstractConfigurati
 
     }
 
+    /// TTL metadata (destroy_time/ttl) is only serialized starting with snapshot
+    /// V8. Enabling CREATE_TTL with an older write version would silently turn
+    /// TTL nodes into permanent persistent nodes on the next snapshot.
+    if (feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL))
+    {
+        const uint64_t write_version = getCoordinationSettings()[CoordinationSetting::write_snapshot_version];
+        if (write_version < SnapshotVersion::V8)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Feature flag CREATE_TTL requires write_snapshot_version >= {}, but it is set to {}. "
+                "Bump write_snapshot_version after every replica has been upgraded.",
+                static_cast<int>(SnapshotVersion::V8), write_version);
+
+        const auto ttl_gc_period_ms = getCoordinationSettings()[CoordinationSetting::ttl_gc_period_ms].totalMilliseconds();
+        if (ttl_gc_period_ms <= 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "ttl_gc_period_ms must be greater than 0 when TTL nodes are enabled, got {}", ttl_gc_period_ms);
+    }
+
     feature_flags.logFlags(getLogger("KeeperContext"));
+}
+
+static UInt64 calculateMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
+    {
+        UInt64 explicit_value = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
+        // 0 falls through to ratio-based calculation for backward compatibility.
+        if (explicit_value > 0)
+            return explicit_value;
+    }
+
+    Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
+    size_t physical_server_memory = getMemoryAmount();
+    if (ratio > 0 && physical_server_memory > 0)
+        return static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
+
+    return 0;
 }
 
 void KeeperContext::updateKeeperMemorySoftLimit(const Poco::Util::AbstractConfiguration & config)
 {
-    if (config.hasProperty("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-}
-
-void KeeperContext::initializeKeeperMemorySoftLimit(Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
-{
-    UInt64 memory_soft_limit = 0;
-    if (config.has("keeper_server.max_memory_usage_soft_limit"))
-        memory_soft_limit = config.getUInt64("keeper_server.max_memory_usage_soft_limit");
-
-    if (memory_soft_limit == 0)
-    {
-        Float64 ratio = config.getDouble("keeper_server.max_memory_usage_soft_limit_ratio", 0.9);
-        size_t physical_server_memory = getMemoryAmount();
-        if (ratio > 0 && physical_server_memory > 0)
-        {
-            memory_soft_limit = static_cast<UInt64>(static_cast<Float64>(physical_server_memory) * ratio);
-            config.setUInt64("keeper_server.max_memory_usage_soft_limit", memory_soft_limit);
-        }
-    }
-
-    LOG_INFO(log, "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(memory_soft_limit));
+    const auto limit = calculateMemorySoftLimit(config);
+    memory_soft_limit = limit;
+    LOG_INFO(getLogger("KeeperContext"), "keeper_server.max_memory_usage_soft_limit is set to {}", formatReadableSizeWithBinarySuffix(limit));
 }
 
 void KeeperContext::updateSettings(CoordinationSettingsPtr new_settings)
@@ -739,6 +619,8 @@ bool KeeperContext::isOperationSupported(Coordination::OpNum operation) const
             return feature_flags.isEnabled(KeeperFeatureFlag::CHECK_STAT);
         case Coordination::OpNum::Create2:
             return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_WITH_STATS);
+        case Coordination::OpNum::CreateTTL:
+            return feature_flags.isEnabled(KeeperFeatureFlag::CREATE_TTL);
         case Coordination::OpNum::TryRemove:
             return feature_flags.isEnabled(KeeperFeatureFlag::TRY_REMOVE);
         case Coordination::OpNum::SetWatch:
@@ -776,7 +658,7 @@ uint64_t KeeperContext::lastCommittedIndex() const
 
 void KeeperContext::setLastCommitIndex(uint64_t commit_index)
 {
-    bool should_notify;
+    bool should_notify = false;
     {
         std::lock_guard lock(last_committed_log_idx_cv_mutex);
         last_committed_log_idx.store(commit_index, std::memory_order_relaxed);

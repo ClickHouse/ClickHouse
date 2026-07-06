@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
+#include <QueryPipeline/Pipe.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 
@@ -30,7 +31,7 @@ public:
 
     String getName() const override { return "LazyUnorderedReadFromMergeTreeSource"; }
     Status prepare() override;
-    Processors expandPipeline() override;
+    PipelineUpdate updatePipeline() override;
 
 private:
     size_t max_block_size;
@@ -45,7 +46,7 @@ private:
 
     QueryPlanResourceHolder resources;
 
-    Processors buildReaders();
+    Pipe buildPipe();
 };
 
 }

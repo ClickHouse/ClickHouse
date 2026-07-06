@@ -1,0 +1,56 @@
+---
+title: ClickHouse Cloud サービスの状態を確認する方法
+description: ClickHouse Cloud API を使って、サービスを起動せずに、停止中、アイドル状態、または稼働中かどうかを確認する方法を学びます。
+date: 2023-11-16
+tags: ['Cloud 管理']
+keywords: ['Cloud サービスの状態']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-check-your-clickhouse-cloud-service-state">
+  ## ClickHouse Cloud サービスの状態を確認する方法
+</div>
+
+ClickHouse Cloud サービスの状態はどのように確認すればよいですか？ サービスが停止中、アイドル状態、または稼働中かを確認したいのですが、その確認によってサービスを起動させたくありません。
+
+<div id="answer">
+  ## 回答
+</div>
+
+[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) は、Cloud サービスの状態を確認するのに便利です。Cloud API を使用する前に、まず対象のサービスで API キーを作成する必要があります。これは ClickHouse Cloud の [clickhouse.cloud](https://console.clickhouse.cloud) で行えます。
+
+* [API 概要](/ja/products/cloud/features/admin-features/api/api-overview)
+* [Swagger](/ja/api-reference/organization/get-list-of-available-organizations)
+
+1. サービスの状態を確認するには、次を実行します。`Key-ID` と `Key-Secret` は、それぞれ実際の値に置き換えてください。
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID]
+   ```
+
+   出力は次のようになります。
+
+   ```json
+   result":{"id":"[Service-ID]","name":"[Service-Name]","provider":"aws","region":"us-east-1","state":"**idle**","endpoints":[{"protocol":"nativesecure","host":"[Connect-URL]","port":9440},{"protocol":"https","host":"[Connect-URL]","port":8443}],"tier":"development","idleScaling":true,"idleTimeoutMinutes":15,"ipAccessList":[{"source":"[my-IP]","description":"[my-IP-name]"}],"createdAt":"2023-04-13T23:47:47Z"},"status":200}
+   ```
+
+2. [JQ ユーティリティ](https://jqlang.github.io/jq/) を使用して `state` キーを抽出できます。
+
+   ```shell
+   curl --user '[Key-ID]:[Key-Secret]' https://api.clickhouse.cloud/v1/organizations/[Org-ID]/services/[Service-ID] | jq '.state'
+   ```
+
+   出力は次のようになります。
+
+   ```json
+   **idle**
+   ```
+
+3. 同じコマンドを現在稼働中のサービスに対して実行すると、次のように出力されます。
+
+   ```json
+   **running**
+   ```

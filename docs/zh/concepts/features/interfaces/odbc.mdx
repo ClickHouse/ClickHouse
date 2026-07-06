@@ -1,0 +1,264 @@
+---
+description: 'ClickHouse ODBC 驱动程序文档'
+sidebarTitle: 'ODBC 驱动程序'
+slug: /interfaces/odbc
+title: 'ODBC 驱动程序'
+doc_type: 'reference'
+---
+
+ClickHouse ODBC 驱动程序提供了一个符合标准的接口，用于将兼容 ODBC 的应用程序连接到
+ClickHouse。它实现了 ODBC API，使应用程序、BI 工具和脚本环境能够执行 SQL
+查询、获取结果，并通过熟悉的机制与 ClickHouse 交互。
+
+该驱动程序通过 [HTTP 协议](/zh/concepts/features/interfaces/http) 与 ClickHouse 服务器 通信，这是所有 ClickHouse 部署中支持的主要
+协议。这使驱动程序能够在各种环境中保持一致运行，
+包括本地安装、Cloud 托管服务，以及仅提供基于 HTTP 访问的环境。
+
+该驱动程序的源代码可在
+[ClickHouse-ODBC GitHub Repository](https://github.com/ClickHouse/clickhouse-odbc) 获取。
+
+<Tip>
+  为获得更好的兼容性，我们强烈建议将您的 ClickHouse 服务器 升级到 24.11 或更高版本。
+</Tip>
+
+<Note>
+  该驱动程序仍在积极开发中。某些 ODBC 功能可能尚未完全实现。当前版本
+  侧重于提供基本连接能力和核心 ODBC 功能，未来版本还将推出更多功能。
+
+  您的反馈非常宝贵，有助于指导新功能和改进事项的优先级。如果您遇到
+  限制、功能缺失或非预期行为，请通过问题跟踪器分享您的观察或功能请求：
+  [https://github.com/ClickHouse/clickhouse-odbc/issues](https://github.com/ClickHouse/clickhouse-odbc/issues)
+</Note>
+
+<div id="installation-on-windows">
+  ## 在 Windows 上安装
+</div>
+
+你可以在以下地址找到该驱动程序的最新版本：
+[https://github.com/ClickHouse/clickhouse-odbc/releases/latest](https://github.com/ClickHouse/clickhouse-odbc/releases/latest)。
+在该页面下载安装并运行 MSI 安装程序，然后按照简单的安装步骤操作即可。
+
+<div id="testing">
+  ## 测试
+</div>
+
+你可以运行这个简单的 PowerShell 脚本来测试驱动。复制下面的文本，设置好 URL、用户名和密码，然后
+将其粘贴到 PowerShell 命令提示符中——运行 `$reader.GetValue(0)` 后，应会显示你的 ClickHouse
+服务器版本。
+
+```powershell
+$url = "http://127.0.0.1:8123/"
+$username = "default"
+$password = ""
+$conn = New-Object System.Data.Odbc.OdbcConnection("`
+    Driver={ClickHouse ODBC Driver (Unicode)};`
+    Url=$url;`
+    Username=$username;`
+    Password=$password")
+$conn.Open()
+$cmd = $conn.CreateCommand()
+$cmd.CommandText = "select version()"
+$reader = $cmd.ExecuteReader()
+$reader.Read()
+$reader.GetValue(0)
+$reader.Close()
+$conn.Close()
+```
+
+<div id="configuration-parameters">
+  ## 配置参数
+</div>
+
+以下参数是通过 ClickHouse ODBC
+驱动程序建立连接时最常用的设置，涵盖基本的身份验证、连接行为以及数据处理选项。完整的受支持参数列表可在项目的 GitHub 页面中查看
+[https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc)。
+
+* `Url`：指定 ClickHouse 服务器的完整 HTTP(S) 端点，包括协议、主机、端口以及
+  可选路径。
+* `Username`：用于向 ClickHouse 服务器进行身份验证的用户名。
+* `Password`：与指定用户名关联的密码。如果未提供，驱动程序将不使用密码
+  身份验证直接连接。
+* `Database`：该连接使用的默认数据库。
+* `Timeout`：驱动程序在中止请求前等待服务器响应的最长时间 (以秒为单位) 。
+* `ClientName`：作为客户端元数据的一部分发送到 ClickHouse 服务器的自定义标识符。可用于追踪或
+  区分来自不同应用程序的流量。该参数会作为驱动程序发出的 HTTP
+  请求中 User-Agent 请求头的一部分。
+* `Compression`：启用或禁用请求和响应载荷的 HTTP 压缩。启用后，它可以减少
+  带宽占用，并提升处理大型结果集时的性能。
+* `SqlCompatibilitySettings`：启用查询设置，使 ClickHouse 的行为更接近传统关系型
+  数据库。当查询由第三方工具 (例如 Power BI) 自动生成时，这会非常有用。这些
+  工具通常不了解 ClickHouse 的某些特有行为，因此可能会生成导致错误或
+  意外结果的查询。更多详情，请参阅 [SqlCompatibilitySettings 配置参数使用的 ClickHouse 设置
+  ](#sql-compatibility-settings)。
+
+以下是一些传递给驱动程序以建立连接的完整连接字符串示例。
+
+* 安装在 WSL 实例本地的 ClickHouse 服务器
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=http://localhost:8123/;Username=default
+```
+
+* 一个 ClickHouse Cloud 实例。
+
+```plaintext
+Driver={ClickHouse ODBC Driver (Unicode)};Url=https://you-instance-url.gcp.clickhouse.cloud:8443/;Username=default;Password=your-password
+```
+
+<div id="powerbi-integration">
+  ## Microsoft Power BI 集成
+</div>
+
+您可以使用 ODBC 驱动程序将 Microsoft Power BI 连接到 ClickHouse 服务器。Power BI 提供两种连接
+选项：通用 ODBC 连接器和 ClickHouse 连接器，这两者都包含在标准的 Power BI 安装中。
+
+这两种连接器底层都依赖 ODBC，但功能有所不同：
+
+* ClickHouse 连接器 (推荐)
+  底层使用 ODBC，但支持 DirectQuery 模式。在此模式下，Power BI 会自动生成 SQL 查询，并且
+  仅检索每个可视化或筛选操作所需的数据。
+
+* ODBC 连接器
+  仅支持 Import 模式。Power BI 会执行用户提供的查询 (或选择整个表) ，并将
+  完整结果集导入 Power BI。后续刷新会重新导入整个数据集。
+
+请根据您的使用场景选择连接器。DirectQuery 最适合用于处理大型数据集的交互式仪表盘。
+当您需要数据的完整本地副本时，请选择 Import 模式。
+
+有关将 Microsoft Power BI 与 ClickHouse 集成的更多信息，请参阅 [ClickHouse 文档中的 Power
+BI 集成页面](/zh/integrations/connectors/data-visualization/powerbi-and-clickhouse)。
+
+<div id="sql-compatibility-settings">
+  ## SQL 兼容性设置
+</div>
+
+ClickHouse 有自己独特的 SQL 方言，在某些情况下，其行为与 MS SQL
+Server、MySQL 或 PostgreSQL 等其他数据库不同。很多时候，这些差异反而是一种优势，因为它们引入了更完善的语法，使 ClickHouse 功能更易于使用。
+
+不过，ODBC 驱动程序通常用于查询由 Power
+BI 等第三方工具生成、而非由用户手动编写的环境中。这些查询通常只依赖 SQL 标准中的很小一部分。在这种情况下，ClickHouse 偏离 SQL 标准的地方可能无法按预期工作，并产生意外结果或错误。
+ODBC 驱动程序提供了一个额外的配置参数 `SqlCompatibilitySettings`，可启用特定的查询设置，使 ClickHouse 的行为更接近标准 SQL。
+
+<div id="sql-compatibility-settings-list">
+  ### 由 SqlCompatibilitySettings 配置参数启用的 ClickHouse 设置
+</div>
+
+本节说明 ODBC 驱动程序会修改哪些设置，以及这样做的原因。
+
+**[cast&#95;keep&#95;nullable](/zh/reference/settings/session-settings#cast_keep_nullable)**
+
+默认情况下，ClickHouse 不允许将 Nullable 类型转换为非 Nullable 类型。不过，许多 BI 工具在执行类型转换时并不区分 Nullable 类型和非 Nullable 类型。因此，BI 工具生成如下查询的情况并不少见：
+
+```sql
+SELECT sum(CAST(value, 'Int32'))
+FROM values
+```
+
+默认情况下，当 `value` 列为 Nullable 时，此查询会失败，并显示以下消息：
+
+```plaintext
+DB::Exception: Cannot convert NULL value to non-Nullable type: while executing 'FUNCTION CAST(__table1.value :: 2,
+'Int32'_String :: 1) -> CAST(__table1.value, 'Int32'_String) Int32 : 0'. (CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN)
+```
+
+启用 `cast_keep_nullable` 后，`CAST` 会保留其参数的可空性。这
+会让 ClickHouse 的行为更接近其他数据库，以及 SQL 标准对这类转换的规定。
+
+**[prefer&#95;column&#95;name&#95;to&#95;alias](/zh/reference/settings/session-settings#prefer_column_name_to_alias)**
+
+ClickHouse 允许在同一个 `SELECT` 列表中通过别名引用表达式。例如，这个查询避免了
+重复，写起来也更简洁：
+
+```sql
+SELECT
+    sum(value) AS S,
+    count() AS C,
+    S / C
+FROM test
+```
+
+此功能虽然被广泛使用，但其他数据库通常不会在同一个 `SELECT` 列表中以这种方式解析别名，
+因此这类查询一般会报错。当别名与某一列同名时，这类问题最明显。例如：
+
+```sql
+SELECT
+    sum(value) AS value,
+    avg(value)
+FROM test
+```
+
+`avg(value)` 应该聚合哪个 `value`？默认情况下，ClickHouse 会优先将其解析为别名，这实际上会把它变成一个
+嵌套聚合，而这并不是大多数工具所期望的。
+
+单看这一点，很少会有问题，但有些 BI 工具会生成包含子查询的查询，并重复使用列别名。例如，Power BI 经常会生成类似下面这样的查询：
+
+```sql
+SELECT
+    sum(C1) AS C1,
+    count(C1) AS C2
+FROM
+(
+    SELECT sum(value) AS C1
+    FROM test
+    GROUP BY group_index
+) AS TBL
+```
+
+引用 `C1` 时可能会出现以下错误：
+
+```plaintext
+Code: 184. DB::Exception: Received from localhost:9000. DB::Exception: Aggregate function sum(C1) AS C1 is found
+inside another aggregate function in query. (ILLEGAL_AGGREGATION)
+```
+
+其他数据库通常不会以这种方式在同一层级解析别名，而是将 `C1` 视为来自
+子查询的列。为了在 ClickHouse 中保持类似的行为，并让这类查询能够正常执行而不报错，ODBC 驱动程序
+启用了 `prefer_column_name_to_alias`。
+
+在大多数情况下，启用这些设置不会有问题。不过，`readonly` 设置为 `1` 的用户
+无法更改任何设置，即使是对 `SELECT` 查询也不例外。对于这类用户，启用 `SqlCompatibilitySettings` 会导致
+错误。下一节将说明如何让此配置参数对只读用户生效。
+
+<div id="readonly-users">
+  ## 让 SQL 兼容性设置适用于只读用户
+</div>
+
+通过 ODBC 驱动程序连接到 ClickHouse 并启用 `SqlCompatibilitySettings` 参数时，`readonly` 设置为 `1` 的用户会报错，因为驱动程序会尝试修改查询设置：
+
+```plaintext
+Code: 164. DB::Exception: Cannot modify 'cast_keep_nullable' setting in readonly mode. (READONLY)
+Code: 164. DB::Exception: Cannot modify 'prefer_column_name_to_alias' setting in readonly mode. (READONLY)
+```
+
+发生这种情况，是因为处于只读模式的用户无权修改设置，即使只是针对单条 `SELECT` 查询也不例外。
+有几种方法可以解决这个问题。
+
+**方案 1：将 `readonly` 设为 `2`**
+
+这是最简单的方案。将 `readonly` 设为 `2` 后，用户在保持只读
+模式的同时仍可修改设置。
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    readonly = 2
+```
+
+在大多数情况下，将 `readonly` 设置为 2 是解决此问题最简单且推荐的方法。如果
+这种方法对你无效，请使用第二种方案。
+
+**方案 2：调整用户设置，使其与 ODBC 驱动程序 设置的参数一致。**
+
+这同样很简单：更新用户设置，使其预先与 ODBC 驱动程序 尝试设置的参数保持一致。
+
+```sql
+ALTER USER your_odbc_user MODIFY SETTING
+    cast_keep_nullable = 1,
+    prefer_column_name_to_alias = 1
+```
+
+通过这一更改，ODBC 驱动程序仍然可以尝试应用这些设置，但由于这些值本来就一致，因此不会产生
+任何实际变更，也就避免了报错。
+
+这个选项同样简单，但需要维护：较新的驱动程序版本可能会更改设置列表，或为了兼容性添加
+新的设置。如果你在 ODBC 用户上硬编码这些设置，那么每当 ODBC 驱动程序开始应用额外设置时，
+你可能都需要更新它们。

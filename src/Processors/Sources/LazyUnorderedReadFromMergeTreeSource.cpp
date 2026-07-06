@@ -56,7 +56,7 @@ IProcessor::Status LazyUnorderedReadFromMergeTreeSource::prepare()
         return Status::PortFull;
 
     if (lazy_materializing_rows)
-        return Status::ExpandPipeline;
+        return Status::UpdatePipeline;
 
     /// Pass through chunks from any ready input.
     bool all_finished = true;
@@ -83,26 +83,38 @@ IProcessor::Status LazyUnorderedReadFromMergeTreeSource::prepare()
     return Status::NeedData;
 }
 
-Processors LazyUnorderedReadFromMergeTreeSource::expandPipeline()
+IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline()
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyUnorderedReadFromMergeTreeSource: No lazy materializing rows");
 
-    auto readers = buildReaders();
+    auto pipe = buildPipe();
     lazy_materializing_rows.reset();
 
-    for (auto & processor : readers)
+    /// Collect the pipe's terminal output ports before detaching processors.
+    /// `ReadFromMergeTree::initializePipeline` may add internal transforms (e.g. `Resize`,
+    /// `ConcatProcessor`, simple transforms), so `Pipe::detachProcessors` returns a flat list
+    /// that includes processors whose first output is already connected internally. Iterating
+    /// over all processors and calling `connect` on their first output would then fail with
+    /// `Port is already connected`. Instead, connect only the pipe's real output ports.
+    std::vector<OutputPort *> pipe_outputs;
+    pipe_outputs.reserve(pipe.numOutputPorts());
+    for (size_t i = 0; i < pipe.numOutputPorts(); ++i)
+        pipe_outputs.push_back(pipe.getOutputPort(i));
+
+    auto processors = Pipe::detachProcessors(std::move(pipe));
+
+    for (auto * proc_output : pipe_outputs)
     {
-        auto & proc_output = processor->getOutputs().front();
-        inputs.emplace_back(proc_output.getHeader(), this);
-        connect(proc_output, inputs.back());
+        inputs.emplace_back(proc_output->getHeader(), this);
+        connect(*proc_output, inputs.back());
         inputs.back().setNeeded();
     }
 
-    return readers;
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
 
-Processors LazyUnorderedReadFromMergeTreeSource::buildReaders()
+Pipe LazyUnorderedReadFromMergeTreeSource::buildPipe()
 {
     auto & parts = lazy_materializing_rows->ranges_in_data_parts;
 
@@ -135,9 +147,7 @@ Processors LazyUnorderedReadFromMergeTreeSource::buildReaders()
     QueryPipelineBuilder pipeline;
     reading->initializePipeline(pipeline, BuildQueryPipelineSettings(context));
 
-    auto pipe = QueryPipelineBuilder::getPipe(std::move(pipeline), resources);
-
-    return Pipe::detachProcessors(std::move(pipe));
+    return QueryPipelineBuilder::getPipe(std::move(pipeline), resources);
 }
 
 }

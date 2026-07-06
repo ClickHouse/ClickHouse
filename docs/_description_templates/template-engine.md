@@ -46,14 +46,10 @@ Input table:
 ```text
 ```
 
-Query:
-
-```sql
+```sql title="Query"
 ```
 
-Result:
-
-```text
+```text title="Response"
 ```
 
 Follow up with any text to clarify the example.
