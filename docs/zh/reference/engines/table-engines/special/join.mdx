@@ -1,0 +1,201 @@
+---
+description: '用于 JOIN 操作的可选预构建数据结构。'
+sidebarTitle: 'Join'
+slug: /engines/table-engines/special/join
+title: 'Join 表引擎'
+doc_type: 'reference'
+---
+
+用于 [JOIN](/zh/reference/statements/select/join) 操作的可选预构建数据结构。
+
+<Note>
+  在 ClickHouse Cloud 中，如果您的服务实例创建时使用的版本早于 25.4，则需要使用 `SET compatibility=25.4` 将兼容性至少设置为 25.4。
+</Note>
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+) ENGINE = Join(join_strictness, join_type, k1[, k2, ...])
+```
+
+请参阅 [CREATE TABLE](/zh/reference/statements/create/table) 查询的详细说明。
+
+<div id="engine-parameters">
+  ## 引擎参数
+</div>
+
+<div id="join_strictness">
+  ### `join_strictness`
+</div>
+
+`join_strictness` – [JOIN 严格度](/zh/reference/statements/select/join#supported-types-of-join).
+
+<div id="join_type">
+  ### `join_type`
+</div>
+
+`join_type` – [JOIN 类型](/zh/reference/statements/select/join#supported-types-of-join).
+
+<div id="key-columns">
+  ### 键列
+</div>
+
+`k1[, k2, ...]` – 来自 `USING` 子句、用于执行 `JOIN` 操作的键列。
+
+输入 `join_strictness` 和 `join_type` 参数时不要加引号，例如 `Join(ANY, LEFT, col1)`。它们必须与该表所用于的 `JOIN` 操作一致。如果参数不匹配，ClickHouse 不会抛出异常，但可能会返回错误的数据。
+
+<div id="specifics-and-recommendations">
+  ## 细节与建议
+</div>
+
+<div id="data-storage">
+  ### 数据存储
+</div>
+
+`Join` 表的数据始终存储在 RAM 中。向表中插入行时，ClickHouse 会将数据块写入磁盘上的目录，以便在服务器重启后恢复这些数据。
+
+如果服务器异常重启，磁盘上的数据块可能会丢失或损坏。在这种情况下，您可能需要手动删除包含损坏数据的文件。
+
+<div id="selecting-and-inserting-data">
+  ### 选择和插入数据
+</div>
+
+你可以使用 `INSERT` 查询向 `Join` 引擎表添加数据。如果创建表时使用的是 `ANY` 严格度，则会忽略重复键对应的数据；如果使用 `ALL` 严格度，则会添加所有行。
+
+`Join` 引擎表的主要用途如下：
+
+* 将该表放在 `JOIN` 子句的右侧。
+* 调用 [joinGet](/zh/reference/functions/regular-functions/other-functions#joinGet) 函数，该函数允许你像从字典中一样从表里提取数据。
+
+<div id="deleting-data">
+  ### 删除数据
+</div>
+
+针对 `Join` 引擎表的 `ALTER DELETE` 查询是以 [变更](/zh/reference/statements/alter/index#mutations) 的形式实现的。`DELETE` 变更会读取过滤后的数据，并覆盖内存和磁盘中的数据。
+
+<div id="join-limitations-and-settings">
+  ### 限制与设置
+</div>
+
+创建表时，将应用以下设置：
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+[join&#95;use&#95;nulls](/zh/reference/settings/session-settings#join_use_nulls)
+
+<div id="max_rows_in_join">
+  #### `max_rows_in_join`
+</div>
+
+[max&#95;rows&#95;in&#95;join](/zh/reference/settings/session-settings#max_rows_in_join)
+
+<div id="max_bytes_in_join">
+  #### `max_bytes_in_join`
+</div>
+
+[max&#95;bytes&#95;in&#95;join](/zh/reference/settings/session-settings#max_bytes_in_join)
+
+<div id="join_overflow_mode">
+  #### `join_overflow_mode`
+</div>
+
+[join&#95;overflow&#95;mode](/zh/reference/settings/session-settings#join_overflow_mode)
+
+<div id="join_any_take_last_row">
+  #### `join_any_take_last_row`
+</div>
+
+[join&#95;any&#95;take&#95;last&#95;row](/zh/reference/settings/session-settings#join_any_take_last_row)
+
+<div id="join_use_nulls">
+  #### `join_use_nulls`
+</div>
+
+<div id="persistent">
+  #### 持久化
+</div>
+
+禁用 Join 和 [Set](/zh/reference/engines/table-engines/special/set) 表引擎的持久化。
+
+减少 I/O 开销。适用于追求性能且不需要持久化的场景。
+
+可能的值：
+
+* 1 — 启用。
+* 0 — 禁用。
+
+默认值：`1`。
+
+`Join` 引擎表不能用于 `GLOBAL JOIN` 操作。
+
+`Join` 引擎允许在 `CREATE TABLE` 语句中指定 [join&#95;use&#95;nulls](/zh/reference/settings/session-settings#join_use_nulls) 设置。[SELECT](/zh/reference/statements/select/index) 查询应使用相同的 `join_use_nulls` 值。
+
+<div id="example">
+  ## 使用示例
+</div>
+
+创建左侧表：
+
+```sql
+CREATE TABLE id_val(`id` UInt32, `val` UInt32) ENGINE = TinyLog;
+```
+
+```sql
+INSERT INTO id_val VALUES (1,11), (2,12), (3,13);
+```
+
+创建右侧 `Join` 表：
+
+```sql
+CREATE TABLE id_val_join(`id` UInt32, `val` UInt8) ENGINE = Join(ANY, LEFT, id);
+```
+
+```sql
+INSERT INTO id_val_join VALUES (1,21), (1,22), (3,23);
+```
+
+连接表：
+
+```sql
+SELECT * FROM id_val ANY LEFT JOIN id_val_join USING (id);
+```
+
+```text
+┌─id─┬─val─┬─id_val_join.val─┐
+│  1 │  11 │              21 │
+│  2 │  12 │               0 │
+│  3 │  13 │              23 │
+└────┴─────┴─────────────────┘
+```
+
+或者，您也可以从 `Join` 表中检索数据，并指定连接键的值：
+
+```sql
+SELECT joinGet('id_val_join', 'val', toUInt32(1));
+```
+
+```text
+┌─joinGet('id_val_join', 'val', toUInt32(1))─┐
+│                                         21 │
+└────────────────────────────────────────────┘
+```
+
+从 `Join` 表中删除一行：
+
+```sql
+ALTER TABLE id_val_join DELETE WHERE id = 3;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  21 │
+└────┴─────┘
+```

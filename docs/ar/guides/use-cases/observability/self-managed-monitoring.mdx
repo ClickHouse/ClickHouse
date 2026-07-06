@@ -1,0 +1,47 @@
+---
+slug: /use-cases/observability/oss-monitoring
+title: 'المراقبة للبيئات مُدارة ذاتيًا'
+sidebarTitle: 'المراقبة للبيئات مُدارة ذاتيًا'
+description: 'دليل المراقبة للبيئات مُدارة ذاتيًا'
+doc_type: 'guide'
+keywords: ['observability', 'المراقبة', 'مُدار ذاتيًا', 'المقاييس', 'صحة النظام']
+---
+
+import ObservabilityIntegrations from '/snippets/ar/_observability_integration_options.mdx';
+import DirectIntegrations from '/snippets/ar/_direct_observability_integration_options.mdx';
+import CommunityMonitoring from '/snippets/ar/_community_monitoring.mdx';
+
+يوفّر هذا الدليل لفرق المؤسسات التي تُقيّم ClickHouse مفتوح المصدر معلومات شاملة حول إمكانات المراقبة والـ observability لعمليات النشر في بيئات الإنتاج. وكثيرًا ما يسأل عملاء المؤسسات عن ميزات المراقبة الجاهزة للاستخدام، والتكامل مع حِزم observability الحالية لديهم، بما في ذلك أدوات مثل Datadog وAWS CloudWatch، وكيف تُقارن إمكانات المراقبة في ClickHouse بعمليات النشر المستضافة ذاتيًا.
+
+<div id="prometheus">
+  ### معمارية التكامل المستندة إلى Prometheus
+</div>
+
+يكشف ClickHouse عن مقاييس متوافقة مع Prometheus عبر نقاط نهاية مختلفة بحسب نموذج النشر لديك، ولكل منها خصائص تشغيلية مميزة:
+
+**ClickHouse مُدار ذاتيًا/مفتوح المصدر (OSS)**
+
+نقطة نهاية Prometheus مباشرة للخادم، يمكن الوصول إليها عبر نقطة النهاية القياسية /metrics على خادم ClickHouse لديك. يوفّر هذا النهج ما يلي:
+
+* إتاحة كاملة للمقاييس: النطاق الكامل لمقاييس ClickHouse المتاحة من دون تصفية مدمجة
+* مقاييس في الوقت الفعلي: تُولَّد مباشرة من جداول النظام عند جمعها
+
+**الوصول المباشر إلى النظام**
+
+يستعلم من جداول نظام بيئة الإنتاج، مما يضيف حملاً على المراقبة ويمنع حالات الخمول الموفّرة للتكلفة
+
+<ObservabilityIntegrations />
+
+<div id="clickstack-deployment">
+  ### خيارات نشر ClickStack
+</div>
+
+* [Helm](/ar/clickstack/deployment/helm): يُوصى به لبيئات Kubernetes المخصّصة لتصحيح الأخطاء. يتيح إعدادات خاصة بكل بيئة، وحدودًا للموارد، وإمكانية التوسّع عبر `values.yaml`.
+* [Docker Compose](/ar/clickstack/deployment/docker-compose): ينشر كل مكوّن (ClickHouse وHyperDX وOTel collector وMongoDB) على حدة.
+* [HyperDX Only](/ar/clickstack/deployment/hyperdx-only): حاوية HyperDX مستقلة.
+
+للاطلاع على خيارات النشر الكاملة وتفاصيل المعمارية، راجع [وثائق ClickStack](/ar/clickstack/overview) و[دليل إدخال البيانات](/ar/clickstack/ingesting-data/overview).
+
+<DirectIntegrations />
+
+<CommunityMonitoring />

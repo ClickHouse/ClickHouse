@@ -1,0 +1,70 @@
+---
+sidebarTitle: '控制台审计日志'
+slug: /cloud/security/audit-logging/console-audit-log
+title: '控制台审计日志'
+description: '本页介绍如何查看云端审计日志'
+doc_type: 'guide'
+keywords: ['审计日志']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+控制台中的活动会记录到审计日志中。如果您拥有 Admin 或 Developer 组织角色，则可以查看该日志，并将其与您的日志系统集成。
+
+<div id="console-audit-log-ui">
+  ## 通过用户界面访问控制台审计日志
+</div>
+
+<Steps>
+  <Step>
+    ## 选择组织
+
+    在 ClickHouse Cloud 中，前往组织详情页面。
+
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="ClickHouse Cloud 活动选项卡" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## 选择审计
+
+    在左侧菜单中选择 **Audit** 选项卡，查看你的 ClickHouse Cloud 组织发生了哪些更改，包括更改由谁发起以及发生时间。
+
+    **Activity** 页面会显示一个表，其中列出了与你的组织相关的已记录事件。默认情况下，该列表按时间倒序排列 (最新事件显示在顶部) 。点击列表头可更改表的排序顺序。表中的每一项都包含以下字段：
+
+    * **Activity:** 描述事件的文本摘要
+    * **User:** 发起该事件的用户
+    * **IP Address:** 在适用情况下，此字段会列出发起该事件的用户 IP 地址
+    * **Time:** 事件的时间戳
+
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="ClickHouse Cloud 活动表" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## 使用搜索栏
+
+    你可以使用搜索栏按某些条件筛选事件，例如服务名称或 IP 地址。你还可以将这些信息导出为 CSV format，以便在外部工具中分发或分析。
+  </Step>
+</Steps>
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="ClickHouse Cloud Activity CSV 导出" border />
+</div>
+
+<div id="console-audit-log-api">
+  ## 通过 API 访问控制台审计日志
+</div>
+
+您可以使用 ClickHouse Cloud API 的 `activity` 端点导出审计事件。
+更多详细信息请参阅 [API 参考文档](/zh/api-reference/organization/get-list-of-available-organizations)。
+
+<div id="log-integrations">
+  ## 日志集成
+</div>
+
+您可以使用 API 与所选的日志平台集成。以下平台提供开箱即用且受支持的连接器：
+
+* [适用于 Splunk 的 ClickHouse Cloud Audit 插件](/zh/integrations/connectors/data-integrations/integrations/splunk)

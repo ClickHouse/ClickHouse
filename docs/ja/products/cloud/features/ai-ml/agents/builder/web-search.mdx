@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'ウェブ検索'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: 'ウェブ検索'
+description: 'ClickHouse Agents向けの外部ウェブ検索ツール'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'ウェブ検索']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+ウェブ検索を使うと、エージェントは会話中に公開ウェブから情報を取得できます。回答に最新情報が必要な質問、たとえば最近のリリース、サービス外で管理されているドキュメント、または信頼できる情報源への手早い確認に利用してください。
+
+<div id="enable-it">
+  ## 有効にする
+</div>
+
+エージェントビルダーの **Capabilities** セクションで **ウェブ検索** を有効にします。有効にすると、ユーザーの質問とエージェントへの指示に基づいて、検索を実行するタイミングをエージェントが判断します。検索が実行されると、結果が収集され、最も関連性の高い内容がモデルのコンテキストに渡されます。
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="ウェブ検索セクションが強調表示され、ウェブ検索のチェックボックスが表示されている Capabilities パネル" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## 検索ラウンドの仕組み
+</div>
+
+各検索は 3 つの段階で実行され、これらは Cloud 側で管理されます。
+
+1. **検索** - エージェントのクエリが検索プロバイダーに送信され、候補となる URL が返されます。
+2. **スクレイプ** - 関連するページを取得し、有用なテキストを抽出します。
+3. **再ランキング** - リランカーが結果をスコアリングし、モデルが最も有用なものから先に参照できるようにします。
+
+エージェントの応答には、実際に使用した URL が引用元として含まれます。
+
+<div id="when-to-use-it">
+  ## 使用する場面
+</div>
+
+* 利用中のサービスに含まれていないリリースノートや変更履歴を調べる。
+* モデルが把握していない可能性のある事実を、情報源に照らして確認する。
+* 公開されているブログ記事やドキュメントを会話に取り込み、分析する。
+
+自分のデータやモデル自身の知識で答えられる質問には使わないでください。検索ラウンドを重ねるたびにレイテンシが増えます。

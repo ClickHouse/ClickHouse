@@ -1,0 +1,151 @@
+---
+title: 'ClickStack'
+sidebarTitle: 'Início'
+description: 'Stack open source de observabilidade com ClickHouse — unificando logs, traces, métricas e sessões'
+mode: "custom"
+---
+
+export function useDark() {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const check = () => setDark(document.documentElement.classList.contains('dark'));
+    check();
+    const obs = new MutationObserver(check);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
+
+export const CsCard = ({ title, img, darkImg, abbr, href, dark }) => {
+  const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+  const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+  return <a href={href} className="cs-card-link" onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }} style={{ textDecoration: 'none', textDecorationLine: 'none', color: 'inherit' }}>
+    <div
+      className="cs-card"
+      style={{
+        aspectRatio: '1 / 1',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        padding: '16px',
+        borderRadius: '12px',
+        border: dark ? '1px solid rgba(255,255,255,0.08)' : '1px solid #e0e0e0',
+        backgroundColor: dark ? 'rgba(65,65,65,0.5)' : '#ffffff',
+        boxShadow: dark ? '0 1px 3px rgba(0,0,0,0.2)' : '0 1px 3px rgba(0,0,0,0.1)',
+        cursor: 'pointer',
+        transition: 'transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease',
+      }}
+    >
+      {img ? (
+        <div style={{ width: 56, height: 56, flexShrink: 0, backgroundImage: `url(${withBase(dark && darkImg ? darkImg : img)})`, backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' }} />
+      ) : (
+        <div style={{
+          width: 56, height: 56,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          borderRadius: '8px',
+          backgroundColor: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+          fontSize: '16px', fontWeight: '700', letterSpacing: '-0.5px',
+          color: dark ? '#d4d4d4' : '#555555',
+          flexShrink: 0,
+        }}>{abbr}</div>
+      )}
+      <span className="text-sm font-semibold text-center" style={{
+        lineHeight: '1.3', color: dark ? '#ffffff' : '#111111',
+        textDecoration: 'none', textDecorationLine: 'none',
+      }}>{title}</span>
+    </div>
+  </a>
+};
+
+export const CsGrid = ({ items }) => {
+  const dark = useDark();
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        .cs-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
+        }
+        .dark .cs-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.35) !important; }
+        html:not(.dark) .prose a.cs-card-link.cs-card-link:hover,
+        html:not(.dark) .prose a.cs-card-link.cs-card-link:hover * {
+          text-decoration: none !important;
+          text-decoration-line: none !important;
+          color: #111111 !important;
+        }
+        .dark .prose a.cs-card-link.cs-card-link:hover,
+        .dark .prose a.cs-card-link.cs-card-link:hover * {
+          text-decoration: none !important;
+          text-decoration-line: none !important;
+          color: #ffffff !important;
+        }
+      `}} />
+      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6" style={{ gap: '16px', margin: '20px 0 36px' }}>
+        {items.map(item => <CsCard key={item.title} {...item} dark={dark} />)}
+      </div>
+    </>
+  );
+};
+
+export const SDKS = [
+  { title: 'Node.js',       img: '/images/logo-nodejs.svg',               href: '/pt-BR/clickstack/ingesting-data/sdks/nodejs' },
+  { title: 'Python',        img: '/images/logo-python.svg',               href: '/pt-BR/clickstack/ingesting-data/sdks/python' },
+  { title: 'Go',            img: '/images/logo-go.svg',                   href: '/pt-BR/clickstack/ingesting-data/sdks/golang' },
+  { title: 'Java',          img: '/images/logo-java.svg',                 href: '/pt-BR/clickstack/ingesting-data/sdks/java' },
+  { title: 'Ruby',          img: '/images/ruby-logo.svg',                 href: '/pt-BR/clickstack/ingesting-data/sdks/ruby' },
+  { title: 'Browser JS',    img: '/images/logo-javascript.svg',           href: '/pt-BR/clickstack/ingesting-data/sdks/browser' },
+  { title: 'React Native',  img: '/images/logo-react.svg',               href: '/pt-BR/clickstack/ingesting-data/sdks/react-native' },
+  { title: 'Next.js',       img: '/images/logo-nextjs.svg',       darkImg: '/images/logo-nextjs-dark.svg',  href: '/pt-BR/clickstack/ingesting-data/sdks/nextjs' },
+  { title: 'NestJS',        img: '/images/logo-nestjs.svg',              href: '/pt-BR/clickstack/ingesting-data/sdks/nestjs' },
+  { title: 'Deno',          img: '/images/logo-deno.svg',         darkImg: '/images/logo-deno-dark.svg',    href: '/pt-BR/clickstack/ingesting-data/sdks/deno' },
+  { title: 'Elixir',        img: '/images/logo-elixir.svg',       darkImg: '/images/logo-elixir-dark.svg',  href: '/pt-BR/clickstack/ingesting-data/sdks/elixir' },
+  { title: 'AWS Lambda',    img: '/images/lambda-logo.svg',           href: '/pt-BR/clickstack/ingesting-data/sdks/aws-lambda' },
+];
+
+export const INFRA = [
+  { title: 'Kubernetes',    img: '/images/kubernetes-logo.svg',       href: '/pt-BR/clickstack/integration-examples/kubernetes' },
+  { title: 'Cloudflare',    img: '/images/integrations/logos/cloudflare.svg',      href: '/pt-BR/clickstack/integration-examples/cloudflare' },
+  { title: 'AWS Lambda',    img: '/images/lambda-logo.svg',           href: '/pt-BR/clickstack/integration-examples/aws-lambda' },
+  { title: 'CloudWatch',    img: '/images/cloudwatch-logo.svg',          href: '/pt-BR/clickstack/integration-examples/cloudwatch' },
+  { title: 'Logs de host',     img: '/images/logo-hostlogs.svg',            href: '/pt-BR/clickstack/integration-examples/host-logs' },
+  { title: 'Systemd',       img: '/images/systemd-logomark.svg',               href: '/pt-BR/clickstack/integration-examples/systemd' },
+  { title: 'Métricas da JVM',   img: '/images/logo-java.svg',                 href: '/pt-BR/clickstack/integration-examples/jvm-metrics' },
+  { title: 'Traces do Node.js',img: '/images/logo-nodejs.svg',               href: '/pt-BR/clickstack/integration-examples/nodejs-traces' },
+];
+
+export const DATABASES = [
+  { title: 'Logs do PostgreSQL',    img: '/images/logo-postgres.svg',  href: '/pt-BR/clickstack/integration-examples/postgres-logs' },
+  { title: 'Métricas do PostgreSQL', img: '/images/logo-postgres.svg',  href: '/pt-BR/clickstack/integration-examples/postgres-metrics' },
+  { title: 'MySQL',              img: '/images/logo-mysql.svg',     href: '/pt-BR/clickstack/integration-examples/mysql' },
+  { title: 'Logs do Redis',         img: '/images/icons/redis-logo.svg',          href: '/pt-BR/clickstack/integration-examples/redis-logs' },
+  { title: 'Métricas do Redis',      img: '/images/icons/redis-logo.svg',          href: '/pt-BR/clickstack/integration-examples/redis-metrics' },
+  { title: 'MongoDB',            img: '/images/mongodb-logo.svg',        href: '/pt-BR/clickstack/integration-examples/mongodb-logs' },
+  { title: 'Logs do Kafka',         img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/pt-BR/clickstack/integration-examples/kafka-logs' },
+  { title: 'Métricas do Kafka',      img: '/images/kafka-logo.svg',  darkImg: '/images/kafka-logo-dark.svg',  href: '/pt-BR/clickstack/integration-examples/kafka-metrics' },
+  { title: 'Logs do Nginx',         img: '/images/logo-nginx.svg',     href: '/pt-BR/clickstack/integration-examples/nginx-logs' },
+  { title: 'Traces do Nginx',       img: '/images/logo-nginx.svg',     href: '/pt-BR/clickstack/integration-examples/nginx-traces' },
+  { title: 'Temporal',           img: '/images/logo-temporal.svg',  darkImg: '/images/logo-temporal-dark.svg',  href: '/pt-BR/clickstack/integration-examples/temporal' },
+];
+
+**ClickStack** é uma plataforma de observabilidade open source, pronta para produção, baseada em ClickHouse e OpenTelemetry. Ela unifica logs, traces, métricas e sessões em uma única stack de alto desempenho.
+
+<h2 noAnchor>O que você quer monitorar?</h2>
+
+<h3 noAnchor>Aplicações</h3>
+
+<CsGrid items={SDKS} />
+
+<h3 noAnchor>Infraestrutura</h3>
+
+<CsGrid items={INFRA} />
+
+<h3 noAnchor>Bancos de dados &amp; serviços</h3>
+
+<CsGrid items={DATABASES} />
+
+***
+
+Não sabe por onde começar? Siga o guia de [Primeiros passos](/pt-BR/clickstack/getting-started) para implantar o ClickStack e depois carregar um [conjunto de dados de exemplo](/pt-BR/clickstack/example-datasets).

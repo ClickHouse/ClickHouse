@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'Ajustando o Managed ClickStack - refinando seu schema'
+description: 'Refine o schema do ClickStack para melhorar o desempenho das consultas e a eficiência de armazenamento no Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'ajuste', 'schema', 'gerenciado', 'observabilidade', 'desempenho', 'otimização', 'armazenamento']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+Se você já usa o ClickStack há algum tempo, provavelmente percebeu que o schema padrão atende à maioria das cargas de trabalho de observabilidade sem nenhuma alteração. Esta página é para quando isso deixa de ser suficiente: a latência das consultas começa a aumentar, ou seus padrões de acesso passam a se afastar da configuração padrão.
+
+Quatro otimizações cobrem a maior parte do que realmente ajuda na prática. Elas estão listadas, em linhas gerais, em ordem de esforço. As duas primeiras são alterações locais de `ALTER TABLE` que você pode aplicar de forma incremental. A terceira vale a pena quando a mesma agregação é executada repetidamente em um dashboard. A quarta exige uma migração de tabela, por isso é a mais trabalhosa.
+
+Os resumos abaixo são curtos de propósito. Para entender o motivo de cada alteração, ver benchmarks e os procedimentos para aplicá-las aos dados existentes, consulte [otimização de desempenho](/pt-BR/clickstack/managing/performance-tuning).
+
+<Steps>
+  <Step>
+    ## Materialize atributos consultados com frequência
+
+    Filtrar por `LogAttributes['service.version']` faz com que o ClickHouse carregue e decodifique todo o Map `LogAttributes` para cada linha examinada. Promova o atributo para uma coluna `MATERIALIZED` e o mesmo filtro passa a ser uma leitura de coluna, geralmente uma ordem de grandeza mais rápida. O ClickStack reescreve o filtro automaticamente assim que a coluna passa a existir, então pesquisas salvas e dashboards continuam funcionando sem nenhuma alteração.
+
+    Escolha os atributos que você realmente consulta com frequência. Cada coluna materializada consome armazenamento e tempo de insert, então este é um exercício de &quot;promover o que você usa&quot;, e não de &quot;promover tudo&quot;.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    As linhas existentes permanecem vazias na nova coluna até que você também execute `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    Leia mais: [Materializar atributos consultados com frequência](/pt-BR/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step>
+    ## Adicione índices de skip
+
+    Os índices de skip permitem que o ClickHouse descarte grânulos de dados que não podem corresponder a um filtro, transformando uma varredura em uma pequena leitura direcionada. Há três tipos que vale a pena conhecer:
+
+    * **Text indexes** (`text(tokenizer = ...)`) em colunas de string e em arrays `mapKeys`/`*AttributeItems`. O schema padrão de logs já inclui esses índices.
+    * **Min-max indexes** em colunas numéricas filtradas por intervalo. O trace `Duration` é o caso clássico.
+    * **Bloom filters** para buscas por igualdade com alta cardinalidade em versões do ClickHouse que ainda não oferecem suporte a text indexes.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    Um índice de skip só compensa o custo de avaliação se realmente eliminar grânulos. Confirme com `EXPLAIN indexes = 1` em uma consulta representativa antes de assumir que ele ajudou.
+
+    Leia mais: [Adicionando índices de skip](/pt-BR/clickstack/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step>
+    ## Pré-calcule agregações repetidas
+
+    Quando a mesma agregação é executada repetidamente em um dashboard (principais serviços por taxa de erro, latência p99 por endpoint, contagem de requisições por minuto), uma visão materializada calcula o resultado no momento do insert e o grava em uma pequena tabela de rollup. Os dashboards passam então a consultar o rollup em vez dos logs ou traces brutos, o que é muito mais barato em comparação.
+
+    Isso compensa quando o dashboard é muito acessado e a tabela subjacente é grande. O custo é algum uso de CPU no momento do insert e uma segunda tabela para manter.
+
+    Leia mais: [Aproveitando visões materializadas](/pt-BR/clickstack/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step>
+    ## Escolha uma chave primária para seu padrão de acesso
+
+    A chave primária controla como as linhas são ordenadas em disco. Filtros nas colunas iniciais dessa chave permitem que o ClickHouse vá direto para a faixa relevante; filtros que não começam com uma dessas colunas varrem a partição inteira.
+
+    A chave padrão de logs `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` favorece &quot;o que aconteceu nos últimos N minutos para o serviço X&quot;. Se a maioria das suas consultas começa com uma coluna diferente (um ID de tenant, um ID de cliente, uma região), mudar a chave primária para começar com essa coluna é a alteração de maior impacto que você pode fazer.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- same columns as otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    O ClickHouse não permite alterar a chave primária diretamente, então isto é uma migração de tabela, e não um simples `ALTER`. O guia de ajuste de desempenho mostra como criar a nova tabela, redirecionar a ingestão e usar uma tabela `Merge` para que os dashboards existentes continuem funcionando com dados antigos e novos.
+
+    Leia mais: [Modificando a chave primária](/pt-BR/clickstack/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## Leitura adicional
+</div>
+
+* [Otimização de desempenho](/pt-BR/clickstack/managing/performance-tuning): guia completo, incluindo projeções e aceleração de busca por linha.
+* [Tabelas e esquemas usados pelo ClickStack](/pt-BR/clickstack/ingesting-data/schemas): o DDL canônico no qual as otimizações se baseiam.
+* [Colocando em produção](/pt-BR/clickstack/managing/production): recomendações mais amplas para ambientes de produção.

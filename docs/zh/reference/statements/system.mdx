@@ -1,0 +1,934 @@
+---
+description: 'SYSTEM 语句的文档'
+sidebarTitle: 'SYSTEM'
+slug: /sql-reference/statements/system
+title: 'SYSTEM 语句'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="reload-embedded-dictionaries">
+  ## SYSTEM RELOAD EMBEDDED DICTIONARIES
+</div>
+
+重新加载所有[内部字典](/zh/reference/statements/create/dictionary)。
+默认情况下，内部字典处于禁用状态。
+无论内部字典的更新结果如何，始终返回 `Ok.`。
+
+<div id="reload-dictionaries">
+  ## SYSTEM RELOAD DICTIONARIES
+</div>
+
+`SYSTEM RELOAD DICTIONARIES` 查询会重新加载状态为 `LOADED` 的字典 (参见 [`system.dictionaries`](/zh/reference/system-tables/dictionaries) 的 `status` 列) ，即此前已成功加载的字典。
+默认情况下，字典采用延迟加载 (参见 [dictionaries&#95;lazy&#95;load](/zh/reference/settings/server-settings/settings#dictionaries_lazy_load)) ，因此不会在启动时自动加载，而是在首次访问时通过调用 [`dictGet`](/zh/reference/functions/regular-functions/ext-dict-functions#dictGet) 函数，或对 `ENGINE = Dictionary` 的表执行 `SELECT` 时初始化。
+
+**语法**
+
+```sql
+SYSTEM RELOAD DICTIONARIES [ON CLUSTER cluster_name]
+```
+
+<div id="reload-dictionary">
+  ## SYSTEM RELOAD 字典
+</div>
+
+彻底重新加载字典 `dictionary_name`，无论该字典当前处于何种状态 (LOADED / NOT&#95;LOADED / FAILED) 。
+无论字典更新结果如何，始终返回 `Ok.`。
+
+```sql
+SYSTEM RELOAD DICTIONARY [ON CLUSTER cluster_name] dictionary_name
+```
+
+可以通过查询 `system.dictionaries` 表来查看字典的状态。
+
+```sql
+SELECT name, status FROM system.dictionaries;
+```
+
+<div id="reload-models">
+  ## SYSTEM RELOAD MODELS
+</div>
+
+<Note>
+  此语句和 `SYSTEM RELOAD MODEL` 仅会从 clickhouse-library-bridge 中卸载 catboost 模型。函数 `catboostEvaluate()`
+  会在模型尚未加载时于首次访问该模型时将其加载。
+</Note>
+
+卸载所有 CatBoost 模型。
+
+**语法**
+
+```sql
+SYSTEM RELOAD MODELS [ON CLUSTER cluster_name]
+```
+
+<div id="reload-model">
+  ## SYSTEM RELOAD MODEL
+</div>
+
+卸载 `model_path` 处的 CatBoost 模型。
+
+**语法**
+
+```sql
+SYSTEM RELOAD MODEL [ON CLUSTER cluster_name] <model_path>
+```
+
+<div id="reload-functions">
+  ## SYSTEM RELOAD FUNCTIONS
+</div>
+
+从配置文件中重新加载所有已注册的[可执行用户自定义函数](/zh/reference/functions/regular-functions/udf#executable-user-defined-functions)，或重新加载其中一个。
+
+**语法**
+
+```sql
+SYSTEM RELOAD FUNCTIONS [ON CLUSTER cluster_name]
+SYSTEM RELOAD FUNCTION [ON CLUSTER cluster_name] function_name
+```
+
+<div id="reload-asynchronous-metrics">
+  ## SYSTEM RELOAD ASYNCHRONOUS METRICS
+</div>
+
+重新计算所有[异步指标](/zh/reference/system-tables/asynchronous_metrics)。由于异步指标会根据设置 [asynchronous&#95;metrics&#95;update&#95;period&#95;s](/zh/reference/settings/server-settings/settings) 定期更新，因此通常无需使用此语句手动更新。
+
+```sql
+SYSTEM RELOAD ASYNCHRONOUS METRICS [ON CLUSTER cluster_name]
+```
+
+<div id="drop-dns-cache">
+  ## SYSTEM CLEAR|DROP DNS CACHE
+</div>
+
+清除 ClickHouse 的内部 DNS 缓存。有时 (对于较旧版本的 ClickHouse) ，在基础设施发生变更时 (例如更改另一台 ClickHouse server 或字典所使用 server 的 IP 地址) ，需要使用此命令。
+
+如需更方便地 (自动) 管理缓存，请参见 `disable_internal_dns_cache`、`dns_cache_max_entries`、`dns_cache_update_period` 参数。
+
+<div id="drop-mark-cache">
+  ## SYSTEM CLEAR|DROP 标记缓存
+</div>
+
+清空标记缓存。
+
+<div id="drop-iceberg-metadata-cache">
+  ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE
+</div>
+
+清空 Iceberg 元数据缓存。
+
+<div id="drop-avro-schema-cache">
+  ## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE
+</div>
+
+清除 `AvroConfluent` 格式使用的、按 URL 区分的 Confluent Schema Registry 缓存。这会同时删除 schema 拉取缓存 (id → schema) 和 schema 注册缓存 (subject + schema → id) ，因此后续的读写都会回退到 registry 服务器。当 registry 端的 schema 被删除或改写时，此功能非常有用；也可用于在测试中验证 registry 的幂等性。
+
+<div id="drop-parquet-metadata-cache">
+  ## SYSTEM DROP PARQUET METADATA CACHE
+</div>
+
+清空 Parquet 元数据缓存。
+
+<div id="drop-text-index-caches">
+  ## SYSTEM CLEAR|DROP TEXT INDEX CACHES
+</div>
+
+清除文本索引的头部、字典和倒排列表缓存。
+
+如果要单独清除其中某一个缓存，可以运行
+
+* `SYSTEM CLEAR TEXT INDEX HEADER CACHE`,
+* `SYSTEM CLEAR TEXT INDEX DICTIONARY CACHE`，或
+* `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
+
+<div id="drop-replica">
+  ## SYSTEM DROP REPLICA
+</div>
+
+可以使用以下语法删除 `ReplicatedMergeTree` 表的失效副本：
+
+```sql
+SYSTEM DROP REPLICA 'replica_name' FROM TABLE database.table;
+SYSTEM DROP REPLICA 'replica_name' FROM DATABASE database;
+SYSTEM DROP REPLICA 'replica_name';
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/path/to/table/in/zk';
+```
+
+这些查询会移除 ZooKeeper 中 `ReplicatedMergeTree` 的副本路径。当某个副本已失效，且由于对应的表已不存在，无法通过 `DROP TABLE` 从 ZooKeeper 中删除其元数据时，这一操作就很有用。它只会删除非活动/过期副本，不能删除本地副本；这种情况请使用 `DROP TABLE`。`DROP REPLICA` 不会删除任何表，也不会从磁盘中移除任何数据或元数据。
+
+第一种会删除 `database.table` 表中 `'replica_name'` 副本的元数据。
+第二种会对该数据库中的所有复制表执行相同操作。
+第三种会对本地服务器上的所有复制表执行相同操作。
+第四种在某个表的所有其他副本都已被删除时，可用于删除失效副本的元数据。它要求显式指定表路径。该路径必须与创建表时传给 `ReplicatedMergeTree` 引擎第一个参数的路径相同。
+
+<div id="drop-database-replica">
+  ## SYSTEM DROP DATABASE REPLICA
+</div>
+
+可使用以下语法删除 `Replicated` 数据库的失效副本：
+
+```sql
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM DATABASE database;
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'];
+SYSTEM DROP DATABASE REPLICA 'replica_name' [FROM SHARD 'shard_name'] FROM ZKPATH '/path/to/table/in/zk';
+```
+
+与 `SYSTEM DROP REPLICA` 类似，但当没有可执行 `DROP DATABASE` 的数据库时，它会从 ZooKeeper 中移除 `Replicated` 数据库的副本路径。请注意，它不会移除 `ReplicatedMergeTree` 的副本 (因此你可能还需要使用 `SYSTEM DROP REPLICA`) 。分片名和副本名是在创建数据库时于 `Replicated` 引擎参数中指定的名称。此外，这些名称也可以从 `system.clusters` 的 `database_shard_name` 和 `database_replica_name` 列中获取。如果缺少 `FROM SHARD` 子句，那么 `replica_name` 必须是完整的副本名称，格式为 `shard_name|replica_name`。
+
+<div id="drop-uncompressed-cache">
+  ## SYSTEM CLEAR|DROP UNCOMPRESSED CACHE
+</div>
+
+清除未压缩数据缓存。
+可通过查询/用户/profile 级设置 [`use_uncompressed_cache`](/zh/reference/settings/session-settings#use_uncompressed_cache) 启用或禁用未压缩数据缓存。
+其大小可通过服务器级设置 [`uncompressed_cache_size`](/zh/reference/settings/server-settings/settings#uncompressed_cache_size) 配置。
+
+<div id="drop-compiled-expression-cache">
+  ## SYSTEM CLEAR|DROP 编译 expression 缓存
+</div>
+
+清除已编译 expression 缓存。
+可通过查询/用户/profile 级设置 [`compile_expressions`](/zh/reference/settings/session-settings#compile_expressions) 启用或禁用已编译 expression 缓存。
+
+<div id="drop-query-condition-cache">
+  ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE
+</div>
+
+清除查询条件缓存。
+
+<div id="drop-query-cache">
+  ## SYSTEM CLEAR|DROP 查询缓存
+</div>
+
+```sql
+SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '<tag>'
+```
+
+清除[查询缓存](/zh/concepts/features/performance/caches/query-cache)。
+如果指定了标签，则仅删除带有该标签的查询缓存条目。
+
+<div id="system-drop-schema-format">
+  ## SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE
+</div>
+
+清除从 [`format_schema_path`](/zh/reference/settings/server-settings/settings#format_schema_path) 加载的 schema 缓存。
+
+支持的目标：
+
+* Protobuf：从内存中移除已导入的 Protobuf 消息定义。
+* Files：删除本地 [`format_schema_path`](/zh/reference/settings/server-settings/settings#format_schema_path) 中缓存的 schema 文件，这些文件会在 `format_schema_source` 设置为 `query` 时生成。
+  注意：如果未指定目标，则会同时清除这两类缓存。
+
+```sql
+SYSTEM CLEAR|DROP FORMAT SCHEMA CACHE [FOR Protobuf/Files]
+```
+
+<div id="flush-logs">
+  ## SYSTEM FLUSH LOGS
+</div>
+
+将缓冲的日志消息刷写到系统表中，例如 system.query&#95;log。该操作主要用于调试，因为大多数系统表默认的刷写时间间隔为 7.5 秒。
+即使消息队列为空，也会创建系统表。
+
+```sql
+SYSTEM FLUSH LOGS [ON CLUSTER cluster_name] [log_name|[database.table]] [, ...]
+```
+
+如果你不想刷写所有内容，可以通过传入日志名称或其目标表，刷写一个或多个单独的日志：
+
+```sql
+SYSTEM FLUSH LOGS query_log, system.query_views_log;
+```
+
+<div id="reload-config">
+  ## SYSTEM RELOAD CONFIG
+</div>
+
+重新加载 ClickHouse 配置。用于配置存储在 ZooKeeper 中时的场景。请注意，`SYSTEM RELOAD CONFIG` 不会重新加载存储在 ZooKeeper 中的 `USER` 配置；它只会重新加载存储在 `users.xml` 中的 `USER` 配置。要重新加载所有 `USER` 配置，请使用 `SYSTEM RELOAD USERS`
+
+```sql
+SYSTEM RELOAD CONFIG [ON CLUSTER cluster_name]
+```
+
+<div id="reload-users">
+  ## SYSTEM RELOAD USERS
+</div>
+
+重新加载所有访问存储，包括：users.xml、本地磁盘访问存储、位于 ZooKeeper 中的复制访问存储。
+
+```sql
+SYSTEM RELOAD USERS [ON CLUSTER cluster_name]
+```
+
+<div id="shutdown">
+  ## SYSTEM SHUTDOWN
+</div>
+
+<CloudNotSupportedBadge />
+
+通常用于关闭 ClickHouse (类似于 `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
+
+<div id="kill">
+  ## SYSTEM KILL
+</div>
+
+终止 ClickHouse 进程 (如 `kill -9 {$ pid_clickhouse-server}`)
+
+<div id="instrument">
+  ## SYSTEM INSTRUMENT
+</div>
+
+使用 LLVM 的 XRay 功能管理插桩点；该功能仅在以 `ENABLE_XRAY=1` 构建 ClickHouse 时可用。
+这使得无需修改源代码，也能以极低开销在生产环境中进行调试和性能分析。
+在未添加任何插桩点时，性能损耗几乎可以忽略不计，因为它只会在长度超过 200 条指令的函数序言和结语处，
+额外增加一次跳转到附近地址的操作。
+
+<div id="instrument-add">
+  ### SYSTEM INSTRUMENT ADD
+</div>
+
+添加一个新的插桩点。已插桩的函数可在 [`system.instrumentation`](/zh/reference/system-tables/instrumentation) 系统表中查看。可以为同一函数添加多个 handler，它们会按插桩添加的顺序依次执行。
+要进行插桩的函数可从 [`system.symbols`](/zh/reference/system-tables/symbols) 系统表中获取。
+
+可向函数添加三种不同类型的 handler：
+
+**语法**
+
+```sql
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
+```
+
+其中，`FUNCTION` 可以是任意函数，或函数名的一部分 (子串) ，例如 `QueryMetricLog::startQuery`；而 handler 则为以下之一
+
+<div id="instrument-add-log">
+  #### LOG
+</div>
+
+在函数的 `ENTRY` 或 `EXIT` 时，打印作为参数传入的文本以及堆栈跟踪。
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG ENTRY 'this is a log printed at entry'
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' LOG EXIT 'this is a log printed at exit'
+```
+
+<div id="instrument-add-sleep">
+  #### SLEEP
+</div>
+
+在 `ENTRY` 或 `EXIT` 时休眠固定秒数：
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0.5
+```
+
+或者，如需使用按均匀分布随机生成的秒数，请提供以空格分隔的最小值和最大值：
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' SLEEP ENTRY 0 1
+```
+
+<div id="instrument-add-profile">
+  #### PROFILE
+</div>
+
+用于衡量函数从 `ENTRY` 到 `EXIT` 之间所花费的时间。
+性能分析结果存储在 [`system.trace_log`](/zh/reference/system-tables/trace_log) 中，并可转换为
+[Chrome Event Trace Format](/zh/reference/system-tables/trace_log#chrome-event-trace-format)。
+
+```sql
+SYSTEM INSTRUMENT ADD 'QueryMetricLog::startQuery' PROFILE
+```
+
+<div id="instrument-remove">
+  ### SYSTEM INSTRUMENT REMOVE
+</div>
+
+可使用以下方式移除单个插桩点：
+
+```sql
+SYSTEM INSTRUMENT REMOVE ID
+```
+
+通过 `ALL` 关键字对它们全部进行操作：
+
+```sql
+SYSTEM INSTRUMENT REMOVE ALL
+```
+
+子查询返回的一组 ID：
+
+```sql
+SYSTEM INSTRUMENT REMOVE (SELECT id FROM system.instrumentation WHERE handler = 'log')
+```
+
+或所有与给定的 function&#95;name 匹配的插桩点：
+
+```sql
+SYSTEM INSTRUMENT REMOVE 'QueryMetricLog::startQuery'
+```
+
+可从 [`system.instrumentation`](/zh/reference/system-tables/instrumentation) 系统表中获取插桩点信息。
+
+<div id="managing-distributed-tables">
+  ## 管理分布式表
+</div>
+
+ClickHouse 可以管理[Distributed](/zh/reference/engines/table-engines/special/distributed)表。当用户向这些表插入数据时，ClickHouse 会先为需要发送到集群节点的数据创建一个队列，然后再异步发送。你可以使用 [`STOP DISTRIBUTED SENDS`](#stop-distributed-sends)、[FLUSH DISTRIBUTED](#flush-distributed) 和 [`START DISTRIBUTED SENDS`](#start-distributed-sends) 查询来控制队列处理。你也可以通过 [`distributed_foreground_insert`](/zh/reference/settings/session-settings#distributed_foreground_insert) 设置，以同步方式向分布式表插入数据。
+
+<div id="stop-distributed-sends">
+  ### SYSTEM STOP DISTRIBUTED SENDS
+</div>
+
+禁用向分布式表插入数据时的后台数据分发。
+
+```sql
+SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<Note>
+  如果启用了 [`prefer_localhost_replica`](/zh/reference/settings/session-settings#prefer_localhost_replica) (默认启用) ，数据仍会照常插入本地分片。
+</Note>
+
+<div id="flush-distributed">
+  ### SYSTEM FLUSH DISTRIBUTED
+</div>
+
+强制 ClickHouse 以同步方式将数据发送到集群节点。如果有任何节点不可用，ClickHouse 会抛出异常并停止执行查询。你可以重试该查询，直到成功；当所有节点恢复在线后，查询就会成功。
+
+你也可以通过 `SETTINGS` 子句覆盖某些设置，这有助于规避一些临时限制，例如 `max_concurrent_queries_for_all_users` 或 `max_memory_usage`。
+
+```sql
+SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name> [ON CLUSTER cluster_name] [SETTINGS ...]
+```
+
+<Note>
+  每个待处理的块都会按照初始 INSERT 查询中的设置存储到磁盘上，因此有时你可能需要覆盖这些设置。
+</Note>
+
+<div id="start-distributed-sends">
+  ### SYSTEM START DISTRIBUTED SENDS
+</div>
+
+启用向分布式表插入数据时的后台数据分发。
+
+```sql
+SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name> [ON CLUSTER cluster_name]
+```
+
+<div id="stop-listen">
+  ### SYSTEM STOP LISTEN
+</div>
+
+关闭套接字，并在指定端口上以指定协议优雅地终止与服务器的现有连接。
+
+但如果未在 clickhouse-server 配置中指定相应的协议设置，此命令将不会生效。
+
+```sql
+SYSTEM STOP LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+* 如果指定了 `CUSTOM 'protocol'` 修饰符，则会停止在服务器配置的 protocols 部分中定义的、名称为指定值的自定义协议。
+* 如果指定了 `QUERIES ALL [EXCEPT .. [,..]]` 修饰符，则会停止所有协议，除非在 `EXCEPT` 子句中指定了排除项。
+* 如果指定了 `QUERIES DEFAULT [EXCEPT .. [,..]]` 修饰符，则会停止所有默认协议，除非在 `EXCEPT` 子句中指定了排除项。
+* 如果指定了 `QUERIES CUSTOM [EXCEPT .. [,..]]` 修饰符，则会停止所有自定义协议，除非在 `EXCEPT` 子句中指定了排除项。
+
+<div id="start-listen">
+  ### SYSTEM START LISTEN
+</div>
+
+允许在指定协议上建立新的连接。
+
+但是，如果指定端口和协议上的 server 不是通过 SYSTEM STOP LISTEN 命令停止监听的，则此命令不会生效。
+
+```sql
+SYSTEM START LISTEN [ON CLUSTER cluster_name] [QUERIES ALL | QUERIES DEFAULT | QUERIES CUSTOM | TCP | TCP WITH PROXY | TCP SECURE | HTTP | HTTPS | MYSQL | GRPC | POSTGRESQL | PROMETHEUS | CUSTOM 'protocol']
+```
+
+<div id="managing-mergetree-tables">
+  ## 管理 MergeTree 表
+</div>
+
+ClickHouse 支持管理 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中的后台进程。
+
+<div id="stop-merges">
+  ### SYSTEM STOP MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+可停止 MergeTree 家族中的表的后台合并：
+
+```sql
+SYSTEM STOP MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<Note>
+  对表执行 `DETACH / ATTACH` 后，即使此前已对所有 MergeTree 表停止合并，也会重新为该表启动后台合并。
+</Note>
+
+<div id="start-merges">
+  ### SYSTEM START MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+可用于启动 MergeTree 家族中的表的后台合并：
+
+```sql
+SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]merge_tree_family_table_name]
+```
+
+<div id="stop-ttl-merges">
+  ### SYSTEM STOP TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+可停止 MergeTree 家族中的表根据 [TTL expression](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 在后台删除旧数据：
+即使表不存在或表未使用 MergeTree 引擎，也会返回 `Ok.`。当数据库不存在时，会返回错误：
+
+```sql
+SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-ttl-merges">
+  ### SYSTEM START TTL MERGES
+</div>
+
+<CloudNotSupportedBadge />
+
+可为 MergeTree 家族中的表按 [TTL expression](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 启动后台旧数据删除：
+即使表不存在，也会返回 `Ok.`。如果数据库不存在，则返回错误：
+
+```sql
+SYSTEM START TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="stop-moves">
+  ### SYSTEM STOP MOVES
+</div>
+
+用于停止对 MergeTree 家族中的表按照[带有 TO VOLUME 或 TO DISK 子句的表 TTL 表达式](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl)执行的后台数据移动：
+即使表不存在，也会返回 `Ok.`。如果数据库不存在，则会返回错误：
+
+```sql
+SYSTEM STOP MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="start-moves">
+  ### SYSTEM START MOVES
+</div>
+
+可为 MergeTree 家族中的表启动后台数据移动，这些移动依据[带有 TO VOLUME 和 TO DISK 子句的表 TTL 表达式](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-table-ttl)执行：
+即使表不存在，也会返回 `Ok.`。当数据库不存在时，则返回错误：
+
+```sql
+SYSTEM START MOVES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_name]
+```
+
+<div id="query_language-system-unfreeze">
+  ### SYSTEM UNFREEZE
+</div>
+
+从所有磁盘中清除具有指定名称的冻结备份。有关解冻单个 parts 的更多信息，请参见 [ALTER TABLE table&#95;name UNFREEZE WITH NAME ](/zh/reference/statements/alter/partition#unfreeze-partition)
+
+```sql
+SYSTEM UNFREEZE WITH NAME <backup_name>
+```
+
+<div id="wait-loading-parts">
+  ### SYSTEM WAIT LOADING PARTS
+</div>
+
+等待，直到表中所有异步加载的数据分区片段 (过期数据分区片段) 均已完成加载。
+
+```sql
+SYSTEM WAIT LOADING PARTS [ON CLUSTER cluster_name] [db.]merge_tree_family_table_name
+```
+
+<div id="managing-replicatedmergetree-tables">
+  ## 管理 ReplicatedMergeTree 表
+</div>
+
+ClickHouse 可以管理 [ReplicatedMergeTree](/zh/reference/engines/table-engines/mergetree-family/replication) 表中与后台复制相关的进程。
+
+<div id="stop-fetches">
+  ### SYSTEM STOP FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+可停止 `ReplicatedMergeTree` 家族表中已插入 parts 的后台拉取操作：
+无论表引擎为何，甚至表或数据库不存在，始终返回 `Ok.`
+
+```sql
+SYSTEM STOP FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-fetches">
+  ### SYSTEM START FETCHES
+</div>
+
+<CloudNotSupportedBadge />
+
+可为 `ReplicatedMergeTree` 家族中的表启动针对已插入 parts 的后台拉取：
+无论表引擎是什么，甚至表或数据库不存在，也始终返回 `Ok.`。
+
+```sql
+SYSTEM START FETCHES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replicated-sends">
+  ### SYSTEM STOP REPLICATED SENDS
+</div>
+
+可停止 `ReplicatedMergeTree` 家族表中新插入的 parts 向集群中其他副本的后台发送：
+
+```sql
+SYSTEM STOP REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replicated-sends">
+  ### SYSTEM START REPLICATED SENDS
+</div>
+
+可为 `ReplicatedMergeTree` 家族中的表启动后台发送，将新插入的 parts 发送到集群中的其他副本：
+
+```sql
+SYSTEM START REPLICATED SENDS [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-replication-queues">
+  ### SYSTEM STOP REPLICATION QUEUES
+</div>
+
+可停止存储在 Zookeeper 中、供 `ReplicatedMergeTree` 家族表使用的复制队列里的后台拉取任务。可能的后台任务类型包括：合并、拉取、变更，以及带有 ON CLUSTER 子句的 DDL 语句：
+
+```sql
+SYSTEM STOP REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-replication-queues">
+  ### SYSTEM START REPLICATION QUEUES
+</div>
+
+可为 `ReplicatedMergeTree` 家族中的表启动存储在 ZooKeeper 中的复制队列里的后台任务。可能的后台任务类型包括：合并、拉取、变更，以及带有 ON CLUSTER 子句的 DDL 语句：
+
+```sql
+SYSTEM START REPLICATION QUEUES [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="stop-pulling-replication-log">
+  ### SYSTEM STOP PULLING REPLICATION LOG
+</div>
+
+停止将新条目从复制日志加载到 `ReplicatedMergeTree` 表的复制队列中。
+
+```sql
+SYSTEM STOP PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="start-pulling-replication-log">
+  ### SYSTEM START PULLING REPLICATION LOG
+</div>
+
+撤销 `SYSTEM STOP PULLING REPLICATION LOG` 的效果。
+
+```sql
+SYSTEM START PULLING REPLICATION LOG [ON CLUSTER cluster_name] [[db.]replicated_merge_tree_family_table_name]
+```
+
+<div id="sync-replica">
+  ### SYSTEM SYNC REPLICA
+</div>
+
+等待 `ReplicatedMergeTree` 表与集群中的其他副本完成同步，但等待时间不超过 `receive_timeout` 秒。
+
+```sql
+SYSTEM SYNC REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name [IF EXISTS] [STRICT | LIGHTWEIGHT [FROM 'srcReplica1'[, 'srcReplica2'[, ...]]] | PULL]
+```
+
+运行此语句后，`[db.]replicated_merge_tree_family_table_name` 会将公共复制日志中的命令拉取到自己的复制队列中，然后该查询会一直等待，直到副本处理完所有已拉取的命令。支持以下修饰符：
+
+* 使用 `IF EXISTS` (自 25.6 起可用) 时，如果表不存在，查询不会抛出错误。这在向集群中添加新副本时很有用：此时它可能已经属于集群配置的一部分，但表仍在创建和同步过程中。
+* 如果指定了 `STRICT` 修饰符，则查询会等待复制队列清空。如果复制队列中持续出现新的条目，则 `STRICT` 版本可能永远不会成功。
+* 如果指定了 `LIGHTWEIGHT` 修饰符，则查询仅等待 `GET_PART`、`ATTACH_PART`、`DROP_RANGE`、`REPLACE_RANGE` 和 `DROP_PART` 条目处理完成。
+  此外，`LIGHTWEIGHT` 修饰符还支持可选的 `FROM 'srcReplicas'` 子句，其中 `'srcReplicas'` 是以逗号分隔的源副本名称列表。此扩展可实现更有针对性的同步，只关注源自指定源副本的复制任务。
+* 如果指定了 `PULL` 修饰符，则查询会从 ZooKeeper 拉取新的复制队列条目，但不会等待任何内容被处理。
+
+<div id="sync-database-replica">
+  ### SYNC DATABASE REPLICA
+</div>
+
+等待指定的[Replicated 数据库](/zh/reference/engines/database-engines/replicated)应用该数据库 DDL 队列中的所有 schema 变更。
+
+**语法**
+
+```sql
+SYSTEM SYNC DATABASE REPLICA replicated_database_name;
+```
+
+<div id="restart-replica">
+  ### SYSTEM RESTART REPLICA
+</div>
+
+可重新初始化 `ReplicatedMergeTree` 表的 Zookeeper 会话状态；系统会将当前状态与作为事实来源的 Zookeeper 进行比较，并在需要时向 Zookeeper 队列添加任务。
+基于 ZooKeeper 数据初始化复制队列的方式与 `ATTACH TABLE` 语句相同。在短时间内，该表将暂时无法执行任何操作。
+
+```sql
+SYSTEM RESTART REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+<div id="restore-replica">
+  ### SYSTEM RESTORE REPLICA
+</div>
+
+如果数据[可能]仍然存在，但 ZooKeeper 元数据已丢失，则可恢复副本。
+
+仅适用于只读的 `ReplicatedMergeTree` 表。
+
+可在以下情况发生后执行该查询：
+
+* ZooKeeper 根路径 `/` 丢失。
+* 副本路径 `/replicas` 丢失。
+* 单个副本路径 `/replicas/replica_name/` 丢失。
+
+副本会附加在本地找到的 parts，并将这些 parts 的信息发送到 ZooKeeper。
+如果副本上的 parts 在元数据丢失前就已存在，且未过期，则不会从其他副本重新拉取 (因此，恢复副本并不意味着要通过网络重新下载所有数据) 。
+
+<Note>
+  所有状态的 parts 都会被移到 `detached/` 文件夹中。数据丢失前处于活动状态 (committed) 的 parts 会被附加。
+</Note>
+
+<div id="restore-database-replica">
+  ### SYSTEM RESTORE DATABASE REPLICA
+</div>
+
+在[可能]存在数据但 Zookeeper 元数据已丢失时，恢复副本。
+
+**语法**
+
+```sql
+SYSTEM RESTORE DATABASE REPLICA repl_db [ON CLUSTER cluster]
+```
+
+**示例**
+
+```sql
+CREATE DATABASE repl_db
+ENGINE=Replicated("/clickhouse/repl_db", shard1, replica1);
+
+CREATE TABLE repl_db.test_table (n UInt32)
+ENGINE = ReplicatedMergeTree
+ORDER BY n PARTITION BY n % 10;
+
+-- zookeeper_delete_path("/clickhouse/repl_db", recursive=True) <- 根节点丢失。
+
+SYSTEM RESTORE DATABASE REPLICA repl_db;
+```
+
+**语法**
+
+```sql
+SYSTEM RESTORE REPLICA [db.]replicated_merge_tree_family_table_name [ON CLUSTER cluster_name]
+```
+
+另一种语法：
+
+```sql
+SYSTEM RESTORE REPLICA [ON CLUSTER cluster_name] [db.]replicated_merge_tree_family_table_name
+```
+
+**示例**
+
+在多个服务器上创建表。若 ZooKeeper 中的副本元数据丢失，由于缺少元数据，该表会以只读方式附加。最后一个查询需要在每个副本上执行。
+
+```sql
+CREATE TABLE test(n UInt32)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+ORDER BY n PARTITION BY n % 10;
+
+INSERT INTO test SELECT * FROM numbers(1000);
+
+-- zookeeper_delete_path("/clickhouse/tables/test", recursive=True) <- 根节点丢失。
+
+SYSTEM RESTART REPLICA test;
+SYSTEM RESTORE REPLICA test;
+```
+
+另一种方法：
+
+```sql
+SYSTEM RESTORE REPLICA test ON CLUSTER cluster;
+```
+
+<div id="restart-replicas">
+  ### SYSTEM RESTART REPLICAS
+</div>
+
+可为所有 `ReplicatedMergeTree` 表重新初始化 Zookeeper 会话状态；它会将当前状态与 Zookeeper 中的状态进行比较，并以 Zookeeper 中的状态为准，必要时向 Zookeeper 队列添加任务
+
+<div id="drop-filesystem-cache">
+  ### SYSTEM CLEAR|DROP FILESYSTEM CACHE
+</div>
+
+用于清空文件系统缓存。
+
+```sql
+SYSTEM CLEAR FILESYSTEM CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="sync-file-cache">
+  ### SYSTEM SYNC FILE CACHE
+</div>
+
+<Note>
+  此操作开销过大，且存在被滥用的风险。
+</Note>
+
+会执行 sync 系统调用。
+
+```sql
+SYSTEM SYNC FILE CACHE [ON CLUSTER cluster_name]
+```
+
+<div id="load-primary-key">
+  ### SYSTEM LOAD PRIMARY KEY
+</div>
+
+加载指定表或所有表的主键。
+
+```sql
+SYSTEM LOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM LOAD PRIMARY KEY
+```
+
+<div id="unload-primary-key">
+  ### SYSTEM UNLOAD PRIMARY KEY
+</div>
+
+卸载指定表或所有表的主键。
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY [db.]name
+```
+
+```sql
+SYSTEM UNLOAD PRIMARY KEY
+```
+
+<div id="managing-refreshable-materialized-views">
+  ## 管理可刷新的 materialized view
+</div>
+
+用于控制[可刷新的 materialized view](/zh/reference/statements/create/view#refreshable-materialized-view)执行的后台任务的命令
+
+在使用这类视图时，请留意 [`system.view_refreshes`](/zh/reference/system-tables/view_refreshes)。
+
+<div id="stop-view-stop-views">
+  ### SYSTEM STOP [REPLICATED] VIEW, STOP VIEWS
+</div>
+
+禁用指定视图或所有可刷新的视图的周期性刷新。如果当前有刷新正在进行，也会一并取消。
+
+如果视图位于 Replicated 或 Shared 数据库 中，`STOP VIEW` 仅影响当前副本，而 `STOP REPLICATED VIEW` 会影响所有副本。
+
+<Note>
+  停止后的状态不会在 server 重启后保留。重启后，视图将恢复按其已配置的刷新计划执行。
+  在 Replicated 或 Shared 数据库 中，`SYSTEM STOP VIEW` 仅影响当前副本。使用 `SYSTEM STOP REPLICATED VIEW` 可停止所有副本上的刷新。
+</Note>
+
+```sql
+SYSTEM STOP VIEW [db.]name
+```
+
+```sql
+SYSTEM STOP VIEWS
+```
+
+<div id="start-view-start-views">
+  ### SYSTEM START [REPLICATED] VIEW, START VIEWS
+</div>
+
+为指定视图或所有可刷新的视图启用周期性刷新。不会立即触发刷新。
+
+如果视图位于 Replicated 或 Shared database 中，`START VIEW` 会撤销 `STOP VIEW` 的效果，`START REPLICATED VIEW` 会撤销 `STOP REPLICATED VIEW` 的效果。`START VIEW` 还会撤销 `PAUSE VIEW` 的效果。
+
+```sql
+SYSTEM START VIEW [db.]name
+```
+
+```sql
+SYSTEM START VIEWS
+```
+
+<div id="pause-view-pause-views">
+  ### SYSTEM PAUSE VIEW, PAUSE VIEWS
+</div>
+
+禁用指定视图或所有可刷新的视图的周期性刷新。
+与 `SYSTEM STOP VIEW` 不同，`SYSTEM PAUSE VIEW` 不会中断已在进行的刷新：当前正在运行的刷新会正常完成，只会阻止后续刷新。
+
+可使用 `SYSTEM START VIEW` 或 `SYSTEM START VIEWS` 恢复。
+
+<Note>
+  暂停状态在 server 重启后不会保留。重启后，视图将恢复为其配置的刷新计划。
+  在 Replicated 或 Shared 数据库中，`SYSTEM PAUSE VIEW` 仅影响当前副本。
+</Note>
+
+```sql
+SYSTEM PAUSE VIEW [db.]name
+```
+
+```sql
+SYSTEM PAUSE VIEWS
+```
+
+<div id="refresh-view">
+  ### SYSTEM REFRESH VIEW
+</div>
+
+立即触发对指定视图的一次计划外刷新。
+
+```sql
+SYSTEM REFRESH VIEW [db.]name
+```
+
+<div id="wait-view">
+  ### SYSTEM WAIT VIEW
+</div>
+
+等待正在进行中的刷新完成。如果当前没有刷新在运行，则会立即返回。如果最近一次刷新尝试失败，则会报错。
+
+可在创建新的可刷新materialized view 后 (不带 EMPTY 关键字) 立即使用，以等待初始刷新完成。
+
+如果该视图位于 Replicated 或 Shared database 中，且刷新正在另一副本上运行，则会等待该刷新完成。
+
+```sql
+SYSTEM WAIT VIEW [db.]name
+```
+
+<div id="cancel-view">
+  ### SYSTEM CANCEL VIEW
+</div>
+
+如果当前副本上的指定视图正在刷新，则中断并取消该刷新。否则，不执行任何操作。
+
+```sql
+SYSTEM CANCEL VIEW [db.]name
+```
+
+<div id="flush-object-storage-queue">
+  ## SYSTEM FLUSH OBJECT STORAGE QUEUE
+</div>
+
+阻塞执行，直到指定文件被给定的 [S3Queue](/zh/reference/engines/table-engines/integrations/s3queue) 或 [AzureQueue](/zh/reference/engines/table-engines/integrations/azure-queue) 表处理完成，或永久失败为止。如果该文件已处理完成，则会立即返回。如果该文件已永久失败 (即所有重试都已耗尽) ，则会引发错误。
+
+```sql
+SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
+```
