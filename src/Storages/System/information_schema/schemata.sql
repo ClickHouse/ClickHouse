@@ -7,8 +7,6 @@ ATTACH VIEW schemata
     `default_character_set_schema` Nullable(String),
     `default_character_set_name` Nullable(String),
     `sql_path` Nullable(String),
-    `default_collation_name` String,
-    `default_encryption` String,
     `CATALOG_NAME` String,
     `SCHEMA_NAME` String,
     `SCHEMA_OWNER` String,
@@ -16,6 +14,8 @@ ATTACH VIEW schemata
     `DEFAULT_CHARACTER_SET_SCHEMA` Nullable(String),
     `DEFAULT_CHARACTER_SET_NAME` Nullable(String),
     `SQL_PATH` Nullable(String),
+    `default_collation_name` String,
+    `default_encryption` String,
     `DEFAULT_COLLATION_NAME` String,
     `DEFAULT_ENCRYPTION` String
 )
@@ -28,8 +28,6 @@ AS SELECT
     NULL                          AS default_character_set_schema,
     NULL                          AS default_character_set_name,
     NULL                          AS sql_path,
-    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific; must match the collation advertised in the MySQL handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`)
-    'NO'                          AS default_encryption,      -- MySQL-specific
     catalog_name                  AS CATALOG_NAME,
     schema_name                   AS SCHEMA_NAME,
     schema_owner                  AS SCHEMA_OWNER,
@@ -37,6 +35,9 @@ AS SELECT
     default_character_set_schema  AS DEFAULT_CHARACTER_SET_SCHEMA,
     default_character_set_name    AS DEFAULT_CHARACTER_SET_NAME,
     sql_path                      AS SQL_PATH,
+    -- MySQL-compatibility columns, appended after the standard columns to preserve their ordinal positions
+    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific; must match the collation advertised in the MySQL handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`)
+    'NO'                          AS default_encryption,      -- MySQL-specific
     default_collation_name        AS DEFAULT_COLLATION_NAME,
     default_encryption            AS DEFAULT_ENCRYPTION
 FROM system.databases

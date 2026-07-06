@@ -135,7 +135,7 @@ static String showTableStatusReplacementQuery(const String & query)
             " metadata_modification_time AS Create_time,"
             " metadata_modification_time AS Update_time,"
             " metadata_modification_time AS Check_time,"
-            " 'utf8_bin' AS Collation,"
+            " 'utf8mb4_0900_ai_ci' AS Collation," /// Consistent with INFORMATION_SCHEMA.TABLES.table_collation and the MySQL handshake
             " 'NULL' AS Checksum,"
             " '' AS Create_options,"
             " '' AS Comment"
