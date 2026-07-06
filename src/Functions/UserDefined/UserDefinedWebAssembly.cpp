@@ -489,9 +489,21 @@ public:
             // width class (COL_FIXED8/16/32/64), not the declared width/signedness. Without
             // this cast, a declared UInt64 argument passed as an actual UInt8 would still
             // serialize as 1 byte, and the guest's get_u64-style reader would read past it.
-            casted_columns[ci] = cols[ci].type->equals(*arguments[ci])
+            //
+            // getReturnTypeImpl also accepts a genuinely Nullable(T) argument against a
+            // plain declared T (COLUMNAR_V1 derives is_nullable from the runtime column
+            // below, so it round-trips this correctly) -- but casting straight to the
+            // non-nullable declared type here would insert NULLs into an ordinary column
+            // and throw on the first real NULL. Cast to Nullable(declared type) instead
+            // whenever the actual argument is nullable, to fix the width/coercion while
+            // still preserving the null map for the is_nullable detection below.
+            const DataTypePtr & declared_arg_type = arguments[ci];
+            DataTypePtr target_type = (cols[ci].type->isNullable() && !declared_arg_type->isNullable())
+                ? makeNullable(declared_arg_type)
+                : declared_arg_type;
+            casted_columns[ci] = cols[ci].type->equals(*target_type)
                 ? cols[ci].column
-                : castColumn(cols[ci], arguments[ci]);
+                : castColumn(cols[ci], target_type);
             const IColumn * col = casted_columns[ci].get();
             bool is_const = false;
 

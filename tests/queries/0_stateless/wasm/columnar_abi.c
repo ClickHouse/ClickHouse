@@ -7,6 +7,9 @@
 //   bytes_reverse_col(s String) -> Nullable(String) — reverses bytes of each string
 //   const_answer_col(s String) -> UInt64 — always 42, returned as a COL_IS_CONST output
 //     column regardless of num_rows (tests that the host accepts a const result column)
+//   array_of_len_col(s String) -> Array(UInt64) — [byte_len(s)] per row; Array return
+//     forces a Nullable(String) argument to reach this export unmodified by null
+//     propagation
 
 #include <stdint.h>
 #include <stddef.h>
@@ -82,6 +85,7 @@ static int buf_push(Buffer * b, uint8_t byte) {
 #define COL_FIXED16    2u
 #define COL_FIXED32    3u
 #define COL_FIXED64    4u
+#define COL_COMPLEX    5u
 #define COL_IS_NULLABLE 0x20u
 #define COL_IS_CONST   0x80u
 
@@ -313,6 +317,50 @@ Buffer * const_answer_col(Buffer * ptr, uint32_t num_rows) {
     uint64_t answer = 42u;
     memcpy(out->data + HEADER_BYTES + DESC_BYTES, &answer, 8u);
     out->size = HEADER_BYTES + DESC_BYTES + 8u;
+
+    return out;
+}
+
+// array_of_len_col(s String) -> Array(UInt64)
+// Returns a single-element array [byte_len(s)] for each row. Array(UInt64) forces
+// useDefaultImplementationForNulls()==false on the host side, so a genuinely
+// Nullable(String) argument reaches this export's caller instead of being
+// null-propagated by the analyzer first (used to test that a Nullable(String)
+// argument round-trips correctly against a declared non-nullable String parameter).
+__attribute__((export_name("array_of_len_col")))
+Buffer * array_of_len_col(Buffer * ptr, uint32_t num_rows) {
+    ColBuf cb = parse_input(ptr);
+
+    // Layout: [BufHeader][ColDesc][outer_offsets:u64[N+1]][nested u64 data: one per row]
+    uint32_t offs_base = HEADER_BYTES + DESC_BYTES;
+    uint32_t data_base = offs_base + (num_rows + 1u) * 8u;
+    uint32_t total_cap = data_base + num_rows * 8u;
+
+    Buffer * out = clickhouse_create_buffer(total_cap);
+    if (!out) return NULL;
+    memset(out->data, 0, total_cap);
+    out->size = total_cap;
+
+    uint8_t * p = out->data;
+    memcpy(p, &num_rows, 4);
+    uint32_t one = 1;
+    memcpy(p + 4, &one, 4);
+
+    ColDesc od = {0};
+    od.type        = COL_COMPLEX;
+    od.data_offset = offs_base;
+    od.data_size   = (uint64_t)(num_rows + 1u) * 8u + (uint64_t)num_rows * 8u;
+    memcpy(p + HEADER_BYTES, &od, DESC_BYTES);
+
+    uint64_t cumulative = 0;
+    for (uint32_t i = 0; i < num_rows; ++i) {
+        uint32_t len;
+        str_bytes(&cb, 0, i, &len);
+        cumulative += 1u; // exactly one element per row
+        memcpy(p + offs_base + (uint64_t)(i + 1u) * 8u, &cumulative, 8u);
+        uint64_t val = (uint64_t)len;
+        memcpy(p + data_base + (uint64_t)i * 8u, &val, 8u);
+    }
 
     return out;
 }
