@@ -72,11 +72,28 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
                 result.push_back(enforcer_expr);
         }
-        /// FIXME: support a column-less multi-node requirement with a round-robin scatter.
-        /// Today a scatter without keys puts every row into bucket 0 (see
-        /// ScatterByPartitionTransform), so it would be priced as parallel while physically
-        /// running on one node. Until then a parent alternative that asks a single-node
-        /// group for such a distribution is discarded (see ExpressionCost::buildable).
+        else if (required_properties.distribution.node_count > 1)
+        {
+            /// Column-less scatter: rows go round-robin, any node may get any row. Like the
+            /// broadcast above, the input always requires {1 node}; a multi-node source
+            /// composes through a gather.
+            ExpressionProperties input_required;
+            input_required.distribution.node_count = 1;
+
+            auto enforcer_expr = std::make_shared<GroupExpression>(
+                std::make_unique<ScatterExchangeStep>(
+                    input_header,
+                    Names{},
+                    required_properties.distribution.node_count));
+            enforcer_expr->group_id = expression->group_id;
+            enforcer_expr->inputs.push_back({.group_id = expression->group_id, .required_properties = input_required});
+            enforcer_expr->properties.distribution = required_properties.distribution;
+            enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
+
+            enforcer_expr->setApplied(*this, required_properties);
+            if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
+                result.push_back(enforcer_expr);
+        }
         else if (required_properties.distribution.node_count == 1
                  && expression->properties.distribution.node_count > 1
                  && !expression->properties.distribution.is_replicated)

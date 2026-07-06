@@ -27,17 +27,27 @@ QueryPipelineBuilderPtr ShuffleSendStep::updatePipeline(QueryPipelineBuilders pi
     /// Add fork processor to send data to num_buckets outputs
     auto & pipeline = *pipelines.front();
     auto stream_header = pipeline.getSharedHeader();
+    const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
     {
-        ColumnNumbers key_columns;
-        for (const auto & key_name : key_names)
-            key_columns.push_back(stream_header->getPositionByName(key_name));
-
         pipeline.resize(1);
-        auto scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns, hash_cast_types);
+        std::shared_ptr<ScatterByPartitionTransform> scatter;
+        if (key_names.empty())
+        {
+            /// No keys means no placement requirement: spread chunks round-robin. Start at this
+            /// source's own bucket so parallel sources do not all begin with destination 0.
+            UInt64 source_bucket = 0;
+            tryParse<UInt64>(source_bucket, shard_id);
+            scatter = ScatterByPartitionTransform::createRoundRobin(stream_header, num_buckets, source_bucket);
+        }
+        else
+        {
+            ColumnNumbers key_columns;
+            for (const auto & key_name : key_names)
+                key_columns.push_back(stream_header->getPositionByName(key_name));
+            scatter = std::make_shared<ScatterByPartitionTransform>(stream_header, num_buckets, key_columns, hash_cast_types);
+        }
         pipeline.addTransform(scatter);
     }
-
-    const String shard_id = settings.parameter_lookup->getParameter("bucket_id").safeGet<String>();
 
     /// Add sink for each bucket
     size_t bucket = 0;
