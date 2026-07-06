@@ -39,7 +39,7 @@ def get_coordination_settings(node):
 
 DYNAMIC_CONFIG_PATH = "/etc/clickhouse-server/config.d/keeper_dynamic.xml"
 
-UPDATED_MAX_REQUEST_SIZE = "1024"
+UPDATED_MAX_REQUEST_SIZE = "10240"
 UPDATED_DYNAMIC_CONFIG = f"""
 <clickhouse>
     <keeper_server>
