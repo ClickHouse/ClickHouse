@@ -20,6 +20,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/IAST.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
@@ -169,6 +170,64 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace
+{
+
+/// Collect the physical storage columns that a column's `DEFAULT` expression semantically
+/// depends on. It uses the same scope-aware dependency analysis as default evaluation
+/// (see `addDefaultRequiredExpressionsRecursively` / `evaluateMissingDefaults`):
+/// `RequiredSourceColumnsVisitor` correctly ignores lambda formal parameters, so
+/// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. `ALIAS` columns are
+/// expanded recursively into the physical columns they ultimately read, so that a default
+/// depending on an expired column through an alias is detected. Each source column is resolved to
+/// its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column `m`).
+NameSet collectDefaultStorageDependencies(const ASTPtr & default_expression, const ColumnsDescription & columns_desc)
+{
+    NameSet result;
+    NameSet visited_aliases;
+
+    std::vector<ASTPtr> to_visit;
+    to_visit.push_back(default_expression);
+
+    while (!to_visit.empty())
+    {
+        /// Clone defensively so the shared column-description AST is never touched, mirroring
+        /// how `evaluateMissingDefaults` analyses a cloned copy of the default expression.
+        auto expression = to_visit.back()->clone();
+        to_visit.pop_back();
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+
+        for (const auto & required_name : columns_context.requiredColumns())
+        {
+            auto resolved = columns_desc.tryGetColumn(
+                GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name);
+            if (!resolved)
+                continue;
+
+            auto storage_name = resolved->getNameInStorage();
+
+            /// An `ALIAS` column is not physically stored, so it never appears in `expired_columns`.
+            /// Expand it into the physical columns its expression reads instead. `visited_aliases`
+            /// guards against cycles in (mutually) recursive alias definitions.
+            auto dependency_default = columns_desc.getDefault(storage_name);
+            if (dependency_default && dependency_default->kind == ColumnDefaultKind::Alias && dependency_default->expression)
+            {
+                if (visited_aliases.emplace(storage_name).second)
+                    to_visit.push_back(dependency_default->expression);
+                continue;
+            }
+
+            result.emplace(std::move(storage_name));
+        }
+    }
+
+    return result;
+}
+
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -699,21 +758,14 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                     if (!col_default || !col_default->expression)
                         continue;
 
-                    IdentifierNameSet identifiers;
-                    col_default->expression->collectIdentifierNames(identifiers);
-
-                    for (const auto & identifier : identifiers)
+                    /// Determine the physical storage columns the DEFAULT expression actually reads.
+                    /// This uses scope-aware dependency analysis (lambda parameters excluded) and
+                    /// expands `ALIAS` columns, so both false positives (a lambda parameter that
+                    /// happens to share a name with an expired column) and false negatives (a
+                    /// dependency reached through an alias) are avoided.
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc))
                     {
-                        /// An identifier in the DEFAULT expression may reference a subcolumn (e.g. `m.keys`),
-                        /// while `expired_columns` holds physical storage column names (e.g. `m`). Resolve the
-                        /// identifier back to its storage column before the lookup. Identifiers that are not
-                        /// columns at all (e.g. lambda parameters) are ignored.
-                        auto resolved = columns_desc.tryGetColumn(
-                            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), identifier);
-                        if (!resolved)
-                            continue;
-
-                        if (expired_columns.contains(resolved->getNameInStorage()))
+                        if (expired_columns.contains(dependency))
                         {
                             expired_columns.emplace(storage_column.name);
                             changed = true;

@@ -107,3 +107,77 @@ SELECT count(), countDistinct(_part) FROM t_nested_subcol;
 SELECT id, `n.a` FROM t_nested_subcol ORDER BY id;
 
 DROP TABLE t_nested_subcol;
+
+-- A lambda formal parameter must not be mistaken for a column dependency. The DEFAULT of the Nested
+-- subcolumn `n.b` uses a lambda whose parameter `x` shadows the expired physical column `x`, but the
+-- expression only reads the present sibling `n.a`. A naive identifier walk would treat the
+-- lambda-local `x` as the expired column and wrongly expire `n.b`, dropping it from the merged part.
+-- Scope-aware dependency analysis excludes lambda parameters, so `n.b` stays materialized.
+DROP TABLE IF EXISTS t_nested_lambda_shadow;
+
+CREATE TABLE t_nested_lambda_shadow (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_lambda_shadow;
+
+INSERT INTO t_nested_lambda_shadow VALUES (1, [10,20]);
+INSERT INTO t_nested_lambda_shadow VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_lambda_shadow ADD COLUMN x UInt32;
+ALTER TABLE t_nested_lambda_shadow ADD COLUMN `n.b` Array(UInt32) DEFAULT arrayMap(x -> x + 1, `n.a`);
+
+SYSTEM START MERGES t_nested_lambda_shadow;
+OPTIMIZE TABLE t_nested_lambda_shadow FINAL;
+
+-- Exactly one part after the merge, and `n.b` must be materialized in it (not wrongly expired).
+SELECT count() FROM system.parts
+    WHERE database = currentDatabase() AND table = 't_nested_lambda_shadow' AND active;
+SELECT count() FROM system.parts_columns
+    WHERE database = currentDatabase() AND table = 't_nested_lambda_shadow' AND active AND column = 'n.b';
+
+-- Sibling data intact and the default evaluates from the present `n.a`.
+SELECT id, `n.a`, `n.b` FROM t_nested_lambda_shadow ORDER BY id;
+
+DROP TABLE t_nested_lambda_shadow;
+
+-- A DEFAULT dependency reached only through an ALIAS column must still be discovered. `s` is an
+-- expired physical column, `s_alias` is `ALIAS s`, and the Nested subcolumn `n.b` depends on the
+-- expired `s` only via the alias. Without expanding aliases, `n.b` is not expired and vertical merge
+-- tries to materialize it from the missing `s`, writing Nested offsets inconsistent with the present
+-- sibling `n.a` and corrupting the shared offsets. Expanding the alias expires `n.b` instead.
+DROP TABLE IF EXISTS t_nested_alias;
+
+CREATE TABLE t_nested_alias (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_alias;
+
+INSERT INTO t_nested_alias VALUES (1, [10,20]);
+INSERT INTO t_nested_alias VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_alias ADD COLUMN s Array(String);
+ALTER TABLE t_nested_alias ADD COLUMN s_alias Array(String) ALIAS s;
+ALTER TABLE t_nested_alias ADD COLUMN `n.b` Array(String) DEFAULT s_alias;
+
+SYSTEM START MERGES t_nested_alias;
+OPTIMIZE TABLE t_nested_alias FINAL;
+
+-- The merge must complete without corrupting the shared Nested offsets, so the sibling survives.
+SELECT count(), countDistinct(_part) FROM t_nested_alias;
+SELECT id, `n.a` FROM t_nested_alias ORDER BY id;
+
+DROP TABLE t_nested_alias;
