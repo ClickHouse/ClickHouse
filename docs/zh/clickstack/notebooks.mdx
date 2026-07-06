@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/notebooks
+title: 'ClickStack 的 AI Notebooks'
+sidebarTitle: 'AI Notebooks'
+description: '适用于 ClickStack 的 AI 调查笔记本'
+doc_type: 'guide'
+keywords: ['clickstack', 'AI notebooks', 'investigation', 'observability', 'HyperDX']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+AI Notebooks 是 ClickStack 中的一种交互式调查工具，结合了 AI agent 和手动分析。你可以用自然语言描述问题，AI agent 会代你查询日志、链路追踪和指标，并以一系列卡片的形式呈现相关数据、图表和摘要。你也可以在 AI 生成的结果旁添加自己的卡片 (图表、表、搜索和 Markdown 注释) ，从而形成完整的调查记录。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="AI Notebook 正在调查一次由 Visa 缓存已满引发的故障" size="lg" />
+
+<Info>
+  **仅限托管 ClickStack**
+
+  AI Notebooks 仅适用于托管 ClickStack 部署。
+</Info>
+
+<div id="setup">
+  ## 设置
+</div>
+
+AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提供商由平台自动管理。
+
+使用 AI Notebooks 之前：
+
+1. **已启用 Generative AI** — 团队管理员必须启用 Generative AI 同意开关。请参阅 [启用 Generative AI](#enabling-generative-ai)。
+2. **笔记本 访问权限** — 你的角色必须具有 笔记本 的读写权限。
+
+启用后，**笔记本** 条目会显示在左侧边栏中，所有具有相应角色的用户都可看到。
+
+<div id="enabling-generative-ai">
+  ## 启用 Generative AI
+</div>
+
+团队管理员必须先开启 Generative AI 同意开关，之后才能使用 笔记本 (以及其他 AI 功能) 。
+
+1. 前往 **Team Settings &gt; Security Policies**。
+2. 将 **Generative AI** 切换为开启。
+3. 查看并接受同意对话框。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="Team Settings 中的 Generative AI 开关" size="lg" />
+
+<div id="using-notebooks">
+  ## 使用 AI Notebooks
+</div>
+
+<div id="creating-a-notebook">
+  ### 创建笔记本
+</div>
+
+1. 在左侧边栏中选择 **笔记本**。
+2. 点击 **新建私有笔记本** (仅自己可见) 或 **新建共享笔记本** (团队成员可见) 。
+
+笔记本列表页面会显示你有权限访问的所有笔记本。你可以按名称或标签进行过滤，或在 **我的笔记本** 和 **所有笔记本** 之间切换。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-list.webp" alt="笔记本列表页面" size="lg" />
+
+<div id="running-investigation">
+  ### 运行 AI 调查
+</div>
+
+在笔记本底部，输入提示词来描述你想调查的内容——例如，*&quot;为什么在过去一小时里，checkout 服务的错误率突然飙升？&quot;*
+
+按下 **Send** (或按 Enter 键) 。AI agent 会：
+
+1. 检查你可用的数据源。
+2. 对你的日志、链路追踪和指标运行搜索查询与聚合查询。
+3. 生成一系列卡片，展示其思考过程、运行的查询、中间图表，以及包含结论的最终摘要。
+
+每一步都会在笔记本中显示为一张卡片。**Thought process** 卡片会展示每个查询背后的推理，**Output** 卡片则包含 agent 的结论和可选图表。与普通的 AI 聊天不同，笔记本会让你清楚看到 AI 在每一步使用了哪些数据——这样你就能验证它的推理、发现它可能忽略的有价值线索，并将调查[分叉](#branching)到不同方向。
+
+调查运行期间，你可以点击 **Stop** 取消它。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-tiles.webp" alt="包含 AI 生成卡片的笔记本" size="lg" />
+
+<div id="branching">
+  ### 为调查创建分支
+</div>
+
+在 AI 进行调查时，你可能会注意到某个中间步骤出现了值得继续深挖的线索——但 agent 随后沿着另一条路径继续了下去。**创建分支**可让你从该点使用不同的提示词重新开始，同时保留原始调查路径。
+
+要创建分支：
+
+1. 展开一个思考过程卡片，然后点击 **Restart from Here**。
+2. 在对话框中，输入修改后的提示词，将调查引导到新的方向。
+3. 点击 **Interrupt &amp; Create Branch**。AI 会从该点启动一个新的调查分支。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branch-modal.webp" alt="创建新分支对话框" size="md" />
+
+当某个卡片有多个分支时，卡片标题栏上会显示左右箭头按钮，以及一个徽标 (例如 **1/2**) ，用于指示当前共有多少个分支。点击箭头即可在不同分支之间切换。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="卡片上的分支导航箭头和 1/2 徽标" size="lg" />
+
+<div id="manual-tiles">
+  ### 添加手动卡片
+</div>
+
+除了 AI 生成的卡片外，你还可以使用笔记本底部的按钮添加自己的分析卡片：
+
+| 按钮           | 快捷键 | 说明                                                                            |
+| ------------ | --- | ----------------------------------------------------------------------------- |
+| **Search**   | `S` | 日志/trace 搜索视图，等同于搜索页面。                                                        |
+| **Chart**    | `L` | 时间序列折线图，使用与 [Dashboards](/zh/clickstack/features/dashboards/overview) 相同的可视化构建器。 |
+| **Table**    | `T` | 表格形式的聚合视图。                                                                    |
+| **Markdown** | `M` | 可自由输入文本，用于记录备注、假设或结论。                                                         |
+
+添加卡片后，它会以行内编辑模式打开，你可以在其中配置数据源、过滤器和聚合——所用界面与创建 [dashboard visualizations](/zh/clickstack/features/dashboards/overview#creating-visualizations) 时相同。点击 **Save** 完成卡片创建。
+
+手动卡片会添加到当前分支中最后一个可见卡片的下方。你可以拖动卡片底边来上下调整其大小。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp" alt="笔记本底部的手动卡片按钮" size="lg" />
+
+<Note>
+  如果当前有 AI 调查正在运行，添加或编辑手动卡片会取消该调查。继续之前会先显示确认对话框。
+</Note>
+
+<div id="sharing-organizing">
+  ### 共享与整理
+</div>
+
+* **私有与共享** — 切换笔记本标题栏中的锁形图标，可在私有 (仅自己可见) 和共享 (团队可见) 之间切换。只有笔记本创建者才能更改此设置。
+* **标签** — 为笔记本添加标签，便于在列表页中轻松过滤。
+* **命名** — 点击笔记本标题即可重命名。如果你在一个未命名的笔记本中开始调查，AI 会自动建议一个名称。
+
+<div id="custom-agent-context">
+  ### 自定义agent上下文
+</div>
+
+团队管理员可以提供额外的上下文，这些内容会包含在团队每次 AI 笔记本调查中。这有助于让 AI 了解你的系统架构、命名约定或已知问题等背景信息。
+
+配置方法如下：
+
+1. 在左侧边栏中进入 **笔记本**。
+2. 打开 **Agent Settings** (仅团队管理员可用) 。
+3. 输入你的自定义上下文 (最多 50,000 个字符) 并保存。
+
+这些上下文会追加到 AI 的系统提示中，并用于团队内所有笔记本调查。
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-agent-context.webp" alt="用于自定义上下文的 Agent Settings 面板" size="lg" />

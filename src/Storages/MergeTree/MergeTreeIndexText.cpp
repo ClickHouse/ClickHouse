@@ -122,12 +122,38 @@ DictionarySparseIndex::DictionarySparseIndex(ColumnPtr tokens_, ColumnPtr offset
 
 UInt64 DictionarySparseIndex::getOffsetInFile(size_t idx) const
 {
-    return assert_cast<const ColumnUInt64 &>(*offsets_in_file).getData()[idx];
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file))
+        return assert_cast<const ColumnUInt64 &>(**offsets_column).getData()[idx];
+
+    return std::get<BitPackedUInt64Array>(offsets_in_file).get(idx);
 }
 
 size_t DictionarySparseIndex::memoryUsageBytes() const
 {
-    return sizeof(*this) + tokens->allocatedBytes() + offsets_in_file->allocatedBytes();
+    size_t offsets_bytes = 0;
+
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file))
+        offsets_bytes = (*offsets_column) ? (*offsets_column)->allocatedBytes() : 0;
+    else
+        offsets_bytes = std::get<BitPackedUInt64Array>(offsets_in_file).allocatedBytes();
+
+    return sizeof(*this) + tokens->allocatedBytes() + offsets_bytes;
+}
+
+void DictionarySparseIndex::optimize()
+{
+    if (tokens)
+    {
+        auto tokens_mut = IColumn::mutate(tokens);
+        tokens_mut->shrinkToFit();
+        tokens = std::move(tokens_mut);
+    }
+
+    if (const auto * offsets_column = std::get_if<ColumnPtr>(&offsets_in_file); offsets_column && *offsets_column)
+    {
+        const auto & offsets_data = assert_cast<const ColumnUInt64 &>(**offsets_column).getData();
+        offsets_in_file = BitPackedUInt64Array(std::span(offsets_data.begin(), offsets_data.end()));
+    }
 }
 
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
@@ -674,14 +700,21 @@ std::pair<std::vector<size_t>, NameSet> MergeTreeIndexGranuleText::matchTokens(c
 
 std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTreeIndexReaderStream & header_stream, MergeTreeIndexDeserializationState & state)
 {
+    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
+
     const auto load_header = [&]
     {
         header_stream.seekToStart();
-        return std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+        auto loaded_header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+
+        /// Optimize the memory usage of the sparse index only if the header is put into the global cache.
+        if (condition_text.useGlobalHeaderCache())
+            loaded_header->sparse_index.optimize();
+
+        return loaded_header;
     };
 
     auto header_hash = TextIndexHeaderCache::hash(index_id_for_caches);
-    const auto & condition_text = typeid_cast<const MergeTreeIndexConditionText &>(*state.condition);
     return condition_text.headerCache()->getOrSet(header_hash, load_header);
 }
 
@@ -1113,13 +1146,19 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
     if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
 
-    chassert(sparse_index.tokens->size() == sparse_index.offsets_in_file->size());
+    const auto * offsets_column_ptr = std::get_if<ColumnPtr>(&sparse_index.offsets_in_file);
+    if (!offsets_column_ptr || !*offsets_column_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Offsets in sparse index of text index must not be bit-packed on serialization");
+
+    const auto & offsets_column = **offsets_column_ptr;
+    chassert(sparse_index.tokens->size() == offsets_column.size());
+
     auto serialization_string = SerializationString::create();
     auto serialization_number = SerializationNumber<UInt64>::create();
 
     writeVarUInt(sparse_index.tokens->size(), ostr);
     serialization_string->serializeBinaryBulk(*sparse_index.tokens, ostr, 0, sparse_index.tokens->size());
-    serialization_number->serializeBinaryBulk(*sparse_index.offsets_in_file, ostr, 0, sparse_index.offsets_in_file->size());
+    serialization_number->serializeBinaryBulk(offsets_column, ostr, 0, offsets_column.size());
 }
 
 TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & istr)

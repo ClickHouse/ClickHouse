@@ -1,0 +1,259 @@
+---
+title: 'Warehouses'
+slug: /cloud/reference/warehouses
+keywords: ['separación de cómputo', 'nube', 'arquitectura', 'compute-compute', 'warehouse', 'warehouses', 'hydra']
+description: 'Separación entre recursos de cómputo en ClickHouse Cloud'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="Separación entre recursos de cómputo" />
+
+<div id="what-is-compute-compute-separation">
+  ## ¿Qué es la separación de cómputo-cómputo?
+</div>
+
+Antes de explicar qué es la separación de cómputo-cómputo, conviene entender qué es un **servicio** en ClickHouse Cloud.
+
+Cada servicio de ClickHouse Cloud incluye:
+
+* Nodos de cómputo de ClickHouse (denominados **réplicas**) con clústeres dedicados de CPU y memoria
+* Un endpoint (o varios endpoints creados desde la consola de la UI de ClickHouse Cloud) para conectarse al servicio (por ejemplo, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) para conexiones locales y de aplicaciones de terceros
+* Una carpeta de almacenamiento de objetos donde el servicio almacena todos los datos y parte de los metadatos:
+
+<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Servicio único en ClickHouse Cloud" />
+
+<br />
+
+*Fig. 1 - Servicio único en ClickHouse Cloud*
+
+En lugar de tener un único servicio, puedes crear varios servicios con acceso al mismo almacenamiento compartido, lo que te permite dedicar recursos a cargas de trabajo específicas sin tener que duplicar los datos.
+Este concepto se denomina **separación de cómputo-cómputo**.
+
+La separación de cómputo-cómputo significa que cada servicio tiene su propio conjunto de réplicas y un endpoint, pero utiliza la misma carpeta de almacenamiento de objetos y accede a las mismas tablas, vistas, etc.
+Esto significa que puedes elegir la capacidad de cómputo adecuada para tu carga de trabajo. Algunas cargas de trabajo pueden resolverse con una sola réplica pequeña, mientras que otras pueden requerir alta disponibilidad (HA) completa y cientos de gigabytes de memoria en varias réplicas.
+
+La separación de cómputo-cómputo también te permite separar las operaciones de lectura de las de escritura para que no interfieran entre sí:
+
+<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separación de cómputo en ClickHouse Cloud" />
+
+<br />
+
+*Fig. 2 - Separación de cómputo en ClickHouse Cloud*
+
+<div id="what-is-a-warehouse">
+  ## ¿Qué es un warehouse?
+</div>
+
+En ClickHouse Cloud, un *warehouse* es un conjunto de **servicios** que comparten los mismos datos.
+Cada warehouse tiene un servicio principal (el servicio que se crea primero) y uno o más servicios secundarios.
+Por ejemplo, en la captura de pantalla de abajo, puedes ver un warehouse, &quot;DWH Prod&quot;, compuesto por dos servicios:
+
+* Servicio principal `DWH Prod`
+* Servicio secundario `DWH Prod Subservice`
+
+<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Ejemplo de warehouse con servicio principal y servicios secundarios" background="white" />
+
+<br />
+
+*Fig. 3 - Ejemplo de warehouse*
+
+Todos los servicios de un warehouse comparten lo siguiente:
+
+* Región (por ejemplo, us-east1)
+* Proveedor de servicios de Cloud (AWS, GCP o Azure)
+* Versión de la base de datos de ClickHouse
+* ClickHouse Keeper (para gestionar réplicas)
+
+<div id="access-controls">
+  ## Controles de acceso
+</div>
+
+<div id="database-credentials">
+  ### Credenciales de la base de datos
+</div>
+
+Como todos los servicios de un warehouse comparten el mismo conjunto de tablas, también comparten los controles de acceso entre servicios.
+Esto significa que todos los usuarios de base de datos que se creen en servicio 1 también podrán usar servicio 2 con los mismos permisos (grants sobre tablas, vistas, etc.), y viceversa.
+Se usa un endpoint distinto para cada servicio, pero el mismo nombre de usuario y la misma contraseña en todos ellos. En otras palabras, **los usuarios se comparten entre los servicios que trabajan con el mismo almacenamiento**, como se muestra en la figura siguiente:
+
+<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acceso de usuarios entre servicios que comparten los mismos datos" />
+
+<br />
+
+*Fig. 4 - La usuaria Alice se creó en servicio 1, pero puede usar las mismas credenciales para acceder a todos los servicios que comparten los mismos datos*
+
+<div id="network-access-control">
+  ### Control de acceso a la red
+</div>
+
+Para restringir el acceso a servicios específicos desde otras aplicaciones o por parte de usuarios ad hoc, puede aplicar restricciones de red.
+Para ello, vaya a **Settings** en la pestaña del servicio concreto al que desea restringir el acceso en la consola de ClickHouse Cloud.
+
+La configuración de filtrado por IP puede aplicarse a cada servicio por separado, lo que significa que puede controlar qué aplicación puede acceder a qué servicio.
+Esto le permite impedir que los usuarios utilicen servicios específicos.
+
+En el ejemplo siguiente, Alice tiene restringido el acceso al servicio 2 del warehouse:
+
+<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configuración del control de acceso a la red" />
+
+<br />
+
+*Fig. 5 - Alice tiene restringido el acceso al servicio 2 debido a la configuración del control de acceso a la red*
+
+Los roles y privilegios de ClickHouse también pueden aplicarse para controlar el acceso a los datos cuando los usuarios se conectan como usuarios individuales en lugar de hacerlo con el usuario *default*.
+
+<div id="read-vs-read-write">
+  ### Servicios de solo lectura frente a servicios de lectura y escritura
+</div>
+
+Los servicios pueden ser de uno de estos tipos:
+
+* **lectura y escritura**
+  * Pueden leer y escribir datos en ClickHouse
+  * Realizan operaciones de fusión en segundo plano (p. ej., fusionar partes después de insertar datos), que consumen CPU y memoria
+  * Pueden exportar datos a sistemas externos
+* **solo lectura**
+  * Solo pueden leer datos; no pueden escribir ni modificar datos en ClickHouse
+  * No realizan operaciones de fusión en segundo plano fuera de las system tables, por lo que sus recursos se dedican por completo a las consultas de lectura
+  * Aún pueden exportar datos a sistemas externos (p. ej., mediante table functions), pero no pueden modificar datos dentro de ClickHouse
+  * Entran en inactividad sin demora, a diferencia de los servicios de lectura y escritura, que pueden mantenerse activos debido a las fusiones en segundo plano.
+
+A veces conviene aislar las cargas de trabajo de lectura críticas de la sobrecarga de escritura y fusión haciendo que un servicio sea de solo lectura.
+Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cree; sin embargo, el primer servicio siempre será de lectura y escritura, como se muestra en la figura siguiente:
+
+<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Servicios de lectura y escritura y de solo lectura en un warehouse" />
+
+<br />
+
+*Fig. 6 - Servicios de lectura y escritura y de solo lectura en un warehouse*
+
+<Note>
+  1. Actualmente, los servicios de solo lectura admiten operaciones de gestión de usuarios (CREATE, DROP, etc.).
+  2. Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) se ejecutan **solo** en servicios de lectura y escritura (RW) de un warehouse.
+  3. El tipo de un servicio (solo lectura o lectura y escritura) queda fijado en el momento de su creación y no puede cambiarse posteriormente desde la Cloud Console. Para cambiar entre acceso de solo lectura y de lectura y escritura, cree un servicio nuevo en el warehouse con el tipo deseado.
+</Note>
+
+<div id="scaling">
+  ## Escalado
+</div>
+
+Cada servicio de un warehouse puede ajustarse según la carga de trabajo en cuanto a:
+
+* Número de nodos (réplicas). El servicio principal (el servicio que se creó primero en el warehouse) debe tener 2 o más nodos. Cada servicio secundario puede tener 1 o más nodos.
+* Tamaño de los nodos (réplicas)
+* Si el servicio debe escalar automáticamente (horizontal y verticalmente)
+* Si el servicio debe quedar inactivo cuando no haya actividad
+
+Para obtener más información, consulte la página [&quot;Escalado automático&quot;](/es/products/cloud/features/autoscaling/overview).
+
+<div id="changes-in-behavior">
+  ## Cambios en el comportamiento de `clusterAllReplicas`
+</div>
+
+Una vez que un warehouse tiene varios servicios, el comportamiento de `clusterAllReplicas()` cambia.
+Usar el nombre de cluster `default` solo tendrá como destino las réplicas dentro del servicio actual, no todos los servicios del warehouse.
+
+Por ejemplo, si llamas a `clusterAllReplicas(default, system, processes)` desde el servicio 1, solo se devuelven los procesos que se ejecutan en el servicio 1.
+Para realizar una consulta en todos los servicios del warehouse, usa en su lugar el nombre de cluster `all_groups.default`:
+
+```sql
+SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
+```
+
+<Note>
+  Los servicios secundarios de un solo nodo pueden escalar verticalmente, mientras que los servicios primarios de un solo nodo no pueden.
+</Note>
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+<div id="workload-isolation-limitations">
+  ### Limitaciones del aislamiento de cargas de trabajo
+</div>
+
+Algunas cargas de trabajo no pueden aislarse en servicios específicos; hay casos límite en los que una carga de trabajo de un servicio afectará a otro servicio del warehouse. Entre ellos se incluyen:
+
+* **Todos los servicios de lectura y escritura realizan operaciones de fusión en segundo plano de forma predeterminada.** Al insertar datos en ClickHouse, la base de datos primero inserta los datos en algunas particiones de staging y luego realiza fusiones en segundo plano. Estas fusiones pueden consumir recursos de memoria y CPU. Cuando dos servicios de lectura y escritura comparten el mismo almacenamiento, ambos realizan operaciones en segundo plano. Esto significa que puede darse una situación en la que haya una consulta `INSERT` en el Servicio 1, pero que la operación de fusión la complete el Servicio 2.
+  Ten en cuenta que los servicios de solo lectura no ejecutan fusiones en segundo plano, por lo que no consumen sus recursos en esta operación. Nuestro equipo de soporte puede desactivar las fusiones en un servicio.
+
+* **Todos los servicios de lectura y escritura realizan operaciones de inserción del motor de tabla S3Queue.** Al crear una tabla S3Queue en un servicio de lectura y escritura, todos los demás servicios de lectura y escritura del warehouse pueden leer datos de S3 y escribir datos en la base de datos.
+
+* **Las inserciones en un servicio de lectura y escritura pueden impedir que otro servicio de lectura y escritura pase a inactividad si esta función está habilitada.** Hay situaciones en las que
+  un servicio realiza operaciones de fusión en segundo plano para otro servicio. Esas operaciones en segundo plano pueden impedir que el segundo servicio pase a inactividad. Una vez que finalicen las operaciones en segundo plano, el servicio quedará inactivo. Los servicios de solo lectura no se ven afectados.
+
+<div id="callouts">
+  ### Avisos útiles
+</div>
+
+* **Versiones de ClickHouse**: El [calendario de actualizaciones](/es/products/cloud/features/admin-features/upgrades) se rige por la configuración del servicio principal. Los servicios secundarios no pueden tener un calendario de versiones independiente del servicio principal.
+
+* **Las consultas `CREATE`/`RENAME`/`DROP DATABASE` podrían bloquearse de forma predeterminada por servicios inactivos o detenidos.** Si estas consultas se ejecutan cuando el servicio está inactivo o detenido, pueden quedarse colgadas. Para evitarlo, puedes ejecutar consultas de administración de bases de datos con [`settings distributed_ddl_task_timeout=0`](/es/reference/settings/session-settings#distributed_ddl_task_timeout) a nivel de sesión o por consulta.
+
+Por ejemplo:
+
+```sql
+CREATE DATABASE db_test_ddl_single_query_setting
+SETTINGS distributed_ddl_task_timeout=0
+```
+
+Si detiene manualmente un servicio, tendrá que iniciarlo de nuevo para que se ejecuten las consultas.
+
+* **Servicio principal con una réplica** Actualmente, el comportamiento predeterminado permite que los servicios secundarios tengan una réplica; el servicio principal debe tener al menos 2.
+  Para habilitar servicios principales con una sola réplica, póngase en contacto con el equipo de soporte. Este comportamiento estará activado de forma predeterminada en el segundo trimestre de 2026.
+* **Inactividad del servicio principal**: la inactividad automática del servicio principal está activada de forma predeterminada.
+
+<div id="pricing">
+  ## Precios
+</div>
+
+Los precios de cómputo son los mismos para todos los servicios de un warehouse (primario y secundario). El almacenamiento se factura solo una vez: está incluido en el primer servicio (original).
+
+Consulta la calculadora de precios en la página de [precios](https://clickhouse.com/pricing), que te ayudará a estimar el costo según el tamaño de tu carga de trabajo y el nivel seleccionado. La tabla Usage Breakdown te mostrará el desglose de los costos de cómputo por servicio.
+
+<div id="backups">
+  ## Copias de seguridad
+</div>
+
+* Como todos los servicios de un mismo warehouse comparten el mismo almacenamiento, las copias de seguridad se realizan solo en el servicio principal (inicial). De este modo, se respaldan los datos de todos los servicios del warehouse.
+* Si restaura una copia de seguridad desde el servicio principal de un warehouse, esta se restaurará en un servicio completamente nuevo, sin conexión con el warehouse existente. A continuación, puede añadir más servicios al nuevo servicio en cuanto finalice la restauración.
+
+<div id="setup-warehouses">
+  ## Cómo configurar un warehouse
+</div>
+
+<div id="creating-a-warehouse">
+  ### Crear un warehouse
+</div>
+
+Para crear un warehouse, debe crear un segundo servicio que compartirá los datos con un servicio existente. Para ello, haga clic en el signo más de cualquiera de los servicios existentes:
+
+<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Crear un nuevo servicio en un warehouse" />
+
+<br />
+
+*Fig. 7 - Haga clic en el signo más para crear un nuevo servicio en un warehouse*
+
+En la pantalla de creación del servicio, el servicio original aparecerá seleccionado en la lista desplegable como origen de los datos del nuevo servicio. Una vez creados, estos dos servicios formarán un warehouse.
+
+<div id="renaming-a-warehouse">
+  ### Cambiar el nombre de un warehouse
+</div>
+
+Hay dos formas de cambiar el nombre de un warehouse:
+
+* Puede seleccionar &quot;Ordenar por warehouse&quot; en la página de servicios, en la esquina superior derecha, y luego hacer clic en el icono del lápiz junto al nombre del warehouse.
+* Puede hacer clic en el nombre del warehouse en cualquiera de los servicios y cambiarle el nombre allí.
+
+<div id="deleting-a-warehouse">
+  ### Eliminación de un warehouse
+</div>
+
+Eliminar un warehouse implica eliminar todos los servicios de cómputo y los datos (tablas, vistas, usuarios, etc.). Esta acción no se puede deshacer.
+Solo puedes eliminar un warehouse eliminando el primer servicio que se creó. Para hacerlo:
+
+1. Elimina todos los servicios creados además del primer servicio;
+2. Elimina el primer servicio (advertencia: en este paso se eliminarán todos los datos del warehouse).

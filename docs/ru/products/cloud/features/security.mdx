@@ -1,0 +1,200 @@
+---
+sidebarTitle: 'Безопасность'
+slug: /cloud/security
+title: 'Безопасность'
+description: 'Узнайте больше о безопасности ClickHouse Cloud и BYOC'
+doc_type: 'reference'
+keywords: ['безопасность', 'облачная безопасность', 'управление доступом', 'соответствие требованиям', 'защита данных']
+---
+
+В этом документе подробно описаны параметры безопасности и рекомендации по защите организации и сервиса ClickHouse.
+ClickHouse стремится предоставлять безопасные решения для аналитических баз данных, поэтому защита данных и целостности сервиса является приоритетом.
+Приведённая здесь информация охватывает различные методы, призванные помочь пользователям защитить свои среды ClickHouse.
+
+<div id="cloud-console-auth">
+  ## Аутентификация в Cloud Console
+</div>
+
+<div id="password-auth">
+  ### Аутентификация по паролю
+</div>
+
+Пароли в консоли ClickHouse Cloud должны соответствовать стандарту NIST 800-63B: минимум 12 символов и 3 из 4 требований к сложности: прописные буквы, строчные буквы, цифры и/или специальные символы.
+
+Подробнее см. в разделе [аутентификация по паролю](/ru/products/cloud/guides/security/cloud-access-management/manage-my-account#email-and-password).
+
+<div id="social-sso">
+  ### Социальный вход (SSO)
+</div>
+
+ClickHouse Cloud поддерживает единый вход (SSO) через Google или Microsoft.
+
+Подробнее о [социальном входе (SSO)](/ru/products/cloud/guides/security/cloud-access-management/manage-my-account#social-sso).
+
+<div id="mfa">
+  ### Многофакторная аутентификация
+</div>
+
+Пользователи, которые входят по электронной почте и паролю или через социальный SSO, также могут настроить многофакторную аутентификацию с помощью приложения-аутентификатора, например Authy или Google Authenticator.
+
+Подробнее о [многофакторной аутентификации](/ru/products/cloud/guides/security/cloud-access-management/manage-my-account#mfa).
+
+<div id="saml-auth">
+  ### Аутентификация SAML (Security Assertion Markup Language)
+</div>
+
+Клиенты уровня Enterprise могут настроить аутентификацию SAML.
+
+Подробнее см. в разделе [Аутентификация SAML](/ru/products/cloud/guides/security/cloud-access-management/saml-sso-setup).
+
+<div id="api-auth">
+  ### Аутентификация API
+</div>
+
+Клиенты могут настраивать ключи API для работы с OpenAPI, Terraform и эндпоинтами Query API.
+
+Подробнее см. в разделе [Аутентификация API](/ru/products/cloud/features/admin-features/api/openapi).
+
+<div id="database-auth">
+  ## Аутентификация в базе данных
+</div>
+
+<div id="db-password-auth">
+  ### Аутентификация в базе данных по паролю
+</div>
+
+Пароли пользователей баз данных ClickHouse должны соответствовать стандарту NIST 800-63B: минимум 12 символов и требования к сложности, включая заглавные и строчные буквы, цифры и/или специальные символы.
+
+Подробнее см. в разделе [аутентификация в базе данных по паролю](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#database-user-id--password).
+
+<div id="ssh-auth">
+  ### Аутентификация пользователей базы данных по Secure Shell (SSH)
+</div>
+
+Для пользователей базы данных ClickHouse можно настроить аутентификацию по SSH.
+
+Подробнее см. в разделе [Аутентификация по SSH](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#database-ssh).
+
+<div id="access-control">
+  ## Управление доступом
+</div>
+
+<div id="console-rbac">
+  ### Ролевое управление доступом (RBAC) в консоли
+</div>
+
+ClickHouse Cloud поддерживает назначение ролей для разрешений на уровне организации, сервиса и базы данных. Разрешения на уровне базы данных при использовании этого метода поддерживаются только в SQL-консоли.
+
+Подробнее см. в разделе [RBAC в консоли](/ru/products/cloud/reference/security/console-roles).
+
+<div id="database-user-grants">
+  ### Привилегии пользователей базы данных
+</div>
+
+Базы данных ClickHouse поддерживают детальное управление разрешениями и ролевой доступ с помощью пользовательских привилегий.
+
+Подробнее о [привилегиях пользователей базы данных](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#database-permissions).
+
+<div id="network-security">
+  ## Сетевая безопасность
+</div>
+
+<div id="ip-filters">
+  ### Фильтры IP
+</div>
+
+Настройте фильтры IP, чтобы ограничить входящие подключения к вашему сервису ClickHouse.
+
+Подробнее см. в разделе [Фильтры IP](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
+
+<div id="private-connectivity">
+  ### Приватное подключение
+</div>
+
+Подключайтесь к своим кластерам ClickHouse из AWS, GCP или Azure через приватное подключение.
+
+Подробнее о [приватном подключении](/ru/products/cloud/guides/security/connectivity/private-networking/index).
+
+<div id="encryption">
+  ## Шифрование
+</div>
+
+<div id="storage-encryption">
+  ### Шифрование на уровне хранилища
+</div>
+
+В ClickHouse Cloud данные в хранилище по умолчанию шифруются с помощью ключей AES 256, управляемых облачным провайдером.
+
+Подробнее см. в разделе [шифрование на уровне хранилища](/ru/products/cloud/guides/security/cmek#storage-encryption).
+
+<div id="tde">
+  ### Прозрачное шифрование данных
+</div>
+
+Помимо шифрования хранилища, клиенты тарифа ClickHouse Cloud Enterprise могут включить прозрачное шифрование данных на уровне базы данных для дополнительной защиты.
+
+Подробнее см. в разделе [«Прозрачное шифрование данных»](/ru/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+
+<div id="cmek">
+  ### Ключи шифрования под управлением клиента
+</div>
+
+Клиенты ClickHouse Cloud Enterprise могут использовать собственный ключ для шифрования на уровне базы данных.
+
+Подробнее см. в разделе [ключи шифрования под управлением клиента](/ru/products/cloud/guides/security/cmek#customer-managed-encryption-keys-cmek).
+
+<div id="auditing-logging">
+  ## Аудит и логирование
+</div>
+
+<div id="console-audit-log">
+  ### Журнал аудита консоли
+</div>
+
+Все действия в консоли заносятся в журнал. Эти журналы можно просматривать и экспортировать.
+
+Подробнее см. в разделе [журнал аудита консоли](/ru/products/cloud/guides/security/audit-logging/console-audit-log).
+
+<div id="database-audit-logs">
+  ### Журналы аудита базы данных
+</div>
+
+Действия в базе данных записываются в журнал. Журналы можно просматривать и экспортировать.
+
+Подробнее о [журналах аудита базы данных](/ru/products/cloud/guides/security/audit-logging/database-audit-log).
+
+<div id="byoc-security-playbook">
+  ### Руководство по безопасности для BYOC
+</div>
+
+Примеры запросов для выявления угроз для команд безопасности, управляющих экземплярами ClickHouse BYOC.
+
+Подробнее см. в [руководстве по безопасности для BYOC](/ru/products/cloud/guides/security/audit-logging/byoc-security-playbook).
+
+<div id="compliance">
+  ## Соответствие требованиям
+</div>
+
+<div id="compliance-reports">
+  ### Отчеты по безопасности и соответствии требованиям
+</div>
+
+ClickHouse придерживается строгих стандартов безопасности и соответствия требованиям. Периодически проверяйте эту страницу на наличие новых отчетов независимого аудита.
+
+Подробнее см. в разделе [отчеты по безопасности и соответствии требованиям](/ru/products/cloud/reference/security/compliance-overview).
+
+<div id="hipaa-compliance">
+  ### Сервисы, соответствующие требованиям HIPAA
+</div>
+
+Клиенты ClickHouse Cloud Enterprise могут развертывать сервисы, содержащие защищённую медицинскую информацию (PHI), в регионах, соответствующих требованиям HIPAA, после подписания соглашения Business Associate Agreement (BAA).
+
+Узнайте больше о [соответствии требованиям HIPAA](/ru/products/cloud/guides/security/compliance/hipaa-onboarding).
+
+<div id="pci-compliance">
+  ### Сервисы, соответствующие требованиям PCI
+</div>
+
+Клиенты ClickHouse Cloud Enterprise могут развёртывать сервисы, содержащие данные кредитных карт, в регионах, соответствующих требованиям PCI.
+
+Подробнее см. в разделе [соответствие требованиям PCI](/ru/products/cloud/guides/security/compliance/pci-onboarding).

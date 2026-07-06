@@ -1,0 +1,305 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/sample-data
+title: 'سجلات وآثار تتبع ومقاييس نموذجية'
+description: 'البدء مع ClickStack ومجموعة بيانات نموذجية تتضمن السجلات والجلسات وآثار التتبع والمقاييس'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانات نموذجية', 'السجلات', 'observability']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يستعرض هذا الدليل كلاً من ClickStack Open Source وManaged ClickStack باستخدام عينة من البيانات.
+
+<Tabs>
+  <Tab title="ClickStack المُدار">
+    يفترض هذا الدليل أنك أكملت [دليل البدء الخاص بـ Managed ClickStack](/ar/clickstack/deployment/managed) وقمت بتدوين [بيانات اعتماد الاتصال](/ar/clickstack/getting-started/managed#next-steps).
+
+    <Steps>
+      <Step>
+        ### اختر الخدمة
+
+        اختر الخدمة التي تحمل علامة Managed ClickStack من صفحة ClickHouse Cloud الرئيسية.
+
+        <Image img="/images/clickstack/select_service.webp" alt="اختيار الخدمة" size="lg" />
+      </Step>
+
+      <Step>
+        ### انتقل إلى ClickStack UI (HyperDX)
+
+        اختر `ClickStack` من القائمة اليسرى للانتقال إلى ClickStack UI، حيث سيتم تسجيل دخولك تلقائيًا.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
+      </Step>
+
+      <Step>
+        ### تنزيل بيانات تجريبية
+
+        لتعبئة واجهة المستخدم ببيانات تجريبية، نزّل الملف التالي:
+
+        [بيانات تجريبية](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # or
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        يحتوي هذا الملف على أمثلة على السجلات والمقاييس والتتبعات من [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) المتاح للعامة - وهو متجر تجارة إلكترونية بسيط قائم على الخدمات المصغّرة. انسخ هذا الملف إلى الدليل الذي تختاره.
+      </Step>
+
+      <Step>
+        ### تحميل بيانات تجريبية
+
+        لتحميل هذه البيانات، نرسلها ببساطة إلى نقطة نهاية HTTP الخاصة بـ OTel collector الذي تم نشره.
+
+        شغّل الأمر التالي لإرسال البيانات إلى OTel collector:
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        يحاكي هذا مصادر OTLP للسجلات والتتبعات والمقاييس التي ترسل البيانات إلى OTel collector. في بيئة الإنتاج، قد تكون هذه المصادر مكتبات العملاء للغات البرمجة، أو حتى OTel collectors أخرى.
+
+        بالعودة إلى عرض `Search`، ينبغي أن ترى أن البيانات قد بدأت بالتحميل (اضبط الإطار الزمني على `Last 1 hour` إذا لم تظهر البيانات):
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="بحث HyperDX" size="lg" />
+
+        قد يستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل المتابعة إلى الخطوات التالية.
+      </Step>
+
+      <Step>
+        ### استكشاف الجلسات
+
+        لنفترض أننا تلقّينا بلاغات تفيد بأن مستخدمينا يواجهون مشكلات عند الدفع مقابل السلع. يمكننا الاطّلاع على تجربتهم باستخدام إمكانات إعادة تشغيل الجلسات في HyperDX.
+
+        حدّد `Client Sessions` من القائمة اليسرى.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="الجلسات" size="lg" />
+
+        يتيح لنا هذا العرض رؤية جلسات الواجهة الأمامية لمتجرنا الإلكتروني. وتظل الجلسات مجهولة الهوية إلى أن يبدأ المستخدمون إتمام الشراء ويحاولوا إكمال الدفع.
+
+        لاحظ أن بعض الجلسات المرتبطة بعناوين بريد إلكتروني تتضمّن خطأً، ما قد يؤكد البلاغات عن المعاملات الفاشلة.
+
+        حدّد trace يتضمّن حالة فشل وبريدًا إلكترونيًا مرتبطًا. يتيح لنا العرض التالي إعادة تشغيل جلسة المستخدم ومراجعة مشكلته. اضغط على play لمشاهدة الجلسة.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="إعادة تشغيل الجلسة" size="lg" />
+
+        تُظهر الإعادة المستخدم وهو يتنقّل في الموقع ويضيف عناصر إلى سلّة التسوق. لا تتردد في الانتقال إلى جزء لاحق من الجلسة حيث يحاول إكمال عملية الدفع.
+
+        <Tip>
+          تُعلَّم أي أخطاء على المخطط الزمني باللون الأحمر.
+        </Tip>
+
+        لم يتمكن المستخدم من إتمام الطلب من دون ظهور خطأ واضح. مرّر إلى أسفل اللوحة اليسرى التي تحتوي على أحداث الشبكة ووحدة التحكّم من متصفح المستخدم. ستلاحظ ظهور خطأ 500 عند إجراء استدعاء `/api/checkout`.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="خطأ في الجلسة" size="lg" />
+
+        حدّد هذا الخطأ `500`. لا يشير كلٌّ من `Overview` و`Column Values` إلى مصدر المشكلة، سوى أن الخطأ غير متوقَّع، ما يؤدي إلى `Internal Error`.
+      </Step>
+
+      <Step>
+        ### استكشاف التتبعات
+
+        انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع الكامل.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="تتبّع الجلسة" size="lg" />
+
+        مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو امتداد خدمة `checkout`. حدّد امتداد خدمة `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="امتداد" size="lg" />
+
+        حدّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء ذاكرة التخزين المؤقت.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="قيم الأعمدة" size="lg" />
+
+        عند التمرير إلى الأعلى والعودة إلى التتبّع، نرى أن السجلات مرتبطة بالامتداد، بفضل الإعداد الذي أنشأناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="سجل مرتبط" size="lg" />
+
+        تبيّن لنا أن ذاكرة التخزين المؤقت تمتلئ في خدمة الدفع، وهذا يمنع اكتمال عمليات الدفع.
+      </Step>
+
+      <Step>
+        ### استكشاف السجلات
+
+        للمزيد من التفاصيل، يمكننا الرجوع إلى `Search`:
+
+        حدِّد `Logs` من المصادر وطبِّق عامل تصفية على خدمة `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="السجلات" size="lg" />
+
+        يمكننا أن نرى أنه رغم أن المشكلة حديثة، فإن عدد المدفوعات المتأثرة مرتفع. علاوة على ذلك، يبدو أن ذاكرة تخزين مؤقت مرتبطة بمدفوعات Visa هي سبب هذه المشكلات.
+      </Step>
+
+      <Step>
+        ### مقاييس المخطط
+
+        رغم أنه تم بوضوح إدخال خطأ في الشيفرة، يمكننا استخدام المقاييس للتحقق من حجم ذاكرة التخزين المؤقت. انتقل إلى عرض `Chart Explorer`.
+
+        حدّد `Metrics` كمصدر البيانات. أكمل إعدادات منشئ المخطط لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)` ثم اضغط زر `play`. كان حجم ذاكرة التخزين المؤقت يزداد بوضوح حتى بلغ الحد الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="المقاييس" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack مفتوح المصدر">
+    يفترض المثال التالي أنك قد شغّلت Open Source ClickStack باتباع [تعليمات الصورة الشاملة](/ar/clickstack/getting-started/oss) وأنك اتصلت بـ [نسخة ClickHouse المحلية](/ar/clickstack/getting-started/oss#complete-connection-credentials).
+
+    <Steps>
+      <Step>
+        ### انتقِل إلى واجهة ClickStack ‏(HyperDX)
+
+        زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة ClickStack.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
+      </Step>
+
+      <Step>
+        ### انسخ مفتاح API للإدخال
+
+        انتقل إلى [`إعدادات الفريق`](http://localhost:8080/team) وانسخ `Ingestion API Key` من قسم `API Keys`. يضمن مفتاح API هذا تأمين إدخال البيانات عبر مجمّع OpenTelemetry.
+
+        <Image img="/images/use-cases/observability/copy_api_key.webp" alt="انسخ مفتاح API" size="lg" />
+      </Step>
+
+      <Step>
+        ### تنزيل بيانات نموذجية
+
+        لكي تظهر بيانات نموذجية في واجهة المستخدم، نزّل الملف التالي:
+
+        [بيانات نموذجية](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # or
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        يحتوي هذا الملف على سجلات ومقاييس وتتبعات تجريبية من تطبيق [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) العام لدينا، وهو متجر تجارة إلكترونية بسيط قائم على الخدمات المصغّرة. انسخ هذا الملف إلى الدليل الذي تختاره.
+      </Step>
+
+      <Step>
+        ### تحميل بيانات تجريبية
+
+        لتحميل هذه البيانات، ما علينا سوى إرسالها إلى نقطة نهاية HTTP الخاصة بجامع OpenTelemetry ‏(OTel) الذي تم نشره.
+
+        أولاً، صدّر مفتاح API الذي نسخته أعلاه.
+
+        ```shell
+        # export API key
+        export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+        ```
+
+        نفّذ الأمر التالي لإرسال البيانات إلى OTel collector:
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        يحاكي هذا مصادر السجلات والتتبعات والمقاييس عبر OTLP وهي ترسل البيانات إلى OTel collector. في بيئة الإنتاج، قد تكون هذه المصادر مكتبات العملاء للغات البرمجة أو حتى OTel collectors أخرى.
+
+        بالعودة إلى عرض `Search`، ينبغي أن ترى أن تحميل البيانات قد بدأ (اضبط النطاق الزمني على `Last 1 hour` إذا لم تظهر البيانات):
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="بحث HyperDX" size="lg" />
+
+        سيستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل الانتقال إلى الخطوات التالية.
+      </Step>
+
+      <Step>
+        ### استكشاف الجلسات
+
+        لنفترض أن لدينا تقارير تفيد بأن مستخدمينا يواجهون مشكلات عند الدفع مقابل السلع. يمكننا عرض تجربتهم باستخدام ميزة session replay في HyperDX.
+
+        حدِّد [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) من القائمة اليمنى.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="الجلسات" size="lg" />
+
+        يتيح لنا هذا العرض الاطلاع على جلسات الواجهة الأمامية لمتجرنا الإلكتروني. وتبقى الجلسات مجهولة الهوية إلى أن يبدأ المستخدمون إتمام الشراء ويحاولوا إكمال عملية دفع.
+
+        لاحظ أن بعض الجلسات المرتبطة بعناوين بريد إلكتروني تتضمن error مرتبطًا بها، ما قد يؤكد التقارير عن المعاملات الفاشلة.
+
+        حدِّد trace يتضمن فشلًا وعنوان بريد إلكتروني مرتبطًا. يتيح لنا العرض التالي إعادة تشغيل جلسة المستخدم ومراجعة مشكلته. اضغط على play لمشاهدة الجلسة.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="إعادة تشغيل الجلسة" size="lg" />
+
+        تُظهر الإعادة المستخدم وهو يتنقل في الموقع ويضيف عناصر إلى سلته. يمكنك الانتقال إلى جزء لاحق من الجلسة حيث يحاول إكمال عملية الدفع.
+
+        <Tip>
+          يتم تمييز أي أخطاء على المخطط الزمني باللون الأحمر.
+        </Tip>
+
+        لم يتمكن المستخدم من إتمام الطلب، من دون ظهور خطأ واضح. مرّر إلى أسفل اللوحة اليسرى التي تعرض أحداث الشبكة ووحدة التحكم من متصفح المستخدم. ستلاحظ أنه تم طرح خطأ 500 عند إجراء استدعاء `/api/checkout`.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="خطأ في الجلسة" size="lg" />
+
+        حدِّد هذا الخطأ `500`. لا يوضح كلٌّ من `Overview` و`Column Values` مصدر المشكلة، باستثناء أن الخطأ غير متوقع، مما يؤدي إلى `Internal Error`.
+      </Step>
+
+      <Step>
+        ### استكشاف التتبعات
+
+        انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع بالكامل.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="تتبّع الجلسة" size="lg" />
+
+        مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو span خدمة `checkout`. حدِّد span خدمة `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
+
+        حدِّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء الذاكرة المؤقتة.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="قيم الأعمدة" size="lg" />
+
+        عند التمرير للأعلى والعودة إلى التتبّع، يمكننا أن نرى أن السجلات مرتبطة بـ span، وذلك بفضل الإعداد الذي أجريناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="سجل مرتبط" size="lg" />
+
+        لقد تبيّن لنا أن الذاكرة المؤقتة تمتلئ في خدمة الدفع، مما يمنع اكتمال عمليات الدفع.
+      </Step>
+
+      <Step>
+        ### استكشاف السجلات
+
+        لمزيد من التفاصيل، يمكننا العودة إلى عرض [`Search`](http://localhost:8080/search):
+
+        حدِّد `Logs` من المصادر، ثم طبّق عامل تصفية على خدمة `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="السجلات" size="lg" />
+
+        يمكننا أن نرى أنه رغم حداثة المشكلة، فإن عدد عمليات الدفع المتأثرة كبير. علاوةً على ذلك، يبدو أن ذاكرة تخزين مؤقت مرتبطة بمدفوعات Visa تتسبب في هذه المشكلات.
+      </Step>
+
+      <Step>
+        ### مقاييس المخطط
+
+        رغم أنه أُدخل خطأ بوضوح في الشيفرة، يمكننا استخدام المقاييس للتأكد من حجم ذاكرة التخزين المؤقت. انتقل إلى عرض `Chart Explorer`.
+
+        حدّد `Metrics` كمصدر للبيانات. أكمل أداة إنشاء المخططات لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)`، ثم اضغط زر `play`. من الواضح أن ذاكرة التخزين المؤقت كانت تزداد قبل أن تصل إلى حجمها الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="المقاييس" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

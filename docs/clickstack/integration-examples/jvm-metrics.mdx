@@ -1,0 +1,287 @@
+---
+slug: /use-cases/observability/clickstack/integrations/jvm-metrics
+title: 'Monitoring JVM metrics with ClickStack'
+sidebarTitle: 'JVM metrics'
+description: 'Monitoring JVM with ClickStack'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+**TL;DR**
+
+Monitor JVM applications in ClickStack using the OpenTelemetry Java agent. Includes a demo dataset and pre-built dashboard.
+</Info>
+
+## Integration with existing JVM application {#existing-jvm}
+
+This section covers configuring your existing JVM application to send metrics to ClickStack using the OpenTelemetry Java agent.
+
+If you would like to test the integration before configuring your production setup, you can test with our demo dataset in the [demo dataset section](#demo-dataset).
+
+##### Prerequisites {#prerequisites}
+- ClickStack instance running
+- Existing Java application (Java 8+)
+- Access to modify JVM startup arguments
+
+<Steps>
+<Step>
+#### Get ClickStack API key {#get-api-key}
+
+The OpenTelemetry Java agent sends data to ClickStack's OTLP endpoint, which requires authentication.
+
+1. Open HyperDX at your ClickStack URL (e.g., http://localhost:8080)
+2. Create an account or log in if needed
+3. Navigate to **Team Settings → API Keys**
+4. Copy your **Ingestion API Key**
+
+<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+</Step>
+<Step>
+#### Download OpenTelemetry Java agent {#download-agent}
+
+Download the OpenTelemetry Java agent JAR file:
+
+```bash
+curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.22.0/opentelemetry-javaagent.jar
+```
+
+This downloads the agent to your current directory. You can place it wherever makes sense for your deployment (e.g., `/opt/opentelemetry/` or alongside your application JAR).
+</Step>
+<Step>
+#### Configure JVM startup arguments {#configure-jvm}
+
+Add the Java agent to your JVM startup command. The agent automatically collects JVM metrics and sends them to ClickStack.
+
+##### Option 1: Command line flags {#command-line-flags}
+
+```bash
+java -javaagent:opentelemetry-javaagent.jar \
+  -Dotel.service.name=my-java-app \
+  -Dotel.exporter.otlp.endpoint=http://localhost:4318 \
+  -Dotel.exporter.otlp.protocol=http/protobuf \
+  -Dotel.exporter.otlp.headers="authorization=YOUR_API_KEY" \
+  -Dotel.metrics.exporter=otlp \
+  -Dotel.logs.exporter=none \
+  -Dotel.traces.exporter=none \
+  -jar my-application.jar
+```
+
+**Replace the following:**
+- `opentelemetry-javaagent.jar` → Full path to the agent JAR (e.g., `/opt/opentelemetry/opentelemetry-javaagent.jar`)
+- `my-java-app` → A meaningful name for your service (e.g., `payment-service`, `user-api`)
+- `YOUR_API_KEY` → Your ClickStack API key from the command above
+- `my-application.jar` → Your application's JAR file name
+- `http://localhost:4318` → Your ClickStack endpoint (use `localhost:4318` if ClickStack runs on the same machine, otherwise use `http://your-clickstack-host:4318`)
+
+##### Option 2: Environment variables {#env-vars}
+
+Alternatively, use environment variables:
+
+```bash
+export JAVA_TOOL_OPTIONS="-javaagent:opentelemetry-javaagent.jar"
+export OTEL_SERVICE_NAME="my-java-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="authorization=YOUR_API_KEY"
+export OTEL_METRICS_EXPORTER="otlp"
+export OTEL_LOGS_EXPORTER="none"
+export OTEL_TRACES_EXPORTER="none"
+
+java -jar my-application.jar
+```
+
+**Replace the following:**
+- `opentelemetry-javaagent.jar` → Full path to the agent JAR
+- `my-java-app` → Your service name
+- `YOUR_API_KEY` → Your ClickStack API key
+- `http://localhost:4318` → Your ClickStack endpoint
+- `my-application.jar` → Your application's JAR file name
+
+<Tip>
+The OpenTelemetry Java agent automatically collects these JVM metrics:
+
+- **Memory**: `jvm.memory.used`, `jvm.memory.limit`, `jvm.memory.committed`, `jvm.memory.used_after_last_gc`
+- **Garbage Collection**: `jvm.gc.duration`
+- **Threads**: `jvm.thread.count`
+- **Classes**: `jvm.class.count`, `jvm.class.loaded`, `jvm.class.unloaded`
+- **CPU**: `jvm.cpu.time`, `jvm.cpu.count`
+</Tip>
+</Step>
+<Step>
+#### Verify metrics in HyperDX {#verifying-metrics}
+
+Once your application is running with the agent, verify metrics are flowing to ClickStack:
+
+1. Open HyperDX at http://localhost:8080 (or your ClickStack URL)
+2. Navigate to **Chart Explorer**
+3. Search for metrics starting with `jvm.` (e.g., `jvm.memory.used`, `jvm.gc.duration`, `jvm.thread.count`)
+</Step>
+</Steps>
+
+## Demo dataset {#demo-dataset}
+
+For users who want to test the JVM metrics integration before instrumenting their applications, we provide a sample dataset with pre-generated metrics showing realistic JVM behavior from a medium-sized microservice with steady moderate traffic.
+
+<Steps>
+<Step>
+#### Download the sample dataset {#download-sample}
+
+```bash
+# Download gauge metrics (memory, threads, CPU, classes)
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/jvm/jvm-metrics-gauge.jsonl
+
+# Download sum metrics (GC events)
+curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/jvm/jvm-metrics-sum.jsonl
+```
+
+The dataset includes 24 hours of JVM metrics showing:
+- Heap memory growth with periodic garbage collection events
+- Thread count variations
+- Realistic GC pause times
+- Class loading activity
+- CPU utilization patterns
+</Step>
+<Step>
+#### Start ClickStack {#start-clickstack}
+
+If you don't already have ClickStack running:
+
+```bash
+docker run -d --name clickstack \
+  -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+Wait a few moments for ClickStack to fully start up.
+</Step>
+<Step>
+#### Import the demo dataset {#import-demo-data}
+
+```bash
+# Import gauge metrics (memory, threads, CPU, classes)
+docker exec -i clickstack clickhouse-client --query="
+  INSERT INTO default.otel_metrics_gauge FORMAT JSONEachRow
+" < jvm-metrics-gauge.jsonl
+
+# Import sum metrics (GC events)
+docker exec -i clickstack clickhouse-client --query="
+  INSERT INTO default.otel_metrics_sum FORMAT JSONEachRow
+" < jvm-metrics-sum.jsonl
+```
+
+This imports the metrics directly into ClickStack's metrics tables.
+</Step>
+<Step>
+#### Verify the demo data {#verify-demo-metrics}
+
+Once imported:
+
+1. Open HyperDX at http://localhost:8080 and log in (create an account if needed)
+2. Navigate to the Search view and set source to **Metrics**
+3. Set the time range to **2025-12-06 14:00:00 - 2025-12-09 14:00:00**
+4. Search for `jvm.memory.used` or `jvm.gc.duration`
+
+You should see metrics for the demo service.
+
+<Info>
+**Timezone Display**
+
+HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Set your time range to **2025-12-06 14:00:00 - 2025-12-09 14:00:00** to ensure you see the demo metrics regardless of your location. Once you see the metrics, you can narrow the range to a 24-hour period for clearer visualizations.
+</Info>
+</Step>
+</Steps>
+
+## Dashboards and visualization {#dashboards}
+
+To help you monitor JVM applications with ClickStack, we provide a pre-built dashboard with essential visualizations for JVM metrics.
+
+<Steps>
+<Step>
+#### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/jvm-metrics-dashboard.json'} download="jvm-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">Download</TrackedLink> the dashboard configuration {#download}
+</Step>
+<Step>
+#### Import the pre-built dashboard {#import-dashboard}
+
+1. Open HyperDX and navigate to the Dashboards section
+2. Click **Import Dashboard** in the upper right corner under the ellipses
+
+<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+
+3. Upload the `jvm-metrics-dashboard.json` file and click **Finish Import**
+
+<Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Finish import"/>
+</Step>
+<Step>
+#### View the dashboard {#created-dashboard}
+
+The dashboard will be created with all visualizations pre-configured:
+
+<Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Kafka Metrics dashboard"/>
+
+<Note>
+For the demo dataset, set the time range to **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. Adjust based on your local timezone.
+</Note>
+</Step>
+</Steps>
+
+## Troubleshooting {#troubleshooting}
+
+### Agent not starting {#troubleshooting-not-loading}
+
+**Verify the agent JAR exists:**
+```bash
+ls -lh /path/to/opentelemetry-javaagent.jar
+```
+
+**Check Java version compatibility (requires Java 8+):**
+```bash
+java -version
+```
+
+**Look for agent startup log message:**
+When your application starts, you should see:
+
+```text
+[otel.javaagent] OpenTelemetry Javaagent v2.22.0 started
+```
+
+### No metrics appearing in HyperDX {#no-metrics}
+
+**Verify ClickStack is running and accessible:**
+
+```bash
+docker ps | grep clickstack
+curl -v http://localhost:4318/v1/metrics
+```
+
+**Check that metrics exporter is configured:**
+
+```bash
+# If using environment variables, verify:
+echo $OTEL_METRICS_EXPORTER
+# Should output: otlp
+```
+
+**Check application logs for OpenTelemetry errors:**
+Look for any error messages related to OpenTelemetry or OTLP export failures in your application logs.
+
+**Verify network connectivity:**
+If ClickStack is on a remote host, ensure port 4318 is accessible from your application server.
+
+**Verify agent version:**
+Ensure you're using the latest stable agent version (currently 2.22.0), as newer versions often include performance improvements.
+
+## Next steps {#next-steps}
+
+- Set up [alerts](/clickstack/features/alerts) for critical metrics like high heap usage, frequent GC pauses, or thread exhaustion
+- Explore [other ClickStack integrations](/clickstack/integration-examples/index) to unify your observability data
+
+## Going to production {#going-to-production}
+
+This guide demonstrates configuring the OpenTelemetry Java agent for local testing. For production deployments, include the agent JAR in your container images and configure via environment variables for easier management. For larger environments with many JVM instances, deploy a centralized OpenTelemetry Collector to batch and forward metrics from multiple applications instead of sending directly to ClickStack.
+
+See [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry) for production deployment patterns and collector configuration examples.

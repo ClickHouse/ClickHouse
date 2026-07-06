@@ -1,0 +1,286 @@
+---
+slug: /use-cases/observability/clickstack/integrations/cloudflare-logs
+title: 'Surveillance des logs Cloudflare avec ClickStack'
+sidebarTitle: 'Logs Cloudflare'
+description: 'Ingérez les données Logpush de Cloudflare dans ClickStack à l’aide de ClickPipes pour une ingestion continue des logs depuis S3'
+doc_type: 'guide'
+keywords: ['Cloudflare', 'logs', 'ClickStack', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **En bref**
+
+  Ce guide vous montre comment ingérer les logs Cloudflare dans ClickStack à l’aide de ClickPipes. Cloudflare Logpush dépose les logs dans S3, et ClickPipes ingère en continu les nouveaux fichiers dans ClickHouse. Contrairement à la plupart des guides d’intégration ClickStack qui utilisent l’OpenTelemetry Collector, ce guide utilise [ClickPipes](/fr/integrations/clickpipes/home) pour récupérer directement les données depuis S3.
+
+  Un jeu de données de démonstration est disponible si vous souhaitez explorer les tableaux de bord avant de configurer l’ingestion en production.
+</Info>
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) exporte les logs de requêtes HTTP vers des destinations comme Amazon S3. Le transfert de ces logs vers ClickStack vous permet de :
+
+* Analyser le trafic edge, les performances du cache et les événements de sécurité avec le reste de vos données d’observabilité
+* Interroger les logs avec ClickHouse SQL
+* Conserver les logs au-delà de la période de rétention par défaut de Cloudflare
+
+Ce guide utilise [ClickPipes](/fr/integrations/clickpipes/home) pour ingérer en continu les fichiers de logs Cloudflare depuis S3 dans ClickHouse. S3 sert de tampon durable entre Cloudflare et ClickHouse, avec une garantie exactly-once et la possibilité de rejouer les données.
+
+<Info>
+  **Alternative : ingestion HTTP directe**
+
+  Cloudflare Logpush prend également en charge l’envoi direct des logs vers des [points de terminaison HTTP](https://developers.cloudflare.com/logs/get-started/enable-destinations/http/). Comme Cloudflare exporte les logs au format JSON délimité par des retours à la ligne (NDJSON) et que ClickHouse accepte nativement ce format via `JSONEachRow`, vous pouvez pointer Logpush directement vers l’interface HTTP de votre ClickHouse Cloud en utilisant le format d’URL de point de terminaison suivant :
+
+  ```text
+  https://YOUR_CLICKHOUSE_HOST:8443/?query=INSERT+INTO+cloudflare_http_logs+FORMAT+JSONEachRow&header_Authorization=Basic+BASE64_CREDENTIALS
+  ```
+
+  Remplacez `YOUR_CLICKHOUSE_HOST` par le nom d’hôte de votre ClickHouse Cloud et `BASE64_CREDENTIALS` par vos identifiants encodés en Base64 (`echo -n 'default:YOUR_PASSWORD' | base64`).
+
+  Cette solution est plus simple à mettre en place (aucune configuration S3, SQS ou IAM n’est nécessaire), mais Cloudflare Logpush [ne permet pas de faire un chargement historique des données](https://developers.cloudflare.com/logs/logpush/) en cas d’échec de livraison. Si ClickHouse est indisponible au moment de l’envoi, ces logs sont définitivement perdus.
+</Info>
+
+<div id="existing-cloudflare">
+  ## Intégration avec une configuration Cloudflare Logpush existante
+</div>
+
+Cette section suppose que Cloudflare Logpush est configuré pour exporter les logs vers S3. Dans le cas contraire, suivez d’abord le [guide de configuration AWS S3 de Cloudflare](https://developers.cloudflare.com/logs/get-started/enable-destinations/aws-s3/).
+
+<div id="prerequisites">
+  ### Prérequis
+</div>
+
+* **service ClickHouse Cloud** en cours de fonctionnement (ClickPipes est une fonctionnalité disponible uniquement dans Cloud — non disponible dans ClickStack OSS)
+* Cloudflare Logpush écrit activement des logs dans un bucket S3
+* Nom du bucket S3 et région dans laquelle Cloudflare écrit les logs
+
+<Steps>
+  <Step>
+    #### Configurer l&#39;authentification S3
+
+    ClickPipes a besoin d&#39;une autorisation pour lire depuis votre bucket S3. Suivez le guide [Accéder aux données S3 en toute sécurité](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) pour configurer soit un accès IAM basé sur les rôles, soit un accès basé sur des identifiants.
+
+    Pour tous les détails sur l&#39;authentification S3 et les autorisations de ClickPipes, consultez la [documentation de référence des S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
+  </Step>
+
+  <Step>
+    #### Créer un job ClickPipes
+
+    1. ClickHouse Cloud Console → **Sources de données** → **Create ClickPipe**
+    2. **Source** : Amazon S3
+
+    <Image img="/images/clickstack/cloudflare/clickpipe-s3.webp" alt="Clickpipe s3" />
+
+    **Connexion :**
+
+    * **Chemin de fichier S3** : le chemin de votre bucket Cloudflare logs avec un caractère générique pour correspondre aux fichiers. Si vous avez activé des sous-dossiers quotidiens dans Logpush, utilisez `**` pour faire correspondre les fichiers dans tous les sous-répertoires :
+      * Sans sous-dossiers : `https://your-bucket.s3.us-east-1.amazonaws.com/logs/*`
+      * Sous-dossiers quotidiens : `https://your-bucket.s3.us-east-1.amazonaws.com/logs/**/*`
+    * **Authentification** : sélectionnez votre méthode d’authentification et fournissez les identifiants ou l’ARN du rôle IAM
+
+    **Paramètres d’ingestion :**
+
+    Cliquez sur **Données entrantes**, puis configurez :
+
+    * Activez **Ingestion continue**
+    * **Ordre** : ordre lexicographique
+
+    <Image img="/images/clickstack/cloudflare/continuous-ingestion.webp" alt="Continuous ingestion" />
+
+    Cloudflare Logpush écrit les fichiers avec un nom basé sur la date (par exemple, `20250127/...`), ce qui suit naturellement l’ordre lexicographique. ClickPipes recherche de nouveaux fichiers toutes les 30 secondes et ingère chaque fichier dont le nom est supérieur à celui du dernier fichier traité.
+
+    **Mappage du schéma :**
+
+    Cliquez sur **Informations d’analyse**. ClickPipes prélève un échantillon de vos fichiers de logs et détecte automatiquement le schéma. Vérifiez les colonnes mappées et ajustez les types si nécessaire. Définissez une **Clé de tri** pour la table de destination — pour les Cloudflare logs, un bon choix est `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`.
+
+    <Image img="/images/clickstack/cloudflare/parse-information.webp" alt="Parse information" />
+
+    Cliquez sur **Terminer la configuration**.
+
+    <Note>
+      Lors de sa création, ClickPipes effectue un chargement initial de **tous les fichiers existants** dans le chemin spécifié avant de passer au polling continu. Si votre bucket contient un volume important de Cloudflare logs en attente, ce chargement initial peut prendre un certain temps.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Configurer la source de données HyperDX
+
+    ClickPipes ingère les logs Cloudflare dans une table plate avec les noms de champs natifs de Cloudflare. Pour afficher ces logs dans HyperDX, configurez une source de données personnalisée qui associe les colonnes Cloudflare à la vue des logs de HyperDX.
+
+    1. Ouvrez HyperDX → **Team Settings** → **Sources**
+
+    <Image img="/images/clickstack/cloudflare/add-source.webp" alt="Ajouter une source" />
+
+    2. Cliquez sur **Add source** et configurez les paramètres suivants. Cliquez sur **Configure Optional Fields** pour accéder à tous les champs :
+
+    <Image img="/images/clickstack/cloudflare/configure-optional-fields.webp" alt="Configurer les champs facultatifs" />
+
+    | Paramètre                          | Valeur                                                                                                                                                                                                                                                                                                            |
+    | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+    | **Name**                           | `Cloudflare Logs`                                                                                                                                                                                                                                                                                                 |
+    | **Source Data Type**               | Log                                                                                                                                                                                                                                                                                                               |
+    | **Database**                       | `default`                                                                                                                                                                                                                                                                                                         |
+    | **Table**                          | `cloudflare_http_logs`                                                                                                                                                                                                                                                                                            |
+    | **Timestamp Column**               | `toDateTime(EdgeStartTimestamp / 1000000000)`                                                                                                                                                                                                                                                                     |
+    | **Default Select**                 | `EdgeStartTimestamp, ClientRequestMethod, ClientRequestURI, EdgeResponseStatus, ClientCountry`                                                                                                                                                                                                                    |
+    | **Service Name Expression**        | `'cloudflare'`                                                                                                                                                                                                                                                                                                    |
+    | **Log Level Expression**           | `multiIf(EdgeResponseStatus >= 500, 'ERROR', EdgeResponseStatus >= 400, 'WARN', 'INFO')`                                                                                                                                                                                                                          |
+    | **Body Expression**                | `concat(ClientRequestMethod, ' ', ClientRequestURI, ' ', toString(EdgeResponseStatus))`                                                                                                                                                                                                                           |
+    | **Log Attributes Expression**      | `map('http.method', ClientRequestMethod, 'http.status_code', toString(EdgeResponseStatus), 'http.url', ClientRequestURI, 'client.country', ClientCountry, 'client.ip', ClientIP, 'cache.status', CacheCacheStatus, 'bot.score', toString(BotScore), 'cloudflare.ray_id', RayID, 'cloudflare.colo', EdgeColoCode)` |
+    | **Resource Attributes Expression** | `map('cloudflare.zone', ClientRequestHost)`                                                                                                                                                                                                                                                                       |
+    | **Implicit Column Expression**     | `concat(ClientRequestMethod, ' ', ClientRequestURI)`                                                                                                                                                                                                                                                              |
+
+    3. Cliquez sur **Save Source**
+
+    <Image img="/images/clickstack/cloudflare/save-source.webp" alt="Enregistrer la source" />
+
+    Cela associe directement les colonnes natives de Cloudflare à l’affichage des logs dans HyperDX, sans transformation ni duplication des données. Le **Body** affiche un résumé de la requête tel que `GET /api/v1/users 200`, et tous les champs Cloudflare sont disponibles comme attributs de recherche.
+  </Step>
+
+  <Step>
+    #### Vérifier les données dans HyperDX
+
+    Accédez à la vue **Search** et sélectionnez la source **Cloudflare Logs**. Définissez l&#39;intervalle de temps de façon à inclure vos données. Vous devriez voir des entrées de logs avec :
+
+    * Des résumés de requêtes dans la colonne Body (par ex. : `GET /api/v1/users 200`)
+    * Des niveaux de gravité codés par couleur selon le code HTTP (INFO pour les 2xx, WARN pour les 4xx, ERROR pour les 5xx)
+    * Des attributs sur lesquels vous pouvez effectuer des recherches, comme `http.status_code`, `client.country`, `cache.status` et `bot.score`
+
+    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="Vue Search" />
+
+    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="Vue Log" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Jeu de données de démonstration
+</div>
+
+Pour les utilisateurs qui souhaitent tester l’intégration avant de configurer leur Cloudflare Logpush de production, nous fournissons un jeu de données d’exemple avec des logs de requêtes HTTP réalistes.
+
+<Steps>
+  <Step>
+    #### Démarrer ClickPipes avec le jeu de données de démonstration
+
+    1. ClickHouse Cloud Console → **Data Sources** → **Create ClickPipe**
+    2. **Source** : Amazon S3
+    3. **Authentication** : Public
+    4. **S3 file path** : `https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/cloudflare/cloudflare-http-logs.json`
+    5. Cliquez sur **Incoming data**
+    6. Sélectionnez **JSON** comme format
+    7. Cliquez sur **Parse information** et vérifiez le schéma détecté
+    8. Définissez le **Table name** sur `cloudflare_http_logs`
+    9. Cliquez sur **Complete Setup**
+
+    Le jeu de données comprend 5 000 entrées de logs de requêtes HTTP sur 24 heures, avec des profils réalistes : trafic provenant de plusieurs pays, réponses servies depuis le cache ou non, requêtes API et de ressources statiques, réponses d’erreur et événements de sécurité.
+  </Step>
+
+  <Step>
+    #### Configurer la source de données HyperDX
+
+    Suivez les [étapes de configuration de la source de données](#configure-source) pour créer une source HyperDX pointant vers la table `cloudflare_http_logs`. Si vous avez déjà configuré la source dans la section consacrée à l’intégration de production, cette étape n’est pas nécessaire.
+  </Step>
+
+  <Step>
+    #### Vérifier les données de démonstration
+
+    ```sql
+    SELECT count() FROM cloudflare_http_logs;
+    -- Doit renvoyer 5000
+    ```
+
+    Accédez à la vue **Search** dans HyperDX, sélectionnez la source **Cloudflare Logs** et définissez la plage horaire sur **2026-02-23 00:00:00 - 2026-02-26 00:00:00**.
+
+    Vous devriez voir des entrées de logs avec des résumés de requêtes, des attributs Cloudflare interrogeables et des niveaux de gravité basés sur les codes d’état HTTP.
+
+    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="Vue de recherche" />
+
+    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="Vue des logs" />
+
+    <Info>
+      **Affichage du fuseau horaire**
+
+      HyperDX affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. Cette plage horaire étendue vous permet de voir les logs de démonstration quel que soit votre emplacement. Une fois les logs affichés, vous pouvez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Tableaux de bord et visualisation
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudflare-logs-dashboard.json'} download="cloudflare-logs-dashboard.json" eventName="docs.cloudflare_logs_monitoring.dashboard_download">Télécharger</TrackedLink> la configuration du tableau de bord
+  </Step>
+
+  <Step>
+    #### Importer un tableau de bord
+
+    1. HyperDX → **Dashboards** → **Import Dashboard**
+
+    <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="Importer un tableau de bord" />
+
+    2. Téléversez `cloudflare-logs-dashboard.json` → **Finish Import**
+
+    <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="Importer un tableau de bord" />
+  </Step>
+
+  <Step>
+    #### Afficher le tableau de bord
+
+    <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="Exemple de tableau de bord" />
+
+    <Note>
+      Pour le jeu de données de démonstration, réglez la plage horaire sur **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (à adapter à votre fuseau horaire local). Le tableau de bord importé n&#39;inclut pas de plage horaire par défaut.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="no-data">
+  ### Les données n’apparaissent pas dans ClickHouse
+</div>
+
+Vérifiez que la table a bien été créée et qu’elle contient des données :
+
+```sql
+SHOW TABLES FROM default LIKE 'cloudflare_http_logs';
+SELECT count() FROM cloudflare_http_logs;
+```
+
+Si la table existe mais est vide, vérifiez si ClickPipes signale des erreurs : ClickHouse Cloud Console → **Data Sources** → Votre ClickPipe → **Logs**. Pour les problèmes d’authentification liés aux buckets privés, consultez la [documentation sur le contrôle d’accès pour S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
+
+<div id="no-hyperdx">
+  ### Les logs n&#39;apparaissent pas dans HyperDX
+</div>
+
+Si les données sont bien dans ClickHouse mais ne s&#39;affichent pas dans HyperDX, vérifiez la configuration de la source de données :
+
+* Vérifiez qu&#39;une source existe pour `cloudflare_http_logs` dans HyperDX → **Team Settings** → **Sources**
+* Assurez-vous que **Timestamp Column** est définie sur `toDateTime(EdgeStartTimestamp / 1000000000)` — les timestamps Cloudflare sont en nanosecondes et doivent être convertis
+* Vérifiez que la plage horaire définie dans HyperDX couvre bien les données. Pour le jeu de données de démonstration, utilisez **2026-02-23 00:00:00 - 2026-02-26 00:00:00**
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+* Configurez des [alertes](/fr/clickstack/features/alerts) pour les événements de sécurité (blocages WAF, pics de trafic de bots, seuils de taux d’erreur)
+* Optimisez les [politiques de rétention](/fr/clickstack/managing/ttl) en fonction de votre volume de données
+* Créez des tableaux de bord supplémentaires pour des cas d’usage spécifiques (performances des API, optimisation du cache, analyse géographique du trafic)
+
+<div id="going-to-production">
+  ## Passer en production
+</div>
+
+Ce guide montre comment ingérer des logs Cloudflare à l’aide d’un jeu de données de démonstration public. Pour les déploiements de production, configurez Cloudflare Logpush pour écrire dans votre propre bucket S3 et configurez ClickPipes avec une [authentification basée sur les rôles IAM](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) afin de sécuriser l’accès. Sélectionnez uniquement les [champs Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) dont vous avez besoin afin de réduire les coûts de stockage et le volume d’ingestion. Activez les sous-dossiers quotidiens dans Logpush pour mieux organiser les fichiers, et utilisez `**/*` dans le motif de chemin ClickPipes pour inclure les sous-répertoires.
+
+Consultez la [documentation S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview) pour découvrir les options de configuration avancées, notamment l’[ingestion non ordonnée basée sur SQS](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order), utile pour gérer les chargements historiques et les fichiers arrivant dans le désordre.

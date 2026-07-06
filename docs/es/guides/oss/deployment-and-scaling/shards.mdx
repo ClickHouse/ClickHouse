@@ -1,0 +1,124 @@
+---
+slug: /shards
+title: 'Segmentos y réplicas de tablas'
+description: 'Qué son los segmentos y las réplicas de las tablas en ClickHouse'
+keywords: ['segmento', 'segmentos', 'segmentación', 'réplica', 'réplicas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<br />
+
+<Note>
+  Este tema no se aplica a ClickHouse Cloud, donde [Parallel Replicas](/es/products/cloud/features/infrastructure/parallel-replicas) funcionan como múltiples segmentos en los clústeres tradicionales shared-nothing de ClickHouse, y el almacenamiento de objetos [sustituye](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) a las réplicas, lo que garantiza alta disponibilidad y tolerancia a fallos.
+</Note>
+
+<div id="what-are-table-shards-in-clickhouse">
+  ## ¿Qué son los segmentos de una tabla en ClickHouse?
+</div>
+
+En los clústeres tradicionales de ClickHouse con arquitectura [sin recursos compartidos](https://en.wikipedia.org/wiki/Shared-nothing_architecture), la segmentación se utiliza cuando ① los datos son demasiado grandes para un solo servidor o ② un solo servidor es demasiado lento para procesarlos. La siguiente figura ilustra el caso ①, en el que la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) supera la capacidad de una sola máquina:
+
+<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+En ese caso, los datos pueden dividirse entre varios servidores ClickHouse en forma de segmentos de tabla:
+
+<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+Cada segmento contiene un subconjunto de los datos y funciona como una tabla normal de ClickHouse que puede consultarse de forma independiente. Sin embargo, las consultas solo procesarán ese subconjunto, lo que puede ser un caso de uso válido según la distribución de los datos. Normalmente, una [tabla distribuida](/es/reference/engines/table-engines/special/distributed) (a menudo una por servidor) proporciona una vista unificada del conjunto completo de datos. No almacena los datos por sí misma, sino que reenvía las consultas **SELECT** a todos los segmentos, recopila los resultados y enruta las operaciones **INSERT** para distribuir los datos de manera uniforme.
+
+<div id="distributed-table-creation">
+  ## Creación de una tabla distribuida
+</div>
+
+Para ilustrar el reenvío de consultas **SELECT** y el enrutamiento de **INSERT**, tomamos como referencia la tabla de ejemplo [Qué son las partes de las tablas](/es/concepts/core-concepts/parts), dividida en dos segmentos en dos servidores de ClickHouse. Primero, mostramos la sentencia DDL para crear la **tabla distribuida** correspondiente para esta configuración:
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_dist ON CLUSTER test_cluster
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
+```
+
+La cláusula `ON CLUSTER` convierte la sentencia DDL en una [sentencia DDL distribuida](/es/reference/statements/distributed-ddl), lo que indica a ClickHouse que cree la tabla en todos los servidores incluidos en la [definición del clúster](/es/guides/oss/deployment-and-scaling/examples/1-shard-2-replicas#configure-clickhouse-servers) `test_cluster`. El DDL distribuido requiere un componente adicional de [Keeper](https://clickhouse.com/clickhouse/keeper) en la [arquitectura del clúster](/es/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+Para los [parámetros del motor Distributed](/es/reference/engines/table-engines/special/distributed#distributed-parameters), especificamos el nombre del clúster (`test_cluster`), el nombre de la base de datos (`uk`) de la tabla de destino segmentada, el nombre de esa tabla de destino segmentada (`uk_price_paid_simple`) y la **clave de segmentación** para el enrutamiento de INSERT. En este ejemplo, usamos la función [rand](/es/reference/functions/regular-functions/random-functions#rand) para asignar filas a los segmentos de forma aleatoria. Sin embargo, cualquier expresión, incluso compleja, puede usarse como clave de segmentación, según el caso de uso. La siguiente sección muestra cómo funciona el enrutamiento de INSERT.
+
+<div id="insert-routing">
+  ## Enrutamiento de INSERT
+</div>
+
+El siguiente diagrama ilustra cómo se procesan los INSERT en una tabla distribuida en ClickHouse:
+
+<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① Un INSERT (con una sola fila) dirigido a la tabla distribuida se envía a un servidor de ClickHouse que aloja la tabla, ya sea directamente o a través de un balanceador de carga.
+
+② Para cada fila del INSERT (solo una en nuestro ejemplo), ClickHouse evalúa la clave de segmentación (aquí, rand()), calcula el resultado módulo el número de servidores de segmento y lo usa como ID del servidor de destino (los ID empiezan en 0 y se incrementan de 1 en 1). Después, la fila se reenvía y ③ se inserta en el segmento de tabla del servidor correspondiente.
+
+La siguiente sección explica cómo funciona el reenvío de SELECT.
+
+<div id="select-forwarding">
+  ## Reenvío de SELECT
+</div>
+
+Este diagrama muestra cómo se procesan las consultas SELECT con una tabla distribuida en ClickHouse:
+
+<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+① Una consulta SELECT de agregación dirigida a la tabla distribuida se envía al servidor de ClickHouse correspondiente, ya sea directamente o a través de un balanceador de carga.
+
+② La tabla distribuida reenvía la consulta a todos los servidores que alojan segmentos de la tabla de destino, donde cada servidor de ClickHouse calcula su resultado de agregación local **en paralelo**.
+
+A continuación, el servidor de ClickHouse que aloja la tabla distribuida a la que se dirigió inicialmente ③ recopila todos los resultados locales, ④ los combina en el resultado global final y ⑤ lo devuelve al emisor de la consulta.
+
+<div id="what-are-table-replicas-in-clickhouse">
+  ## ¿Qué son las réplicas de tabla en ClickHouse?
+</div>
+
+La replicación en ClickHouse garantiza la **integridad de los datos** y la **conmutación por error** al mantener **copias de los datos de los segmentos** en varios servidores. Dado que los fallos de hardware son inevitables, la replicación evita la pérdida de datos al garantizar que cada segmento tenga varias réplicas. Las escrituras pueden dirigirse a cualquier réplica, ya sea directamente o a través de una [tabla distribuida](#distributed-table-creation), que selecciona una réplica para la operación. Los cambios se propagan automáticamente al resto de réplicas. En caso de fallo o mantenimiento, los datos siguen estando disponibles en otras réplicas y, cuando un host que falló se recupera, se sincroniza automáticamente para mantenerse actualizado.
+
+Tenga en cuenta que la replicación requiere un componente [Keeper](https://clickhouse.com/clickhouse/keeper) en la [arquitectura del clúster](/es/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+El siguiente diagrama ilustra un clúster de ClickHouse con seis servidores, donde los dos segmentos de tabla `Shard-1` y `Shard-2` introducidos anteriormente tienen cada uno tres réplicas. Se envía una consulta a este clúster:
+
+<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="SHARDS" />
+
+<br />
+
+El procesamiento de consultas funciona de forma similar a las configuraciones sin réplicas, y solo una réplica de cada segmento ejecuta la consulta.
+
+> Las réplicas no solo garantizan la integridad de los datos y la conmutación por error, sino que también mejoran el rendimiento del procesamiento de consultas al permitir que varias consultas se ejecuten en paralelo en distintas réplicas.
+
+① Se envía una consulta dirigida a la tabla distribuida al servidor de ClickHouse correspondiente, ya sea directamente o a través de un balanceador de carga.
+
+② La tabla distribuida reenvía la consulta a una réplica de cada segmento, donde cada servidor de ClickHouse que aloja la réplica seleccionada calcula en paralelo el resultado de su consulta local.
+
+El resto funciona [igual](#select-forwarding) que en las configuraciones sin réplicas y no se muestra en el diagrama anterior. El servidor de ClickHouse que aloja la tabla distribuida a la que se dirigió inicialmente la consulta recopila todos los resultados locales, los fusiona en el resultado global final y se lo devuelve a quien envió la consulta.
+
+Tenga en cuenta que ClickHouse permite configurar la estrategia de reenvío de consultas para ②. De forma predeterminada, a diferencia de lo que se muestra en el diagrama anterior, la tabla distribuida [prefiere](/es/reference/settings/session-settings#prefer_localhost_replica) una réplica local si está disponible, pero también pueden usarse otras [estrategias](/es/reference/settings/session-settings#load_balancing).
+
+<div id="where-to-find-more-information">
+  ## Dónde encontrar más información
+</div>
+
+Para obtener más detalles más allá de esta introducción general a los segmentos y las réplicas de tablas, consulta nuestra [guía de implementación y escalado](/es/guides/oss/deployment-and-scaling/examples/2-shards-1-replica).
+
+También recomendamos encarecidamente este video tutorial para profundizar en los segmentos y las réplicas de ClickHouse:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vBjCJtw_Ei0?si=WqopTrnti6usCMRs" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

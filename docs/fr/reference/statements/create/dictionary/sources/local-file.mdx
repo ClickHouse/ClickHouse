@@ -1,0 +1,45 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/local-file
+title: 'Source de dictionnaire de fichier local'
+sidebarTitle: 'Fichier local'
+description: 'Configurer un fichier local comme source de dictionnaire dans ClickHouse.'
+doc_type: 'reference'
+---
+
+La source de fichier local charge les données du dictionnaire à partir d’un fichier situé sur le système de fichiers local. Cela est utile pour les petites tables de correspondance statiques qui peuvent être stockées sous forme de fichiers plats dans des formats tels que TSV, CSV ou tout autre [format pris en charge](/fr/reference/formats/index).
+
+Exemple de paramètres :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <source>
+      <file>
+        <path>/opt/dictionaries/os.tsv</path>
+        <format>TabSeparated</format>
+      </file>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Champs des paramètres :
+
+| Paramètre | Description                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------ |
+| `path`    | Le chemin absolu vers le fichier.                                                                            |
+| `format`  | Le format du fichier. Tous les formats décrits dans [Formats](/fr/reference/formats/index) sont pris en charge. |
+
+Lorsqu’un dictionnaire avec la source `FILE` est créé via une commande DDL (`CREATE DICTIONARY ...`), le fichier source doit se trouver dans le répertoire `user_files` afin d’empêcher les utilisateurs de la base de données d’accéder à des fichiers quelconques sur le nœud ClickHouse.
+
+**Voir aussi**
+
+* [Fonction de dictionnaire](/fr/reference/functions/table-functions/dictionary)

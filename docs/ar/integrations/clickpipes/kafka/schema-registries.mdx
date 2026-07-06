@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'التكامل مع سجل مخططات'
+description: 'كيفية دمج ClickPipes مع سجل مخططات لإدارة المخططات.'
+slug: /integrations/clickpipes/kafka/schema-registries
+title: 'سجلات المخططات لـ Kafka ClickPipe'
+doc_type: 'guide'
+keywords: ['سجلات المخططات', 'kafka', 'clickpipes', 'avro', 'confluent']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+يدعم ClickPipes التكامل مع سجل مخططات لفك ترميز موضوعات Kafka المشفّرة بتنسيقَي Avro وProtobuf.
+
+<div id="supported-schema-registries">
+  ## سجلات المخططات المدعومة لـ Kafka ClickPipes
+</div>
+
+تتوفّر إمكانية دعم سجلات المخططات المتوافقة مع واجهة برمجة التطبيقات الخاصة بـ Confluent Schema Registry. ويشمل ذلك:
+
+* Confluent Schema Registry
+* Redpanda Schema Registry
+
+لا يدعم ClickPipes حتى الآن AWS Glue Schema Registry أو Azure Schema Registry. إذا كنت بحاجة إلى دعم سجلات المخططات هذه، [فتواصل مع فريقنا](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="schema-registry-configuration">
+  ## الإعداد
+</div>
+
+للتكامل مع سجل مخططات أثناء إعداد ClickPipes، يجب استخدام أحد الأساليب التالية:
+
+1. توفير مسار كامل إلى subject المخطط (مثل: `https://registry.example.com/subjects/events`)
+   * اختياريًا، يمكن الإشارة إلى إصدار محدد بإضافة `/versions/[version]` إلى URL (وإلا سيسترجع ClickPipes أحدث إصدار).
+2. توفير مسار كامل إلى معرّف المخطط (مثل: `https://registry.example.com/schemas/ids/1000`)
+3. توفير URL الجذر لسجل مخططات (مثل: `https://registry.example.com`)
+
+<div id="network-connectivity">
+  ## اتصال الشبكة
+</div>
+
+يتصل ClickPipes بسجل مخططات عبر HTTPS باستخدام عنوان URL الذي توفّره. ولا يشترط أن يكون سجل مخططات متاحًا عبر الإنترنت العام.
+
+إذا كان الوصول إلى وسطاء Kafka يتم عبر [نقطة نهاية خاصة عكسية](/ar/integrations/clickpipes/aws-privatelink) (AWS PrivateLink أو GCP Private Service Connect)، فيمكن لسجل مخططات استخدام الاتصال الخاص نفسه. ويحلّ ClickPipes اسم مضيف السجل عبر DNS الخاص بنقطة النهاية الخاصة العكسية، لذا يمكن الوصول إلى سجل مستضاف بشكل خاص إلى جانب الوسطاء لديك طالما أن اسم مضيفه يُحل إلى عناوين IP الخاصة بنقطة النهاية الخاصة العكسية (عبر دعم DNS الخاص بنقطة النهاية أو عبر تعيين DNS خاص مخصّص).
+
+ضع ما يلي في اعتبارك:
+
+* يجب أن يستخدم عنوان URL لسجل مخططات `https://`.
+* إذا كان اسم مضيف السجل يُحل إلى عنوان خاص، فيجب أن يكون الوصول إليه ممكنًا عبر نقطة نهاية خاصة عكسية محددة لـ ClickPipe؛ وإلا فسيفشل فحص الاتصال أثناء الإعداد.
+
+<div id="how-schema-registries-work">
+  ## كيف يعمل ذلك
+</div>
+
+يسترجع ClickPipes المخطط من سجل مخططات المُعدّ ويطبّقه ديناميكيًا.
+
+* إذا كان هناك schema ID مضمن في الرسالة، فسيستخدمه لاسترجاع المخطط.
+* إذا لم يكن هناك schema ID مضمن في الرسالة، فسيستخدم schema ID أو اسم الموضوع المحدد في تهيئة ClickPipe لاسترجاع المخطط.
+* إذا كُتبت الرسالة بدون schema ID مضمن، ولم يتم تحديد schema ID أو اسم الموضوع في تهيئة ClickPipe، فلن يتم استرجاع المخطط وسيتم تخطي الرسالة مع تسجيل `SOURCE_SCHEMA_ERROR` في جدول الأخطاء الخاص بـ ClickPipes.
+* إذا لم تكن الرسالة مطابقة للمخطط، فسيتم تخطيها مع تسجيل `DATA_PARSING_ERROR` في جدول الأخطاء الخاص بـ ClickPipes.
+* بالنسبة إلى مخططات Protobuf فقط: سيحمّل ClickPipes أي مخططات مستوردة مُعرّفة كتبعيات. أما مخططات Avro ذات المراجع الخارجية فليست مدعومة بعد.
+
+<div id="schema-mapping">
+  ## مواءمة المخطط
+</div>
+
+تُطبَّق القواعد التالية على المواءمة بين المخطط المسترجَع وجدول الوجهة في ClickHouse:
+
+* إذا كان المخطط يحتوي على حقل غير مُدرَج في مواءمة وجهة ClickHouse، فسيتم تجاهل هذا الحقل.
+* إذا كان المخطط يفتقد حقلاً مُعرَّفًا في مواءمة وجهة ClickHouse، فسيُملأ عمود ClickHouse بقيمة &quot;صفرية&quot;، مثل 0 أو سلسلة فارغة. لاحظ أن تعبيرات `DEFAULT` غير مدعومة.
+* إذا كان حقل المخطط وعمود ClickHouse غير متوافقين، فستفشل عمليات إدراج ذلك الصف/تلك الرسالة، وسيُسجَّل الفشل في جدول الأخطاء الخاص بـ ClickPipes. لاحظ أن بعض التحويلات الضمنية مدعومة (على سبيل المثال، بين الأنواع الرقمية)، ولكن ليس جميعها (على سبيل المثال، لا يمكن إدراج حقل سجل Avro في عمود ClickHouse من النوع `Int32`).

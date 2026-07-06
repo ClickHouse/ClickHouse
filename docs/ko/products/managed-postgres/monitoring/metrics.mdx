@@ -1,0 +1,126 @@
+---
+slug: /cloud/managed-postgres/monitoring/metrics
+sidebarTitle: '메트릭 참고'
+title: 'Managed Postgres 메트릭 참고'
+description: 'Managed Postgres Prometheus 엔드포인트를 통해 노출되는 메트릭 전체 목록'
+keywords: ['managed postgres', '메트릭', 'prometheus', '참고', '관측성']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
+
+이 페이지에는
+[Managed Postgres Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus)에서 노출되는 모든 메트릭이 나열되어 있습니다.
+설정 및 인증에 대해서는 [Prometheus 엔드포인트] 페이지를 참조하십시오.
+
+<div id="common-labels">
+  ## 공통 레이블
+</div>
+
+모든 메트릭에는 다음 레이블이 포함됩니다.
+
+| Label                   | Description     |
+| ----------------------- | --------------- |
+| `clickhouse_org`        | 조직 ID           |
+| `postgres_service`      | Postgres 서비스 ID |
+| `postgres_service_name` | Postgres 서비스 이름 |
+
+일부 메트릭에는 구분 기준이 되는 차원에 대한 레이블이 추가로 포함됩니다(예:
+CPU 메트릭의 `mode`, 연결의 `state`, 데이터베이스 크기의 `database`).
+이러한 레이블은 각 메트릭과 함께 나열됩니다.
+
+<div id="information-metric">
+  ## 정보 메트릭
+</div>
+
+`PostgresServiceInfo`는 값이 항상 `1`인 게이지로, 레이블에
+서비스의 현재 상태와 버전이 포함됩니다. 이를 사용해
+다른 메트릭에 상태를 조인하거나, 서비스가
+`running` 상태를 벗어날 때 알림을 설정할 수 있습니다.
+
+| 메트릭                   | 유형    | 추가 레이블                                | 설명                                  |
+| --------------------- | ----- | ------------------------------------- | ----------------------------------- |
+| `PostgresServiceInfo` | gauge | `postgres_status`, `postgres_version` | 서비스마다 하나의 series가 있으며 값은 항상 `1`입니다. |
+
+`postgres_status`는 서비스의 현재 수명 주기 상태를 나타냅니다
+(예: `running`, `creating`, `stopped`). `postgres_version`은
+Postgres의 메이저 버전(예: `17`, `18`)을 나타냅니다.
+
+<div id="capacity">
+  ## 용량
+</div>
+
+서비스에 프로비저닝된 정적 한도입니다. 이 값은
+서비스 크기를 조정할 때만 변경됩니다.
+
+| 메트릭                                | 유형    | 단위    | 설명                    |
+| ---------------------------------- | ----- | ----- | --------------------- |
+| `PostgresServer_CPUCores`          | gauge | cores | 서비스에 할당된 CPU 코어 수입니다. |
+| `PostgresServer_MemoryLimitBytes`  | gauge | bytes | 서비스에 할당된 메모리입니다.      |
+| `PostgresServer_StorageLimitBytes` | gauge | bytes | 서비스에 할당된 스토리지입니다.     |
+
+<div id="resource-utilization">
+  ## 리소스 사용률
+</div>
+
+| 메트릭                                    | 유형  | 추가 레이블 | 설명                                                                                               |
+| -------------------------------------- | --- | ------ | ------------------------------------------------------------------------------------------------ |
+| `PostgresServer_CPUSeconds_Total`      | counter | `mode` | 사용된 CPU 시간이며, 모드별로 구분됩니다: `user`, `system`, `iowait`, `softirq`, `steal`, `irq`, `nice`, `idle`. |
+| `PostgresServer_MemoryUsedPercent`     | gauge |        | 사용 중인 메모리로, `PostgresServer_MemoryLimitBytes` 대비 백분율입니다.                                         |
+| `PostgresServer_MemoryCachePercent`    | gauge |        | 캐시와 버퍼가 사용하는 메모리로, 전체 메모리 대비 백분율입니다.                                                             |
+| `PostgresServer_FilesystemUsedPercent` | gauge |        | 사용된 파일 시스템 공간으로, 전체 스토리지 대비 백분율입니다.                                                              |
+
+CPU 사용률을 백분율로 계산하려면,
+확인하려는 모드에 대한 `PostgresServer_CPUSeconds_Total`의 rate를 구한 다음
+`PostgresServer_CPUCores`로 나누십시오.
+
+<div id="io">
+  ## 디스크 및 네트워크 I/O
+</div>
+
+| 메트릭                                         | 유형      | 단위    | 설명                 |
+| ------------------------------------------- | ------- | ----- | ------------------ |
+| `PostgresServer_DiskReads_Total`            | counter | ops   | 완료된 디스크 읽기 작업 수    |
+| `PostgresServer_DiskWrites_Total`           | counter | ops   | 완료된 디스크 쓰기 작업 수    |
+| `PostgresServer_NetworkReceiveBytes_Total`  | counter | bytes | 네트워크를 통해 수신한 바이트 수 |
+| `PostgresServer_NetworkTransmitBytes_Total` | counter | bytes | 네트워크를 통해 전송한 바이트 수 |
+
+<div id="database-activity">
+  ## 데이터베이스 활동
+</div>
+
+서비스 시작 이후 누적된 카운터입니다. `rate()` 또는 `irate()`를 사용해
+초당 값으로 변환합니다.
+
+| 메트릭                                           | 유형  | 설명              |
+| --------------------------------------------- | --- | --------------- |
+| `PostgresServer_TuplesFetched_Total`          | counter | 쿼리가 가져온 행 수입니다. |
+| `PostgresServer_TuplesInserted_Total`         | counter | 삽입된 행 수입니다.     |
+| `PostgresServer_TuplesUpdated_Total`          | counter | 업데이트된 행 수입니다.   |
+| `PostgresServer_TuplesDeleted_Total`          | counter | 삭제된 행 수입니다.     |
+| `PostgresServer_TransactionsCommitted_Total`  | counter | 커밋된 트랜잭션 수입니다.  |
+| `PostgresServer_TransactionsRolledBack_Total` | counter | 롤백된 트랜잭션 수입니다.  |
+| `PostgresServer_Deadlocks_Total`              | counter | 감지된 데드락 수입니다.   |
+
+<div id="connections-cache-size">
+  ## 연결, 캐시, 데이터베이스 크기
+</div>
+
+| 메트릭                                | 유형    | 추가 레이블     | 설명                                                                         |
+| ---------------------------------- | ----- | ---------- | -------------------------------------------------------------------------- |
+| `PostgresServer_ActiveConnections` | gauge | `state`    | 상태별 연결 수입니다(예: `active`, `idle`).                                          |
+| `PostgresServer_CacheHitRatio`     | gauge |            | 버퍼 캐시 적중률입니다. 전체 접근 블록 수 대비 캐시에서 제공된 블록 수의 비율을 백분율로 나타냅니다.                 |
+| `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 각 데이터베이스의 디스크 크기(바이트)입니다. `postgres` 기본 데이터베이스와 사용자가 생성한 모든 데이터베이스를 포함합니다. |
+
+<div id="related">
+  ## 관련 페이지
+</div>
+
+* [Prometheus 엔드포인트] — 설정, 인증 및 스크레이핑
+* [대시보드](/ko/products/managed-postgres/monitoring/dashboard) — Cloud Console에 기본 제공되는 차트
+* [OpenAPI 가이드](/ko/products/managed-postgres/openapi) — API Key 생성
+  및 조직과 서비스 ID 조회
+
+[Prometheus 엔드포인트]: /products/managed-postgres/monitoring/prometheus

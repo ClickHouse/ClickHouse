@@ -1687,6 +1687,14 @@ protected:
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
+    /// Runs the same metadata validation as `setProperties` but without publishing
+    /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
+    /// the durable commit.
+    void checkMetadataProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        ContextPtr local_context) const;
+
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
@@ -1749,6 +1757,7 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
     void checkTableCanBeDropped(ContextPtr query_context) const override;
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;
