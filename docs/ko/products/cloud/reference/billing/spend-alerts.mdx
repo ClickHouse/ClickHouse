@@ -1,0 +1,78 @@
+---
+sidebarTitle: '지출 알림'
+slug: /cloud/manage/billing/spend-alerts
+title: '조직 지출 알림 구성'
+description: '청구 기간 동안 임계값을 기준으로 ClickHouse Cloud 사용량을 모니터링할 수 있도록 지출 알림을 구성합니다.'
+keywords: ['청구', '지출 알림', '사용량 임계값', '알림', '비용 모니터링', '조직 청구']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+지출 알림은 청구 기간 동안 조직의 사용량이 설정된 임계값에 도달하면 알려 주므로 예상치 못한 요금이 발생하는 것을 방지할 수 있습니다. 이 기능은 알림만 전송합니다. 자동 청구를 트리거하는 임계값은 [임계값](/ko/products/cloud/reference/billing/payment-thresholds)을 참조하십시오.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* 지출 알림을 설정하고 확인하려면 **조직 관리자** 또는 **청구 관리자** 역할이 있어야 합니다.
+
+<div id="how-spend-alerts-work">
+  ## 지출 알림 작동 방식
+</div>
+
+* 알림은 청구 기간 내 총 사용량을 기준으로 하며, 새 주기가 시작될 때마다 재설정됩니다.
+* 알림은 해당 시점에 계산된 총 사용량을 기준으로 매시간 실행되므로, 임계값을 초과한 뒤 알림이 발생합니다.
+
+<Info>
+  **지출 알림은 사용량 상한을 설정하지 않습니다**
+
+  지출 알림이 100%에 도달해도 사용이 제한되거나 사용량 상한이 적용되지는 않습니다. 지출은 100% 임계값을 초과한 이후에도 계속 누적됩니다.
+</Info>
+
+<div id="set-up-spend-alert">
+  ## 지출 알림 설정
+</div>
+
+<Steps>
+  <Step>
+    ### 지출 알림 대화 상자 열기
+
+    1. ClickHouse Cloud 콘솔에서 **Organization &gt; Billing**으로 이동합니다.
+    2. **Actions &gt; Add spend alerts**를 클릭합니다.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Actions 메뉴가 열려 있고 Add spend alerts가 강조 표시된 청구 페이지" size="lg" />
+  </Step>
+
+  <Step>
+    ### 알림 구성 및 저장
+
+    1. 청구 기간마다 달러 또는 크레딧 기준의 지출 알림 금액을 입력합니다.
+    2. 알림 채널(**Email**, **UI**, **Slack**) 중 하나 이상을 선택합니다.
+    3. **Save**를 클릭합니다.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="지출 한도, 자동 임계값 알림, 알림 채널이 표시된 조직 지출 알림 대화 상자" size="md" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## 자동 임계값 알림
+</div>
+
+설정된 지출 알림 금액에 따라 3개의 알림이 자동으로 생성되고 실행됩니다.
+
+| 임계값      | 실행 조건          | 예시 ($10 알림) |
+| -------- | -------------- | ----------- |
+| **50%**  | 지출 금액의 절반에 도달  | $5          |
+| **75%**  | 지출 금액의 75%에 도달 | $7.50       |
+| **100%** | 전체 지출 금액에 도달   | $10         |
+
+<div id="notification-channels">
+  ## 알림 채널
+</div>
+
+| 채널        | 설명                                              |
+| --------- | ----------------------------------------------- |
+| **Email** | 설정된 이메일 주소로 알림을 보냅니다. 수신자를 변경하려면 편집 아이콘을 클릭하세요. |
+| **UI**    | ClickHouse Cloud 콘솔에 알림을 표시합니다.                 |
+| **Slack** | Slack 채널로 알림을 보냅니다. 설정하려면 편집 아이콘을 클릭하세요.        |

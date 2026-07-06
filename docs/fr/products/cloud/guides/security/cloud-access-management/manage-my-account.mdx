@@ -1,0 +1,137 @@
+---
+sidebarTitle: 'Gérer mon compte'
+slug: /cloud/security/manage-my-account
+title: 'Gérer mon compte'
+description: 'Cette page explique comment accepter des invitations, gérer les paramètres MFA et réinitialiser des mots de passe'
+doc_type: 'guide'
+keywords: ['gestion des comptes', 'profil utilisateur', 'sécurité', 'Cloud Console', 'paramètres']
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="accept-invitation">
+  ## Accepter une invitation
+</div>
+
+Vous pouvez utiliser plusieurs méthodes pour accepter une invitation à rejoindre une organisation. S&#39;il s&#39;agit de votre première invitation, sélectionnez ci-dessous la méthode d&#39;authentification appropriée pour votre organisation.
+
+S&#39;il ne s&#39;agit pas de votre première organisation, connectez-vous soit à votre organisation existante, puis acceptez l&#39;invitation depuis la partie inférieure gauche de la page, soit acceptez l&#39;invitation depuis votre e-mail et connectez-vous avec votre compte existant.
+
+<Info>
+  **Utilisateurs SAML**
+
+  Les organisations utilisant SAML disposent d&#39;une connexion distincte pour chaque organisation ClickHouse. Utilisez le lien direct fourni par votre administrateur pour vous connecter.
+</Info>
+
+<div id="email-and-password">
+  ### Adresse e-mail et mot de passe
+</div>
+
+ClickHouse Cloud vous permet de vous authentifier à l’aide d’une adresse e-mail et d’un mot de passe. Si vous utilisez cette méthode, la meilleure façon de protéger votre compte ClickHouse est d’employer un mot de passe fort. De nombreuses ressources en ligne peuvent vous aider à créer un mot de passe facile à retenir. Vous pouvez également utiliser un générateur de mots de passe aléatoires et enregistrer votre mot de passe dans un gestionnaire de mots de passe pour renforcer la sécurité.
+
+Les mots de passe doivent comporter au minimum 12 caractères et répondre à 3 des 4 exigences de complexité suivantes : lettres majuscules, lettres minuscules, chiffres et/ou caractères spéciaux.
+
+<div id="social-sso">
+  ### Authentification unique (SSO) via Google ou Microsoft
+</div>
+
+Utilisez `Continue with Google` ou `Continue with Microsoft Account` pour vous inscrire à des services ou accepter des invitations.
+
+Si votre entreprise utilise Google Workspace ou Microsoft 365, vous pouvez tirer parti de votre configuration actuelle d&#39;authentification unique dans ClickHouse Cloud. Pour cela, il vous suffit de vous inscrire avec votre adresse e-mail professionnelle et d&#39;inviter d&#39;autres utilisateurs avec leur adresse e-mail professionnelle. Ainsi, vos utilisateurs devront se connecter via le parcours de connexion de votre entreprise, soit par l&#39;intermédiaire de votre fournisseur d&#39;identité, soit directement via l&#39;authentification Google ou Microsoft, avant de pouvoir s&#39;authentifier dans ClickHouse Cloud.
+
+<div id="saml-sso">
+  ### Authentification unique SAML (SSO)
+</div>
+
+<EnterprisePlanFeatureBadge feature="SAML SSO" />
+
+Les utilisateurs de SAML SSO sont automatiquement ajoutés par leur fournisseur d’identité lorsqu’ils se connectent. Les utilisateurs de ClickHouse Cloud disposant du rôle Admin de l’organisation peuvent [gérer les rôles](/fr/products/cloud/guides/security/cloud-access-management/manage-cloud-users) attribués aux utilisateurs SAML et imposer SAML comme seule méthode d’authentification.
+
+<div id="mfa">
+  ## Gérer l’authentification multifacteur (MFA)
+</div>
+
+Les utilisateurs qui se connectent avec une adresse e-mail et un mot de passe, ou via une authentification sociale, peuvent renforcer la sécurité de leur compte à l’aide de l’authentification multifacteur (MFA). Pour configurer la MFA :
+
+1. Connectez-vous à [console.clickhouse.cloud](https://console.clickhouse.cloud/)
+2. Cliquez sur vos initiales dans le coin supérieur gauche, à côté du logo ClickHouse
+3. Sélectionnez Profil
+4. Sélectionnez Sécurité dans le menu de gauche
+5. Cliquez sur Configurer dans l’encadré Authenticator app
+6. Utilisez une application d’authentification, comme Authy, 1Password ou Google Authenticator, pour scanner le code QR
+7. Saisissez le code pour confirmer
+8. Sur l’écran suivant, copiez le code de récupération et conservez-le dans un endroit sûr
+9. Cochez la case à côté de `I have safely recorded this code`
+10. Cliquez sur Continuer
+
+<div id="obtain-recovery-code">
+  ### Obtenir un nouveau code de récupération
+</div>
+
+Si vous avez déjà activé la MFA et que vous n’avez pas créé votre code de récupération ou que vous l’avez égaré, suivez ces étapes pour obtenir un nouveau code de récupération :
+
+1. Accédez à https://console.clickhouse.cloud
+2. Connectez-vous avec vos identifiants et la MFA
+3. Accédez à votre profil dans le coin supérieur gauche
+4. Cliquez sur Security à gauche
+5. Cliquez sur l’icône de corbeille à côté de votre Authenticator app
+6. Cliquez sur Remove authenticator app
+7. Saisissez votre code et cliquez sur Continue
+8. Cliquez sur Set up dans la section Authenticator app
+9. Scannez le code QR et saisissez le nouveau code
+10. Copiez votre code de récupération et conservez-le en lieu sûr
+11. Cochez la case à côté de `I have safely recorded this code`
+12. Cliquez sur Continue
+
+<div id="account-recovery">
+  ## Récupération du compte
+</div>
+
+<div id="forgot-password">
+  ### Mot de passe oublié
+</div>
+
+Si vous avez oublié votre mot de passe, suivez ces étapes pour le réinitialiser en libre-service :
+
+1. Accédez à https://console.clickhouse.cloud
+2. Saisissez votre adresse e-mail, puis cliquez sur Continuer
+3. Cliquez sur Mot de passe oublié ?
+4. Cliquez sur Envoyer le lien de réinitialisation du mot de passe
+5. Consultez votre messagerie, puis cliquez sur Réinitialiser le mot de passe dans l’e-mail
+6. Saisissez votre nouveau mot de passe, confirmez-le, puis cliquez sur Mettre à jour le mot de passe
+7. Cliquez sur Retour à la connexion
+8. Connectez-vous normalement avec votre nouveau mot de passe
+
+<div id="mfa-self-serivce-recovery">
+  ### Récupération MFA en libre-service
+</div>
+
+Si vous avez perdu votre appareil MFA ou supprimé votre jeton, suivez ces étapes pour récupérer l’accès et créer un nouveau jeton :
+
+1. Accédez à https://console.clickhouse.cloud
+2. Saisissez vos identifiants et cliquez sur Continue
+3. Sur l’écran d’authentification multifacteur, cliquez sur Cancel
+4. Cliquez sur Recovery code
+5. Saisissez le code et cliquez sur Continue
+6. Copiez le nouveau code de récupération et conservez-le dans un endroit sûr
+7. Cochez la case à côté de `I have safely recorded this code` et cliquez sur Continue
+8. Une fois connecté, accédez à votre profil en haut à gauche
+9. Cliquez sur Security en haut à gauche
+10. Cliquez sur l’icône de corbeille à côté de Authenticator app pour supprimer votre ancien authentificateur
+11. Cliquez sur Remove authenticator app
+12. Lorsque l’authentification multifacteur vous est demandée, cliquez sur Cancel
+13. Cliquez sur Recovery code
+14. Saisissez votre code de récupération (il s’agit du nouveau code généré à l’étape 7) et cliquez sur Continue
+15. Copiez le nouveau code de récupération et conservez-le dans un endroit sûr - il s’agit d’une sécurité de secours au cas où vous quitteriez l’écran pendant le processus de suppression
+16. Cochez la case à côté de `I have safely recorded this code` et cliquez sur Continue
+17. Suivez la procédure ci-dessus pour configurer un nouveau facteur MFA
+
+<div id="lost-mfa-and-recovery-code">
+  ### Perte de l’appareil MFA et du code de récupération
+</div>
+
+Si vous avez perdu votre appareil MFA ET votre code de récupération, ou si vous avez perdu votre appareil MFA sans avoir jamais obtenu de code de récupération, suivez ces étapes pour demander une réinitialisation :
+
+**Soumettre un ticket** : Si vous faites partie d’une organisation qui compte d’autres utilisateurs administrateurs, même si vous tentez d’accéder à une organisation ne comportant qu’un seul utilisateur, demandez à un membre de votre organisation ayant le rôle Admin de se connecter à l’organisation et de soumettre un ticket d’assistance en votre nom pour réinitialiser votre MFA. Une fois la demande authentifiée, nous réinitialiserons votre MFA et en informerons l’Admin. Connectez-vous ensuite comme d’habitude, sans MFA, puis accédez aux paramètres de votre profil pour configurer un nouveau facteur si vous le souhaitez.
+
+**Réinitialisation par e-mail** : Si vous êtes le seul utilisateur de l’organisation, soumettez une demande d’assistance par e-mail (support@clickhouse.com) en utilisant l’adresse e-mail associée à votre compte. Une fois que nous aurons vérifié que la demande provient de la bonne adresse e-mail, nous réinitialiserons votre MFA ET votre mot de passe. Consultez votre messagerie pour accéder au lien de réinitialisation du mot de passe. Définissez ensuite un nouveau mot de passe, puis accédez aux paramètres de votre profil pour configurer un nouveau facteur si vous le souhaitez.

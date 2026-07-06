@@ -1,0 +1,37 @@
+---
+title: 관리형 환경 탐색
+---
+
+&quot;Launch ClickStack&quot;을 선택하여 ClickStack UI(HyperDX)에 액세스합니다. 자동으로 인증된 후 해당 화면으로 리디렉션됩니다.
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    모든 OpenTelemetry 데이터에 대한 데이터 소스가 미리 생성됩니다.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+
+  <Tab title="Vector">
+    Vector를 사용하는 경우 데이터 소스를 직접 생성해야 합니다. 처음 로그인하면 데이터 소스를 생성하라는 안내가 표시됩니다. 아래에는 로그 데이터 소스에 대한 예시 구성을 보여줍니다.
+
+    <img src="/images/clickstack/create-vector-datasource.webp" alt="" />
+
+    이 구성은 `time_local` 컬럼을 타임스탬프로 사용하는 Nginx 스타일 스키마를 가정합니다. 가능하면 이 컬럼은 프라이머리 키(primary key)에 선언된 타임스탬프 컬럼이어야 합니다. **이 컬럼은 필수입니다**.
+
+    또한 로그 보기에서 반환할 컬럼을 명시적으로 정의할 수 있도록 `Default SELECT`를 업데이트하는 것이 좋습니다. 서비스 이름, 로그 레벨 또는 본문 컬럼과 같은 추가 필드를 사용할 수 있다면 이들도 구성할 수 있습니다. 표시용 타임스탬프 컬럼이 테이블의 프라이머리 키에 사용된 컬럼 및 위에서 구성한 컬럼과 다를 경우, 이를 재정의할 수도 있습니다.
+
+    위 예시에서는 데이터에 `Body` 컬럼이 없습니다. 대신 사용 가능한 필드에서 Nginx 로그 라인을 재구성하는 SQL 표현식으로 정의합니다.
+
+    다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
+
+    생성이 완료되면 검색 보기로 이동하며, 즉시 데이터 탐색을 시작할 수 있습니다.
+
+    <img src="/images/clickstack/getting-started/clickstack_managed_ui.webp" alt="" />
+  </Tab>
+</Tabs>
+
+<br />
+
+이제 준비가 모두 완료되었습니다. 🎉
+
+이제 ClickStack을 살펴보십시오. 로그와 트레이스 검색을 시작하고, 로그·트레이스·메트릭이 실시간으로 어떻게 연관되는지 확인하고, 대시보드를 만들고, 서비스 맵을 탐색하고, Event deltas와 패턴을 파악하고, 알림을 설정하여 문제에 선제적으로 대응할 수 있습니다.

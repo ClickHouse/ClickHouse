@@ -843,6 +843,7 @@ The string encoding of the tuple data type presents similar challenges as with t
 For example, in the following table, the tuple contains an enum with a tick and parenthesis in the name, which can cause parsing issues if not handled properly:
 
 ```sql
+SET enable_nullable_tuple_type = 1;
 CREATE OR REPLACE TABLE foo
 (
    `t` Tuple(
@@ -1432,15 +1433,15 @@ More complex functions like `uniq`, `quantile`, or `groupArray` use implementati
 
 ### QBit {#qbit}
 
-`QBit` is a vector type for efficient lookup with different levels of precision. Internally it’s stored in a transposed format. On the wire, QBit is simply an `Array` of the underlying element type (`Float32`, `Float64`, or `BFloat16`). The bit-transpose optimization for storage happens server-side, not in the RowBinary protocol.
+`QBit` is a vector type for efficient lookup with different levels of precision. Internally it’s stored in a transposed format. On the wire, QBit is simply an `Array` of the underlying element type (`Int8`, `Float32`, `Float64`, or `BFloat16`). The bit-transpose optimization for storage happens server-side, not in the RowBinary protocol.
 
 Syntax:
 
 ```text
-QBit(element_type, dimension)
+QBit(element_type, dimension[, stride])
 ```
 
-Where `element_type` is `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension.
+Where `element_type` is `Int8`, `Float32`, `Float64`, or `BFloat16`, and `dimension` is the fixed vector dimension. The optional `stride` only controls how the bit planes are grouped into storage streams server-side; it does not affect the RowBinary wire format, which is always the full array of `dimension` elements.
 
 Wire format: identical to `Array(element_type)`:
 

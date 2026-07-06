@@ -63,7 +63,9 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinAlgorithm, ErrorCodes::UNKNOWN_JOIN,
 
 IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
     {{"greedy",             JoinOrderAlgorithm::GREEDY},
-     {"dpsize",             JoinOrderAlgorithm::DPSIZE}})
+     {"dpsize",             JoinOrderAlgorithm::DPSIZE},
+     {"dpsub",              JoinOrderAlgorithm::DPSUB},
+     {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
@@ -128,6 +130,10 @@ IMPLEMENT_SETTING_ENUM(AggregateFunctionInputFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"state", FormatSettings::AggregateFunctionInputFormat::State},
     {"value", FormatSettings::AggregateFunctionInputFormat::Value},
     {"array", FormatSettings::AggregateFunctionInputFormat::Array}})
+
+IMPLEMENT_SETTING_ENUM(GeoJSONUnsupportedGeometryHandling, ErrorCodes::BAD_ARGUMENTS,
+    {{"throw", FormatSettings::UnsupportedGeometryHandling::Throw},
+     {"null",  FormatSettings::UnsupportedGeometryHandling::Null}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(LogsLevel, ErrorCodes::BAD_ARGUMENTS)
 
@@ -382,6 +388,13 @@ IMPLEMENT_SETTING_ENUM(
      {"lon_lat", GeoToH3ArgumentOrder::LON_LAT}})
 
 IMPLEMENT_SETTING_ENUM(
+    SkipUnavailableShardsMode,
+    ErrorCodes::BAD_ARGUMENTS,
+    {{"unavailable", SkipUnavailableShardsMode::UNAVAILABLE},
+     {"unavailable_or_table_missing", SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING},
+     {"unavailable_or_exception_before_processing", SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING}})
+
+IMPLEMENT_SETTING_ENUM(
     MergeTreeSerializationInfoVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeSerializationInfoVersion::BASIC},
@@ -489,11 +502,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
 
-IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
-    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
-     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
-     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
-
 IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},
      {"symbolized", JemallocProfileFormat::Symbolized},
@@ -503,6 +511,10 @@ IMPLEMENT_SETTING_ENUM(S3UriStyle, ErrorCodes::BAD_ARGUMENTS,
     {{"auto", S3UriStyle::AUTO},
      {"path", S3UriStyle::PATH},
      {"virtual_hosted", S3UriStyle::VIRTUAL_HOSTED}})
+
+IMPLEMENT_SETTING_ENUM(ExplainQueryPlanDefault, ErrorCodes::BAD_ARGUMENTS,
+    {{"legacy", ExplainQueryPlanDefault::LEGACY},
+     {"pretty", ExplainQueryPlanDefault::PRETTY}})
 
 IMPLEMENT_SETTING_ENUM(
     FileLikeEngineDefaultPartitionStrategy,

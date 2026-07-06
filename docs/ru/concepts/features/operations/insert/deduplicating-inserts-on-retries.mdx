@@ -1,0 +1,557 @@
+---
+slug: /guides/developer/deduplicating-inserts-on-retries
+title: 'Дедупликация вставок при повторных попытках'
+description: 'Предотвращение дублирования данных при повторных попытках вставки'
+keywords: ['дедупликация', 'выполнять дедупликацию', 'повторные попытки вставки', 'вставки']
+doc_type: 'guide'
+---
+
+Операции вставки иногда могут завершаться с ошибками, например из-за тайм-аутов. При сбое вставки данные могли быть успешно вставлены, а могли и не быть. В этом руководстве рассказывается, как включить дедупликацию при повторных попытках вставки, чтобы одни и те же данные не вставлялись больше одного раза.
+
+При повторной попытке вставки ClickHouse пытается определить, были ли данные уже успешно вставлены. Если вставленные данные помечены как дубликат, ClickHouse не вставляет их в целевую таблицу. Однако пользователь всё равно получит статус успешного выполнения операции, как если бы данные были вставлены обычным образом.
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+<div id="uncertain-insert-status">
+  ### Неопределённый статус вставки
+</div>
+
+Пользователь должен повторять операцию вставки, пока она не завершится успешно. Если все повторные попытки окажутся неудачными, определить, были ли данные вставлены, невозможно. Если задействованы materialized views, также неясно, в каких таблицах могли появиться данные. Materialized views могут быть рассинхронизированы с исходной таблицей.
+
+<div id="deduplication-window-limit">
+  ### Ограничение окна дедупликации
+</div>
+
+Если в ходе последовательности повторных попыток выполняется более `*_deduplication_window` других операций вставки, дедупликация может работать не так, как задумано. В этом случае одни и те же данные могут быть вставлены несколько раз.
+
+<div id="enabling-insert-deduplication-on-retries">
+  ## Включение дедупликации при вставке при повторных попытках
+</div>
+
+<div id="insert-deduplication-for-tables">
+  ### Дедупликация при вставке для таблиц
+</div>
+
+**Только движки `*MergeTree` поддерживают дедупликацию при вставке.**
+
+Для движков `*ReplicatedMergeTree` дедупликация при вставке включена по умолчанию и управляется настройками [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window) и [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds). Для нереплицируемых движков `*MergeTree` дедупликация управляется настройкой [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
+
+Перечисленные выше настройки определяют параметры журнала дедупликации таблицы. Журнал дедупликации хранит конечное число `block_id`, которые определяют, как работает дедупликация (см. ниже).
+
+<div id="query-level-insert-deduplication">
+  ### Дедупликация при вставке на уровне запроса
+</div>
+
+Настройка `insert_deduplicate=1` включает дедупликацию на уровне запроса. Обратите внимание: если выполнить вставку данных с `insert_deduplicate=0`, эти данные уже нельзя будет дедуплицировать, даже если затем повторить вставку с `insert_deduplicate=1`. Это связано с тем, что при вставках с `insert_deduplicate=0` для блоков не записываются идентификаторы `block_id`.
+
+<div id="how-insert-deduplication-works">
+  ## Как работает дедупликация при вставке
+</div>
+
+Когда данные вставляются в ClickHouse, система разбивает их на блоки в зависимости от количества строк и байтов.
+
+Для таблиц, использующих движки `*MergeTree`, каждому блоку присваивается уникальный `block_id` — хеш данных в этом блоке. Этот `block_id` используется как уникальный ключ операции вставки. Если такой же `block_id` найден в журнале дедупликации, блок считается дубликатом и не вставляется в таблицу.
+
+Этот подход хорошо работает, когда вставки содержат разные данные. Однако если одни и те же данные намеренно вставляются несколько раз, нужно использовать настройку `insert_deduplication_token`, чтобы управлять процессом дедупликации. Эта настройка позволяет указать уникальный токен для каждой вставки, который ClickHouse использует для определения, являются ли данные дубликатом.
+
+Для запросов `INSERT ... VALUES` разбиение вставляемых данных на блоки детерминировано и задаётся настройками. Поэтому повторные попытки вставки следует выполнять с теми же значениями настроек, что и в исходной операции.
+
+Для запросов `INSERT ... SELECT` важно, чтобы часть `SELECT` возвращала одни и те же данные в одном и том же порядке при каждом выполнении. Обратите внимание: на практике этого трудно добиться. Чтобы обеспечить стабильный порядок данных при повторных попытках, укажите секцию `ORDER BY ALL` в части `SELECT` запроса. Сейчас в запросе необходимо использовать именно `ORDER BY ALL`. Поддержка `ORDER BY` пока не реализована, и часть `SELECT` запроса не будет считаться стабильной. Имейте в виду, что между повторными попытками выбранная таблица может быть обновлена — в этом случае результирующие данные могут измениться, и дедупликация не произойдёт. Кроме того, при вставке больших объёмов данных число блоков может превысить окно журнала дедупликации, и ClickHouse не сможет определить, что эти блоки нужно дедуплицировать.
+Сейчас поведение `INSERT ... SELECT` управляется настройкой `insert_select_deduplicate`. Она определяет, применяется ли дедупликация к данным, вставляемым с помощью запросов `INSERT ... SELECT`. Подробности и примеры использования см. в документации по ссылке.
+
+<div id="insert-deduplication-with-materialized-views">
+  ## Дедупликация при вставке с materialized view
+</div>
+
+Если у таблицы есть одно или несколько materialized view, вставляемые данные также записываются в целевые таблицы этих представлений с заданными преобразованиями. Преобразованные данные тоже дедуплицируются при повторных попытках. ClickHouse выполняет дедупликацию для materialized view так же, как и для данных, вставляемых в целевую таблицу.
+
+Управлять этим процессом можно с помощью следующих настроек исходной таблицы:
+
+* [`replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window)
+* [`replicated_deduplication_window_seconds`](/ru/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)
+* [`non_replicated_deduplication_window`](/ru/reference/settings/merge-tree-settings#non_replicated_deduplication_window)
+
+Также необходимо включить в профиле пользователя настройку [`deduplicate_blocks_in_dependent_materialized_views`](/ru/reference/settings/session-settings#deduplicate_blocks_in_dependent_materialized_views).
+Если включена настройка `insert_deduplicate=1`, вставленные данные дедуплицируются в исходной таблице. Настройка `deduplicate_blocks_in_dependent_materialized_views=1` дополнительно включает дедупликацию в зависимых таблицах. Для полной дедупликации необходимо включить обе настройки.
+
+При вставке блоков в таблицы materialized view ClickHouse вычисляет `block_id`, хешируя строку, которая объединяет `block_id` исходной таблицы и дополнительные идентификаторы. Это обеспечивает точную дедупликацию в materialized view и позволяет различать данные по их исходной вставке независимо от преобразований, применённых до записи в целевую таблицу materialized view.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+<div id="identical-blocks-after-materialized-view-transformations">
+  ### Идентичные блоки после преобразований в materialized view
+</div>
+
+Идентичные блоки, сгенерированные при преобразовании внутри materialized view, не дедуплицируются, поскольку они основаны на разных вставленных данных.
+
+Вот пример:
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+```
+
+```sql
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Приведенные выше настройки позволяют выбирать данные из таблицы, состоящей из последовательности блоков, каждый из которых содержит только одну строку. Эти небольшие блоки не объединяются и остаются неизменными, пока не будут вставлены в таблицу.
+
+```sql
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+```
+
+Нам нужно включить дедупликацию для materialized view:
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Здесь мы видим, что в таблицу `dst` были вставлены две части. 2 блока из select -- 2 части при вставке. Эти части содержат разные данные.
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Здесь видно, что в таблицу `mv_dst` было вставлено 2 части. Эти части содержат одни и те же данные, однако дедупликация для них не выполнялась.
+
+```sql
+INSERT INTO dst SELECT
+    number + 1 AS key,
+    IF(key = 0, 'A', 'B') AS value
+FROM numbers(2);
+
+SELECT
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   1 │ B     │ all_0_0_0 │
+│   2 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─key─┬─value─┬─_part─────┐
+│   0 │ B     │ all_0_0_0 │
+│   0 │ B     │ all_1_1_0 │
+└─────┴───────┴───────────┘
+```
+
+Здесь видно, что при повторной вставке все данные дедуплицируются. Дедупликация работает как для таблицы `dst`, так и для таблицы `mv_dst`.
+
+<div id="identical-blocks-on-insertion">
+  ### Идентичные блоки при вставке
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Вставка:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2);
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+С указанными выше настройками в результате `select` получаются два блока — следовательно, для вставки в таблицу `dst` тоже должно быть два блока. Однако мы видим, что в таблицу `dst` был вставлен только один блок. Это произошло потому, что для второго блока была выполнена дедупликация. В нём те же данные и тот же ключ дедупликации `block_id`, который вычисляется как хеш от вставленных данных. Такое поведение не соответствует ожидаемому. Такие случаи редки, но теоретически возможны. Чтобы корректно обрабатывать такие ситуации, пользователь должен указать `insert_deduplication_token`. Исправим это на следующих примерах:
+
+<div id="identical-blocks-in-insertion-with-insert_deduplication_token">
+  ### Идентичные блоки при вставке с `insert_deduplication_token`
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+SET max_block_size=1;
+SET min_insert_block_size_rows=0;
+SET min_insert_block_size_bytes=0;
+```
+
+Вставка:
+
+```sql
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+Как и ожидалось, были вставлены два идентичных блока.
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst SELECT
+    0 AS key,
+    'A' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+При повторной вставке, как и ожидалось, выполняется дедупликация.
+
+```sql
+SELECT 'third attempt';
+
+INSERT INTO dst SELECT
+    1 AS key,
+    'b' AS value
+FROM numbers(2)
+SETTINGS insert_deduplication_token='some_user_token';
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   0 │ A     │ all_2_2_0 │
+│ from dst   │   0 │ A     │ all_3_3_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+Эта вставка также будет дедуплицирована, хотя и содержит другие вставленные данные. Обратите внимание, что `insert_deduplication_token` имеет более высокий приоритет: если указан `insert_deduplication_token`, ClickHouse не использует хеш-сумму данных.
+
+<div id="different-insert-operations-generate-the-same-data-after-transformation-in-the-underlying-table-of-the-materialized-view">
+  ### Разные операции вставки после преобразования создают одинаковые данные в базовой таблице materialized view
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+select 'second attempt';
+
+INSERT INTO dst VALUES (2, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+│ from dst   │   2 │ A     │ all_1_1_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Мы каждый раз вставляем разные данные. Однако в таблицу `mv_dst` вставляются одни и те же данные. Данные не дедуплицируются, потому что исходные данные различались.
+
+<div id="different-materialized-view-inserts-into-one-underlying-table-with-equivalent-data">
+  ### Разные варианты вставки через materialized view в одну базовую таблицу с эквивалентными данными
+</div>
+
+```sql
+CREATE TABLE dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE TABLE mv_dst
+(
+    `key` Int64,
+    `value` String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS non_replicated_deduplication_window=1000;
+
+CREATE MATERIALIZED VIEW mv_first
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+CREATE MATERIALIZED VIEW mv_second
+TO mv_dst
+AS SELECT
+    0 AS key,
+    value AS value
+FROM dst;
+
+SET deduplicate_blocks_in_dependent_materialized_views=1;
+
+select 'first attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER by all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Два одинаковых блока были вставлены в таблицу `mv_dst` (как и ожидалось).
+
+```sql
+SELECT 'second attempt';
+
+INSERT INTO dst VALUES (1, 'A');
+
+SELECT
+    'from dst',
+    *,
+    _part
+FROM dst
+ORDER BY all;
+```
+
+```response
+┌─'from dst'─┬─key─┬─value─┬─_part─────┐
+│ from dst   │   1 │ A     │ all_0_0_0 │
+└────────────┴─────┴───────┴───────────┘
+```
+
+```sql
+SELECT
+    'from mv_dst',
+    *,
+    _part
+FROM mv_dst
+ORDER by all;
+```
+
+```response
+┌─'from mv_dst'─┬─key─┬─value─┬─_part─────┐
+│ from mv_dst   │   0 │ A     │ all_0_0_0 │
+│ from mv_dst   │   0 │ A     │ all_1_1_0 │
+└───────────────┴─────┴───────┴───────────┘
+```
+
+Для этой повторной попытки выполняется дедупликация в обеих таблицах: `dst` и `mv_dst`.

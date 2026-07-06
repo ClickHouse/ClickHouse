@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/ttl
+title: 'Gestion du TTL'
+sidebarTitle: 'Gestion du TTL'
+description: 'Gestion du TTL avec ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'ttl', 'rétention des données', 'cycle de vie', 'gestion du stockage']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
+
+<div id="ttl-clickstack">
+  ## TTL dans ClickStack
+</div>
+
+Le time-to-live (TTL) est une fonctionnalité essentielle de ClickStack pour assurer une rétention et une gestion efficaces des données, en particulier compte tenu des volumes considérables de données générées en continu. Le TTL permet l’expiration et la suppression automatiques des données les plus anciennes, garantissant une utilisation optimale du stockage et le maintien des performances sans intervention manuelle. Cette capacité est essentielle pour alléger la base de données, réduire les coûts de stockage et garantir des requêtes rapides et efficaces en se concentrant sur les données les plus pertinentes et les plus récentes. De plus, elle aide à respecter les politiques de rétention des données en gérant systématiquement leur cycle de vie, ce qui renforce la durabilité et la scalabilité globales de la solution d’observability.
+
+**Par défaut, ClickStack conserve les données pendant 3 jours. Pour modifier ce paramètre, voir [&quot;Modification du TTL&quot;](#modifying-ttl).**
+
+Le TTL est contrôlé au niveau de la table dans ClickHouse. Par exemple, le schéma par défaut des logs est présenté ci-dessous ; `${TABLES_TTL}` est remplacé par la durée de rétention configurée (3 jours sauf modification) lorsque le collector crée la table :
+
+<OtelLogsSchema />
+
+Le partitionnement dans ClickHouse permet de séparer logiquement les données sur disque selon une colonne ou une expression SQL. En séparant logiquement les données, chaque partition peut être traitée indépendamment, par exemple supprimée lorsqu’elle expire conformément à une politique TTL.
+
+Comme le montre l’exemple ci-dessus, le partitionnement est spécifié sur une table lors de sa définition initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL sur une ou plusieurs colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée. Les données sont ainsi logiquement associées (via un préfixe commun de nom de dossier) à chaque partition sur le disque, qui peut ensuite être interrogée isolément. Dans l’exemple ci-dessus, le schéma `otel_logs` par défaut partitionne les données par jour à l’aide de l’expression `toDate(Timestamp)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et celle-ci est dirigée vers la partition correspondante si elle existe (si la ligne est la première d’une journée, la partition sera créée). Pour plus de détails sur le partitionnement et ses autres applications, voir [&quot;Partitions de table&quot;](/fr/concepts/core-concepts/partitions).
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg" />
+
+Le schéma de la table inclut également `TTL toDateTime(Timestamp) + ${TABLES_TTL}` et le paramètre `ttl_only_drop_parts = 1`. La première clause garantit que les données seront supprimées une fois qu’elles dépassent le TTL configuré (3 jours par défaut). Le paramètre `ttl_only_drop_parts = 1` fait en sorte que seules les data parts dont toutes les données ont expiré soient supprimées (au lieu de tenter une suppression partielle des lignes). Comme le partitionnement garantit que les données de jours distincts ne sont jamais fusionnées, elles peuvent ainsi être supprimées efficacement.
+
+<Warning>
+  **`ttl_only_drop_parts`**
+
+  Nous recommandons de toujours utiliser le paramètre [`ttl_only_drop_parts=1`](/fr/reference/settings/merge-tree-settings#ttl_only_drop_parts). Lorsque ce paramètre est activé, ClickHouse supprime une part entière lorsque toutes les lignes qu’elle contient ont expiré. Supprimer des parts entières au lieu d’un nettoyage partiel des lignes expirées par TTL (obtenu via des mutations gourmandes en ressources lorsque `ttl_only_drop_parts=0`) permet d’utiliser des durées `merge_with_ttl_timeout` plus courtes et de réduire l’impact sur les performances du système. Si les données sont partitionnées selon la même unité que celle utilisée pour l’expiration TTL, par exemple le jour, les parts ne contiendront naturellement que des données de l’intervalle défini. Cela garantit que `ttl_only_drop_parts=1` peut être appliqué efficacement.
+</Warning>
+
+Par défaut, les données dont le TTL a expiré sont supprimées lorsque ClickHouse [fusionne les data parts](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). Lorsque ClickHouse détecte que des données ont expiré, il effectue une fusion hors planification.
+
+<Info>
+  **Planification du TTL**
+
+  Les TTL ne sont pas appliqués immédiatement, mais selon une planification, comme indiqué ci-dessus. Le paramètre de table MergeTree `merge_with_ttl_timeout` définit le délai minimal, en secondes, avant de répéter une fusion avec suppression TTL. La valeur par défaut est de 14400 secondes (4 heures). Mais il ne s’agit que du délai minimal ; le déclenchement d’une fusion TTL peut prendre plus de temps. Si la valeur est trop faible, cela entraînera de nombreuses fusions hors planification susceptibles de consommer beaucoup de ressources. Une expiration TTL peut être forcée à l’aide de la commande `ALTER TABLE my_table MATERIALIZE TTL`.
+</Info>
+
+<div id="modifying-ttl">
+  ## Modification du TTL
+</div>
+
+Pour modifier le TTL, vous avez deux possibilités :
+
+1. **Modifier les schémas des tables (recommandé)**. Pour cela, vous devez vous connecter à l’instance ClickHouse, par exemple avec [clickhouse-client](/fr/concepts/features/interfaces/cli) ou la [Cloud SQL Console](/fr/products/cloud/features/sql-console-features/sql-console). Par exemple, vous pouvez modifier le TTL de la table `otel_logs` à l’aide de l’instruction DDL suivante :
+
+```sql
+ALTER TABLE default.otel_logs
+MODIFY TTL TimestampTime + toIntervalDay(7);
+```
+
+2. **Modifiez l’OTel collector**. Le ClickStack OpenTelemetry collector crée des tables dans ClickHouse si elles n’existent pas. Cela se fait via le ClickHouse exporter, qui expose lui-même un paramètre `ttl` permettant de contrôler l’expression TTL par défaut, par exemple.
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+<div id="column-level-ttl">
+  ### TTL au niveau de la colonne
+</div>
+
+Les exemples ci-dessus appliquent l’expiration des données au niveau de la table. Vous pouvez également définir une expiration au niveau de la colonne. À mesure que les données vieillissent, cela permet de supprimer les colonnes dont l’utilité dans les analyses ne justifie plus les ressources nécessaires à leur conservation. Par exemple, nous recommandons de conserver la colonne `Body` au cas où de nouvelles métadonnées dynamiques seraient ajoutées sans avoir été extraites au moment de l’insertion, par exemple un nouveau label Kubernetes. Après un certain temps, par exemple 1 mois, il peut devenir évident que ces métadonnées supplémentaires ne sont pas utiles, ce qui réduit l’intérêt de conserver la colonne `Body`.
+
+Ci-dessous, nous montrons comment supprimer la colonne `Body` après 30 jours.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+ ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  Pour définir un TTL au niveau de la colonne, les utilisateurs doivent définir leur propre schéma. Cela ne peut pas être configuré dans l&#39;OTel collector.
+</Note>

@@ -1,0 +1,252 @@
+---
+sidebarTitle: 'Langfuse'
+slug: /cloud/features/ai-ml/langfuse
+title: 'Langfuse'
+description: 'Langfuse منصة مفتوحة المصدر لهندسة نماذج اللغة الكبيرة (LLM)، تساعد الفرق على تصحيح الأخطاء في تطبيقات LLM الخاصة بها وتحليلها وتطويرها بشكل تعاوني.'
+doc_type: 'مرجع'
+---
+
+<div id="what-is-langfuse">
+  ## ما هو Langfuse؟
+</div>
+
+يُعد [Langfuse](https://langfuse.com) منصة مفتوحة المصدر لهندسة نماذج اللغة الكبيرة (LLM)، تساعد الفرق على تصحيح أخطاء تطبيقات LLM الخاصة بها وتحليلها وتحسينها بصورة تعاونية وتكرارية. وهو جزء من منظومة ClickHouse، ويعتمد في جوهره على **ClickHouse** لتوفير بنية خلفية للرصد قابلة للتوسع وعالية الأداء.
+
+ومن خلال الاستفادة من التخزين العمودي في ClickHouse وقدراته التحليلية السريعة، يستطيع Langfuse التعامل مع مليارات التتبعات والأحداث بزمن استجابة منخفض، مما يجعله مناسبًا لأحمال العمل الإنتاجية عالية المعدل.
+
+<div id="why-langfuse">
+  ## لماذا Langfuse؟
+</div>
+
+* **مفتوح المصدر:** مفتوح المصدر بالكامل مع واجهة API عامة لعمليات التكامل المخصصة
+* **محسّن لبيئات الإنتاج:** مصمم بأقل قدر ممكن من الأثر على الأداء
+* **أفضل SDKs في فئتها:** SDKs أصلية لـ Python وJavaScript
+* **دعم الأطر:** متكامل مع أطر شائعة مثل OpenAI SDK وLangChain وLlamaIndex
+* **متعدد الوسائط:** يدعم تتبّع النصوص والصور وغيرها من الوسائط
+* **منصة متكاملة:** مجموعة أدوات تغطي دورة حياة تطوير تطبيقات LLM بالكامل
+
+<div id="deployment-options">
+  ## خيارات النشر
+</div>
+
+يقدّم Langfuse خيارات نشر مرنة لتلبية مختلف متطلبات الأمان والبنية التحتية.
+
+**[Langfuse Cloud](https://cloud.langfuse.com)** هي خدمة مُدارة بالكامل، ومدعومة بعنقود ClickHouse مُدار لتحقيق أفضل أداء. وهي حاصلة على شهادتَي SOC 2 Type II وISO 27001، ومتوافقة مع GDPR، ومتاحة في منطقتَي بيانات في الولايات المتحدة (AWS us-west-2) والاتحاد الأوروبي (AWS eu-west-1).
+
+**[مستضاف ذاتيًا](https://langfuse.com/self-hosting)** من Langfuse مفتوح المصدر بالكامل (بترخيص MIT) ومجاني للنشر على بنيتك التحتية باستخدام Docker أو Kubernetes. يمكنك تشغيل مثيل ClickHouse الخاص بك (أو استخدام ClickHouse Cloud) لتخزين بيانات الرصد، مما يضمن لك تحكمًا كاملًا في بياناتك. 
+
+<div id="architecture">
+  ## البنية المعمارية
+</div>
+
+يعتمد Langfuse فقط على مكونات مفتوحة المصدر، ويمكن نشره محليًا أو على بنية تحتية سحابية أو في البيئات المحلية:
+
+* **ClickHouse**: يخزن بيانات الرصد عالية الحجم (traces وspans وgenerations وscores). ويتيح التجميع السريع والتحليلات للوحات المعلومات.
+* **Postgres**: يخزن البيانات المعاملاتية مثل حسابات المستخدمين، وإعدادات المشاريع، وتعريفات المطالبات.
+* **Redis**: يتولى وضع الأحداث في قوائم الانتظار والتخزين المؤقت.
+* **S3/Blob Storage**: يخزن حمولات البيانات الكبيرة وبيانات الأحداث الخام.
+
+```mermaid
+flowchart TB
+    User["UI, API, SDKs"]
+    subgraph vpc["VPC"]
+        Web["Web Server<br/>(langfuse/langfuse)"]
+        Worker["Async Worker<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(Transactional Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(Cache, Queue)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(Observability Data)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(Raw events, multi-modal attachments)", pos: "b", w: 60, h: 60, constraint: "on" }
+    end
+    LLM["LLM API/Gateway<br/>(optional; BYO; can be same VPC or VPC-peered)"]
+
+    User --> Web
+    Web --> S3
+    Web --> Postgres
+    Web --> Cache
+    Web --> Clickhouse
+    Web -..->|"optional for playground"| LLM
+
+    Cache --> Worker
+    Worker --> Clickhouse
+    Worker --> Postgres
+    Worker --> S3
+    Worker -..->|"optional for evals"| LLM
+```
+
+<div id="features">
+  ## الميزات
+</div>
+
+<div id="observability">
+  ### الرصد
+</div>
+
+تُعد [الرصد](https://langfuse.com/docs/observability/overview) ضرورية لفهم تطبيقات LLM واستكشاف أخطائها وإصلاحها. وعلى عكس البرمجيات التقليدية، تتضمن تطبيقات LLM تفاعلات معقدة وغير حتمية قد يصعب مراقبتها واستكشافها. يوفّر Langfuse إمكانات tracing شاملة تساعدك على فهم ما يحدث في تطبيقك بدقة.
+
+*📹 هل تريد معرفة المزيد؟ [**شاهد الشرح الكامل من البداية إلى النهاية**](https://langfuse.com/watch-demo?tab=observability) لـ Langfuse الرصد وكيفية دمجه مع تطبيقك.*
+
+<Tabs>
+  <Tab title="تفاصيل التتبّع">
+    تتيح لك التتبّعات متابعة كل استدعاء لـ LLM وسائر المنطق ذي الصلة في تطبيقك.
+
+    <video src="https://static.langfuse.com/docs-videos/trace-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="الجلسات">
+    تتيح لك الجلسات تتبّع المحادثات متعددة الخطوات أو مسارات العمل المعتمدة على الوكلاء.
+
+    <video src="https://static.langfuse.com/docs-videos/sessions-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="الخط الزمني">
+    استكشف مشكلات زمن الاستجابة وإصلاحها عبر فحص عرض الخط الزمني.
+
+    <video src="https://static.langfuse.com/docs-videos/timeline-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="المستخدمون">
+    أضف `userId` الخاص بك لمراقبة التكاليف والاستخدام لكل مستخدم. ويمكنك اختياريًا إنشاء رابط عميق لهذا العرض داخل أنظمتك.
+
+    <video src="https://static.langfuse.com/docs-videos/users-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="مخططات الوكلاء">
+    يمكن عرض وكلاء LLM على هيئة رسم بياني لتوضيح تدفق مسارات العمل المعقدة المعتمدة على الوكلاء.
+
+    <video src="https://static.langfuse.com/docs-videos/langgraph-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="لوحة المعلومات">
+    اطّلع على مقاييس الجودة والتكلفة وزمن الاستجابة في لوحة المعلومات لمراقبة تطبيق LLM الخاص بك.
+
+    <video src="https://static.langfuse.com/docs-videos/dashboard.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="prompt-management">
+  ### إدارة المطالبات
+</div>
+
+تُعد [إدارة المطالبات](https://langfuse.com/docs/prompt-management/overview) عنصرًا أساسيًا لبناء تطبيقات LLM فعّالة. ويوفّر Langfuse أدوات تساعدك على إدارة مطالباتك، وتعيين إصدارات لها، وتحسينها على امتداد دورة حياة التطوير.
+
+*📹 هل تريد معرفة المزيد؟ [**شاهد العرض الشامل من البداية إلى النهاية**](https://langfuse.com/watch-demo?tab=prompt) لإدارة المطالبات في Langfuse وكيفية دمجها مع تطبيقك.*
+
+<Tabs>
+  <Tab title="إنشاء">
+    أنشئ مطالبة جديدة عبر واجهة المستخدم أو SDKs أو API.
+
+    <video src="https://static.langfuse.com/docs-videos/create-update-prompts.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="التحكم في الإصدارات">
+    أنشئ إصدارات للمطالبات وحرّرها بشكل تعاوني عبر واجهة المستخدم أو API أو SDKs.
+
+    <video src="https://static.langfuse.com/docs-videos/create-prompt-version.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="النشر">
+    انشر المطالبات إلى بيئة الإنتاج أو أي بيئة أخرى عبر العلامات، من دون أي تغييرات في الشيفرة.
+
+    <video src="https://static.langfuse.com/docs-videos/deploy-prompt.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="المقاييس">
+    قارن بين زمن الاستجابة والتكلفة ومقاييس التقييم عبر الإصدارات المختلفة من مطالباتك.
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-metrics.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="الاختبار في Playground">
+    اختبر مطالباتك فورًا في Playground.
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-to-playground.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="الربط مع التتبعات">
+    اربط المطالبات بالتتبعات لفهم أدائها ضمن سياق تطبيق LLM الخاص بك.
+
+    <video src="https://static.langfuse.com/docs-videos/linked-generations.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="تتبع التغييرات">
+    تتبّع التغييرات التي تطرأ على مطالباتك لفهم كيفية تطورها بمرور الوقت.
+
+    <video src="https://static.langfuse.com/docs-videos/track-changes.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="evaluation">
+  ### التقييم ومجموعات البيانات
+</div>
+
+يُعد [التقييم](https://langfuse.com/docs/evaluation/overview) عنصرًا أساسيًا لضمان جودة تطبيقات LLM لديك وموثوقيتها. وتوفّر Langfuse أدوات تقييم مرنة تتكيّف مع احتياجاتك الخاصة، سواء كنت تختبر في بيئة التطوير أو تراقب الأداء في بيئة الإنتاج.
+
+*📹 هل تريد معرفة المزيد؟ [**شاهد العرض التوضيحي الشامل**](https://langfuse.com/watch-demo?tab=evaluation) لـ Langfuse Evaluation وكيفية استخدامه لتحسين تطبيق LLM لديك.*
+
+<Tabs>
+  <Tab title="التحليلات">
+    اعرض نتائج التقييم بصريًا في لوحة معلومات Langfuse.
+
+    <video src="https://static.langfuse.com/docs-videos/scores-dashboard.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="ملاحظات المستخدم">
+    اجمع الملاحظات من مستخدميك. ويمكن تسجيلها في الواجهة الأمامية عبر Browser SDK الخاص بنا، أو على جهة الخادم عبر SDKs أو API. ويتضمن الفيديو تطبيقًا نموذجيًا.
+
+    <video src="https://static.langfuse.com/docs-videos/scores-user-feedback.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="LLM-as-a-Judge">
+    شغّل تقييمات LLM-as-a-judge مُدارة بالكامل على التتبعات في بيئة الإنتاج أو التطوير. ويمكن تطبيقها على أي خطوة داخل تطبيقك لإجراء تقييمات على مستوى كل خطوة.
+
+    <video src="https://static.langfuse.com/docs-videos/scores-llm-as-a-judge.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="التجارب">
+    قيّم المطالبات والنماذج على مجموعات البيانات مباشرةً من واجهة المستخدم. ولا حاجة إلى أي تعليمات برمجية مخصصة.
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-experiments.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="قائمة انتظار التعليقات التوضيحية">
+    أنشئ خطًا أساسيًا لسير عمل التقييم لديك باستخدام تعليقات توضيحية بشرية عبر Annotation Queues.
+
+    <video src="https://static.langfuse.com/docs-videos/scores-annotation-queue.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="عمليات تقييم مخصصة">
+    أضف نتائج تقييم مخصصة؛ مع دعم القيم الرقمية والمنطقية والفئوية.
+
+    ```bash
+    POST /api/public/scores
+    ```
+
+    أضف الدرجات عبر Python أو JS SDK.
+
+    ```python title="مثال (Python)"
+    langfuse.score(
+      trace_id="123",
+      name="my_custom_evaluator",
+      value=0.5,
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="quickstarts">
+  ## البدء السريع
+</div>
+
+ابدأ العمل باستخدام Langfuse في غضون دقائق. اختر المسار الأنسب لاحتياجاتك الحالية:
+
+* [دمج تتبّع تطبيقات/وكلاء LLM](https://langfuse.com/docs/observability/get-started)
+* [دمج إدارة مطالبة](https://langfuse.com/docs/prompt-management/get-started)
+* [إعداد التقييمات](https://langfuse.com/docs/evaluation/overview)
+
+<div id="learn-more">
+  ## اطّلِع على المزيد
+</div>
+
+* [وثائق Langfuse](https://langfuse.com/docs)
+* [مستودع Langfuse على GitHub](https://github.com/langfuse/langfuse)
+* [شاهد فيديو العرض التوضيحي](https://langfuse.com/watch-demo)
