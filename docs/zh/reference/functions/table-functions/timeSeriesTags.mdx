@@ -1,0 +1,27 @@
+---
+description: 'timeSeriesTags 表函数返回表 `db_name.time_series_table` 所使用的标签表，该表的表引擎为 TimeSeries 引擎。'
+sidebarTitle: 'timeSeriesTags'
+slug: /sql-reference/table-functions/timeSeriesTags
+title: 'timeSeriesTags'
+doc_type: 'reference'
+---
+
+`timeSeriesTags(db_name.time_series_table)` - 返回表引擎为 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 的表 `db_name.time_series_table` 所使用的[标签](/zh/reference/engines/table-engines/integrations/time-series#tags-table)表：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table
+```
+
+如果 *tags* 表位于内层，该函数同样适用：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+以下查询是等价的：
+
+```sql
+SELECT * FROM timeSeriesTags(db_name.time_series_table);
+SELECT * FROM timeSeriesTags('db_name.time_series_table');
+SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
+```

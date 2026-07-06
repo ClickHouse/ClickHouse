@@ -1,0 +1,383 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nginx
+title: '使用 ClickStack 监控 Nginx 日志'
+sidebarTitle: 'Nginx 日志'
+description: '使用 ClickStack 监控 Nginx'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OTel `filelog` 接收器在 ClickStack 中采集并可视化 Nginx 访问日志 (JSON 格式) 。包含演示数据集和预构建仪表盘。
+</Info>
+
+<div id="existing-nginx">
+  ## 与现有 Nginx 集成
+</div>
+
+本节介绍如何通过修改 ClickStack OTel collector 配置，将您现有的 Nginx 安装配置为向 ClickStack 发送日志。
+如果您想先测试此集成，再配置自己现有的环境，可以使用我们预先配置的设置以及[下一节](/zh/clickstack/integration-examples/nginx-logs#demo-dataset)中的样本数据进行测试。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 已安装 Nginx
+* 具有修改 Nginx 配置文件的权限
+
+<Steps>
+  <Step>
+    #### 配置 Nginx 日志格式
+
+    首先，将 Nginx 配置为以 JSON 格式输出日志，以便更轻松地进行解析。将以下日志格式定义添加到你的 nginx.conf 中：
+
+    `nginx.conf` 文件通常位于：
+
+    * **Linux (apt/yum)**：`/etc/nginx/nginx.conf`
+    * **macOS (Homebrew)**：`/usr/local/etc/nginx/nginx.conf` 或 `/opt/homebrew/etc/nginx/nginx.conf`
+    * **Docker**：配置通常以卷的形式挂载
+
+    将以下日志格式定义添加到 `http` 块中：
+
+    ```nginx
+    http {
+        log_format json_combined escape=json
+        '{'
+          '"time_local":"$time_local",'
+          '"remote_addr":"$remote_addr",'
+          '"request_method":"$request_method",'
+          '"request_uri":"$request_uri",'
+          '"status":$status,'
+          '"body_bytes_sent":$body_bytes_sent,'
+          '"request_time":$request_time,'
+          '"upstream_response_time":"$upstream_response_time",'
+          '"http_referer":"$http_referer",'
+          '"http_user_agent":"$http_user_agent"'
+        '}';
+
+        access_log /var/log/nginx/access.log json_combined;
+        error_log /var/log/nginx/error.log warn;
+    }
+    ```
+
+    完成此更改后，重新加载 Nginx。
+  </Step>
+
+  <Step>
+    #### 创建自定义 OTel collector 配置
+
+    ClickStack 支持通过挂载自定义配置文件并设置环境变量来扩展基础 OpenTelemetry Collector 配置。自定义配置会与 HyperDX 通过 OpAMP 管理的基础配置合并。
+
+    创建一个名为 nginx-monitoring.yaml 的文件，内容如下：
+
+    ```yaml
+    receivers:
+      filelog:
+        include:
+          - /var/log/nginx/access.log
+          - /var/log/nginx/error.log
+        start_at: end 
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx"
+
+    service:
+      pipelines:
+        logs/nginx:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    此配置将：
+
+    * 从 Nginx 的标准位置读取日志
+    * 解析 JSON 日志记录
+    * 提取并保留原始日志时间戳
+    * 添加 `source: Nginx` 属性，以便在 HyperDX 中进行过滤
+    * 通过专用管道将日志发送到 ClickHouse exporter
+
+    <Note>
+      - 您只需在自定义配置中定义新的接收器和管道
+      - 处理器 (memory&#95;limiter、transform、batch) 和导出器 (clickhouse) 已在基础 ClickStack 配置中定义，您只需按名称引用它们
+      - time&#95;parser operator 会从 Nginx 的 time&#95;local 字段中提取时间戳，以保留原始日志时间
+      - 这些管道会通过现有处理器将数据从您的接收器路由到 ClickHouse exporter
+    </Note>
+  </Step>
+
+  <Step>
+    #### 配置 ClickStack 以加载自定义配置
+
+    如需在现有的 ClickStack 部署中启用自定义 collector 配置，您必须：
+
+    1. 将自定义配置文件挂载到 /etc/otelcol-contrib/custom.config.yaml
+    2. 设置环境变量 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml
+    3. 挂载 Nginx 日志目录，以便 collector 能够读取这些日志
+
+    ##### 选项 1：Docker Compose
+
+    更新您的 ClickStack 部署配置：
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 现有配置 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... 其他环境变量 ...
+        volumes:
+          - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/nginx:/var/log/nginx:ro
+          # ... 其他挂载卷 ...
+    ```
+
+    ##### 选项 2：Docker Run (All-in-One 镜像)
+
+    如果使用 all-in-one 镜像并通过 `docker run` 运行：
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log/nginx:/var/log/nginx:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      确保 ClickStack collector 具备读取 nginx 日志文件所需的适当权限。在生产环境中，请使用只读挂载 (:ro) ，并遵循最小权限原则。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    配置完成后，登录 HyperDX，确认日志已正常流入：
+
+    1. 进入搜索视图
+    2. 将 source 设为日志，并确认你能看到包含 `request`、`request&#95;time`、`upstream&#95;response&#95;time` 等字段的日志条目。
+
+    你应会看到类似下面的内容：
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于想在配置生产系统之前先测试 nginx 集成的用户，我们提供了一份预先生成的 nginx 访问日志演示数据集，其中包含逼真的流量模式。
+
+<Steps>
+  <Step>
+    #### 下载样本数据集
+
+    ```bash
+    # 下载日志
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
+    ```
+
+    该数据集包含：
+
+    * 具有逼真流量模式的日志条目
+    * 各种端点和 HTTP 方法
+    * 混合了成功请求和错误请求
+    * 逼真的响应时间和字节数
+  </Step>
+
+  <Step>
+    #### 创建测试 collector 配置
+
+    创建一个名为 `nginx-demo.yaml` 的文件，内容如下：
+
+    ```yaml
+    cat > nginx-demo.yaml << 'EOF'
+    receivers:
+      filelog:
+        include:
+          - /tmp/nginx-demo/access.log
+        start_at: beginning  # 演示数据从开头读取
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx-demo"
+
+    service:
+      pipelines:
+        logs/nginx-demo:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
+    使用演示日志和配置运行 ClickStack：
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/access.log:/tmp/nginx-demo/access.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    ClickStack 运行后：
+
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建账户)
+    2. 进入搜索视图，并将数据源设置为 `Logs`
+    3. 将时间范围设置为 **2025-10-19 11:00:00 - 2025-10-22 11:00:00**
+
+    你应当会在搜索视图中看到以下内容：
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间范围为 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC。较大的时间范围可确保无论你位于何处都能看到这些演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="日志视图" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="日志视图" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+为帮助你快速开始使用 ClickStack 监控 nginx，我们提供了 Nginx 日志所需的核心可视化内容。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预构建仪表盘
+
+    1. 打开 HyperDX，进入 Dashboards 部分。
+    2. 点击右上角省略号菜单下的“Import Dashboard”。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+
+    3. 上传 nginx-logs-dashboard.json 文件，然后点击完成导入。
+
+    <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="完成导入" />
+  </Step>
+
+  <Step>
+    #### 系统将创建一个已预先配置好所有可视化内容的仪表盘
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (请根据你的本地时区调整) 。导入的仪表盘默认不会预设时间范围。
+    </Note>
+
+    <Image img="/images/clickstack/nginx-logs-dashboard.webp" alt="示例仪表盘" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### 自定义配置未加载
+</div>
+
+* 验证环境变量 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE 是否已正确设置
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+* 检查自定义配置文件是否已挂载到 `/etc/otelcol-contrib/custom.config.yaml`
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+```
+
+* 查看自定义 config 的内容，确认其可正常读取
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+<div id="no-logs">
+  ### HyperDX 中未显示日志
+</div>
+
+* 确保 nginx 正在输出 JSON 日志
+
+```bash
+tail -f /var/log/nginx/access.log
+```
+
+* 检查 collector 是否能读取日志
+
+```bash
+docker exec `<container>` cat /var/log/nginx/access.log
+```
+
+* 验证当前生效的配置中包含 filelog receiver
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/effective.yaml | grep filelog
+```
+
+* 检查 collector 日志中是否有错误
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键指标 (错误率、延迟阈值) 配置[告警](/zh/clickstack/features/alerts)
+* 针对特定场景 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
+
+<div id="going-to-production">
+  ## 生产环境部署
+</div>
+
+本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

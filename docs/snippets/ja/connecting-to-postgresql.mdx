@@ -1,0 +1,404 @@
+---
+slug: /integrations/postgresql/connecting-to-postgresql
+title: ClickHouse と PostgreSQL の接続
+keywords: ['clickhouse', 'postgres', 'postgresql', '接続', '統合', 'テーブル', 'エンジン']
+description: 'PostgreSQL を ClickHouse に接続するさまざまな方法を説明するページ'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+このページでは、PostgreSQL を ClickHouse と統合するための次の方法について説明します。
+
+* PostgreSQL のテーブルから読み取るために `PostgreSQL` テーブルエンジンを使用する
+* PostgreSQL 内のデータベースを ClickHouse 内のデータベースと同期するために、実験的な `MaterializedPostgreSQL` データベースエンジンを使用する
+
+<Tip>
+  [Managed Postgres](/ja/products/managed-postgres/overview) サービスもぜひご覧ください。コンピュートと物理的に同じ場所に配置された NVMe ストレージを基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックとなるワークロードで最大 10 倍のパフォーマンスを実現します。また、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres のデータを ClickHouse にレプリケートできます。
+</Tip>
+
+<div id="using-the-postgresql-table-engine">
+  ## PostgreSQL テーブルエンジン を使う
+</div>
+
+`PostgreSQL` テーブルエンジンを使用すると、ClickHouse からリモートの PostgreSQL サーバーに保存されているデータに対して **SELECT** および **INSERT** 操作を実行できます。
+この記事では、1 つのテーブルを使った基本的なインテグレーション方法を紹介します。
+
+<div id="1-setting-up-postgresql">
+  ### 1. PostgreSQL の設定
+</div>
+
+1. PostgreSQL がネットワークインターフェイスで待ち受けるよう、`postgresql.conf` に次のエントリを追加します:
+
+```text
+  listen_addresses = '*'
+```
+
+2. ClickHouse から接続するためのユーザーを作成します。説明用として、この例ではスーパーユーザー権限をすべて付与します。
+
+```sql
+  CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+```
+
+3. PostgreSQL で新しいデータベースを作成します:
+
+```sql
+  CREATE DATABASE db_in_psg;
+```
+
+4. 新しいテーブルを作成します:
+
+```sql
+  CREATE TABLE table1 (
+      id         integer primary key,
+      column1    varchar(10)
+  );
+```
+
+5. テスト用に数行追加しましょう:
+
+```sql
+  INSERT INTO table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def');
+```
+
+6. レプリケーションのために、新しいユーザーによる新しいデータベースへの接続を許可するよう PostgreSQL を設定するには、次のエントリを `pg_hba.conf` ファイルに追加します。アドレス行は、PostgreSQL サーバーのサブネットまたは IP アドレスに合わせて更新してください。
+
+```text
+  # TYPE  DATABASE        USER            ADDRESS                 METHOD
+  host    db_in_psg             clickhouse_user 192.168.1.0/24          password
+```
+
+7. `pg_hba.conf` の設定を再読み込みします (このコマンドは、使用しているバージョンに応じて調整してください) :
+
+```text
+  /usr/pgsql-12/bin/pg_ctl reload
+```
+
+8. 新しい `clickhouse_user` でログインできることを確認します:
+
+```text
+  psql -U clickhouse_user -W -d db_in_psg -h <your_postgresql_host>
+```
+
+<Note>
+  この機能を ClickHouse Cloud で使用する場合は、ClickHouse Cloud の IP アドレスから PostgreSQL インスタンスへアクセスできるよう許可が必要になることがあります。
+  外向きトラフィックの詳細については、ClickHouse の [Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を確認してください。
+</Note>
+
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. ClickHouseでテーブルを定義する
+</div>
+
+1. `clickhouse-client` に接続します:
+
+```bash
+  clickhouse-client --user default --password ClickHouse123!
+```
+
+2. 新しいデータベースを作成します。
+
+```sql
+  CREATE DATABASE db_in_ch;
+```
+
+3. `PostgreSQL` を使用するテーブルを作成します:
+
+```sql
+  CREATE TABLE db_in_ch.table1
+  (
+      id UInt64,
+      column1 String
+  )
+  ENGINE = PostgreSQL('postgres-host.domain.com:5432', 'db_in_psg', 'table1', 'clickhouse_user', 'ClickHouse_123');
+```
+
+必要な最小限のパラメータは次のとおりです。
+
+| パラメータ     | 説明                     | 例                             |
+| --------- | ---------------------- | ----------------------------- |
+| host:port | ホスト名または IP アドレスとポート    | postgres-host.domain.com:5432 |
+| database  | PostgreSQL のデータベース名    | db&#95;in&#95;psg             |
+| user      | Postgres に接続するためのユーザー名 | clickhouse&#95;user           |
+| password  | Postgres に接続するためのパスワード | ClickHouse&#95;123            |
+
+<Note>
+  パラメータの完全な一覧については、[PostgreSQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/postgresql) のドキュメントページを参照してください。
+</Note>
+
+<div id="3-test-the-integration">
+  ### 3 インテグレーションをテストする
+</div>
+
+1. ClickHouse で、初期状態の行を表示します:
+
+```sql
+  SELECT * FROM db_in_ch.table1
+```
+
+ClickHouse のテーブルには、PostgreSQL のテーブルにすでに存在していた 2 行が自動的に取り込まれているはずです。
+
+```response
+  Query id: 34193d31-fe21-44ac-a182-36aaefbd78bf
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  └────┴─────────┘
+```
+
+2. PostgreSQL に戻り、テーブルに2行ほど追加します:
+
+```sql
+  INSERT INTO table1
+    (id, column1)
+  VALUES
+    (3, 'ghi'),
+    (4, 'jkl');
+```
+
+4. その2つの新しい行がClickHouseのテーブルに表示されるはずです:
+
+```sql
+  SELECT * FROM db_in_ch.table1
+```
+
+応答は次のとおりです。
+
+```response
+  Query id: 86fa2c62-d320-4e47-b564-47ebf3d5d27b
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
+```
+
+5. ClickHouseのテーブルに行を追加するとどうなるか、見てみましょう：
+
+```sql
+  INSERT INTO db_in_ch.table1
+    (id, column1)
+  VALUES
+    (5, 'mno'),
+    (6, 'pqr');
+```
+
+6. ClickHouse に追加した行が、PostgreSQL のテーブルに表示されているはずです:
+
+```sql
+  db_in_psg=# SELECT * FROM table1;
+  id | column1
+  ----+---------
+    1 | abc
+    2 | def
+    3 | ghi
+    4 | jkl
+    5 | mno
+    6 | pqr
+  (6 rows)
+```
+
+この例では、`PostrgeSQL` テーブルエンジン を使用した、PostgreSQL と ClickHouse の基本的なインテグレーションを紹介しました。
+スキーマの指定、一部のカラムのみを返す設定、複数のレプリカへの接続など、さらに多くの機能については、[PostgreSQL テーブルエンジン のドキュメントページ](/ja/reference/engines/table-engines/integrations/postgresql)をご覧ください。あわせて、ブログ記事 [ClickHouse and PostgreSQL - a match made in data heaven - part 1](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres) もご覧ください。
+
+<div id="using-the-materializedpostgresql-database-engine">
+  ## MaterializedPostgreSQL データベースエンジンを使用する
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+PostgreSQL データベースエンジンは、PostgreSQL のレプリケーション機能を使用して、データベース全体、またはその一部のスキーマやテーブルを含むデータベースのレプリカを作成します。
+この記事では、1 つのデータベース、1 つのスキーマ、1 つのテーブルを使った基本的なインテグレーション方法を説明します。
+
+***以下の手順では、PostgreSQL CLI (psql) と ClickHouse CLI (clickhouse-client) を使用します。PostgreSQL サーバーは Linux にインストールされています。以下は、PostgreSQL データベースが新規のテストインストールである場合の最小構成です。***
+
+<div id="1-in-postgresql">
+  ### 1. PostgreSQL で
+</div>
+
+1. `postgresql.conf` で、最小の listen レベル、レプリケーション用の WAL レベル、およびレプリケーションスロットを設定します。
+
+次のエントリを追加します。
+
+```text
+listen_addresses = '*'
+max_replication_slots = 10
+wal_level = logical
+```
+
+**ClickHouse には、最低でも `logical` の WAL レベルと、`2` つ以上のレプリケーションスロットが必要です*
+
+2. 管理者アカウントを使用して、ClickHouse から接続するためのユーザーを作成します:
+
+```sql
+CREATE ROLE clickhouse_user SUPERUSER LOGIN PASSWORD 'ClickHouse_123';
+```
+
+**説明のため、完全なスーパーユーザー権限を付与しています。*
+
+3. 新しいデータベースを作成します:
+
+```sql
+CREATE DATABASE db1;
+```
+
+4. `psql` で新しいデータベースに接続します：
+
+```text
+\connect db1
+```
+
+5. 新しいテーブルを作成します:
+
+```sql
+CREATE TABLE table1 (
+    id         integer primary key,
+    column1    varchar(10)
+);
+```
+
+6. 初期データを追加します:
+
+```sql
+INSERT INTO table1
+(id, column1)
+VALUES
+(1, 'abc'),
+(2, 'def');
+```
+
+7. レプリケーション用の新しいユーザーによる新しいデータベースへの接続を許可するように、PostgreSQL を設定します。以下は、`pg_hba.conf` ファイルに追加する最小限のエントリです。
+
+```text
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+host    db1             clickhouse_user 192.168.1.0/24          password
+```
+
+**説明用の例として、ここでは平文パスワードによる認証方式を使用しています。PostgreSQL のドキュメントに従って、address 行はサブネットまたはサーバーのアドレスに更新してください*
+
+8. 次のように `pg_hba.conf` の設定を再読み込みします (お使いのバージョンに応じて調整してください) :
+
+```text
+/usr/pgsql-12/bin/pg_ctl reload
+```
+
+9. 新しい`clickhouse_user`でログインを確認します:
+
+```text
+ psql -U clickhouse_user -W -d db1 -h <your_postgresql_host>
+```
+
+<div id="2-in-clickhouse">
+  ### 2. ClickHouse で
+</div>
+
+1. ClickHouse CLI にログインします
+
+```bash
+clickhouse-client --user default --password ClickHouse123!
+```
+
+2. PostgreSQL データベースエンジンの実験的機能を有効にします:
+
+```sql
+SET allow_experimental_database_materialized_postgresql=1
+```
+
+3. レプリケーション対象の新しいデータベースを作成し、初期テーブルを定義します。
+
+```sql
+CREATE DATABASE db1_postgres
+ENGINE = MaterializedPostgreSQL('postgres-host.domain.com:5432', 'db1', 'clickhouse_user', 'ClickHouse_123')
+SETTINGS materialized_postgresql_tables_list = 'table1';
+```
+
+最小限のオプション:
+
+| パラメータ     | 説明                     | 例                                                                  |
+| --------- | ---------------------- | ------------------------------------------------------------------ |
+| host:port | ホスト名または IP アドレスとポート    | postgres-host.domain.com:5432                                      |
+| database  | PostgreSQL のデータベース名    | db1                                                                |
+| user      | Postgres に接続するためのユーザー名 | clickhouse&#95;user                                                |
+| password  | Postgres に接続するためのパスワード | ClickHouse&#95;123                                                 |
+| settings  | エンジンの追加設定              | materialized&#95;postgresql&#95;tables&#95;list = &#39;table1&#39; |
+
+<Info>
+  PostgreSQL データベースエンジンの完全なガイドについては、https://clickhouse.com/docs/engines/database-engines/materialized-postgresql/#settings を参照してください。
+</Info>
+
+4. 初期テーブルにデータがあることを確認します:
+
+```sql
+ch_env_2 :) select * from db1_postgres.table1;
+
+SELECT *
+FROM db1_postgres.table1
+```
+
+```response
+Query id: df2381ac-4e30-4535-b22e-8be3894aaafc
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+```
+
+<div id="3-test-basic-replication">
+  ### 3. 基本レプリケーションをテストする
+</div>
+
+1. PostgreSQL で新しい行を追加します:
+
+```sql
+INSERT INTO table1
+(id, column1)
+VALUES
+(3, 'ghi'),
+(4, 'jkl');
+```
+
+2. ClickHouse で、新しい行が表示されることを確認します:
+
+```sql
+ch_env_2 :) select * from db1_postgres.table1;
+
+SELECT *
+FROM db1_postgres.table1
+```
+
+```response
+Query id: b0729816-3917-44d3-8d1a-fed912fb59ce
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  4 │ jkl     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  3 │ ghi     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+```
+
+<div id="4-summary">
+  ### 4. まとめ
+</div>
+
+このインテグレーションガイドでは、テーブルを 1 つ含むデータベースをレプリケートするシンプルな例に焦点を当てましたが、データベース全体をレプリケートしたり、既存のレプリケーションに新しいテーブルやスキーマを追加したりする、より高度なオプションもあります。このレプリケーションでは DDL コマンドはサポートされていませんが、構造変更が行われた際に変更を検出してテーブルを再読み込みするようにエンジンを設定できます。
+
+<Info>
+  高度なオプションで利用できるその他の機能については、[参照ドキュメント](/ja/reference/engines/database-engines/materialized-postgresql)を参照してください。
+</Info>

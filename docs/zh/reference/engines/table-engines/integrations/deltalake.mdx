@@ -1,0 +1,146 @@
+---
+description: '该引擎为亚马逊 S3 中现有的 Delta Lake
+  表提供只读集成。'
+sidebarTitle: 'DeltaLake'
+slug: /engines/table-engines/integrations/deltalake
+title: 'DeltaLake 表引擎'
+doc_type: 'reference'
+---
+
+该引擎可与 S3、GCP 和 Azure 存储中现有的 [Delta Lake](https://github.com/delta-io/delta) 表集成，并支持读写 (自 v25.10 起) 。
+
+<div id="create-table">
+  ## 创建 DeltaLake 表
+</div>
+
+要创建 DeltaLake 表，该表必须已存在于 S3、GCP 或 Azure 存储中。以下命令不接受用于创建新表的 DDL 参数。
+
+<Tabs>
+  <Tab title="S3">
+    **语法**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+    ```
+
+    **引擎参数**
+
+    * `url` — 指向现有 Delta Lake 表路径的存储桶 URL。
+    * `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) 账户用户的长期凭证。可使用它们对请求进行身份验证。该参数为可选项。如果未指定凭证，则会从配置文件中读取。
+    * `extra_credentials` - 可选。用于传递 `role_arn`，以便在 ClickHouse Cloud 中实现基于角色的访问。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。
+
+    引擎参数也可以通过 [Named Collections](/zh/concepts/features/configuration/server-config/named-collections) 指定。
+
+    **示例**
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+    ```
+
+    使用命名集合：
+
+    ```xml
+    <clickhouse>
+        <named_collections>
+            <deltalake_conf>
+                <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+                <access_key_id>ABC123</access_key_id>
+                <secret_access_key>Abc+123</secret_access_key>
+            </deltalake_conf>
+        </named_collections>
+    </clickhouse>
+    ```
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
+    ```
+  </Tab>
+
+  <Tab title="GCP">
+    **语法**
+
+    ```sql
+    -- 使用 HTTPS URL（推荐）
+    CREATE TABLE table_name
+    ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
+    ```
+
+    <Info>
+      **不支持 gsutil URI**
+
+      不支持 `gs://clickhouse-docs-example-bucket` 这类 gsutil URI，请使用以 `https://storage.googleapis.com` 开头的 URL
+    </Info>
+
+    **参数**
+
+    * `url` — 指向 Delta Lake 表的 GCS 存储桶 URL。必须使用 `https://storage.googleapis.com/<bucket>/<path>/`
+      格式 (GCS XML API 端点) ，或使用会自动转换的 `gs://<bucket>/<path>/`。
+    * `access_key_id` — GCS Access Key。可通过 Google Cloud Console → Cloud Storage → Settings → Interoperability 创建。
+    * `secret_access_key` — GCS 密钥。
+
+    **命名集合**
+
+    您也可以使用命名集合。
+    例如：
+
+    ```sql
+    CREATE NAMED COLLECTION gcs_creds AS
+    access_key_id = '<access_key>',
+    secret_access_key = '<secret>';
+
+    CREATE TABLE gcpDeltaLake
+    ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
+    ```
+  </Tab>
+
+  <Tab title="Azure">
+    **语法**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ```
+
+    **参数**
+
+    * `connection_string` — Azure 连接字符串
+    * `storage_account_url` — Azure 存储账户 URL (例如，https://account.blob.core.windows.net)
+    * `container_name` — Azure 容器名称
+    * `blobpath` — 容器内 Delta Lake 表的路径
+    * `account_name` — Azure 存储账户名称
+    * `account_key` — Azure 存储账户密钥
+  </Tab>
+</Tabs>
+
+<div id="insert-data">
+  ## 使用 DeltaLake 表写入数据
+</div>
+
+使用 DeltaLake 表引擎创建表后，可以通过以下方式向表中插入数据：
+
+```sql
+SET allow_experimental_delta_lake_writes = 1;
+
+INSERT INTO deltalake(id, firstname, lastname, gender, age)
+VALUES (1, 'John', 'Smith', 'M', 32);
+```
+
+<Note>
+  仅支持通过 delta kernel 向该表引擎写入数据。
+  目前尚不支持向 Azure 写入，但支持 S3 和 GCS。
+</Note>
+
+<div id="data-cache">
+  ### 数据缓存
+</div>
+
+`DeltaLake` 表引擎和表函数支持数据缓存，与 `S3`、`AzureBlobStorage` 和 `HDFS` 存储相同。更多详情，请参见[&quot;S3 表引擎&quot;](/zh/reference/engines/table-engines/integrations/s3#data-cache)。
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [deltaLake 表函数](/zh/reference/functions/table-functions/deltalake)

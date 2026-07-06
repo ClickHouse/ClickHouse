@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'ضبط Managed ClickStack - تحسين مخطط البيانات لديك'
+description: 'حسّن مخطط بيانات ClickStack لتحسين أداء الاستعلامات وكفاءة التخزين في Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'الضبط', 'مخطط البيانات', 'managed', 'observability', 'الأداء', 'التحسين', 'التخزين']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+إذا كنت تشغّل ClickStack منذ فترة، فمن المرجّح أنك لاحظت أن مخطط البيانات الافتراضي يلبّي معظم أعباء عمل observability من دون أي تغييرات. هذه الصفحة مخصّصة للحالات التي لا يعود فيها ذلك كافيًا: عندما يبدأ زمن استجابة الاستعلامات بالارتفاع، أو عندما تنحرف أنماط الوصول لديك عن الإعدادات الافتراضية.
+
+تغطي أربعة تحسينات معظم ما يفيد عمليًا. وهي مرتّبة تقريبًا بحسب مقدار الجهد المطلوب. أول تحسينين هما تغييرات محلية على `ALTER TABLE` يمكنك تطبيقها تدريجيًا. أما الثالث فيؤتي ثماره عندما يتكرر تشغيل التجميع نفسه مرارًا على لوحة معلومات. ويتطلب الرابع ترحيل جدول، لذا فهو الأكثر تعقيدًا.
+
+الملخصات أدناه قصيرة عمدًا. للاطلاع على المبررات وراء كل تغيير، وقياسات الأداء المقارنة، والطرق العملية لتطبيقه على البيانات الحالية، راجع [ضبط الأداء](/ar/clickstack/managing/performance-tuning).
+
+<Steps>
+  <Step>
+    ## تجسيد السمات كثيرة الاستعلام
+
+    تؤدي التصفية على `LogAttributes['service.version']` إلى أن يحمّل ClickHouse خريطة `LogAttributes` كاملة ويفك ترميزها لكل صف يفحصه. حوِّل هذه السمة إلى عمود `MATERIALIZED`، وعندها تصبح التصفية نفسها مجرد قراءة عمود، وغالبًا ما تكون أسرع بعامل يصل إلى عشرة أضعاف. ويعيد ClickStack كتابة عامل التصفية تلقائيًا بمجرد وجود العمود، لذا تظل عمليات البحث المحفوظة ولوحات المعلومات تعمل كما هي دون تغيير.
+
+    اختر السمات التي تستعلم عنها كثيرًا بالفعل. فكل عمود materialized يستهلك مساحة تخزين ووقتًا عند insert، لذا فالفكرة هنا هي &quot;جسِّد ما تستخدمه&quot; لا &quot;جسِّد كل شيء&quot;.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    ستظل الصفوف الحالية فارغة في العمود الجديد إلى أن تنفّذ أيضًا `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`.
+
+    اقرأ المزيد: [تجسيد السمات كثيرة الاستعلام](/ar/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step>
+    ## إضافة skip indexes
+
+    تتيح skip indexes لـ ClickHouse استبعاد حبيبات البيانات التي يستحيل أن تطابق عامل التصفية، مما يحوّل المسح إلى قراءة صغيرة موجَّهة. وهناك ثلاثة أنواع يجدر بك معرفتها:
+
+    * **Text indexes** (`text(tokenizer = ...)`) على الأعمدة النصية وعلى مصفوفات `mapKeys`/`*AttributeItems`. يأتي مخطط logs الافتراضي مزودًا بها بالفعل.
+    * **Min-max indexes** على الأعمدة الرقمية التي تُصفّى حسب النطاق. وتمثل `Duration` في traces الحالة الكلاسيكية.
+    * **Bloom filters** لعمليات البحث بالمساواة ذات cardinality العالية في إصدارات ClickHouse التي لا تدعم بعد text indexes.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    لا تكون skip index مجدية مقابل تكلفة تقييمها إلا إذا كانت تستبعد الحبيبات فعلًا. تحقّق من ذلك باستخدام `EXPLAIN indexes = 1` على استعلام ممثل قبل افتراض أنها حسّنت الأداء.
+
+    اقرأ المزيد: [إضافة skip indexes](/ar/clickstack/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step>
+    ## الحساب المسبق للتجميعات المتكررة
+
+    عندما يتكرر تشغيل التجميع نفسه مرارًا على لوحة معلومات (أهم الخدمات بحسب معدل الأخطاء، زمن الاستجابة p99 لكل نقطة نهاية، وعدد الطلبات في الدقيقة)، فإن materialized view تحسب النتيجة عند insert وتكتبها إلى جدول rollup صغير. بعد ذلك، تستعلم لوحات المعلومات من الـ rollup بدلًا من logs أو traces الخام، وهو أقل كلفة بكثير.
+
+    يكون هذا مجديًا عندما تكون لوحة المعلومات كثيرة الاستخدام ويكون الجدول الأساسي كبيرًا. والمقابل هو بعض استهلاك CPU وقت insert وجدول ثانٍ يحتاج إلى صيانة.
+
+    اقرأ المزيد: [الاستفادة من materialized views](/ar/clickstack/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step>
+    ## اختر المفتاح الأساسي وفق نمط الوصول لديك
+
+    يتحكم المفتاح الأساسي في كيفية ترتيب الصفوف على القرص. وتتيح عوامل التصفية على الأعمدة الأولى في هذا المفتاح لـ ClickHouse الوصول مباشرة إلى المنطقة ذات الصلة؛ أما عوامل التصفية التي لا تبدأ بأحد تلك الأعمدة فتفحص القسم بالكامل.
+
+    يفضّل مفتاح logs الافتراضي `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` نمط &quot;ما الذي حدث خلال آخر N دقيقة للخدمة X&quot;. وإذا كانت معظم الاستعلامات لديك تبدأ بعمود مختلف (مثل معرّف المستأجر أو معرّف العميل أو المنطقة)، فإن تغيير المفتاح الأساسي ليبدأ بذلك العمود هو أكثر تعديل يمكنك إجراؤه تأثيرًا.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- نفس الأعمدة الموجودة في otel_logs
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    لا يتيح ClickHouse تعديل المفتاح الأساسي في مكانه، لذا فهذه table migration وليست مجرد `ALTER` بسيط. ويشرح دليل ضبط الأداء كيفية إنشاء الجدول الجديد، وإعادة توجيه إدخال البيانات، واستخدام جدول `Merge` بحيث تظل لوحات المعلومات الحالية تعمل عبر البيانات القديمة والجديدة.
+
+    اقرأ المزيد: [تعديل المفتاح الأساسي](/ar/clickstack/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## للمزيد من القراءة
+</div>
+
+* [ضبط الأداء](/ar/clickstack/managing/performance-tuning): الدليل الكامل، بما في ذلك الإسقاطات وتسريع عمليات البحث عن الصفوف.
+* [الجداول والمخططات المستخدمة في ClickStack](/ar/clickstack/ingesting-data/schemas): تعريفات DDL المرجعية التي تستند إليها هذه التحسينات.
+* [الانتقال إلى بيئة الإنتاج](/ar/clickstack/managing/production): توصيات أشمل لبيئات الإنتاج.

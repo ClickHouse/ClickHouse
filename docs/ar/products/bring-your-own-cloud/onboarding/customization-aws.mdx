@@ -1,0 +1,109 @@
+---
+title: 'إعداد AWS المخصّص'
+slug: /cloud/reference/byoc/onboarding/customization-aws
+sidebarTitle: 'إعداد AWS المخصّص'
+keywords: ['BYOC', 'السحابة', 'bring your own cloud', 'التهيئة', 'AWS', 'VPC']
+description: 'نشر ClickHouse BYOC ضمن شبكة AWS VPC الحالية لديك'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="customer-managed-vpc-aws">
+  ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS
+</div>
+
+إذا كنت تفضّل استخدام VPC حاليًا لنشر ClickHouse BYOC بدلًا من أن يوفّر ClickHouse Cloud شبكة VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في إعدادات الشبكة، ويتيح لك دمج ClickHouse BYOC في البنية التحتية الشبكية الحالية لديك.
+
+<Steps>
+  <Step>
+    ### قم بتهيئة VPC الحالية لديك
+
+    1. أضِف الوسم `clickhouse-byoc="true"` إلى VPC.
+    2. خصّص ما لا يقل عن 3 شبكات فرعية خاصة موزعة على 3 مناطق توافر مختلفة لتستخدمها ClickHouse Cloud.
+    3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/23` (على سبيل المثال، 10.0.0.0/23) لتوفير عدد كافٍ من عناوين IP لنشر ClickHouse.
+    4. أضِف الوسمين `kubernetes.io/role/internal-elb=1` و`clickhouse-byoc="true"` إلى كل شبكة فرعية لتمكين التهيئة الصحيحة لموازن التحميل.
+
+    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="الشبكة الفرعية لـ VPC في BYOC" />
+
+    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="وسوم الشبكة الفرعية لـ VPC في BYOC" />
+  </Step>
+
+  <Step>
+    ### قم بتهيئة S3 Gateway Endpoint
+
+    إذا لم تكن VPC لديك تحتوي بالفعل على S3 Gateway Endpoint مُهيأة، فستحتاج إلى إنشاء واحدة لتمكين اتصال آمن وخاص بين VPC وAmazon S3. تتيح نقطة النهاية هذه لخدمات ClickHouse الوصول إلى S3 من دون المرور عبر الإنترنت العام. يُرجى الرجوع إلى لقطة الشاشة أدناه للاطلاع على مثال على التهيئة.
+
+    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="S3 Endpoint لـ BYOC" />
+  </Step>
+
+  <Step>
+    ### تأكد من توفر اتصال الشبكة
+
+    **وصول الإنترنت الصادر**
+    يجب أن تسمح VPC لديك، كحد أدنى، بوصول الإنترنت الصادر حتى تتمكن مكونات ClickHouse BYOC من التواصل مع طبقة التحكم الخاصة بـ Tailscale. يُستخدم Tailscale لتوفير شبكة آمنة قائمة على مبدأ انعدام الثقة لعمليات الإدارة الخاصة. يتطلب التسجيل والإعداد الأوليان باستخدام Tailscale اتصالاً بالإنترنت العام، ويمكن تحقيق ذلك إما مباشرة أو عبر NAT gateway. هذا الاتصال ضروري للحفاظ على خصوصية نشر BYOC لديك وأمانه.
+
+    **حلّ أسماء DNS**
+    تأكد من أن VPC لديك توفّر حلّ أسماء DNS بشكل سليم، وألا تحظر أسماء DNS القياسية أو تتداخل معها أو تستبدلها. يعتمد ClickHouse BYOC على DNS لحلّ أسماء خوادم التحكم الخاصة بـ Tailscale ونقاط نهاية الخدمة الخاصة بـ ClickHouse. إذا لم يكن DNS متاحًا أو كان مُهيأً بشكل غير صحيح، فقد تفشل خدمات BYOC في الاتصال أو العمل بشكل صحيح.
+  </Step>
+
+  <Step>
+    ### قم بتهيئة حساب AWS الخاص بك
+
+    ينشئ إعداد BYOC الأولي دور IAM ذا امتيازات (`ClickHouseManagementRole`) يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية. ويمكن تنفيذ ذلك باستخدام [CloudFormation template](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml) أو [Terraform module](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+
+    عند النشر لإعداد `BYO-VPC`، اضبط المعلمة `IncludeVPCWritePermissions` على `false` لضمان عدم منح ClickHouse Cloud أذونات لتعديل VPC التي يديرها العميل.
+
+    <Note>
+      حاويات التخزين وعنقود Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse ليست مضمنة في هذا الإعداد الأولي. سيتم توفيرها في خطوة لاحقة. وعلى الرغم من أنك تتحكم في VPC الخاصة بك، لا تزال ClickHouse Cloud بحاجة إلى أذونات IAM لإنشاء عنقود Kubernetes وإدارته، وأدوار IAM لحسابات الخدمة، وS3 buckets، وغيرها من الموارد الأساسية في حساب AWS الخاص بك.
+    </Note>
+
+    #### Terraform module بديل
+
+    إذا كنت تفضل استخدام Terraform بدلاً من CloudFormation، فاستخدم الوحدة التالية:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                     = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env                   = "production"
+      include_vpc_write_permissions = false
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### قم بإعداد البنية التحتية لـ BYOC
+
+    في ClickHouse Cloud console، قم بتهيئة ما يلي عند إعداد بنية تحتية جديدة:
+
+    1. ضمن **تهيئة VPC**، اختر **استخدام VPC حالية**.
+    2. أدخل **VPC ID** الخاص بك (على سبيل المثال، `vpc-0bb751a5b888ad123`).
+    3. أدخل **معرّفات الشبكات الفرعية الخاصة** للشبكات الفرعية الثلاث التي قمت بتهيئتها سابقًا.
+    4. اختياريًا، أدخل **معرّفات الشبكات الفرعية العامة** إذا كان إعدادك يتطلب موازنات تحميل متاحة للعامة.
+    5. انقر فوق **إعداد البنية التحتية** لبدء التوفير.
+
+    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="واجهة إعداد BYOC في ClickHouse Cloud مع تحديد استخدام VPC حالية" />
+
+    <Note>
+      قد يستغرق إعداد منطقة جديدة ما يصل إلى 40 دقيقة.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="customer-managed-iam-roles">
+  ## أدوار IAM المُدارة من قِبل العميل
+</div>
+
+بالنسبة إلى المؤسسات التي لديها متطلبات أمان متقدمة أو سياسات امتثال صارمة، يمكنك توفير أدوار IAM الخاصة بك بدلًا من أن ينشئها ClickHouse Cloud. يتيح لك هذا النهج تحكمًا كاملًا في أذونات IAM، كما يمكّنك من فرض السياسات الأمنية الخاصة بمؤسستك.
+
+<Info>
+  أدوار IAM المُدارة من قِبل العميل متاحة حاليًا في معاينة خاصة. إذا كنت بحاجة إلى هذه الإمكانية، فتواصل مع ClickHouse Support لمناقشة متطلباتك المحددة والجدول الزمني.
+
+  عند توفرها، ستتيح لك هذه الميزة ما يلي:
+
+  * توفير أدوار IAM مُعدة مسبقًا ليستخدمها ClickHouse Cloud
+  * إزالة أذونات الكتابة من الأذونات المرتبطة بـ IAM الخاصة بـ `ClickHouseManagementRole` والمستخدمة للوصول عبر الحسابات
+  * الحفاظ على تحكم كامل في أذونات الأدوار وعلاقات الثقة
+</Info>
+
+للحصول على معلومات حول أدوار IAM التي ينشئها ClickHouse Cloud افتراضيًا، راجع [مرجع امتيازات BYOC](/ar/products/bring-your-own-cloud/reference/privilege).
