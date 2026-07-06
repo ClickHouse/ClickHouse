@@ -723,57 +723,15 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
 
 ChainedBuffers ReaderExecutor::serveHitStep(const PlanSchedule::Step & step, size_t position_phys)
 {
-    /// A resident step: stream its contiguous resident run straight from the plan's held
-    /// (pinning) cache readers - no per-window discovery, no source. Serve each tier's range
-    /// from its own reader, advancing the cursor so the appended runs stay disjoint; stop at the
-    /// first gap (the next call serves it). A machine for a downstream gap may be in flight here
-    /// (the resident/prefetch overlap): this path touches ONLY the caches and the (empty,
-    /// moved-to-the-machine) foreground connection cluster, never the worker's machine.
-    ChainedBuffers chain;
-
-    /// Test hook: pause after the plan classifies this run as a hit but before the read, so
-    /// a test can drop/evict the cache in that window and verify the plan-pinned segment
-    /// survives. No-op in production.
-    FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
-
-    /// Serve a BLOCK at a time (not a full window): a cache hit has no remote open to
-    /// amortise over a window, so block-sizing just bounds the in-flight ChainedBuffers memory per
-    /// call. The loop also stops at the resident run end / `plan_end`. Bound to the step (the
-    /// maximal cross-tier resident run) and the extent / file end before sub-sizing to a block.
+    /// A resident step: the display already covers it (the plan's held views pin the resident
+    /// runs), so this is the covers-immediately case of the serve - read the display, run the
+    /// handed fills. Block-bounded: a cache hit has no remote open to amortise over a window,
+    /// so block-sizing just bounds the in-flight ChainedBuffers memory per call. A machine for
+    /// a downstream gap may be in flight (the resident/prefetch overlap): the display's hit
+    /// holder touches only the caches, never the machine.
     const size_t to_read = std::min(readCeiling(), step.output.end() - position_phys);
-    const size_t window_end = position_phys
-        + std::min(effectiveBlockSize(read_plan.geometry()->pressure_level), to_read);
-    StatTimer get_scope(stats, Stats::CacheGetMicroseconds);
-    for (size_t pos = position_phys; pos < window_end;)
-    {
-        auto run = read_plan.geometry()->residentAt(pos);
-        /// Map the resident geometry entry to its foreground-private held view (1:1
-        /// positional). A resident entry always has a view; guard defensively.
-        if (!run.resident() || run.entry >= read_plan.bufs.size()
-            || !read_plan.bufs[run.entry].view)
-            break;
-        const size_t serve_end = std::min(run.run_end, window_end);
-        ChainedBuffers chunk = readHitFromView(*read_plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
-        const size_t got = chunk.range().size;
-        if (got == 0)
-            break;
-        stats.add(Stats::CacheGetRequests);
-        const bool is_page = run.tier == CacheTier::PageCache;
-        stats.add(is_page ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache, got);
-        /// Run the scheduled handed fills from the just-served bytes: promote the hit UP into
-        /// the faster cells that miss it (`HandedChain`) and complete a lower cell across it
-        /// DOWN (`UpperCacheRead`) - one schedule-driven executor for both directions.
-        runHandedFills(ByteRange{pos, got}, chunk, stats);
-        chain.append(std::move(chunk));
-        pos += got;
-        if (pos < serve_end)
-            break;
-    }
-    HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
-        static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
-
-    if (data_start_offset)
-        chain.shift(-static_cast<ssize_t>(data_start_offset));
+    const size_t len = std::min(effectiveBlockSize(read_plan.geometry()->pressure_level), to_read);
+    ChainedBuffers chain = serveFromDisplay(ByteRange{position_phys, len});
     LOG_TRACE(log, "serveHitStep: streamed resident [{}, {}) from cache",
         position_phys, position_phys + chain.range().size);
     return chain;
@@ -2246,7 +2204,7 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, ByteRange window)
     /// downloader, so the wait wakes and reads its committed bytes, deduping the concurrent cold
     /// populate instead of re-fetching it. A bypass gap has no fill-target writer, so this is a
     /// no-op there and the whole window falls to the source read below.
-    waitOnDisplay(fetch_window, /*own_worker_only=*/false, result, covered, stats);
+    display.wait(fetch_window, /*own_worker_only=*/false, result, covered, stats);
 
     /// Source-fetch whatever is still uncovered (no tier holds it and no sibling is filling it),
     /// opening a long connection at each OBJECT-piece start so the reads coalesce across windows
@@ -2309,34 +2267,20 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     if (!read_plan.schedule.retrieves[ri].into.empty())
         return serveRetrievePopulatable(ri, window);
 
-    auto & st = read_plan.retrieve_status[ri];
-    const size_t pos = position_phys - data_start_offset;  /// `ready_bytes` is logical
-    /// Coverage-driven: a job can be partially banked AND still have a window in flight, so
-    /// branch on "does `ready_bytes` cover the cursor?".
-    while (st.ready_bytes.empty()
-        || pos < st.ready_bytes.range().offset
-        || pos >= st.ready_bytes.range().end())
+    /// Coverage-driven: advance the job until the display can serve the cursor (a bypass gap's
+    /// display holder is the bank, fed by the collects).
+    while (display.frontier(window) == window.offset)
     {
         if (machineFor(ri))
-            collectInFlightInto(ri);  /// wait, bank one window, advance the frontier
+            collectInFlightInto(ri);  /// wait, bank one window, advance the display
         else
             return serveWindowInline(ri, window);  /// not prefetched: read it now
     }
-    ChainedBuffers out = serveStepFromBanked(step, st, position_phys);
-    /// Run any scheduled handed fill overlapping the served range: the schedule CAN emit a
-    /// promote over an `into`-empty gap (a whole-cell run the fetch parts do not fully span is
-    /// not a FETCH target, yet the served bytes may complete its blocks), and a planned job runs
-    /// regardless of whether the bytes came from the bank or an inline fetch. The bank is
-    /// logical; the fills expect physical - shift there and back (the shift mutates only this
-    /// slice's descriptors, the remaining bank is untouched). Usually a no-op: a true bypass
-    /// range has no cells at all, so no handed job overlaps it.
-    if (!out.empty())
-    {
-        out.shift(static_cast<ssize_t>(data_start_offset));
-        runHandedFills(out.range(), out, stats);
-        out.shift(-static_cast<ssize_t>(data_start_offset));
-    }
-    return out;
+    /// Serve off the display; `serveFromDisplay` also runs any scheduled handed fill from the
+    /// served bytes - the schedule CAN emit a promote over an `into`-empty gap (a whole-cell run
+    /// the fetch parts do not fully span is not a FETCH target, yet the served bytes may
+    /// complete its blocks), and a planned job runs regardless of which path served the bytes.
+    return serveFromDisplay(window);
 }
 
 IntervalSet ReaderExecutor::committedCoverage(ByteRange window_phys) const
@@ -2525,7 +2469,9 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(size_t ri, ByteRange win
         /// `out` is discarded and the foreground fallback re-reads the window, so folding here
         /// would double-count the discarded prefix against the cache counters.
         Stats cell_stats;
-        serveWindowFromCells(window_phys, /*allow_wait=*/machine_leads, out, covered, cell_stats);
+        display.read(window_phys, out, covered, cell_stats);
+        if (machine_leads)
+            display.wait(window_phys, /*own_worker_only=*/true, out, covered, cell_stats);
         if (covered.subtract(window_phys).empty())   /// fully served from the cells
         {
             stats += cell_stats;
@@ -2549,19 +2495,136 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(size_t ri, ByteRange win
     return serveWindowInline(ri, window);
 }
 
-void ReaderExecutor::waitOnDisplay(
+IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
+{
+    /// Committed cells - the writers' LIVE committed sets, so an in-flight worker's streaming
+    /// commits show up here as they land (the fill front's current progress).
+    IntervalSet cov = ex.committedCoverage(window_phys);
+    /// Resident hit views - the plan's pinned facts (an entry can only serve through its held view).
+    if (const auto & geom = ex.read_plan.geometry())
+        for (size_t i = 0; i < geom->entries.size(); ++i)
+        {
+            if (i >= ex.read_plan.bufs.size() || !ex.read_plan.bufs[i].view)
+                continue;
+            for (const auto & res : geom->entries[i].resident)
+            {
+                const size_t lo = std::max(res.offset, window_phys.offset);
+                const size_t hi = std::min(res.end(), window_phys.end());
+                if (lo < hi)
+                    cov.add(ByteRange{lo, hi - lo});
+            }
+        }
+    /// The bank (logical coords; the display is physical).
+    for (const auto & st : ex.read_plan.retrieve_status)
+    {
+        if (st.ready_bytes.empty())
+            continue;
+        const ByteRange bank = st.ready_bytes.range();
+        const size_t lo = std::max(bank.offset + ex.data_start_offset, window_phys.offset);
+        const size_t hi = std::min(bank.end() + ex.data_start_offset, window_phys.end());
+        if (lo < hi)
+            cov.add(ByteRange{lo, hi - lo});
+    }
+    return cov;
+}
+
+bool ReaderExecutor::Display::covers(ByteRange window_phys) const
+{
+    return coverage(window_phys).subtract(window_phys).empty();
+}
+
+size_t ReaderExecutor::Display::frontier(ByteRange window_phys) const
+{
+    auto gaps = coverage(window_phys).subtract(window_phys);
+    return gaps.empty() ? window_phys.end() : gaps.front().offset;
+}
+
+void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
+{
+    /// 1) Resident HIT views: stream contiguous resident runs from the plan's held (pinning)
+    ///    readers, the fastest tier at each position (`residentAt`), stopping at the first
+    ///    non-resident byte - the later holders take over under the shared `covered` guard.
+    ///    Entered only when the window STARTS resident (a hit step), so the classification
+    ///    failpoint and the read-latency histogram fire exactly as the old hit path did.
+    const auto & geom = ex.read_plan.geometry();
+    if (geom && geom->residentAt(window_phys.offset).resident())
+    {
+        /// Test hook: pause after residency classified this a hit but before the read, so a
+        /// test can drop/evict the cache and verify the plan-pinned segment survives.
+        FailPointInjection::pauseFailPoint(FailPoints::reader_executor_pause_after_cache_status);
+        StatTimer get_scope(out_stats, Stats::CacheGetMicroseconds);
+        for (size_t pos = window_phys.offset; pos < window_phys.end();)
+        {
+            auto run = geom->residentAt(pos);
+            if (!run.resident() || run.entry >= ex.read_plan.bufs.size()
+                || !ex.read_plan.bufs[run.entry].view)
+                break;
+            const size_t serve_end = std::min(run.run_end, window_phys.end());
+            ChainedBuffers chunk = readHitFromView(*ex.read_plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
+            const size_t got = chunk.range().size;
+            if (got == 0)
+                break;
+            out_stats.add(Stats::CacheGetRequests);
+            out_stats.add(run.tier == CacheTier::PageCache ? Stats::BytesFromPageCache
+                                                           : Stats::BytesFromFilesystemCache, got);
+            covered.add(ByteRange{pos, got});
+            out.append(std::move(chunk));
+            pos += got;
+            if (pos < serve_end)
+                break;
+        }
+        HistogramMetrics::ReaderExecutorCacheReadLatency.observe(
+            static_cast<HistogramMetrics::Value>(get_scope.elapsedMicroseconds()));
+    }
+
+    /// 2) Committed cells (fastest resident tier first, under the shared `covered`).
+    ex.recreditCommittedPrefixes(window_phys, out, covered, out_stats);
+
+    /// 3) The bank - bytes a piece fetched that no cell could hold. Serving CONSUMES: the bank
+    ///    is trimmed past the served end (dropping any skipped head with it), so the banked
+    ///    footprint stays ~one window. No cache counters - the bytes were counted at fetch.
+    for (auto & st : ex.read_plan.retrieve_status)
+    {
+        if (st.ready_bytes.empty())
+            continue;
+        const ByteRange bank = st.ready_bytes.range();   /// logical
+        const size_t lo = std::max(bank.offset + ex.data_start_offset, window_phys.offset);
+        const size_t hi = std::min(bank.end() + ex.data_start_offset, window_phys.end());
+        if (lo >= hi)
+            continue;
+        size_t served_end_logical = 0;
+        for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
+        {
+            const ByteRange g_logical{g.offset - ex.data_start_offset, g.size};
+            ChainedBuffers slice = st.ready_bytes.slice(g_logical);
+            /// The bank's range is a bounding box; serve a gap only when the slice FULLY covers
+            /// it - never mark bytes covered that were not appended (the caller's fallback
+            /// fetches a genuinely missing piece).
+            if (!slice.covers(g_logical))
+                continue;
+            slice.shift(static_cast<ssize_t>(ex.data_start_offset));
+            out.append(std::move(slice));
+            covered.add(g);
+            served_end_logical = std::max(served_end_logical, g_logical.end());
+        }
+        if (served_end_logical > bank.offset)
+            st.ready_bytes = st.ready_bytes.slice(ByteRange{served_end_logical, bank.end() - served_end_logical});
+    }
+}
+
+void ReaderExecutor::Display::wait(
     ByteRange window_phys, bool own_worker_only, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
 {
     const auto is_worker_target = [&](CacheWriter * w)
     {
-        if (!machine)
+        if (!ex.machine)
             return false;
-        for (const auto & v : machine->writer_views)
+        for (const auto & v : ex.machine->writer_views)
             if (v.writer == w)
                 return true;
         return false;
     };
-    for (const auto & buf : read_plan.bufs)
+    for (const auto & buf : ex.read_plan.bufs)
     {
         /// A page cell is filled by promotion at the serve, not downloaded - no downloader,
         /// a wait on it would never wake.
@@ -2588,14 +2651,20 @@ void ReaderExecutor::waitOnDisplay(
     }
 }
 
-void ReaderExecutor::serveWindowFromCells(
-    ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
+ChainedBuffers ReaderExecutor::serveFromDisplay(ByteRange window)
 {
-    /// The committed prefix first (fastest resident tier first, under the shared `covered`),
-    /// then the in-flight worker's own live frontier (the read-behind serve).
-    recreditCommittedPrefixes(window_phys, out, covered, out_stats);
-    if (allow_wait && machine)
-        waitOnDisplay(window_phys, /*own_worker_only=*/true, out, covered, out_stats);
+    ChainedBuffers out;
+    IntervalSet covered;
+    display.read(window, out, covered, stats);
+    /// The contiguous served prefix; the next call serves from the first gap.
+    auto gaps = covered.subtract(window);
+    const size_t prefix_end = gaps.empty() ? window.end() : gaps.front().offset;
+    ChainedBuffers chain = out.slice(ByteRange{window.offset, prefix_end - window.offset});
+    if (!chain.empty())
+        runHandedFills(ByteRange{window.offset, chain.range().size}, chain, stats);
+    if (data_start_offset)
+        chain.shift(-static_cast<ssize_t>(data_start_offset));
+    return chain;
 }
 
 ChainedBuffers ReaderExecutor::interpretStep(size_t position_phys)

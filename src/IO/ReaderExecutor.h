@@ -787,14 +787,48 @@ private:
     /// `recreditCommittedPrefixes`, and promotes the served run up. A bypass gap keeps the bank.
     ChainedBuffers serveRetrievePopulatable(size_t ri, ByteRange window);
     // ─── The display: the one state surface where execution results appear ─────────
-    // The committed cell bytes (plus, until it is virtualized, the bypass bank). The serve
-    // looks at the display and either takes ready bytes or advances a job; a job's progress
-    // IS the display state - there is no separate populatable progress counter to drift.
 
-    /// DISPLAY coverage: `window_phys` ∩ the plan's held write buffers' committed ranges
-    /// (the read-only twin of `recreditCommittedPrefixes`'s computation: no read, no stats). A
-    /// byte a SIBLING downloaded is NOT in this executor's per-writer committed set, so it reads
-    /// as uncovered here - which is what bounds the inline serve to its own led prefix.
+    /// The DISPLAY: everything the plan can serve RIGHT NOW, with live progress - the union of
+    /// the three byte holders, read through one surface:
+    ///   - resident HIT views (the plan's pinned facts),
+    ///   - committed CELLS (the writers' live `committed()` sets - they grow as an in-flight
+    ///     worker streams, so the display shows the fill front's CURRENT progress),
+    ///   - the BANK (bytes a piece fetched that no cell could hold: bypass gaps).
+    /// The serve looks at the display and either takes ready bytes or advances a job; a job's
+    /// data progress IS the display state. Foreground-only, plan-scoped (all state it reads
+    /// dies at re-plan).
+    class Display
+    {
+    public:
+        explicit Display(ReaderExecutor & ex_) : ex(ex_) {}
+
+        /// What is servable of `window_phys` right now (union of the three holders).
+        IntervalSet coverage(ByteRange window_phys) const;
+        bool covers(ByteRange window_phys) const;
+        /// The end of the contiguous servable run from `window_phys.offset`.
+        size_t frontier(ByteRange window_phys) const;
+        /// Serve the servable bytes of `window_phys` into `out`/`covered`, fastest holder
+        /// first under the shared `covered` guard, preserving each holder's attribution
+        /// (hit: `CacheGetRequests` + tier bytes + read-latency histogram; cell: the recredit
+        /// semantics; bank: consume-and-trim, no cache counters - the bytes were counted at
+        /// fetch). Bytes are PHYSICAL (pre-decryption-shift).
+        void read(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats);
+        /// Wait on cells a LIVE writer is filling and read them: `own_worker_only` restricts to
+        /// the in-flight machine's own download targets (the read-behind serve; a cell nobody
+        /// downloads would never wake); otherwise any disk-tier writer qualifies (the contended
+        /// path: dedup on a sibling executor's download). Page cells are filled by promotion,
+        /// not downloaded - never waited on.
+        void wait(ByteRange window_phys, bool own_worker_only, ChainedBuffers & out,
+            IntervalSet & covered, Stats & out_stats);
+
+    private:
+        ReaderExecutor & ex;
+    };
+
+    /// Coverage by the plan's held write buffers' committed ranges only (the read-only twin of
+    /// `recreditCommittedPrefixes`: no read, no stats). A byte a SIBLING downloaded is NOT in
+    /// this executor's per-writer committed set, so it reads as uncovered here - which is what
+    /// bounds the inline serve to its own led prefix.
     IntervalSet committedCoverage(ByteRange window_phys) const;
     /// Does the committed coverage span the whole window?
     bool committedCellCovers(ByteRange window_phys) const;
@@ -814,27 +848,19 @@ private:
     /// committed set - a refused cell write or a sibling-downloaded segment. Used by the launch
     /// scan, the lead launch, and the Ready->Done transition; the serve never reads it.
     size_t launchProgress(size_t ri) const;
-    /// DISPLAY wait: read the still-uncommitted sub-ranges of `window_phys` from disk cells a
-    /// LIVE writer is filling, blocking on each segment's download frontier
-    /// (`waitAndReadSiblingLed`, a `FileSegment` condition wait). `own_worker_only` restricts
-    /// the wait to cells the in-flight machine itself downloads (the read-behind serve; a cell
-    /// nobody downloads would never wake); otherwise any disk-tier writer qualifies (the
-    /// contended path: dedup on a sibling executor's download). Page cells are filled by
-    /// promotion, not downloaded - never waited on.
-    void waitOnDisplay(ByteRange window_phys, bool own_worker_only, ChainedBuffers & out,
-        IntervalSet & covered, Stats & out_stats);
-
-    /// Serve a populatable window from the display: the committed prefix, then (when
-    /// `allow_wait`) the in-flight worker's own live frontier. Accumulates into `out` /
-    /// `covered`; the caller checks full coverage and falls back to a foreground fetch otherwise.
-    void serveWindowFromCells(ByteRange window_phys, bool allow_wait, ChainedBuffers & out, IntervalSet & covered,
-        Stats & out_stats);
+    /// The banked serve used by `serveWindowInline`'s tail (its window was just assembled and
+    /// banked with the handed fills already run, so a display read would double-count the
+    /// committed part). Dissolves with `serveWindowInline` in M5c.
     ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
     /// Inline serve for a window no prefetch machine and no committed cell covers: a not-prefetched
     /// bypass gap (pure source fetch, banked) or a populatable gap whose cursor segment a sibling
     /// executor leads (wait the sibling's disk cell to dedup, source-fetch any remainder). Banks the
     /// window in `ready_bytes` and serves it from there.
     ChainedBuffers serveWindowInline(size_t ri, ByteRange window);
+    /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
+    /// handed fills from the served bytes; shifts to logical. The serve tail shared by the hit
+    /// step and the banked bypass step.
+    ChainedBuffers serveFromDisplay(ByteRange window);
     void collectInFlightInto(size_t ri);
     void maybeLaunchAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
@@ -1013,6 +1039,8 @@ private:
     /// thread. Also the fallback collect-runner when there is no pool - its verbs no-op on a
     /// settled inline machine (null `current_step`).
     std::unique_ptr<IFetchMachineRunner> local_runner;
+    /// The display (see the class doc): holds only a back-reference, safe to initialize here.
+    Display display{*this};
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the
