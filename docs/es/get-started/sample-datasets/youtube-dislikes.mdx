@@ -1,0 +1,524 @@
+---
+description: 'Una colección de marcas de “No me gusta” en videos de YouTube.'
+sidebarTitle: 'No me gusta de YouTube'
+slug: /getting-started/example-datasets/youtube-dislikes
+title: 'Conjunto de datos de YouTube sobre no me gusta'
+doc_type: 'guide'
+keywords: ['conjunto de datos de ejemplo', 'youtube', 'datos de muestra', 'analítica de vídeo', 'no me gusta']
+---
+
+En noviembre de 2021, YouTube eliminó el recuento público de ***no me gusta*** de todos sus videos. Aunque los creadores siguen pudiendo ver la cantidad de no me gusta, los espectadores solo pueden ver cuántos ***me gusta*** ha recibido un video.
+
+<Warning>
+  El conjunto de datos contiene más de 4,55 mil millones de registros, así que ten cuidado al copiar y pegar los comandos siguientes, a menos que tus recursos puedan soportar ese volumen. Los siguientes comandos se ejecutaron en una instancia de **Production** de [ClickHouse Cloud](https://clickhouse.cloud).
+</Warning>
+
+Los datos están en formato JSON y pueden descargarse desde [archive.org](https://archive.org/download/dislikes_youtube_2021_12_video_json_files). También hemos puesto estos mismos datos a disposición en S3 para que puedan descargarse de forma más eficiente en una instancia de ClickHouse Cloud.
+
+A continuación se indican los pasos para crear una tabla en ClickHouse Cloud e insertar los datos.
+
+<Note>
+  Los pasos siguientes también funcionarán sin problemas en una instalación local de ClickHouse. El único cambio sería usar la función `s3` en lugar de `s3cluster` (a menos que tengas un cluster configurado; en ese caso, cambia `default` por el nombre de tu cluster).
+</Note>
+
+<div id="step-by-step-instructions">
+  ## Instrucciones paso a paso
+</div>
+
+<Steps>
+  <Step>
+    ### Exploración de datos
+
+    Veamos qué aspecto tienen los datos. La función de tabla `s3cluster` devuelve una tabla, así que podemos `DESCRIBE` el resultado:
+
+    ```sql
+    DESCRIBE s3(
+        'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
+        'JSONLines'
+    );
+    ```
+
+    ClickHouse infiere el siguiente esquema a partir del archivo JSON:
+
+    ```response
+    ┌─name────────────────┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+    │ id                  │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ fetch_date          │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ upload_date         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ title               │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ uploader_id         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ uploader            │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ uploader_sub_count  │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+    │ is_age_limit        │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ view_count          │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+    │ like_count          │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+    │ dislike_count       │ Nullable(Int64)                                                                                                                        │              │                    │         │                  │                │
+    │ is_crawlable        │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ is_live_content     │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ has_subtitles       │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ is_ads_enabled      │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ is_comments_enabled │ Nullable(Bool)                                                                                                                         │              │                    │         │                  │                │
+    │ description         │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ rich_metadata       │ Array(Tuple(call Nullable(String), content Nullable(String), subtitle Nullable(String), title Nullable(String), url Nullable(String))) │              │                    │         │                  │                │
+    │ super_titles        │ Array(Tuple(text Nullable(String), url Nullable(String)))                                                                              │              │                    │         │                  │                │
+    │ uploader_badges     │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    │ video_badges        │ Nullable(String)                                                                                                                       │              │                    │         │                  │                │
+    └─────────────────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ### Crear la tabla
+
+    A partir del esquema inferido, ajustamos los tipos de datos y añadimos una clave primaria.
+    Defina la siguiente tabla:
+
+    ```sql
+    CREATE TABLE youtube
+    (
+        `id` String,
+        `fetch_date` DateTime,
+        `upload_date_str` String,
+        `upload_date` Date,
+        `title` String,
+        `uploader_id` String,
+        `uploader` String,
+        `uploader_sub_count` Int64,
+        `is_age_limit` Bool,
+        `view_count` Int64,
+        `like_count` Int64,
+        `dislike_count` Int64,
+        `is_crawlable` Bool,
+        `has_subtitles` Bool,
+        `is_ads_enabled` Bool,
+        `is_comments_enabled` Bool,
+        `description` String,
+        `rich_metadata` Array(Tuple(call String, content String, subtitle String, title String, url String)),
+        `super_titles` Array(Tuple(text String, url String)),
+        `uploader_badges` String,
+        `video_badges` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (uploader, upload_date)
+    ```
+  </Step>
+
+  <Step>
+    ### Insertar datos
+
+    El siguiente comando transmite los registros de los archivos de S3 a la tabla `youtube`.
+
+    <Warning>
+      Esto inserta una gran cantidad de datos: 4,65 mil millones de filas. Si no quieres el conjunto de datos completo, simplemente añade una cláusula `LIMIT` con el número de filas que desees.
+    </Warning>
+
+    ```sql
+    INSERT INTO youtube
+    SETTINGS input_format_null_as_default = 1
+    SELECT
+        id,
+        parseDateTimeBestEffortUSOrZero(toString(fetch_date)) AS fetch_date,
+        upload_date AS upload_date_str,
+        toDate(parseDateTimeBestEffortUSOrZero(upload_date::String)) AS upload_date,
+        ifNull(title, '') AS title,
+        uploader_id,
+        ifNull(uploader, '') AS uploader,
+        uploader_sub_count,
+        is_age_limit,
+        view_count,
+        like_count,
+        dislike_count,
+        is_crawlable,
+        has_subtitles,
+        is_ads_enabled,
+        is_comments_enabled,
+        ifNull(description, '') AS description,
+        rich_metadata,
+        super_titles,
+        ifNull(uploader_badges, '') AS uploader_badges,
+        ifNull(video_badges, '') AS video_badges
+    FROM s3(
+        'https://clickhouse-public-datasets.s3.amazonaws.com/youtube/original/files/*.zst',
+        'JSONLines'
+    )
+    ```
+
+    Algunos comentarios sobre nuestro comando `INSERT`:
+
+    * La función `parseDateTimeBestEffortUSOrZero` resulta útil cuando es posible que los campos de fecha entrantes no estén en el formato correcto. Si `fetch_date` no se puede analizar correctamente, se establecerá en `0`
+    * La columna `upload_date` contiene fechas válidas, pero también cadenas como &quot;4 hours ago&quot;, que claramente no es una fecha válida. Decidimos almacenar el valor original en `upload_date_str` e intentar convertirlo con `toDate(parseDateTimeBestEffortUSOrZero(upload_date::String))`. Si el análisis falla, simplemente obtenemos `0`
+    * Usamos `ifNull` para evitar valores `NULL` en nuestra tabla. Si un valor entrante es `NULL`, la función `ifNull` establece el valor como una cadena vacía
+  </Step>
+
+  <Step>
+    ### Cuenta el número de filas
+
+    Abre una nueva pestaña en SQL Console de ClickHouse Cloud (o una nueva ventana de `clickhouse-client`) y observa cómo aumenta el recuento.
+    Llevará un tiempo insertar 4.56B filas, según los recursos de tu server. (Sin ajustar ninguna configuración, tarda unas 4.5 horas.)
+
+    ```sql
+    SELECT formatReadableQuantity(count())
+    FROM youtube
+    ```
+
+    ```response
+    ┌─formatReadableQuantity(count())─┐
+    │ 4.56 billion                    │
+    └─────────────────────────────────┘
+    ```
+  </Step>
+
+  <Step>
+    ### Explora los datos
+
+    Una vez insertados los datos, cuenta cuántos «No me gusta» tienen tus videos o canales favoritos. Veamos cuántos videos ha subido ClickHouse:
+
+    ```sql
+    SELECT count()
+    FROM youtube
+    WHERE uploader = 'ClickHouse';
+    ```
+
+    ```response
+    ┌─count()─┐
+    │      84 │
+    └─────────┘
+
+    1 row in set. Elapsed: 0.570 sec. Processed 237.57 thousand rows, 5.77 MB (416.54 thousand rows/s., 10.12 MB/s.)
+    ```
+
+    <Note>
+      La consulta anterior se ejecuta tan rápido porque elegimos `uploader` como la primera columna de la clave primaria, por lo que solo tuvo que procesar 237k filas.
+    </Note>
+
+    Veamos los «me gusta» y «no me gusta» de los videos de ClickHouse:
+
+    ```sql
+    SELECT
+        title,
+        like_count,
+        dislike_count
+    FROM youtube
+    WHERE uploader = 'ClickHouse'
+    ORDER BY dislike_count DESC;
+    ```
+
+    La respuesta se ve así:
+
+    ```response
+    ┌─title────────────────────────────────────────────────────────────────────────────────────────────────┬─like_count─┬─dislike_count─┐
+    │ ClickHouse v21.11 Release Webinar                                                                    │         52 │             3 │
+    │ ClickHouse Introduction                                                                              │         97 │             3 │
+    │ Casa Modelo Algarve                                                                                  │        180 │             3 │
+    │ Профайлер запросов:  трудный путь                                                                    │         33 │             3 │
+    │ ClickHouse в Курсометре                                                                              │          4 │             2 │
+    │ 10 Good Reasons to Use ClickHouse                                                                    │         27 │             2 │
+    ...
+
+    84 rows in set. Elapsed: 0.013 sec. Processed 155.65 thousand rows, 16.94 MB (11.96 million rows/s., 1.30 GB/s.)
+    ```
+
+    Aquí tienes una búsqueda de videos con **ClickHouse** en los campos `title` o `description`:
+
+    ```sql
+    SELECT
+        view_count,
+        like_count,
+        dislike_count,
+        concat('https://youtu.be/', id) AS url,
+        title
+    FROM youtube
+    WHERE (title ILIKE '%ClickHouse%') OR (description ILIKE '%ClickHouse%')
+    ORDER BY
+        like_count DESC,
+        view_count DESC;
+    ```
+
+    Esta consulta tiene que procesar cada fila y, además, analizar dos columnas de cadenas. Aun así, obtenemos un rendimiento bastante bueno de 4,15 M filas/segundo:
+
+    ```response
+    1174 rows in set. Elapsed: 1099.368 sec. Processed 4.56 billion rows, 1.98 TB (4.15 million rows/s., 1.80 GB/s.)
+    ```
+
+    Los resultados son así:
+
+    ```response
+    ┌─view_count─┬─like_count─┬─dislike_count─┬─url──────────────────────────┬─title──────────────────────────────────────────────────────────────────────────────────────────────────┐
+    │       1919 │         63 │             1 │ https://youtu.be/b9MeoOtAivQ │ ClickHouse v21.10 Release Webinar                                                                      │
+    │       8710 │         62 │             4 │ https://youtu.be/PeV1mC2z--M │ What is JDBC DriverManager? | JDBC                                                                     │
+    │       3534 │         62 │             1 │ https://youtu.be/8nWRhK9gw10 │ CLICKHOUSE - Arquitetura Modular                                                                       │
+    ```
+  </Step>
+</Steps>
+
+<div id="questions">
+  ## Preguntas
+</div>
+
+<div id="if-someone-disables-comments-does-it-lower-the-chance-someone-will-actually-click-like-or-dislike">
+  ### Si alguien desactiva los comentarios, ¿disminuye la probabilidad de que alguien realmente haga clic en «me gusta» o «no me gusta»?
+</div>
+
+Cuando los comentarios están desactivados, ¿es más probable que la gente marque «me gusta» o «no me gusta» para expresar lo que siente sobre un video?
+
+```sql
+SELECT
+    concat('< ', formatReadableQuantity(view_range)) AS views,
+    is_comments_enabled,
+    total_clicks / num_views AS prob_like_dislike
+FROM
+(
+    SELECT
+        is_comments_enabled,
+        power(10, CEILING(log10(view_count + 1))) AS view_range,
+        sum(like_count + dislike_count) AS total_clicks,
+        sum(view_count) AS num_views
+    FROM youtube
+    GROUP BY
+        view_range,
+        is_comments_enabled
+) WHERE view_range > 1
+ORDER BY
+    is_comments_enabled ASC,
+    num_views ASC;
+```
+
+```response
+┌─views─────────────┬─is_comments_enabled─┬────prob_like_dislike─┐
+│ < 10.00           │ false               │  0.08224180712685371 │
+│ < 100.00          │ false               │  0.06346337759167248 │
+│ < 1.00 thousand   │ false               │  0.03201883652987105 │
+│ < 10.00 thousand  │ false               │  0.01716073540410903 │
+│ < 10.00 billion   │ false               │ 0.004555639481829971 │
+│ < 100.00 thousand │ false               │  0.01293351460515323 │
+│ < 1.00 billion    │ false               │ 0.004761811192464957 │
+│ < 1.00 million    │ false               │ 0.010472604018980551 │
+│ < 10.00 million   │ false               │  0.00788902538420125 │
+│ < 100.00 million  │ false               │  0.00579152804250582 │
+│ < 10.00           │ true                │  0.09819517478134059 │
+│ < 100.00          │ true                │  0.07403784478585775 │
+│ < 1.00 thousand   │ true                │  0.03846294910067627 │
+│ < 10.00 billion   │ true                │ 0.005615217329358215 │
+│ < 10.00 thousand  │ true                │  0.02505881391701455 │
+│ < 1.00 billion    │ true                │ 0.007434998802482997 │
+│ < 100.00 thousand │ true                │ 0.022694648130822004 │
+│ < 100.00 million  │ true                │ 0.011761563746575625 │
+│ < 1.00 million    │ true                │ 0.020776022304589435 │
+│ < 10.00 million   │ true                │ 0.016917095718089584 │
+└───────────────────┴─────────────────────┴──────────────────────┘
+
+22 rows in set. Elapsed: 8.460 sec. Processed 4.56 billion rows, 77.48 GB (538.73 million rows/s., 9.16 GB/s.)
+```
+
+Habilitar los comentarios parece estar relacionado con una mayor tasa de participación.
+
+<div id="how-does-the-number-of-videos-change-over-time---notable-events">
+  ### ¿Cómo evoluciona el número de videos a lo largo del tiempo? - eventos destacados
+</div>
+
+```sql
+SELECT
+    toStartOfMonth(toDateTime(upload_date)) AS month,
+    uniq(uploader_id) AS uploaders,
+    count() AS num_videos,
+    sum(view_count) AS view_count
+FROM youtube
+GROUP BY month
+ORDER BY month ASC;
+```
+
+```response
+┌──────month─┬─uploaders─┬─num_videos─┬───view_count─┐
+│ 2005-04-01 │         5 │          6 │    213597737 │
+│ 2005-05-01 │         6 │          9 │      2944005 │
+│ 2005-06-01 │       165 │        351 │     18624981 │
+│ 2005-07-01 │       395 │       1168 │     94164872 │
+│ 2005-08-01 │      1171 │       3128 │    124540774 │
+│ 2005-09-01 │      2418 │       5206 │    475536249 │
+│ 2005-10-01 │      6750 │      13747 │    737593613 │
+│ 2005-11-01 │     13706 │      28078 │   1896116976 │
+│ 2005-12-01 │     24756 │      49885 │   2478418930 │
+│ 2006-01-01 │     49992 │     100447 │   4532656581 │
+│ 2006-02-01 │     67882 │     138485 │   5677516317 │
+│ 2006-03-01 │    103358 │     212237 │   8430301366 │
+│ 2006-04-01 │    114615 │     234174 │   9980760440 │
+│ 2006-05-01 │    152682 │     332076 │  14129117212 │
+│ 2006-06-01 │    193962 │     429538 │  17014143263 │
+│ 2006-07-01 │    234401 │     530311 │  18721143410 │
+│ 2006-08-01 │    281280 │     614128 │  20473502342 │
+│ 2006-09-01 │    312434 │     679906 │  23158422265 │
+│ 2006-10-01 │    404873 │     897590 │  27357846117 │
+```
+
+Se nota un aumento repentino de usuarios que suben contenido [en torno al covid](https://www.theverge.com/2020/3/27/21197642/youtube-with-me-style-videos-views-coronavirus-cook-workout-study-home-beauty).
+
+<div id="more-subtitles-over-time-and-when">
+  ### Más subtítulos con el tiempo y cuándo
+</div>
+
+Con los avances en el reconocimiento de voz, es más fácil que nunca crear subtítulos para vídeo, y YouTube añadió los subtítulos automáticos a finales de 2009; ¿fue entonces cuando se produjo el salto?
+
+```sql
+SELECT
+    toStartOfMonth(upload_date) AS month,
+    countIf(has_subtitles) / count() AS percent_subtitles,
+    percent_subtitles - any(percent_subtitles) OVER (
+        ORDER BY month ASC ROWS BETWEEN 1 PRECEDING AND 1 PRECEDING
+    ) AS previous
+FROM youtube
+GROUP BY month
+ORDER BY month ASC;
+```
+
+```response
+┌──────month─┬───percent_subtitles─┬────────────────previous─┐
+│ 2015-01-01 │  0.2652653881082824 │      0.2652653881082824 │
+│ 2015-02-01 │  0.3147556050309162 │    0.049490216922633834 │
+│ 2015-03-01 │ 0.32460464492371877 │    0.009849039892802558 │
+│ 2015-04-01 │ 0.33471963051468445 │    0.010114985590965686 │
+│ 2015-05-01 │  0.3168087575501062 │   -0.017910872964578273 │
+│ 2015-06-01 │  0.3162609788438222 │  -0.0005477787062839745 │
+│ 2015-07-01 │ 0.31828767677518033 │   0.0020266979313581235 │
+│ 2015-08-01 │  0.3045551564286859 │   -0.013732520346494415 │
+│ 2015-09-01 │   0.311221133995152 │    0.006665977566466086 │
+│ 2015-10-01 │ 0.30574870926812175 │   -0.005472424727030245 │
+│ 2015-11-01 │ 0.31125409712077234 │   0.0055053878526505895 │
+│ 2015-12-01 │  0.3190967954651779 │    0.007842698344405541 │
+│ 2016-01-01 │ 0.32636021432496176 │    0.007263418859783877 │
+
+```
+
+Los resultados muestran un pico en 2009. Al parecer, por aquel entonces YouTube estaba eliminando su función de subtítulos aportados por la comunidad, que permitía subir subtítulos para los videos de otras personas.
+Esto dio lugar a una campaña muy exitosa para que los creadores añadieran subtítulos a sus videos para espectadores con discapacidad auditiva y personas sordas.
+
+<div id="top-uploaders-over-time">
+  ### Principales usuarios que suben contenido a lo largo del tiempo
+</div>
+
+```sql
+WITH uploaders AS
+    (
+        SELECT uploader
+        FROM youtube
+        GROUP BY uploader
+        ORDER BY sum(view_count) DESC
+        LIMIT 10
+    )
+SELECT
+    month,
+    uploader,
+    sum(view_count) AS total_views,
+    avg(dislike_count / like_count) AS like_to_dislike_ratio
+FROM youtube
+WHERE uploader IN (uploaders)
+GROUP BY
+    toStartOfMonth(upload_date) AS month,
+    uploader
+ORDER BY
+    month ASC,
+    total_views DESC;
+```
+
+```response
+┌──────month─┬─uploader───────────────────┬─total_views─┬─like_to_dislike_ratio─┐
+│ 1970-01-01 │ T-Series                   │    10957099 │  0.022784656361208206 │
+│ 1970-01-01 │ Ryan's World               │           0 │  0.003035559410234172 │
+│ 1970-01-01 │ SET India                  │           0 │                   nan │
+│ 2006-09-01 │ Cocomelon - Nursery Rhymes │   256406497 │    0.7005566715978622 │
+│ 2007-06-01 │ Cocomelon - Nursery Rhymes │    33641320 │    0.7088650914344298 │
+│ 2008-02-01 │ WWE                        │    43733469 │   0.07198856488734842 │
+│ 2008-03-01 │ WWE                        │    16514541 │    0.1230603715431997 │
+│ 2008-04-01 │ WWE                        │     5907295 │    0.2089399470159618 │
+│ 2008-05-01 │ WWE                        │     7779627 │   0.09101676560436774 │
+│ 2008-06-01 │ WWE                        │     7018780 │    0.0974184753155297 │
+│ 2008-07-01 │ WWE                        │     4686447 │    0.1263845422065158 │
+│ 2008-08-01 │ WWE                        │     4514312 │   0.08384574274791441 │
+│ 2008-09-01 │ WWE                        │     3717092 │   0.07872802579349912 │
+```
+
+<div id="how-do-like-ratio-changes-as-views-go-up">
+  ### ¿Cómo cambia la proporción de “Me gusta” a medida que aumentan las visualizaciones?
+</div>
+
+```sql
+SELECT
+    concat('< ', formatReadableQuantity(view_range)) AS view_range,
+    is_comments_enabled,
+    round(like_ratio, 2) AS like_ratio
+FROM
+(
+SELECT
+    power(10, CEILING(log10(view_count + 1))) AS view_range,
+    is_comments_enabled,
+    avg(like_count / dislike_count) AS like_ratio
+FROM youtube WHERE dislike_count > 0
+GROUP BY
+    view_range,
+    is_comments_enabled HAVING view_range > 1
+ORDER BY
+    view_range ASC,
+    is_comments_enabled ASC
+);
+```
+
+```response
+┌─view_range────────┬─is_comments_enabled─┬─like_ratio─┐
+│ < 10.00           │ false               │       0.66 │
+│ < 10.00           │ true                │       0.66 │
+│ < 100.00          │ false               │          3 │
+│ < 100.00          │ true                │       3.95 │
+│ < 1.00 thousand   │ false               │       8.45 │
+│ < 1.00 thousand   │ true                │      13.07 │
+│ < 10.00 thousand  │ false               │      18.57 │
+│ < 10.00 thousand  │ true                │      30.92 │
+│ < 100.00 thousand │ false               │      23.55 │
+│ < 100.00 thousand │ true                │      42.13 │
+│ < 1.00 million    │ false               │      19.23 │
+│ < 1.00 million    │ true                │      37.86 │
+│ < 10.00 million   │ false               │      12.13 │
+│ < 10.00 million   │ true                │      30.72 │
+│ < 100.00 million  │ false               │       6.67 │
+│ < 100.00 million  │ true                │      23.32 │
+│ < 1.00 billion    │ false               │       3.08 │
+│ < 1.00 billion    │ true                │      20.69 │
+│ < 10.00 billion   │ false               │       1.77 │
+│ < 10.00 billion   │ true                │       19.5 │
+└───────────────────┴─────────────────────┴────────────┘
+```
+
+<div id="how-are-views-distributed">
+  ### ¿Cómo se distribuyen las vistas?
+</div>
+
+```sql
+SELECT
+    labels AS percentile,
+    round(quantiles) AS views
+FROM
+(
+    SELECT
+        quantiles(0.999, 0.99, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1)(view_count) AS quantiles,
+        ['99.9th', '99th', '95th', '90th', '80th', '70th','60th', '50th', '40th', '30th', '20th', '10th'] AS labels
+    FROM youtube
+)
+ARRAY JOIN
+    quantiles,
+    labels;
+```
+
+```response
+┌─percentile─┬───views─┐
+│ 99.9th     │ 1216624 │
+│ 99th       │  143519 │
+│ 95th       │   13542 │
+│ 90th       │    4054 │
+│ 80th       │     950 │
+│ 70th       │     363 │
+│ 60th       │     177 │
+│ 50th       │      97 │
+│ 40th       │      57 │
+│ 30th       │      32 │
+│ 20th       │      16 │
+│ 10th       │       6 │
+└────────────┴─────────┘
+```

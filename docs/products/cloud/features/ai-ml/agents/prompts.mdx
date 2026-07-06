@@ -1,0 +1,60 @@
+---
+sidebarTitle: 'Prompts'
+slug: /cloud/features/ai-ml/agents/prompts
+title: 'Prompts'
+description: 'Saved prompt library for ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'prompts', 'templates']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge/>
+
+The Prompts library is a place to save and reuse natural-language prompts you find yourself typing repeatedly. Think of it as snippets for your chat composer — useful when the same analytical question or formatting instruction comes up across conversations.
+
+## Create a prompt {#create-a-prompt}
+
+Open the Prompts panel from the **Prompts** icon in the left navigation and click the **+** button to open the **Create Prompt** form. Fill in the fields:
+
+- **Prompt Name** (required) - what shows up in the picker. Be descriptive: *"Weekly active users by region"* beats *"WAU"*.
+- **Text** (required) - the actual text that will be inserted into the composer.
+- **Special variables** - click the **Special variables** button to insert placeholders, or type `{{name}}` style markers directly. The picker prompts you for values before inserting.
+- **Category**, **Description**, **Command** (optional) - for organizing the library, picker preview text, and a quick-invoke shortcut.
+
+Then click **Create Prompt** at the bottom right.
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="Prompts panel with the + button highlighted on the left and the Create Prompt form open on the right showing Prompt Name, Text, Category, Special variables, Description, and Command fields, with a Create Prompt button" size="lg"/>
+
+## Use a prompt {#use-a-prompt}
+
+In the Prompts panel, open the **...** menu on a prompt card and choose **Preview**:
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="Prompts panel with a prompt selected, its details visible on the right, and a context menu showing Preview and Edit options" size="lg"/>
+
+The preview shows the prompt's text along with its author and date. Click **Use Prompt** to insert the body into the composer. If the prompt has variables, fill them in first.
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="Prompt preview modal showing the prompt title, author, date, body text, and a Use Prompt button" size="md"/>
+
+## Share prompts {#share-prompts}
+
+By default, a prompt is private to the person who created it. The owner can change a prompt's visibility to:
+
+- **Specific users or groups** - anyone you nominate can find and use the prompt.
+- **Organization-wide** - everyone in your ClickHouse Cloud organization can find and use it.
+
+Prompts use the same permission model as agents. For the full matrix of roles and what each can do, see [Sharing and
+access](/products/cloud/features/ai-ml/agents/sharing-and-access).
+
+## Prompts vs. skills vs. instructions {#prompts-vs-skills-vs-instructions}
+
+Prompts, skills, and agent instructions all add text to the model, but they differ in who triggers them and how persistent they are.
+
+- **Prompts** - text you insert into the composer yourself, edited per turn.
+- **[Skills](/products/cloud/features/ai-ml/agents/builder/skills)** - instruction sets the agent loads on its own when it judges them relevant to the task.
+- **Agent instructions** - the agent's persistent system prompt, applied to every conversation.
+
+Reach for a prompt when you want to reuse phrasing but stay in control of the wording each time. Reach for a skill when you want the agent to apply
+the same guidance consistently across a task type without having to type it. Reach for agent instructions when the behavior should hold for the
+lifetime of the agent.

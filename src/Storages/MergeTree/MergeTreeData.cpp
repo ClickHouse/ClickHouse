@@ -4515,6 +4515,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
 
+    const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
+        /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
+        /*new_changes=*/new_metadata.settings_changes->as<const ASTSetQuery &>().changes);
 
     if (merging_params.allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(new_metadata);
@@ -4541,7 +4544,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
         if (new_metadata.settings_changes)
         {
-            const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+            MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+
             for (const auto & changed : new_changes)
             {
                 StoragePolicyPtr new_policy;
@@ -4963,8 +4968,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     if (old_metadata.hasSettingsChanges())
     {
-        const auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
-        const auto & new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+        auto current_changes = old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
+
+        MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
+        MergeTreeSettings::resolveDiskSetting(new_changes, local_context, /*is_loading_from_existing_metadata=*/!disk_setting_changed);
+
         local_context->checkMergeTreeSettingsConstraints(*settings_from_storage, new_changes);
 
         bool found_disk_setting = false;
@@ -4986,7 +4995,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             if (!current_value && MergeTreeSettings::isPartFormatSetting(setting_name))
             {
                 MergeTreeSettings copy = *getSettings();
-                copy.applyChange(changed_setting);
+                copy.applyChange(changed_setting, local_context, /*is_loading_from_existing_metadata=*/true);
                 String reason;
                 if (!canUsePolymorphicParts(copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -5024,7 +5033,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             {
                 /// Use default settings + new and check if doesn't affect part format settings
                 auto copy = getDefaultSettings();
-                copy->applyChanges(new_changes);
+                copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
                 String reason;
                 if (!canUsePolymorphicParts(*copy, reason) && !reason.empty())
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Can't change settings. Reason: {}", reason);
@@ -5239,7 +5248,9 @@ void MergeTreeData::changeSettings(
     {
         bool has_storage_policy_changed = false;
 
-        const auto & new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        auto new_changes = new_settings->as<const ASTSetQuery &>().changes;
+        MergeTreeSettings::resolveDiskSetting(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
+
         StoragePolicyPtr new_storage_policy = nullptr;
 
         for (const auto & change : new_changes)
@@ -5285,7 +5296,7 @@ void MergeTreeData::changeSettings(
 
         /// Reset to default settings before applying existing.
         auto copy = getDefaultSettings();
-        copy->applyChanges(new_changes);
+        copy->applyChanges(new_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         if (run_sanity_checks)
         {
             const auto & ac = getContext()->getAccessControl();
@@ -7569,7 +7580,10 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
+        /// Skip the temporary file too: restoring it without the main file would make the part load
+        /// as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded.
         if (filename.ends_with(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+            || filename.ends_with(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME)
             || filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
         {
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
@@ -8523,6 +8537,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", new_dir);
+        /// Strip both the committed transaction metadata file and any leftover `txn_version.txt.tmp`.
+        /// A stale tmp file left without the main file makes the part load as a rolled-back
+        /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
+        /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
+        /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
+        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
@@ -9511,7 +9531,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     if (metadata.settings_changes)
     {
         const auto & changes = metadata.settings_changes->as<const ASTSetQuery &>().changes;
-        settings->applyChanges(changes);
+        settings->applyChanges(changes, getContext(), /*is_loading_from_existing_metadata=*/true);
     }
 
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
@@ -10058,6 +10078,11 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 }
 
 void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    checkTableSizeBelowDropLimit(query_context);
+}
+
+void MergeTreeData::checkTableSizeBelowDropLimit(ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
@@ -11079,7 +11104,7 @@ MergeTreeSettingsPtr MergeTreeData::getSettings(const SettingsChanges * settings
     if (settings_changes && !settings_changes->empty())
     {
         auto new_data_settings = std::make_shared<MergeTreeSettings>(*data_settings);
-        new_data_settings->applyChanges(*settings_changes);
+        new_data_settings->applyChanges(*settings_changes, getContext(), /*is_loading_from_existing_metadata=*/true);
         return new_data_settings;
     }
 

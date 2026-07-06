@@ -1,0 +1,38 @@
+---
+sidebarTitle: 'Autoescalonamento vertical'
+slug: /cloud/features/autoscaling/vertical
+description: 'Configuração do autoescalonamento vertical no ClickHouse Cloud'
+keywords: ['autoescalonamento', 'escalonamento automático', 'vertical', 'escalonamento', 'CPU', 'memória']
+title: 'Autoescalonamento vertical'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<ScalePlanFeatureBadge feature="Autoescalonamento vertical" />
+
+Os serviços dos níveis Scale e Enterprise oferecem suporte ao autoescalonamento com base no uso de CPU e memória. O uso do serviço é monitorado continuamente durante uma janela de análise para orientar as decisões de escalonamento. Se o uso subir acima ou cair abaixo de determinados limites, o serviço será escalado adequadamente para acompanhar a demanda.
+
+<div id="configuring-vertical-auto-scaling">
+  ## Configurando o autoescalonamento vertical
+</div>
+
+O escalonamento dos serviços ClickHouse Cloud Scale ou Enterprise pode ser ajustado por membros da organização com a função **Admin**. Para configurar o autoescalonamento vertical, acesse a aba **Settings** do seu serviço e ajuste a memória mínima e máxima, juntamente com as configurações de CPU, como mostrado abaixo.
+
+<Note>
+  Serviços com uma única réplica não podem ser escalonados em todos os tiers.
+</Note>
+
+<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Página de configurações de escalonamento" border />
+
+Defina a **memória máxima** das suas réplicas com um valor maior que o da **memória mínima**. O serviço será então escalonado conforme necessário dentro desses limites. Essas configurações também estão disponíveis durante o fluxo inicial de criação do serviço. Cada réplica do seu serviço receberá os mesmos recursos de memória e CPU.
+
+Você também pode optar por definir esses valores como iguais, basicamente &quot;fixando&quot; o serviço em uma configuração específica. Ao fazer isso, o escalonamento será imediatamente forçado para o tamanho desejado.
+
+É importante observar que isso desativará qualquer autoescalonamento no cluster, e seu serviço não ficará protegido contra aumentos no uso de CPU ou memória além dessas configurações.
+
+<Note>
+  Para serviços do tier Enterprise, perfis padrão 1:4 oferecem suporte a autoescalonamento vertical. Perfis personalizados não oferecem suporte a autoescalonamento vertical nem a escalonamento vertical manual. No entanto, esses serviços podem ser escalonados verticalmente entrando em contato com o suporte.
+</Note>

@@ -1,0 +1,235 @@
+---
+sidebarTitle: 'Vector'
+slug: /integrations/vector
+description: 'كيفية تتبّع ملف سجل وإرساله إلى ClickHouse باستخدام Vector'
+title: 'تكامل Vector مع ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_ingestion'
+  - website: 'https://vector.dev/'
+keywords: ['vector', 'جمع السجلات', 'Observability', 'إدخال البيانات', 'مسار معالجة']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+تُعدّ القدرة على تحليل السجلات في الوقت الفعلي أمرًا بالغ الأهمية لتطبيقات الإنتاج.
+ويتميّز ClickHouse في تخزين بيانات السجلات وتحليلها بفضل إمكانات الضغط الممتازة لديه (حتى [170x](https://clickhouse.com/blog/log-compression-170x) للسجلات)
+وقدرتِه على تجميع كميات كبيرة من البيانات بسرعة.
+
+يوضح لك هذا الدليل كيفية استخدام خط أنابيب البيانات الشائع [Vector](https://vector.dev/docs/about/what-is-vector/) لمراقبة ملف سجل Nginx وإرساله إلى ClickHouse.
+والخطوات أدناه متشابهة عند مراقبة أي نوع من ملفات السجل.
+
+**المتطلبات الأساسية:**
+
+* لديك بالفعل ClickHouse قيد التشغيل
+* لديك Vector مثبت
+
+<Steps>
+  <Step>
+    ## أنشئ قاعدة بيانات وجدولًا
+
+    عرّف جدولًا لتخزين أحداث السجل:
+
+    1. ابدأ بإنشاء قاعدة بيانات جديدة باسم `nginxdb`:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS nginxdb
+    ```
+
+    2. أدرِج حدث السجل بالكامل كسلسلة نصية واحدة. من الواضح أن هذا ليس تنسيقًا مناسبًا جدًا لإجراء التحليلات على بيانات السجل، لكننا سنعالج هذا الجزء أدناه باستخدام ***العروض المُجسَّدة***.
+
+    ```sql
+    CREATE TABLE IF NOT EXISTS  nginxdb.access_logs (
+      message String
+    )
+    ENGINE = MergeTree()
+    ORDER BY tuple()
+    ```
+
+    <Note>
+      تم تعيين **ORDER BY** إلى **tuple()** (tuple فارغ) لعدم الحاجة إلى مفتاح أساسي بعد.
+    </Note>
+  </Step>
+
+  <Step>
+    ## تهيئة Nginx
+
+    في هذه الخطوة، ستتعرّف على كيفية تهيئة logging في Nginx.
+
+    1. تُرسل الخاصية `access_log` التالية السجلات إلى `/var/log/nginx/my_access.log` بتنسيق **combined**.
+       توضع هذه القيمة في قسم `http` من ملف `nginx.conf`:
+
+    ```bash
+    http {
+      include       /etc/nginx/mime.types;
+      default_type  application/octet-stream;
+      access_log  /var/log/nginx/my_access.log combined;
+      sendfile        on;
+      keepalive_timeout  65;
+      include /etc/nginx/conf.d/*.conf;
+    }
+    ```
+
+    2. احرص على إعادة تشغيل Nginx إذا اضطررت إلى تعديل `nginx.conf`.
+
+    3. أنشئ بعض السجلات في سجل الوصول من خلال زيارة صفحات على خادم الويب لديك.
+       تبدو السجلات بتنسيق **combined** كما يلي:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET / HTTP/1.1" 200 615 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:44 +0000] "GET /favicon.ico HTTP/1.1" 404 555 "http://localhost/" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    192.168.208.1 - - [12/Oct/2021:03:31:49 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+  </Step>
+
+  <Step>
+    ## تكوين Vector
+
+    يجمع Vector السجلات والمقاييس والتتبعات، ويحوّلها ويوجّهها (ويُشار إليها باسم **المصادر**) إلى العديد من المزوّدين المختلفين (ويُشار إليهم باسم **الوجهات**)؛ بما في ذلك التوافق الجاهز مع ClickHouse.
+    تُعرَّف المصادر والوجهات في ملف تكوين باسم **vector.toml**.
+
+    1. يحدّد ملف **vector.toml** التالي **مصدرًا** من النوع **file** يتابع نهاية ملف **my&#95;access.log**، كما يحدّد **وجهة** بوصفها جدول **access&#95;logs** المعرَّف أعلاه:
+
+    ```bash
+    [sources.nginx_logs]
+    type = "file"
+    include = [ "/var/log/nginx/my_access.log" ]
+    read_from = "end"
+
+    [sinks.clickhouse]
+    type = "clickhouse"
+    inputs = ["nginx_logs"]
+    endpoint = "http://clickhouse-server:8123"
+    database = "nginxdb"
+    table = "access_logs"
+    skip_unknown_fields = true
+    ```
+
+    2. ابدأ تشغيل Vector باستخدام configuration أعلاه. راجع [وثائق](https://vector.dev/docs/) Vector لمزيد من التفاصيل حول تعريف المصادر والمصارف.
+
+    3. تحقّق من إدراج سجلات الوصول في ClickHouse عبر تشغيل الاستعلام التالي. ينبغي أن ترى سجلات الوصول في جدولك:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="عرض سجلات ClickHouse بتنسيق جدولي" />
+  </Step>
+
+  <Step>
+    ## تحليل السجلات
+
+    يُعدّ تخزين السجلات في ClickHouse أمرًا رائعًا، غير أن تخزين كل حدث كسلسلة نصية واحدة لا يتيح إجراء تحليل يُذكر للبيانات.
+    سنتناول بعد ذلك كيفية تحليل أحداث السجلات باستخدام [طريقة العرض المُجسَّدة](/ar/concepts/features/materialized-views/incremental-materialized-view).
+
+    تعمل **المشاهدة المادية** بطريقة مشابهة لمحفّز الإدراج في SQL. عند إدراج صفوف البيانات في جدول المصدر، تُجري المشاهدة المادية تحويلاً على هذه الصفوف وتُدرج النتائج في جدول الهدف.
+    يمكن تهيئة المشاهدة المادية لتوليد تمثيل مُحلَّل لأحداث السجلات في **access&#95;logs**.
+    يظهر أدناه مثال على أحد هذه الأحداث:
+
+    ```bash
+    192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"
+    ```
+
+    تتوفر في ClickHouse دوال متعددة لتحليل السلسلة النصية المذكورة أعلاه. تعمل الدالة [`splitByWhitespace`](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByWhitespace) على تحليل السلسلة النصية بالمسافات البيضاء، وتُعيد كل رمز في مصفوفة.
+    للتوضيح، نفّذ الأمر التالي:
+
+    ```sql title="Query"
+    SELECT splitByWhitespace('192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    ```text title="Response"
+    ["192.168.208.1","-","-","[12/Oct/2021:15:32:43","+0000]","\"GET","/","HTTP/1.1\"","304","0","\"-\"","\"Mozilla/5.0","(Macintosh;","Intel","Mac","OS","X","10_15_7)","AppleWebKit/537.36","(KHTML,","like","Gecko)","Chrome/93.0.4577.63","Safari/537.36\""]
+    ```
+
+    بعض السلاسل النصية تحتوي على أحرف إضافية، ولم يكن ثمة حاجة إلى تحليل user agent (تفاصيل المتصفح)، غير أن المصفوفة الناتجة قريبة مما هو مطلوب.
+
+    على غرار `splitByWhitespace`، تُقسِّم الدالة [`splitByRegexp`](/ar/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) سلسلةً نصيةً إلى مصفوفة بناءً على تعبير نمطي.
+    نفِّذ الأمر التالي، الذي يُعيد سلسلتين نصيتين.
+
+    ```sql
+    SELECT splitByRegexp('\S \d+ "([^"]*)"', '192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] "GET / HTTP/1.1" 304 0 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36"')
+    ```
+
+    لاحظ أن السلسلة الثانية المُعادة هي user agent الذي جرى تحليله واستخراجه بنجاح من السجل:
+
+    ```text
+    ["192.168.208.1 - - [12/Oct/2021:15:32:43 +0000] \"GET / HTTP/1.1\" 30"," \"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.63 Safari/537.36\""]
+    ```
+
+    قبل الاطلاع على أمر `CREATE MATERIALIZED VIEW` النهائي، لنستعرض بعض الدوال الإضافية المستخدمة لتنظيف البيانات.
+    على سبيل المثال، قيمة `RequestMethod` هي `"GET` وتحتوي على علامة اقتباس مزدوجة غير مرغوب فيها.
+    يمكنك استخدام الدالة [`trimBoth` (alias `trim`)](/ar/reference/functions/regular-functions/string-functions#trimBoth) لإزالة علامة الاقتباس المزدوجة:
+
+    ```sql
+    SELECT trim(LEADING '"' FROM '"GET')
+    ```
+
+    تحتوي سلسلة الوقت على رمز `[` في بدايتها، كما أنها ليست بتنسيق يستطيع ClickHouse تحليله إلى تاريخ.
+    غير أنه إذا استبدلنا الفاصل من نقطتين (**:**) بفاصلة (**,**)، فإن عملية التحليل تعمل بشكل ممتاز:
+
+    ```sql
+    SELECT parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM '[12/Oct/2021:15:32:43'), ':', ' '))
+    ```
+
+    نحن الآن جاهزون لتعريف الـ materialized view.
+    يتضمن التعريف أدناه `POPULATE`، مما يعني أن الصفوف الموجودة في **access&#95;logs** ستُعالَج وتُدرَج على الفور.
+    نفِّذ عبارة SQL التالية:
+
+    ```sql
+    CREATE MATERIALIZED VIEW nginxdb.access_logs_view
+    (
+      RemoteAddr String,
+      Client String,
+      RemoteUser String,
+      TimeLocal DateTime,
+      RequestMethod String,
+      Request String,
+      HttpVersion String,
+      Status Int32,
+      BytesSent Int64,
+      UserAgent String
+    )
+    ENGINE = MergeTree()
+    ORDER BY RemoteAddr
+    POPULATE AS
+    WITH
+      splitByWhitespace(message) as split,
+      splitByRegexp('\S \d+ "([^"]*)"', message) as referer
+    SELECT
+      split[1] AS RemoteAddr,
+      split[2] AS Client,
+      split[3] AS RemoteUser,
+      parseDateTimeBestEffort(replaceOne(trim(LEADING '[' FROM split[4]), ':', ' ')) AS TimeLocal,
+      trim(LEADING '"' FROM split[6]) AS RequestMethod,
+      split[7] AS Request,
+      trim(TRAILING '"' FROM split[8]) AS HttpVersion,
+      split[9] AS Status,
+      split[10] AS BytesSent,
+      trim(BOTH '"' from referer[2]) AS UserAgent
+    FROM
+      (SELECT message FROM nginxdb.access_logs)
+    ```
+
+    تحقق الآن من نجاح العملية.
+    يجب أن تظهر لك سجلات الوصول مُحللَّةً وموزَّعةً بشكل أنيق في أعمدة:
+
+    ```sql
+    SELECT * FROM nginxdb.access_logs_view
+    ```
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي" />
+
+    <Note>
+      في الدرس أعلاه، جرى تخزين البيانات في جدولين، لكن يمكنك تغيير الجدول الأولي `nginxdb.access_logs` لاستخدام محرك الجدول [`Null`](/ar/reference/engines/table-engines/special/null).
+      ستظل البيانات المُحلَّلة تنتهي في الجدول `nginxdb.access_logs_view`، لكن البيانات الخام لن تُخزَّن في أي جدول.
+    </Note>
+  </Step>
+</Steps>
+
+> باستخدام Vector، الذي لا يتطلب سوى تثبيت بسيط وإعداد سريع، يمكنك إرسال السجلات من خادم Nginx إلى جدول في ClickHouse. وباستخدام عرض مادي، يمكنك تحليل هذه السجلات إلى أعمدة لتسهيل إجراء التحليلات.

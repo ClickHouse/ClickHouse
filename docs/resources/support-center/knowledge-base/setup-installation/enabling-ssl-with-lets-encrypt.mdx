@@ -1,0 +1,176 @@
+---
+title: How to enable SSL with Let's Encrypt on a single ClickHouse server
+description: Learn how to set up SSL for a single ClickHouse server using Let's Encrypt, including certificate issuance, configuration, and validation.
+date: 2024-12-11
+tags: ['Security and Authentication']
+keywords: ['SSL', 'Let/`s Encrypt']
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+{frontMatter.description}
+{/* truncate */}
+
+## Steps to Follow {#steps-to-follow}
+The following steps can be used to enable SSL for a single ClickHouse Server using [Let's Encrypt](https://letsencrypt.org/), a free, automated, and open Certificate Authority (CA) designed to make it easy for anyone to secure their websites with HTTPS. By automating the certificate issuance and renewal process, Let's Encrypt ensures websites remain secure without requiring manual intervention.
+
+<Note>
+We assume ClickHouse has been installed at the standard package locations in the following guide. We use the domain `product-test-server.clickhouse-dev.com` for all examples. Substitute your domain accordingly.
+</Note>
+
+1. Verify you have a DNS `A` or `AAAA` record pointing to your server. This can be achieved using the Linux tool `dig.` For example, the response for `product-test-server.clickhouse-dev.com` if using the Cloudflare DNS server `1.1.1.1`:
+
+<br/>
+
+```bash
+dig @1.1.1.1 product-test-server.clickhouse-dev.com
+
+; <<>> DiG 9.18.28-0ubuntu0.22.04.1-Ubuntu <<>> @1.1.1.1 product-test-server.clickhouse-dev.com
+; (1 server found)
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 22315
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 0, ADDITIONAL: 1
+
+;; OPT PSEUDOSECTION:
+; EDNS: version: 0, flags:; udp: 1232
+;; QUESTION SECTION:
+;product-test-server.clickhouse-dev.com.    IN A
+
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+
+;; Query time: 52 msec
+;; SERVER: 1.1.1.1#53(1.1.1.1) (UDP)
+;; WHEN: Thu Dec 12 09:37:33 UTC 2024
+;; MSG SIZE  rcvd: 83
+```
+
+Notice the section below confirming the presence of an A record.
+
+```bash
+;; ANSWER SECTION:
+product-test-server.clickhouse-dev.com. 300 IN A 34.248.59.9
+```
+
+2. Open port 80 on your server. This port will be used for automatic certificate renewal using the ACME protocol with certbot. For AWS, this can be achieved by [modifying the instance's associated Security Group](https://repost.aws/knowledge-center/connect-http-https-ec2).
+
+<br/>
+
+<Image img="/images/knowledgebase/lets-encrypt-ssl/port_80_security_group.webp" size="md" alt="AWS Security Group configuration showing port 80 open" border />
+
+3. Install [`certbot`](https://certbot.eff.org/instructions) e.g. using `apt`
+
+<br/>
+
+```bash
+sudo apt install certbot
+```
+
+4. Obtain an SSL certificate
+
+<br/>
+
+```bash
+sudo certbot certonly
+Saving debug log to /var/log/letsencrypt/letsencrypt.log
+
+How would you like to authenticate with the ACME CA?
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+1: Spin up a temporary webserver (standalone)
+2: Place files in webroot directory (webroot)
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+Select the appropriate number [1-2] then [enter] (press 'c' to cancel): 1
+Please enter the domain name(s) you would like on your certificate (comma and/or
+space separated) (Enter 'c' to cancel): product-test-server.clickhouse-dev.com
+Requesting a certificate for product-test-server.clickhouse-dev.com
+
+Successfully received certificate.
+Certificate is saved at: /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/fullchain.pem
+Key is saved at:         /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/privkey.pem
+This certificate expires on 2025-03-12.
+These files will be updated when the certificate renews.
+Certbot has set up a scheduled task to automatically renew this certificate in the background.
+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+If you like Certbot, please consider supporting our work by:
+ * Donating to ISRG / Let's Encrypt:   https://letsencrypt.org/donate
+ * Donating to EFF:                    https://eff.org/donate-le
+```
+
+<Note>
+We don't have a web server running on our server, so use (1) allowing Certbot to use a standalone temporary web server.
+</Note>
+
+Enter the full domain name of your server e.g. `product-test-server.clickhouse-dev.com` when requested.
+
+<Note>
+Let's Encrypt has a policy of not issuing certificates for certain types of domains, such as public cloud provider-generated domains (e.g., AWS *.compute.amazonaws.com domains). These domains are considered shared infrastructure and are blocked for security and abuse prevention reasons.
+</Note>
+
+5. Copy certificates to the ClickHouse directory. 
+
+<br/>
+
+```bash
+echo '* * * * * root cp -u /etc/letsencrypt/live/product-test-server.clickhouse-dev.com/*.pem /etc/clickhouse-server/ && chown clickhouse:clickhouse /etc/clickhouse-server/*.pem && chmod 400 /etc/clickhouse-server/*.pem' | sudo tee /etc/cron.d/copy-certificates
+```
+
+This command sets up a cron job to automate the management of Let's Encrypt SSL certificates for a ClickHouse server. It runs every minute as the root user, copying the .pem files from the Let's Encrypt directory to the ClickHouse server's configuration directory, but only if the files have been updated. After copying, the script adjusts the ownership of the files to the clickhouse user and group, ensuring the server has the required access. It also sets secure read-only permissions (`chmod 400`) on the copied files to maintain strict file security. This ensures that the ClickHouse server always has access to the latest SSL certificates without requiring manual intervention, maintaining security and minimizing operational overhead.
+
+6. Configure the use of these certificates in clickhouse-server.
+
+<br/>
+
+```bash
+echo "https_port: 8443
+tcp_port_secure: 9440
+openSSL:
+ server:
+ certificateFile: '/etc/clickhouse-server/fullchain.pem'
+ privateKeyFile: '/etc/clickhouse-server/privkey.pem'
+ disableProtocols: 'sslv2,sslv3,tlsv1,tlsv1_1'" | sudo tee /etc/clickhouse-server/config.d/ssl.yaml
+```
+
+7. Restart ClickHouse Server
+
+<br/>
+
+```bash
+sudo clickhouse restart
+```
+
+8. Validate ClickHouse can communicate over SSL
+
+<br/>
+
+```bash
+curl https://product-test-server.clickhouse-dev.com:8443/
+
+Ok.
+```
+
+For this last step to work you may need to ensure port 8443 is accessible e.g. included in your Security Group in AWS. Alternatively, if you only want to access ClickHouse from the server, modify your hosts file i.e.
+
+```bash
+echo "127.0.0.1 product-test-server.clickhouse-dev.com" | sudo tee -a /etc/hosts
+```
+
+<Warning>
+If you open connections from wildcard addresses, make sure that at least one of the following measures is applied:
+
+- server is protected by firewall and not accessible from untrusted networks;
+- all users are restricted to a subset of network addresses (see users.xml);
+- all users have strong passwords, only secure (TLS) interfaces are accessible, or connections are only made via TLS interfaces.
+- users without passwords have read-only access.
+
+See also: https://www.shodan.io/search?query=clickhouse
+
+The blog [Building single page applications with ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http) can be used as guidance for securing public instances.
+</Warning>
+
+The following should also work if connecting from the local machine on which ClickHouse is running. To connect via `product-test-server.clickhouse-dev.com` open port 9440 in your:
+
+```bash
+clickhouse client --secure --user default --password <password>
+```

@@ -1,0 +1,47 @@
+---
+date: 2024-02-14
+title: "How to achieve data read consistency in ClickHouse?"
+description: "Learn how to ensure data consistency when reading from ClickHouse, whether you're connected to the same node or a random node."
+tags: ['Performance and Optimizations']
+keywords: ['Read Consistency']
+---
+
+## Question
+
+I'm writing data into ClickHouse Cloud and need to be able, when reading data, to guarantee that I'm getting the latest complete information.
+
+## Answer
+
+### Talking to the same node
+
+If you are using the native protocol, or a session to do your write/read, you should then be connected to the same replica: in this scenario, you're reading directly from the node where you're writing, and so your read will always be consistent.
+
+### Talking to a random node
+
+If you can't guarantee you're talking to the same node (for example, talking to the node via HTTPS calls which get shuffled via a load balancer), you can either:
+
+A)
+
+ 1. write your data
+ 2. connect to a new replica
+ 3. run `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+ 4. read the latest data
+
+See `SYSTEM` commands [reference](/reference/statements/system#sync-replica)
+
+OR
+
+B) read anytime with sequential consistency
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+Note that when using ClickHouse Cloud and its default [SharedMergeTree](/products/cloud/features/infrastructure/shared-merge-tree) table engine, using `insert_quorum_parallel` is not required — all inserts to SharedMergeTree are quorum inserts (by design).
+
+Using [`SYSTEM SYNC REPLICAS`](/reference/statements/system#sync-replica) or [`select_sequential_consistency`](/reference/settings/session-settings#select_sequential_consistency) will increase the load on ClickHouse Keeper and might have slower performance depending on the load on the service.
+
+The recommended approach is to do the write/read using the same session or the native protocol (sticky connection).
+

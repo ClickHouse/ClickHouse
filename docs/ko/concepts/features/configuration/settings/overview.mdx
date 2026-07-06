@@ -1,0 +1,67 @@
+---
+description: '설정 개요 페이지입니다.'
+slug: /operations/settings/overview
+title: '설정 개요'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+<Note>
+  XML 기반 설정 프로필과 [설정 파일](/ko/concepts/features/configuration/server-config/configuration-files)은 현재 ClickHouse Cloud에서
+  지원되지 않습니다. ClickHouse Cloud
+  서비스의 설정을 지정하려면 [SQL 기반 설정 프로필](/ko/concepts/features/security/access-rights#settings-profiles-management)을 사용해야
+  합니다.
+</Note>
+
+ClickHouse 설정의 주요 그룹은 다음과 같습니다:
+
+* 전역 서버 설정
+* 세션 설정
+* 쿼리 설정
+* 백그라운드 작업 설정
+
+전역 설정은 더 하위 수준에서 재정의되지 않는 한 기본적으로 적용됩니다. 세션 설정은 프로필, 사용자 구성 및 SET 명령을 통해 지정할 수 있습니다. 쿼리 설정은 SETTINGS 절을 통해 지정할 수 있으며 개별 쿼리에 적용됩니다. 백그라운드 작업 설정은 뮤테이션, 머지, 그리고 경우에 따라 기타 작업에 적용되며, 이러한 작업은 백그라운드에서 비동기적으로 실행됩니다.
+
+<div id="see-non-default-settings">
+  ## 기본값이 아닌 설정 보기
+</div>
+
+기본값에서 변경된 설정을 확인하려면
+`system.settings` 테이블을 쿼리할 수 있습니다:
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+설정이 기본값에서 하나도 변경되지 않았다면 ClickHouse는
+아무것도 반환하지 않습니다.
+
+특정 설정의 값을 확인하려면 쿼리에서 해당
+설정의 `name`을 지정하면 됩니다:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+다음과 같은 결과가 반환됩니다:
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 행 in set. Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
+
+* [전역 서버 설정](/ko/reference/settings/server-settings/settings)을 참조하여 전역 서버 수준에서
+  ClickHouse 서버를 구성하는 방법을 자세히 알아보십시오.
+* [세션 설정](/ko/concepts/features/configuration/settings/settings-query-level)을 참조하여 세션 수준에서 ClickHouse
+  서버를 구성하는 방법을 자세히 알아보십시오.
+* [Context 계층 구조](/ko/resources/develop-contribute/introduction/architecture#context)를 참조하여 ClickHouse에서 구성이 처리되는 방식에 관해 자세히 알아보십시오.

@@ -1,0 +1,13 @@
+---
+title: Введение
+---
+
+<PrivatePreviewBadge />
+
+<Note>
+  Вы можете записаться в список ожидания закрытой предварительной версии [здесь](https://clickhouse.com/cloud/clickpipes/bigquery-connector).
+</Note>
+
+BigQuery ClickPipe предоставляет полностью управляемый и отказоустойчивый способ приёма данных из BigQuery в ClickHouse Cloud. В закрытой предварительной версии поддерживается метод репликации **первоначальной загрузки**, который позволяет массово загружать наборы данных BigQuery для анализа и прототипирования. Поддержка **CDC** появится в будущем — а пока мы рекомендуем использовать [Google Cloud Storage ClickPipe](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview), чтобы после завершения первоначальной загрузки непрерывно синхронизировать экспортированные из BigQuery данные с ClickHouse Cloud.
+
+BigQuery ClickPipes можно вручную развёртывать и настраивать через интерфейс ClickPipes, а также программно с помощью [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).

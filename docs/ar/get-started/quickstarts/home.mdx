@@ -1,0 +1,31 @@
+---
+sidebarTitle: 'أدلة سريعة'
+title: 'مستعرض الأدلة السريعة'
+description: 'استكشف الأدلة السريعة لبدء استخدام ClickHouse بسرعة'
+keywords: ['أدلة سريعة', 'استكشاف', 'البدء', 'الدروس التعليمية']
+mode: 'custom'
+---
+
+import { QuickStartsGrid } from '/snippets/ar/components/QuickStartsGrid/QuickStartsGrid.jsx'
+import { quickStartsData } from '/snippets/ar/components/QuickStartsGrid/quickstarts-data.jsx'
+
+{/* الأدلة السريعة المميّزة - لكلّ منها معرّف دليل سريع وصورة لافتة (يُعرض العنوان داخل الصورة) */}
+
+export const featuredQuickstarts = [
+  { id: 'create-your-first-service-on-cloud' },
+  { id: 'insert-data-using-clickhouse-client' },
+  { id: 'obtain-your-cloud-connection-details' }
+];
+
+
+<div className="relative overflow-hidden">
+  <div className="absolute top-0 left-0 right-0 opacity-80">
+    <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="صورة خلفية للزينة." />
+
+    <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="صورة خلفية للزينة." />
+  </div>
+
+  {/* عرض المكوّن QuickStartsGrid */}
+
+  <QuickStartsGrid quickStartsData={quickStartsData} featured={featuredQuickstarts} />
+</div>
