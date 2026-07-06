@@ -146,18 +146,33 @@ run_timeout_case()
 
     # Confirm the query reaches the write phase (source fully read => execution inside the writer) before
     # the deadline; this is what makes the timeout fire in the column write loop rather than in the read.
-    local read_rows=0
+    local read_rows
+    local max_read_rows=0
     local _
     for _ in $(seq 1 600); do
         read_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT read_rows FROM system.processes WHERE query_id = '$query_id'")
-        if [ -n "$read_rows" ] && [ "$read_rows" -ge "$ROWS" ]; then break; fi
+        if [ -n "$read_rows" ] && [ "$read_rows" -gt "$max_read_rows" ]; then max_read_rows=$read_rows; fi
+        if [ "$max_read_rows" -ge "$ROWS" ]; then break; fi
         # Stop polling once the query is gone (already finished / timed out).
         if ! kill -0 "$insert_pid" 2>/dev/null; then break; fi
         sleep 0.1
     done
 
     wait "$insert_pid" 2>/dev/null
-    if grep -q "TIMEOUT_EXCEEDED" "$err"; then
+
+    # The query may exit between polls, so a low in-flight maximum is not yet proof that the read phase
+    # ate the deadline: re-read the final counter from the log before judging.
+    if [ "$max_read_rows" -lt "$ROWS" ]; then
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS system.query_log"
+        max_read_rows=$(${CLICKHOUSE_CLIENT} -q "SELECT coalesce(max(read_rows), 0) FROM system.query_log WHERE current_database = currentDatabase() AND query_id = '$query_id'")
+    fi
+
+    # A TIMEOUT_EXCEEDED alone is not enough: if the source was never fully read, the deadline fired in
+    # the read/squash phase and the writer-side check was never exercised.
+    if [ -z "$max_read_rows" ] || [ "$max_read_rows" -lt "$ROWS" ]; then
+        echo "timeout wide: did not observe the column write phase"
+        cat "$err"
+    elif grep -q "TIMEOUT_EXCEEDED" "$err"; then
         echo "timeout wide: reported as timeout"
     else
         echo "timeout wide: wrong error"
