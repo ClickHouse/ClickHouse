@@ -937,19 +937,56 @@ void AvroDeserializer::Action::executeUnionName(MutableColumns & columns, avro::
     ///  - value column (payload) if requested, else
     ///  - the active branch column (payload.BranchName) if requested, else
     ///  - skip.
+    // if (target_column_idx >= 0)
+    // {
+    //     /// Value column reads the datum. (Branch columns with value column present = PoC-2.)
+    //     ext.read_columns[target_column_idx] = nested_deserializers[index](*columns[target_column_idx], decoder);
+    //     /// Active branch column can't also read the same datum; leave branch cols as NULL for now.
+    //     if (has_branch_cols)
+    //         for (size_t i = 0; i < branch_column_idxs.size(); ++i)
+    //         {
+    //             const int col = branch_column_idxs[i];
+    //             if (col < 0) continue;
+    //             columns[col]->insertDefault();
+    //             ext.read_columns[col] = 1;
+    //         }
+    // }
     if (target_column_idx >= 0)
     {
-        /// Value column reads the datum. (Branch columns with value column present = PoC-2.)
+        /// Value column reads the datum into its ColumnVariant.
         ext.read_columns[target_column_idx] = nested_deserializers[index](*columns[target_column_idx], decoder);
-        /// Active branch column can't also read the same datum; leave branch cols as NULL for now.
+
+        /// Fill companion branch columns from the value already deserialized into the Variant,
+        /// without decoding the datum again: copy the active branch's value into its branch
+        /// column and set the inactive ones to NULL. Activeness is read from what the Variant
+        /// actually stored for this row (its local discriminator), so it can't drift from `index`.
         if (has_branch_cols)
+        {
+            const auto & variant = assert_cast<const ColumnVariant &>(*columns[target_column_idx]);
+            const size_t last_row = variant.size() - 1;
+            const auto active_local_disc = variant.localDiscriminatorAt(last_row);
+
             for (size_t i = 0; i < branch_column_idxs.size(); ++i)
             {
                 const int col = branch_column_idxs[i];
-                if (col < 0) continue;
-                columns[col]->insertDefault();
+                if (col < 0)
+                    continue;
+
+                if (static_cast<int>(i) == static_cast<int>(index)
+                    && active_local_disc != ColumnVariant::NULL_DISCRIMINATOR)
+                {
+                    /// Variant branch sub-columns are non-nullable; the branch column is Nullable(T).
+                    const auto & sub = variant.getVariantByLocalDiscriminator(active_local_disc);
+                    const size_t off = variant.offsetAt(last_row);
+                    assert_cast<ColumnNullable &>(*columns[col]).insertFromNotNullable(sub, off);
+                }
+                else
+                {
+                    columns[col]->insertDefault();
+                }
                 ext.read_columns[col] = 1;
             }
+        }
     }
     else if (active_branch_col >= 0)
     {

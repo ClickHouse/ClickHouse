@@ -93,9 +93,9 @@ $CH_CLIENT --input_format_avro_union_type_name=1 -q "
 "
 echo
 
-echo "== Known limit: value + branch column together -> branch is NULL =="
+echo "== Value + branch column together: active branch filled, others NULL =="
 $CH_CLIENT --input_format_avro_union_type_name=1 -q "
-  SELECT id, variant_payload, \`variant_payload.TypeB\`
+  SELECT id, variant_payload, \`variant_payload.TypeB\`, \`variant_payload.TypeC\`
   FROM file('$file_name')
   ORDER BY id
 "
