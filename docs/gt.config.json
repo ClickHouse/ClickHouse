@@ -57,6 +57,8 @@
         "./snippets/[locales]/**/*.mdx",
         "./[locales]/**/*.md",
         "./snippets/[locales]/**/*.md",
+        "./**/_TEMPLATE.mdx",
+        "./**/_TEMPLATE.md",
         "./**/README.md",
         "./**/LICENSE.md",
         "./**/COPYING.md",

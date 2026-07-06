@@ -103,7 +103,6 @@ namespace MergeTreeSetting
 namespace ServerSetting
 {
     extern const ServerSettingsBool disable_insertion_and_mutation;
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -470,13 +469,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (!squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 context->getSettingsRef()[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -516,13 +514,12 @@ QueryPipeline InterpreterInsertQuery::addInsertToSelectPipeline(ASTInsertQuery &
 
     if (squash_with_strict_limits)
     {
-        pipeline.addSimpleTransform([&](const SharedHeader &in_header) -> ProcessorPtr
+        pipeline.addSimpleTransform([&](const SharedHeader & in_header) -> ProcessorPtr
         {
             return std::make_shared<AddDeduplicationInfoTransform>(
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 in_header);
         });
     }
@@ -795,7 +792,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader())
         );
     }
@@ -830,7 +826,6 @@ QueryPipeline InterpreterInsertQuery::buildInsertPipeline(ASTInsertQuery & query
                 insert_dependencies,
                 insert_dependencies->getRootViewID(),
                 settings[Setting::insert_deduplication_token].value,
-                context->getServerSettings()[ServerSetting::insert_deduplication_version].value,
                 chain.getInputSharedHeader()));
     }
 
