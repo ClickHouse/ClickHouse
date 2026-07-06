@@ -5,16 +5,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# ColumnBinary/COLUMNAR_V1 cannot represent Map, LowCardinality, or Variant nested inside
+# ColumnBinary/COLUMNAR_V1 cannot represent LowCardinality or Variant nested inside
 # Array/Tuple. These signatures must be rejected at format construction time, before any
 # block is serialized, rather than failing partway through the first block. Fixed-width
 # types of any size (UUID, IPv6, Int128/UInt128, Decimal128/256) and FixedString(N) of
 # any length are supported via COL_FIXEDN — see 04506_column_binary_wide_fixed_width for
 # their round-trip coverage. Nullable(T) nested inside Array/Tuple is supported too —
-# see 04507_column_binary_nested_nullable for its round-trip coverage.
+# see 04507_column_binary_nested_nullable for its round-trip coverage. Map(K, V) is
+# supported (it's Array(Tuple(K, V)) under the hood) — see 04508_column_binary_map.
 
-${CLICKHOUSE_CLIENT} --query "SELECT map('a', 1) AS m FROM numbers(1) FORMAT ColumnBinary" 2>&1 \
-    | grep -o "Map is not supported"
+${CLICKHOUSE_CLIENT} --query "SELECT map('a', 1) AS m FROM numbers(1) FORMAT ColumnBinary" | wc -c
 
 ${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4() AS u FROM numbers(1) FORMAT ColumnBinary" | wc -c
 

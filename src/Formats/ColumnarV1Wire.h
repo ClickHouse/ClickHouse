@@ -23,7 +23,9 @@
 /// ── Column types ─────────────────────────────────────────────────────────────
 ///   COL_BYTES   (0) — variable-length byte strings (ColumnString)
 ///   COL_FIXED8/16/32/64 (1-4) — fixed-width scalars, one memcpy per column
-///   COL_COMPLEX (5) — Array(T) or Tuple(T…), recursive layout
+///   COL_COMPLEX (5) — Array(T) or Tuple(T…), recursive layout; also used for
+///                     Map(K, V), which is unwrapped to Array(Tuple(K, V)) at
+///                     every touch point rather than getting its own tag
 ///   COL_VARIANT (6) — Variant(…), discriminated union with per-row offsets
 ///   COL_FIXEDN  (7) — fixed-width scalars of any other width (UUID, IPv6,
 ///                     Int128/UInt128, Decimal128/256) and FixedString(N);
@@ -67,14 +69,19 @@
 /// validateColumnarV1SupportedType is the single source of truth for which
 /// ClickHouse types this wire format can represent; call it eagerly (at format
 /// construction / CREATE FUNCTION time) rather than discovering a rejection
-/// only once the first block is serialized. Not supported: Map, LowCardinality,
-/// Nullable(Array/Variant) (no wire slot for a top-level null map on COL_COMPLEX/
-/// COL_VARIANT; Nullable(Tuple(...)) is supported instead, via a top-level null
-/// map on COL_COMPLEX), and Variant nested inside Array/Tuple. Nullable(T) nested
-/// inside Array/Tuple is supported (u8 null_map[n] prepended to T's own layout,
-/// see complexDataSize/writeComplexData/the decode lambda). Any fixed-width type
-/// is supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8 bytes, COL_FIXEDN
-/// for everything else — UUID, IPv6, Int128/UInt128, Decimal128/256), and so is
+/// only once the first block is serialized. Not supported: LowCardinality (no
+/// wire encoding at all — would need a dictionary + variable-width index, unlike
+/// everything else here), Nullable(Array/Variant) (no wire slot for a top-level
+/// null map on COL_COMPLEX/COL_VARIANT; Nullable(Tuple(...)) is supported instead,
+/// via a top-level null map on COL_COMPLEX), and Variant nested inside Array/
+/// Tuple. Nullable(T) nested inside Array/Tuple is supported (u8 null_map[n]
+/// prepended to T's own layout, see complexDataSize/writeComplexData/the decode
+/// lambda). Map(K, V) is supported with no dedicated wire encoding: it's Array
+/// (Tuple(K, V)) under the hood (DataTypeMap::getNestedType() /
+/// ColumnMap::getNestedColumn()), so it's unwrapped to that at every touch point
+/// and goes through the existing Array/Tuple path. Any fixed-width type is
+/// supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8 bytes, COL_FIXEDN for
+/// everything else — UUID, IPv6, Int128/UInt128, Decimal128/256), and so is
 /// FixedString(N) of any length (also COL_FIXEDN). Any type kind this format has
 /// no encoding for at all (Dynamic, JSON/Object, AggregateFunction(...), ...) is
 /// also rejected.
@@ -88,6 +95,7 @@
 #include <base/unaligned.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -184,9 +192,14 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
             validateColumnarV1SupportedType(alt, is_nested);
         return;
     }
-    if (typeid_cast<const DataTypeMap *>(type.get()))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1/ColumnBinary: Map is not supported: {}", type->getName());
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        // Map(K, V) is Array(Tuple(K, V)) under the hood (DataTypeMap::getNestedType());
+        // no dedicated wire encoding needed, just validate through the existing Array/
+        // Tuple path.
+        validateColumnarV1SupportedType(map_type->getNestedType(), is_nested);
+        return;
+    }
     if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "COLUMNAR_V1/ColumnBinary: LowCardinality is not supported: {}", type->getName());
@@ -242,6 +255,8 @@ inline void     writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
 
 inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
 {
+    if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
+        return complexDataSize(map_col->getNestedColumn(), n);
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
@@ -273,6 +288,11 @@ inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
 
 inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
 {
+    if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
+    {
+        writeComplexData(map_col->getNestedColumn(), n, dst);
+        return;
+    }
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         const auto & ch_offs = arr->getOffsets();
@@ -345,6 +365,11 @@ inline uint64_t buildColDescriptor(
     // (validateColumnarV1SupportedType rejects Nullable(Variant(...))).
     if (const auto * top_null_col = typeid_cast<const ColumnNullable *>(col))
         col = &top_null_col->getNestedColumn();
+
+    // Map(K, V) is Array(Tuple(K, V)) under the hood (ColumnMap::getNestedColumn());
+    // unwrap so the Array branch below handles it with no dedicated wire format.
+    if (const auto * map_col = typeid_cast<const ColumnMap *>(col))
+        col = &map_col->getNestedColumn();
 
     // ── Variant column → COL_VARIANT ─────────────────────────────────────────
     // Wire layout:
@@ -533,6 +558,11 @@ inline void writeColData(
         }
     }
 
+    // Map(K, V) is Array(Tuple(K, V)) under the hood; unwrap so the Array branch
+    // below writes it with no dedicated wire format.
+    if (const auto * map_col = typeid_cast<const ColumnMap *>(col))
+        col = &map_col->getNestedColumn();
+
     // ── Variant column → COL_VARIANT ─────────────────────────────────────────
     if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
     {
@@ -678,6 +708,8 @@ inline MutableColumnPtr readColumnFromDesc(
     std::function<MutableColumnPtr(const uint8_t *&, const DataTypePtr &, uint32_t)> decode;
     decode = [&](const uint8_t *& p, const DataTypePtr & type, uint32_t n) -> MutableColumnPtr
     {
+        if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+            return ColumnMap::create(decode(p, map_type->getNestedType(), n));
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
             // n comes from a guest-controlled row/element count; widen before the +1 or
@@ -936,7 +968,11 @@ inline MutableColumnPtr readColumnFromDesc(
     }
     else if (raw_type == COL_COMPLEX)
     {
-        if (const auto * arr_type = typeid_cast<const DataTypeArray *>(base_type.get()))
+        // Map(K, V) is Array(Tuple(K, V)) on the wire; decode through the Array type
+        // and re-wrap the result in ColumnMap at the end.
+        const auto * map_type_ptr = typeid_cast<const DataTypeMap *>(base_type.get());
+        const DataTypePtr & complex_type = map_type_ptr ? map_type_ptr->getNestedType() : base_type;
+        if (const auto * arr_type = typeid_cast<const DataTypeArray *>(complex_type.get()))
         {
             // WASM→CH sequential layout: outer uint64 offsets[rows+1] at data_offset,
             // followed immediately by nested writeComplexData-format data.
@@ -977,8 +1013,10 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             // Tuple (and other complex types): data is packed at data_offset by writeComplexData.
             const uint8_t * data_ptr = buf.data() + desc.data_offset;
-            col = maybe_nullable(decode(data_ptr, base_type, rows_to_dec));
+            col = maybe_nullable(decode(data_ptr, complex_type, rows_to_dec));
         }
+        if (map_type_ptr)
+            col = ColumnMap::create(std::move(col));
     }
     else if (raw_type == COL_VARIANT)
     {
