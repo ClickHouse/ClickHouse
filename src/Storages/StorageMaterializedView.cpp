@@ -431,16 +431,15 @@ void StorageMaterializedView::readImpl(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    /// Check the source table using the requested column names as-is. Unlike the target check
-    /// above, the subcolumn-to-parent normalization must NOT be applied here: these are the
-    /// view's output names, and a materialized view can expose data derived from a differently
-    /// named source column, so inferring a parent-column grant on the source from an output
-    /// subcolumn name would be an RBAC bypass. Propagating parent-column grants to a view's
-    /// source would require analysing the inner SELECT's real column dependencies, which is out
-    /// of scope here; the source check therefore keeps its original column-name behaviour.
+    /// The source-table check follows the long-standing contract: reading view columns requires
+    /// `SELECT` on the source-table columns with the same names as the view's output columns.
+    /// Reading a subcolumn (e.g. `t.a`) is a partial read of its parent view column `t`, so it
+    /// must require exactly the grants that reading `t` requires. Hence the requested names are
+    /// normalized to parent columns here as well, but against the view's own schema — the one
+    /// they were resolved against — and not the target table's, which can diverge from it.
     const auto & select_table_id = view_metadata->select.select_table_id;
     if (!select_table_id.empty())
-        context->checkAccess(AccessType::SELECT, select_table_id, column_names);
+        context->checkAccess(AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
 
     auto storage_id = storage->getStorageID();
 
