@@ -3276,7 +3276,29 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
-            auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
+
+            /// If the left argument is Nullable(Array(...)), its hidden nested array payload
+            /// can still be evaluated for null rows after stripping. Empty those rows first.
+            ColumnsWithTypeAndName stripped_args = createBlockWithNestedColumns(arguments);
+            if (detail::isArrayOrNullableArray(*left_argument.type))
+            {
+                auto merged_null_map_col = ColumnUInt8::create(input_rows_count, false);
+                auto & merged_data = merged_null_map_col->getData();
+                for (size_t i = 0; i < input_rows_count; ++i)
+                    merged_data[i] = null_bytemap[i] || left_argument.column->isNullAt(i);
+
+                const auto * row_null_map = merged_null_map_col.get();
+                for (auto & arg : stripped_args)
+                {
+                    if (const auto * arr_col = checkAndGetColumn<ColumnArray>(arg.column.get()))
+                    {
+                        if (auto emptied = NullableArrayOffsets::emptyNullRows(*arr_col, row_null_map, input_rows_count))
+                            arg.column = std::move(emptied);
+                    }
+                }
+            }
+
+            auto res = executeImpl2(stripped_args, removeNullable(result_type), input_rows_count, &null_bytemap);
             /// When the declared result is `Nullable(Array)`, propagate denominator nulls via `wrapInNullable`.
             if (!result_type->isNullable())
                 return res;

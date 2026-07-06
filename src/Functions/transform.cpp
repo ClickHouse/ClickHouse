@@ -92,7 +92,14 @@ namespace
 
         const IColumn * data_column = &col_const->getDataColumn();
         if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
+        {
+            /// A const NULL Nullable(Array(...)) mapping array has no meaningful mapping.
+            /// Reject it rather than silently treating the hidden default array as the mapping.
+            if (nullable->isNullAt(0))
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                    "Argument for function transform must not be a NULL array");
             data_column = &nullable->getNestedColumn();
+        }
 
         return checkAndGetColumn<ColumnArray>(data_column);
     }
