@@ -35,7 +35,7 @@ bool isStringOrFixedStringOrNativeNumber(const IDataType & arg)
 
 }
 
-class FunctionConv final : public IFunction
+class FunctionConv : public IFunction
 {
 public:
     static constexpr auto name = "conv";

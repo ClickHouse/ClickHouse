@@ -191,10 +191,9 @@ try
     delayed_interactive = is_interactive && !queries.empty();
     if (!is_interactive || delayed_interactive)
     {
+        echo_queries = getClientConfiguration().getBool("echo", false);
         ignore_error = getClientConfiguration().getBool("ignore-error", false);
     }
-
-    setupEchoAndHighlightSettings();
 
     load_suggestions = true;
     wait_for_suggestions_to_load = true;

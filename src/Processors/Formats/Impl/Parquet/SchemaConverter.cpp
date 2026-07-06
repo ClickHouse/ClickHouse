@@ -910,7 +910,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
         return;
     }
 
@@ -918,7 +918,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
         return;
     }
 
@@ -951,7 +951,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits = 0;
+        size_t physical_bits;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -1008,7 +1008,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale = 0;
+        UInt32 scale;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)

@@ -5,7 +5,6 @@
 #include <Analyzer/Utils.h>
 
 #include <Columns/ColumnNullable.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Common/assert_cast.h>
 #include <Common/FieldVisitorToString.h>
 #include <DataTypes/FieldToDataType.h>
@@ -38,11 +37,11 @@ ConstantNode::ConstantNode(ConstantValue constant_value_)
     : ConstantNode(constant_value_, nullptr /*source_expression*/)
 {}
 
-ConstantNode::ConstantNode(ColumnConstPtr constant_column_, DataTypePtr value_data_type_)
-    : ConstantNode(ConstantValue{constant_column_, value_data_type_})
+ConstantNode::ConstantNode(ColumnPtr constant_column_, DataTypePtr value_data_type_)
+    : ConstantNode(ConstantValue{std::move(constant_column_), value_data_type_})
 {}
 
-ConstantNode::ConstantNode(ColumnConstPtr constant_column_)
+ConstantNode::ConstantNode(ColumnPtr constant_column_)
     : ConstantNode(constant_column_, applyVisitor(FieldToDataType(), (*constant_column_)[0]))
 {}
 
@@ -112,33 +111,40 @@ void ConstantNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state
 
 void ConstantNode::convertToNullable()
 {
-    /// Use the LowCardinality-aware variant so that a `LowCardinality(T)` key becomes
-    /// `LowCardinality(Nullable(T))` rather than being left unchanged (a plain `Nullable`
-    /// cannot wrap `LowCardinality`). This keeps the analyzer in sync with `ColumnNode`,
-    /// `FunctionNode` and the planner, which all use `makeNullableOrLowCardinalityNullableSafe`
-    /// when `group_by_use_nulls` is enabled. Otherwise the declared key type would stay
-    /// non-Nullable while the runtime produces a Nullable column, leading to a logical error.
-    const auto & column = constant_value.getColumn();
-    constant_value
-        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
-           makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
+    constant_value = { makeNullableSafe(constant_value.getColumn()), makeNullableSafe(constant_value.getType()) };
 }
 
-bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions /*compare_options*/) const
+bool ConstantNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions compare_options) const
 {
     const auto & rhs_typed = assert_cast<const ConstantNode &>(rhs);
 
     const auto & column = constant_value.getColumn();
     const auto & rhs_column = rhs_typed.constant_value.getColumn();
 
-    return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
-           && column->compareAt(0, 0, *rhs_column, 1) == 0;
+    if (compare_options.compare_types)
+        return constant_value.getType()->equals(*rhs_typed.constant_value.getType())
+               && column->compareAt(0, 0, *rhs_column, 1) == 0;
+
+    if (column->isNullAt(0))
+        return rhs_column->isNullAt(0);
+
+    auto not_nullable_type = removeNullable(constant_value.getType());
+    auto not_nullable_rhs_type = removeNullable(rhs_typed.constant_value.getType());
+
+    if (!constant_value.getType()->equals(*rhs_typed.constant_value.getType()))
+        return false;
+
+    auto not_nullable_column = removeNullable(column);
+    auto not_nullable_rhs_column = removeNullable(rhs_column);
+
+    return not_nullable_column->compareAt(0, 0, *not_nullable_rhs_column, 1) == 0;
 }
 
-void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions /*compare_options*/) const
+void ConstantNode::updateTreeHashImpl(HashState & hash_state, CompareOptions compare_options) const
 {
     constant_value.getColumn()->updateHashFast(hash_state);
-    constant_value.getType()->updateHash(hash_state);
+    if (compare_options.compare_types)
+        constant_value.getType()->updateHash(hash_state);
 }
 
 QueryTreeNodePtr ConstantNode::cloneImpl() const
@@ -170,9 +176,6 @@ ASTPtr ConstantNode::toASTImpl(const ConvertToASTOptions & options) const
 {
     static const auto from_column = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(node.constant_value.getColumn(), 0, node.constant_value.getType())); };
     static const auto from_field = [](const ConstantNode &node){ return make_intrusive<ASTLiteral>(node.getValue()); };
-
-    if (options.use_source_expression_for_constants && source_expression)
-        return source_expression->toAST(options);
 
     if (!options.add_cast_for_constants)
         return getCachedAST(from_column);
