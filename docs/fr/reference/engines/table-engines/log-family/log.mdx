@@ -1,0 +1,113 @@
+---
+description: 'Documentation de Log'
+slug: /engines/table-engines/log-family/log
+toc_priority: 33
+toc_title: 'Log'
+title: 'Moteur de table Log'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Ce moteur appartient à la famille des moteurs `Log`. Consultez l’article [Famille de moteurs Log](/fr/reference/engines/table-engines/log-family/index) pour connaître les propriétés communes des moteurs `Log` ainsi que leurs différences.
+
+`Log` diffère de [TinyLog](/fr/reference/engines/table-engines/log-family/tinylog) par la présence d’un petit fichier de « marks » avec les fichiers de colonnes. Ces marks sont écrites pour chaque bloc de données et contiennent des offsets indiquant à partir de quel emplacement commencer la lecture du fichier afin d’ignorer le nombre de lignes spécifié. Cela permet de lire les données de la table à l’aide de plusieurs threads.
+En cas d’accès concurrent aux données, les opérations de lecture peuvent être effectuées simultanément, tandis que les opérations d’écriture bloquent les lectures ainsi que les autres écritures.
+Le moteur `Log` ne prend pas en charge les index. De même, si l’écriture dans une table échoue, la table est corrompue et sa lecture renvoie une erreur. Le moteur `Log` convient aux données temporaires, aux tables écrites une seule fois, ainsi qu’aux tests ou aux démonstrations.
+
+<div id="table_engines-log-creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Log
+```
+
+Consultez la description détaillée de l’instruction [CREATE TABLE](/fr/reference/statements/create/table).
+
+<div id="table_engines-log-writing-the-data">
+  ## Écriture des données
+</div>
+
+Le moteur `Log` stocke efficacement les données en écrivant chaque colonne dans son propre fichier. Pour chaque table, le moteur `Log` écrit les fichiers suivants dans l’emplacement de stockage spécifié :
+
+* `<column>.bin` : un fichier de données pour chaque colonne, contenant les données sérialisées et compressées.
+  `__marks.mrk` : un fichier de marks, qui stocke les offsets et le nombre de lignes pour chaque bloc de données inséré. Les marks facilitent l’exécution efficace des requêtes en permettant au moteur d’ignorer les blocs de données non pertinents lors de la lecture.
+
+<div id="writing-process">
+  ### Processus d’écriture
+</div>
+
+Lorsque des données sont écrites dans une table `Log` :
+
+1. Les données sont sérialisées et compressées en blocs.
+2. Pour chaque colonne, les données compressées sont ajoutées à la fin du fichier `<column>.bin` correspondant.
+3. Les entrées correspondantes sont ajoutées au fichier `__marks.mrk` afin d’enregistrer l’offset et le nombre de lignes des données nouvellement insérées.
+
+<div id="table_engines-log-reading-the-data">
+  ## Lecture des données
+</div>
+
+Le fichier de marks permet à ClickHouse de paralléliser la lecture des données. Cela signifie qu&#39;une requête `SELECT` renvoie des lignes dans un ordre imprévisible. Utilisez la clause `ORDER BY` pour trier les lignes.
+
+<div id="table_engines-log-example-of-use">
+  ## Exemple d’utilisation
+</div>
+
+Création d’une table :
+
+```sql
+CREATE TABLE log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = Log
+```
+
+Insertion de données :
+
+```sql
+INSERT INTO log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+Nous avons utilisé deux requêtes `INSERT` pour créer deux blocs de données dans les fichiers `<column>.bin`.
+
+ClickHouse utilise plusieurs threads lors de la lecture des données. Chaque thread lit un bloc de données distinct et renvoie les lignes obtenues indépendamment, dès qu&#39;il a terminé. Par conséquent, l&#39;ordre des blocs de lignes dans la sortie peut ne pas correspondre à celui de ces mêmes blocs dans l&#39;entrée. Par exemple :
+
+```sql
+SELECT * FROM log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+Tri des résultats (par ordre croissant par défaut) :
+
+```sql
+SELECT * FROM log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

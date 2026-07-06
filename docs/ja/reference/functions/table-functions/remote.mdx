@@ -1,0 +1,200 @@
+---
+description: 'テーブル関数 `remote` を使用すると、[Distributed](/reference/engines/table-engines/special/distributed) テーブルを作成しなくても、リモートサーバーに動的にアクセスできます。テーブル関数 `remoteSecure` は
+  `remote` と同じですが、セキュアな接続を使用します。'
+sidebarTitle: 'remote'
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
+doc_type: 'reference'
+---
+
+テーブル関数 `remote` を使用すると、[Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルを作成しなくても、リモートサーバーに動的にアクセスできます。テーブル関数 `remoteSecure` は `remote` と同じですが、セキュアな接続を使用します。
+
+どちらの関数も、`SELECT` クエリと `INSERT` クエリで使用できます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
+```
+
+<div id="parameters">
+  ## パラメータ
+</div>
+
+| 引数               | 説明                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addresses_expr` | リモートサーバーのアドレス、または複数のリモートサーバーのアドレスを生成する式です。フォーマット: `host` または `host:port`。<br /><br />    `host` には、サーバー名、IPv4 アドレス、または IPv6 アドレスを指定できます。IPv6 アドレスは `[]` で囲んで指定する必要があります。<br /><br />    `port` はリモートサーバーの TCP ポートです。ポートを省略した場合、テーブル関数 `remote` ではサーバー設定ファイルの [tcp&#95;port](/ja/reference/settings/server-settings/settings#tcp_port) (デフォルトは 9000) が使用され、テーブル関数 `remoteSecure` では [tcp&#95;port&#95;secure](/ja/reference/settings/server-settings/settings#tcp_port_secure) (デフォルトは 9440) が使用されます。<br /><br />    IPv6 アドレスでは、ポートの指定が必須です。<br /><br />    `addresses_expr` パラメータのみを指定した場合、`db` と `table` にはデフォルトで `system.one` が使用されます。<br /><br />    型: [String](/ja/reference/data-types/string). |
+| `db`             | データベース名。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `table`          | テーブル名。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `user`           | ユーザー名。指定しない場合は `default` が使用されます。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `password`       | ユーザーパスワード。指定しない場合は空のパスワードが使用されます。型: [String](/ja/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `sharding_key`   | ノード間でデータを分散するためのシャーディングキーです。例: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`。型: [UInt32](/ja/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+
+引数は [名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使って渡すこともできます。
+
+<div id="returned-value">
+  ## 戻り値
+</div>
+
+リモートサーバー上のテーブル。
+
+<div id="usage">
+  ## 使用方法
+</div>
+
+テーブル関数 `remote` と `remoteSecure` はリクエストごとに接続を再確立するため、代わりに `Distributed` テーブルを使用することをお勧めします。また、ホスト名が設定されている場合は名前解決が行われ、複数のレプリカを扱う際にエラーはカウントされません。大量のクエリを処理する場合は、必ず事前に `Distributed` テーブルを作成し、`remote` テーブル関数は使用しないでください。
+
+`remote` テーブル関数は、次のような場合に役立ちます。
+
+* あるシステムから別のシステムへの一回限りのデータ移行
+* データの比較、デバッグ、テストのために特定のサーバーへアクセスする場合、つまりアドホックな接続
+* 調査目的で複数の ClickHouse クラスター間でクエリを実行する場合
+* 手動で行う、頻度の低い分散リクエスト
+* サーバーの構成を毎回定義し直す分散リクエスト
+
+<div id="addresses">
+  ### アドレス
+</div>
+
+```text
+example01-01-1
+example01-01-1:9440
+example01-01-1:9000
+localhost
+127.0.0.1
+[::]:9440
+[::]:9000
+[2a02:6b8:0:1111::11]:9000
+```
+
+複数のアドレスはカンマ区切りで指定できます。この場合、ClickHouse は分散処理を行い、指定したすべてのアドレスにクエリを送信します (異なるデータを持つ分片のように) 。例:
+
+```text
+example01-01-1,example01-02-1
+```
+
+<div id="examples">
+  ## 例
+</div>
+
+<div id="selecting-data-from-a-remote-server">
+  ### リモートサーバーからデータを取得する:
+</div>
+
+```sql
+SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
+```
+
+または、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections)を使用する場合:
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = '127.0.0.1',
+        database = 'db';
+SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
+```
+
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### リモートサーバー上のテーブルにデータを挿入する:
+</div>
+
+```sql
+CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
+SELECT * FROM remote_table;
+```
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### あるシステムから別のシステムへのテーブル移行:
+</div>
+
+この例では、サンプルデータセット内の1つのテーブルを使用します。データベースは `imdb`、テーブルは `actors` です。
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### ソース側の ClickHouse システム (現在データをホストしているシステム) で
+</div>
+
+* ソースデータベースとテーブル名 (`imdb.actors`) を確認します
+
+  ```sql
+  show databases
+  ```
+
+  ```sql
+  show tables in imdb
+  ```
+
+* ソースから CREATE TABLE 文を取得します:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'imdb' AND table = 'actors'
+```
+
+レスポンス
+
+```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+```
+
+<div id="on-the-destination-clickhouse-system">
+  #### 宛先のClickHouseシステムで
+</div>
+
+* 宛先データベースを作成します:
+
+  ```sql
+  CREATE DATABASE imdb
+  ```
+
+* ソースのCREATE TABLE 文を使用して、宛先テーブルを作成します:
+
+  ```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+  ```
+
+<div id="back-on-the-source-deployment">
+  #### ソース側のデプロイメントに戻る
+</div>
+
+リモートシステム上に作成した新しいデータベースとテーブルにデータを挿入します。ホスト、ポート、ユーザー名、パスワード、宛先データベース、宛先テーブルが必要です。
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
+SELECT * from imdb.actors
+```
+
+<div id="globs-in-addresses">
+  ## グロブ展開
+</div>
+
+`{ }` 内のパターンは、分片の集合を生成したり、レプリカを指定したりするために使用されます。`{ }` の組が複数ある場合は、対応する集合の直積が生成されます。
+
+サポートされているパターンの種類は次のとおりです。
+
+* `{a,b,c}` - 代替文字列 `a`、`b`、`c` のいずれかを表します。このパターンは、1 つ目の分片アドレスでは `a` に、2 つ目の分片アドレスでは `b` に、以降も同様に置き換えられます。たとえば、`example0{1,2}-1` は `example01-1` と `example02-1` というアドレスを生成します。
+* `{N..M}` - 数値の範囲です。このパターンは、`N` から `M` まで (`M` を含む) 増加するインデックスを持つ分片アドレスを生成します。たとえば、`example0{1..2}-1` は `example01-1` と `example02-1` を生成します。
+* `{0n..0m}` - 先頭にゼロが付いた数値の範囲です。このパターンは、インデックスの先頭のゼロを保持します。たとえば、`example{01..03}-1` は `example01-1`、`example02-1`、`example03-1` を生成します。
+* `{a|b}` - `|` で区切られた任意の数のバリアントです。このパターンはレプリカを指定します。たとえば、`example01-{1|2}` はレプリカ `example01-1` と `example01-2` を生成します。
+
+クエリは、最初に正常なレプリカに送信されます。ただし、`remote` では、レプリカは現在の [load&#95;balancing](/ja/reference/settings/session-settings#load_balancing) 設定で指定された順序で順番に試行されます。
+生成されるアドレス数は、[table&#95;function&#95;remote&#95;max&#95;addresses](/ja/reference/settings/session-settings#table_function_remote_max_addresses) 設定によって制限されます。

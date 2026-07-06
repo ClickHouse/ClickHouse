@@ -224,6 +224,18 @@ jobs:
           path: {PATH}
 """
 
+        # Per-job run condition emitted for every cacheable job. The job runs
+        # only when:
+        #   * the workflow was not cancelled, and
+        #   * no upstream dependency reported 'failure' or 'undefined', and
+        #   * the config_workflow job did NOT mark this job as a cache hit.
+        # `cache_success_base64` is the list of base64-encoded job names that
+        # the config_workflow resolved to a previous successful run (see
+        # `hook_cache.py`); `{JOB_NAME_BASE64}` is this job's name base64'd.
+        # When the name is present, a cached success exists and the job is
+        # skipped. NOTE: this token is the job NAME, so renaming a job changes
+        # the token and invalidates its old cache entries (the stale entries
+        # are simply left behind and ignored).
         TEMPLATE_IF_EXPRESSION = """
     if: ${{{{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.{WORKFLOW_CONFIG_JOB_NAME}.outputs.data).workflow_config.cache_success_base64, '{JOB_NAME_BASE64}') }}}}\
 """

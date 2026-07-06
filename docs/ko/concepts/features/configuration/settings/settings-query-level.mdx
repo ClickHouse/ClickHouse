@@ -1,0 +1,252 @@
+---
+description: '쿼리 수준 설정'
+sidebarTitle: '쿼리 수준 세션 설정'
+slug: /operations/settings/query-level
+title: '쿼리 수준 세션 설정'
+doc_type: '참고'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+특정 설정을 적용해 SQL 문을 실행하는 방법은 여러 가지가 있습니다.
+설정은 여러 계층으로 구성되며, 각 후속 계층은 이전 계층에서 설정된 값을 다시 정의합니다.
+
+<div id="order-of-priority">
+  ## 우선순위
+</div>
+
+설정을 정의할 때의 우선순위는 다음과 같습니다.
+
+1. 사용자에게 직접 설정을 적용하거나 설정 프로필 내에서 적용
+
+   * SQL (권장)
+   * `/etc/clickhouse-server/users.d`에 하나 이상의 XML 또는 YAML 파일 추가
+
+2. 세션 설정
+
+   * ClickHouse Cloud SQL 콘솔 또는 대화형 모드의
+     `clickhouse client`에서 `SET setting=value`를 전송합니다. 마찬가지로 HTTP protocol에서도 ClickHouse
+     session을 사용할 수 있습니다. 이렇게 하려면
+     `session_id` HTTP 매개변수를 지정해야 합니다.
+
+3. 쿼리 설정
+
+   * 비대화형 모드로 `clickhouse client`를 시작할 때 시작
+     매개변수 `--setting=value`를 지정합니다.
+   * HTTP API를 사용할 때 CGI 매개변수(`URL?setting_1=value&setting_2=value...`)를 전달합니다.
+   * SELECT 쿼리의
+     [SETTINGS](/ko/reference/statements/select/index#settings-in-select-query)
+     절에서 설정을 정의합니다. 설정 값은 해당 쿼리에만 적용되며,
+     쿼리 실행 후 기본값 또는 이전 값으로 재설정됩니다.
+
+<div id="converting-a-setting-to-its-default-value">
+  ## 설정을 기본값으로 되돌리기
+</div>
+
+설정을 변경한 뒤 기본값으로 다시 되돌리려면 값을 `DEFAULT`로 지정합니다. 구문은 다음과 같습니다:
+
+```sql
+SET setting_name = DEFAULT
+```
+
+예를 들어, `async_insert`의 기본값은 `0`입니다. 값을 `1`로 변경한다고 가정해 보겠습니다:
+
+```sql
+SET async_insert = 1;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+응답은 다음과 같습니다.
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+다음 명령은 값을 다시 0으로 설정합니다:
+
+```sql
+SET async_insert = DEFAULT;
+
+SELECT value FROM system.settings where name='async_insert';
+```
+
+이제 설정이 기본값으로 돌아왔습니다:
+
+```response
+┌─value───┐
+│ 0       │
+└─────────┘
+```
+
+<div id="custom_settings">
+  ## 사용자 지정 설정
+</div>
+
+일반적인 [설정](/ko/reference/settings/session-settings) 외에도 사용자 지정 설정을 정의할 수 있습니다.
+사용자 지정 설정을 사용하면 **세션별 매개변수**를 전달하고, 이를 쿼리, 정책 또는 함수 내에서 참조할 수 있습니다. 다음과 같은 경우에 유용합니다:
+
+* 사용자 아이덴티티 또는 조직을 기준으로 데이터 필터링
+* Context에 따라 다른 비즈니스 로직 적용
+* 세션에서 여러 쿼리에 걸쳐 상태 정보 유지
+
+사용자 지정 설정 이름은 정의한 목록에 포함된 미리 정의된 프리픽스 중 하나로 시작해야 합니다.
+프리픽스 목록은 서버 구성 파일에 정의된 서버 설정 [`custom_settings_prefixes`](/ko/reference/settings/server-settings/settings#custom_settings_prefixes)를 사용해 지정할 수 있습니다.
+
+아래 예시에서는 `SQL_`를 접두사로 선택합니다:
+
+```xml
+<custom_settings_prefixes>SQL_</custom_settings_prefixes>
+```
+
+<Note>
+  ClickHouse Cloud에서는 접두사를 지정할 수 없습니다.
+  모든 사용자 지정 사용자 설정은 `SQL_` 접두사로 시작합니다.
+</Note>
+
+사용자 지정 설정을 정의하려면 `SET` 명령을 사용합니다:
+
+```sql
+SET SQL_a = 123;
+```
+
+사용자 지정 설정의 현재 값을 가져오려면 `getSetting()` 함수를 사용하십시오:
+
+```sql
+SELECT getSetting('SQL_a');
+```
+
+<div id="examples">
+  ## 예시
+</div>
+
+이 예시들은 모두 `async_insert` 설정 값을 `1`로 지정하고,
+실행 중인 시스템에서 설정을 확인하는 방법을 보여줍니다.
+
+<div id="using-sql-to-apply-a-setting-to-a-user-directly">
+  ### SQL을 사용해 사용자에게 직접 설정 적용하기
+</div>
+
+다음은 `async_inset = 1` 설정으로 사용자 `ingester`를 생성합니다:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS async_insert = 1
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### 설정 프로필과 할당 확인
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ ...                                                                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS async_insert = true  │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="using-sql-to-create-a-settings-profile-and-assign-to-a-user">
+  ### SQL을 사용해 설정 프로필을 생성하고 사용자에게 할당하기
+</div>
+
+다음은 `async_inset = 1` 설정으로 `log_ingest` 프로필을 생성하는 예입니다:
+
+```sql
+CREATE
+SETTINGS PROFILE log_ingest SETTINGS async_insert = 1
+```
+
+이렇게 하면 사용자 `ingester`가 생성되고, 해당 사용자에게 설정 프로필 `log_ingest`가 할당됩니다:
+
+```sql highlight={3}
+CREATE USER ingester
+IDENTIFIED WITH sha256_hash BY '7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3'
+SETTINGS PROFILE log_ingest
+```
+
+<div id="using-xml-to-create-a-settings-profile-and-user">
+  ### XML로 설정 프로필과 사용자를 생성하기
+</div>
+
+```xml title=/etc/clickhouse-server/users.d/users.xml highlight={2-6,11}
+<clickhouse>
+    <profiles>
+        <log_ingest>
+            <async_insert>1</async_insert>
+        </log_ingest>
+    </profiles>
+
+    <users>
+        <ingester>
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <profile>log_ingest</profile>
+        </ingester>
+        <default replace="true">
+            <password_sha256_hex>7e099f39b84ea79559b3e85ea046804e63725fd1f46b37f281276aae20f86dc3</password_sha256_hex>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+        </default>
+    </users>
+</clickhouse>
+```
+
+<div id="examine-the-settings-profile-and-assignment">
+  #### 설정 프로필과 할당 확인
+</div>
+
+```sql
+SHOW ACCESS
+```
+
+```response highlight={3,5}
+┌─ACCESS─────────────────────────────────────────────────────────────────────────────┐
+│ CREATE USER default IDENTIFIED WITH sha256_password                                │
+│ CREATE USER ingester IDENTIFIED WITH sha256_password SETTINGS PROFILE log_ingest   │
+│ CREATE SETTINGS PROFILE default                                                    │
+│ CREATE SETTINGS PROFILE log_ingest SETTINGS async_insert = true                    │
+│ CREATE SETTINGS PROFILE readonly SETTINGS readonly = 1                             │
+│ ...                                                                                │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="assign-a-setting-to-a-session">
+  ### 세션에 설정 지정하기
+</div>
+
+```sql
+SET async_insert =1;
+SELECT value FROM system.settings where name='async_insert';
+```
+
+```response
+┌─value──┐
+│ 1      │
+└────────┘
+```
+
+<div id="assign-a-setting-during-a-query">
+  ### 쿼리 실행 중 설정 지정
+</div>
+
+```sql highlight={2}
+INSERT INTO YourTable
+SETTINGS async_insert=1
+VALUES (...)
+```
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* ClickHouse 설정에 대한 설명은 [설정](/ko/reference/settings/session-settings) 페이지를 참조하십시오.
+* [전역 서버 설정](/ko/reference/settings/server-settings/settings)

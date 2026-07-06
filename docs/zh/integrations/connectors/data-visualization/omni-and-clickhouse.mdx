@@ -1,0 +1,44 @@
+---
+sidebarTitle: 'Omni'
+slug: /integrations/omni
+keywords: ['ClickHouse', 'Omni', '连接', '集成', 'UI']
+description: 'Omni 是一个面向 BI、数据应用和嵌入式分析的企业级平台，帮助您实时探索和共享洞察。'
+title: 'Omni'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Omni 可通过官方 ClickHouse 数据源连接到 ClickHouse Cloud 或本地自建部署。
+
+<div id="1-gather-your-connection-details">
+  ## 1. 获取连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-data-source">
+  ## 2. 创建 ClickHouse 数据源
+</div>
+
+前往 Admin -&gt; Connections，然后点击右上角的“Add Connection”按钮。
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_01.webp" alt="Omni 管理界面，显示 Connections 部分中的 Add Connection 按钮" border />
+
+<br />
+
+选择 `ClickHouse`，然后在表单中输入凭据。
+
+<Image size="lg" img="/images/integrations/data-visualization/omni_02.webp" alt="Omni 中 ClickHouse 的连接配置界面，显示凭据表单字段" border />
+
+<br />
+
+现在，您应该可以在 Omni 中查询并可视化 ClickHouse 中的数据。

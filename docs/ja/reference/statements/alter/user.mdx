@@ -1,0 +1,119 @@
+---
+description: 'USER に関するドキュメント'
+sidebarTitle: 'USER'
+slug: /sql-reference/statements/alter/user
+title: 'ALTER USER'
+doc_type: 'reference'
+---
+
+ClickHouse のユーザーアカウントを変更します。
+
+構文:
+
+```sql
+ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [NOT IDENTIFIED | RESET AUTHENTICATION METHODS TO NEW | {IDENTIFIED | ADD IDENTIFIED} {[WITH {plaintext_password | sha256_password | sha256_hash | double_sha1_password | double_sha1_hash}] BY {'password' | 'hash'}} | WITH NO_PASSWORD | {WITH ldap SERVER 'server_name'} | {WITH kerberos [REALM 'realm']} | {WITH ssl_certificate CN 'common_name' | SAN 'TYPE:subject_alt_name'} | {WITH ssh_key BY KEY 'public_key' TYPE 'ssh-rsa|...'} | {WITH http SERVER 'server_name' [SCHEME 'Basic']} [VALID UNTIL datetime]
+    [, {[{plaintext_password | sha256_password | sha256_hash | ...}] BY {'password' | 'hash'}} | {ldap SERVER 'server_name'} | {...} | ... [,...]]]
+    [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [VALID UNTIL datetime]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
+    [DROP ALL PROFILES]
+    [DROP ALL SETTINGS]
+    [DROP SETTINGS variable [,...] ]
+    [DROP PROFILES 'profile_name' [,...] ]
+    [ADD|MODIFY SETTINGS variable [=value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE|CONST|CHANGEABLE_IN_READONLY] [,...] ]
+    [ADD PROFILES 'profile_name' [,...] ]
+```
+
+`ALTER USER` を使用するには、[ALTER USER](/ja/reference/statements/grant#access-management) 権限を持っている必要があります。
+
+<div id="grantees-clause">
+  ## GRANTEES 句
+</div>
+
+このユーザーが [GRANT OPTION](/ja/reference/statements/grant#granting-privilege-syntax) 付きで必要なすべてのアクセス権を付与されていることを条件に、このユーザーから [権限](/ja/reference/statements/grant#privileges) を受け取ることが許可されるユーザーまたはロールを指定します。`GRANTEES` 句のオプションは次のとおりです。
+
+* `user` — このユーザーが権限を付与できるユーザーを指定します。
+* `role` — このユーザーが権限を付与できるロールを指定します。
+* `ANY` — このユーザーは誰にでも権限を付与できます。これはデフォルト設定です。
+* `NONE` — このユーザーは誰にも権限を付与できません。
+
+`EXCEPT` 式を使用すると、任意のユーザーまたはロールを除外できます。たとえば、`ALTER USER user1 GRANTEES ANY EXCEPT user2` です。これは、`user1` が `GRANT OPTION` 付きでいくつかの権限を付与されている場合、それらの権限を `user2` を除く誰にでも付与できることを意味します。
+
+<div id="examples">
+  ## 例
+</div>
+
+割り当てられたロールをデフォルトに設定します:
+
+```sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+事前にユーザーにロールが割り当てられていない場合、ClickHouse では例外が発生します。
+
+割り当てられているすべてのロールをデフォルトに設定します:
+
+```sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+今後ユーザーにロールが割り当てられた場合、そのロールは自動的にデフォルトになります。
+
+`role1` と `role2` を除き、割り当てられているすべてのロールをデフォルトに設定します。
+
+```sql
+ALTER USER user DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+`john` アカウントのユーザーが、自身の権限を `jack` アカウントのユーザーに付与できるようにします。
+
+```sql
+ALTER USER john GRANTEES jack;
+```
+
+既存の認証方式は保持したまま、ユーザーに新しい認証方式を追加します。
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+注記:
+
+1. 古いバージョンのClickHouseでは、複数の認証方式の構文がサポートされていない場合があります。そのため、ClickHouse serverにそのようなユーザーが存在する状態で、その構文をサポートしていないバージョンにダウングレードすると、それらのユーザーは使用不能になり、一部のユーザー関連操作も正常に行えなくなります。問題なくダウングレードするには、事前にすべてのユーザーが単一の認証方式のみを持つように設定しておく必要があります。あるいは、適切な手順を踏まずにserverをダウングレードしてしまった場合は、問題のあるユーザーを削除する必要があります。
+2. `no_password` は、セキュリティ上の理由から他の認証方式と併用できません。
+   そのため、`no_password` 認証方式を `ADD` することはできません。以下のクエリはエラーになります:
+
+```sql
+ALTER USER user1 ADD IDENTIFIED WITH no_password
+```
+
+ユーザーの認証方式を削除して `no_password` を使用する場合は、以下の置換形式で指定する必要があります。
+
+認証方式をリセットし、クエリで指定したものを追加します (ADD キーワードを伴わない先頭の IDENTIFIED の効果) :
+
+```sql
+ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '2', plaintext_password by '3'
+```
+
+認証方式をリセットし、最後に追加した方式のみを保持します:
+
+```sql
+ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
+```
+
+<div id="valid-until-clause">
+  ## VALID UNTIL 句
+</div>
+
+認証方式の有効期限の日付と、必要に応じて時刻を指定できます。パラメータには文字列を指定します。日時には `YYYY-MM-DD [hh:mm:ss] [timezone]` フォーマットを使用することを推奨します。デフォルトでは、このパラメータは `'infinity'` です。
+`VALID UNTIL` 句は、クエリ内で認証方式がまったく指定されていない場合を除き、認証方式とあわせてのみ指定できます。この場合、`VALID UNTIL` 句は既存のすべての認証方式に適用されます。
+
+例:
+
+* `ALTER USER name1 VALID UNTIL '2025-01-01'`
+* `ALTER USER name1 VALID UNTIL '2025-01-01 12:00:00 UTC'`
+* `ALTER USER name1 VALID UNTIL 'infinity'`
+* `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL'2025-01-01''`

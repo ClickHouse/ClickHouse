@@ -1,0 +1,383 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nginx
+title: 'ClickStack による Nginx ログの監視'
+sidebarTitle: 'Nginx ログ'
+description: 'ClickStack による Nginx の監視'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OTel の `filelog` receiver を使用して、Nginx のアクセスログ (JSON フォーマット) を ClickStack で収集し、可視化します。デモデータセットとあらかじめ用意されたダッシュボードが含まれています。
+</Info>
+
+<div id="existing-nginx">
+  ## 既存のNginxとのインテグレーション
+</div>
+
+このセクションでは、ClickStack OTel collector の設定を変更し、既存の Nginx 環境から ClickStack にログを送信する方法を説明します。
+既存環境の設定を行う前にこのインテグレーションを試したい場合は、[次のセクション](/ja/clickstack/integration-examples/nginx-logs#demo-dataset)にある事前設定済みのセットアップとサンプルデータを使ってテストできます。
+
+<div id="prerequisites">
+  ##### 前提条件
+</div>
+
+* ClickStack インスタンスが稼働していること
+* 既存の Nginx インストール環境
+* Nginx の設定ファイルを変更するためのアクセス権
+
+<Steps>
+  <Step>
+    #### Nginx のログフォーマットを設定する
+
+    まず、ログをパースしやすくするために、Nginx が JSON フォーマットでログを出力するよう設定します。このログフォーマット定義を `nginx.conf` に追加してください。
+
+    `nginx.conf` ファイルは通常、次の場所にあります。
+
+    * **Linux (apt/yum)**: `/etc/nginx/nginx.conf`
+    * **macOS (Homebrew)**: `/usr/local/etc/nginx/nginx.conf` または `/opt/homebrew/etc/nginx/nginx.conf`
+    * **Docker**: 設定は通常、ボリュームとしてマウントされます
+
+    このログフォーマット定義を `http` ブロックに追加してください。
+
+    ```nginx
+    http {
+        log_format json_combined escape=json
+        '{'
+          '"time_local":"$time_local",'
+          '"remote_addr":"$remote_addr",'
+          '"request_method":"$request_method",'
+          '"request_uri":"$request_uri",'
+          '"status":$status,'
+          '"body_bytes_sent":$body_bytes_sent,'
+          '"request_time":$request_time,'
+          '"upstream_response_time":"$upstream_response_time",'
+          '"http_referer":"$http_referer",'
+          '"http_user_agent":"$http_user_agent"'
+        '}';
+
+        access_log /var/log/nginx/access.log json_combined;
+        error_log /var/log/nginx/error.log warn;
+    }
+    ```
+
+    この変更を行った後、Nginx を再読み込みします。
+  </Step>
+
+  <Step>
+    #### カスタム OTel collector 設定を作成する
+
+    ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry Collector 設定を拡張できます。カスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
+
+    以下の内容で、`nginx-monitoring.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    receivers:
+      filelog:
+        include:
+          - /var/log/nginx/access.log
+          - /var/log/nginx/error.log
+        start_at: end 
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx"
+
+    service:
+      pipelines:
+        logs/nginx:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    この設定では、次のことを行います:
+
+    * 標準的な場所にある Nginx のログを読み取ります
+    * JSON 形式のログエントリを解析します
+    * 元のログのタイムスタンプを抽出して保持します
+    * HyperDX でのフィルタリング用に source: Nginx 属性を追加します
+    * 専用のパイプラインを通じてログを ClickHouse エクスポーターにルーティングします
+
+    <Note>
+      - カスタム設定では、新しい receiver とパイプラインのみを定義します
+      - プロセッサ (memory&#95;limiter、transform、batch) とエクスポーター (clickhouse) は、ベースの ClickStack 設定ですでに定義されているため、ここでは名前で参照するだけです
+      - time&#95;parser operator は、Nginx の time&#95;local フィールドからタイムスタンプを抽出し、元のログ時刻を保持します
+      - パイプラインは、既存のプロセッサを介して、receiver から ClickHouse エクスポーターへデータをルーティングします
+    </Note>
+  </Step>
+
+  <Step>
+    #### ClickStack でカスタム設定を読み込むように構成する
+
+    既存の ClickStack デプロイメントでカスタム collector の設定を有効にするには、以下を行う必要があります。
+
+    1. カスタム設定ファイルを /etc/otelcol-contrib/custom.config.yaml にマウントする
+    2. 環境変数 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE=/etc/otelcol-contrib/custom.config.yaml を設定する
+    3. collector が読み取れるように、Nginx のログディレクトリをマウントする
+
+    ##### オプション 1: Docker Compose
+
+    ClickStack のデプロイメント設定を更新します。
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 既存の設定 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... その他の環境変数 ...
+        volumes:
+          - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log/nginx:/var/log/nginx:ro
+          # ... その他のボリューム ...
+    ```
+
+    ##### オプション 2: Docker Run (オールインワンイメージ)
+
+    オールインワンイメージを docker run で使用する場合:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log/nginx:/var/log/nginx:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      ClickStack collector に、nginx のログファイルを読み取るための適切な権限があることを確認してください。本番環境では、読み取り専用マウント (:ro) を使用し、最小権限の原則に従ってください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDXでログを確認する
+
+    設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
+
+    1. Search view に移動します
+    2. ログソースを Logs に設定し、`request`、`request&#95;time`、`upstream&#95;response&#95;time` などのフィールドを持つログエントリが表示されていることを確認します
+
+    以下のように表示されれば正常です。
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="ログビュー" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="ログビュー" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境を構成する前に nginx インテグレーションを試したいユーザー向けに、実際のトラフィックパターンに近い、事前生成済みの nginx アクセスログのサンプルデータセットを用意しています。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    ```bash
+    # ログをダウンロード
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/access.log
+    ```
+
+    このデータセットには、以下が含まれます。
+
+    * 実際のトラフィックパターンに近いログエントリ
+    * さまざまなエンドポイントと HTTP メソッド
+    * 正常なリクエストとエラーが混在したデータ
+    * 現実的なレスポンス時間とバイト数
+  </Step>
+
+  <Step>
+    #### テスト用の collector 設定を作成する
+
+    以下の設定内容で、`nginx-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > nginx-demo.yaml << 'EOF'
+    receivers:
+      filelog:
+        include:
+          - /tmp/nginx-demo/access.log
+        start_at: beginning  # デモデータ用に先頭から読み取る
+        operators:
+          - type: json_parser
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.time_local
+            layout: '%d/%b/%Y:%H:%M:%S %z'
+          - type: add
+            field: attributes.source
+            value: "nginx-demo"
+
+    service:
+      pipelines:
+        logs/nginx-demo:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモログと設定を使って ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/nginx-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/access.log:/tmp/nginx-demo/access.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    ClickStack が起動したら、次の手順を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウントの作成が必要な場合があります)
+    2. Search view に移動し、ログソースを `Logs` に設定します
+    3. 時間範囲を **2025-10-19 11:00:00 - 2025-10-22 11:00:00** に設定します
+
+    Search view には次のように表示されるはずです。
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は UTC の 2025-10-20 11:00:00 - 2025-10-21 11:00:00 です。時間範囲を広めに設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、より見やすく可視化するために、範囲を 24 時間に絞ることができます。
+    </Info>
+
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="ログビュー" />
+
+    <Image img="/images/clickstack/log-view.webp" alt="ログビュー" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+ClickStack で nginx の監視をすぐに開始できるよう、Nginx Logs 用の基本的な可視化を用意しています。
+
+<Steps>
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-logs-dashboard.json'} download="nginx-logs-dashboard.json" eventName="docs.nginx_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
+    1. HyperDX を開き、Dashboards セクションに移動します。
+    2. 右上の三点メニューから「Import Dashboard」をクリックします。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポート" />
+
+    3. nginx-logs-dashboard.json ファイルをアップロードし、「finish import」をクリックします。
+
+    <Image img="/images/clickstack/finish-nginx-logs-import.webp" alt="インポートの完了" />
+  </Step>
+
+  <Step>
+    #### 事前設定済みの可視化を含むダッシュボードが作成されます
+
+    <Note>
+      デモデータセットでは、時間範囲を **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
+    </Note>
+
+    <Image img="/images/clickstack/nginx-logs-dashboard.webp" alt="ダッシュボードの例" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### カスタム設定が読み込まれない
+</div>
+
+* 環境変数 CUSTOM&#95;OTELCOL&#95;CONFIG&#95;FILE が正しく設定されているか確認してください
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+* カスタム設定ファイルが /etc/otelcol-contrib/custom.config.yaml にマウントされていることを確認します
+
+```bash
+docker exec <container-name> ls -lh /etc/otelcol-contrib/custom.config.yaml
+```
+
+* カスタム設定の内容を表示し、問題なく読み取れることを確認します
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+<div id="no-logs">
+  ### HyperDX にログが表示されない場合
+</div>
+
+* nginx が JSON 形式でログを出力していることを確認してください
+
+```bash
+tail -f /var/log/nginx/access.log
+```
+
+* collector がログを読み取れることを確認する
+
+```bash
+docker exec `<container>` cat /var/log/nginx/access.log
+```
+
+* 有効な設定に filelog receiver が含まれていることを確認する
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/effective.yaml | grep filelog
+```
+
+* collector のログにエラーがないか確認する
+
+```bash
+docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
+```
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なメトリクス (エラー率、レイテンシのしきい値) について[アラート](/ja/clickstack/features/alerts)を設定します
+* 特定のユースケース (API の監視、セキュリティイベント) 向けに追加の[ダッシュボード](/ja/clickstack/features/dashboards/overview)を作成します
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、すばやくセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でデプロイする場合は、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
