@@ -70,8 +70,8 @@ void DistinctTransform::buildFilter(
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            if (isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
+            if ((i & 0xFFF) == 0 && isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
             if (!(*mask)[i])
             {
@@ -88,8 +88,8 @@ void DistinctTransform::buildFilter(
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            if (isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
+            if ((i & 0xFFF) == 0 && isCancelled())
+                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
             auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
@@ -156,8 +156,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if (isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
+                if ((row & 0xFFF) == 0 && isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -167,8 +167,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if (isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
+                if ((row & 0xFFF) == 0 && isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -178,8 +178,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if (isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
+                if ((row & 0xFFF) == 0 && isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -189,8 +189,8 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if (isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT LC optimization was cancelled");
+                if ((row & 0xFFF) == 0 && isCancelled())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -208,7 +208,7 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
 
     if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "DISTINCT was cancelled");
+        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
