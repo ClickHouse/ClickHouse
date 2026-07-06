@@ -12,6 +12,7 @@
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
 #include <Common/CurrentThread.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/StackTrace.h>
@@ -1064,6 +1065,23 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
     Int64 query_memory_usage_delta = current_memory_usage - memory_usage_before_adding_blocks;
     Int64 max_total_bytes_for_query = memory_usage_before_adding_blocks ? table_join->getMaxMemoryUsage() : 0;
+
+    /// With `enable_join_in_memory_compression`, react to overall memory pressure even without an
+    /// explicit `max_memory_usage` / `max_bytes_in_join`, the same way external aggregation and sorting
+    /// activate: derive the query memory budget from the memory still available on the server
+    /// (`getMostStrictAvailableSystemMemory`). Otherwise the feature only ever triggers when one of those
+    /// limits is set, which is rarely the case in practice, so it would stay dormant exactly when a large
+    /// build side is about to exhaust memory. The available value already excludes what this join has
+    /// added so far, so add the delta back to approximate the budget as of when it started adding blocks.
+    if (memory_usage_before_adding_blocks && table_join->enableJoinInMemoryCompression())
+    {
+        if (auto available_system_memory = getMostStrictAvailableSystemMemory())
+        {
+            Int64 system_memory_budget = static_cast<Int64>(*available_system_memory) + query_memory_usage_delta;
+            if (max_total_bytes_for_query == 0 || system_memory_budget < max_total_bytes_for_query)
+                max_total_bytes_for_query = system_memory_budget;
+        }
+    }
 
     auto max_total_bytes_in_join = table_join->sizeLimits().max_bytes;
 
