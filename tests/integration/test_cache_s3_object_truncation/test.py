@@ -3,11 +3,13 @@ Regression test for graceful handling of truncated S3 objects during cached read
 
 When an S3 object is overwritten with shorter content between listing and
 reading, the cache layer must NOT throw LOGICAL_ERROR and must NOT crash the
-server. In predownloadForFileSegment, when the bytes the reader needs lie beyond
-the truncated object there is no valid data to return, so the read fails with a
-regular CANNOT_READ_ALL_DATA error -- not a LOGICAL_ERROR, and not a fabricated
-EOF (a short/zero read there makes the caller consume uninitialized memory,
-which aborts under MemorySanitizer and returns silent garbage in release).
+server. When the bytes the reader needs lie beyond the truncated object there
+is no valid data to return, so the read fails with a regular error -- an S3
+range/If-Match error from the resumed request, S3_OBJECT_CHANGED_DURING_READ,
+or CANNOT_READ_ALL_DATA, depending on where the mismatch is detected -- not a
+LOGICAL_ERROR, and not a fabricated EOF (a short/zero read there makes the
+caller consume uninitialized memory, which aborts under MemorySanitizer and
+returns silent garbage in release).
 
 Two conditions are required to actually exercise the predownload path, both
 discovered empirically (a naive test passes on the buggy code too):
@@ -22,8 +24,9 @@ discovered empirically (a naive test passes on the buggy code too):
    (CANNOT_READ_ALL_DATA) and never reaches the predownload path.
 
 All three cache read paths -- predownloadForFileSegment, readFromFileSegment and
-readBigAt -- fail a truncated read the same way: a regular CANNOT_READ_ALL_DATA,
-never a LOGICAL_ERROR and never a fabricated EOF.
+readBigAt -- fail a truncated read the same way: a regular error (never a
+LOGICAL_ERROR and never a fabricated EOF), with the object-size mismatch
+classified as S3_OBJECT_CHANGED_DURING_READ when it reaches the cache layer.
 
 NOTE on readBigAt: readBigAt is the random-access path used by the Parquet
 reader over object storage, and is not reached by a MergeTree SELECT. It cannot
@@ -123,10 +126,11 @@ def test_truncated_object_predownload_no_logical_error(started_cluster):
     Truncate the column data object to a valid prefix, then seek (via a point
     query on the primary key) to a granule located beyond the truncation. On the
     unpatched code this throws `Failed to predownload remaining ... bytes`
-    (LOGICAL_ERROR); the fix fails with a regular CANNOT_READ_ALL_DATA and the
-    server stays up. Any non-LOGICAL_ERROR (CANNOT_READ_ALL_DATA, broken part,
-    etc.) is acceptable; what matters is no forbidden LOGICAL_ERROR and that the
-    server survives (no use-of-uninitialized-value crash).
+    (LOGICAL_ERROR); the fix fails with a regular error and the server stays up.
+    Any non-LOGICAL_ERROR (an S3 range/If-Match error from the resumed request,
+    S3_OBJECT_CHANGED_DURING_READ, CANNOT_READ_ALL_DATA, broken part, etc.) is
+    acceptable; what matters is no forbidden LOGICAL_ERROR and that the server
+    survives (no use-of-uninitialized-value crash).
     """
     minio = started_cluster.minio_client
     node.query("DROP TABLE IF EXISTS t_trunc SYNC")
