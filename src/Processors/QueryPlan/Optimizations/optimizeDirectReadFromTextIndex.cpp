@@ -156,7 +156,8 @@ String optimizationInfoToString(const IndexReadColumns & added_columns, const Na
 
 /// Helper function.
 /// Collects index conditions from the given ReadFromMergeTree step and stores them in text_index_read_infos.
-void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos)
+/// Sets `any_part_has_patches` to true if any queried part has patch parts (from lightweight updates).
+void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_step, TextIndexReadInfos & text_index_read_infos, bool & any_part_has_patches)
 {
     const auto & indexes = read_from_merge_tree_step->getIndexes();
     if (!indexes || indexes->skip_indexes.useful_indices.empty())
@@ -189,6 +190,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
         );
         const auto & part_updated_columns = alter_conversions->getAllUpdatedColumns();
         all_updated_columns.insert(part_updated_columns.begin(), part_updated_columns.end());
+        any_part_has_patches |= alter_conversions->hasPatches();
     }
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
@@ -884,7 +886,8 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
         return;
 
     TextIndexReadInfos text_index_read_infos;
-    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos);
+    bool any_part_has_patches = false;
+    collectTextIndexReadInfos(read_from_merge_tree_step, text_index_read_infos, any_part_has_patches);
     if (text_index_read_infos.empty())
         return;
 
@@ -900,6 +903,17 @@ void processAndOptimizeTextIndexFunctions(const Stack & stack, QueryPlan::Nodes 
     /// (row-level evaluation when direct read is off or a part is not fully materialized) and does not
     /// register any read column.
     bool already_has_direct_read = !read_from_merge_tree_step->getIndexReadTasks().empty();
+
+    /// The direct-read index step reads no physical data and cannot anchor patch application
+    /// (aligned by `_part_offset`), so it is incompatible with patch parts even when the patched
+    /// column is unrelated to the index column (the per-index `canUseIndex` check is not enough).
+    /// Disable only the virtual-column/direct-read rewrite when any queried part has patches; still
+    /// run tokenizer/preprocessor rewriting so the regular fallback matches direct_read = 0 results.
+    if (any_part_has_patches)
+    {
+        LOG_TRACE(getLogger("optimizeDirectReadFromTextIndex"), "Disabling direct reading from text index because some parts have patch parts (lightweight updates)");
+        direct_read_from_text_index = false;
+    }
 
     bool optimized = false;
     if (auto prewhere_info = read_from_merge_tree_step->getPrewhereInfo())
