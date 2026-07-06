@@ -43,7 +43,9 @@ $CLICKHOUSE_CLIENT -nm -q "
       index_granularity=8192,
       index_granularity_bytes=10e6,
       distributed_index_analysis_min_parts_to_activate=0,
-      distributed_index_analysis_min_indexes_bytes_to_activate=0;
+      distributed_index_analysis_min_indexes_bytes_to_activate=0,
+      -- auto_statistics_types='': otherwise the auto column statistics (materialized on INSERT by default) add a statistics.packed file that inflates part sizes and perturbs the distributed index analysis counters.
+      auto_statistics_types='';
   system stop merges test_skip_with_expr;
   insert into test_skip_with_expr select toDateTime64('2024-01-01 00:00:00', 9) + number, number from numbers(1e6)
     settings max_block_size=10000, min_insert_block_size_rows=10000, max_insert_threads=1;
