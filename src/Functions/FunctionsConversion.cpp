@@ -1703,6 +1703,12 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
     /// Check that the set of old variants types is a subset of new variant types and collect new global discriminator for each old global discriminator.
     UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, ColumnVariant::Discriminator> old_global_discriminator_to_new;
     old_global_discriminator_to_new.reserve(old_variants.size());
+    /// Two distinct types can share the same name. AggregateFunction has a hidden state representation
+    /// (Aggregation vs Window) that is not encoded in its name, so an old and a new variant matched by name
+    /// can still have different in-memory layouts. In that case we must convert the subcolumn to the new
+    /// representation instead of reusing it as-is, otherwise later reads would interpret the bytes using the
+    /// wrong layout and crash. We keep the converting wrapper keyed by the old global discriminator.
+    UnorderedMapWithMemoryTracking<ColumnVariant::Discriminator, WrapperType> old_global_discriminator_to_convert_wrapper;
     for (const auto & [old_variant_type, old_discriminator] : old_variant_types_to_old_global_discriminator)
     {
         auto it = new_variant_types_to_new_global_discriminator.find(old_variant_type);
@@ -1712,6 +1718,11 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
                 "Cannot convert type {} to {}. Conversion between Variant types is allowed only when new Variant type is an extension "
                 "of an initial one", from_variant.getName(), to_variant.getName());
         old_global_discriminator_to_new[old_discriminator] = it->second;
+
+        const auto & old_type = old_variants[old_discriminator];
+        const auto & new_type = new_variants[it->second];
+        if (!old_type->equals(*new_type))
+            old_global_discriminator_to_convert_wrapper[old_discriminator] = prepareUnpackDictionaries(old_type, new_type);
     }
 
     /// Collect variant types and their global discriminators that should be added to the old Variant to get the new Variant.
@@ -1723,7 +1734,7 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
             variant_types_and_discriminators_to_add.emplace_back(new_variants[i], i);
     }
 
-    return [old_global_discriminator_to_new, variant_types_and_discriminators_to_add]
+    return [old_global_discriminator_to_new, old_global_discriminator_to_convert_wrapper, old_variants, new_variants, variant_types_and_discriminators_to_add]
            (ColumnsWithTypeAndName & arguments, const DataTypePtr &, const ColumnNullable *, size_t) -> ColumnPtr
     {
         const auto & column_variant = assert_cast<const ColumnVariant &>(*arguments.front().column.get());
@@ -1734,8 +1745,18 @@ FunctionCast::WrapperType FunctionCast::createVariantToVariantWrapper(const Data
         new_local_to_global_discriminators.reserve(num_old_variants + variant_types_and_discriminators_to_add.size());
         for (ColumnVariant::Discriminator i = 0; i != num_old_variants; ++i)
         {
-            new_variant_columns.push_back(column_variant.getVariantPtrByLocalDiscriminator(i));
-            new_local_to_global_discriminators.push_back(old_global_discriminator_to_new.at(column_variant.globalDiscriminatorByLocal(i)));
+            const auto old_global_discriminator = column_variant.globalDiscriminatorByLocal(i);
+            const auto new_global_discriminator = old_global_discriminator_to_new.at(old_global_discriminator);
+            auto variant_column = column_variant.getVariantPtrByLocalDiscriminator(i);
+            /// The type matched by name but its representation changed: convert the subcolumn to the new layout.
+            if (auto wrapper_it = old_global_discriminator_to_convert_wrapper.find(old_global_discriminator);
+                wrapper_it != old_global_discriminator_to_convert_wrapper.end())
+            {
+                ColumnsWithTypeAndName convert_args = {{variant_column, old_variants[old_global_discriminator], ""}};
+                variant_column = wrapper_it->second(convert_args, new_variants[new_global_discriminator], nullptr, variant_column->size());
+            }
+            new_variant_columns.push_back(std::move(variant_column));
+            new_local_to_global_discriminators.push_back(new_global_discriminator);
         }
 
         for (const auto & [new_variant_type, new_global_discriminator] : variant_types_and_discriminators_to_add)
@@ -1909,16 +1930,13 @@ FunctionCast::WrapperType FunctionCast::createColumnToVariantWrapper(const DataT
     /// in state representation, its constructor collapses them by name to a single variant type.
     /// If our source column carries the other state representation, we must cast it to the destination
     /// variant type before storing it as a subcolumn, otherwise serialization would interpret the bytes
-    /// using the wrong layout and crash.
+    /// using the wrong layout and crash. The source type was matched to the destination variant by name,
+    /// so any remaining inequality is such a hidden representation difference (it may be nested inside
+    /// Array/Map/Tuple); prepareUnpackDictionaries converts it and recurses into nested types.
     const auto & target_variant_type = to_variant.getVariants()[*variant_discr_opt];
-    const auto * from_agg_type = typeid_cast<const DataTypeAggregateFunction *>(from_nested_type.get());
-    const auto * target_variant_agg_type = typeid_cast<const DataTypeAggregateFunction *>(target_variant_type.get());
     WrapperType to_target_variant_type_cast;
-    if (from_agg_type && target_variant_agg_type && from_agg_type->equalsIgnoringVariant(*target_variant_type)
-        && !from_nested_type->equals(*target_variant_type))
-    {
+    if (!from_nested_type->equals(*target_variant_type))
         to_target_variant_type_cast = prepareUnpackDictionaries(from_nested_type, target_variant_type);
-    }
 
     return [variant_discr = *variant_discr_opt,
             cast_to_variant_type_wrapper = std::move(to_target_variant_type_cast),
@@ -2091,8 +2109,22 @@ FunctionCast::WrapperType FunctionCast::createStringToDynamicThroughParsingWrapp
 
 FunctionCast::WrapperType FunctionCast::createVariantToDynamicWrapper(const DataTypeVariant & from_variant_type, const DataTypeDynamic & dynamic_type) const
 {
-    /// First create extended Variant with shared variant type and cast this Variant to it.
-    auto variants_for_dynamic = from_variant_type.getVariants();
+    /// A Dynamic column identifies its stored types by their name and re-resolves the type from that name
+    /// (e.g. in dynamicElement or the -Merge combinator). Two distinct types can share the same name:
+    /// AggregateFunction has a hidden state representation (Aggregation vs Window) that is not encoded in
+    /// its name. If we stored a Window-representation state under its name, a later read would resolve the
+    /// name to the canonical (Aggregation) representation and interpret the bytes with the wrong layout and
+    /// crash. So the Dynamic must hold each type in its canonical (name-resolved) representation. Build the
+    /// storage Variant from those canonical types; the Variant to Variant cast below converts any subcolumn
+    /// whose representation differs (it recurses into Array/Map/Tuple).
+    auto source_variants = from_variant_type.getVariants();
+    DataTypes variants_for_dynamic;
+    variants_for_dynamic.reserve(source_variants.size() + 1);
+    for (const auto & source_variant : source_variants)
+    {
+        auto canonical_variant = DataTypeFactory::instance().tryGet(source_variant->getName());
+        variants_for_dynamic.push_back(canonical_variant && !canonical_variant->equals(*source_variant) ? canonical_variant : source_variant);
+    }
     size_t number_of_variants = variants_for_dynamic.size();
     variants_for_dynamic.push_back(ColumnDynamic::getSharedVariantDataType());
     const auto & variant_type_for_dynamic = std::make_shared<DataTypeVariant>(variants_for_dynamic);

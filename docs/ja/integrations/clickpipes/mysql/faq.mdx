@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'よくある質問'
+description: 'ClickPipes for MySQL に関するよくある質問。'
+slug: /integrations/clickpipes/mysql/faq
+title: 'ClickPipes for MySQL よくある質問'
+doc_type: 'reference'
+keywords: ['MySQL ClickPipes よくある質問', 'ClickPipes MySQL トラブルシューティング', 'MySQL ClickHouse レプリケーション', 'ClickPipes MySQL サポート', 'MySQL CDC（変更データキャプチャ） ClickHouse']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="does-the-clickpipe-support-mariadb">
+  ### MySQL ClickPipe は MariaDB をサポートしていますか？
+</div>
+
+はい、MySQL ClickPipe は MariaDB 10.0 以降をサポートしています。設定は MySQL と非常によく似ており、デフォルトでは GTID レプリケーションを使用します。
+
+<div id="does-the-clickpipe-support-planetscale-vitess">
+  ### MySQL ClickPipe は PlanetScale、Vitess、または TiDB をサポートしていますか？
+</div>
+
+いいえ、これらは MySQL の binlog API に対応していません。
+
+<div id="how-is-replication-managed">
+  ### レプリケーションはどのように管理されますか？
+</div>
+
+`GTID` と `FilePos` の両方のレプリケーションをサポートしています。Postgres とは異なり、オフセットを管理するためのスロットはありません。代わりに、MySQL サーバーで十分な binlog の保持期間を設定する必要があります。binlog 内のオフセットが無効になった場合 (*たとえば、mirror が長時間 Paused のままだった場合や、`FilePos` レプリケーションの使用中にデータベースのフェイルオーバーが発生した場合*) 、パイプを再同期する必要があります。非効率なクエリによってインジェストが遅れ、保持期間を超えてしまう可能性があるため、宛先テーブルに応じて materialized view を必ず最適化してください。
+
+また、アクティビティのないデータベースでは、ClickPipes がより新しいオフセットに進めないままログファイルがローテーションされることもあります。定期的に更新される heartbeat table をセットアップする必要がある場合があります。
+
+初期ロードの開始時に、開始位置となる binlog オフセットを記録します。CDC (変更データキャプチャ) を進めるには、初期ロードの完了時点でもこのオフセットが有効である必要があります。大量のデータを取り込む場合は、適切な binlog の保持期間を必ず設定してください。テーブルのセットアップ中は、高度な設定で大きなテーブルに対して *Use a custom partitioning key for initial load* を設定すると、1 つのテーブルを並列にロードできるため、初期ロードを高速化できます。
+
+<div id="binlog-event-exceeded-max-allowed-packet">
+  ### パイプが `max_allowed_packet` の binlog エラーで失敗するのはなぜですか？
+</div>
+
+パイプが次のようなエラーで失敗する場合:
+
+```text
+MySQL execute error: ERROR 1236 (HY000): log event entry exceeded max_allowed_packet;
+Increase max_allowed_packet on source
+```
+
+これは、単一のbinlogイベント (1件の行変更に対応) が、MySQL serverの[`max_allowed_packet`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet)設定よりも大きいことを意味します。serverはこの上限を超えるイベントを送信できないため、binlogストリームの読み取りが中断され、CDC (変更データキャプチャ) が先に進めなくなります。
+
+これは多くの場合、大きな`BLOB`、`TEXT`、または`JSON`の値を含む行が原因です。解決するには、次の対応を行ってください。
+
+* **ログソース側で`max_allowed_packet`を増やします。** 最大の行変更サイズを上回る値に引き上げてください。通常は最大値の`1G`に設定して問題ありません。
+  ```sql
+  SET GLOBAL max_allowed_packet = 1073741824; -- 1 GiB
+  ```
+  再起動後も設定が保持されるように、server configuration (例: `my.cnf` または DB パラメータグループ) にも設定してください。
+* **単一の行が1Gを超える場合:** パイプを再同期します。
+
+<div id="tls-certificate-validation-error">
+  ### MySQL への接続時に TLS 証明書の検証エラーが発生するのはなぜですか？
+</div>
+
+MySQL に接続すると、`x509: certificate is not valid for any names` や `x509: certificate signed by unknown authority` のような証明書エラーが発生することがあります。これは、ClickPipes でデフォルトで TLS 暗号化が有効になっているためです。
+
+これらの問題を解決するには、いくつかの方法があります。
+
+1. **TLS Host フィールドを設定する** - 接続先のホスト名が証明書と異なる場合 (Endpoint Service 経由の AWS PrivateLink でよくあります) は、証明書の Common Name (CN) または Subject Alternative Name (SAN) に一致するように「TLS Host (optional)」を設定してください。
+
+2. **Root CA をアップロードする** - 内部の認証局を使用している MySQL サーバーや、デフォルトのインスタンス単位 CA 構成を使用する Google Cloud SQL の場合に該当します。Google Cloud SQL 証明書へのアクセス方法の詳細については、[このセクション](/ja/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql)を参照してください。
+
+3. **サーバー証明書を設定する** - すべての接続ホスト名を含むようにサーバーの SSL 証明書を更新し、信頼された認証局を使用してください。
+
+4. **証明書の検証をスキップする** - セルフホストの MySQL または MariaDB では、デフォルト構成で自己署名証明書が作成されますが、ClickPipes ではこれを検証できません ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/creating-ssl-rsa-files-using-mysql.html#creating-ssl-rsa-files-using-mysql-automatic)、[MariaDB](https://mariadb.com/kb/en/securing-connections-for-client-and-server/#enabling-tls-for-mariadb-server)) 。この証明書を使用すると通信中のデータは暗号化されますが、サーバーのなりすましリスクがあります。本番環境では適切に署名された証明書の使用を推奨しますが、この方法は一時的なインスタンスでのテストや、レガシーなインフラストラクチャへの接続には便利です。
+
+<div id="do-you-support-schema-changes">
+  ### スキーマ変更に対応していますか？
+</div>
+
+詳細については、[ClickPipes for MySQL: スキーマ変更の伝播サポート](/ja/integrations/clickpipes/mysql/schema-changes) ページを参照してください。
+
+<div id="support-on-delete-cascade">
+  ### MySQL の外部キーのカスケード削除 `ON DELETE CASCADE` のレプリケーションをサポートしていますか？
+</div>
+
+MySQL では[カスケード削除が処理される仕組み](https://dev.mysql.com/doc/refman/8.0/en/innodb-and-mysql-replication.html)上、これらは binlog に書き込まれません。そのため、ClickPipes (または任意の CDC (変更データキャプチャ) ツール) でこれらをレプリケーションすることはできません。これにより、データの不整合が発生する可能性があります。カスケード削除をサポートするには、代わりにトリガーを使用することを推奨します。
+
+<div id="replicate-table-dot">
+  ### ドットを含むテーブルをレプリケートできないのはなぜですか？
+</div>
+
+現在、PeerDB には制限があり、レプリケーション元のテーブル識別子 (つまりスキーマ名またはテーブル名) にドットが含まれている場合、レプリケーションはサポートされていません。PeerDB はドットで分割して解釈するため、その場合はどこまでがスキーマでどこからがテーブルかを判別できないためです。
+この制限を回避できるよう、スキーマとテーブルを個別に入力できるようにする対応が進められています。
+
+<div id="include-excluded-columns">
+  ### 最初にレプリケーション対象から除外したカラムを後から含めることはできますか？
+</div>
+
+現時点ではまだサポートされていません。代わりに、含めたいカラムがある場合は、対象の[テーブルを再同期](/ja/integrations/clickpipes/mysql/table-resync)してください。

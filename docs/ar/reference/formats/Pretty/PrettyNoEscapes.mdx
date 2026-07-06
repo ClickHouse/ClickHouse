@@ -1,0 +1,43 @@
+---
+alias: []
+description: 'توثيق تنسيق PrettyNoEscapes'
+input_format: false
+keywords: ['PrettyNoEscapes']
+output_format: true
+slug: /interfaces/formats/PrettyNoEscapes
+title: 'PrettyNoEscapes'
+doc_type: 'مرجع'
+---
+
+import PrettyFormatSettings from '/snippets/ar/common-pretty-format-settings.mdx';
+
+| الإدخال | الإخراج | اسم بديل |
+| ------- | ------- | -------- |
+| ✗       | ✔       |          |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يختلف عن [Pretty](/ar/reference/formats/Pretty/Pretty) في أنه لا يستخدم [تسلسلات إفلات ANSI](http://en.wikipedia.org/wiki/ANSI_escape_code).
+وهذا ضروري لعرض هذه الصيغة في المتصفح، وكذلك لاستخدام أداة سطر الأوامر &#39;watch&#39;.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+مثال:
+
+```bash
+$ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
+```
+
+<Note>
+  يمكن استخدام [واجهة HTTP](/ar/concepts/features/interfaces/http) لعرض هذا التنسيق في المتصفح.
+</Note>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+<PrettyFormatSettings />

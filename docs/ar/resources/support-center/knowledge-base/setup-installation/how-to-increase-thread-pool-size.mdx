@@ -1,0 +1,37 @@
+---
+title: كيفية زيادة عدد الخيوط في ClickHouse
+description: تعرّف على كيفية ضبط المجمّع العام للخيوط في ClickHouse من خلال تعديل إعدادات مثل `max_thread_pool_size` و`thread_pool_queue_size` و`max_thread_pool_free_size`.
+date: 2023-03-01
+tags: ['الأداء والتحسينات']
+keywords: ['الخيوط المتاحة']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## زيادة عدد الخيوط في ClickHouse
+</div>
+
+يستخدم ClickHouse خيوطًا من **المجمّع العام للخيوط** لمعالجة الاستعلامات، كما ينفّذ عمليات في الخلفية مثل الدمج والتعديلات. وإذا لم يكن هناك خيط خامل لمعالجة استعلام، فسيُنشأ خيط جديد في المجمّع.
+
+يُحدَّد الحد الأقصى لحجم المجمّع العام للخيوط بواسطة الإعداد `max_thread_pool_size`، وتبلغ قيمته الافتراضية 10,000. يمكنك تعديل هذه القيمة في ملف الإعدادات — وهنا نضبطها على 20,000:
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+إذا عدّلت `max_thread_pool_size`، فنوصي بتغيير `thread_pool_queue_size` إلى القيمة نفسها. يشير الإعداد `thread_pool_queue_size` إلى الحد الأقصى لعدد المهام التي يمكن جدولة تنفيذها على المجمّع العام للخيوط:
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+يمكنك أيضًا تحرير الموارد إذا كان لدى الخادم عدد كبير من الخيوط الخاملة، وذلك باستخدام الإعداد `max_thread_pool_free_size`. القيمة الافتراضية هي 1,000، ما يعني أن المجمّع العام للخيوط لديك لن يضم أبدًا أكثر من 1,000 خيط خامل. يوضّح المثال التالي كيفية زيادة القيمة إلى 2,000:
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+اطّلع على [الوثائق](/ar/reference/settings/server-settings/settings#max_thread_pool_size) لمزيد من التفاصيل حول الإعدادات المذكورة أعلاه والإعدادات الأخرى التي تؤثر في المجمّع العام للخيوط.

@@ -1,0 +1,270 @@
+---
+description: 'Este motor fornece integração somente leitura com tabelas Apache Paimon
+  existentes no Amazon S3, Azure, HDFS e em armazenamento local.'
+sidebarTitle: 'Paimon'
+slug: /engines/table-engines/integrations/paimon
+title: 'Motor de tabela Paimon'
+doc_type: 'reference'
+---
+
+Este motor fornece integração somente leitura com tabelas Apache [Paimon](https://paimon.apache.org/) existentes no Amazon S3, Azure, HDFS e em armazenamento local.
+Ele oferece suporte a leituras de snapshot, leituras incrementais e à poda básica de partições.
+
+<div id="create-table">
+  ## Criar tabela
+</div>
+
+Observe que a tabela Paimon já deve existir no armazenamento; este comando não aceita parâmetros de DDL para criar uma nova tabela.
+A criação de tabelas `Paimon*` é condicionada por `allow_experimental_paimon_storage_engine` (desabilitado por padrão), portanto habilite-o antes de executar `CREATE TABLE`.
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+CREATE TABLE paimon_table_s3
+    ENGINE = PaimonS3(url,  [, access_key_id, secret_access_key] [,format] [,compression])
+
+CREATE TABLE paimon_table_azure
+    ENGINE = PaimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+CREATE TABLE paimon_table_hdfs
+    ENGINE = PaimonHDFS(path_to_table, [,format] [,compression_method])
+
+CREATE TABLE paimon_table_local
+    ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
+```
+
+<div id="engine-arguments">
+  ## Argumentos do mecanismo
+</div>
+
+A descrição dos argumentos corresponde à descrição dos argumentos nos motores `S3`, `AzureBlobStorage`, `HDFS` e `File`, respectivamente.
+`format` indica o formato dos arquivos de dados na tabela Paimon.
+
+Os parâmetros do mecanismo podem ser especificados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections)
+
+<div id="example">
+  ### Exemplo
+</div>
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
+```
+
+Usando coleções nomeadas:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <paimon_conf>
+            <url>http://test.s3.amazonaws.com/clickhouse-bucket/</url>
+            <access_key_id>test</access_key_id>
+            <secret_access_key>test</secret_access_key>
+        </paimon_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
+```
+
+<div id="capabilities">
+  ## Recursos
+</div>
+
+* Leituras de snapshot a partir do snapshot mais recente da tabela.
+* Leituras incrementais com base no ID do snapshot confirmado, quando habilitado.
+* Poda de partições quando `use_paimon_partition_pruning` está habilitado.
+* Atualização opcional de metadados em segundo plano quando configurada.
+* UUID estável da tabela ao usar bancos de dados Atomic/Replicated, permitindo macros `{uuid}` em caminhos do Keeper.
+
+<div id="settings">
+  ## Configurações
+</div>
+
+Este motor usa as mesmas configurações dos motores correspondentes de armazenamento de objetos e adiciona configurações específicas do Paimon:
+
+* `allow_experimental_paimon_storage_engine` — habilita a criação dos motores de tabela `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS` e `PaimonLocal`. Padrão: `0` (desabilitado).
+* `paimon_incremental_read` — habilita o modo de leitura incremental.
+* `paimon_metadata_refresh_interval_sec` — intervalo, em segundos, da atualização de metadados em segundo plano. Quando definido como um valor maior que 0, uma tarefa em segundo plano busca periodicamente o snapshot e o esquema mais recentes no armazenamento de objetos. Padrão: 30.
+* `paimon_keeper_path` — caminho do Keeper para o estado da leitura incremental. Deve ser definido e ser único por tabela; oferece suporte a macros como `{database}`, `{table}`, `{uuid}`.
+* `paimon_replica_name` — nome da réplica para o estado da leitura incremental. Deve ser definido e ser único por réplica; oferece suporte a macros como `{replica}`.
+
+<div id="incremental-read-examples">
+  ## Exemplos de leitura incremental
+</div>
+
+Leitura incremental com estado do Keeper:
+
+```sql
+CREATE TABLE paimon_inc
+ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/{database}/{uuid}',
+    paimon_replica_name = '{replica}';
+```
+
+<div id="query-level-settings-for-incremental-read">
+  ### Configurações no nível da consulta para leitura incremental
+</div>
+
+As configurações a seguir são **no nível da consulta** (passadas via `SELECT ... SETTINGS`, não em `CREATE TABLE`). Elas controlam o comportamento das leituras incrementais em cada consulta:
+
+* `paimon_target_snapshot_id` — lê apenas o delta do snapshot especificado. O watermark confirmado no Keeper **não** é avançado, portanto o mesmo snapshot pode ser relido quantas vezes for necessário. Padrão: `-1` (desabilitado).
+* `max_consume_snapshots` — número máximo de snapshots a consumir em uma única leitura incremental. Quando a source acumula muitos snapshots não lidos, isso limita quantos são consumidos por consulta para controlar o tamanho do lote. `0` significa sem limite. Padrão: `0`.
+
+**Leitura de snapshot direcionada** — sempre retorna o delta do snapshot 1, independentemente do watermark atual:
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS paimon_target_snapshot_id = 1;
+```
+
+**Limitando o número de snapshots por lote** — se houver três novos snapshots pendentes, consuma no máximo dois por consulta:
+
+```sql
+SELECT count()
+FROM paimon_inc
+SETTINGS max_consume_snapshots = 2;
+```
+
+<div id="paimon-to-mergetree-via-refresh-mv">
+  ## Paimon para MergeTree por meio de view materializada atualizável
+</div>
+
+Você pode criar um pipeline de ponta a ponta que sincroniza continuamente dados de uma tabela Paimon com uma tabela MergeTree usando uma view materializada atualizável no modo `APPEND`. Cada ciclo de atualização lê apenas novos dados incrementais do Paimon e os adiciona à tabela de destino.
+
+**Etapa 1 — Crie a tabela de origem do Paimon com leitura incremental e atualização de metadados habilitadas.**
+
+O exemplo abaixo usa `PaimonLocal`. Substitua o motor por `PaimonS3`, `PaimonAzure`, `PaimonHDFS` ou pelo motor `Paimon` com detecção automática, conforme apropriado para seu backend de armazenamento:
+
+```sql
+SET allow_experimental_paimon_storage_engine = 1;
+
+-- Local storage
+CREATE TABLE paimon_mv_source
+ENGINE = PaimonLocal('/path/to/paimon/table')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+
+-- S3 storage (the `Paimon` engine defaults to the S3 implementation when no `disk` is specified)
+CREATE TABLE paimon_mv_source
+ENGINE = Paimon('http://minio:9000/bucket/path/to/table', 'access_key', 'secret_key')
+SETTINGS
+    paimon_incremental_read = 1,
+    paimon_keeper_path = '/clickhouse/tables/{uuid}',
+    paimon_replica_name = '{replica}',
+    paimon_metadata_refresh_interval_sec = 1;
+```
+
+`paimon_metadata_refresh_interval_sec` define o intervalo, em segundos, de atualização de metadados em segundo plano. Quando é maior que 0, uma tarefa em segundo plano extrai periodicamente o `snapshot` e o esquema mais recentes do armazenamento de objetos, para que o ciclo de atualização da MV possa ver dados recém-confirmados sem esperar que uma consulta acione a atualização dos metadados. O padrão é 30. Use com cautela em muitas tabelas para evitar E/S excessiva no armazenamento de objetos e no Keeper.
+
+**Etapa 2 — Crie a tabela de destino MergeTree (esquema clonado da tabela Paimon):**
+
+```sql
+CREATE TABLE paimon_mv_dest AS paimon_mv_source
+ENGINE = MergeTree()
+ORDER BY tuple();
+```
+
+**Etapa 3 — Crie a view materializada atualizável:**
+
+```sql
+CREATE MATERIALIZED VIEW paimon_mv
+REFRESH EVERY 10 SECOND
+APPEND
+TO paimon_mv_dest
+AS SELECT * FROM paimon_mv_source;
+```
+
+A cada 10 segundos, a MV executa um `SELECT * FROM paimon_mv_source`, que retorna apenas as linhas adicionadas desde o último snapshot confirmado e as adiciona a `paimon_mv_dest`.
+
+**Limpeza:**
+
+```sql
+SYSTEM STOP VIEW paimon_mv;
+DROP VIEW IF EXISTS paimon_mv SYNC;
+DROP TABLE IF EXISTS paimon_mv_dest SYNC;
+DROP TABLE IF EXISTS paimon_mv_source SYNC;
+```
+
+<Note>
+  Interrompa a MV antes de removê-la para evitar que a atualização em segundo plano impeça operações de DDL.
+</Note>
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+* A leitura incremental requer que o Keeper (ZooKeeper) esteja configurado.
+* A leitura incremental requer que `paimon_keeper_path` esteja definido e seja único para cada tabela.
+* `paimon_replica_name` deve ser único para cada réplica dentro do mesmo caminho do Keeper.
+* A leitura incremental usa entrega com garantia de, no máximo, uma vez: o snapshot confirmado avança quando os arquivos de dados são coletados, antes de os dados serem efetivamente consumidos. Se a consulta falhar após a coleta dos arquivos, os snapshots ignorados não serão lidos novamente em uma nova tentativa.
+* O motor da tabela é somente leitura; a modificação de dados não é suportada.
+* A leitura incremental não lida com exclusões de dados históricos na origem Paimon. Se os dados de upstream do Paimon forem excluídos ou atualizados, as linhas correspondentes já gravadas em uma tabela de destino MergeTree no ClickHouse não serão removidas automaticamente. Você deve executar manualmente `ALTER TABLE ... DELETE` na tabela MergeTree para limpar dados desatualizados.
+
+<div id="aliases">
+  ## Aliases
+</div>
+
+O `Paimon` motor de tabela detecta automaticamente o backend de armazenamento com base na configuração `disk` e direciona para `PaimonS3`, `PaimonAzure` ou `PaimonLocal`, conforme o caso. Quando nenhum `disk` é especificado, a implementação padrão é `PaimonS3`.
+
+<div id="virtual-columns">
+  ## Colunas virtuais
+</div>
+
+* `_path` — Caminho do arquivo. Tipo: `LowCardinality(String)`.
+* `_file` — Nome do arquivo. Tipo: `LowCardinality(String)`.
+* `_size` — Tamanho do arquivo em bytes. Tipo: `Nullable(UInt64)`. Se o tamanho do arquivo for desconhecido, o valor será `NULL`.
+* `_time` — Data e hora da última modificação do arquivo. Tipo: `Nullable(DateTime)`. Se a data e hora forem desconhecidas, o valor será `NULL`.
+* `_etag` — O etag do arquivo. Tipo: `LowCardinality(String)`. Se o etag for desconhecido, o valor será `NULL`.
+
+<div id="data-types-supported">
+  ## Tipos de dados compatíveis
+</div>
+
+| Tipo de dado do Paimon            | Tipo de dado do ClickHouse |
+| --------------------------------- | -------------------------- |
+| BOOLEAN                           | Int8                       |
+| TINYINT                           | Int8                       |
+| SMALLINT                          | Int16                      |
+| INTEGER                           | Int32                      |
+| BIGINT                            | Int64                      |
+| FLOAT                             | Float32                    |
+| DOUBLE                            | Float64                    |
+| STRING,VARCHAR,BYTES,VARBINARY    | String                     |
+| DATE                              | Date                       |
+| TIME(p),TIME                      | Time(&#39;UTC&#39;)        |
+| TIMESTAMP(p) WITH LOCAL TIME ZONE | DateTime64                 |
+| TIMESTAMP(p)                      | DateTime64(&#39;UTC&#39;)  |
+| CHAR                              | FixedString(1)             |
+| BINARY(n)                         | FixedString(n)             |
+| DECIMAL(P,S)                      | Decimal(P,S)               |
+| ARRAY                             | Array                      |
+| MAP                               | Map                        |
+
+<div id="partition-supported">
+  ## Partições compatíveis
+</div>
+
+Tipos de dados compatíveis com chaves de partição do Paimon:
+
+* `CHAR`
+* `VARCHAR`
+* `BOOLEAN`
+* `DECIMAL`
+* `TINYINT`
+* `SMALLINT`
+* `INTEGER`
+* `DATE`
+* `TIME`
+* `TIMESTAMP`
+* `TIMESTAMP WITH LOCAL TIME ZONE`
+* `BIGINT`
+* `FLOAT`
+* `DOUBLE`

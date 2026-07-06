@@ -1,0 +1,152 @@
+---
+description: '在 Debian/Ubuntu Linux 上安装 ClickHouse'
+keywords: ['ClickHouse', 'install', 'Debian', 'Ubuntu', 'deb']
+sidebarTitle: 'Debian/Ubuntu'
+slug: /install/debian_ubuntu
+title: '在 Debian/Ubuntu 上安装 ClickHouse'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/zh/recommendations.mdx';
+
+> 建议在 **Debian** 或 **Ubuntu** 上使用官方预编译的 `deb` 软件包。
+
+<Steps>
+  <Step>
+    ## 查看建议
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## 设置 Debian 软件源
+
+    要安装 ClickHouse，请运行以下命令：
+
+    ```bash
+    # 安装前置条件软件包
+    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+    # 下载 ClickHouse GPG 密钥并将其保存到密钥环中
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+
+    # 获取系统架构
+    ARCH=$(dpkg --print-architecture)
+
+    # 将 ClickHouse 软件源添加到 apt 源列表
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+
+    # 更新 apt 软件包列表
+    sudo apt-get update
+    ```
+
+    * 你可以根据需要将 `stable` 替换为 `lts`，以使用不同的[发布类型](/zh/resources/support-center/knowledge-base/setup-installation/production)。
+    * 你也可以从 [packages.clickhouse.com](https://packages.clickhouse.com/deb/pool/main/c/) 手动下载并安装软件包。
+
+    <br />
+
+    <Accordion title="旧版发行版安装 deb 软件包的方法">
+      ```bash
+      # 安装前置条件软件包
+      sudo apt-get install apt-transport-https ca-certificates dirmngr
+
+      # 添加 ClickHouse GPG 密钥以验证软件包
+      sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+      # 将 ClickHouse 软件源添加到 apt 源列表
+      echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+          /etc/apt/sources.list.d/clickhouse.list
+          
+      # 更新 apt 软件包列表
+      sudo apt-get update
+
+      # 安装 ClickHouse server 和 ClickHouse 客户端软件包
+      sudo apt-get install -y clickhouse-server clickhouse-client
+
+      # 启动 ClickHouse server 服务
+      sudo service clickhouse-server start
+
+      # 启动 ClickHouse 命令行客户端
+      clickhouse-client # 或者，如果你已设置密码，则使用 "clickhouse-client --password"。
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ## 安装 ClickHouse server 和 ClickHouse 客户端
+
+    ```bash
+    sudo apt-get install -y clickhouse-server clickhouse-client
+    ```
+  </Step>
+
+  <Step>
+    ## 启动 ClickHouse
+
+    要启动 ClickHouse server，请运行：
+
+    ```bash
+    sudo service clickhouse-server start
+    ```
+
+    要启动 ClickHouse 客户端，请运行：
+
+    ```bash
+    clickhouse-client
+    ```
+
+    如果你为 server 设置了密码，则需要运行：
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## 安装独立运行的 ClickHouse Keeper
+
+    <Tip>
+      在生产环境中，我们强烈建议在专用节点上运行 ClickHouse Keeper。
+      在测试环境中，如果你决定在同一台服务器上运行 ClickHouse Server 和 ClickHouse Keeper，
+      则无需安装 ClickHouse Keeper，因为它已包含在 ClickHouse server 中。
+    </Tip>
+
+    要在独立运行的 ClickHouse Keeper 服务器上安装 `clickhouse-keeper`，请运行：
+
+    ```bash
+    sudo apt-get install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## 启用并启动 ClickHouse Keeper
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>
+
+<div id="packages">
+  ## 软件包
+</div>
+
+下面列出了可用的各个 deb 软件包及其说明：
+
+| 软件包                            | 说明                                                                                                                                                  |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clickhouse-common-static`     | 安装已编译的 ClickHouse 二进制文件。                                                                                                                            |
+| `clickhouse-server`            | 为 `clickhouse-server` 创建符号链接，并安装默认的服务器配置。                                                                                                           |
+| `clickhouse-client`            | 为 `clickhouse-client` 及其他客户端相关工具创建符号链接，并安装客户端配置文件。                                                                                                  |
+| `clickhouse-common-static-dbg` | 安装包含调试信息的已编译 ClickHouse 二进制文件。                                                                                                                      |
+| `clickhouse-keeper`            | 用于在专用的 ClickHouse Keeper 节点上安装 ClickHouse Keeper。如果你在与 ClickHouse server 相同的服务器上运行 ClickHouse Keeper，则无需安装此软件包。该软件包还会安装 ClickHouse Keeper 及其默认配置文件。 |
+
+<br />
+
+<Info>
+  如果你需要安装特定版本的 ClickHouse，则必须安装所有同版本的软件包：
+  `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+</Info>

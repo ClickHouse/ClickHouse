@@ -317,10 +317,18 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
+                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
         pool->wait();
+
+        /// Share one StoredColumnsIndex across all slots so that RowRef::block_no is globally
+        /// unique: cells built by any slot end up in the shared two-level map after the build
+        /// phase, and per-row used flags are merged into a common structure keyed by block_no.
+        auto shared_index = getData(hash_joins[0])->stored_columns_index;
+        for (size_t i = 1; i < slots; ++i)
+            getData(hash_joins[i])->stored_columns_index = shared_index;
 
         /// Exact-size deferred build: when there is no statistics hint to preallocate from, buffer the
         /// right blocks and size each two-level map to the estimated distinct-key count (merged HLL
@@ -573,6 +581,13 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 hash_join->data->captureMemoryUsageBaseline();
             hash_join->buffered_rows += dispatched_block.rows();
             hash_join->buffered_bytes += dispatched_block.allocatedBytes();
+            /// Keep the slot's lock-free `total_rows`/`total_bytes` snapshots covering the parked
+            /// blocks (on top of the empty-map baseline stored by the constructor), so the early
+            /// `max_bytes_in_join` guard below and the spill checks of the wrapping
+            /// `SpillingHashJoin` see the deferred build's footprint. The replay re-stores the
+            /// snapshots from the real maps.
+            hash_join->total_rows.fetch_add(dispatched_block.rows(), std::memory_order_relaxed);
+            hash_join->total_bytes.fetch_add(dispatched_block.allocatedBytes(), std::memory_order_relaxed);
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
         /// Deferred key-byte publication for the skip path (see the comment above the dispatch): the
@@ -648,6 +663,10 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
+
+                /// Update the snapshot of total rows and bytes for the current join instance
+                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
+                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -782,27 +801,22 @@ const Block & ConcurrentHashJoin::getTotals() const
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
     size_t res = 0;
+    /// A slot's rows live in exactly one place at a time: parked in the deferred-build buffer, or in
+    /// the hash map after the replay (or released to GraceHashJoin). The per-slot snapshot tracks
+    /// whichever place currently holds them (the buffering loop adds parked blocks, the replay
+    /// re-stores from the real maps), so the lock-free sum never double-counts.
     for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        /// A slot's rows live in exactly one place at a time: parked in `buffered_*` during a deferred
-        /// build, or in the hash map after the replay (or released to GraceHashJoin). Summing both is
-        /// always correct and never double-counts. For non-deferred builds `buffered_rows` is 0.
-        res += hash_join->data->getTotalRowCount() + hash_join->buffered_rows;
-    }
+        res += hash_join->total_rows.load(std::memory_order_relaxed);
     return res;
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
     size_t res = 0;
+    /// See `getTotalRowCount`: the snapshots include a deferred build still parked in memory, so the
+    /// wrapping `SpillingHashJoin` sees the real footprint and can trigger a spill.
     for (const auto & hash_join : hash_joins)
-    {
-        std::lock_guard lock(hash_join->mutex);
-        /// See `getTotalRowCount`: buffered bytes account for a deferred build still parked in memory,
-        /// so the wrapping `SpillingHashJoin` sees the real footprint and can trigger a spill.
-        res += hash_join->data->getTotalByteCount() + hash_join->buffered_bytes;
-    }
+        res += hash_join->total_bytes.load(std::memory_order_relaxed);
     return res;
 }
 
@@ -877,22 +891,22 @@ size_t ConcurrentHashJoin::getProjectedTotalByteCount() const
         /// per-source-block key bytes, an upper bound).
         res += buffered_key_bytes.load(std::memory_order_relaxed);
 
-        /// `RowRefList` arena nodes for keys with more than one row. The first row of each key lives
-        /// in the map cell; every further row lives in a `Batch`, which holds up to
-        /// `RowRefList::Batch::MAX_SIZE` rows in 128 bytes. With `d` duplicate rows spread over `k`
-        /// keys (`k <= min(distinct_keys, d)`), the number of `Batch`es is
-        /// `sum_i ceil(e_i / MAX_SIZE) <= (d + (MAX_SIZE - 1) * k) / MAX_SIZE`, maximized at
-        /// `k = min(distinct_keys, d)`. This is a tight upper bound (not the ~MAX_SIZE x over-estimate
-        /// of `d` batches), so a duplicate-heavy build is not projected far larger than it really is
-        /// (which would spuriously spill). `d` uses the LOWER-biased distinct-key estimate so an HLL
-        /// over-estimate cannot shrink the duplicate count below reality, while `k` uses the same
-        /// up-biased estimate as the map term (an upper bound on the number of distinct keys) - so
-        /// both `d` and `k`, and hence the batch count, stay conservative.
-        constexpr size_t batch_rows = RowRefList::Batch::MAX_SIZE;
+        /// Arena `Batch` nodes for keys with more than one row (see `RowRefList`): a key's first row
+        /// is inline in the map cell word; a key with duplicates gets one 64-byte cell node holding
+        /// up to `RowRefList::MAX_LOCAL` rows, then overflow nodes of `RowRefList::Batch::SLOTS`
+        /// refs each. With `d` duplicate rows spread over `k` keys (`k <= min(distinct_keys, d)`),
+        /// the node count is at most `k + ceil(d / SLOTS)`, maximized at `k = min(distinct_keys, d)`.
+        /// This is a tight upper bound (not a per-duplicate node over-estimate), so a duplicate-heavy
+        /// build is not projected far larger than it really is (which would spuriously spill). `d`
+        /// uses the LOWER-biased distinct-key estimate so an HLL over-estimate cannot shrink the
+        /// duplicate count below reality, while `k` uses the same up-biased estimate as the map term
+        /// (an upper bound on the number of distinct keys) - so both `d` and `k`, and hence the node
+        /// count, stay conservative.
+        constexpr size_t node_slots = RowRefList::Batch::SLOTS;
         const size_t ndv_low = ndvLowerBound(raw_ndv);
         const size_t duplicate_rows = total_buffered_rows > ndv_low ? total_buffered_rows - ndv_low : 0;
         const size_t dup_keys = std::min(ndv_reserve, duplicate_rows);
-        const size_t max_batches = (duplicate_rows + (batch_rows - 1) * dup_keys + batch_rows - 1) / batch_rows;
+        const size_t max_batches = dup_keys + (duplicate_rows + node_slots - 1) / node_slots;
         res += max_batches * sizeof(RowRefList::Batch);
     }
     return res;
@@ -1310,11 +1324,17 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
             blocks.emplace_back(std::move(scattered_block).getSourceBlock());
         }
         hash_join->clearBuffers();
+        /// The released blocks are accounted by their new owner from here on; zero the lock-free
+        /// snapshots like the released-map path below does.
+        hash_join->total_rows.store(0, std::memory_order_relaxed);
+        hash_join->total_bytes.store(0, std::memory_order_relaxed);
         return blocks;
     }
 
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
+    hash_join->total_rows.store(0, std::memory_order_relaxed);
+    hash_join->total_bytes.store(0, std::memory_order_relaxed);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
@@ -1394,6 +1414,13 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                         hash_join->data->getAndSetRightTableKeys();
                         size_t total_bytes = hash_join->data->getTotalByteCount();
                         hash_join->data->shrinkStoredBlocksToFit(total_bytes);
+
+                        /// The rows now live in the real maps, and `clearBuffers` above zeroed the
+                        /// buffered counters, so re-point the lock-free snapshots at the maps (after
+                        /// the shrink, which can reduce the byte count). The exact
+                        /// `deferred_limits_check_requested` check below reads these.
+                        hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
+                        hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
                     });
             }
             pool->wait();
@@ -1467,7 +1494,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
         if (std::any_of(hash_joins.begin(), hash_joins.end(),
                         [&](const auto &hj){ return !getData(hj)->nullmaps.empty(); }))
         {
-            /// Keep the pointers in NullMapHolder to original ScatteredColumns, which remain valid
+            /// Keep the pointers in NullMapHolder to original StoredBlocks, which remain valid
             /// in their respective slots
             HashJoin::NullmapList combined;
             size_t combined_allocated = 0;
@@ -1477,8 +1504,8 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 const auto * sc = holder.columns;
                 if (!sc)
                     return;
-                // matches the original right block rows referenced by this slot's ScatteredColumns
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns_info.columns.at(0)->size(), static_cast<UInt8>(0));
+                // matches the original right block rows referenced by this slot's StoredBlocks
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->columns.at(0)->size(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)
@@ -1498,7 +1525,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
 
                 if (sc->selector.isContinuousRange())
                 {
-                    // Fast path: the slot's ScatteredColumns cover a single continuous range in the original right block
+                    // Fast path: the slot's StoredBlocks cover a single continuous range in the original right block
                     const auto range = sc->selector.getRange();
                     apply_range(range.first, range.second);
                 }
@@ -1532,7 +1559,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 for (const auto & holder : src->nullmaps)
                     filter_holder_by_selector(holder);
                 // Clear per-slot nullmaps after consolidation to prevent duplicates and free memory held by masks
-                // we do not free ScatteredColumns here; they are owned by the join and needed during probing/emission
+                // we do not free StoredBlocks here; they are owned by the join and needed during probing/emission
                 src->nullmaps.clear();
                 src->nullmaps_allocated_size = 0;
             }

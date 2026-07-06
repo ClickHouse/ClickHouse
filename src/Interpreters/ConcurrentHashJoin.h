@@ -135,17 +135,20 @@ public:
         /// slot's hash map is reserved to the estimated distinct-key count (see `NdvShard`) and the
         /// blocks are replayed, so the map is filled with few or no rehashes. Only used when
         /// `deferred_build` is set (no statistics hint).
-        /// `buffered_rows`/`buffered_bytes` keep `getTotalRowCount`/`getTotalByteCount` accurate while
-        /// the data is parked here, and `getProjectedTotalByteCount` projects the size of the maps the
-        /// replay would build on top of them, so the wrapping `SpillingHashJoin` can still decide to
-        /// spill. On a spill the buffered blocks are handed to `GraceHashJoin` directly (see
-        /// `releaseSlotBlocks`), without ever building the in-memory map.
+        /// `buffered_rows`/`buffered_bytes` keep the `total_rows`/`total_bytes` snapshots accurate while
+        /// the data is parked here (the buffering loop adds each buffered block to the snapshots), and
+        /// `getProjectedTotalByteCount` projects the size of the maps the replay would build on top of
+        /// them, so the wrapping `SpillingHashJoin` can still decide to spill. On a spill the buffered
+        /// blocks are handed to `GraceHashJoin` directly (see `releaseSlotBlocks`), without ever
+        /// building the in-memory map.
         VectorWithMemoryTracking<ScatteredBlock> buffered_blocks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
 
         /// Empty the parked deferred build as one unit, once its blocks have left the buffer - either
         /// replayed into the map (`onBuildPhaseFinish`) or handed to `GraceHashJoin` (`releaseSlotBlocks`).
+        /// The caller owns re-pointing the `total_rows`/`total_bytes` snapshots at the real maps
+        /// (replay) or zero (handover).
         void clearBuffers()
         {
             buffered_blocks.clear();
@@ -153,6 +156,13 @@ public:
             buffered_rows = 0;
             buffered_bytes = 0;
         }
+
+        /// Snapshot of the total rows and bytes held by the hash join. This is updated during
+        /// `addBlockToJoin` and is used to track the whole join state without locking. During a
+        /// deferred build it includes the buffered blocks (`buffered_rows`/`buffered_bytes`); the
+        /// replay in `onBuildPhaseFinish` re-stores it from the real maps.
+        std::atomic<size_t> total_rows{0};
+        std::atomic<size_t> total_bytes{0};
     };
 
     friend class NotJoinedHash;
