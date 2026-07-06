@@ -305,7 +305,7 @@ private:
       */
     bool got_unknown_packet_from_replica = false;
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
     bool packet_in_progress = false;
 #endif
 

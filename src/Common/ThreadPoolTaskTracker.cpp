@@ -1,6 +1,7 @@
+#include "config.h"
+
 #include <Common/MemoryTracker.h>
 #include <Common/ThreadPoolTaskTracker.h>
-#include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
 {

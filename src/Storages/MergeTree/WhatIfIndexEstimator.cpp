@@ -313,30 +313,6 @@ bool tryEstimateWithStatistics(
     return true;
 }
 
-/// Expand each baseline mark range to the full skip-index windows it touches (a window is
-/// `granularity` data granules) and merge them into ranges
-MarkRanges skipIndexWindowsOverlapping(const MarkRanges & baseline, size_t granularity, size_t total_marks)
-{
-    MarkRanges windows;
-    if (granularity == 0 || total_marks == 0)
-        return windows;
-
-    for (const auto & range : baseline)
-    {
-        const size_t last = std::min(range.end, total_marks);
-        if (range.begin >= last)
-            continue;
-
-        const size_t begin = range.begin / granularity * granularity;
-        const size_t end = std::min((last - 1) / granularity * granularity + granularity, total_marks);
-        if (!windows.empty() && begin <= windows.back().end)
-            windows.back().end = std::max(windows.back().end, end);
-        else
-            windows.emplace_back(begin, end);
-    }
-    return windows;
-}
-
 /// Build the candidate index in memory over the baseline marks and check each granule
 bool tryEstimateEmpirical(
     WhatIfIndexEstimator::IndexResult & result,
@@ -393,138 +369,122 @@ bool tryEstimateEmpirical(
             for (size_t m = range.begin; m < range.end && m < in_baseline.size(); ++m)
                 in_baseline[m] = true;
 
-        /// Read only the skip-index windows overlapping the baseline instead of the whole part
-        const MarkRanges read_ranges = skipIndexWindowsOverlapping(mark_ranges, skip_index_granularity, total_marks);
-        if (read_ranges.empty())
-            continue;
+        /// TODO(yariks5s): read the whole part, non-zero-start ranges hit a LOGICAL_ERROR on adaptive granularity
+        RangesInDataPart part_for_read(part);
 
         /// Apply patch parts / on-the-fly mutations so we see the up-to-date values
         auto alter_conversions = mutations_snapshot
             ? MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, context)
             : std::make_shared<AlterConversions>();
 
-        /// aggregate each skip-index granule and count how many
-        /// baseline granules the candidate would skip. Returns false if a read limit was hit
-        auto scan_range = [&](const MarkRange & read_range) -> bool
+        Pipe pipe = createMergeTreeSequentialSource(
+            MergeTreeSequentialSourceType::Merge,
+            data,
+            storage_snapshot,
+            std::move(part_for_read),
+            std::move(alter_conversions),
+            nullptr,
+            index_columns,
+            std::nullopt,
+            std::make_shared<std::atomic<size_t>>(0),
+            false,
+            false,
+            false);
+
+        /// Apply the query's execution-speed limits here too (size is the explicit check below)
+        if (auto query_limits = read_step->getQueryInfo().storage_limits)
         {
-            RangesInDataPart part_for_read(part);
-
-            Pipe pipe = createMergeTreeSequentialSource(
-                MergeTreeSequentialSourceType::Merge,
-                data,
-                storage_snapshot,
-                std::move(part_for_read),
-                alter_conversions,
-                nullptr,
-                index_columns,
-                MarkRanges{read_range},
-                std::make_shared<std::atomic<size_t>>(0),
-                false,
-                false,
-                false);
-
-            /// Apply the query's execution-speed limits here too (size is the explicit check below)
-            if (auto query_limits = read_step->getQueryInfo().storage_limits)
+            auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
+            for (auto & entry : *speed_limits)
             {
-                auto speed_limits = std::make_shared<StorageLimitsList>(*query_limits);
-                for (auto & entry : *speed_limits)
-                {
-                    entry.local_limits.size_limits = {};
-                    entry.leaf_limits = {};
-                    entry.local_limits.speed_limits.max_execution_time = {};
-                }
-                for (const auto & processor : pipe.getProcessors())
-                    processor->setStorageLimits(speed_limits);
+                entry.local_limits.size_limits = {};
+                entry.leaf_limits = {};
+                entry.local_limits.speed_limits.max_execution_time = {};
             }
+            for (const auto & processor : pipe.getProcessors())
+                processor->setStorageLimits(speed_limits);
+        }
 
-            QueryPipeline pipeline(std::move(pipe));
-            /// Tie the scan to the query so quota / speed / time limits apply
-            pipeline.setProcessListElement(context->getProcessListElement());
-            pipeline.setProgressCallback(context->getProgressCallback());
-            pipeline.setQuota(context->getQuota());
-            PullingPipelineExecutor executor(pipeline);
+        QueryPipeline pipeline(std::move(pipe));
+        /// Tie the scan to the query so quota / speed / time limits apply
+        pipeline.setProcessListElement(context->getProcessListElement());
+        pipeline.setProgressCallback(context->getProgressCallback());
+        pipeline.setQuota(context->getQuota());
+        PullingPipelineExecutor executor(pipeline);
 
-            auto aggregator = index_helper->createIndexAggregator();
-            size_t current_mark = read_range.begin;
-            size_t rows_remaining_in_mark = current_mark < total_marks
-                ? part_index_granularity->getMarkRows(current_mark)
-                : 0;
-            size_t data_granules_in_window = 0;
-            size_t baseline_marks_in_window = 0;
+        auto aggregator = index_helper->createIndexAggregator();
+        size_t current_mark = 0;
+        size_t rows_remaining_in_mark = total_marks > 0 ? part_index_granularity->getMarkRows(0) : 0;
+        size_t data_granules_in_window = 0;
+        size_t baseline_marks_in_window = 0;
 
-            auto flush_window = [&]
-            {
-                if (baseline_marks_in_window == 0)
-                    return;
-                auto granule = aggregator->getGranuleAndReset();
-                total_data_granules += baseline_marks_in_window;
-                if (!condition->mayBeTrueOnGranule(granule, {}))
-                    skipped_data_granules += baseline_marks_in_window;
-            };
-
-            auto on_mark_finished = [&]
-            {
-                ++data_granules_in_window;
-                if (current_mark < in_baseline.size() && in_baseline[current_mark])
-                    ++baseline_marks_in_window;
-
-                if (data_granules_in_window >= skip_index_granularity)
-                {
-                    flush_window();
-                    aggregator = index_helper->createIndexAggregator();
-                    data_granules_in_window = 0;
-                    baseline_marks_in_window = 0;
-                }
-
-                ++current_mark;
-                rows_remaining_in_mark = current_mark < total_marks
-                    ? part_index_granularity->getMarkRows(current_mark)
-                    : 0;
-            };
-
-            Block block;
-            while (executor.pull(block))
-            {
-                if (block.rows() == 0)
-                    continue;
-
-                total_rows_read += block.rows();
-                total_bytes_read += block.bytes();
-                /// throw mode raises here; break mode returns false so we don't pass off a partial scan as done
-                if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
-                                       ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
-                    return false;
-
-                /// Evaluate the index expression so the aggregator sees what a real
-                /// MATERIALIZE INDEX would see (lower(s) instead of raw s)
-                if (index_expression)
-                    index_expression->execute(block);
-
-                /// Index aggregators require full columns, sparse-serialized parts
-                /// would otherwise trip getRawData (matches the real index writer)
-                for (auto & column : block)
-                    column.column = recursiveRemoveSparse(column.column);
-
-                size_t pos = 0;
-                aggregator->update(block, &pos, block.rows());
-
-                if (block.rows() <= rows_remaining_in_mark)
-                    rows_remaining_in_mark -= block.rows();
-                else
-                    rows_remaining_in_mark = 0;
-
-                if (rows_remaining_in_mark == 0 && current_mark < total_marks)
-                    on_mark_finished();
-            }
-
-            if (!aggregator->empty())
-                flush_window();
-            return true;
+        auto flush_window = [&]
+        {
+            if (baseline_marks_in_window == 0)
+                return;
+            auto granule = aggregator->getGranuleAndReset();
+            total_data_granules += baseline_marks_in_window;
+            if (!condition->mayBeTrueOnGranule(granule, {}))
+                skipped_data_granules += baseline_marks_in_window;
         };
 
-        for (const auto & read_range : read_ranges)
-            if (!scan_range(read_range))
+        auto on_mark_finished = [&]
+        {
+            ++data_granules_in_window;
+            if (current_mark < in_baseline.size() && in_baseline[current_mark])
+                ++baseline_marks_in_window;
+
+            if (data_granules_in_window >= skip_index_granularity)
+            {
+                flush_window();
+                aggregator = index_helper->createIndexAggregator();
+                data_granules_in_window = 0;
+                baseline_marks_in_window = 0;
+            }
+
+            ++current_mark;
+            rows_remaining_in_mark = current_mark < total_marks
+                ? part_index_granularity->getMarkRows(current_mark)
+                : 0;
+        };
+
+        Block block;
+        while (executor.pull(block))
+        {
+            if (block.rows() == 0)
+                continue;
+
+            total_rows_read += block.rows();
+            total_bytes_read += block.bytes();
+            /// throw mode raises here; break mode returns false so we don't pass off a partial scan as done
+            if (!read_limits.check(total_rows_read, total_bytes_read, "rows or bytes to read",
+                                   ErrorCodes::TOO_MANY_ROWS, ErrorCodes::TOO_MANY_BYTES))
                 return false;
+
+            /// Evaluate the index expression so the aggregator sees what a real
+            /// MATERIALIZE INDEX would see (lower(s) instead of raw s)
+            if (index_expression)
+                index_expression->execute(block);
+
+            /// Index aggregators require full columns, sparse-serialized parts
+            /// would otherwise trip getRawData (matches the real index writer)
+            for (auto & column : block)
+                column.column = recursiveRemoveSparse(column.column);
+
+            size_t pos = 0;
+            aggregator->update(block, &pos, block.rows());
+
+            if (block.rows() <= rows_remaining_in_mark)
+                rows_remaining_in_mark -= block.rows();
+            else
+                rows_remaining_in_mark = 0;
+
+            if (rows_remaining_in_mark == 0 && current_mark < total_marks)
+                on_mark_finished();
+        }
+
+        if (!aggregator->empty())
+            flush_window();
     }
 
     if (total_data_granules == 0)

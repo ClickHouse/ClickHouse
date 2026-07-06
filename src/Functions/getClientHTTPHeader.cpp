@@ -36,8 +36,6 @@ public:
 
     String getName() const override { return "getClientHTTPHeader"; }
 
-    bool isDeterministic() const override { return false; }
-
     bool useDefaultImplementationForConstants() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
 
