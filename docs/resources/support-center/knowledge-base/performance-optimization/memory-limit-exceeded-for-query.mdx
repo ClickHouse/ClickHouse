@@ -1,0 +1,71 @@
+---
+title: 'Memory limit exceeded for query'
+description: 'Troubleshooting memory limit exceeded errors for a query'
+date: 2025-07-25
+tags: ['Errors and Exceptions']
+keywords: ['OOM', 'memory limit exceeded']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+import { Image } from "/snippets/components/Image.jsx";
+
+## Memory limit exceeded for query {#troubleshooting-out-of-memory-issues}
+As a new user, ClickHouse can often seem like magic - every query is super fast,
+even on the largest datasets and most ambitious queries. Invariably though,
+real-world usage tests even the limits of ClickHouse. Queries exceeding memory
+can be the result of a number of causes. Most commonly, we see large joins or
+aggregations on high cardinality fields. If performance is critical, and these
+queries are required, we often recommend users simply scale up - something
+ClickHouse Cloud does automatically and effortlessly to ensure your queries
+remain responsive. We appreciate, however, that in self-managed scenarios,
+this is sometimes not trivial, and maybe optimal performance is not even required.
+Users, in this case, have a few options.
+
+### Aggregations {#aggregations}
+For memory-intensive aggregations or sorting scenarios, users can use the settings
+[`max_bytes_before_external_group_by`](/reference/settings/session-settings#max_bytes_before_external_group_by)
+and [`max_bytes_before_external_sort`](/reference/settings/session-settings#max_bytes_ratio_before_external_sort) respectively.
+The former of which is discussed extensively [here](/reference/statements/select/group-by#group-by-in-external-memory).
+
+In summary, this ensures any aggregations can “spill” out to disk if a memory
+threshold is exceeded. This will invariably impact query performance but will
+help ensure queries do not OOM. The latter sorting setting helps address similar
+issues with memory-intensive sorts. This can be particularly important in
+distributed environments where a coordinating node receives sorted responses
+from child shards. In this case, the coordinating server can be asked to sort a
+dataset larger than its available memory. With [`max_bytes_before_external_sort`](/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
+sorting can be allowed to spill over to disk. This setting is also helpful for
+cases where the user has an `ORDER BY` after a `GROUP BY` with a `LIMIT`,
+especially in cases where the query is distributed.
+
+### Joins {#joins}
+For joins, users can select different `JOIN` algorithms, which can assist in
+lowering the required memory. By default, joins use the hash join, which offers
+the most completeness with respect to features and often the best performance.
+This algorithm loads the right-hand table of the `JOIN` into an in-memory hash
+table, against which the left-hand table is then evaluated. To minimize memory,
+users should thus place the smaller table on the right side. This approach still
+has limitations in memory-bound cases, however. In these cases, `partial_merge`
+join can be enabled via the [`join_algorithm`](/reference/settings/session-settings#join_algorithm)
+setting. This derivative of the [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join),
+first sorts the right table into blocks and creates a min-max index for them.
+It then sorts parts of the left table by the join key and joins them over the
+right table. The min-max index is used to skip unneeded right table blocks.
+This is less memory-intensive at the expense of performance. Taking this concept
+further, the `full_sorting_merge` algorithm allows a `JOIN` to be performed when
+the right-hand side is very large and doesn't fit into memory and lookups are
+impossible, e.g. a complex subquery. In this case, both the right and left side
+are sorted on disk if they do not fit in memory, allowing large tables to be
+joined.
+
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Joins algorithms"/>
+
+Since 20.3, ClickHouse has supported an auto value for the `join_algorithm` setting.
+This instructs ClickHouse to apply an adaptive join approach, where the hash-join
+algorithm is preferred until memory limits are violated, at which point the
+partial_merge algorithm is attempted. Finally, concerning joins, we encourage
+readers to be aware of the behavior of distributed joins and how to minimize
+their memory consumption. More information can be found [here](/reference/statements/in#distributed-subqueries).
+

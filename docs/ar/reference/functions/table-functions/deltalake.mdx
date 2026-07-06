@@ -1,0 +1,126 @@
+---
+description: 'يوفّر واجهة شبيهة بالجداول للقراءة فقط لجداول Delta Lake في
+  Amazon S3.'
+sidebarTitle: 'deltaLake'
+slug: /sql-reference/table-functions/deltalake
+title: 'deltaLake'
+doc_type: 'reference'
+---
+
+يوفّر واجهة شبيهة بالجداول لجداول [Delta Lake](https://github.com/delta-io/delta) في Amazon S3 أو Azure Blob Storage أو نظام ملفات محلي مربوط، مع دعم كلٍّ من القراءة والكتابة (بدءًا من v25.10)
+
+<div id="syntax">
+  ## البنية
+</div>
+
+`deltaLake` هو اسم مستعار لـ `deltaLakeS3`، وهو مدعوم للتوافق.
+
+```sql
+deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+
+deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+deltaLakeLocal(path, [,format])
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+وسائط دالة الجدول هذه هي نفسها المستخدمة في دوال الجداول `s3` و`azureBlobStorage` و`HDFS` و`file`.
+تشير الوسيطة `format` إلى تنسيق ملفات البيانات في جدول Delta Lake.
+
+يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الدور في ClickHouse Cloud. راجع [Secure S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات التهيئة.
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+تُرجع جدولًا ذا البنية المحددة لقراءة البيانات من جدول Delta Lake المحدد أو الكتابة إليها.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+<div id="reading-data">
+  ### قراءة البيانات
+</div>
+
+افترض وجود جدول في تخزين S3 على `https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/`.
+لقراءة البيانات من الجدول في ClickHouse، شغّل:
+
+```sql title="Query"
+SELECT
+    URL,
+    UserAgent
+FROM deltaLake('https://clickhouse-public-datasets.s3.amazonaws.com/delta_lake/hits/')
+WHERE URL IS NOT NULL
+LIMIT 2
+```
+
+```response title="Response"
+┌─URL───────────────────────────────────────────────────────────────────┬─UserAgent─┐
+│ http://auto.ria.ua/search/index.kz/jobinmoscow/detail/55089/hasimages │         1 │
+│ http://auto.ria.ua/search/index.kz/jobinmoscow.ru/gosushi             │         1 │
+└───────────────────────────────────────────────────────────────────────┴───────────┘
+```
+
+<div id="inserting-data">
+  ### إدراج البيانات
+</div>
+
+لنفترض وجود جدول في تخزين S3 عند `s3://ch-docs-s3-bucket/people_10k/`.
+لإدراج البيانات في الجدول، فعِّل أولًا الميزة التجريبية:
+
+```sql title="Query"
+SET allow_experimental_delta_lake_writes=1
+```
+
+ثم اكتب:
+
+```sql title="Query"
+INSERT INTO TABLE FUNCTION deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>') VALUES (10001, 'John', 'Smith', 'Male', 30)
+```
+
+```response title="Response"
+Query id: 09069b47-89fa-4660-9e42-3d8b1dde9b17
+
+Ok.
+
+1 row in set. Elapsed: 3.426 sec.
+```
+
+يمكنك التأكد من نجاح عملية الإدراج بقراءة الجدول مرة أخرى:
+
+```sql title="Query"
+SELECT *
+FROM deltaLake('s3://ch-docs-s3-bucket/people_10k/', '<access_key>', '<secret>')
+WHERE (firstname = 'John') AND (lastname = 'Smith')
+```
+
+```response title="Response"
+Query id: 65032944-bed6-4d45-86b3-a71205a2b659
+
+   ┌────id─┬─firstname─┬─lastname─┬─gender─┬─age─┐
+1. │ 10001 │ John      │ Smith    │ Male   │  30 │
+   └───────┴───────────┴──────────┴────────┴─────┘
+```
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، فستكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
+* `_etag` — قيمة etag للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة etag غير معروفة، فستكون القيمة `NULL`.
+
+<div id="related">
+  ## ذات صلة
+</div>
+
+* [محرك DeltaLake](/ar/reference/engines/table-engines/integrations/deltalake)
+* [دالة الجدول cluster لـ DeltaLake](/ar/reference/functions/table-functions/deltalakeCluster)

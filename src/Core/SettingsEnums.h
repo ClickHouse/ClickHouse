@@ -474,6 +474,21 @@ enum class GeoToH3ArgumentOrder : uint8_t
 
 DECLARE_SETTING_ENUM(GeoToH3ArgumentOrder)
 
+/// Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled.
+enum class SkipUnavailableShardsMode : uint8_t
+{
+    /// Ignore only connection-related errors.
+    UNAVAILABLE = 0,
+    /// Additionally ignore errors caused by a missing table or database on the shard
+    /// (the historical behavior of `skip_unavailable_shards`, and the default).
+    UNAVAILABLE_OR_TABLE_MISSING,
+    /// Additionally ignore any exception received from the shard before it returned any data block to the initiator.
+    /// Note: a shard performing a blocking computation (aggregation, sort, ...) may process rows and fail before
+    /// emitting a block, so its partial work can still be silently discarded. This is the most permissive mode.
+    UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING,
+};
+
+DECLARE_SETTING_ENUM(SkipUnavailableShardsMode)
 
 DECLARE_SETTING_ENUM(MergeTreeSerializationInfoVersion)
 DECLARE_SETTING_ENUM(MergeTreeStringSerializationVersion)
@@ -566,15 +581,6 @@ enum class DeduplicateInsertMode : uint8_t
 };
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
-
-enum class InsertDeduplicationVersions : uint8_t
-{
-    OLD_SEPARATE_HASHES = 0,
-    COMPATIBLE_DOUBLE_HASHES,
-    NEW_UNIFIED_HASHES,
-};
-
-DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
 
 enum class JemallocProfileFormat : uint8_t
 {

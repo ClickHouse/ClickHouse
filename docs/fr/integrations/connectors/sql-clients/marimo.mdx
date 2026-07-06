@@ -1,0 +1,124 @@
+---
+slug: /integrations/marimo
+sidebarTitle: 'marimo'
+description: 'marimo est un notebook Python nouvelle génération pour interagir avec les données'
+title: 'Utiliser marimo avec ClickHouse'
+doc_type: 'guide'
+keywords: ['marimo', 'notebook', 'analyse de données', 'Python', 'visualisation']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[marimo](https://marimo.io/) est un notebook réactif open source pour Python, avec SQL intégré. Lorsque vous exécutez une cellule ou interagissez avec un élément de l’UI, marimo exécute automatiquement les cellules concernées (ou les marque comme obsolètes), ce qui maintient la cohérence entre le code et les résultats et évite les bugs avant même qu’ils ne surviennent. Chaque notebook marimo est enregistré en pur Python, exécutable comme script et déployable comme application.
+
+<Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Se connecter à ClickHouse" />
+
+<div id="install-marimo-sql">
+  ## 1. Installer marimo avec prise en charge de SQL
+</div>
+
+```shell
+pip install "marimo[sql]" clickhouse_connect
+marimo edit clickhouse_demo.py
+```
+
+Cela devrait ouvrir un navigateur web pointant vers localhost.
+
+<div id="connect-to-clickhouse">
+  ## 2. Se connecter à ClickHouse.
+</div>
+
+Accédez au panneau des sources de données, sur le côté gauche de l’éditeur marimo, puis cliquez sur &#39;Add database&#39;.
+
+<Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Ajouter une nouvelle base de données" />
+
+Vous serez ensuite invité à renseigner les informations de la base de données.
+
+<Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Renseignez les informations de la base de données" />
+
+Vous aurez alors une cellule que vous pourrez exécuter pour établir une connexion.
+
+<Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Exécutez la cellule pour vous connecter à ClickHouse" />
+
+<div id="run-sql">
+  ## 3. Exécuter des requêtes SQL
+</div>
+
+Une fois la connexion configurée, vous pouvez créer une nouvelle cellule SQL et sélectionner le moteur ClickHouse.
+
+<Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Choisir le moteur SQL" />
+
+Pour ce guide, nous utiliserons le jeu de données New York Taxi.
+
+```sql
+CREATE TABLE trips (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO trips
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM gcs(
+    'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_0.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+```sql
+SELECT * FROM trips LIMIT 1000;
+```
+
+<Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Résultats dans un DataFrame" />
+
+Vous pouvez maintenant afficher les résultats dans un DataFrame. Je souhaite visualiser les trajets les plus coûteux à partir d’un lieu de prise en charge donné. marimo fournit plusieurs composants d’UI pour vous aider. J’utiliserai une liste déroulante pour sélectionner le lieu et altair pour créer le graphique.
+
+<Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinaison d’une liste déroulante, d’une table et d’un graphique" />
+
+Le modèle d’exécution réactif de marimo s’étend aux requêtes SQL. Ainsi, les modifications apportées à votre SQL déclenchent automatiquement les calculs en aval pour les cellules dépendantes (ou, en option, marquent les cellules comme obsolètes pour les calculs coûteux). Le graphique et la table sont donc mis à jour lorsque la requête change.
+
+Vous pouvez également activer App View pour disposer d’une interface épurée afin d’explorer vos données.
+
+<Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Exécuter App View" />
