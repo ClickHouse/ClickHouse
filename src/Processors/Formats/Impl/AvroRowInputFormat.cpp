@@ -32,6 +32,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
 #include <Compiler.hh>
@@ -1239,20 +1240,20 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
+        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
 
     return names_and_types;
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
     checkStackSize();
 
     std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names);
+    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
     switch (node->type())
     {
@@ -1322,7 +1323,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names));
+            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1330,7 +1331,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names);
+                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1339,7 +1340,9 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names);
+                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names, allow_nullable_tuple_type);
+                if (isTuple(nested_type) && !allow_nullable_tuple_type)
+                    return nested_type;
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1355,14 +1358,14 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names, allow_nullable_tuple_type));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
         {
             auto resolved = avro::resolveSymbol(node);
-            return avroNodeToDataTypeImpl(resolved, seen_names);
+            return avroNodeToDataTypeImpl(resolved, seen_names, allow_nullable_tuple_type);
         }
         case avro::Type::AVRO_RECORD:
         {
@@ -1377,7 +1380,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names, allow_nullable_tuple_type));
                 nested_names.push_back(node->nameAt(i));
             }
 
@@ -1385,7 +1388,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names), avroNodeToDataTypeImpl(node->leafAt(1), seen_names));
+            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type), avroNodeToDataTypeImpl(node->leafAt(1), seen_names, allow_nullable_tuple_type));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }
@@ -1706,6 +1709,14 @@ void registerAvroSchemaReader(FormatFactory & factory)
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });
 
+    for (const auto * format_name : {"Avro", "AvroConfluent"})
+    {
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_allow_nullable_tuple_type={}", settings.schema_inference_allow_nullable_tuple_type);
+        });
+    }
 }
 
 }
