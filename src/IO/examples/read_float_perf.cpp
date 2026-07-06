@@ -78,7 +78,7 @@ try
     WriteBufferFromFileDescriptor out(STDOUT_FILENO);
 
     if (method == 1) loop<T, readFloatTextPrecise>(in, out);
-    if (method == 2) loop<T, readFloatTextFast>(in, out);
+    if (method == 2) loop<T, readFloatImpreciseForCompatibility>(in, out);
     if (method == 3) loop<T, readFloatTextSimple>(in, out);
 
     out.finalize();

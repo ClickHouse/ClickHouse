@@ -7580,7 +7580,10 @@ void MergeTreeData::restorePartFromBackup(std::shared_ptr<RestoredPartsHolder> r
         }
 
         /// TODO Transactions: Decide what to do with version metadata (if any). Let's just skip it for now.
+        /// Skip the temporary file too: restoring it without the main file would make the part load
+        /// as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded.
         if (filename.ends_with(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME)
+            || filename.ends_with(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME)
             || filename.ends_with(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME))
         {
             ProfileEvents::increment(ProfileEvents::RestorePartsSkippedFiles);
@@ -8534,6 +8537,12 @@ MergeTreeData::MutableDataPartsVector MergeTreeData::tryLoadPartsToAttach(const 
     for (const auto & [part_name, old_dir, new_dir, disk] : renamed_parts.old_and_new_names)
     {
         LOG_DEBUG(log, "Checking part {}", new_dir);
+        /// Strip both the committed transaction metadata file and any leftover `txn_version.txt.tmp`.
+        /// A stale tmp file left without the main file makes the part load as a rolled-back
+        /// transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as `Outdated`.
+        /// Remove the temporary file first so the cleanup is fail-closed: a failure between the two
+        /// removals leaves a valid `txn_version.txt` rather than the dangerous tmp-only state.
+        disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         disk->removeFileIfExists(fs::path(relative_data_path) / source_dir / new_dir / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 
         auto single_disk_volume = std::make_shared<SingleDiskVolume>("volume_" + part_name, disk);
@@ -10069,6 +10078,11 @@ bool MergeTreeData::canReplacePartition(const DataPartPtr & src_part) const
 }
 
 void MergeTreeData::checkTableCanBeDropped(ContextPtr query_context) const
+{
+    checkTableSizeBelowDropLimit(query_context);
+}
+
+void MergeTreeData::checkTableSizeBelowDropLimit(ContextPtr query_context) const
 {
     if (!supportsReplication() && isStaticStorage())
         return;
