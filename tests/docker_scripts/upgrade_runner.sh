@@ -429,6 +429,12 @@ cp /var/log/clickhouse-server/clickhouse-server.upgrade.log /test_output/clickho
 #       Filtered via regex in the secondary pipe below to require the PostgreSQL connection-pool / cleaner-task
 #       context AND the connection-failure symptom together, so real PostgreSQL regressions (auth, protocol,
 #       query errors) are not masked.
+# The MySQL matchers below filter the same class of benign connection failure from a `DatabaseMySQL` engine
+#       that `04210_show_remote_databases_in_system_tables` also creates
+#       (`ENGINE = MySQL('192.0.2.1:3306', ...)`, the same unreachable RFC 5737 host). On the post-upgrade
+#       restart the engine probes the server while loading the persisted object and logs `<Error>` for the
+#       expected connection failure. Filtered to require the MySQL component AND the connection-failure
+#       symptom together, so real MySQL regressions (auth, protocol, query errors) are not masked.
 echo "Check for Error messages in server log:"
 rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
            -e "Code: 236. DB::Exception: Cancelled mutating parts" \
@@ -517,6 +523,9 @@ rg -Fav -e "Code: 236. DB::Exception: Cancelled merging parts" \
     | grep -av -e "Value passed to 'throwIf' function is non-zero" \
     | grep -av -e "PostgreSQLConnectionPool: Connection error" \
     | grep -av -e "DatabasePostgreSQL::removeOutdatedTables.*Connection to .* failed" \
+    | grep -av -e "mysqlxx::Pool.*Failed to connect to MySQL" \
+    | grep -av -e "Application: Connection to mysql failed" \
+    | grep -av -e "DatabaseMySQL.*Connections to mysql failed" \
     | grep -Fa "<Error>" > /test_output/upgrade_error_messages.txt || true
 
 if [ -s /test_output/upgrade_error_messages.txt ]; then
