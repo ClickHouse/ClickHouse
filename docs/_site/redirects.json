@@ -748,6 +748,10 @@
     "destination": "/api-reference/organization/get-list-of-available-organizations"
   },
   {
+    "source": "/cloud/manage/api/swagger",
+    "destination": "/api-reference/organization/get-list-of-available-organizations"
+  },
+  {
     "source": "/cloud/manage/api/usageCost-api-reference",
     "destination": "/api-reference/organization/get-list-of-available-organizations"
   },

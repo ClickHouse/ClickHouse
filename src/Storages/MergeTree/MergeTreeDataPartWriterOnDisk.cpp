@@ -156,8 +156,8 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    PackedFilesWriter * packed_writer_for_streams =
-        skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+    PackedFilesWriter * packed_writer_for_streams
+        = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
     for (const auto & skip_index : skip_indices)
     {
@@ -179,13 +179,21 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 
             /// The "logical" stream name (skp_idx_<name>[.suffix]) is what the in-archive virtual
             /// file uses; the on-disk per-file substream may use a hashed form to fit filesystem
-            /// limits. We pass both into MergeTreeWriterStream and SizeAdaptiveSpoolBuffer:
+            /// limits. We pass both into the stream's size-adaptive packing:
             ///   - logical_stream_name: used as the packed_writer virtual filename when the
             ///     substream stays in the archive (no FS length limit there).
             ///   - on_disk_stream_name: used as the standalone-file path when the substream
             ///     spills past the size threshold.
             auto logical_stream_name = index_name + index_substream.suffix;
             auto on_disk_stream_name = replaceFileNameToHashIfNeeded(logical_stream_name, *storage_settings, data_part_storage.get());
+
+            SizeAdaptivePacking packing;
+            if (packs_this_index)
+                packing = {
+                    packed_writer_for_streams,
+                    logical_stream_name + index_substream.extension,
+                    logical_stream_name + marks_file_extension,
+                    packed_spill_threshold};
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
                 on_disk_stream_name,
@@ -199,10 +207,7 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
                 marks_compression_codec,
                 settings.marks_compress_block_size,
                 settings.query_write_settings,
-                packs_this_index ? packed_writer_for_streams : nullptr,
-                packs_this_index ? logical_stream_name + index_substream.extension : String{},
-                packs_this_index ? logical_stream_name + marks_file_extension : String{},
-                packed_spill_threshold);
+                packing);
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
@@ -409,8 +414,8 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         for (const auto & [type, stream] : skip_indices_streams[i])
         {
             /// preFinalize drains the chain above (compressor + hashing) so the
-            /// SizeAdaptiveSpoolBuffer at the bottom of the stream has seen all bytes and the
-            /// spilled-vs-packed decision is final.
+            /// size-adaptive packing buffer at the bottom of the stream has seen all bytes and
+            /// the spilled-vs-packed decision is final.
             stream->preFinalize();
 
             if (stream->isPacked())
@@ -433,9 +438,9 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
                     }
                 }
 
-                /// Substream fit under the spill threshold: bytes are still in the spool
-                /// buffer; finalize hands them to skip_indices_packed_writer. No per-file
-                /// checksum entry -- the archive's single checksum covers it.
+                /// Substream fit under the spill threshold: bytes are still buffered in memory;
+                /// finalize hands them to skip_indices_packed_writer. No per-file checksum
+                /// entry -- the archive's single checksum covers it.
                 stream->finalize();
             }
             else
