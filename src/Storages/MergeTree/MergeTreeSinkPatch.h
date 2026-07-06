@@ -21,9 +21,6 @@ public:
 
 protected:
     PlainLightweightUpdateHolder update_holder;
-    /// Format version + patch `StorageMetadataPtr` + (for v2) the sort-key prefix size captured
-    /// at the UPDATE's callsite, bundled by `MergeTreeData::getPatchPartMetadata`. The prefix
-    /// size is persisted into `source_parts.dat` so readers can recover the patch's sort-key shape.
     PatchPartMetadata patch_metadata;
 
     void finishDelayedChunk() override;

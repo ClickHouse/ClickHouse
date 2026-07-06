@@ -25,8 +25,6 @@ private:
     UInt64 getDataVersionInPartition(const String & original_partition_id) const;
 
     LightweightUpdateHolderInKeeper update_holder;
-    /// Format version + patch `StorageMetadataPtr` + (for v2) the semantic sort-key prefix size.
-    /// See `MergeTreeSinkPatch::patch_metadata`.
     PatchPartMetadata patch_metadata;
 };
 
