@@ -23,6 +23,7 @@
 #include <Common/likePatternToRegexp.h>
 
 #include <IO/ReadBufferFromString.h>
+#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 
@@ -138,34 +139,33 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
     matcher.asterisk_like_pattern = pattern;
 }
 
-/// True if the whole string is an integer literal (optional sign, then only digits). A lexical
-/// check, not a parse: we only need the shape, so it can't overflow on values wider than Int64.
-bool isIntegerLikeString(const std::string & s)
+/// True if the whole string parses as a number (integer or floating point, incl. exponent form).
+/// Used to catch numeric-valued settings written as quoted strings (see isNumericSettingValue).
+bool isNumericLikeString(const std::string & s)
 {
-    size_t i = 0;
-    if (i < s.size() && (s[i] == '+' || s[i] == '-'))
-        ++i;
-    if (i == s.size())
+    if (s.empty())
         return false;
-    for (; i < s.size(); ++i)
-        if (s[i] < '0' || s[i] > '9')
-            return false;
-    return true;
+    ReadBufferFromString buf(s);
+    Float64 v;
+    return tryReadFloatText(v, buf) && buf.eof();
 }
 
-/// True if a setting value is (or, written as a string, encodes) an integer. `QueryFuzzer::
-/// fuzzSettingValue` uses this to leave such values untouched: a time-duration setting
-/// (`sleep_in_send_data_ms`, `*_timeout`, `*_interval`, ...) is an integer count and, when
-/// `fuzzField` blows it up to a value like 1048576, the server sleeps/waits uninterruptibly for
-/// minutes (ignoring query cancellation and `max_execution_time`), which the stress-test hung-check
-/// reports as a false "possible deadlock". Recognising durations by name is fragile (e.g.
-/// `..._timeout_milliseconds`), but they are all integers, so skipping integer values covers the
-/// whole class. `ParserSetQuery` preserves the literal type, so `receive_timeout = '10'` arrives as
-/// a String Field -- and `fuzzField`'s string mutations (`str + str`) would turn `'10000'` into
-/// `'1000010000'` -- so integer-encoding strings are skipped too. Float/enum/free-form strings --
-/// the interesting ones for parse/apply coverage -- are still fuzzed, and a huge float duration only
-/// makes a limit more permissive rather than hanging.
-bool isIntegerSettingValue(const Field & f)
+/// True if a setting value is (or, written as a string, encodes) a number. `QueryFuzzer::
+/// fuzzSettingValue` uses this to leave such values untouched, because that is where the
+/// time-duration settings live and `fuzzField` blowing one up hangs the server: a `..._ms` /
+/// `sleep_in_send_data_ms` / `*_interval` count mutated to 1048576, or a `Seconds`-typed
+/// `receive_timeout` / `send_timeout` / `lock_acquire_timeout` / `max_execution_time` mutated to
+/// 1e10, makes the server sleep or block a socket/lock wait uninterruptibly for minutes (ignoring
+/// query cancellation and `max_execution_time`), which the stress-test hung-check reports as a
+/// false "possible deadlock". Recognising durations by name is fragile (e.g.
+/// `..._timeout_milliseconds`), but they are all numeric, so skipping numeric values covers the
+/// whole class. Both integer and `Float64` forms occur -- `SettingFieldSeconds` parses via
+/// `fieldToNumber<Float64>`, so `max_execution_time = 30.5` arrives as `Float64` -- and
+/// `ParserSetQuery` preserves the literal type, so `receive_timeout = '10'` arrives as a String
+/// Field that `fuzzField`'s string mutations (`str + str`) would turn into `'1010'`; hence numbers,
+/// floats and numeric strings are all skipped. Enum/free-form strings -- the interesting ones for
+/// parse/apply coverage -- are still fuzzed.
+bool isNumericSettingValue(const Field & f)
 {
     switch (f.getType())
     {
@@ -175,9 +175,14 @@ bool isIntegerSettingValue(const Field & f)
         case Field::Types::UInt128:
         case Field::Types::Int256:
         case Field::Types::UInt256:
+        case Field::Types::Float64:
+        case Field::Types::Decimal32:
+        case Field::Types::Decimal64:
+        case Field::Types::Decimal128:
+        case Field::Types::Decimal256:
             return true;
         case Field::Types::String:
-            return isIntegerLikeString(f.safeGet<std::string>());
+            return isNumericLikeString(f.safeGet<std::string>());
         default:
             return false;
     }
@@ -686,7 +691,7 @@ Field QueryFuzzer::fuzzField(Field field)
 
 void QueryFuzzer::fuzzSettingValue(Field & value)
 {
-    if (!isIntegerSettingValue(value))
+    if (!isNumericSettingValue(value))
         value = fuzzField(value);
 }
 
@@ -4728,9 +4733,9 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values. `fuzzSettingValue` leaves integer-valued settings as
+        /// Fuzz existing setting values. `fuzzSettingValue` leaves numeric-valued settings as
         /// written by the query so time durations (timeouts, sleeps, intervals) are not blown up
-        /// into a multi-minute hang; see `fuzzSettingValue` / `isIntegerSettingValue`.
+        /// into a multi-minute hang; see `fuzzSettingValue` / `isNumericSettingValue`.
         for (auto & c : set->changes)
             if (fuzz_rand() % 50 == 0)
                 fuzzSettingValue(c.value);
