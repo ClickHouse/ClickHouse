@@ -49,9 +49,6 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
-    if (ast_insert_query->compression && context->getApplicationType() == Context::ApplicationType::SERVER)
-        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
-
     if (ast_insert_query->format.empty())
     {
         if (input_function)
