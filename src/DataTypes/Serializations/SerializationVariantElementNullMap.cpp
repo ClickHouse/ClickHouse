@@ -184,7 +184,16 @@ void SerializationVariantElementNullMap::deserializeBinaryBulkWithMultipleStream
     }
     settings.path.pop_back();
 
-    size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - num_read_discriminators + rows_offset;
+    size_t discriminators_offset = variant_element_null_map_state->discriminators->size() - num_read_discriminators;
+
+    /// Skip the first rows_offset discriminators in all later logic. In the compact-discriminator
+    /// path deserializeCompactDiscriminators appends rows_offset + limit discriminators but reports
+    /// variant_limit only for the post-offset range, so num_read_discriminators has to be normalized
+    /// the same way SerializationVariantElement does before the fast paths below rely on it. Without
+    /// this the variant_limit == 0 fast path would append rows_offset extra entries to the null map
+    /// when a range with a skipped prefix contains no rows of this variant.
+    discriminators_offset += rows_offset;
+    num_read_discriminators -= rows_offset;
 
     MutableColumnPtr mutable_column = result_column->assumeMutable();
     auto & data = assert_cast<ColumnUInt8 &>(*mutable_column).getData();
