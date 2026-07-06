@@ -208,6 +208,95 @@ TEST(ReaderExecutor, ReadSingleObjectNoCaches)
     EXPECT_TRUE(rope3.empty());
 }
 
+TEST(ReaderExecutor, DisplayServesHoleyBankPrefix)
+{
+    /// The bank can be HOLEY - the wait-bank appends only the gaps each live writer could
+    /// serve, so a failed middle leaves disjoint chunks. `Display::coverage` counts the bank
+    /// per interval, and `Display::read` must serve the same shape: the claimed contiguous
+    /// prefix serves (never an empty window - the caller reads empty as EOF mid-extent), and
+    /// the unserved chunk beyond the hole SURVIVES the consuming trim for the next window.
+    String content(1000, '\0');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('A' + i % 26);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 1000);
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    auto r1 = executor.readNextWindow();
+    ASSERT_EQ(r1.range().size, 512u);
+
+    /// Bank [512, 612) and [700, 800) with the true bytes, hole at [612, 700).
+    const size_t ri_a = inspect(executor).retrieveIndexAt(512);
+    const size_t ri_b = inspect(executor).retrieveIndexAt(700);
+    ASSERT_NE(ri_a, size_t(-1));
+    ASSERT_NE(ri_b, size_t(-1));
+    inspect(executor).bankBytes(ri_a, 512, std::string_view(content).substr(512, 100));
+    inspect(executor).bankBytes(ri_b, 700, std::string_view(content).substr(700, 100));
+
+    /// The banked prefix serves; an empty chain here is the false-EOF regression.
+    auto r2 = executor.readNextWindow();
+    ASSERT_EQ(r2.range().offset, 512u);
+    ASSERT_EQ(r2.range().size, 100u);
+
+    /// The chunk beyond the hole is still banked - the trim consumed only the delivered prefix.
+    const auto ivs = inspect(executor).bankIntervals(ri_b);
+    ASSERT_EQ(ivs.size(), 1u);
+    EXPECT_EQ(ivs.front().offset, 700u);
+    EXPECT_EQ(ivs.front().size, 100u);
+
+    /// The rest of the file reads back intact: the hole is fetched, the banked tail is served
+    /// from the bank (not re-fetched), and the bytes match.
+    String collected(content.substr(0, 612));
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            collected.append(node.data(), node.size);
+    }
+    EXPECT_EQ(collected, content);
+}
+
+TEST(ReaderExecutor, UnknownSizeLatchedEofStillFetchesBelowEndGaps)
+{
+    /// A size-unknown EOF latch records that AN end was seen, not where. A pool lead can
+    /// latch it while its window's bytes are discarded (the cache refused the put), leaving
+    /// a below-end gap the serve must re-fetch - refusing to launch because of the latch
+    /// silently truncates the read. Constructed state: latch + serve below the true end.
+    String content(1000, '\0');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('a' + i % 26);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", StoredObject::UnknownSize);
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 512;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    auto r1 = executor.readNextWindow();
+    ASSERT_EQ(r1.range().size, 512u);
+
+    inspect(executor).latchEof();
+
+    /// The engine must still fetch [512, ...) from the source; empty is silent truncation.
+    auto r2 = inspect(executor).serveWindowAt(512);
+    ASSERT_FALSE(r2.empty());
+    EXPECT_EQ(r2.range().offset, 512u);
+    String got;
+    for (const auto & node : r2.getNodes())
+        got.append(node.data(), node.size);
+    EXPECT_EQ(got, content.substr(512, got.size()));
+    EXPECT_GT(got.size(), 0u);
+}
+
 TEST(ReaderExecutor, ReadMultiObject)
 {
     auto source = std::make_shared<MemorySourceReader>(
@@ -3284,15 +3373,14 @@ TEST(ReaderExecutor, CacheLookupSplitByObjectBoundary)
     auto chain = executor.readNextWindow();
     EXPECT_EQ(chain.range().size, 500u);
 
-    /// With plan-then-stream the window is probed for residency per object in TWO passes:
-    /// the residency probe (reused across the plan, not re-run, since this aligned plan does
-    /// not expand to a cell boundary), then - because the data is cold - the per-object
-    /// gap-fill `lookup`. The mock counts each as an access, so the cache sees four per-object
-    /// calls: [blob_A, blob_B] twice. The point of the test is that BOTH passes split at the
-    /// object boundary, each call carrying the right `StoredObject` and `object_file_offset`.
-    ASSERT_EQ(tracker->log.size(), 4u);
+    /// With plan-then-stream the window is probed for residency per object ONCE, at plan
+    /// build (the plan is reused across the serve; the engine's inline pieces consult the
+    /// DISPLAY, never the provider - late-populated cells are served via the writers' wait,
+    /// not a fresh probe). The point of the test is that the probe splits at the object
+    /// boundary, each call carrying the right `StoredObject` and `object_file_offset`.
+    ASSERT_EQ(tracker->log.size(), 2u);
 
-    for (size_t pass = 0; pass < 2; ++pass)
+    for (size_t pass = 0; pass < 1; ++pass)
     {
         const auto & a = tracker->log[pass * 2];
         const auto & b = tracker->log[pass * 2 + 1];

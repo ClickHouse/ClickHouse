@@ -1301,10 +1301,11 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     EXPECT_EQ(result, content) << "no corruption / no missing bytes under eviction pressure";
     /// Destroy the executor so it flushes its `stats` into the thread's ProfileEvents.
     executor.reset();
-    /// The held long connection streams the first cold run (segments 0-1) in one GET but is
-    /// re-opened per window for the later flood-evicted segments (2-3), so the unified inline
-    /// fill's small-plan re-fetch count is 9 - higher than the legacy path's 7. The small plan
-    /// does not pin far ahead, so flood-evicted cold cells are re-fetched either way.
-    EXPECT_EQ(sourceRequestsSoFar(), 9u)
+    /// The engine's inline pieces run through the machine flow with the in-flow connection
+    /// policy, so the held long connection streams each cold run instead of re-opening per
+    /// window - the re-fetch count returns to the legacy assembler's 7 (the interim bespoke
+    /// inline path paid 9). The small plan does not pin far ahead, so flood-evicted cold
+    /// cells are re-fetched either way.
+    EXPECT_EQ(sourceRequestsSoFar(), 7u)
         << "the small plan does not pin far ahead, so flood-evicted cold cells are re-fetched";
 }

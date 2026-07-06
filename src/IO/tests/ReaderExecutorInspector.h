@@ -53,6 +53,47 @@ public:
     /// The continuity estimator's predicted reach after the last plan feed.
     size_t predictedReach() const { return ex.continuity_tracker.predictedReach(); }
 
+    /// Bank injection / inspection (the display's overflow cell). `bankBytes` constructs the
+    /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose
+    /// production trigger (a sibling-led wait returning short between two served cells) needs
+    /// a cross-executor race - so a test can pin the display's frontier/read agreement on it.
+    void bankBytes(size_t ri, size_t logical_offset, std::string_view bytes)
+    {
+        auto buf = std::make_shared<OwnedChainedBuffer>(bytes.size());
+        std::memcpy(buf->data(), bytes.data(), bytes.size());
+        ChainedBuffers chunk;
+        chunk.append(ChainedBufferNode{buf, 0, bytes.size(), logical_offset});
+        ex.read_plan.retrieve_status[ri].ready_bytes.append(std::move(chunk));
+    }
+    std::vector<ByteRange> bankIntervals(size_t ri) const
+    {
+        const auto & ivs = ex.read_plan.retrieve_status[ri].ready_bytes.getIntervals();
+        return {ivs.begin(), ivs.end()};
+    }
+    /// The schedule job whose range holds `phys`, or `size_t(-1)`.
+    size_t retrieveIndexAt(size_t phys) const
+    {
+        for (size_t i = 0; i < ex.read_plan.schedule.retrieves.size(); ++i)
+        {
+            const auto & r = ex.read_plan.schedule.retrieves[i].range;
+            if (phys >= r.offset && phys < r.end())
+                return i;
+        }
+        return size_t(-1);
+    }
+    /// Latch size-unknown EOF as a collected machine's short read would (the merge at
+    /// collect), without having to stage the pool machine + refused-put race.
+    void latchEof() { ex.reached_eof = true; }
+    /// Drive one serve of the cursor step at `logical_pos`, bypassing `readNextWindow`'s
+    /// pre-read EOF gate - the engine runs below a latched EOF only via the machine-drain
+    /// branch, which needs an in-flight machine a unit test cannot hold still.
+    ChainedBuffers serveWindowAt(size_t logical_pos)
+    {
+        const size_t phys = logical_pos + ex.data_start_offset;
+        ex.prepareCursor(phys);
+        return ex.interpretStep(phys);
+    }
+
     /// Long-connection probes.
     bool hasLongConn() const { return ex.long_conn.has_value(); }
     size_t longConnPosition() const { return ex.long_conn ? ex.long_conn->current_position : 0; }

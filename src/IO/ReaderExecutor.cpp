@@ -2163,6 +2163,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
     const size_t attempted_end = machine ? machine->physical_window.end() : 0;
+    const bool was_inline = machine && machine->inline_serve;
     ChainedBuffers collected;
     if (tryCollectMachine(collected))
     {
@@ -2172,6 +2173,18 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// gap keeps the bank (`collected` is logical, as `ready_bytes` is - no shift).
         if (r.into.empty() && !collected.empty())
             st.ready_bytes.append(std::move(collected));
+        else if (was_inline && !collected.empty())
+        {
+            /// OVERFLOW: an inline piece's cells refused some bytes (cache full / download
+            /// budget / sibling-owned segment) - the display cannot hold them, so BANK the
+            /// uncovered part (the bank is the overflow display cell, trimmed as it serves).
+            /// The serve then always covers what a piece fetched; no bespoke assembler needed.
+            /// Inline pieces only: they are window-sized, so the overflow stays ~one window
+            /// (a pool lead's refusal is re-fetched window-wise by the serve loop instead).
+            const ByteRange got = collected.range();
+            if (!display.covers(ByteRange{got.offset + data_start_offset, got.size}))
+                st.ready_bytes.append(std::move(collected));
+        }
         /// Launch high-water: the window was ATTEMPTED end to end (committed, refused by the
         /// cache, or sibling-owned) - the launcher never re-launches it. Job-relative and
         /// END-based (an inline machine's window starts at the cell floor, so accumulating
@@ -2182,36 +2195,25 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     /// Revoked while still queued: nothing to record - the foreground reads this window instead.
 }
 
-ChainedBuffers ReaderExecutor::serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const
-{
-    /// All logical: `ready_bytes` and `position` are logical; the cursor step is physical,
-    /// so shift its end by the header. No `ChainedBuffers` shift - only the bounds arithmetic.
-    const size_t pos = position_phys - data_start_offset;
-    const size_t step_end = step.output.end() - data_start_offset;
-    const size_t end = std::min({step_end, pos + readCeiling(), st.ready_bytes.range().end()});
-    ChainedBuffers out = st.ready_bytes.slice(ByteRange{pos, end - pos});
-    /// Release everything up to `end` (the served prefix + any skipped head) so the
-    /// banked footprint stays ~one window.
-    st.ready_bytes = st.ready_bytes.slice(ByteRange{end, st.ready_bytes.range().end() - end});
-    return out;
-}
 
-ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, ByteRange window)
+bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
-    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
-    const size_t position_phys = window.offset;
 
-    /// Fill the whole CELL so the cursor's later windows in the cell are served from it and an
-    /// eviction sweep cannot drop it mid-scan: extend the window out to the job's fetch grids,
-    /// clamped into its range - schedule data, no geometry query on the serve path. The grids
-    /// come from the plan's POPULATING tiers only, so a bypass job (an all-bypass plan) has
-    /// grids of 1 and reads exactly the requested bytes - there is no cell to hold more. (The
-    /// min/max guards keep the extension a superset of the window even for a degenerate
-    /// schedule. Known bounded divergence from the old per-tier-clamped geometry query: the
-    /// head can reach across a same-tier resident run the per-tier clamp stopped at - at most
-    /// one grid cell, served from cache when resident, once per plan.)
+    /// Join an in-flight machine first: ours delivers this job's bytes (cells / overflow bank);
+    /// a FOREIGN one holds the single slot and the cursor already outran it - free the slot.
+    if (machine)
+    {
+        collectInFlightInto(machine->retrieve_index);
+        return true;
+    }
+
+    /// The piece extends to the job's fetch grids, clamped into its range (cell-fill
+    /// granularity; identity for a bypass job - its grids are 1). Known bounded divergence
+    /// from the old per-tier-clamped geometry query: the head can reach across a same-tier
+    /// resident run the per-tier clamp stopped at - at most one grid cell, cache-served when
+    /// resident, once per plan.
     const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
     const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
     const size_t fetch_lo
@@ -2220,50 +2222,75 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, ByteRange window)
         std::min(r.range.end(), (window.end() + tail_grid - 1) / tail_grid * tail_grid));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
-    ChainedBuffers result;
-    IntervalSet covered;
-    /// A committed prefix / late hit a sibling already populated (a bypass gap has none).
-    recreditCommittedPrefixes(fetch_window, result, covered, stats);
-    serveLateHits(fetch_window, result, covered, stats);
+    /// 1) Dedup + late hits: wait on ANY cell a live writer is filling (a sibling executor's
+    ///    download; a completed one returns immediately) and BANK the bytes - sibling bytes
+    ///    never enter this executor's committed sets, so the bank is how they reach the
+    ///    display. A bypass gap has no fill-target writer: no-op there.
+    IntervalSet cov = display.coverage(fetch_window);
+    {
+        ChainedBuffers waited;
+        display.wait(fetch_window, /*own_worker_only=*/false, waited, cov, stats);
+        if (!waited.empty())
+        {
+            if (data_start_offset)
+                waited.shift(-static_cast<ssize_t>(data_start_offset));
+            st.ready_bytes.append(std::move(waited));
+            /// Launch high-water only to the CONTIGUOUS display frontier: a waited middle that
+            /// returned short leaves a real hole, and marking it attempted would stop the
+            /// background from ever fetching it (the foreground would heal it, but late).
+            const size_t contiguous = display.frontier(window);
+            if (contiguous > r.range.offset)
+                st.fetched = std::max(st.fetched, contiguous - r.range.offset);
+            return true;
+        }
+    }
 
-    /// Wait on ANY disk cell a live writer is filling - a sibling executor holds the segment's
-    /// downloader, so the wait wakes and reads its committed bytes, deduping the concurrent cold
-    /// populate instead of re-fetching it. A bypass gap has no fill-target writer, so this is a
-    /// no-op there and the whole window falls to the source read below.
-    display.wait(fetch_window, /*own_worker_only=*/false, result, covered, stats);
+    /// 2) A source piece over the first uncovered gap, run as an INLINE machine (the same Fill
+    ///    flow as the background: elect + fetch with the in-flow connection policy + commit;
+    ///    the collect pins, runs the deferred put, and overflow-banks what the cells refused).
+    ///    A latched `reached_eof` does NOT refuse the launch: under a size-unknown source the
+    ///    latch records that AN end was seen, not where - a below-end gap (a pool lead's put
+    ///    the cache refused) must still be re-fetched or its window is silently dropped. A gap
+    ///    past the true end costs one empty read and the loop breaks, as the legacy path paid.
+    auto gaps = cov.subtract(fetch_window);
+    if (gaps.empty())
+        return false;
+    const ByteRange piece = gaps.front();
+    if (!launchMachineForWindow(ri, piece, *local_runner))
+        return false;
+    collectInFlightInto(ri);
+    /// Over-read accounting for the piece's extension beyond the cursor window, keyed off the
+    /// display frontier so a short fill records only what landed (the machine's own write path
+    /// does not account over-read).
+    const size_t frontier = display.frontier(piece);
+    if (piece.offset < window.offset && frontier > piece.offset)
+        overread_pending.add(ByteRange{piece.offset, std::min(frontier, window.offset) - piece.offset});
+    if (frontier > window.end())
+    {
+        const size_t tail = std::max(piece.offset, window.end());
+        overread_pending.add(ByteRange{tail, frontier - tail});
+    }
+    /// Launch high-water to the window end: attempted, whether the cells took the bytes or the
+    /// overflow bank did - the background never re-launches it.
+    if (window.end() > r.range.offset)
+        st.fetched = std::max(st.fetched, window.end() - r.range.offset);
+    /// Progress = the display can now serve the window's first byte.
+    if (display.frontier(window) > window.offset)
+        return true;
 
-    /// Source-fetch whatever is still uncovered (no tier holds it and no sibling is filling it),
-    /// opening a long connection at each OBJECT-piece start so the reads coalesce across windows
-    /// (and, across an object boundary, the tail object opens with its own reach) - the same
-    /// connection the prefetch path opens. Populate any covering cell (`push_to_writers`; a bypass
-    /// gap has no writer, and a sibling-held segment's write is skipped).
-    ChainedBuffers src;
-    for (const auto & g : covered.subtract(fetch_window))
-        src.append(fetchGapsFromSource(g, /*from_prefetch=*/false, reached_eof, level, read_extent_end,
-            &long_conn, /*stop=*/nullptr, /*may_open_long=*/true, stats));
-    if (!src.empty())
-        assembleAndWriteBack(fetch_window, window, src, result, covered, /*push_to_writers=*/true, stats);
-
-    /// Run the scheduled handed fills from the assembled bytes (still physical): promote the
-    /// window up into the faster cells the fetch skipped. A bypass gap schedules no handed job
-    /// over its range, so this is a no-op there.
-    runHandedFills(window, result, stats);
-
-    /// Slice to the requested window and pin the filled segment at the fetched frontier (cleared at
-    /// EOF / for a transient), so an eviction sweep does not drop it before the next window - as the
-    /// legacy synchronous assembler did. Bank the window (logical) and serve it from the bank.
-    ChainedBuffers win = finalizeAssembledWindow(window, fetch_window.end(), result, reached_eof);
+    /// 3) Last resort - the wait-timeout escape hatch: a sibling leader hung mid-download, so
+    ///    the wait returned short AND our election still loses (the segment keeps a foreign
+    ///    downloader). Read the window from the source directly, cache-blind, and bank it -
+    ///    bounded to one window, only on this rare path (the old bespoke assembler's loser-tail).
+    ChainedBuffers direct = fetchGapsFromSource(window, /*from_prefetch=*/false, reached_eof,
+        read_plan.geometry()->pressure_level, read_extent_end, &long_conn, /*stop=*/nullptr,
+        /*may_open_long=*/true, stats);
+    if (direct.empty())
+        return false;
     if (data_start_offset)
-        win.shift(-static_cast<ssize_t>(data_start_offset));
-    if (!win.empty())
-        st.ready_bytes.append(std::move(win));
-    /// Advance the launch high-water to the cursor: this window was served (from the source, a
-    /// sibling's cell, or the bank), so the background never re-launches it - even when the
-    /// bytes could not enter this executor's own committed set (a refused write, a sibling-owned
-    /// segment). A high-water mark, NOT an accumulator: an inline serve at the cursor can land
-    /// BELOW the frontier (the cursor trails an ahead launch), so `+= want` would over-count.
-    st.fetched = std::max(st.fetched, (position_phys - r.range.offset) + window.size);
-    return serveStepFromBanked(read_plan.schedule.steps[read_plan.cursor], st, position_phys);
+        direct.shift(-static_cast<ssize_t>(data_start_offset));
+    st.ready_bytes.append(std::move(direct));
+    return true;
 }
 
 ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys)
@@ -2284,19 +2311,14 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
     if (!read_plan.schedule.retrieves[ri].into.empty())
         return serveRetrievePopulatable(ri, window);
 
-    /// Coverage-driven: advance the job until the display can serve the cursor (a bypass gap's
-    /// display holder is the bank, fed by the collects).
+    /// THE ENGINE: advance the job (join the in-flight machine / wait a sibling / run an
+    /// inline piece) until the display can serve the cursor, then read the display. A false
+    /// advance with nothing servable is EOF for this extent.
     while (display.frontier(window) == window.offset)
-    {
-        if (machineFor(ri))
-            collectInFlightInto(ri);  /// wait, bank one window, advance the display
-        else
-            return serveWindowInline(ri, window);  /// not prefetched: read it now
-    }
-    /// Serve off the display; `serveFromDisplay` also runs any scheduled handed fill from the
-    /// served bytes - the schedule CAN emit a promote over an `into`-empty gap (a whole-cell run
-    /// the fetch parts do not fully span is not a FETCH target, yet the served bytes may
-    /// complete its blocks), and a planned job runs regardless of which path served the bytes.
+        if (!advanceJobInline(ri, window))
+            break;
+    /// `serveFromDisplay` also runs any scheduled handed fill from the served bytes - a planned
+    /// job runs regardless of which holder served them.
     return serveFromDisplay(window);
 }
 
@@ -2502,14 +2524,15 @@ ChainedBuffers ReaderExecutor::serveRetrievePopulatable(size_t ri, ByteRange win
         }
     }
 
-    /// The cell is short and no in-flight machine is filling this exact window (the cursor sits on
-    /// a segment a sibling executor leads, or the cache refused the write): drain any in-flight
-    /// machine for THIS retrieve (finalize + free the slot), then serve inline - `serveWindowInline`
-    /// waits on the sibling-led cell (dedup) and source-fetches any remainder, banking one window.
+    /// The cell is short and no in-flight machine is filling this exact window (the cursor sits
+    /// on a segment a sibling executor leads, or the cache refused the write): THE ENGINE -
+    /// advance the job (join the machine / wait the sibling / run an inline piece; the collect
+    /// overflow-banks what the cells refuse) until the display can serve, then read the display.
     /// The ORIGINAL window, not the narrowed one: the raced/short path re-serves it whole.
-    if (machineFor(ri))
-        collectInFlightInto(ri);
-    return serveWindowInline(ri, window);
+    while (display.frontier(window) == window.offset)
+        if (!advanceJobInline(ri, window))
+            break;
+    return serveFromDisplay(window);
 }
 
 IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
@@ -2531,17 +2554,17 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
                     cov.add(ByteRange{lo, hi - lo});
             }
         }
-    /// The bank (logical coords; the display is physical).
+    /// The bank (logical coords; the display is physical). Per-INTERVAL, not the bounding
+    /// range: the bank can hold disjoint chunks (sibling-waited pieces), and coverage must
+    /// never claim a hole.
     for (const auto & st : ex.read_plan.retrieve_status)
-    {
-        if (st.ready_bytes.empty())
-            continue;
-        const ByteRange bank = st.ready_bytes.range();
-        const size_t lo = std::max(bank.offset + ex.data_start_offset, window_phys.offset);
-        const size_t hi = std::min(bank.end() + ex.data_start_offset, window_phys.end());
-        if (lo < hi)
-            cov.add(ByteRange{lo, hi - lo});
-    }
+        for (const auto & iv : st.ready_bytes.getIntervals())
+        {
+            const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
+            const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
+            if (lo < hi)
+                cov.add(ByteRange{lo, hi - lo});
+        }
     return cov;
 }
 
@@ -2597,36 +2620,56 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     /// 2) Committed cells (fastest resident tier first, under the shared `covered`).
     ex.recreditCommittedPrefixes(window_phys, out, covered, out_stats);
 
-    /// 3) The bank - bytes a piece fetched that no cell could hold. Serving CONSUMES: the bank
-    ///    is trimmed past the served end (dropping any skipped head with it), so the banked
-    ///    footprint stays ~one window. No cache counters - the bytes were counted at fetch.
+    /// 3) The bank - bytes a piece fetched that no cell could hold. Served per INTERVAL, the
+    ///    exact shape `coverage` claims: the bank can be holey (a sibling-waited middle that
+    ///    returned short, a pagecache-tier region between two waited disk cells), and serving
+    ///    the intersection of each uncovered gap with each interval keeps `frontier` and `read`
+    ///    in agreement - a claimed prefix always serves, never a false empty window.
+    ///    No cache counters - the bytes were counted at fetch.
     for (auto & st : ex.read_plan.retrieve_status)
     {
         if (st.ready_bytes.empty())
             continue;
-        const ByteRange bank = st.ready_bytes.range();   /// logical
-        const size_t lo = std::max(bank.offset + ex.data_start_offset, window_phys.offset);
-        const size_t hi = std::min(bank.end() + ex.data_start_offset, window_phys.end());
-        if (lo >= hi)
-            continue;
-        size_t served_end_logical = 0;
-        for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
+        for (const auto & iv : st.ready_bytes.getIntervals())
         {
-            const ByteRange g_logical{g.offset - ex.data_start_offset, g.size};
-            ChainedBuffers slice = st.ready_bytes.slice(g_logical);
-            /// The bank's range is a bounding box; serve a gap only when the slice FULLY covers
-            /// it - never mark bytes covered that were not appended (the caller's fallback
-            /// fetches a genuinely missing piece).
-            if (!slice.covers(g_logical))
+            const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
+            const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
+            if (lo >= hi)
                 continue;
-            slice.shift(static_cast<ssize_t>(ex.data_start_offset));
-            out.append(std::move(slice));
-            covered.add(g);
-            served_end_logical = std::max(served_end_logical, g_logical.end());
+            for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
+            {
+                const ByteRange g_logical{g.offset - ex.data_start_offset, g.size};
+                ChainedBuffers slice = st.ready_bytes.slice(g_logical);
+                /// Within one interval the slice covers the gap by construction; the guard
+                /// stays so a byte is never marked covered that was not appended.
+                if (!slice.covers(g_logical))
+                    continue;
+                slice.shift(static_cast<ssize_t>(ex.data_start_offset));
+                out.append(std::move(slice));
+                covered.add(g);
+            }
         }
-        if (served_end_logical > bank.offset)
-            st.ready_bytes = st.ready_bytes.slice(ByteRange{served_end_logical, bank.end() - served_end_logical});
     }
+    /// Serving CONSUMES, but only what the caller DELIVERS: trim every bank below the window's
+    /// contiguous covered prefix (`serveFromDisplay` slices exactly that prefix). Banked bytes
+    /// beyond the first uncovered hole stay banked - they serve a later window once the hole is
+    /// fetched - while bytes below the prefix are delivered or held by a faster holder, so the
+    /// banked footprint still stays ~one window.
+    const auto prefix_gaps = covered.subtract(window_phys);
+    const size_t prefix_end_phys = prefix_gaps.empty() ? window_phys.end() : prefix_gaps.front().offset;
+    if (prefix_end_phys > window_phys.offset)
+        for (auto & st : ex.read_plan.retrieve_status)
+        {
+            if (st.ready_bytes.empty())
+                continue;
+            const ByteRange bank = st.ready_bytes.range();   /// logical
+            const size_t cut = prefix_end_phys - ex.data_start_offset;
+            if (cut <= bank.offset)
+                continue;
+            st.ready_bytes = cut < bank.end()
+                ? st.ready_bytes.slice(ByteRange{cut, bank.end() - cut})
+                : ChainedBuffers{};
+        }
 }
 
 void ReaderExecutor::Display::wait(

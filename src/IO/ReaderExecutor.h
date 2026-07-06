@@ -852,15 +852,14 @@ private:
     /// committed set - a refused cell write or a sibling-downloaded segment. Used by the launch
     /// scan, the lead launch, and the Ready->Done transition; the serve never reads it.
     size_t launchProgress(size_t ri) const;
-    /// The banked serve used by `serveWindowInline`'s tail (its window was just assembled and
-    /// banked with the handed fills already run, so a display read would double-count the
-    /// committed part). Dissolves with `serveWindowInline` in M5c.
-    ChainedBuffers serveStepFromBanked(const PlanSchedule::Step & step, RetrieveStatus & st, size_t position_phys) const;
-    /// Inline serve for a window no prefetch machine and no committed cell covers: a not-prefetched
-    /// bypass gap (pure source fetch, banked) or a populatable gap whose cursor segment a sibling
-    /// executor leads (wait the sibling's disk cell to dedup, source-fetch any remainder). Banks the
-    /// window in `ready_bytes` and serves it from there.
-    ChainedBuffers serveWindowInline(size_t ri, ByteRange window);
+    /// THE ENGINE's inline advance: bring job `ri` one step closer to serving `window` on the
+    /// display - join an in-flight machine (own or foreign), wait a sibling's live cell and
+    /// bank its bytes, or run one source piece as an INLINE machine (the collect pins, puts,
+    /// and overflow-banks what the cells refuse). Returns false when no progress is possible
+    /// (EOF / nothing schedulable) - the serve then returns the display's servable prefix,
+    /// empty meaning end-of-extent. The rare wait-timeout case (a sibling leader hung
+    /// mid-download and re-election keeps losing) falls to one cache-blind direct read.
+    bool advanceJobInline(size_t ri, ByteRange window);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes; shifts to logical. The serve tail shared by the hit
     /// step and the banked bypass step.
