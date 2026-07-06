@@ -643,6 +643,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// This also applies when `to_stage == WithMergeableState` (nested distributed) — `FetchColumns`
     /// is a legal answer for any `to_stage`. The `nodes == 1` proxy optimization and the `nodes == 0`
     /// branch below are kept (they are handled by the existing path).
+    ///
+    /// The plan path currently bypasses `optimize_distributed_group_by_sharding_key` (the per-shard-
+    /// complete aggregation applied by `getOptimizedQueryProcessingStageAnalyzer` below when the
+    /// `GROUP BY` covers the sharding key): returning `FetchColumns` here skips that stage decision.
+    /// On data not distributed according to the sharding key this changes results — the plan path
+    /// returns exact totals (correct) instead of the optimization's per-shard answer — and it gives
+    /// up the optimization's perf win. See
+    /// `01247_optimize_distributed_group_by_sharding_key_dist_on_dist`.
+    /// TODO: support it on the plan path (aggregation pushdown with a per-shard-complete stage).
     if (nodes > 1 && useDistributedPlanForReading(local_context, cluster, query_info))
         return QueryProcessingStage::FetchColumns;
 

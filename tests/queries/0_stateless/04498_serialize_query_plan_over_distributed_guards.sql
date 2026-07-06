@@ -4,7 +4,8 @@
 -- initiator-side MPP conversion must be skipped for plans that already read from remote shards
 -- (WITH TOTALS, ROLLUP), and the forwarded-settings reset in ClusterProxy must keep
 -- make_distributed_plan off on shards so legacy fallback paths (shardNum,
--- distributed_group_by_no_merge) do not throw SUPPORT_IS_DISABLED.
+-- distributed_group_by_no_merge) do not throw SUPPORT_IS_DISABLED. The make-only section pins the
+-- same guards with the plan path disabled (make_distributed_plan = 1, serialize_query_plan = 0).
 
 SET enable_analyzer = 1;
 SET serialize_query_plan = 1;
@@ -49,6 +50,25 @@ SELECT count(), sum(v) FROM mdp_dist2;
 
 SELECT '-- distributed-over-distributed with make_distributed_plan = 1 too';
 SELECT count(), sum(v) FROM mdp_dist2 SETTINGS make_distributed_plan = 1;
+
+-- make_distributed_plan = 1 with the plan path disabled (serialize_query_plan = 0): the plan path
+-- is off, so all of these must run the legacy read path without exceptions and return correct
+-- results. This pins the MPP-guard behavior when only make_distributed_plan is set.
+SET serialize_query_plan = 0;
+SET make_distributed_plan = 1;
+
+SELECT '-- make-only: plain aggregate (legacy path)';
+SELECT count(), sum(v) FROM mdp_dist;
+
+SELECT '-- make-only: shardNum (legacy path)';
+SELECT shardNum() AS s, count() FROM mdp_dist GROUP BY s ORDER BY s;
+
+SELECT '-- make-only: distributed_group_by_no_merge = 1 GROUP BY (legacy path)';
+SELECT k, c FROM (SELECT k, count() AS c FROM mdp_dist GROUP BY k) ORDER BY k, c SETTINGS distributed_group_by_no_merge = 1;
+
+-- Restore the ambient settings of the test.
+SET serialize_query_plan = 1;
+SET make_distributed_plan = 0;
 
 -- Regression: subquery-level SETTINGS serialize_query_plan = 1 while the outer query is at the
 -- default 0. The subquery is planned with its own context (the placeholder is planted), but the

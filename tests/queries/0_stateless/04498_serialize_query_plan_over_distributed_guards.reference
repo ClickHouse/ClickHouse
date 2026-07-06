@@ -48,6 +48,20 @@
 80	760
 -- distributed-over-distributed with make_distributed_plan = 1 too
 80	760
+-- make-only: plain aggregate (legacy path)
+40	380
+-- make-only: shardNum (legacy path)
+1	20
+2	20
+-- make-only: distributed_group_by_no_merge = 1 GROUP BY (legacy path)
+0	5
+0	5
+1	5
+1	5
+2	5
+2	5
+3	5
+3	5
 -- subquery-level SETTINGS serialize_query_plan = 1 with the outer query at default
 40	380
 41	380
