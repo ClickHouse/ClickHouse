@@ -403,7 +403,9 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
-        LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        /// The error is either rethrown or reported to the caller via nullptr, and the caller
+        /// decides how severe the failure is, so do not log it at error level here.
+        LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
 
         if (!online
             || (!was_successful && !dont_throw_if_failed_first_time)

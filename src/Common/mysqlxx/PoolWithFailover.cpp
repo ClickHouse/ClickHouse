@@ -262,10 +262,12 @@ PoolWithFailover::Entry PoolWithFailover::get()
             }
         }
 
+        /// The failure is reported to the caller via an exception at the end,
+        /// so do not log it at error level here.
         if (replicas_by_priority.size() > 1)
-            app.logger().error("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
+            app.logger().warning("Connection to all mysql replicas failed " + std::to_string(try_no + 1) + " times");
         else
-            app.logger().error("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
+            app.logger().warning("Connection to mysql failed " + std::to_string(try_no + 1) + " times");
     }
 
     if (full_pool)

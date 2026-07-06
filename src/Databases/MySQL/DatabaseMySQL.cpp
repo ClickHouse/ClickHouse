@@ -105,12 +105,14 @@ DatabaseMySQL::DatabaseMySQL(
     {
         if (attach)
         {
-            tryLogCurrentException("DatabaseMySQL");
+            /// The failure is tolerated on attach (e.g. the remote server is unreachable
+            /// during server startup), so log at warning.
+            tryLogCurrentException("DatabaseMySQL", "", LogsLevel::warning);
         }
 #if CLICKHOUSE_CLOUD
         else if (SharedDatabaseCatalog::initialized() && !SharedDatabaseCatalog::isInitialQuery(context_))
         {
-            tryLogCurrentException("DatabaseMySQL");
+            tryLogCurrentException("DatabaseMySQL", "", LogsLevel::warning);
         }
 #endif
         else
@@ -193,7 +195,8 @@ ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, Context
                             backQuote(table_name), getCurrentExceptionMessage(true));
         }
 
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// The caller asked not to throw, so the failure is tolerated - log at warning.
+        tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
     }
 
     if (!local_tables_cache.contains(table_name))
