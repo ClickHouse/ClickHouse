@@ -1488,7 +1488,6 @@ struct PerPeerReader
     void setReaderStateLocked(ReaderState s) TSA_REQUIRES(deque_mutex);
     void closeReaderLocked(bool bump_generation) TSA_REQUIRES(deque_mutex);
     void markCompacted(); ///< self-locking (acquires deque_mutex)
-    bool generationChangedLocked(uint64_t local_generation) const TSA_REQUIRES(deque_mutex);
 
     // === Decoded deque helpers (decoded_mutex held by caller) ===
     bool discardBeforeLocked(uint64_t index) TSA_REQUIRES(deque_mutex);
@@ -1542,12 +1541,6 @@ void PerPeerReader::markCompacted()
     setReaderStateLocked(ReaderState::Compacted);
 }
 
-
-bool PerPeerReader::generationChangedLocked(uint64_t local_generation) const
-{
-    return generation != local_generation;
-}
-
 bool PerPeerReader::discardBeforeLocked(uint64_t index)
 {
     bool changed = false;
@@ -1599,7 +1592,8 @@ uint64_t PerPeerReader::fillCoverageEndLocked() const
     return decoded_front_index;
 }
 
-void PerPeerReader::setResumeCursorLocked(const ChangelogFileDescriptionPtr & file_description, size_t position, uint64_t first_index, size_t count)
+void PerPeerReader::setResumeCursorLocked(
+    const ChangelogFileDescriptionPtr & file_description, size_t position, uint64_t first_index, size_t count)
 {
     LogReadPlan::FileSpan cursor;
     cursor.file_description = file_description;
@@ -1649,7 +1643,7 @@ void PerPeerReader::waitForCursor(uint64_t local_generation)
         dq_lock,
         [&] TSA_NO_THREAD_SAFETY_ANALYSIS
         {
-            return state != ReaderState::Running || generationChangedLocked(local_generation) || !pending_cursors.empty()
+            return state != ReaderState::Running || generation != local_generation || !pending_cursors.empty()
                 || resume_cursor.has_value();
         });
 }
@@ -1720,17 +1714,15 @@ bool openHeldBuffer(PerPeerReader & reader, const LogReadPlan::FileSpan & cursor
 /// Does NOT write resume_cursor — that is the caller's responsibility (single write point in fillFromCursor).
 OpenResult ensureOpenAt(PerPeerReader & reader, const LogReadPlan::FileSpan & cursor, LoggerPtr log)
 {
-    bool cursor_compacted = false;
     bool need_seek = false;
 
-    cursor.file_description->withLock(
+    bool cursor_compacted = cursor.file_description->withLock(
         [&]
         {
             if (cursor.file_description->removed_from_disk)
             {
-                cursor_compacted = true;
                 reader.markCompacted();
-                return;
+                return true;
             }
 
             if (reader.held_buf)
@@ -1742,6 +1734,8 @@ OpenResult ensureOpenAt(PerPeerReader & reader, const LogReadPlan::FileSpan & cu
                 else if (static_cast<size_t>(reader.held_buf->getPosition()) != cursor.position)
                     need_seek = true;
             }
+
+            return false;
         });
 
     if (cursor_compacted)
@@ -1842,7 +1836,7 @@ appendChunk(PerPeerReader & reader, uint64_t local_generation, uint64_t chunk_fi
     std::lock_guard dq_lock(reader.deque_mutex);
     if (reader.state != ReaderState::Running)
         return AppendChunkResult::Exit;
-    if (reader.generationChangedLocked(local_generation))
+    if (reader.generation != local_generation)
     {
         reader.resetFillCursorLocked();
         return AppendChunkResult::RestartCursor;
@@ -1919,12 +1913,12 @@ CursorOutcome fillFromCursor(
                     dq_lock,
                     [&] TSA_NO_THREAD_SAFETY_ANALYSIS
                     {
-                        return reader.state != ReaderState::Running || reader.generationChangedLocked(local_generation)
+                        return reader.state != ReaderState::Running || reader.generation != local_generation
                             || reader.decoded_bytes < reader.window_budget_bytes;
                     });
                 if (reader.state != ReaderState::Running)
                     return CursorOutcome::Terminal;
-                if (reader.generationChangedLocked(local_generation))
+                if (reader.generation != local_generation)
                 {
                     reader.resetFillCursorLocked();
                     return CursorOutcome::Restart;
@@ -1999,10 +1993,7 @@ void LogEntryStorage::closeAllReadersLocked()
 /// PRECONDITION: caller holds changelog_lock (shared); from_index is located and its location is in
 /// `file`. Returns the exclusive end of the emitted coverage (== from_index when nothing to emit).
 uint64_t LogEntryStorage::appendRunCursors(
-    LogReadPlan::ReadAheadWindow & window,
-    const ChangelogFileDescriptionPtr & file,
-    uint64_t from_index,
-    uint64_t end_limit) const
+    LogReadPlan::ReadAheadWindow & window, const ChangelogFileDescriptionPtr & file, uint64_t from_index, uint64_t end_limit) const
 {
     const auto & vr = file->valid_runs;
     /// Clamp to the flushed-and-located prefix: exact end for sealed files, live bound for the active file.
@@ -2011,26 +2002,31 @@ uint64_t LogEntryStorage::appendRunCursors(
     if (from_index >= end)
         return from_index;
 
-    auto run_it = std::upper_bound(
-        vr.runs.begin(), vr.runs.end(), from_index,
-        [](uint64_t value, const auto & run) { return value < run.first_index; });
-    if (run_it == vr.runs.begin())
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Valid-run metadata of {} does not cover located index {}", file->getPathSafe(), from_index);
-    --run_it;
+    auto next_it = std::ranges::upper_bound(vr.runs, from_index, {}, &ChangelogFileDescription::ValidRuns::Run::first_index);
+    if (next_it == vr.runs.begin())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Valid-run metadata of {} does not cover located index {}", file->getPathSafe(), from_index);
+
+    auto run_it = std::prev(next_it);
+
+    /// End of the run following `it` (exclusive), or vr.end_index if `it` is the last run.
+    const auto run_end_after = [&](auto it)
+    {
+        auto next = std::next(it);
+        return next == vr.runs.end() ? vr.end_index : next->first_index;
+    };
 
     /// A located index falling in a gap after the selected run means the runs drifted from
     /// logs_location -- fail fast rather than silently under-report coverage.
-    const uint64_t selected_run_end =
-        std::next(run_it) == vr.runs.end() ? vr.end_index : std::next(run_it)->first_index;
+    const uint64_t selected_run_end = run_end_after(run_it);
     if (from_index >= selected_run_end)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Valid-run metadata of {} does not cover located index {}", file->getPathSafe(), from_index);
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Valid-run metadata of {} does not cover located index {}", file->getPathSafe(), from_index);
 
     for (; run_it != vr.runs.end(); ++run_it)
     {
         const uint64_t run_begin = std::max(from_index, run_it->first_index);
-        const uint64_t run_end = std::min(end, std::next(run_it) == vr.runs.end() ? vr.end_index : std::next(run_it)->first_index);
+        const uint64_t run_end = std::min(end, run_end_after(run_it));
         if (run_begin >= run_end)
             break;
         LogReadPlan::FileSpan cursor;
@@ -2039,7 +2035,7 @@ uint64_t LogEntryStorage::appendRunCursors(
         cursor.count = run_end - run_begin;
         cursor.position = run_begin == run_it->first_index
             ? run_it->start_position
-            : logs_location.at(run_begin).position;   /// clipped start: one lookup, index is located
+            : logs_location.at(run_begin).position; /// clipped start: one lookup, index is located
         window.push_back(std::move(cursor));
     }
     return end;
@@ -2055,8 +2051,8 @@ LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int6
     if (plan.logs_compacted)
         return plan;
 
-    const bool can_use_readahead = readahead_settings.window_bytes != 0
-        && readahead_settings.max_peer_readers != 0 && readahead_settings.chunk_size != 0;
+    const bool can_use_readahead
+        = readahead_settings.window_bytes != 0 && readahead_settings.max_peer_readers != 0 && readahead_settings.chunk_size != 0;
     if (!can_use_readahead)
         return plan;
 
@@ -2107,15 +2103,12 @@ LogReadPlan LogEntryStorage::getCommitReadPlan(uint64_t index, uint64_t retained
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Location of log entry with index {} is missing", index);
     }
     const auto & base_loc = base_it->second;
-    plan.items.emplace_back(LogReadPlan::FileSpan{
-        .file_description = base_loc.file_description,
-        .position = base_loc.position,
-        .first_index = index,
-        .count = 1});
+    plan.items.emplace_back(
+        LogReadPlan::FileSpan{
+            .file_description = base_loc.file_description, .position = base_loc.position, .first_index = index, .count = 1});
 
-    const bool can_use_commit_readahead = commit_readahead_window_bytes != 0
-        && readahead_settings.chunk_size != 0
-        && !latest_logs_cache.hasUnlimitedSpace();
+    const bool can_use_commit_readahead
+        = commit_readahead_window_bytes != 0 && readahead_settings.chunk_size != 0 && !latest_logs_cache.hasUnlimitedSpace();
     if (!can_use_commit_readahead)
         return plan;
 
@@ -2157,24 +2150,23 @@ void LogEntryStorage::fillTask(std::shared_ptr<PerPeerReader> reader) const
 
         switch (fillFromCursor(*reader, *current_cursor, local_generation, readahead_settings, log))
         {
-        case CursorOutcome::Terminal:
-            return;
-        case CursorOutcome::Restart:
-            continue;
-        case CursorOutcome::Eof:
-            reader->closeHeld();
-            {
-                std::lock_guard dq_lock(reader->deque_mutex);
-                reader->resume_cursor.reset();
-                if (reader->state != ReaderState::Running)
-                    return;
-                if (reader->pending_cursors.empty())
+            case CursorOutcome::Terminal: return;
+            case CursorOutcome::Restart: continue;
+            case CursorOutcome::Eof: {
+                reader->closeHeld();
                 {
-                    reader->setReaderStateLocked(ReaderState::Exhausted);
-                    return;
+                    std::lock_guard dq_lock(reader->deque_mutex);
+                    reader->resume_cursor.reset();
+                    if (reader->state != ReaderState::Running)
+                        return;
+                    if (reader->pending_cursors.empty())
+                    {
+                        reader->setReaderStateLocked(ReaderState::Exhausted);
+                        return;
+                    }
                 }
+                break;
             }
-            break;
         }
     }
 }
@@ -2689,9 +2681,7 @@ void LogEntryStorage::checkValidRunsConsistency() const
         const auto & vr = loc.file_description->valid_runs;
         chassert(index < vr.end_index);
 
-        auto run_it = std::upper_bound(
-            vr.runs.begin(), vr.runs.end(), index,
-            [](uint64_t value, const auto & run) { return value < run.first_index; });
+        auto run_it = std::ranges::upper_bound(vr.runs, index, {}, &ChangelogFileDescription::ValidRuns::Run::first_index);
         chassert(run_it != vr.runs.begin());
         --run_it;
 

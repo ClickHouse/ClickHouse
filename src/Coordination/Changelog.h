@@ -14,7 +14,6 @@
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
-#include <future>
 #include <vector>
 #include <filesystem>
 
@@ -235,7 +234,7 @@ using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
   * (logs_location) and the entry may be evicted.
   *
   * Replication is served by per-peer read-ahead readers (per_peer_readers): each follower gets a
-  * dedicated reader decoding entries ahead of the requested range, bounded by keeper_log_readahead_*.
+  * dedicated reader decoding entries ahead of the requested range.
   *
   * Committing is served by a single always-on commit read-ahead reader (commit_reader), built on
   * the same machinery but exempt from peer capacity limits and idle eviction, with its window sized
@@ -244,7 +243,7 @@ using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
   *
   * Both planners derive fill cursors from per-file valid-run metadata (ChangelogFileDescription::
   * valid_runs, appendRunCursors), bounding every cursor to a single run of current records. This
-  * covers the active file's flushed prefix too, so peer read-ahead needs no separate seal bit.
+  * covers the active file's flushed prefix too.
   */
 
 /// Settings for the per-peer decoded changelog read-ahead subsystem.
@@ -312,7 +311,7 @@ struct LogEntryStorage
     /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
     LogEntryPtr getEntryFromMemory(uint64_t index) const;
 
-    /// Commit read-ahead fast path: pop the commit reader's deque front iff it equals index.
+    /// Commit read-ahead fast path: pop the commit reader's deque front if it equals index.
     LogEntryPtr tryPopCommitReadAhead(uint64_t index);
 
     /// Build a single-entry commit plan with bounded fill cursors. Under changelog_lock (shared).
@@ -456,9 +455,6 @@ private:
     /// Always-on reader feeding the NuRaft commit loop; owned separately from per_peer_readers,
     /// exempt from max_peer_readers capacity and idle eviction.
     std::shared_ptr<PerPeerReader> commit_reader TSA_GUARDED_BY(per_peer_readers_mutex);
-    /// Commit reader window byte budget (LogFileSettings.commit_logs_cache_size_threshold).
-    /// commit_logs_cache_entry_count_threshold has no effect: a sequentially-drained window
-    /// gains nothing from an entry-count bound.
     size_t commit_readahead_window_bytes = 0;
 
     std::shared_ptr<PerPeerReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)

@@ -1896,8 +1896,9 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
 }
 
 
-// Entries evicted from cache must be readable from disk.
-TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
+// Entries evicted from cache must be readable from disk on the direct path, and byte-hint truncation on
+// that same path must behave the same way as it does for cached data.
+TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
 {
     // executeReadPlan seeks by decompressed offset in the raw file; compressed logs are not
     // yet supported in the plan-execute split path.
@@ -1929,7 +1930,7 @@ TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
     }
 
     uint64_t counter_before
-        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
 
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
     changelog.init(0, 0);
@@ -1945,8 +1946,17 @@ TYPED_TEST(CoordinationChangelogTest, ActiveFileEvictedEntryStillReturned)
     }
 
     uint64_t counter_after
-        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+        = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
     EXPECT_GT(counter_after, counter_before);
+
+    // Byte-hint truncation on the direct path (the read above already covers the hint=0 case).
+    auto hint_1b = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/1, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(hint_1b, nullptr);
+    ASSERT_GE(hint_1b->size(), 1u); // a 1-byte hint must still return at least one entry
+
+    auto hint_max = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/0x7FFFFFFF, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(hint_max, nullptr);
+    ASSERT_EQ(hint_max->size(), 20u); // a huge hint must not truncate
 }
 
 
@@ -2004,7 +2014,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendVsActiveFileRead)
                     EXPECT_LE(entries->size(), 5u);
                 }
             }
-            catch (const DB::Exception &) // NOLINT(bugprone-empty-catch) - expected when writeAt races with the read
+            catch (const DB::Exception &) // NOLINT(bugprone-empty-catch) - a read racing concurrent appends/rotation may throw; this test only hunts data races
             {
             }
         }
@@ -2079,71 +2089,6 @@ TYPED_TEST(CoordinationChangelogTest, ValidRunsMaintenanceInvariants)
     changelog_read.checkValidRunsConsistencyForTests();
 }
 
-// A rewrite whose new run entirely covers a previous rewrite's run (writeAt(10) after writeAt(20),
-// both within the same unrotated file) must drop the fully-superseded middle run, not just truncate it.
-TYPED_TEST(CoordinationChangelogTest, ValidRunsMultiRewriteMiddleRunDrop)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Runtime location maintenance does not apply to compressed logs";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    const DB::LogFileSettings settings{
-        .force_sync = false,
-        .compress_logs = false,
-        .rotate_interval = 100, // single unrotated (active) file for the whole test
-        .latest_logs_cache_size_threshold = 1,
-    };
-
-    DB::Changelog changelog(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
-    changelog.readChangelogAndInitWriter(0, 0);
-
-    for (uint64_t i = 1; i <= 30; ++i)
-        changelog.appendEntry(i, getLogEntry("multi_rewrite_" + std::to_string(i), i));
-    changelog.flush();
-
-    changelog.writeAt(20, getLogEntry("multi_rewrite_rewrite_20", 9920));
-    changelog.flush();
-    for (uint64_t i = 21; i <= 30; ++i)
-        changelog.appendEntry(i, getLogEntry("multi_rewrite_" + std::to_string(i), i));
-    // flush() twice: see the comment in ValidRunsMaintenanceInvariants.
-    changelog.flush();
-    changelog.flush();
-    changelog.checkValidRunsConsistencyForTests();
-
-    changelog.writeAt(10, getLogEntry("multi_rewrite_rewrite_10", 9910));
-    changelog.flush();
-    for (uint64_t i = 11; i <= 30; ++i)
-        changelog.appendEntry(i, getLogEntry("multi_rewrite_" + std::to_string(i), i));
-    changelog.flush();
-    changelog.flush();
-    changelog.checkValidRunsConsistencyForTests();
-
-    // Physical layout is now [1..30][20..30'][10..30'']: the middle run (first_index=20) is fully
-    // superseded by the third write and must be dropped entirely, not merely truncated.
-    auto plan = changelog.getReadPlan(1, 31, 0);
-    ASSERT_FALSE(plan.items.empty());
-    auto file = std::get<DB::LogReadPlan::FileSpan>(plan.items[0]).file_description;
-    ASSERT_NE(file, nullptr);
-
-    const auto & runs = file->valid_runs.runs;
-    ASSERT_EQ(runs.size(), 2u);
-    EXPECT_EQ(runs[0].first_index, 1u);
-    EXPECT_EQ(runs[1].first_index, 10u);
-    EXPECT_EQ(file->valid_runs.end_index, 31u);
-
-    // index 10's rewrite term (9910) sticks; the re-append loop (11..30) restores every other index,
-    // including 20, back to its original term.
-    for (uint64_t i = 1; i <= 30; ++i)
-    {
-        auto entry = changelog.entryAt(i);
-        ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
-        const uint64_t expected_term = (i == 10) ? 9910 : i;
-        EXPECT_EQ(entry->get_term(), expected_term) << "Wrong term at index " << i;
-    }
-}
-
 // Tests: per-peer read-ahead
 
 namespace DB
@@ -2157,11 +2102,13 @@ namespace FailPoints
 }
 
 // Bounded fill cursors, tested directly against DB::Changelog since KeeperLogStore::changelog is
-// private. getReadAheadPlan emits a natural cursor over the active file's flushed prefix; these
-// tests shrink that cursor's count to exercise the bound explicitly.
+// private. getReadAheadPlan emits a natural cursor over the active file's flushed prefix; this test
+// shrinks that cursor's count to exercise the bound explicitly.
 
-// A bounded cursor stops exactly at its count bound; the rest is served via direct-read fallback.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadBoundedCursorStopsAtBound)
+// A bounded cursor stops exactly at its count bound, whether the fill runs straight through (served via
+// direct-read fallback for the rest) or parks mid-range (byte budget reached before the bound) and must
+// resume correctly on refill.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadBoundedCursor)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
@@ -2189,184 +2136,94 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadBoundedCursorStopsAtBound)
 
     this->keeper_context->setLastCommitIndex(40);
 
-    DB::Changelog changelog(
-        this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000}, this->keeper_context);
-    changelog.readChangelogAndInitWriter(0, 0);
+    // Each phase below is scoped so two Changelog instances are never simultaneously live on the same
+    // directory.
 
-    auto plan = changelog.getReadAheadPlan(1, 41, 0);
-    // The active file's flushed prefix is a valid run, so the planner emits one natural cursor
-    // covering it (previously excluded by the seal). Truncate it to exercise the bound.
-    ASSERT_TRUE(plan.read_ahead_window.has_value());
-    ASSERT_EQ(plan.read_ahead_window->size(), 1u);
-    EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
-    EXPECT_EQ(plan.read_ahead_window->front().count, 40u);
-    ASSERT_FALSE(plan.items.empty());
-
-    plan.read_ahead_window->front().count = 25;
-
-    const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
-
-    auto entries = changelog.serveReadAhead(/*peer_id=*/7, plan);
-    ASSERT_NE(entries, nullptr);
-    ASSERT_EQ(entries->size(), 40u);
-    for (uint64_t i = 0; i < 40; ++i)
-        EXPECT_EQ((*entries)[i]->get_term(), i + 1) << "Wrong term at index " << (i + 1);
-
-    const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
-    EXPECT_EQ(decoded_after - decoded_before, 25u) << "Fill must stop exactly at the bounded cursor's count";
-}
-
-// A bounded fill cursor that parks mid-range (byte budget reached before the bound) resumes correctly
-// and still stops exactly at the bound once refilled.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadBoundedCursorParkRefill)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    const DB::LogFileSettings settings{
-        .force_sync = false,
-        .compress_logs = false,
-        .rotate_interval = 100,
-        .latest_logs_cache_size_threshold = 1,
-    };
-
-    // See ReadAheadBoundedCursorStopsAtBound: write+close, then re-derive caches deterministically via
-    // a fresh instance's init-read path instead of relying on flush()'s racy synchronous refreshCache().
+    // Phase A: the fill runs straight through with no park and must still stop exactly at the bound.
     {
-        DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
-        writer.readChangelogAndInitWriter(0, 0);
-        for (uint64_t i = 1; i <= 40; ++i)
-            writer.appendEntry(i, getLogEntry("bounded_cursor_" + std::to_string(i), i));
-        writer.flush();
+        DB::Changelog changelog(
+            this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000}, this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
+
+        auto plan = changelog.getReadAheadPlan(1, 41, 0);
+        // The active file's flushed prefix is a valid run, so the planner emits one natural cursor
+        // covering it (previously excluded by the seal). Truncate it to exercise the bound.
+        ASSERT_TRUE(plan.read_ahead_window.has_value());
+        ASSERT_EQ(plan.read_ahead_window->size(), 1u);
+        EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
+        EXPECT_EQ(plan.read_ahead_window->front().count, 40u);
+        ASSERT_FALSE(plan.items.empty());
+
+        plan.read_ahead_window->front().count = 25;
+
+        const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
+
+        auto entries = changelog.serveReadAhead(/*peer_id=*/7, plan);
+        ASSERT_NE(entries, nullptr);
+        ASSERT_EQ(entries->size(), 40u);
+        for (uint64_t i = 0; i < 40; ++i)
+            EXPECT_EQ((*entries)[i]->get_term(), i + 1) << "Wrong term at index " << (i + 1);
+
+        const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
+        EXPECT_EQ(decoded_after - decoded_before, 25u) << "Fill must stop exactly at the bounded cursor's count";
     }
 
-    this->keeper_context->setLastCommitIndex(40);
-
-    DB::Changelog changelog(
-        this->log,
-        settings,
-        DB::FlushSettings(),
-        // window_bytes sized to roughly 3 "bounded_cursor_N" entries so the fill parks well before
-        // reaching the count=25 bound below.
-        DB::ReadAheadSettings{.enabled = true, .window_bytes = 54, .serve_wait_timeout_ms = 5000},
-        this->keeper_context);
-    changelog.readChangelogAndInitWriter(0, 0);
-
-    auto plan = changelog.getReadAheadPlan(1, 41, 0);
-    ASSERT_TRUE(plan.read_ahead_window.has_value());
-    ASSERT_EQ(plan.read_ahead_window->size(), 1u);
-    EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
-    EXPECT_EQ(plan.read_ahead_window->front().count, 40u);
-    ASSERT_FALSE(plan.items.empty());
-
-    plan.read_ahead_window->front().count = 25;
-
-    const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
-
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
-
-    std::promise<DB::LogEntriesPtr> result_promise;
-    std::thread reader([&]
+    // Phase B: a small window_bytes budget forces the fill to park mid-range before reaching the bound;
+    // it must resume correctly on refill and still stop exactly at the bound.
     {
-        auto served = changelog.serveReadAhead(/*peer_id=*/9, plan);
-        result_promise.set_value(served);
-    });
+        DB::Changelog changelog(
+            this->log,
+            settings,
+            DB::FlushSettings(),
+            // window_bytes sized to roughly 3 "bounded_cursor_N" entries so the fill parks well before
+            // reaching the count=25 bound below.
+            DB::ReadAheadSettings{.enabled = true, .window_bytes = 54, .serve_wait_timeout_ms = 5000},
+            this->keeper_context);
+        changelog.readChangelogAndInitWriter(0, 0);
 
-    // Wait for one park, then let the fill and the concurrent drain finish via notify-on-pop -- no sleeps.
-    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_park_armed);
-    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
+        auto plan = changelog.getReadAheadPlan(1, 41, 0);
+        ASSERT_TRUE(plan.read_ahead_window.has_value());
+        ASSERT_EQ(plan.read_ahead_window->size(), 1u);
+        EXPECT_EQ(plan.read_ahead_window->front().first_index, 1u);
+        EXPECT_EQ(plan.read_ahead_window->front().count, 40u);
+        ASSERT_FALSE(plan.items.empty());
 
-    auto entries = result_promise.get_future().get();
-    reader.join();
+        plan.read_ahead_window->front().count = 25;
 
-    ASSERT_NE(entries, nullptr);
-    ASSERT_EQ(entries->size(), 40u);
-    for (uint64_t i = 0; i < 40; ++i)
-        EXPECT_EQ((*entries)[i]->get_term(), i + 1) << "Wrong term at index " << (i + 1);
+        const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
 
-    const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
-    EXPECT_EQ(decoded_after - decoded_before, 25u) << "Fill must stop exactly at the bounded cursor's count after park/refill";
+        DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
+
+        std::promise<DB::LogEntriesPtr> result_promise;
+        std::thread reader([&]
+        {
+            auto served = changelog.serveReadAhead(/*peer_id=*/9, plan);
+            result_promise.set_value(served);
+        });
+
+        // Wait for one park, then let the fill and the concurrent drain finish via notify-on-pop -- no sleeps.
+        DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_park_armed);
+        DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
+
+        auto entries = result_promise.get_future().get();
+        reader.join();
+
+        ASSERT_NE(entries, nullptr);
+        ASSERT_EQ(entries->size(), 40u);
+        for (uint64_t i = 0; i < 40; ++i)
+            EXPECT_EQ((*entries)[i]->get_term(), i + 1) << "Wrong term at index " << (i + 1);
+
+        const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
+        EXPECT_EQ(decoded_after - decoded_before, 25u) << "Fill must stop exactly at the bounded cursor's count after park/refill";
+    }
 }
 
 // Regression test for the peer stale-serve hole: writeAt never truncates the on-disk file, so a live
 // rewrite whose tail lines up with the (renamed) file end leaves a stale interior run behind. The old
-// unbounded fill cursor decoded straight through it and Eofed silently, no failpoint needed.
+// unbounded fill cursor decoded straight through it and Eofed silently, no failpoint needed. A restart
+// (fresh instance opening the same on-disk layout) must rebuild metadata that keeps the peer planner off
+// the stale run just as reliably as the live writeAt path did.
 TYPED_TEST(CoordinationChangelogTest, ReadAheadWriteAtInvalidation)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (uint64_t i = 1; i <= 50; ++i)
-    {
-        auto entry = getLogEntry("write_at_invalidation_" + std::to_string(i), i);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    // KeeperLogStore settle sequence: refreshCache's synchronous drain (inside flushAsync) races the
-    // write thread's addLogLocations, so a second end_of_append_batch after waiting for durability is
-    // needed to actually apply the locations registered during the wait.
-    waitDurableLogs(changelog);
-    changelog.end_of_append_batch(0, 0);
-
-    auto rewrite_entry = getLogEntry("write_at_invalidation_rewrite", 999);
-    changelog.write_at(45, rewrite_entry);
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-    for (uint64_t i = 46; i <= 50; ++i)
-    {
-        auto entry = getLogEntry("write_at_invalidation_new_" + std::to_string(i), 900 + i);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-    changelog.end_of_append_batch(0, 0);
-
-    // Rotate changelog_41_50 out from under the active writer, finalizing it with the rewritten tail
-    // still lined up exactly at the renamed to_log_index -- the deterministic silent sub-case.
-    for (uint64_t i = 51; i <= 55; ++i)
-    {
-        auto entry = getLogEntry("write_at_invalidation_tail_" + std::to_string(i), i);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-    changelog.end_of_append_batch(0, 0);
-
-    auto b1 = changelog.log_entries_ext(41, 45, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/7);
-    ASSERT_NE(b1, nullptr);
-    ASSERT_EQ(b1->size(), 4u);
-    for (uint64_t i = 41; i < 45; ++i)
-        EXPECT_EQ((*b1)[i - 41]->get_term(), i) << "Wrong term at index " << i;
-
-    auto b2 = changelog.log_entries_ext(45, 51, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/7);
-    ASSERT_NE(b2, nullptr);
-    ASSERT_EQ(b2->size(), 6u);
-    EXPECT_EQ((*b2)[0]->get_term(), 999u) << "Peer must see the rewritten entry at index 45, not the stale one";
-    for (uint64_t i = 45; i < 51; ++i)
-        EXPECT_EQ((*b2)[i - 45]->get_term(), changelog.entry_at(i)->get_term()) << "Wrong term at index " << i;
-}
-
-// Restart-init variant of ReadAheadWriteAtInvalidation: same on-disk layout, but a fresh instance's
-// init scan (not live writeAt) must rebuild metadata that keeps the peer planner off the stale run.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadWriteAtInvalidationAfterRestart)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
@@ -2381,43 +2238,67 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWriteAtInvalidationAfterRestart)
         .latest_logs_cache_size_threshold = 1,
     };
 
+    // Phase 1 (live): the live instance must be fully destroyed (scope exit) before phase 2 opens the
+    // same directory below -- two live instances on one directory are forbidden.
     {
-        DB::KeeperLogStore writer(settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
-        writer.init(0, 0);
+        DB::KeeperLogStore changelog(
+            settings, DB::FlushSettings(), DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000}, this->keeper_context);
+        changelog.init(0, 0);
 
         for (uint64_t i = 1; i <= 50; ++i)
         {
-            auto entry = getLogEntry("write_at_invalidation_restart_" + std::to_string(i), i);
-            writer.append(entry);
+            auto entry = getLogEntry("write_at_invalidation_" + std::to_string(i), i);
+            changelog.append(entry);
         }
-        writer.end_of_append_batch(0, 0);
-        waitDurableLogs(writer);
-        writer.end_of_append_batch(0, 0);
+        changelog.end_of_append_batch(0, 0);
+        // KeeperLogStore settle sequence: refreshCache's synchronous drain (inside flushAsync) races the
+        // write thread's addLogLocations, so a second end_of_append_batch after waiting for durability is
+        // needed to actually apply the locations registered during the wait.
+        waitDurableLogs(changelog);
+        changelog.end_of_append_batch(0, 0);
 
-        auto rewrite_entry = getLogEntry("write_at_invalidation_restart_rewrite", 999);
-        writer.write_at(45, rewrite_entry);
-        writer.end_of_append_batch(0, 0);
-        waitDurableLogs(writer);
+        auto rewrite_entry = getLogEntry("write_at_invalidation_rewrite", 999);
+        changelog.write_at(45, rewrite_entry);
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
         for (uint64_t i = 46; i <= 50; ++i)
         {
-            auto entry = getLogEntry("write_at_invalidation_restart_new_" + std::to_string(i), 900 + i);
-            writer.append(entry);
+            auto entry = getLogEntry("write_at_invalidation_new_" + std::to_string(i), 900 + i);
+            changelog.append(entry);
         }
-        writer.end_of_append_batch(0, 0);
-        waitDurableLogs(writer);
-        writer.end_of_append_batch(0, 0);
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+        changelog.end_of_append_batch(0, 0);
 
+        // Rotate changelog_41_50 out from under the active writer, finalizing it with the rewritten tail
+        // still lined up exactly at the renamed to_log_index -- the deterministic silent sub-case.
         for (uint64_t i = 51; i <= 55; ++i)
         {
-            auto entry = getLogEntry("write_at_invalidation_restart_tail_" + std::to_string(i), i);
-            writer.append(entry);
+            auto entry = getLogEntry("write_at_invalidation_tail_" + std::to_string(i), i);
+            changelog.append(entry);
         }
-        writer.end_of_append_batch(0, 0);
-        waitDurableLogs(writer);
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+        changelog.end_of_append_batch(0, 0);
+
+        auto b1 = changelog.log_entries_ext(41, 45, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/7);
+        ASSERT_NE(b1, nullptr);
+        ASSERT_EQ(b1->size(), 4u);
+        for (uint64_t i = 41; i < 45; ++i)
+            EXPECT_EQ((*b1)[i - 41]->get_term(), i) << "Wrong term at index " << i;
+
+        auto b2 = changelog.log_entries_ext(45, 51, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/7);
+        ASSERT_NE(b2, nullptr);
+        ASSERT_EQ(b2->size(), 6u);
+        EXPECT_EQ((*b2)[0]->get_term(), 999u) << "Peer must see the rewritten entry at index 45, not the stale one";
+        for (uint64_t i = 45; i < 51; ++i)
+            EXPECT_EQ((*b2)[i - 45]->get_term(), changelog.entry_at(i)->get_term()) << "Wrong term at index " << i;
     }
 
-    // No consistency-checker call here (it's DB::Changelog-only; KeeperLogStore::changelog is
-    // private) -- served-terms assertions below are this test's end-to-end validation.
+    // Phase 2 (restart): same on-disk layout, but a fresh instance's init scan (not live writeAt) must
+    // rebuild equally-consistent metadata. No consistency-checker call here (it's DB::Changelog-only;
+    // KeeperLogStore::changelog is private) -- re-running the same served-terms assertions below is this
+    // phase's end-to-end validation.
     DB::KeeperLogStore changelog(
         settings, DB::FlushSettings(), DB::ReadAheadSettings{.enabled = true, .serve_wait_timeout_ms = 5000}, this->keeper_context);
     changelog.init(0, 0);
@@ -2438,6 +2319,8 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadWriteAtInvalidationAfterRestart)
 
 // Startup-reconstruction equivalence: a live instance's multi-rewrite runs and a fresh instance's
 // init-scan-rebuilt runs (same on-disk layout) must produce byte-for-byte identical read-ahead plans.
+// The multi-rewrite sequence itself (writeAt(10) after writeAt(20), both within the same unrotated file)
+// must also drop the fully-superseded middle run entirely, not just truncate it.
 TYPED_TEST(CoordinationChangelogTest, ReadAheadPlanStructureFromRuns)
 {
     if (this->enable_compression)
@@ -2467,7 +2350,10 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadPlanStructureFromRuns)
         changelog.flush();
         for (uint64_t i = 21; i <= 30; ++i)
             changelog.appendEntry(i, getLogEntry("plan_structure_" + std::to_string(i), i));
+        // flush() twice: see the comment in ValidRunsMaintenanceInvariants.
         changelog.flush();
+        changelog.flush();
+        changelog.checkValidRunsConsistencyForTests();
 
         changelog.writeAt(10, getLogEntry("plan_structure_rewrite_10", 9910));
         changelog.flush();
@@ -2478,6 +2364,29 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadPlanStructureFromRuns)
         changelog.flush();
         changelog.flush();
         changelog.checkValidRunsConsistencyForTests();
+
+        // Physical layout is now [1..30][20..30'][10..30'']: the middle run (first_index=20) is fully
+        // superseded by the third write and must be dropped entirely, not merely truncated.
+        auto run_plan = changelog.getReadPlan(1, 31, 0);
+        ASSERT_FALSE(run_plan.items.empty());
+        auto file = std::get<DB::LogReadPlan::FileSpan>(run_plan.items[0]).file_description;
+        ASSERT_NE(file, nullptr);
+
+        const auto & runs = file->valid_runs.runs;
+        ASSERT_EQ(runs.size(), 2u);
+        EXPECT_EQ(runs[0].first_index, 1u);
+        EXPECT_EQ(runs[1].first_index, 10u);
+        EXPECT_EQ(file->valid_runs.end_index, 31u);
+
+        // index 10's rewrite term (9910) sticks; the re-append loop (11..30) restores every other index,
+        // including 20, back to its original term.
+        for (uint64_t i = 1; i <= 30; ++i)
+        {
+            auto entry = changelog.entryAt(i);
+            ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
+            const uint64_t expected_term = (i == 10) ? 9910 : i;
+            EXPECT_EQ(entry->get_term(), expected_term) << "Wrong term at index " << i;
+        }
 
         p_live = changelog.getReadAheadPlan(1, 31, 0);
         // changelog goes out of scope here (full shutdown, joining the write thread) before
@@ -2629,14 +2538,14 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadBrokenFileBounded)
         total_count += cursor.count;
     EXPECT_EQ(total_count, 13u) << "No cursor may cover the corrupted tail past the last valid index";
 
-    const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
+    const uint64_t decoded_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
     auto entries = changelog.serveReadAhead(/*peer_id=*/11, plan);
     ASSERT_NE(entries, nullptr);
     ASSERT_EQ(entries->size(), 13u);
     for (uint64_t i = 0; i < 13; ++i)
         EXPECT_EQ((*entries)[i]->get_term(), i + 1) << "Wrong term at index " << (i + 1);
 
-    const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries].load();
+    const uint64_t decoded_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
     EXPECT_EQ(decoded_after - decoded_before, 13u) << "The bounded window must decode exactly through the last valid index";
 }
 
@@ -2646,7 +2555,9 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadBrokenFileBounded)
 // of the latest logs cache's own eviction.
 
 // Strictly sequential entry_at_ext(i, true) calls across a changelog spanning many files must all return
-// the correct entry, with the commit reader engaging (not falling back to a pure direct-read path).
+// the correct entry, with the commit reader engaging (not falling back to a pure direct-read path), and
+// once the reader's window covers the requested range, subsequent calls must be served via the fast path
+// without rebuilding the plan / installing more cursors than one benign duplicate per file boundary.
 TYPED_TEST(CoordinationChangelogTest, CommitReadAheadSequentialCatchup)
 {
     if (this->enable_compression)
@@ -2667,7 +2578,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadSequentialCatchup)
     constexpr uint64_t total = 200;
 
     // Write+close, then re-derive from disk via a fresh instance's init-read path (see
-    // ReadAheadBoundedCursorStopsAtBound) so the ≥150 counter assertion below isn't flaky.
+    // ReadAheadBoundedCursor) so the ≥150 counter assertion below isn't flaky.
     {
         DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
         writer.init(0, 0);
@@ -2683,67 +2594,16 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadSequentialCatchup)
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
     changelog.init(0, 0);
 
-    const uint64_t cra_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead].load();
-    const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-
-    for (uint64_t i = 1; i <= total; ++i)
-    {
-        auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
-        ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
-        EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
-    }
-
-    const uint64_t cra_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead].load();
-    const uint64_t cursors_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-    EXPECT_GE(cra_after - cra_before, 150u) << "Most entries must be served through the commit read-ahead reader";
-    EXPECT_GE(cursors_after - cursors_before, 1u) << "At least one read-ahead cursor must have been installed";
-}
-
-// Once the commit reader's window covers the requested range, subsequent entry_at_ext calls must be
-// served via the fast path without rebuilding the plan / installing more cursors.
-TYPED_TEST(CoordinationChangelogTest, CommitReadAheadFastPathNoPlanRebuild)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    const DB::LogFileSettings settings{
-        .force_sync = false,
-        .compress_logs = false,
-        .rotate_interval = 10,
-        .latest_logs_cache_size_threshold = 1,
-        .commit_logs_cache_size_threshold = 64 * 1024 * 1024,
-    };
-    const DB::ReadAheadSettings readahead_settings{.enabled = false, .serve_wait_timeout_ms = 100};
-
-    constexpr uint64_t total = 100;
-
-    // Write+close, then re-derive from disk via a fresh instance's init-read path (see
-    // ReadAheadBoundedCursorStopsAtBound) so index 1 is deterministically NOT in latest_logs_cache --
-    // the "first fetch is a genuine miss" assumption below depends on it.
-    {
-        DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
-        writer.init(0, 0);
-        for (uint64_t i = 1; i <= total; ++i)
-        {
-            auto entry = getLogEntry("commit_ra_fastpath", i);
-            writer.append(entry);
-        }
-        writer.end_of_append_batch(0, 0);
-        waitDurableLogs(writer);
-    }
-
-    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
-    changelog.init(0, 0);
+    const uint64_t cra_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead];
+    const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
 
     // First fetch triggers the initial miss: plan build + cursor installation.
     auto first = changelog.entry_at_ext(1, /*for_commit=*/true);
     ASSERT_NE(first, nullptr);
     EXPECT_EQ(first->get_term(), 1u);
 
-    const uint64_t cursors_after_first = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
+    const uint64_t cursors_after_first = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+    EXPECT_GT(cursors_after_first, cursors_before) << "The initial miss must build a plan and install at least one read-ahead cursor";
 
     // Subsequent indices are covered by the already-installed window: no further plan/cursor rebuilds.
     for (uint64_t i = 2; i <= total; ++i)
@@ -2753,7 +2613,10 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadFastPathNoPlanRebuild)
         EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
     }
 
-    const uint64_t cursors_after_all = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
+    const uint64_t cra_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead];
+    const uint64_t cursors_after_all = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+    EXPECT_GE(cra_after - cra_before, 150u) << "Most entries must be served through the commit read-ahead reader";
+
     const uint64_t num_files = total / settings.rotate_interval;
     // Under load, a transient miss can land in the fill task's cursor-to-cursor transition window and
     // install one benign duplicate cursor per file boundary (appendChunk's append_index dedup makes it
@@ -2766,7 +2629,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadFastPathNoPlanRebuild)
 
 // A small commit read-ahead byte budget must force a deterministic park/refill cycle in the fill task,
 // still delivering every entry correctly across the window boundary. Goes through DB::Changelog
-// directly (same technique as ReadAheadBoundedCursorParkRefill) to control the park precisely.
+// directly (same technique as ReadAheadBoundedCursor's park/refill phase) to control the park precisely.
 TYPED_TEST(CoordinationChangelogTest, CommitReadAheadParkRefillAtWindowBoundary)
 {
     if (this->enable_compression)
@@ -2784,7 +2647,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadParkRefillAtWindowBoundary)
     };
 
     // Write+close, then re-derive from disk via a fresh instance's init-read path (see
-    // ReadAheadBoundedCursorStopsAtBound) for deterministic latest_logs_cache eviction.
+    // ReadAheadBoundedCursor) for deterministic latest_logs_cache eviction.
     {
         DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
         writer.readChangelogAndInitWriter(0, 0);
@@ -2809,7 +2672,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadParkRefillAtWindowBoundary)
     // serveCommitEntry(1, plan) blocks (via drainReader) until index 1 is decoded, and the fill task
     // pauses at keeper_changelog_readahead_park_armed while still holding the reader's deque_mutex.
     // Calling it synchronously here would self-deadlock, so run it on a separate thread (as
-    // ReadAheadBoundedCursorParkRefill does for the peer path).
+    // ReadAheadBoundedCursor's park/refill phase does for the peer path).
     std::vector<DB::LogEntryPtr> served(41);
     std::thread first_index_reader([&]
     {
@@ -3173,7 +3036,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadServeTimeoutFallback)
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
     changelog.init(0, 0);
 
-    const uint64_t file_reads_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+    const uint64_t file_reads_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
 
     DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
@@ -3189,7 +3052,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadServeTimeoutFallback)
     ASSERT_NE(entry, nullptr);
     EXPECT_EQ(entry->get_term(), 1u);
 
-    const uint64_t file_reads_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile].load();
+    const uint64_t file_reads_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromFile];
     EXPECT_GT(file_reads_after, file_reads_before) << "Serve timeout must fall back to a blocking direct read";
 
     // KeeperLogStore's destructor (via ~Changelog -> shutdown) must join the still-wedged fill task
@@ -3222,7 +3085,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
     const DB::ReadAheadSettings readahead_settings{.enabled = false, .serve_wait_timeout_ms = 100};
 
     // Write+close, then re-derive latest_logs_cache deterministically via a fresh instance's init-read
-    // path (see ReadAheadBoundedCursorStopsAtBound) for exact-boundary assertions.
+    // path (see ReadAheadBoundedCursor) for exact-boundary assertions.
     {
         DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
         writer.init(0, 0);
@@ -3238,7 +3101,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
     changelog.init(0, 0);
 
-    const uint64_t latest_cache_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache].load();
+    const uint64_t latest_cache_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache];
 
     for (uint64_t i = 1; i <= total; ++i)
     {
@@ -3247,107 +3110,110 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
         EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
     }
 
-    const uint64_t latest_cache_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache].load();
+    const uint64_t latest_cache_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache];
     EXPECT_GE(latest_cache_after - latest_cache_before, cached_tail)
         << "Entries at/above the latest-cache boundary must be served as cheap hits, never via the commit reader";
 }
 
-// With an unlimited latest logs cache (threshold 0), every index is an in-memory cheap hit: the commit
-// read-ahead reader must never engage at all.
-TYPED_TEST(CoordinationChangelogTest, CommitReadAheadUnlimitedLatestCacheNeverEngages)
+// Both configurations that disable the commit read-ahead path -- an unlimited latest logs cache, and a
+// zero commit-cache byte budget -- must serve every fetch correctly with zero reader engagement.
+TYPED_TEST(CoordinationChangelogTest, CommitReadAheadDisabledModes)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
 
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 0, // unlimited: every index stays in latest_logs_cache
-            .commit_logs_cache_size_threshold = 64 * 1024 * 1024,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = false, .serve_wait_timeout_ms = 100},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    constexpr uint64_t total = 50;
-    for (uint64_t i = 1; i <= total; ++i)
+    // Sub-case A: with an unlimited latest logs cache (threshold 0), every index is an in-memory cheap
+    // hit: the commit read-ahead reader must never engage at all.
     {
-        auto entry = getLogEntry("commit_ra_unlimited", i);
-        changelog.append(entry);
+        ChangelogDirTest test("./logs");
+        this->setLogDirectory("./logs");
+
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{
+                .force_sync = false,
+                .compress_logs = false,
+                .rotate_interval = 10,
+                .latest_logs_cache_size_threshold = 0, // unlimited: every index stays in latest_logs_cache
+                .commit_logs_cache_size_threshold = 64 * 1024 * 1024,
+            },
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{.enabled = false, .serve_wait_timeout_ms = 100},
+            this->keeper_context);
+        changelog.init(0, 0);
+
+        constexpr uint64_t total = 50;
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = getLogEntry("commit_ra_unlimited", i);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        const uint64_t cra_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead];
+        const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
+            ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
+            EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
+        }
+
+        const uint64_t cra_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead];
+        const uint64_t cursors_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+        EXPECT_EQ(cra_after, cra_before) << "Unlimited latest logs cache must mean every read is a cheap hit";
+        EXPECT_EQ(cursors_after, cursors_before) << "The commit reader must never engage when the latest cache is unlimited";
     }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
 
-    const uint64_t cra_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead].load();
-    const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-
-    for (uint64_t i = 1; i <= total; ++i)
+    // Sub-case B: commit_logs_cache_size_threshold = 0 disables commit read-ahead entirely. All commit
+    // fetches must still be correct, purely via the direct-read path, with zero cursor installs. Fresh
+    // ChangelogDirTest so the store (destroyed at the end of sub-case A, before its own dir guard) starts
+    // from an empty directory again.
     {
-        auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
-        ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
-        EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
-    }
+        ChangelogDirTest test("./logs");
+        this->setLogDirectory("./logs");
 
-    const uint64_t cra_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromCommitReadAhead].load();
-    const uint64_t cursors_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-    EXPECT_EQ(cra_after, cra_before) << "Unlimited latest logs cache must mean every read is a cheap hit";
-    EXPECT_EQ(cursors_after, cursors_before) << "The commit reader must never engage when the latest cache is unlimited";
+        DB::KeeperLogStore changelog(
+            DB::LogFileSettings{
+                .force_sync = false,
+                .compress_logs = false,
+                .rotate_interval = 10,
+                .latest_logs_cache_size_threshold = 1,
+                .commit_logs_cache_size_threshold = 0, // 0 = commit read-ahead disabled
+            },
+            DB::FlushSettings(),
+            DB::ReadAheadSettings{.enabled = false, .serve_wait_timeout_ms = 100},
+            this->keeper_context);
+        changelog.init(0, 0);
+
+        constexpr uint64_t total = 50;
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = getLogEntry("commit_ra_zero_budget", i);
+            changelog.append(entry);
+        }
+        changelog.end_of_append_batch(0, 0);
+        waitDurableLogs(changelog);
+
+        const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
+            ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
+            EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
+        }
+
+        const uint64_t cursors_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled];
+        EXPECT_EQ(cursors_after, cursors_before) << "commit_logs_cache_size_threshold=0 must disable commit read-ahead entirely";
+    }
 }
 
-// commit_logs_cache_size_threshold = 0 disables commit read-ahead entirely. All commit fetches must
-// still be correct, purely via the direct-read path, with zero cursor installs.
-TYPED_TEST(CoordinationChangelogTest, CommitReadAheadZeroBudgetDisabled)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 1,
-            .commit_logs_cache_size_threshold = 0, // 0 = commit read-ahead disabled
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = false, .serve_wait_timeout_ms = 100},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    constexpr uint64_t total = 50;
-    for (uint64_t i = 1; i <= total; ++i)
-    {
-        auto entry = getLogEntry("commit_ra_zero_budget", i);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    const uint64_t cursors_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-
-    for (uint64_t i = 1; i <= total; ++i)
-    {
-        auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
-        ASSERT_NE(entry, nullptr) << "Missing entry at index " << i;
-        EXPECT_EQ(entry->get_term(), i) << "Wrong term at index " << i;
-    }
-
-    const uint64_t cursors_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadCursorsInstalled].load();
-    EXPECT_EQ(cursors_after, cursors_before) << "commit_logs_cache_size_threshold=0 must disable commit read-ahead entirely";
-}
-
-// entry_at_ext must dispatch correctly through the virtual base, both with an explicit for_commit=true
-// and via the defaulted argument (which must behave identically to entry_at).
-TYPED_TEST(CoordinationChangelogTest, CommitReadAheadSignatureOverride)
+// Both log_entries_ext and entry_at_ext must dispatch correctly through the virtual base: the
+// peer-facing log_entries_ext signature, entry_at_ext with an explicit for_commit=true, and
+// entry_at_ext's defaulted argument (which must behave identically to entry_at).
+TYPED_TEST(CoordinationChangelogTest, LogStoreSignatureOverrides)
 {
     if (this->enable_compression)
         GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
@@ -3371,6 +3237,10 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadSignatureOverride)
     waitDurableLogs(changelog);
 
     nuraft::log_store * base = &changelog;
+
+    auto result = base->log_entries_ext(1, 4, 0, DB::KeeperLogStore::NO_PEER_ID);
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 3u);
 
     auto for_commit = base->entry_at_ext(3, /*for_commit=*/true);
     ASSERT_NE(for_commit, nullptr);
@@ -3536,8 +3406,10 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
         EXPECT_EQ((*direct_result)[i]->get_term(), (*disabled_result)[i]->get_term());
 }
 
-// serveReadAhead runs without changelog_lock; concurrent appends must not deadlock.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadConcurrentAppend)
+// serveReadAhead runs without changelog_lock, so a concurrent append must not deadlock while a fill is
+// wedged; and the wedged fill's serve must escape via the serve_wait timeout fallback (blocking direct
+// read), still returning the correct entries, all while the failpoint remains enabled.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFill)
 {
     if (this->enable_compression)
         return;
@@ -3568,10 +3440,14 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadConcurrentAppend)
 
     DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
+    std::atomic<int64_t> elapsed_ms{0};
     std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> result_promise;
     std::thread reader([&]
     {
+        const auto start = std::chrono::steady_clock::now();
         auto result = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
+        elapsed_ms.store(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start).count());
         result_promise.set_value(std::move(result));
     });
 
@@ -3585,65 +3461,27 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadConcurrentAppend)
     });
 
     auto append_fut = append_done.get_future();
-    ASSERT_EQ(append_fut.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+    ASSERT_EQ(append_fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "append deadlocked while the read-ahead fill is wedged";
+
+    // The serve must escape the still-wedged fill via the serve_wait timeout fallback and deliver the
+    // correct entries -- checked here, before the failpoint is disabled, to prove the escape is
+    // deterministic rather than an artifact of releasing the fill early.
+    auto result_fut = result_promise.get_future();
+    ASSERT_EQ(result_fut.wait_for(std::chrono::seconds(5)), std::future_status::ready)
+        << "serve did not escape the wedged fill via the serve_wait timeout fallback";
+
+    auto result = result_fut.get();
+    EXPECT_LE(elapsed_ms.load(), 5000);
+    ASSERT_NE(result, nullptr);
+    ASSERT_EQ(result->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
 
     DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
     reader.join();
     appender.join();
-
-    auto result = result_promise.get_future().get();
-    ASSERT_NE(result, nullptr);
-    ASSERT_EQ(result->size(), 5u);
-    for (size_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
-}
-
-// Wedged fill must escape via timeout and return correct entries.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadWedgedFillTimeout)
-{
-    if (this->enable_compression)
-        return;
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 1,
-            .commit_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (size_t i = 0; i < 20; ++i)
-    {
-        auto entry = getLogEntry("readahead_test_l2_test8", static_cast<size_t>(i + 1));
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
-
-    auto start = std::chrono::steady_clock::now();
-    auto result = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
-    auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start).count();
-
-    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
-
-    EXPECT_LE(elapsed_ms, 5000);
-
-    ASSERT_NE(result, nullptr);
-    ASSERT_EQ(result->size(), 5u);
-    for (size_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
 }
 
 // Rewind must clear the deque and return contiguous entries from the new start.
@@ -3687,8 +3525,9 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadNonSequentialRewind)
         EXPECT_EQ((*r2)[i]->get_term(), static_cast<uint64_t>(i + 1));
 }
 
-// Compaction after PLAN must produce nullptr, not a throw.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionDuringServe)
+// Compaction must retire the peer's terminal reader (the next request must create a fresh one), and
+// reads of fully-compacted ranges must not crash or deadlock.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionReaderLifecycle)
 {
     if (this->enable_compression)
         return;
@@ -3709,23 +3548,38 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadCompactionDuringServe)
         this->keeper_context);
     changelog.init(0, 0);
 
-    for (size_t i = 0; i < 10; ++i)
+    for (size_t i = 0; i < 20; ++i)
     {
-        auto entry = getLogEntry("readahead_test_l2_test11", static_cast<size_t>(i + 1));
+        auto entry = getLogEntry("compaction_lifecycle", static_cast<size_t>(i + 1));
         changelog.append(entry);
     }
     changelog.end_of_append_batch(0, 0);
     waitDurableLogs(changelog);
 
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+    auto r1 = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/6);
+    ASSERT_NE(r1, nullptr);
+    ASSERT_EQ(r1->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*r1)[i]->get_term(), static_cast<uint64_t>(i + 1));
 
-    changelog.compact(10);
+    changelog.compact(15);
 
-    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
+    // The next serve call reaps the terminal reader (Compacted due to compaction) and creates a new one
+    // for entries 16-20. The fill may still be in-flight when compact returns; serve_wait_timeout_ms
+    // (100ms) bounds the wait, and the direct-read fallback still returns correct data.
+    auto r2 = changelog.log_entries_ext(16, 21, 0, /*peer_id=*/6);
+    ASSERT_NE(r2, nullptr);
+    ASSERT_EQ(r2->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*r2)[i]->get_term(), static_cast<uint64_t>(16 + i));
 
-    auto result = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/3);
-    if (result != nullptr)
-        EXPECT_LE(result->size(), 5u);
+    changelog.compact(20);
+
+    // Fully compacted range: nullptr is the expected steady-state result, but this must not crash or
+    // deadlock even if a reader still in flight hands back a short batch instead.
+    auto r3 = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/6);
+    if (r3 != nullptr)
+        EXPECT_LE(r3->size(), 5u);
 }
 
 // Shutdown must join all fill tasks without deadlock.
@@ -3767,9 +3621,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
 
     DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
 
+    std::promise<nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>> result_promise;
     std::thread reader([&]
     {
-        changelog.log_entries_ext(1, 6, 0, /*peer_id=*/4);
+        auto result = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/4);
+        result_promise.set_value(std::move(result));
     });
 
     // Wait until the fill task is actually wedged before releasing it.
@@ -3778,164 +3634,14 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadShutdownJoinsFills)
 
     reader.join();
 
-}
-
-// log_entries_ext must dispatch correctly through the virtual base.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadSignatureOverride)
-{
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{.force_sync = false, .compress_logs = this->enable_compression, .rotate_interval = 5},
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (size_t i = 0; i < 5; ++i)
-    {
-        auto entry = getLogEntry("sig_check", static_cast<size_t>(i + 1));
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    nuraft::log_store * base = &changelog;
-    auto result = base->log_entries_ext(1, 4, 0, DB::KeeperLogStore::NO_PEER_ID);
-    ASSERT_NE(result, nullptr);
-    ASSERT_EQ(result->size(), 3u);
-}
-
-// Byte hint must truncate results the same as the direct path.
-// Tests the direct path (NO_PEER_ID, read-ahead disabled) byte-hint truncation.
-TYPED_TEST(CoordinationChangelogTest, DirectPathByteHintTruncation)
-{
-    if (this->enable_compression)
-        return;
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 1,
-            .commit_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (size_t i = 0; i < 20; ++i)
-    {
-        auto entry = getLogEntry("readahead_test_l2_test19", static_cast<size_t>(i + 1));
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    auto l1_1b = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/1, DB::KeeperLogStore::NO_PEER_ID);
-    ASSERT_NE(l1_1b, nullptr);
-    ASSERT_GE(l1_1b->size(), 1u);
-
-    auto l1_0b = changelog.log_entries_ext(1, 11, /*batch_size_hint_in_bytes=*/0, DB::KeeperLogStore::NO_PEER_ID);
-    ASSERT_NE(l1_0b, nullptr);
-    ASSERT_EQ(l1_0b->size(), 10u);
-
-    auto l1_max = changelog.log_entries_ext(1, 21, /*batch_size_hint_in_bytes=*/0x7FFFFFFF, DB::KeeperLogStore::NO_PEER_ID);
-    ASSERT_NE(l1_max, nullptr);
-    ASSERT_EQ(l1_max->size(), 20u);
-}
-
-// serve_wait_timeout must bound serve time when fill is blocked.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadServeWaitBound)
-{
-    if (this->enable_compression)
-        return;
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 10,
-            .latest_logs_cache_size_threshold = 1,
-            .commit_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (size_t i = 0; i < 10; ++i)
-    {
-        auto entry = getLogEntry("readahead_test_l2_test20", static_cast<size_t>(i + 1));
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
-
-    const auto start = std::chrono::steady_clock::now();
-    auto result = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/5);
-    const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start).count();
-
-    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_wedge);
-
-    EXPECT_LE(elapsed_ms, 5000);
-
+    // serve_wait_timeout_ms is 60000 here, so the serve blocks on the wedged fill rather than escaping
+    // via timeout; joining above already proves shutdown doesn't deadlock, and once the fill is released
+    // the serve must still deliver the correct entries.
+    auto result = result_promise.get_future().get();
     ASSERT_NE(result, nullptr);
     ASSERT_EQ(result->size(), 5u);
-}
-
-// After a reader terminates, the next request must create a fresh reader.
-TYPED_TEST(CoordinationChangelogTest, ReadAheadTerminalReaderReaping)
-{
-    if (this->enable_compression)
-        return;
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 5,
-            .latest_logs_cache_size_threshold = 1,
-            .commit_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (size_t i = 0; i < 20; ++i)
-    {
-        auto entry = getLogEntry("readahead_test_l2_test21c", static_cast<size_t>(i + 1));
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    auto r1 = changelog.log_entries_ext(1, 6, 0, /*peer_id=*/6);
-    ASSERT_NE(r1, nullptr);
-    ASSERT_EQ(r1->size(), 5u);
-
-    changelog.compact(15);
-
-    // The second serve call reaps the terminal reader (Compacted due to compaction)
-    // and creates a new one for entries 16-20. The fill may still be in-flight when
-    // compact returns; serve_wait_timeout_ms (100ms) bounds the wait.
-    (void)changelog.log_entries_ext(16, 21, 0, /*peer_id=*/6);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*result)[i]->get_term(), static_cast<uint64_t>(i + 1));
 }
 
 // TSan stress: interleave appends, read-ahead serves, and compaction.
