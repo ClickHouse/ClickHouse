@@ -376,8 +376,9 @@ static Block buildMainBlockWithSortKey(const Block & result_header, const Column
 
 bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
 {
-    /// Need a new patch block if main's max sort-key has advanced past the last-read patch block's
-    /// max sort-key.
+    /// Need a new patch block while main's max sort-key is >= the last-read patch block's max.
+    /// Reading must continue on equality: sort keys are not unique, and the equal-key run may
+    /// continue in the next patch block with rows that match the current main block.
     const auto & old = typeid_cast<const PatchMergeOnKeyReadResult &>(old_patch);
 
     /// An empty patch block contributes nothing — always read the next mark if there is one.
@@ -405,7 +406,7 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
         sorting_key.column_names,
         sorting_key.reverse_flags);
 
-    return cmp > 0;
+    return cmp >= 0;
 }
 
 bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
