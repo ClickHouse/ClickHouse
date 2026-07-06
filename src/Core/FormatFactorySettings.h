@@ -1428,6 +1428,9 @@ The fallback to Vertical format (see `output_format_pretty_fallback_to_vertical`
     DECLARE(Bool, output_format_pretty_named_tuples_as_json, true, R"(
         Controls whether named tuples in Pretty format are output as pretty-printed JSON objects.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_display_tuples_as_subcolumns, false, R"(
+Controls whether tuples in `Pretty` formats are displayed as nested subcolumns, splitting each tuple into a group of subcolumns with the element names shown in a second header row. When disabled, tuples are rendered as a single column (as JSON when `output_format_pretty_named_tuples_as_json` is enabled, otherwise in the tuple text form).
+)", 0) \
     DECLARE(Bool, insert_distributed_one_random_shard, false, R"(
 Enables or disables random shard insertion into a [Distributed](/engines/table-engines/special/distributed) table when there is no distributed key.
 

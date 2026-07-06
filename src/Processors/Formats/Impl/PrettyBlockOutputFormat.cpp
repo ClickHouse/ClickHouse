@@ -18,6 +18,7 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeTuple.h>
 
 #include <algorithm>
 
@@ -234,20 +235,150 @@ void PrettyBlockOutputFormat::writingThread()
 void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind)
 {
     auto num_rows = chunk.getNumRows();
-    auto num_columns = chunk.getNumColumns();
-    const auto & columns = chunk.getColumns();
-    const auto & header = getPort(port_kind).getSharedHeader();
+    const auto & original_columns = chunk.getColumns();
+    const auto & original_header = getPort(port_kind).getSharedHeader();
+    size_t original_num_columns = original_columns.size();
 
     size_t cut_to_width = format_settings.pretty.max_value_width;
-    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && num_columns == 1 && total_rows == 0)
+    if (!format_settings.pretty.max_value_width_apply_for_single_value && num_rows == 1 && original_num_columns == 1 && total_rows == 0)
         cut_to_width = 0;
+
+    /// When `output_format_pretty_display_tuples_as_subcolumns` is enabled, every top-level `Tuple` column is
+    /// expanded into a group of subcolumns (one per tuple element). The whole rendering machinery below then
+    /// operates on the expanded columns, and the header gets a second row with the tuple element names.
+    Columns expanded_columns;
+    Serializations expanded_serializations;
+    ColumnsWithTypeAndName expanded_header_columns;
+
+    /// For each rendered column: the index of the group (top-level column) it belongs to.
+    std::vector<size_t> column_to_group;
+    /// Per group (top-level column): display name, first rendered column, number of rendered columns.
+    Strings group_names;
+    std::vector<size_t> group_first_column;
+    std::vector<size_t> group_num_columns;
+
+    bool has_subcolumns = false;
+    if (format_settings.pretty.display_tuples_as_subcolumns)
+    {
+        for (size_t i = 0; i < original_num_columns; ++i)
+        {
+            if (typeid_cast<const DataTypeTuple *>(original_header->getByPosition(i).type.get()))
+            {
+                has_subcolumns = true;
+                break;
+            }
+        }
+    }
+
+    if (has_subcolumns)
+    {
+        for (size_t i = 0; i < original_num_columns; ++i)
+        {
+            const auto & elem = original_header->getByPosition(i);
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(elem.type.get());
+
+            size_t first = expanded_columns.size();
+            if (tuple_type)
+            {
+                const auto & element_types = tuple_type->getElements();
+                const auto & element_names = tuple_type->getElementNames();
+                for (size_t k = 0; k < element_types.size(); ++k)
+                {
+                    expanded_columns.push_back(tuple_type->getSubcolumn(element_names[k], original_columns[i]));
+                    expanded_serializations.push_back(tuple_type->getSubcolumnSerialization(element_names[k], serializations[i]));
+                    expanded_header_columns.emplace_back(nullptr, element_types[k], element_names[k]);
+                    column_to_group.push_back(group_names.size());
+                }
+                group_num_columns.push_back(element_types.size());
+            }
+            else
+            {
+                expanded_columns.push_back(original_columns[i]);
+                expanded_serializations.push_back(serializations[i]);
+                expanded_header_columns.emplace_back(nullptr, elem.type, elem.name);
+                column_to_group.push_back(group_names.size());
+                group_num_columns.push_back(1);
+            }
+            group_names.push_back(elem.name);
+            group_first_column.push_back(first);
+        }
+    }
+
+    Block expanded_header(expanded_header_columns);
+
+    /// Views used by the table-rendering path (the vertical fallback below keeps using the originals).
+    const Columns & columns = has_subcolumns ? expanded_columns : original_columns;
+    const Serializations & render_serializations = has_subcolumns ? expanded_serializations : serializations;
+    const Block & header = has_subcolumns ? expanded_header : *original_header;
+    size_t num_columns = columns.size();
 
     WidthsPerColumn widths;
     Widths max_widths;
     Widths name_widths;
     Strings names;
     bool has_newlines = false;
-    calculateWidths(*header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
+    if (has_subcolumns)
+    {
+        Chunk expanded_chunk(Columns(expanded_columns), num_rows);
+        calculateWidths(header, expanded_chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
+    }
+    else
+        calculateWidths(header, chunk, format_settings.pretty.multiline_fields, has_newlines, widths, max_widths, name_widths, names);
+
+    /// A group (tuple) name must fit into the combined width of its subcolumns; if it does not, widen them.
+    Strings group_display_names;
+    Widths group_widths;      /// Paddable width of the group-name cell (sum of subcolumn widths + internal separators).
+    Widths group_name_widths; /// Width of the (possibly truncated) group name itself.
+    if (has_subcolumns)
+    {
+        size_t num_groups = group_names.size();
+        group_display_names.resize(num_groups);
+        group_widths.resize(num_groups);
+        group_name_widths.resize(num_groups);
+        bool ascii = format_settings.pretty.charset != FormatSettings::Pretty::Charset::UTF8;
+        for (size_t g = 0; g < num_groups; ++g)
+        {
+            size_t first = group_first_column[g];
+            size_t count = group_num_columns[g];
+
+            if (count == 1)
+            {
+                group_display_names[g] = names[first];
+                group_name_widths[g] = name_widths[first];
+                group_widths[g] = max_widths[first];
+                continue;
+            }
+
+            /// Each internal boundary between subcolumns occupies 3 more characters (`" │ "`).
+            size_t combined = 3 * (count - 1);
+            for (size_t k = 0; k < count; ++k)
+                combined += max_widths[first + k];
+
+            auto [name, width] = truncateName(
+                group_names[g],
+                format_settings.pretty.max_column_name_width_cut_to
+                    ? std::max<UInt64>(combined, format_settings.pretty.max_column_name_width_cut_to)
+                    : 0,
+                format_settings.pretty.max_column_name_width_min_chars_to_cut,
+                ascii);
+            width = std::min<UInt64>(format_settings.pretty.max_column_pad_width, width);
+
+            /// If the tuple name is wider than its subcolumns combined, distribute the extra width among them.
+            if (width > combined)
+            {
+                size_t extra = width - combined;
+                size_t per = extra / count;
+                size_t remainder = extra - per * count;
+                for (size_t k = 0; k < count; ++k)
+                    max_widths[first + k] += per + (k < remainder ? 1 : 0);
+                combined = width;
+            }
+
+            group_display_names[g] = std::move(name);
+            group_name_widths[g] = width;
+            group_widths[g] = combined;
+        }
+    }
 
     size_t table_width = 0;
     for (size_t width : max_widths)
@@ -259,7 +390,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     if (format_settings.pretty.fallback_to_vertical
         && displayed_rows == 0
         && num_rows <= format_settings.pretty.fallback_to_vertical_max_rows_per_chunk
-        && num_columns >= format_settings.pretty.fallback_to_vertical_min_columns
+        && original_num_columns >= format_settings.pretty.fallback_to_vertical_min_columns
         && (table_width >= format_settings.pretty.fallback_to_vertical_min_table_width || has_newlines))
     {
         use_vertical_format = true;
@@ -267,9 +398,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
 
     if (use_vertical_format)
     {
+        /// The Vertical fallback renders whole tuples (not expanded subcolumns), so it uses the original columns.
         if (!vertical_format_fallback)
         {
-            vertical_format_fallback = std::make_unique<VerticalRowOutputFormat>(out, header, format_settings);
+            vertical_format_fallback = std::make_unique<VerticalRowOutputFormat>(out, original_header, format_settings);
             vertical_format_fallback->writePrefixIfNeeded();
         }
 
@@ -277,7 +409,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         {
             if (i != 0)
                 vertical_format_fallback->writeRowBetweenDelimiter();
-            vertical_format_fallback->writeRow(columns, i);
+            vertical_format_fallback->writeRow(original_columns, i);
             ++displayed_rows;
         }
 
@@ -300,15 +432,17 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
 
     String header_begin;    /// ┏━━┳━━━┓
+    String header_middle;   /// ┣━━╋━━━┫ (only with subcolumns, between the two header name rows)
     String header_end;      /// ┡━━╇━━━┩
     String rows_separator;  /// ├──┼───┤
     String rows_end;        /// └──┴───┘
     String footer_begin;    /// ┢━━╈━━━┪
+    String footer_middle;   /// ┣━━╋━━━┫ (only with subcolumns, between the two footer name rows)
     String footer_end;      /// ┗━━┻━━━┛
 
     bool unicode = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8;
     using GridPart = std::array<std::string_view, 4>;
-    using Grid = std::array<GridPart, 7>;
+    using Grid = std::array<GridPart, 8>;
 
     constexpr Grid utf8_grid
     {
@@ -319,10 +453,12 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         GridPart{"┢", "━", "╈", "┪"},
         GridPart{"┗", "━", "┻", "┛"},
         GridPart{"┌", "─", "┬", "┐"},
+        GridPart{"┣", "━", "╋", "┫"},
     };
 
     constexpr Grid ascii_grid
     {
+        GridPart{"+", "-", "+", "+"},
         GridPart{"+", "-", "+", "+"},
         GridPart{"+", "-", "+", "+"},
         GridPart{"+", "-", "+", "+"},
@@ -338,72 +474,47 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     std::string_view vertical_bar        = unicode ? "│" : "|";
     std::string_view horizontal_bar      = unicode ? "─" : "-";
 
-    if (style == Style::Full)
+    /// Whether the boundary *before* rendered column `i` (i > 0) starts a new top-level column group,
+    /// as opposed to a boundary between subcolumns of the same tuple.
+    auto is_group_start = [&](size_t i) -> bool
     {
-        header_begin = left_blank;
-        header_end = left_blank;
-        rows_separator = left_blank;
-        rows_end = left_blank;
-        footer_begin = left_blank;
-        footer_end = left_blank;
+        return !has_subcolumns || column_to_group[i] != column_to_group[i - 1];
+    };
 
-        WriteBufferFromString header_begin_out(header_begin, AppendModeTag{});
-        WriteBufferFromString header_end_out(header_end, AppendModeTag{});
-        WriteBufferFromString rows_separator_out(rows_separator, AppendModeTag{});
-        WriteBufferFromString rows_end_out(rows_end, AppendModeTag{});
-        WriteBufferFromString footer_begin_out(footer_begin, AppendModeTag{});
-        WriteBufferFromString footer_end_out(footer_end, AppendModeTag{});
-
-        header_begin_out    << grid[0][0];
-        header_end_out      << grid[1][0];
-        rows_separator_out  << grid[2][0];
-        rows_end_out        << grid[3][0];
-        footer_begin_out    << grid[4][0];
-        footer_end_out      << grid[5][0];
-
+    /// Build a horizontal border line. `outer` provides the corners, fill and group-boundary junctions;
+    /// `inner_junction` is the glyph placed at within-tuple (subcolumn) boundaries.
+    auto make_border = [&](String & str, const GridPart & outer, std::string_view inner_junction)
+    {
+        str = left_blank;
+        WriteBufferFromString buf(str, AppendModeTag{});
+        buf << outer[0];
         for (size_t i = 0; i < num_columns; ++i)
         {
             if (i != 0)
-            {
-                header_begin_out    << grid[0][2];
-                header_end_out      << grid[1][2];
-                rows_separator_out  << grid[2][2];
-                rows_end_out        << grid[3][2];
-                footer_begin_out    << grid[4][2];
-                footer_end_out      << grid[5][2];
-            }
-
+                buf << (is_group_start(i) ? outer[2] : inner_junction);
             for (size_t j = 0; j < max_widths[i] + 2; ++j)
-            {
-                header_begin_out    << grid[0][1];
-                header_end_out      << grid[1][1];
-                rows_separator_out  << grid[2][1];
-                rows_end_out        << grid[3][1];
-                footer_begin_out    << grid[4][1];
-                footer_end_out      << grid[5][1];
-            }
+                buf << outer[1];
         }
+        buf << outer[3] << "\n";
+    };
 
-        header_begin_out    << grid[0][3] << "\n";
-        header_end_out      << grid[1][3] << "\n";
-        rows_separator_out  << grid[2][3] << "\n";
-        rows_end_out        << grid[3][3] << "\n";
-        footer_begin_out    << grid[4][3] << "\n";
-        footer_end_out      << grid[5][3] << "\n";
+    if (style == Style::Full)
+    {
+        make_border(header_begin, grid[0], grid[0][1]); /// continuous under tuple names
+        make_border(header_end, grid[1], grid[1][2]);
+        make_border(rows_separator, grid[2], grid[2][2]);
+        make_border(rows_end, grid[3], grid[3][2]);
+        make_border(footer_begin, grid[4], grid[4][2]);
+        make_border(footer_end, grid[5], grid[5][1]); /// continuous under tuple names
+        if (has_subcolumns)
+        {
+            make_border(header_middle, grid[7], grid[0][2]); /// ╋ at group boundaries, ┳ at subcolumn boundaries
+            make_border(footer_middle, grid[7], grid[5][2]); /// ╋ at group boundaries, ┻ at subcolumn boundaries
+        }
     }
     else if (style == Style::Compact)
     {
-        rows_end = left_blank;
-        WriteBufferFromString rows_end_out(rows_end, AppendModeTag{});
-        rows_end_out << grid[3][0];
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            if (i != 0)
-                rows_end_out << grid[3][2];
-            for (size_t j = 0; j < max_widths[i] + 2; ++j)
-                rows_end_out << grid[3][1];
-        }
-        rows_end_out << grid[3][3] << "\n";
+        make_border(rows_end, grid[3], grid[3][2]);
     }
     else if (style == Style::Space)
     {
@@ -467,7 +578,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     writePaddingSpaces(3);
             }
 
-            const auto & col = header->getByPosition(i);
+            const auto & col = header.getByPosition(i);
 
             auto write_value = [&]
             {
@@ -511,7 +622,181 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
         out << "\n";
     };
 
+    /// The top-level names row when subcolumns are shown: one cell per top-level column (a tuple name spans
+    /// the combined width of its subcolumns). Mirrors `write_names`, but iterates over groups.
+    auto write_group_names = [&](bool is_top) -> void
+    {
+        writeString(left_blank, out);
+
+        if (style == Style::Full)
+        {
+            out << vertical_bold_bar;
+            writePaddingSpace();
+        }
+        else if (style == Style::Compact)
+            out << grid[is_top ? 6 : 3][0] << horizontal_bar;
+        else if (style == Style::Space)
+            writePaddingSpace();
+
+        for (size_t g = 0; g < group_names.size(); ++g)
+        {
+            if (g != 0)
+            {
+                if (style == Style::Full)
+                {
+                    writePaddingSpace();
+                    out << vertical_bold_bar;
+                    writePaddingSpace();
+                }
+                else if (style == Style::Compact)
+                    out << horizontal_bar << grid[is_top ? 6 : 3][2] << horizontal_bar;
+                else if (style == Style::Space)
+                    writePaddingSpaces(3);
+            }
+
+            /// Tuple names are left-aligned; a single non-tuple column keeps its own alignment.
+            bool align_right = group_num_columns[g] == 1
+                && header.getByPosition(group_first_column[g]).type->shouldAlignRightInPrettyFormats();
+
+            auto write_value = [&]
+            {
+                if (color)
+                    out << "\033[1m";
+                writeString(group_display_names[g], out);
+                if (color)
+                    out << "\033[0m";
+            };
+
+            auto write_padding = [&]
+            {
+                for (size_t k = 0; k < group_widths[g] - group_name_widths[g]; ++k)
+                {
+                    if (style == Style::Compact)
+                        out << horizontal_bar;
+                    else
+                        writePaddingSpace();
+                }
+            };
+
+            if (align_right)
+            {
+                write_padding();
+                write_value();
+            }
+            else
+            {
+                write_value();
+                write_padding();
+            }
+        }
+        if (style == Style::Full)
+        {
+            writePaddingSpace();
+            out << vertical_bold_bar;
+        }
+        else if (style == Style::Compact)
+            out << horizontal_bar << grid[is_top ? 6 : 3][3];
+
+        out << "\n";
+    };
+
+    /// The subcolumn names row: one cell per rendered column. Cells of single (non-tuple) columns are blank.
+    /// `is_top` selects the within-tuple junction: `┬` (below the top-level names) for the header,
+    /// `┴` (above the top-level names) for the footer.
+    auto write_subcolumn_names = [&](bool is_top) -> void
+    {
+        writeString(left_blank, out);
+
+        if (style == Style::Full)
+        {
+            out << vertical_bold_bar;
+            writePaddingSpace();
+        }
+        else if (style == Style::Compact)
+            out << grid[2][0] << horizontal_bar;
+        else if (style == Style::Space)
+            writePaddingSpace();
+
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (i != 0)
+            {
+                if (style == Style::Full)
+                {
+                    writePaddingSpace();
+                    out << vertical_bold_bar;
+                    writePaddingSpace();
+                }
+                else if (style == Style::Compact)
+                    out << horizontal_bar << (is_group_start(i) ? grid[2][2] : grid[is_top ? 6 : 3][2]) << horizontal_bar;
+                else if (style == Style::Space)
+                    writePaddingSpaces(3);
+            }
+
+            bool single = group_num_columns[column_to_group[i]] == 1;
+            size_t name_width = single ? 0 : name_widths[i];
+            bool align_right = !single && header.getByPosition(i).type->shouldAlignRightInPrettyFormats();
+
+            auto write_value = [&]
+            {
+                if (single)
+                    return;
+                if (color)
+                    out << "\033[1m";
+                writeString(names[i], out);
+                if (color)
+                    out << "\033[0m";
+            };
+
+            auto write_padding = [&]
+            {
+                for (size_t k = 0; k < max_widths[i] - name_width; ++k)
+                {
+                    if (style == Style::Compact)
+                        out << horizontal_bar;
+                    else
+                        writePaddingSpace();
+                }
+            };
+
+            if (align_right)
+            {
+                write_padding();
+                write_value();
+            }
+            else
+            {
+                write_value();
+                write_padding();
+            }
+        }
+        if (style == Style::Full)
+        {
+            writePaddingSpace();
+            out << vertical_bold_bar;
+        }
+        else if (style == Style::Compact)
+            out << horizontal_bar << grid[2][3];
+
+        out << "\n";
+    };
+
+    auto write_header = [&]()
+    {
+        writeString(header_begin, out);
+        if (has_subcolumns)
+        {
+            write_group_names(true);
+            writeString(header_middle, out);
+            write_subcolumn_names(true);
+        }
+        else
+            write_names(true);
+        writeString(header_end, out);
+    };
+
     if (glue_chunks
+        && !has_subcolumns
         && port_kind == PortKind::Main
         && (!format_settings.pretty.row_numbers || row_number_width == prev_row_number_width)
         && max_widths == prev_chunk_max_widths)
@@ -530,9 +815,7 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     }
     else
     {
-        writeString(header_begin, out);
-        write_names(true);
-        writeString(header_end, out);
+        write_header();
     }
 
     bool vertical_filler_written = false;
@@ -596,10 +879,10 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
                     else if (j != 0)
                         writePaddingSpace();
 
-                    const auto & type = header->getByPosition(j).type;
+                    const auto & type = header.getByPosition(j).type;
                     writeValueWithPadding(
                         *columns[j],
-                        *serializations[j],
+                        *render_serializations[j],
                         i,
                         format_settings.pretty.multiline_fields, serialized_values[j], offsets_inside_serialized_values[j],
                         widths[j].empty() ? max_widths[j] : widths[j][displayed_row],
@@ -654,7 +937,14 @@ void PrettyBlockOutputFormat::writeChunk(const Chunk & chunk, PortKind port_kind
     if ((num_rows >= format_settings.pretty.display_footer_column_names_min_rows) && format_settings.pretty.display_footer_column_names)
     {
         writeString(footer_begin, out);
-        write_names(false);
+        if (has_subcolumns)
+        {
+            write_subcolumn_names(false);
+            writeString(footer_middle, out);
+            write_group_names(false);
+        }
+        else
+            write_names(false);
         writeString(footer_end, out);
         had_footer = true;
     }
