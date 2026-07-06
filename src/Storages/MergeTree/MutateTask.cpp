@@ -3687,17 +3687,24 @@ bool MutateTask::prepare()
         /// their data streams to `files_to_skip` and record the columns for the task to recompress.
         /// Columns that are also rewritten by the interpreter are excluded (the rewrite already
         /// applies the current codec).
-        for (const auto & column_name : columns_to_recompress)
+        ///
+        /// Iterate in the part's stored-column order rather than over `columns_to_recompress`, whose
+        /// iteration order (it is a `NameSet`) is unspecified. This makes the arbitration of a stream
+        /// shared by several of the recompressed columns deterministic: with `share_nested_offsets`
+        /// the `Nested` siblings `n.a`/`n.b` share one `n.size0` offsets stream, and it is rewritten
+        /// exactly once by the first column that reaches it (see `recompressed_streams`). Processing
+        /// the columns in stored order makes the first sibling in that order own the shared stream,
+        /// matching how a fresh write of the part assigns it, instead of an arbitrary hash-set order.
+        for (const auto & column : ctx->new_data_part->getColumns())
         {
-            if (ctx->updated_header.has(column_name))
+            if (!columns_to_recompress.contains(column.name))
                 continue;
 
-            auto column = ctx->new_data_part->getColumns().tryGetByName(column_name);
-            if (!column)
+            if (ctx->updated_header.has(column.name))
                 continue;
 
-            ctx->columns_to_recompress.push_back(*column);
-            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, *column, *ctx->data->getSettings()))
+            ctx->columns_to_recompress.push_back(column);
+            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, column, *ctx->data->getSettings()))
                 ctx->files_to_skip.insert(file);
         }
 

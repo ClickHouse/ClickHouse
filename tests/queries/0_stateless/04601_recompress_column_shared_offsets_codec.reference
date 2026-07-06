@@ -1,0 +1,6 @@
+shared n.size0 codec byte: 90 (90 = ZSTD, from schema-first n.a)
+data intact	100000	100000	100000
+1
+shared n.size0 codec byte: 90 (90 = ZSTD, from schema-first n.a)
+data intact	100000	100000	100000
+1
