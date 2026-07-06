@@ -81,6 +81,28 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
 
+### Limiting the number of tables {#limiting-the-number-of-tables}
+
+The `max_tables` setting limits how many tables the database may contain. `0` (the default) means unlimited. When the limit is reached, `CREATE TABLE` and `ATTACH TABLE` throw a `TOO_MANY_TABLES` exception.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+The limit can be changed for an existing database with `ALTER DATABASE`:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+Lowering the limit below the current number of tables does not drop any tables. It only prevents new ones from being created until the count drops below the limit again.
+
+A few operations interact with the limit in ways worth noting. `CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. `UNDROP TABLE` re-attaches a dropped table through the table-creation path, so it is subject to the limit and fails if the database is already at `max_tables`. In contrast, `RENAME TABLE` moving a table into the database does not go through the table-creation path, so it is not currently subject to the limit.
+
+A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own. The check is best-effort under concurrency.
+
+The setting is available for the on-disk database engines that keep their tables in memory and their metadata in local `.sql` files: `Atomic` and `Ordinary`. It is not supported by the `Replicated` engine.
+
 ## See also {#see-also}
 
 - [system.databases](../../operations/system-tables/databases.md) system table

@@ -5,6 +5,7 @@
 #include <memory>
 #include <span>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 #include <Core/UUID.h>
 #include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseOrdinary.h>
@@ -76,6 +77,9 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int INCORRECT_QUERY;
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int TOO_MANY_TABLES;
+    extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -221,6 +225,8 @@ void DatabaseOnDisk::createTable(
 
     const auto & create = query->as<ASTCreateQuery &>();
     chassert(table_name == create.getTable());
+
+    checkTablesLimit();
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -930,6 +936,57 @@ void DatabaseOnDisk::modifySettingsMetadata(const SettingsChanges & settings_cha
         getContext()->getSettingsRef()[Setting::fsync_metadata]);
 
     default_db_disk->replaceFile(metadata_tmp_file_path, metadata_file_path);
+}
+
+void DatabaseOnDisk::checkTablesLimit() const
+{
+    const UInt64 limit = max_tables.load(std::memory_order_relaxed);
+    if (limit == 0)
+        return;
+
+    size_t current_tables;
+    {
+        std::lock_guard lock(mutex);
+        current_tables = tables.size();
+    }
+
+    /// NOTE: The check is best-effort.
+    if (current_tables >= limit)
+        throw Exception(
+            ErrorCodes::TOO_MANY_TABLES,
+            "Too many tables in database {}. The limit (database setting `max_tables`) is set to {}, the current number is {}",
+            backQuote(getDatabaseName()), limit, current_tables);
+}
+
+void DatabaseOnDisk::applySettingsChanges(const SettingsChanges & settings_changes, ContextPtr query_context)
+{
+    /// Altering database settings is only supported for the on-disk engines that keep all their
+    /// tables in the in-memory `tables` map and store their metadata in a local `.sql` file that
+    /// `modifySettingsMetadata` can rewrite: `Atomic` and `Ordinary`. Other engines derived from
+    /// this class are rejected.
+    if (getEngineName() != "Atomic" && getEngineName() != "Ordinary")
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "ALTER DATABASE ... MODIFY SETTING is not supported for the {} database engine", getEngineName());
+
+    /// Validate and normalize the whole list before persisting or applying anything.
+    SettingsChanges normalized_changes = settings_changes;
+    for (auto & change : normalized_changes)
+    {
+        if (change.name != "max_tables")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Database engine {} does not support altering setting `{}`", getEngineName(), change.name);
+        /// The value arrives from the parser as an untyped literal. Convert it to the setting's type the
+        /// same way `SETTINGS max_tables = ...` is converted at CREATE time, letting conversion errors
+        /// (e.g. `CANNOT_CONVERT_TYPE`) propagate so both paths report the same error for an invalid value.
+        change.value = SettingFieldUInt64(change.value).value;
+    }
+
+    modifySettingsMetadata(normalized_changes, query_context);
+
+    for (const auto & change : normalized_changes)
+        max_tables.store(change.value.safeGet<UInt64>(), std::memory_order_relaxed);
 }
 
 void DatabaseOnDisk::checkTableNameLength(const String & table_name) const
