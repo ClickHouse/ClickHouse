@@ -1,0 +1,167 @@
+---
+sidebarTitle: 'ClickHouse CLI'
+slug: /cloud/features/cli
+title: 'ClickHouse CLI'
+description: 'Usa ClickHouse CLI para gestionar recursos de ClickHouse Cloud e instancias locales de ClickHouse'
+keywords: ['clickhousectl', 'CLI', 'gestión de la nube', 'desarrollo local']
+doc_type: 'referencia'
+---
+
+ClickHouse CLI (`clickhousectl`) es una herramienta de línea de comandos unificada para gestionar recursos de ClickHouse Cloud y trabajar con ClickHouse en entornos de desarrollo local. También permite gestionar servicios de [ClickHouse Cloud Postgres](/es/products/managed-postgres/overview).
+
+<div id="installation">
+  ## Instalación
+</div>
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+También se crea automáticamente un alias para `chctl` por comodidad.
+
+<div id="cloud-management">
+  ## Administración de Cloud
+</div>
+
+Autentíquese con ClickHouse Cloud y administre sus servicios directamente desde la línea de comandos.
+
+<div id="authentication">
+  ### Autenticación
+</div>
+
+```bash
+clickhousectl cloud auth
+```
+
+Esto te pide tu clave de API y tu secreto, y los guarda en `.clickhouse/credentials.json` (local del proyecto, ignorado por git).
+
+También puedes usar variables de entorno:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+<div id="services">
+  ### Servicios
+</div>
+
+```bash
+# Listar servicios
+clickhousectl cloud service list
+
+# Crear un servicio
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1
+
+# Obtener detalles del servicio
+clickhousectl cloud service get <service-id>
+
+# Escalar un servicio
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3
+
+# Iniciar/detener un servicio
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# Eliminar un servicio
+clickhousectl cloud service delete <service-id>
+```
+
+<div id="postgres-services">
+  ### Servicios de Postgres (beta)
+</div>
+
+Cree y administre los servicios de [ClickHouse Cloud Postgres](/es/products/managed-postgres/overview).
+
+```bash
+# Listar servicios de Postgres
+clickhousectl cloud postgres list
+
+# Crear un servicio de Postgres
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18
+
+# Obtener detalles del servicio
+clickhousectl cloud postgres get <pg-id>
+
+# Actualizar un servicio
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+
+# Restablecer la contraseña
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Réplicas de lectura y restauración a un momento específico
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# Eliminar un servicio
+clickhousectl cloud postgres delete <pg-id>
+```
+
+<div id="organizations">
+  ### Organizaciones
+</div>
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+```
+
+<div id="api-keys">
+  ### Claves de la API
+</div>
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key delete <key-id>
+```
+
+<div id="members-and-invitations">
+  ### Miembros e invitaciones
+</div>
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+```
+
+<div id="backups">
+  ### Copias de seguridad
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="json-output">
+  ### Salida JSON
+</div>
+
+Usa la opción `--json` para obtener respuestas en formato JSON de cualquier comando de la nube:
+
+```bash
+clickhousectl cloud --json service list
+```
+
+<div id="local-development">
+  ## Desarrollo local
+</div>
+
+La CLI también gestiona instalaciones y servidores locales de ClickHouse. Consulta la página de [clickhousectl (CLI)](/es/get-started/setup/self-managed/clickhousectl) para empezar a trabajar con el desarrollo local.
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+* macOS (aarch64, x86&#95;64) o Linux (aarch64, x86&#95;64)
+* Los comandos de Cloud requieren una [clave de API de ClickHouse Cloud](/es/products/cloud/features/admin-features/api/openapi)

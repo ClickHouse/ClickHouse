@@ -8,6 +8,7 @@ SET enable_analyzer=1;
 SET enable_join_runtime_filters=0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS tp1;
 DROP TABLE IF EXISTS tp2;

@@ -1,0 +1,58 @@
+---
+title: 在 ClickHouse 中使用过滤聚合
+description: 了解如何在 ClickHouse 中使用 `-If` 和 `-Distinct` 聚合组合器，以简化查询语法并提升分析能力。
+date: 2023-03-01
+tags: ['函数']
+keywords: ['过滤聚合']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="using-filtered-aggregates">
+  ## 使用过滤聚合
+</div>
+
+ClickHouse 提供了一种简单直观的方式来编写*过滤聚合*。
+
+例如，对比一下编写过滤聚合时标准 SQL 的写法 (在 ClickHouse 中同样适用) 与使用 `-If` [聚合函数组合器](/zh/reference/functions/aggregate-functions/combinators) 的简写语法；这种组合器可以附加到任何聚合函数后面：
+
+```sql
+--标准 SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--ClickHouse 使用聚合组合器
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+类似地，也有一个 `-Distinct` 聚合组合器：
+
+```sql
+--标准 SQL
+SELECT avg(DISTINCT number)
+
+--ClickHouse 使用聚合组合器
+SELECT avgDistinct(number)
+```
+
+为什么过滤聚合很重要？因为它可以让你在网站分析服务中实现 **&quot;分群对比&quot;** 功能。
+例如：
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+请查看文档中的[聚合函数组合器](/zh/reference/functions/aggregate-functions/combinators)页面，
+了解更多信息。

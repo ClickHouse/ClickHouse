@@ -1,0 +1,107 @@
+---
+description: 'SQLite 데이터베이스에 연결하고 `INSERT` 및 `SELECT`
+  쿼리를 실행하여 ClickHouse와 SQLite 간에 데이터를 주고받을 수 있습니다.'
+sidebarTitle: 'SQLite'
+slug: /engines/database-engines/sqlite
+title: 'SQLite'
+doc_type: 'reference'
+---
+
+[SQLite](https://www.sqlite.org/index.html) 데이터베이스에 연결하고 `INSERT` 및 `SELECT` 쿼리를 실행하여 ClickHouse와 SQLite 간에 데이터를 주고받을 수 있습니다.
+
+<div id="creating-a-database">
+  ## 데이터베이스 생성하기
+</div>
+
+```sql
+    CREATE DATABASE sqlite_database
+    ENGINE = SQLite('db_path')
+```
+
+**엔진 매개변수**
+
+* `db_path` — SQLite 데이터베이스 파일의 경로.
+
+<div id="data_types-support">
+  ## 데이터 타입 지원
+</div>
+
+아래 표는 ClickHouse가 SQLite에서 스키마를 자동으로 추론할 때 적용되는 기본 타입 매핑을 보여줍니다:
+
+| SQLite  | ClickHouse                              |
+| ------- | --------------------------------------- |
+| INTEGER | [Int32](/ko/reference/data-types/int-uint) |
+| REAL    | [Float32](/ko/reference/data-types/float)  |
+| TEXT    | [String](/ko/reference/data-types/string)  |
+| TEXT    | [UUID](/ko/reference/data-types/uuid)      |
+| BLOB    | [String](/ko/reference/data-types/string)  |
+
+[SQLite 테이블 엔진](/ko/reference/engines/table-engines/integrations/sqlite)을 사용해 특정 ClickHouse 타입으로 테이블을 명시적으로 정의하면, 다음 ClickHouse 타입을 SQLite TEXT 컬럼에서 파싱할 수 있습니다:
+
+* [Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32)
+* [DateTime](/ko/reference/data-types/datetime), [DateTime64](/ko/reference/data-types/datetime64)
+* [UUID](/ko/reference/data-types/uuid)
+* [Enum8, Enum16](/ko/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/ko/reference/data-types/decimal)
+* [FixedString](/ko/reference/data-types/fixedstring)
+* 모든 정수 타입([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ko/reference/data-types/int-uint))
+* [Float32, Float64](/ko/reference/data-types/float)
+
+SQLite는 동적 타이핑을 사용하며, 타입 접근 함수가 자동으로 타입 강제 변환을 수행합니다. 예를 들어 TEXT 컬럼을 정수로 읽을 때 텍스트를 숫자로 파싱할 수 없으면 0을 반환합니다. 즉, ClickHouse 테이블이 원본 SQLite 컬럼과 다른 타입으로 정의되어 있으면 오류가 발생하는 대신 값이 별도 경고 없이 강제 변환될 수 있습니다.
+
+<div id="specifics-and-recommendations">
+  ## 세부 사항 및 권장 사항
+</div>
+
+SQLite는 전체 데이터베이스(정의, 테이블, 인덱스, 데이터 자체)를 호스트 머신의 단일 크로스플랫폼 파일로 저장합니다. 쓰기 작업 중에는 SQLite가 데이터베이스 파일 전체를 잠그므로, 쓰기 작업은 순차적으로 수행됩니다. 읽기 작업은 동시에 처리할 수 있습니다.
+SQLite는 서비스 관리(예: 시작 스크립트)나 `GRANT` 및 비밀번호 기반 Access Control을 요구하지 않습니다. Access Control은 데이터베이스 파일 자체에 부여된 파일 시스템 권한으로 처리됩니다.
+
+<div id="usage-example">
+  ## 사용 예시
+</div>
+
+SQLite에 연결된 ClickHouse 데이터베이스:
+
+```sql
+CREATE DATABASE sqlite_db ENGINE = SQLite('sqlite.db');
+SHOW TABLES FROM sqlite_db;
+```
+
+```text
+┌──name───┐
+│ table1  │
+│ table2  │
+└─────────┘
+```
+
+테이블을 보여줍니다:
+
+```sql
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+ClickHouse 테이블의 데이터를 SQLite 테이블에 삽입:
+
+```sql
+CREATE TABLE clickhouse_table(`col1` String,`col2` Int16) ENGINE = MergeTree() ORDER BY col2;
+INSERT INTO clickhouse_table VALUES ('text',10);
+INSERT INTO sqlite_db.table1 SELECT * FROM clickhouse_table;
+SELECT * FROM sqlite_db.table1;
+```
+
+```text
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+│ text  │   10 │
+└───────┴──────┘
+```

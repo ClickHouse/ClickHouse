@@ -1,0 +1,57 @@
+---
+title: "ClickHouse에서 필터링된 집계 사용하기"
+description: "`-If` 및 `-Distinct` 집계 조합자를 사용해 ClickHouse에서 필터링된 집계를 적용하여 쿼리 구문을 단순화하고 분석 기능을 향상시키는 방법을 설명합니다."
+date: 2023-03-01
+tags: ['함수']
+keywords: ['필터링된 집계']
+---
+
+{frontMatter.description}
+
+{/* 생략 */}
+
+<div id="using-filtered-aggregates">
+  ## 필터링된 집계 사용하기
+</div>
+
+ClickHouse는 *필터링된 집계*를 간단하고 직관적으로 작성할 수 있는 방법을 제공합니다.
+
+예를 들어, 필터링된 집계를 작성하는 표준 SQL 방식(이 방식도 ClickHouse에서 문제없이 작동합니다)과 모든 집계 함수에 덧붙일 수 있는 `-If` [집계 함수 조합자](/ko/reference/functions/aggregate-functions/combinators)를 사용하는 축약 구문을 비교해 보겠습니다:
+
+```sql
+--표준 SQL
+SELECT
+   avg(number)
+FILTER (WHERE number > 50)
+FROM numbers(100)
+
+--집계 조합자를 사용하는 ClickHouse
+SELECT
+   avgIf(number, number > 50)
+FROM numbers(100)
+```
+
+이와 마찬가지로 `-Distinct` 집계 조합자가 있습니다:
+
+```sql
+--표준 SQL
+SELECT avg(DISTINCT number)
+
+--조합자를 사용하는 ClickHouse
+SELECT avgDistinct(number)
+```
+
+필터링된 집계가 중요한 이유는 무엇일까요? 웹 분석 서비스에서 **&quot;세그먼트 비교&quot;** 기능을 구현할 수 있기 때문입니다.
+예시는 다음과 같습니다:
+
+```sql
+WITH
+   Region = 'us' AS segment1,
+   Browser = 'Chrome' AS segment2
+SELECT
+   uniqIf(UserID, segment1),
+   uniqIf(UserID, segment2)
+WHERE segment1 OR segment2
+```
+
+자세한 내용은 문서의 [집계 함수 조합자](/ko/reference/functions/aggregate-functions/combinators) 페이지에서 확인하십시오.

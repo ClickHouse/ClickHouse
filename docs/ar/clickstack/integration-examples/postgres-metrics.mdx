@@ -1,0 +1,307 @@
+---
+slug: /use-cases/observability/clickstack/integrations/postgresql-metrics
+title: 'مراقبة مقاييس PostgreSQL باستخدام ClickStack'
+sidebarTitle: 'مقاييس PostgreSQL'
+description: 'مراقبة مقاييس PostgreSQL باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['PostgreSQL', 'Postgres', 'مقاييس', 'OTEL', 'ClickStack', 'مراقبة قواعد البيانات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  راقب مقاييس أداء PostgreSQL في ClickStack باستخدام مستقبِل PostgreSQL في OTel. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-postgres">
+  ## التكامل مع PostgreSQL الحالي
+</div>
+
+يتناول هذا القسم كيفية تهيئة تثبيت PostgreSQL الحالي لديك لإرسال المقاييس إلى ClickStack، وذلك عبر تهيئة ClickStack OTel collector باستخدام مستقبِل PostgreSQL.
+
+إذا كنت ترغب في اختبار تكامل مقاييس PostgreSQL قبل تهيئة إعدادك الحالي، فيمكنك إجراء الاختبار باستخدام مجموعة البيانات التجريبية المُعدّ مسبقًا في [القسم التالي](#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* تثبيت PostgreSQL حالي (الإصدار 9.6 أو أحدث)
+* إتاحة الوصول عبر الشبكة من ClickStack إلى PostgreSQL (المنفذ الافتراضي 5432)
+* مستخدم مراقبة في PostgreSQL لديه الأذونات المناسبة
+
+<Steps>
+  <Step>
+    #### تأكد من أن مستخدم المراقبة لديه الأذونات المطلوبة
+
+    يتطلب مستقبِل PostgreSQL مستخدمًا لديه إذن قراءة على طرق عرض الإحصاءات. امنح دور `pg_monitor` لمستخدم المراقبة لديك:
+
+    ```sql
+    GRANT pg_monitor TO your_monitoring_user;
+    ```
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة مخصصة لـ OTel collector
+
+    يتيح لك ClickStack توسيع تهيئة OpenTelemetry collector الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
+
+    أنشئ `postgres-metrics.yaml`:
+
+    ```yaml
+    receivers:
+      postgresql:
+        endpoint: postgres-host:5432
+        transport: tcp
+        username: otel_monitor
+        password: ${env:POSTGRES_PASSWORD}
+        databases:
+          - postgres
+          - your_application_db # استبدلها بأسماء قواعد البيانات الفعلية لديك
+        collection_interval: 30s
+        tls:
+          insecure: true
+
+    processors:
+      resourcedetection:
+        detectors: [env, system, docker]
+        timeout: 5s
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+
+    exporters:
+      clickhouse:
+        endpoint: tcp://localhost:9000
+        database: default
+        ttl: 96h
+
+    service:
+      pipelines:
+        metrics/postgres:
+          receivers: [postgresql]
+          processors: [resourcedetection, batch]
+          exporters: [clickhouse]
+    ```
+
+    <Note>
+      يعطّل الإعداد `tls: insecure: true` التحقق من SSL لأغراض التطوير/الاختبار. إذا كنت تستخدم PostgreSQL في بيئة الإنتاج مع تمكين SSL، فأزل هذا السطر أو اضبط الشهادات المناسبة.
+    </Note>
+  </Step>
+
+  <Step>
+    #### انشر ClickStack باستخدام تهيئة مخصصة
+
+    قم بتركيب ملف التهيئة المخصص:
+
+    ```bash
+    docker run -d \
+      --name clickstack-postgres \
+      -p 8123:8123 -p 9000:9000 -p 4317:4317 -p 4318:4318 \
+      -e HYPERDX_API_KEY=your-api-key \
+      -e CLICKHOUSE_PASSWORD=your-clickhouse-password \
+      -e POSTGRES_PASSWORD=secure_password_here \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/postgres-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      clickhouse/clickstack:latest
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من جمع المقاييس
+
+    بعد إكمال التهيئة، سجّل الدخول إلى HyperDX وتأكد من أن المقاييس تتدفق:
+
+    1. انتقل إلى مستكشف المقاييس
+    2. ابحث عن المقاييس التي تبدأ بـ postgresql. (على سبيل المثال: postgresql.backends وpostgresql.commits)
+    3. ينبغي أن ترى نقاط بيانات المقاييس تظهر وفقًا لفاصل الجمع الذي قمت بتهيئته
+
+    بمجرد بدء تدفق المقاييس، انتقل إلى قسم [لوحات المعلومات والتصورات المرئية](#dashboards) لاستيراد لوحة المعلومات الجاهزة مسبقًا.
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة البيانات التجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل مقاييس PostgreSQL قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات مُولَّدة مسبقًا تتضمن أنماطًا واقعية لمقاييس PostgreSQL.
+
+<Info>
+  **مقاييس على مستوى قاعدة البيانات فقط**
+
+  تتضمن مجموعة البيانات التجريبية هذه مقاييس على مستوى قاعدة البيانات فقط للحفاظ على خفة بيانات العينة. تُجمَع مقاييس الجداول والفهارس تلقائيًا عند مراقبة قاعدة بيانات PostgreSQL فعلية.
+</Info>
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة بيانات المقاييس النموذجية
+
+    نزّل ملفات المقاييس المُولَّدة مسبقًا (24 ساعة من مقاييس PostgreSQL بأنماط واقعية):
+
+    ```bash
+    # تنزيل مقاييس gauge (connections, database size)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgres-metrics-gauge.csv
+
+    # تنزيل مقاييس sum (commits, rollbacks, operations)
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/postgres/postgres-metrics-sum.csv
+    ```
+
+    تتضمن مجموعة البيانات أنماطًا واقعية:
+
+    * **ارتفاع صباحي في الاتصالات (08:00)** - ذروة تسجيل الدخول
+    * **مشكلة في أداء cache (11:00)** - ارتفاع مفاجئ في Blocks&#95;read
+    * **خلل في التطبيق (14:00-14:30)** - ارتفاع معدل التراجع إلى 15%
+    * **حالات deadlocks (14:15, 16:30)** - deadlocks نادرة
+  </Step>
+
+  <Step>
+    #### ابدأ ClickStack
+
+    ابدأ instance من ClickStack:
+
+    ```bash
+    docker run -d --name clickstack-postgres-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    انتظر نحو 30 ثانية حتى يكتمل تشغيل ClickStack بالكامل.
+  </Step>
+
+  <Step>
+    #### حمّل المقاييس إلى ClickStack
+
+    حمّل المقاييس مباشرةً إلى ClickHouse:
+
+    ```bash
+    # تحميل مقاييس gauge
+    cat postgres-metrics-gauge.csv | docker exec -i clickstack-postgres-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # تحميل مقاييس sum
+    cat postgres-metrics-sum.csv | docker exec -i clickstack-postgres-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### تحقّق من المقاييس في HyperDX
+
+    بعد تحميلها، فإن أسرع طريقة لعرض مقاييسك هي من خلال لوحة المعلومات الجاهزة مسبقًا.
+
+    انتقل إلى قسم [لوحات المعلومات والتصورات](#dashboards) لاستيراد لوحة المعلومات وعرض العديد من مقاييس PostgreSQL دفعةً واحدة.
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تغطي البيانات التجريبية الفترة **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. اضبط النطاق الزمني على **2025-11-09 00:00:00 - 2025-11-12 00:00:00** لضمان ظهور المقاييس التجريبية بغض النظر عن موقعك. وبعد أن ترى المقاييس، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والمرئيات
+</div>
+
+لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر مرئيات أساسية لمقاييس PostgreSQL.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/postgres-metrics-dashboard.json'} download="postgres-metrics-dashboard.json" eventName="docs.postgres_metrics_monitoring.dashboard_download">نزّل</TrackedLink> ملف إعداد لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استورد لوحة المعلومات المُعدّة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع ملف `postgres-metrics-dashboard.json` وانقر على **إنهاء الاستيراد**
+
+    <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="مربع حوار إنهاء الاستيراد" />
+  </Step>
+
+  <Step>
+    #### اعرض لوحة المعلومات
+
+    ستُنشأ لوحة المعلومات مع إعداد جميع المرئيات مسبقًا:
+
+    <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="لوحة معلومات مقاييس PostgreSQL" />
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### تعذّر تحميل التهيئة المخصصة
+</div>
+
+تحقّق من ضبط متغير البيئة:
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+تحقّق من تحميل ملف الإعدادات المخصّص:
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml
+```
+
+<div id="no-metrics">
+  ### عدم ظهور أي مقاييس في HyperDX
+</div>
+
+تحقق من إمكانية الوصول إلى PostgreSQL:
+
+```bash
+docker exec <clickstack-container> psql -h postgres-host -U otel_monitor -d postgres -c "SELECT 1"
+```
+
+تحقق من سجلات OTel collector:
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i postgres
+```
+
+<div id="auth-errors">
+  ### أخطاء المصادقة
+</div>
+
+تحقّق من ضبط كلمة المرور بشكل صحيح:
+
+```bash
+docker exec <clickstack-container> printenv POSTGRES_PASSWORD
+```
+
+اختبر بيانات الاعتماد مباشرةً:
+
+```bash
+psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) للعتبات الحرجة (حدود الاتصالات، ارتفاع معدلات التراجع، انخفاض نسب الإصابة في ذاكرة التخزين المؤقت)
+* فعّل المراقبة على مستوى الاستعلامات باستخدام امتداد `pg_stat_statements`
+* راقب عدة مثيلات PostgreSQL عبر تكرار إعدادات الـ receiver مع نقاط نهاية وأسماء خدمات مختلفة
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يستند هذا الدليل إلى OTel Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على إعدادات بيئة الإنتاج.
