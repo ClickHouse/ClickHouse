@@ -452,7 +452,7 @@ Either both of the settings must be specified or neither of them. When both of t
 
 When using StorageKafka2, you can optionally enable static partition-to-shard affinity by specifying `kafka_partition_shard_num` and `kafka_shard_count`. This allows multiple ClickHouse instances (shards) to consume from the same Kafka topic, with each shard only processing a deterministic subset of partitions based on the formula:
 
-```
+```text
 partition_id % kafka_shard_count == kafka_partition_shard_num % kafka_shard_count
 ```
 

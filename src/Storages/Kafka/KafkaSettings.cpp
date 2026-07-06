@@ -1,7 +1,6 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/FormatFactorySettings.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -145,42 +144,16 @@ void KafkaSettings::sanityCheck(ContextPtr global_context) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The table system.dead_letter_queue is not configured on the server. You cannot create a table with this `kafka_handle_error_mode`.");
 
-    const auto & partition_num_str = (*impl)[KafkaSetting::kafka_partition_shard_num].value;
-    const auto shard_count = (*impl)[KafkaSetting::kafka_shard_count].value;
-    const bool has_partition_num = !partition_num_str.empty();
-    const bool has_shard_count = shard_count > 0;
+    /// Partition affinity: full validation (including macro expansion and range check)
+    /// is done in StorageKafka2::parsePartitionAffinitySettings; here we only check
+    /// that both settings are specified together.
+    const bool has_partition_num = !(*impl)[KafkaSetting::kafka_partition_shard_num].value.empty();
+    const bool has_shard_count = (*impl)[KafkaSetting::kafka_shard_count].value > 0;
 
     if (has_partition_num != has_shard_count)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "'kafka_partition_shard_num' and 'kafka_shard_count' must be specified together");
-
-    if (has_partition_num && has_shard_count)
-    {
-        // Skip numeric validation if the value contains macros (will be validated after expansion)
-        if (!partition_num_str.contains('{'))
-        {
-            UInt64 parsed_partition_num = 0;
-            try
-            {
-                parsed_partition_num = parse<UInt64>(partition_num_str);
-            }
-            catch (...)
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "'kafka_partition_shard_num' must be a valid non-negative integer, got '{}'",
-                    partition_num_str);
-            }
-
-            if (parsed_partition_num > shard_count)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "'kafka_partition_shard_num' ({}) must not be greater than 'kafka_shard_count' ({})",
-                    parsed_partition_num,
-                    shard_count);
-        }
-    }
 }
 
 SettingsChanges KafkaSettings::getFormatSettings() const

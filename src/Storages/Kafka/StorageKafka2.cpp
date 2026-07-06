@@ -614,10 +614,11 @@ void StorageKafka2::parsePartitionAffinitySettings()
     const auto & raw_partition_num = (*kafka_settings)[KafkaSetting::kafka_partition_shard_num].value;
     const auto shard_count_val = (*kafka_settings)[KafkaSetting::kafka_shard_count].value;
 
-    // Neither setting is specified — affinity is not enabled
     if (raw_partition_num.empty() && shard_count_val == 0)
         return;
 
+    /// sanityCheck already ensures both are specified together, but after macro
+    /// expansion the value might become empty — catch that edge case here.
     const auto & partition_num_str = getContext()->getMacros()->expand(raw_partition_num, macros_info);
 
     if (partition_num_str.empty())

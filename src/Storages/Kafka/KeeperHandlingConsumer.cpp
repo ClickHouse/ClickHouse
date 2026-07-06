@@ -182,10 +182,8 @@ std::optional<KeeperHandlingConsumer::CannotPollReason> KeeperHandlingConsumer::
         return CannotPollReason::NoMetadata;
     }
 
-    // Apply partition affinity filter using hash-mod mapping:
-    //   partition_id % shard_count == partition_num % shard_count
-    // The modulo on partition_num allows both 0-based and 1-based shard numbering.
-    // NOTE: if a different mapping algorithm is introduced in the future, update this logic.
+    /// Filter partitions by affinity: partition_id % shard_count == partition_num % shard_count.
+    /// The modulo on partition_num supports both 0-based and 1-based shard numbering.
     if (shard_count > 0)
     {
         const auto effective_shard_num = partition_num % shard_count;
