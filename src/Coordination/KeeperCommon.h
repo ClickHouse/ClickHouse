@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -117,24 +118,26 @@ using ZooKeeperResponseCallback = std::function<bool(const Coordination::ZooKeep
 ///  unnecessary and is trying to be small.)
 struct KeeperNodeStats
 {
-    /// Ephemeral nodes and nodes with TTL can't have children, so we set their num_children to
-    /// these special values to indicate these special node types.
-    static constexpr uint32_t SPECIAL_EPHEMERAL = UINT32_MAX;
-    static constexpr uint32_t SPECIAL_TTL = UINT32_MAX - 1;
-    /// Smallest of the above SPECIAL_* values.
-    static constexpr uint32_t SPECIAL_MIN = SPECIAL_TTL;
+    /// Flags packed into ctime_and_flags.
+    static constexpr uint64_t NUM_FLAGS = 3;
+    static constexpr uint64_t EPHEMERAL = 1ul << 63;
+    static constexpr uint64_t TTL = 1ul << 62;
+    static constexpr uint64_t CONTAINER = 1ul << 61;
+    static constexpr uint64_t FLAGS_MASK = EPHEMERAL | TTL | CONTAINER;
+    static_assert(FLAGS_MASK == ~(~0ul >> NUM_FLAGS));
 
     uint32_t data_size = 0;
     uint32_t acl_id = 0;
     int32_t version = 0;
-    /// Either number of children or one of the SPECIAL_* constants above.
-    uint32_t num_children_or_special = 0;
+    /// Always 0 for ephemeral and TTL nodes (they can't have children).
+    int32_t num_children = 0;
 
     int64_t czxid = 0;
     int64_t mzxid = 0;
     int64_t pzxid = 0;
 
-    int64_t ctime = 0;
+    /// Upper NUM_FLAGS bits are flags, lower bits are signed ctime.
+    uint64_t ctime_and_flags = 0;
     int64_t mtime = 0;
 
     int32_t cversion = 0;
@@ -144,16 +147,19 @@ struct KeeperNodeStats
     /// for sequentially named children (otherwise).
     int64_t ephemeral_or_seq_num_or_ttl = 0;
 
-    int32_t getNumChildren() const { return num_children_or_special >= SPECIAL_MIN ? 0 : num_children_or_special; }
-    bool isEphemeral() const { return num_children_or_special == SPECIAL_EPHEMERAL; }
-    bool isTTL() const { return num_children_or_special == SPECIAL_TTL; }
+    bool isEphemeral() const { return (ctime_and_flags & EPHEMERAL) != 0; }
+    bool isTTL() const { return (ctime_and_flags & TTL) != 0; }
+    bool isContainer() const { return (ctime_and_flags & CONTAINER) != 0; }
+    int64_t getCTime() const { return int64_t(ctime_and_flags << NUM_FLAGS) >> NUM_FLAGS; } // sign-extend
 
-    /// Marks the node as ephemeral (in num_children_or_special) and sets its owner (in ephemeral_or_seq_num_or_ttl).
+    int32_t getNumChildren() const { return num_children; }
+
+    /// Sets EPHEMERAL flag in ctime_and_flags, and assigns ephemeral_or_seq_num_or_ttl.
     void makeEphemeral(int64_t ephemeral_owner);
     /// Similar for TTL.
     void makeTTL(int64_t ttl);
-    /// Sets non-ephemeral non-TTL node's number of children.
-    void setNumChildren(uint32_t num_children);
+    void setNumChildren(uint32_t new_num_children);
+    void setCTime(int64_t ctime);
 
     void increaseNumChildren();
     void decreaseNumChildren();
@@ -161,9 +167,17 @@ struct KeeperNodeStats
     void setSeqNum(int64_t seq_num);
     void increaseSeqNum();
 
-    int64_t getEphemeralOwner() const { return isEphemeral() ? ephemeral_or_seq_num_or_ttl : 0; }
+    int64_t getEphemeralOwner() const
+    {
+        if (isEphemeral())
+            return ephemeral_or_seq_num_or_ttl;
+        /// ZooKeeper-compatible sentinel for container nodes (matches `CONTAINER_EPHEMERAL_OWNER` in ZooKeeper).
+        if (isContainer())
+            return std::numeric_limits<int64_t>::min();
+        return 0;
+    }
     int64_t getTTL() const { return isTTL() ? ephemeral_or_seq_num_or_ttl : 0; }
-    int64_t getSeqNum() const { return num_children_or_special < SPECIAL_MIN ? ephemeral_or_seq_num_or_ttl : 0; }
+    int64_t getSeqNum() const { return (isEphemeral() || isTTL()) ? 0 : ephemeral_or_seq_num_or_ttl; }
 
     int64_t destroyTime() const
     {

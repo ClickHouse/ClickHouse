@@ -242,7 +242,7 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
     ///            used by future versions of the format to add fields that can be ignored by
     ///            older readers
     ///    group varint (4 x u32): path_suffix_size, data_size, acl_id, version
-    ///    group varint (4 x u32): path_prefix_size, path_depth_delta, num_children_or_special
+    ///    group varint (4 x u32): path_prefix_size, path_depth_delta, num_children, flags
     ///    group varint (4 x u32): cversion, aversion
     ///    group varint (8 x u64): czxid_delta, mzxid_delta, pzxid_delta, ctime_delta, mtime_delta,
     ///                            ephemeral_or_seq_num_or_ttl
@@ -252,6 +252,9 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
     ///
     /// Tombstones (NodeAction::Remove) don't store stats, so the last two group varints are
     /// omitted for them. The digest bytes are kept as padding (see Appendix 1 below).
+    ///
+    /// `flags` is the top byte of `KeeperNodeStats::ctime_and_flags`, with the non-flag (ctime)
+    /// bits zeroed. `ctime_delta` encodes the ctime value alone, without the flags.
     ///
     /// The *_delta values are delta+zigzag-encoded relative to a corresponding base_* values in
     /// BlockData.
@@ -311,14 +314,13 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
     const uint32_t data_size = node.stats.data_size;
     const uint32_t path_depth_delta = encodeZigZagDelta32(block->base_depth, node.path.depth);
 
+    /// We put flags in the upper bits of a byte so that new flags can be added to ctime_and_flags
+    /// in future without changing format. Serialized size doesn't change as long as we stay within 1 byte.
+    static_assert((DB::KeeperNodeStats::FLAGS_MASK & ~(0xfful << (64 - 8))) == 0); // flags are all in the upper byte
+    const uint32_t flags = static_cast<uint32_t>((node.stats.ctime_and_flags & DB::KeeperNodeStats::FLAGS_MASK) >> (64 - 8));
+
     DB::GroupVarint4x32::encode(p, path_suffix_size, data_size, node.stats.acl_id, static_cast<uint32_t>(node.stats.version));
-    /// (`num_children_or_special` can take values `UINT32_MAX` and `UINT32_MAX - 1` for ephemeral
-    ///  or ttl nodes. Not ideal as it uses 4 bytes. But such nodes are rare, so it's ok.
-    ///  We could write `num_children_or_special - SPECIAL_MIN`, so that special values become
-    ///  0 and 1; but then the common case of `num_children_or_special = 0` goes from 0 bytes
-    ///  to 1 byte, which probably more than outweighs the rare 3-byte savings. We could go weirder,
-    ///  like `(num_children_or_special - SPECIAL_MIN) ^ 2`, but that doesn't seem worth the complexity.)
-    DB::GroupVarint4x32::encode(p, path_prefix_size, path_depth_delta, node.stats.num_children_or_special, 0);
+    DB::GroupVarint4x32::encode(p, path_prefix_size, path_depth_delta, static_cast<uint32_t>(node.stats.num_children), flags);
 
     uint64_t digest = 0x0000deadbeef0000; // for tombstones the digest bytes are just padding
     if (node.action != NodeAction::Remove)
@@ -330,7 +332,7 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
             encodeZigZagDelta64(block->base_zxid, static_cast<uint64_t>(node.stats.czxid)),
             encodeZigZagDelta64(block->base_zxid, static_cast<uint64_t>(node.stats.mzxid)),
             encodeZigZagDelta64(block->base_zxid, static_cast<uint64_t>(node.stats.pzxid)),
-            encodeZigZagDelta64(block->base_time, static_cast<uint64_t>(node.stats.ctime)),
+            encodeZigZagDelta64(block->base_time, static_cast<uint64_t>(node.stats.getCTime())),
             encodeZigZagDelta64(block->base_time, static_cast<uint64_t>(node.stats.mtime)),
             static_cast<uint64_t>(node.stats.ephemeral_or_seq_num_or_ttl),
             0,
@@ -439,21 +441,27 @@ inline void ALWAYS_INLINE readNodeImpl(
 
     if (out_stats || out_path)
     {
-        /// group varint (4 x u32): path_prefix_size, path_depth_delta, num_children_or_special, (unused)
+        /// group varint (4 x u32): path_prefix_size, path_depth_delta, num_children, flags
         uint32_t path_prefix_size = 0;
         uint32_t path_depth_delta = 0;
-        uint32_t num_children_or_special = 0;
-        uint32_t unused = 0;
-        DB::GroupVarint4x32::decode(varints, path_prefix_size, path_depth_delta, num_children_or_special, unused);
+        uint32_t num_children = 0;
+        uint32_t flags = 0;
+        DB::GroupVarint4x32::decode(varints, path_prefix_size, path_depth_delta, num_children, flags);
 
         if (out_stats)
-            out_stats->num_children_or_special = num_children_or_special;
+        {
+            if ((flags & ~uint32_t(DB::KeeperNodeStats::FLAGS_MASK >> (64 - 8))) != 0)
+                throw DB::Exception(DB::ErrorCodes::CORRUPTED_DATA, "Node has invalid flags: {}", flags);
+            out_stats->num_children = static_cast<int32_t>(num_children);
+            out_stats->ctime_and_flags = uint64_t(flags) << (64 - 8);
+        }
 
         if (out_stats && action != NodeAction::Remove)
         {
             /// group varint (4 x u32): cversion, aversion, (unused), (unused)
             uint32_t cversion = 0;
             uint32_t aversion = 0;
+            uint32_t unused = 0;
             DB::GroupVarint4x32::decode(varints, cversion, aversion, unused, unused);
             out_stats->cversion = static_cast<int32_t>(cversion);
             out_stats->aversion = static_cast<int32_t>(aversion);
@@ -473,7 +481,7 @@ inline void ALWAYS_INLINE readNodeImpl(
             out_stats->czxid = static_cast<int64_t>(decodeZigZagDelta64(block->base_zxid, czxid_delta));
             out_stats->mzxid = static_cast<int64_t>(decodeZigZagDelta64(block->base_zxid, mzxid_delta));
             out_stats->pzxid = static_cast<int64_t>(decodeZigZagDelta64(block->base_zxid, pzxid_delta));
-            out_stats->ctime = static_cast<int64_t>(decodeZigZagDelta64(block->base_time, ctime_delta));
+            out_stats->ctime_and_flags |= decodeZigZagDelta64(block->base_time, ctime_delta) & ~DB::KeeperNodeStats::FLAGS_MASK;
             out_stats->mtime = static_cast<int64_t>(decodeZigZagDelta64(block->base_time, mtime_delta));
             out_stats->ephemeral_or_seq_num_or_ttl = static_cast<int64_t>(ephemeral_or_seq_num_or_ttl);
         }

@@ -139,7 +139,7 @@ uint64_t KeeperNodeStats::calculateDigest(std::string_view path, std::string_vie
 
     hash.update(czxid);
     hash.update(mzxid);
-    hash.update(ctime);
+    hash.update(getCTime());
     hash.update(mtime);
     hash.update(version);
     hash.update(cversion);
@@ -168,7 +168,8 @@ void KeeperNodeStats::copyStats(const Coordination::Stat & stat)
     pzxid = stat.pzxid;
 
     mtime = stat.mtime;
-    ctime = stat.ctime;
+    ctime_and_flags = 0;
+    setCTime(stat.ctime);
 
     version = stat.version;
     cversion = stat.cversion;
@@ -176,7 +177,7 @@ void KeeperNodeStats::copyStats(const Coordination::Stat & stat)
 
     data_size = stat.dataLength;
 
-    num_children_or_special = 0;
+    num_children = 0;
     ephemeral_or_seq_num_or_ttl = 0;
     if (stat.ephemeralOwner == 0)
         setNumChildren(stat.numChildren);
@@ -188,7 +189,7 @@ void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
 {
     response_stat.czxid = czxid;
     response_stat.mzxid = mzxid;
-    response_stat.ctime = ctime;
+    response_stat.ctime = getCTime();
     response_stat.mtime = mtime;
     response_stat.version = version;
     response_stat.cversion = cversion;
@@ -202,42 +203,53 @@ void KeeperNodeStats::setResponseStat(Coordination::Stat & response_stat) const
 void KeeperNodeStats::makeEphemeral(int64_t ephemeral_owner)
 {
     chassert(ephemeral_owner != 0);
-    num_children_or_special = SPECIAL_EPHEMERAL;
+    chassert(!isTTL() && num_children == 0);
+    ctime_and_flags |= EPHEMERAL;
     ephemeral_or_seq_num_or_ttl = ephemeral_owner;
 }
 
 void KeeperNodeStats::makeTTL(int64_t ttl)
 {
-    num_children_or_special = SPECIAL_TTL;
+    chassert(!isEphemeral() && num_children == 0);
+    ctime_and_flags |= TTL;
     ephemeral_or_seq_num_or_ttl = ttl;
 }
 
-void KeeperNodeStats::setNumChildren(uint32_t num_children)
+void KeeperNodeStats::setNumChildren(uint32_t new_num_children)
 {
-    num_children_or_special = num_children;
+    chassert(!isEphemeral() && !isTTL());
+    chassert(new_num_children <= uint32_t(std::numeric_limits<int32_t>::max()));
+    num_children = static_cast<int32_t>(new_num_children);
+}
+
+void KeeperNodeStats::setCTime(int64_t ctime)
+{
+    /// Check that ctime fits in 64 - NUM_FLAGS bits.
+    chassert((int64_t(uint64_t(ctime) << NUM_FLAGS) >> NUM_FLAGS) == ctime);
+    ctime_and_flags = (ctime_and_flags & FLAGS_MASK) | (uint64_t(ctime) & ~FLAGS_MASK);
 }
 
 void KeeperNodeStats::increaseNumChildren()
 {
-    chassert(num_children_or_special < SPECIAL_MIN - 1);
-    ++num_children_or_special;
+    chassert(!isEphemeral() && !isTTL());
+    ++num_children;
 }
 
 void KeeperNodeStats::decreaseNumChildren()
 {
-    chassert(num_children_or_special > 0);
-    --num_children_or_special;
+    chassert(num_children > 0);
+    --num_children;
 }
 
 void KeeperNodeStats::setSeqNum(int64_t seq_num)
 {
-    chassert(num_children_or_special < SPECIAL_MIN);
+    chassert(!isEphemeral() && !isTTL());
     ephemeral_or_seq_num_or_ttl = seq_num;
 }
 
 void KeeperNodeStats::increaseSeqNum()
 {
-    chassert(num_children_or_special < SPECIAL_MIN);
+    chassert(!isEphemeral() && !isTTL());
     ++ephemeral_or_seq_num_or_ttl;
 }
 

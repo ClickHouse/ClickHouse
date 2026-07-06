@@ -72,7 +72,7 @@ FullNode makeNodeA(std::string_view path)
             .czxid = 101,
             .mzxid = 205,
             .pzxid = 210,
-            .ctime = 1700000000123,
+            .ctime_and_flags = 1700000000123,
             .mtime = 1700000111456,
             .cversion = 7,
             .aversion = 2,
@@ -88,7 +88,7 @@ FullNode makeNodeB(std::string_view path)
             .czxid = 300,
             .mzxid = 300,
             .pzxid = 305,
-            .ctime = 1,
+            .ctime_and_flags = 1,
             .mtime = 2,
             .cversion = 1,
             .aversion = 0,
@@ -114,7 +114,7 @@ void expectNodesEqual(const FullNode & expected, const FullNode & actual)
     EXPECT_EQ(expected.stats.czxid, actual.stats.czxid);
     EXPECT_EQ(expected.stats.mzxid, actual.stats.mzxid);
     EXPECT_EQ(expected.stats.pzxid, actual.stats.pzxid);
-    EXPECT_EQ(expected.stats.ctime, actual.stats.ctime);
+    EXPECT_EQ(expected.stats.ctime_and_flags, actual.stats.ctime_and_flags);
     EXPECT_EQ(expected.stats.mtime, actual.stats.mtime);
     EXPECT_EQ(expected.stats.cversion, actual.stats.cversion);
     EXPECT_EQ(expected.stats.aversion, actual.stats.aversion);
