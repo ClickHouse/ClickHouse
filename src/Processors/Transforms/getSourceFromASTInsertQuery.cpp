@@ -49,6 +49,9 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     if (ast_insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has infile and was send directly to server");
 
+    if (ast_insert_query->compression && context->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
+
     if (ast_insert_query->format.empty())
     {
         if (input_function)
@@ -57,7 +60,7 @@ InputFormatPtr getInputFormatFromASTInsertQuery(
     }
 
     std::unique_ptr<ReadBuffer> input_buffer = with_buffers
-        ? getReadBufferFromASTInsertQuery(ast)
+        ? getReadBufferFromASTInsertQuery(ast, context)
         : std::make_unique<EmptyReadBuffer>();
 
     const Settings & settings = context->getSettingsRef();
@@ -109,11 +112,14 @@ Pipe getSourceFromASTInsertQuery(
     return getSourceFromInputFormat(ast, std::move(format), std::move(context), input_function);
 }
 
-std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast)
+std::unique_ptr<ReadBuffer> getReadBufferFromASTInsertQuery(const ASTPtr & ast, ContextPtr context)
 {
     const auto * insert_query = ast->as<ASTInsertQuery>();
     if (!insert_query)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query requires data to insert, but it is not INSERT query");
+
+    if (insert_query->compression && !insert_query->infile && context->getApplicationType() == Context::ApplicationType::SERVER)
+        throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Query has COMPRESSION next to FORMAT and was send directly to server");
 
     if (insert_query->infile)
     {

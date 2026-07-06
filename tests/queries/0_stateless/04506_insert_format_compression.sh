@@ -6,23 +6,23 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
-[ -e "${CLICKHOUSE_TMP}"/04501_data.csv ] && rm "${CLICKHOUSE_TMP}"/04501_data.csv
-[ -e "${CLICKHOUSE_TMP}"/04501_data.csv.gz ] && rm "${CLICKHOUSE_TMP}"/04501_data.csv.gz
+[ -e "${CLICKHOUSE_TMP}"/04506_data.csv ] && rm "${CLICKHOUSE_TMP}"/04506_data.csv
+[ -e "${CLICKHOUSE_TMP}"/04506_data.csv.gz ] && rm "${CLICKHOUSE_TMP}"/04506_data.csv.gz
 
-printf '1,A\n2,B\n' > "${CLICKHOUSE_TMP}"/04501_data.csv
-gzip -k "${CLICKHOUSE_TMP}"/04501_data.csv
+printf '1,A\n2,B\n' > "${CLICKHOUSE_TMP}"/04506_data.csv
+gzip -k "${CLICKHOUSE_TMP}"/04506_data.csv
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS test_insert_format_compression"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 
 # Compressed data via stdin, next to a bare FORMAT clause (no FROM INFILE).
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'gzip'" < "${CLICKHOUSE_TMP}"/04501_data.csv.gz
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'gzip'" < "${CLICKHOUSE_TMP}"/04506_data.csv.gz
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
-rm -f "${CLICKHOUSE_TMP}"/04501_data.csv "${CLICKHOUSE_TMP}"/04501_data.csv.gz
+rm -f "${CLICKHOUSE_TMP}"/04506_data.csv "${CLICKHOUSE_TMP}"/04506_data.csv.gz
 
 # Parser-only check: COMPRESSION next to a bare FORMAT (no FROM INFILE) is accepted and round-trips through formatting.
 ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION ''gzip''')"
@@ -33,27 +33,27 @@ ${CLICKHOUSE_CLIENT} --query "SELECT formatQuerySingleLine('INSERT INTO test_ins
 # Functional check: COMPRESSION works the same way through the input() table function as through a bare FORMAT clause.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
 
-printf '3,C\n4,D\n' > "${CLICKHOUSE_TMP}"/04501_data2.csv
-gzip -k "${CLICKHOUSE_TMP}"/04501_data2.csv
+printf '3,C\n4,D\n' > "${CLICKHOUSE_TMP}"/04506_data2.csv
+gzip -k "${CLICKHOUSE_TMP}"/04506_data2.csv
 
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression SELECT * FROM input('id UInt32, text String') FORMAT CSV COMPRESSION 'gzip'" < "${CLICKHOUSE_TMP}"/04501_data2.csv.gz
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression SELECT * FROM input('id UInt32, text String') FORMAT CSV COMPRESSION 'gzip'" < "${CLICKHOUSE_TMP}"/04506_data2.csv.gz
 
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
-rm -f "${CLICKHOUSE_TMP}"/04501_data2.csv "${CLICKHOUSE_TMP}"/04501_data2.csv.gz
+rm -f "${CLICKHOUSE_TMP}"/04506_data2.csv "${CLICKHOUSE_TMP}"/04506_data2.csv.gz
 
 # Non-gzip compression method: COMPRESSION works with 'zstd' too, not just 'gzip'.
-printf '7,G\n8,H\n' > "${CLICKHOUSE_TMP}"/04501_data3.csv
-zstd -q -k -f "${CLICKHOUSE_TMP}"/04501_data3.csv -o "${CLICKHOUSE_TMP}"/04501_data3.csv.zst
+printf '7,G\n8,H\n' > "${CLICKHOUSE_TMP}"/04506_data3.csv
+zstd -q -k -f "${CLICKHOUSE_TMP}"/04506_data3.csv -o "${CLICKHOUSE_TMP}"/04506_data3.csv.zst
 
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'zstd'" < "${CLICKHOUSE_TMP}"/04501_data3.csv.zst
+${CLICKHOUSE_CLIENT} --query "INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'zstd'" < "${CLICKHOUSE_TMP}"/04506_data3.csv.zst
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
-rm -f "${CLICKHOUSE_TMP}"/04501_data3.csv "${CLICKHOUSE_TMP}"/04501_data3.csv.zst
+rm -f "${CLICKHOUSE_TMP}"/04506_data3.csv "${CLICKHOUSE_TMP}"/04506_data3.csv.zst
 
 # clickhouse-local regression: bare FORMAT + COMPRESSION via stdin works the same way in clickhouse-local
 # as in clickhouse-client (both share ClientBase::sendDataFrom for this path). A bare-FORMAT INSERT fed
@@ -62,21 +62,35 @@ rm -f "${CLICKHOUSE_TMP}"/04501_data3.csv "${CLICKHOUSE_TMP}"/04501_data3.csv.zs
 # INSERT run in one invocation with a persistent --path, and SELECT runs in a second invocation.
 # Uses MergeTree, not Memory, since Memory-engine data does not survive across clickhouse-local
 # process restarts even with the same --path.
-printf '9,I\n10,J\n' > "${CLICKHOUSE_TMP}"/04501_data4.csv
-gzip -k -f "${CLICKHOUSE_TMP}"/04501_data4.csv
+printf '9,I\n10,J\n' > "${CLICKHOUSE_TMP}"/04506_data4.csv
+gzip -k -f "${CLICKHOUSE_TMP}"/04506_data4.csv
 
-rm -rf "${CLICKHOUSE_TMP}"/04501_local_path
-mkdir -p "${CLICKHOUSE_TMP}"/04501_local_path
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path
+mkdir -p "${CLICKHOUSE_TMP}"/04506_local_path
 
-${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04501_local_path --query "
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path --query "
 CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION 'gzip'
-" < "${CLICKHOUSE_TMP}"/04501_data4.csv.gz
+" < "${CLICKHOUSE_TMP}"/04506_data4.csv.gz
 
-${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04501_local_path --query "SELECT * FROM test_insert_format_compression ORDER BY id"
+${CLICKHOUSE_LOCAL} --path "${CLICKHOUSE_TMP}"/04506_local_path --query "SELECT * FROM test_insert_format_compression ORDER BY id"
 
-rm -f "${CLICKHOUSE_TMP}"/04501_data4.csv "${CLICKHOUSE_TMP}"/04501_data4.csv.gz
-rm -rf "${CLICKHOUSE_TMP}"/04501_local_path
+rm -f "${CLICKHOUSE_TMP}"/04506_data4.csv "${CLICKHOUSE_TMP}"/04506_data4.csv.gz
+rm -rf "${CLICKHOUSE_TMP}"/04506_local_path
+
+# Negative check: COMPRESSION is client-side-only. Sent directly to the server over HTTP (which never
+# decompresses this clause), it must be rejected with a clear error instead of falling through to the
+# format parser with still-compressed bytes.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+printf '11,K\n' | gzip | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20test_insert_format_compression%20FORMAT%20CSV%20COMPRESSION%20'gzip'" --data-binary @- | grep -c -o "Query has COMPRESSION next to FORMAT and was send directly to server"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
+
+# Negative check: same rejection applies on the async_insert path, which reads the insert data via a
+# different function (AsynchronousInsertQueue::pushQueryWithInlinedData) that bypasses the synchronous
+# insert's format-preparation code entirely, so it needs (and has) its own copy of this guard.
+${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
+printf '12,L\n' | gzip | ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&query=INSERT%20INTO%20test_insert_format_compression%20FORMAT%20CSV%20COMPRESSION%20'gzip'&async_insert=1&wait_for_async_insert=1" --data-binary @- | grep -c -o "Query has COMPRESSION next to FORMAT and was send directly to server"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE test_insert_format_compression"
 
 # Negative check: COMPRESSION with an unknown method name after bare FORMAT is rejected with a clear error.
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE test_insert_format_compression (id UInt32, text String) ENGINE = Memory"
