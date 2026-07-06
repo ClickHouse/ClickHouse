@@ -181,11 +181,9 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
         const size_t total_manifests = data_snapshot->manifest_list_entries.size();
         while (true)
         {
-            size_t idx;
-            if (shared_manifest_index)
-                idx = shared_manifest_index->fetch_add(1, std::memory_order_relaxed);
-            else
-                idx = local_manifest_file_index++;
+            const size_t idx = shared_manifest_index
+                ? shared_manifest_index->fetch_add(1, std::memory_order_relaxed)
+                : local_manifest_file_index++;
             if (idx >= total_manifests)
                 break;
 
