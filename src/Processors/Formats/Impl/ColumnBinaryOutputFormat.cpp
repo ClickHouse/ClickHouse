@@ -6,6 +6,7 @@
 #include <Formats/FormatSettings.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 
 #include <Common/typeid_cast.h>
@@ -36,6 +37,17 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
         const IColumn * actual = is_const
             ? &static_cast<const ColumnConst &>(raw_col).getDataColumn()
             : &raw_col;
+        // TODO(LowCardinality wire format): fully materialized to the dictionary's full
+        // column here rather than encoded as dictionary+index on the wire — see the TODO
+        // on validateColumnarV1SupportedType's LowCardinality branch. Must happen before
+        // is_nullable below: a LowCardinality(Nullable(T)) dictionary materializes to a
+        // real ColumnNullable, which is_nullable needs to see to reserve a null map.
+        ColumnPtr lowcard_materialized;
+        if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(actual))
+        {
+            lowcard_materialized = lc_col->convertToFullColumn();
+            actual = lowcard_materialized.get();
+        }
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : static_cast<uint32_t>(rows);
 
@@ -65,6 +77,12 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         const IColumn * actual = is_const
             ? &static_cast<const ColumnConst &>(raw_col).getDataColumn()
             : &raw_col;
+        ColumnPtr lowcard_materialized;
+        if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(actual))
+        {
+            lowcard_materialized = lc_col->convertToFullColumn();
+            actual = lowcard_materialized.get();
+        }
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
         cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, descs[i]);
@@ -109,6 +127,12 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
         const IColumn * actual = is_const
             ? &static_cast<const ColumnConst &>(raw_col).getDataColumn()
             : &raw_col;
+        ColumnPtr lowcard_materialized;
+        if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(actual))
+        {
+            lowcard_materialized = lc_col->convertToFullColumn();
+            actual = lowcard_materialized.get();
+        }
         bool is_nullable = typeid_cast<const ColumnNullable *>(actual) != nullptr;
         uint32_t col_rows = is_const ? 1u : num_rows;
         ColumnarV1::writeColData(actual, is_nullable, col_rows, descs[i], buf_span);

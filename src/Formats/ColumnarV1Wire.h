@@ -69,22 +69,24 @@
 /// validateColumnarV1SupportedType is the single source of truth for which
 /// ClickHouse types this wire format can represent; call it eagerly (at format
 /// construction / CREATE FUNCTION time) rather than discovering a rejection
-/// only once the first block is serialized. Not supported: LowCardinality (no
-/// wire encoding at all — would need a dictionary + variable-width index, unlike
-/// everything else here), Nullable(Array/Variant) (no wire slot for a top-level
-/// null map on COL_COMPLEX/COL_VARIANT; Nullable(Tuple(...)) is supported instead,
-/// via a top-level null map on COL_COMPLEX), and Variant nested inside Array/
-/// Tuple. Nullable(T) nested inside Array/Tuple is supported (u8 null_map[n]
-/// prepended to T's own layout, see complexDataSize/writeComplexData/the decode
-/// lambda). Map(K, V) is supported with no dedicated wire encoding: it's Array
-/// (Tuple(K, V)) under the hood (DataTypeMap::getNestedType() /
-/// ColumnMap::getNestedColumn()), so it's unwrapped to that at every touch point
-/// and goes through the existing Array/Tuple path. Any fixed-width type is
-/// supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8 bytes, COL_FIXEDN for
-/// everything else — UUID, IPv6, Int128/UInt128, Decimal128/256), and so is
-/// FixedString(N) of any length (also COL_FIXEDN). Any type kind this format has
-/// no encoding for at all (Dynamic, JSON/Object, AggregateFunction(...), ...) is
-/// also rejected.
+/// only once the first block is serialized. Not supported: Nullable(Array/Variant)
+/// (no wire slot for a top-level null map on COL_COMPLEX/COL_VARIANT; Nullable
+/// (Tuple(...)) is supported instead, via a top-level null map on COL_COMPLEX),
+/// and Variant nested inside Array/Tuple. Nullable(T) nested inside Array/Tuple
+/// is supported (u8 null_map[n] prepended to T's own layout, see complexDataSize/
+/// writeComplexData/the decode lambda). Map(K, V) is supported with no dedicated
+/// wire encoding: it's Array(Tuple(K, V)) under the hood (DataTypeMap::
+/// getNestedType() / ColumnMap::getNestedColumn()), so it's unwrapped to that at
+/// every touch point and goes through the existing Array/Tuple path.
+/// LowCardinality(T) is supported by fully materializing to T's full column on
+/// write (ColumnLowCardinality::convertToFullColumn()) and rebuilding via
+/// insertRangeFromFullColumn on read — TODO: no dictionary/index encoding on the
+/// wire yet, see the TODO on validateColumnarV1SupportedType's LowCardinality
+/// branch. Any fixed-width type is supported at any width (COL_FIXED8/16/32/64
+/// for 1/2/4/8 bytes, COL_FIXEDN for everything else — UUID, IPv6, Int128/
+/// UInt128, Decimal128/256), and so is FixedString(N) of any length (also
+/// COL_FIXEDN). Any type kind this format has no encoding for at all (Dynamic,
+/// JSON/Object, AggregateFunction(...), ...) is also rejected.
 
 #include <cstring>
 #include <span>
@@ -95,6 +97,7 @@
 #include <base/unaligned.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
@@ -200,9 +203,21 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
         validateColumnarV1SupportedType(map_type->getNestedType(), is_nested);
         return;
     }
-    if (typeid_cast<const DataTypeLowCardinality *>(type.get()))
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1/ColumnBinary: LowCardinality is not supported: {}", type->getName());
+    if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+    {
+        // TODO(LowCardinality wire format): currently supported by fully materializing
+        // to the dictionary's underlying full column on write (ColumnLowCardinality::
+        // convertToFullColumn(), see buildColDescriptor/writeColData/complexDataSize/
+        // writeComplexData) and rebuilding via insertRangeFromFullColumn on read — there
+        // is no dictionary/index encoding on the wire. A direct encoding (a sub-
+        // ColDescriptor for the dictionary column plus a variable-width index array,
+        // mirroring COL_VARIANT's inline sub-descriptor approach) would avoid re-
+        // deduplicating values the source column already deduplicated, and avoid paying
+        // the materialization cost three times per column (precomputeSerializedSize's
+        // size pass, the layout pass, and the write pass).
+        validateColumnarV1SupportedType(lowcard_type->getDictionaryType(), is_nested);
+        return;
+    }
     if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
     {
         validateColumnarV1SupportedType(array_type->getNestedType(), /* is_nested */ true);
@@ -257,6 +272,8 @@ inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
 {
     if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
         return complexDataSize(map_col->getNestedColumn(), n);
+    if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
+        return complexDataSize(*lc_col->convertToFullColumn(), n);
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
         uint32_t total = static_cast<uint32_t>(arr->getData().size());
@@ -291,6 +308,11 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
     if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
     {
         writeComplexData(map_col->getNestedColumn(), n, dst);
+        return;
+    }
+    if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
+    {
+        writeComplexData(*lc_col->convertToFullColumn(), n, dst);
         return;
     }
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
@@ -688,9 +710,17 @@ inline MutableColumnPtr readColumnFromDesc(
     bool is_const         = (desc.type & COL_IS_CONST) != 0;
     uint32_t rows_to_dec  = is_const ? 1u : num_rows;
 
+    // LowCardinality is fully materialized to the dictionary's full column on write
+    // (see buildColDescriptor); unwrap the declared type the same way before applying
+    // the Nullable unwrap below, so e.g. LowCardinality(Nullable(String)) — materialized
+    // to a plain ColumnNullable(String) — is decoded as Nullable(String), matching what
+    // was actually written, not misread as top-level Nullable(LowCardinality(...)).
+    const auto * lowcard_type_ptr = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
+    const DataTypePtr & unwrapped_type = lowcard_type_ptr ? lowcard_type_ptr->getDictionaryType() : result_type;
+
     const DataTypePtr & base_type = is_nullable_wire
-        ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
-        : result_type;
+        ? dynamic_cast<const DataTypeNullable &>(*unwrapped_type).getNestedType()
+        : unwrapped_type;
 
     // desc comes straight from guest/network memory and is otherwise untrusted:
     // validate data_offset/data_size against buf.size() before forming any
@@ -710,6 +740,13 @@ inline MutableColumnPtr readColumnFromDesc(
     {
         if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
             return ColumnMap::create(decode(p, map_type->getNestedType(), n));
+        if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
+        {
+            auto full_col = decode(p, lowcard_type->getDictionaryType(), n);
+            auto lc_col = lowcard_type->createColumn();
+            typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full_col, 0, full_col->size());
+            return lc_col;
+        }
         if (const auto * arr_type = typeid_cast<const DataTypeArray *>(type.get()))
         {
             // n comes from a guest-controlled row/element count; widen before the +1 or
@@ -1122,6 +1159,13 @@ inline MutableColumnPtr readColumnFromDesc(
     else
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
+    }
+
+    if (lowcard_type_ptr)
+    {
+        auto lc_col = lowcard_type_ptr->createColumn();
+        typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*col, 0, col->size());
+        col = std::move(lc_col);
     }
 
     if (is_const && num_rows > 0)
