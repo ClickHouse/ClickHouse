@@ -206,6 +206,15 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+
+        /// Check for 'COMPRESSION' parameter (optional), only meaningful when there is no FROM INFILE
+        /// (in that case COMPRESSION, if any, was already consumed right after the infile name).
+        if (!infile && s_compression.ignore(pos, expected))
+        {
+            ParserStringLiteral compression_p;
+            if (!compression_p.parse(pos, compression, expected))
+                return false;
+        }
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
@@ -235,10 +244,29 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
+        if (s_format.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, format, expected))
+                return false;
 
-        tryGetIdentifierNameInto(format, format_str);
+            tryGetIdentifierNameInto(format, format_str);
+
+            /// Check for 'COMPRESSION' parameter (optional), only meaningful when the SELECT
+            /// reads inline data through the `input` table function (otherwise there is no
+            /// data to decompress, the rows come from the SELECT itself), and only when
+            /// there is no FROM INFILE (whose own COMPRESSION, if any, was already consumed
+            /// right after the infile name).
+            if (!infile && selectReadsInlineDataViaInputFunction(select) && s_compression.ignore(pos, expected))
+            {
+                ParserStringLiteral compression_p;
+                if (!compression_p.parse(pos, compression, expected))
+                    return false;
+            }
+        }
+        else
+        {
+            tryGetIdentifierNameInto(format, format_str);
+        }
     }
     else if (!infile)
     {
@@ -318,11 +346,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (infile)
     {
         query->infile = infile;
-        query->compression = compression;
-
         query->children.push_back(infile);
-        if (compression)
-            query->children.push_back(compression);
+    }
+
+    if (compression)
+    {
+        query->compression = compression;
+        query->children.push_back(compression);
     }
 
     if (table_function)

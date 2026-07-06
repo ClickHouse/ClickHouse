@@ -132,6 +132,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
+
+            if (!infile && compression)
+                ostr
+                    << " "
+                    << "COMPRESSION"
+
+                    << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
         }
     }
     else
@@ -140,6 +147,13 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         {
             ostr << delim
                 << "FORMAT" << " " << format;
+
+            if (!infile && compression)
+                ostr
+                    << " "
+                    << "COMPRESSION"
+
+                    << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
         }
         else if (!infile)
         {

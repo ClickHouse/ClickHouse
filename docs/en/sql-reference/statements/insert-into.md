@@ -224,6 +224,45 @@ INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
 :::
 
+## Inserting Compressed Data via stdin {#inserting-compressed-data-via-stdin}
+
+**Syntax**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] FORMAT format_name COMPRESSION type
+```
+
+A `COMPRESSION` clause can also be used next to a bare `FORMAT` clause, i.e. without `FROM INFILE`, to insert compressed data supplied via stdin. This is supported in the [command-line client](../../interfaces/client.md) and [clickhouse-local](../../operations/utilities/clickhouse-local.md); the client decompresses the data locally before sending it to the server. `type` is a string literal; supported types are: `'none'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`.
+
+:::note
+`COMPRESSION` next to a bare `FORMAT` is only supported for data piped via stdin, not for compressed data embedded inline in the query text. Compressed bytes have no unambiguous end marker that the client can use to separate this query's data from a following query's text in a `--multiquery` script, so inline compressed data is rejected with an error.
+:::
+
+:::note
+`COMPRESSION` next to a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](../../interfaces/client.md) and `clickhouse-local`. The [HTTP interface](/interfaces/http) parses this syntax but does not decompress the body for it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
+:::
+
+:::note
+Each `INSERT ... FORMAT format_name COMPRESSION type` piped via stdin reads from stdin until it is exhausted. In a `--multiquery` script with more than one such statement, only the first one reads any data; subsequent ones see an already-exhausted stdin and insert zero rows without an error. This is the existing behavior of bare `FORMAT` with stdin in general, not specific to `COMPRESSION`. Run each stdin-fed `INSERT` as a separate client invocation instead.
+:::
+
+**Example**
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+gzip -k input.csv
+clickhouse-client --query="CREATE TABLE table_from_stdin (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_stdin FORMAT CSV COMPRESSION 'gzip'" < input.csv.gz
+clickhouse-client --query="SELECT * FROM table_from_stdin FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
+
 ## Inserting using a Table Function {#inserting-using-a-table-function}
 
 Data can be inserted into tables referenced by [table functions](../../sql-reference/table-functions/index.md).

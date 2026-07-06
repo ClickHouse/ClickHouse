@@ -1,0 +1,14 @@
+1	A
+2	B
+INSERT INTO test_insert_format_compression FORMAT CSV COMPRESSION \'gzip\'
+INSERT INTO test_insert_format_compression SELECT * FROM input(\'id UInt32, text String\') FORMAT CSV COMPRESSION \'gzip\'
+3	C
+4	D
+7	G
+8	H
+9	I
+10	J
+1
+1
+0
+0
