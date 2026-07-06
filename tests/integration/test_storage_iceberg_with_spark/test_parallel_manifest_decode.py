@@ -21,6 +21,11 @@ This test:
    `system.query_log` (no LIKE pattern matching on query text, no sums across
    queries). Asserts each per-query bump equals `min(threads, number of data
    manifests)` when N > 1, and 0 when N == 1.
+5. Deletes one row (the table uses `'write.delete.mode'='merge-on-read'`, so the
+   DELETE adds a positional-delete manifest instead of rewriting data files) and
+   asserts the spawn counter still equals the DATA manifest count, not the total
+   manifest-list entry count — the case that distinguishes clamping on
+   `content_type == DATA` entries from clamping on `manifest_list_entries.size()`.
 """
 
 import uuid
@@ -36,13 +41,14 @@ from helpers.iceberg_utils import (
 
 # Each Spark insert into a partitioned iceberg table produces one data manifest;
 # the test inserts into 8 distinct partitions, so the snapshot's manifest list has
-# exactly 8 data entries. The implementation clamps `parallel_threads` to
+# exactly 8 DATA entries. The implementation clamps `parallel_threads` to
 # `min(requested, max(data_manifests, 1))` — only DATA-content manifests count,
-# since delete manifests are drained serially before the producers start. This
-# fixture performs no deletes, so the data manifest count equals the total: 8.
-# Any N >= 8 therefore yields an effective 8-thread spawn (and a corresponding
-# 8-bump on the ProfileEvent counter).
-TOTAL_MANIFESTS = 8
+# since delete manifests are drained serially before the producers start. The
+# final phase of the test adds one positional-delete manifest (merge-on-read
+# DELETE), after which the manifest list has DATA_MANIFESTS + 1 entries while the
+# data manifest count — and therefore the expected spawn count for N >= 8 — stays
+# at DATA_MANIFESTS.
+DATA_MANIFESTS = 8
 
 
 def _execute_spark(spark, cluster, storage_type, table, query):
@@ -51,11 +57,10 @@ def _execute_spark(spark, cluster, storage_type, table, query):
 
 def _expected_events(threads):
     """Mirror of `resolveParallelManifestDecodeThreads`: counter bumps by 0 in
-    serial mode, otherwise by `min(threads, data manifests)` (all 8 of this
-    fixture's manifests are data manifests)."""
+    serial mode, otherwise by `min(threads, data manifests)`."""
     if threads <= 1:
         return 0
-    return min(threads, TOTAL_MANIFESTS)
+    return min(threads, DATA_MANIFESTS)
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -78,11 +83,11 @@ def test_parallel_manifest_decode_matches_serial(
             )
             USING iceberg
             PARTITIONED BY (identity(id))
-            OPTIONS('format-version'='2')
+            TBLPROPERTIES ('format-version' = '2', 'write.update.mode'='merge-on-read', 'write.delete.mode'='merge-on-read', 'write.merge.mode'='merge-on-read')
         """,
     )
 
-    for i in range(TOTAL_MANIFESTS):
+    for i in range(DATA_MANIFESTS):
         _execute_spark(
             spark,
             started_cluster_iceberg_with_spark,
@@ -166,3 +171,33 @@ def test_parallel_manifest_decode_matches_serial(
             f"expected IcebergParallelManifestDecodeThreadsSpawned = {expected}, "
             f"got {actual}"
         )
+
+    # Delete-manifest phase. The merge-on-read DELETE adds one positional-delete
+    # manifest to the snapshot and leaves the data manifests untouched (no manifest
+    # compaction at this count), so the manifest list now has DATA_MANIFESTS + 1
+    # entries while only DATA_MANIFESTS of them have content_type == DATA. This is
+    # the case where the clamp's DATA-only count diverges from the total entry
+    # count: a regression to clamping on `manifest_list_entries.size()` would spawn
+    # (and count) DATA_MANIFESTS + 1 threads below.
+    _execute_spark(
+        spark,
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        table_name,
+        f"DELETE FROM {table_name} WHERE id = 3",
+    )
+
+    serial_del_qid, serial_del = query_with_threads("del", select_all, 1)
+    parallel_del_qid, parallel_del = query_with_threads("del", select_all, 16)
+    assert serial_del != "", "post-delete baseline returned no rows; fixture broken"
+    assert "v3" not in serial_del, "deleted row still visible; fixture broken"
+    assert serial_del == parallel_del
+
+    instance.query("SYSTEM FLUSH LOGS")
+    assert events_for_qid(serial_del_qid) == 0
+    actual = events_for_qid(parallel_del_qid)
+    assert actual == DATA_MANIFESTS, (
+        f"expected the spawn counter to equal the DATA manifest count "
+        f"({DATA_MANIFESTS}), not the total manifest-list entry count "
+        f"({DATA_MANIFESTS + 1} including the delete manifest), got {actual}"
+    )
