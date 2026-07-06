@@ -61,10 +61,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsStreaming() const override { return true; }
-
-    CursorPromotersMap buildPromoters() override;
-
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(
@@ -236,8 +232,7 @@ private:
         TableLockHolder & table_lock_holder,
         std::unique_lock<std::mutex> & lock,
         const MergeTreeTransactionPtr & txn,
-        bool optimize_skip_merged_partitions = false,
-        bool readonly = false);
+        bool optimize_skip_merged_partitions = false);
 
     MergeMutateSelectedEntryPtr selectPartsToMutate(
         const StorageMetadataPtr & metadata_snapshot, PreformattedMessage & disable_reason,

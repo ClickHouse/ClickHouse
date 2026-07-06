@@ -1,10 +1,7 @@
 #include <Interpreters/ITokenizer.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
 #include <Common/StringUtils.h>
-#include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
 
 #if defined(__SSE2__)
@@ -93,7 +90,7 @@ void NgramsTokenizer::substringToBloomFilter(const char * data, size_t length, B
     stringToBloomFilter(data, length, bloom_filter);
 }
 
-void NgramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool, bool) const
+void NgramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool, bool) const
 {
     stringToTokens(data, length, tokens);
 }
@@ -202,7 +199,7 @@ void wordBoundarySubstringToBloomFilter(
 /// Same boundary-filtering logic as `wordBoundarySubstringToBloomFilter`.
 template <typename Tokenizer>
 void wordBoundarySubstringToTokens(
-    const Tokenizer & tokenizer, const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix)
+    const Tokenizer & tokenizer, const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix)
 {
     size_t cur = 0;
     size_t token_start = 0;
@@ -236,7 +233,7 @@ void SplitByNonAlphaTokenizer::substringToBloomFilter(
 }
 
 void SplitByNonAlphaTokenizer::substringToTokens(
-    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
@@ -278,7 +275,7 @@ void SplitByStringTokenizer::substringToBloomFilter(const char *, size_t, BloomF
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToBloomFilter is not implemented");
 }
 
-void SplitByStringTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+void SplitByStringTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByStringTokenizer::substringToTokens is not implemented");
 }
@@ -319,7 +316,7 @@ void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &,
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToBloomFilter is not implemented");
 }
 
-void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+void ArrayTokenizer::substringToTokens(const char *, size_t, std::vector<String> &, bool, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
 }
@@ -342,8 +339,8 @@ bool SparseGramsTokenizer::nextInString(const char * data, size_t length, size_t
         sparse_grams_iterator.set(data, data + length);
     }
 
-    Pos next_begin = nullptr;
-    Pos next_end = nullptr;
+    Pos next_begin;
+    Pos next_end;
     if (!sparse_grams_iterator.get(next_begin, next_end))
     {
         previous_data = nullptr;
@@ -370,8 +367,8 @@ bool SparseGramsTokenizer::nextInStringLike(const char * data, size_t length, si
 
     while (true)
     {
-        Pos next_begin = nullptr;
-        Pos next_end = nullptr;
+        Pos next_begin;
+        Pos next_end;
         if (!sparse_grams_iterator.get(next_begin, next_end))
         {
             previous_data = nullptr;
@@ -412,12 +409,12 @@ void SparseGramsTokenizer::substringToBloomFilter(const char * data, size_t leng
     stringToBloomFilter(data, length, bloom_filter);
 }
 
-void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
+void SparseGramsTokenizer::substringToTokens(const char * data, size_t length, std::vector<String> & tokens, bool /*is_prefix*/, bool /*is_suffix*/) const
 {
     stringToTokens(data, length, tokens);
 }
 
-VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const VectorWithMemoryTracking<String> & tokens) const
+std::vector<String> SparseGramsTokenizer::compactTokens(const std::vector<String> & tokens) const
 {
     std::unordered_set<String> result;
     auto sorted_tokens = tokens;
@@ -446,7 +443,7 @@ VectorWithMemoryTracking<String> SparseGramsTokenizer::compactTokens(const Vecto
             result.insert(token);
     }
 
-    return VectorWithMemoryTracking<String>(result.begin(), result.end());
+    return std::vector<String>(result.begin(), result.end());
 }
 
 String SparseGramsTokenizer::getDescription() const
@@ -468,54 +465,6 @@ void forEachTokenToBloomFilter(const ITokenizer & tokenizer, const char * data, 
             bloom_filter.add(token_start, token_length);
             return false;
         });
-}
-
-ColumnPtr tokenizeToArray(const ITokenizer & tokenizer, const IColumn & input, size_t from, size_t rows)
-{
-    chassert(from + rows <= input.size());
-
-    auto tokens_data = ColumnString::create();
-    auto tokens_offsets = ColumnArray::ColumnOffsets::create();
-    tokens_offsets->reserve(rows);
-
-    auto tokenize = [&](std::string_view doc)
-    {
-        forEachToken(tokenizer, doc.data(), doc.size(),
-            [&](const char * token_start, size_t token_length)
-            {
-                tokens_data->insertData(token_start, token_length);
-                return false;
-            });
-    };
-
-    if (const auto * col_array = typeid_cast<const ColumnArray *>(&input))
-    {
-        const IColumn & data = col_array->getData();
-        const IColumn::Offsets & src_offsets = col_array->getOffsets();
-        const bool data_is_nullable = data.isNullable();
-
-        for (size_t i = from; i < from + rows; ++i)
-        {
-            for (size_t j = src_offsets[i - 1]; j < src_offsets[i]; ++j)
-            {
-                if (data_is_nullable && data.isNullAt(j))
-                    continue;
-                tokenize(data.getDataAt(j));
-            }
-            tokens_offsets->getData().push_back(tokens_data->size());
-        }
-    }
-    else
-    {
-        for (size_t i = from; i < from + rows; ++i)
-        {
-            if (!input.isNullAt(i))
-                tokenize(input.getDataAt(i));
-            tokens_offsets->getData().push_back(tokens_data->size());
-        }
-    }
-
-    return ColumnArray::create(std::move(tokens_data), std::move(tokens_offsets));
 }
 
 bool AsciiCJKTokenizer::nextInString(
@@ -627,7 +576,7 @@ bool AsciiCJKTokenizer::nextInString(
 bool AsciiCJKTokenizer::nextInStringLike(const char * data, size_t length, size_t & __restrict pos, String & token) const
 {
     token.clear();
-    size_t token_start = 0;
+    size_t token_start;
     std::optional<size_t> last_glob_pos;
     bool escaped = false; /// Whether current char is an escaped char
     while (pos < length)
@@ -780,7 +729,7 @@ void AsciiCJKTokenizer::substringToBloomFilter(
 }
 
 void AsciiCJKTokenizer::substringToTokens(
-    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+    const char * data, size_t length, std::vector<String> & tokens, bool is_prefix, bool is_suffix) const
 {
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }

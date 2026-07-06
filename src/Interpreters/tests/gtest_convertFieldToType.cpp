@@ -19,7 +19,7 @@ struct ConvertFieldToTypeTestParams
     const std::optional<Field> expected_value;
 };
 
-static std::ostream & operator << (std::ostream & ostr, const ConvertFieldToTypeTestParams & params)
+std::ostream & operator << (std::ostream & ostr, const ConvertFieldToTypeTestParams & params)
 {
     return ostr << "{"
             << "\n\tfrom_type  : " << params.from_type

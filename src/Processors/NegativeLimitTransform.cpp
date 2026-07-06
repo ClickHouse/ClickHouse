@@ -241,7 +241,7 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkSuffixWithinLimit()
     if (queued_row_count <= offset || queued_row_count - offset <= limit)
         return Status::Finished;
 
-    chassert(!queue.empty() && "Queue is empty in tryPushChunkSuffixWithinLimit");
+    assert(!queue.empty() && "Queue is empty in tryPushChunkSuffixWithinLimit");
 
     auto & front = queue.front();
 
@@ -308,7 +308,7 @@ IProcessor::Status NegativeLimitTransform::tryPushWholeFrontChunk()
     /// Need to keep at least 'offset' rows queued.
     while (queued_row_count > offset)
     {
-        chassert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
+        assert(!queue.empty() && "Queue is empty in tryPushWholeFrontChunk");
 
         auto & front = queue.front();
 
@@ -340,7 +340,7 @@ IProcessor::Status NegativeLimitTransform::tryPushChunkPrefixWithinLimit()
         return Status::Finished;
 
 
-    chassert(!queue.empty() && "Queue is empty in tryPushChunkPrefixWithinLimit");
+    assert(!queue.empty() && "Queue is empty in tryPushChunkPrefixWithinLimit");
 
     auto & front = queue.front();
 

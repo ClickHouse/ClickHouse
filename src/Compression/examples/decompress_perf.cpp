@@ -2,7 +2,6 @@
 #include <iostream>
 
 #include <base/types.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <lz4.h>
 
 #include <IO/ReadBuffer.h>
@@ -16,7 +15,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/formatReadable.h>
 #include <base/unaligned.h>
-#include <Examples/clickhouse_examples.h>
 
 
 /** for i in *.bin; do ./decompress_perf < $i > /dev/null; done
@@ -144,8 +142,8 @@ private:
 
     bool nextImpl() override
     {
-        size_t size_decompressed = {};
-        size_t size_compressed_without_checksum = {};
+        size_t size_decompressed;
+        size_t size_compressed_without_checksum;
         size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
         if (!size_compressed)
             return false;
@@ -194,7 +192,7 @@ try
     size_t times = argc < 3 ? 1 : parse<size_t>(argv[2]);
     ssize_t variant = argc < 4 ? -1 : parse<ssize_t>(argv[3]);
 
-    DB::VectorWithMemoryTracking<UInt64> runs;
+    std::vector<UInt64> runs;
 
     for (size_t i = 0; i < times; i++)
     {

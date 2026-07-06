@@ -9,7 +9,7 @@ namespace DB
 
 /// Class for text serialization/deserialization of the JSON data type.
 template <typename Parser>
-class SerializationJSON final : public SerializationObject
+class SerializationJSON : public SerializationObject
 {
 private:
     SerializationJSON(
