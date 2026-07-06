@@ -322,6 +322,26 @@ TEST(BackupInfo, NormalizedStringIgnoresS3PathQueryExceptVersionId)
     EXPECT_EQ(second.toNormalizedString().find("two"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringKeepsS3UrlPlainQueryAsKey)
+{
+    auto first = BackupInfo::fromString("S3('s3://bucket/backup?part=1')");
+    auto second = BackupInfo::fromString("S3('s3://bucket/backup?part=2')");
+
+    EXPECT_NE(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString().find("part=1"), String::npos);
+    EXPECT_NE(second.toNormalizedString().find("part=2"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringKeepsS3PathPlainQueryAsKey)
+{
+    auto first = BackupInfo::fromString("S3(collection, 'backup?part=1')");
+    auto second = BackupInfo::fromString("S3(collection, 'backup?part=2')");
+
+    EXPECT_NE(first.toNormalizedString(), second.toNormalizedString());
+    EXPECT_NE(first.toNormalizedString().find("part=1"), String::npos);
+    EXPECT_NE(second.toNormalizedString().find("part=2"), String::npos);
+}
+
 TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
 {
     auto s3 = BackupInfo::fromString("S3('s3://bucket/backup')");
