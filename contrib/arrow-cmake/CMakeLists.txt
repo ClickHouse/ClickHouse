@@ -99,7 +99,12 @@ add_library(_flatbuffers STATIC ${FLATBUFFERS_SRCS})
 # Expose the headers as SYSTEM so that the (header-only) flexbuffers.h does not trip ClickHouse's
 # strict -Werror when included from clickhouse_common_io consumers (e.g. the Flatbuffers format).
 target_include_directories(_flatbuffers SYSTEM PUBLIC ${FLATBUFFERS_INCLUDE_DIR})
-target_compile_definitions(_flatbuffers PRIVATE -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
+# PUBLIC (not PRIVATE): consumers of the header-only flexbuffers.h (e.g. the Flatbuffers output
+# format in clickhouse_common_io) must also disable the locale-independent parsing helpers, because
+# musl does not declare `strtoll_l` / `strtoull_l`, which flatbuffers/util.h references when
+# FLATBUFFERS_LOCALE_INDEPENDENT is left enabled. This also keeps the setting consistent with how
+# flatbuffers' own sources are compiled.
+target_compile_definitions(_flatbuffers PUBLIC -DFLATBUFFERS_LOCALE_INDEPENDENT=0)
 add_library (ch_contrib::flatbuffers ALIAS _flatbuffers)
 
 # ===  hdfs
