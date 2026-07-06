@@ -1,0 +1,80 @@
+---
+description: 'توثيق لعبارة SET'
+sidebarTitle: 'SET'
+slug: /sql-reference/statements/set
+title: 'عبارة SET'
+doc_type: 'reference'
+---
+
+```sql
+SET param = value
+```
+
+يُعيّن `value` للإعداد `param` في [الجلسة الحالية](/ar/concepts/features/configuration/settings/overview). لا يمكنك تغيير [إعدادات الخادم](/ar/reference/settings/server-settings/settings) بهذه الطريقة.
+
+يمكنك أيضًا تعيين جميع القيم من ملف تعريف الإعدادات المحدد في استعلام واحد.
+
+```sql
+SET profile = 'profile-name-from-the-settings-file'
+```
+
+بالنسبة إلى الإعدادات المنطقية المعيّنة إلى true، يمكنك استخدام صياغة مختصرة بحذف تعيين القيمة. وعند تحديد اسم الإعداد فقط، يُعيَّن تلقائيًا إلى `1` (true).
+
+```sql
+-- These are equivalent:
+SET force_index_by_date = 1
+SET force_index_by_date
+```
+
+<div id="set-time-zone">
+  ## SET TIME ZONE
+</div>
+
+```sql
+SET TIME ZONE [=] 'timezone'
+```
+
+يضبط المنطقة الزمنية للجلسة. هذا اسم مستعار لـ `SET session_timezone = 'timezone'`، وهو متاح للتوافق مع PostgreSQL وقواعد بيانات SQL الأخرى.
+
+ترسل العديد من عملاء SQL وORMs وبرامج تشغيل JDBC الأمر `SET TIME ZONE` تلقائيًا عند الاتصال. تتيح هذه الصياغة لهذه الأدوات العمل مع ClickHouse من دون حلول مخصصة.
+
+```sql
+SET TIME ZONE 'UTC';
+SET TIME ZONE 'Europe/Amsterdam';
+SET TIME ZONE 'America/New_York';
+
+-- Verify the current session time zone
+SELECT getSetting('session_timezone');
+```
+
+يجب أن تكون قيمة timezone اسمًا صحيحًا من [قاعدة بيانات المناطق الزمنية لـ IANA](https://www.iana.org/time-zones). وسيؤدي استخدام اسم timezone غير صحيح إلى حدوث خطأ.
+
+لمزيد من المعلومات حول الإعداد `session_timezone`، راجع [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone).
+
+<div id="setting-query-parameters">
+  ## تعيين معلمات الاستعلام
+</div>
+
+يمكن أيضًا استخدام عبارة `SET` لتعريف معلمات الاستعلام بإضافة السابقة `param_` قبل اسم المعلمة.
+تتيح لك معلمات الاستعلام كتابة استعلامات عامة باستخدام عناصر نائبة تُستبدل بالقيم الفعلية وقت التنفيذ.
+
+```sql
+SET param_name = value
+```
+
+لاستخدام معلمة استعلام في استعلامك، أشِر إليها باستخدام الصيغة `{name: datatype}`:
+
+```sql
+SET param_id = 42;
+SET param_name = 'John';
+
+SELECT * FROM users
+WHERE id = {id: UInt32}
+AND name = {name: String};
+```
+
+تكون معلمات الاستعلام مفيدةً بشكل خاص عندما تكون هناك حاجة إلى تنفيذ الاستعلام نفسه عدة مرات باستخدام قيم مختلفة.
+
+لمزيد من المعلومات التفصيلية حول معلمات الاستعلام، بما في ذلك استخدامها مع النوع `Identifier`، راجع [تعريف معلمات الاستعلام واستخدامها](/ar/reference/syntax#defining-and-using-query-parameters).
+
+لمزيد من المعلومات، راجع [الإعدادات](/ar/reference/settings/session-settings).

@@ -1,0 +1,73 @@
+---
+description: '指定した
+  クラスター内の多数のノードから、HDFS 内のファイルを並列に処理できます。'
+sidebarTitle: 'hdfsCluster'
+slug: /sql-reference/table-functions/hdfsCluster
+title: 'hdfsCluster'
+doc_type: 'reference'
+---
+
+指定したクラスター内の多数のノードから、HDFS 内のファイルを並列に処理できます。イニシエーターでは、クラスター内のすべてのノードとの 接続 を確立し、HDFS のファイルパス内のアスタリスクを展開して、各ファイルを動的に割り当てます。ワーカーノードでは、次に処理する task をイニシエーターに問い合わせて処理します。これを、すべての tasks が完了するまで繰り返します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+hdfsCluster(cluster_name, URI, format, structure)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+| 引数             | 説明                                                                                                                                                                                                                                     |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name` | リモートおよびローカルのサーバーのアドレスセットと接続パラメーターの構築に使用されるクラスター名。                                                                                                                                                                                      |
+| `URI`          | 1 つのファイル、または複数のファイルを指す URI。読み取り専用モードでは、次のワイルドカードをサポートします: `*`, `**`, `?`, `{'abc','def'}`、`{N..M}`。ここで、`N`、`M` は数値、`abc`、`def` は文字列です。詳細は [パス内のワイルドカード](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path) を参照してください。 |
+| `format`       | ファイルの [フォーマット](/ja/reference/formats/index)。                                                                                                                                                                                              |
+| `structure`    | テーブルの構造。フォーマットは `'column1_name column1_type, column2_name column2_type, ...'` です。                                                                                                                                                      |
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+指定されたファイル内のデータを読み取るための、指定された構造のテーブル。
+
+<div id="examples">
+  ## 例
+</div>
+
+1. `cluster_simple` という名前の ClickHouse クラスターがあり、HDFS 上に次の URI を持つ複数のファイルがあるとします。
+
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/some&#95;dir/some&#95;file&#95;3&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;1&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;2&#39;
+* &#39;hdfs://hdfs1:9000/another&#95;dir/some&#95;file&#95;3&#39;
+
+2. これらのファイルの行数をクエリします。
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV', 'name String, value UInt32')
+```
+
+3. これら2つのディレクトリ内にあるすべてのファイルの行数をクエリします：
+
+```sql
+SELECT count(*)
+FROM hdfsCluster('cluster_simple', 'hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV', 'name String, value UInt32')
+```
+
+<Note>
+  ファイル一覧に先頭に 0 が付いた数値範囲が含まれる場合は、各桁ごとに波かっこを使った構文を使用するか、`?` を使用してください。
+</Note>
+
+<div id="related">
+  ## 関連
+</div>
+
+* [HDFSエンジン](/ja/reference/engines/table-engines/integrations/hdfs)
+* [HDFSテーブル関数](/ja/reference/functions/table-functions/hdfs)

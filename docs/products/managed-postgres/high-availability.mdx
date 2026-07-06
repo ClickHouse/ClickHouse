@@ -1,0 +1,62 @@
+---
+slug: /cloud/managed-postgres/high-availability
+sidebarTitle: 'High availability'
+title: 'High availability'
+description: 'Configure standby replicas and replication modes for high availability in ClickHouse Managed Postgres'
+keywords: ['high availability', 'ha', 'standby', 'replication', 'failover', 'postgres ha']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
+
+Managed Postgres offers different levels of high availability to match your durability and performance requirements. You can add one or two standby replicas when provisioning your database, or adjust this configuration later from the **Settings** page as needed.
+
+{/* TODO(kaushik-ubi): Screenshot of high availability configuration view
+    Path: /images/cloud/managed-postgres/high-availability-config.png */}
+
+## High availability options {#high-availability-options}
+
+### 2 Standbys {#two-standbys}
+
+With two standbys, two replica nodes are provisioned alongside your primary. Both standbys are the same size as the primary and either can take over if the primary fails.
+
+This configuration uses **synchronous replication** where the primary waits for acknowledgement from at least one standby before confirming writes. This provides stronger durability guarantees than asynchronous replication. Because only one acknowledgement is required (not both), the performance impact is less severe than synchronous replication with a single standby.
+
+### 1 Standby {#one-standby}
+
+With one standby, a replica node is provisioned alongside your primary. The standby is the same size as the primary and can take over if the primary fails.
+
+Data is replicated to the standby using **asynchronous replication**. This means writes commit to the primary without waiting for acknowledgement from the standby. Asynchronous replication ensures that high availability doesn't slow down your writes due to additional network latency. However, it also means the standby might not have received the most recent transactions at the moment of a primary failure. For most applications, this trade-off between performance and the small risk of losing very recent writes is worth it. If durability of writes is necessary, it is recommended to opt for 2 standbys.
+
+### No Standby {#no-standby}
+
+With this option, only a primary node is provisioned in your selected size. No standby node is created. Your primary node is still monitored for failures, but recovery may take longer depending on the nature of the problem since there's no replica ready to take over. This configuration is best suited for development environments, testing, or non-critical workloads where some downtime is acceptable.
+
+## Standbys vs read replicas {#standbys-vs-read-replicas}
+
+Standbys and read replicas serve different purposes in Managed Postgres and are configured separately.
+
+**Standbys** are dedicated exclusively to high availability and automatic failover. They replicate data from the primary using streaming replication and are always ready to be promoted if the primary fails. Standbys aren't exposed for read queries.
+
+**Read replicas** are designed for read scaling. They pull WAL (Write-Ahead Log) data from object storage and run in a separate network environment with their own connection endpoint. Read replicas allow you to offload read traffic from your primary without impacting HA guarantees.
+
+### Why standbys don't serve read queries {#why-standbys-dont-serve-read-queries}
+
+While some database providers expose hot standbys for read-only queries, Managed Postgres intentionally doesn't. Allowing read queries on standbys can compromise their primary purpose: being ready to take over instantly when the primary fails.
+
+There are two main concerns:
+
+1. **WAL replay competition**: Under write-heavy workloads, read queries on a standby compete with WAL replay for system resources. This competition can cause high replication lag, meaning the standby falls behind the primary. If a failover occurs while the standby is lagging, it won't have the most recent data and may not be ready to take over cleanly.
+
+2. **VACUUM interference**: Long-running read queries on a standby can prevent `VACUUM` (and `AUTOVACUUM`) from cleaning up dead tuples on the primary. PostgreSQL can't remove rows that an active query on any replica might still need to access. This can lead to table bloat and degraded performance over time.
+
+By keeping standbys dedicated to failover, Managed Postgres ensures they're always synchronized and ready to take over with minimal data loss and downtime. For read scaling, use [read replicas](/products/managed-postgres/read-replicas) instead.
+
+## Handling failures {#handling-failures}
+
+All Managed Postgres instances are continuously monitored for failures, regardless of whether high availability is enabled. In all cases, the system attempts to heal from failures automatically.
+
+When standbys are available, automatic healing is faster and more straightforward. The system typically recovers within minutes by promoting a standby to primary. Without standbys, recovery may require manual intervention, significantly increasing the duration of any outage.

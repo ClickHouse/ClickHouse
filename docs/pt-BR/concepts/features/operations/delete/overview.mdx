@@ -1,0 +1,82 @@
+---
+slug: /deletes/overview
+title: 'Visão geral da exclusão'
+description: 'Como excluir dados no ClickHouse'
+keywords: ['excluir', 'truncate', 'drop', 'exclusão leve']
+doc_type: 'guide'
+---
+
+Há várias formas de excluir dados no ClickHouse, cada uma com suas próprias vantagens e características de desempenho. Selecione o método apropriado com base no seu modelo de dados e no volume de dados que você pretende excluir.
+
+| Método                                                                       | Sintaxe                      | Quando usar                                                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Exclusão leve](/pt-BR/concepts/features/operations/delete/lightweight-delete)     | `DELETE FROM [table]`        | Use ao excluir pequenas quantidades de dados. As linhas são imediatamente filtradas de todas as consultas SELECT subsequentes, mas, a princípio, são apenas marcadas internamente como excluídas, sem serem removidas do disco. |
+| [Mutação de exclusão](/pt-BR/reference/statements/alter/delete)                    | `ALTER TABLE [table] DELETE` | Use quando os dados precisarem ser removidos do disco imediatamente (por exemplo, por questões de compliance). Afeta negativamente o desempenho de SELECT.                                                                      |
+| [Truncar tabela](/pt-BR/reference/statements/truncate)                             | `TRUNCATE TABLE [db.table]`  | Remove com eficiência todos os dados de uma tabela.                                                                                                                                                                             |
+| [Remover partição](/pt-BR/reference/statements/alter/partition#drop-partitionpart) | `DROP PARTITION`             | Remove com eficiência todos os dados de uma partição.                                                                                                                                                                           |
+
+Aqui está um resumo das diferentes formas de excluir dados no ClickHouse:
+
+<div id="lightweight-deletes">
+  ## Exclusões leves
+</div>
+
+As exclusões leves fazem com que as linhas sejam imediatamente marcadas como excluídas, para que possam ser automaticamente filtradas de todas as consultas `SELECT` subsequentes. A remoção posterior dessas linhas excluídas ocorre durante ciclos naturais de merge e, assim, gera menos E/S. Como resultado, é possível que, por um período não especificado, os dados não sejam realmente excluídos do armazenamento, mas apenas marcados como excluídos. Se você precisar garantir que os dados sejam excluídos, considere o comando de mutação acima.
+
+```sql
+-- delete all data from 2018 with a lightweight delete. Not recommended.
+DELETE FROM posts WHERE toYear(CreationDate) = 2018
+```
+
+Excluir grandes volumes de dados com a instrução `DELETE` leve também pode afetar negativamente o desempenho de consultas `SELECT`. O comando também não é compatível com tabelas com projeções.
+
+Observe que uma mutação é usada na operação para [marcar as linhas excluídas](/pt-BR/reference/statements/delete#how-lightweight-deletes-work-internally-in-clickhouse) (adicionando uma coluna `_row_exists`), o que gera alguma E/S.
+
+Em geral, as exclusões leves devem ser preferidas em vez de mutações se a existência dos dados excluídos em disco puder ser tolerada (por exemplo, em casos em que não há requisitos de conformidade). Essa abordagem ainda deve ser evitada se todos os dados precisarem ser excluídos.
+
+Leia mais sobre [exclusões leves](/pt-BR/concepts/features/operations/delete/lightweight-delete).
+
+<div id="delete-mutations">
+  ## Mutações de exclusão
+</div>
+
+As mutações de exclusão podem ser executadas com um comando `ALTER TABLE ... DELETE`, por exemplo.
+
+```sql
+-- exclui todos os dados de 2018 com uma mutation. Não recomendado.
+ALTER TABLE posts DELETE WHERE toYear(CreationDate) = 2018
+```
+
+Elas podem ser executadas de forma síncrona (por padrão, se não forem replicadas) ou assíncrona (conforme determinado pela configuração [mutations&#95;sync](/pt-BR/reference/settings/session-settings#mutations_sync)). Essas operações consomem muita E/S, reescrevendo todas as partes que correspondem à expressão `WHERE`. Não há atomicidade nesse processo - as partes são substituídas por partes alteradas assim que ficam prontas, e uma consulta `SELECT` que comece a ser executada durante uma mutação verá dados de partes que já foram alteradas junto com dados de partes que ainda não foram alteradas. Os usuários podem acompanhar o andamento por meio da tabela [system.mutations](/pt-BR/reference/system-tables/mutations#monitoring-mutations). Essas são operações intensivas de E/S e devem ser usadas com moderação, pois podem afetar o desempenho das consultas `SELECT` no cluster.
+
+Leia mais sobre [mutações de exclusão](/pt-BR/reference/statements/alter/delete).
+
+<div id="truncate-table">
+  ## Truncar tabela
+</div>
+
+Se for necessário excluir todos os dados de uma tabela, use o comando `TRUNCATE TABLE` mostrado abaixo. Esta é uma operação simples.
+
+```sql
+TRUNCATE TABLE posts
+```
+
+Saiba mais sobre [TRUNCATE TABLE](/pt-BR/reference/statements/truncate).
+
+<div id="drop-partition">
+  ## Remover partição
+</div>
+
+Se você especificou uma chave de particionamento personalizada para seus dados, as partições podem ser removidas com eficiência. Evite particionamento com alta cardinalidade.
+
+```sql
+ALTER TABLE posts (DROP PARTITION '2008')
+```
+
+Leia mais sobre [DROP PARTITION](/pt-BR/reference/statements/alter/partition).
+
+<div id="more-resources">
+  ## Mais recursos
+</div>
+
+* [Como lidar com atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

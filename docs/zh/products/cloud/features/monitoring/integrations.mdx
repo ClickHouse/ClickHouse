@@ -1,0 +1,36 @@
+---
+title: '社区与合作伙伴集成'
+slug: /cloud/monitoring/integrations
+description: 'ClickHouse Cloud 的第三方监控集成以及 Billing & Usage API'
+keywords: ['cloud', 'monitoring', 'datadog', 'grafana', 'community', 'billing', 'usage api']
+sidebarTitle: '集成'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/zh/_community_monitoring.mdx';
+
+<div id="direct-datadog">
+  ## 直接集成 Datadog
+</div>
+
+Datadog 为其 agent 提供了一个 ClickHouse Monitoring 插件，可直接查询系统表。该集成通过 `clusterAllReplicas` 功能提供具备集群感知能力的全面数据库监控。
+
+<Warning>
+  **不推荐用于 ClickHouse Cloud**
+
+  由于这种直接查询系统表的 Datadog agent 集成与成本优化的空闲行为不兼容，并且受到云代理层的运行限制，因此不建议在 ClickHouse Cloud 部署中使用。
+</Warning>
+
+建议改用 Datadog [Agent](https://docs.datadoghq.com/agent/?tab=Linux) 和 [OpenMetrics integration](https://docs.datadoghq.com/integrations/openmetrics/)，从 ClickHouse Cloud 的 Prometheus 端点收集指标。这种方法既能适应服务的空闲行为，也能保持监控工作负载与生产工作负载之间的运行隔离。有关配置说明，请参阅 [Datadog 的 Prometheus 和 OpenMetrics integration 文档](https://docs.datadoghq.com/integrations/openmetrics/)。
+
+有关 Prometheus 端点设置的详细信息，请参阅 [Prometheus integration 页面](/zh/products/cloud/features/monitoring/prometheus#integrating-with-datadog)。
+
+<CommunityMonitoring />
+
+<div id="billing-usage-api">
+  ## 计费与使用情况 API
+</div>
+
+Billing &amp; Usage API 可用于以编程方式访问您的 Cloud 组织的计费和使用记录。这对于构建自定义成本监控仪表盘，或将计费数据集成到现有财务报告工作流中非常有用。
+
+如需完整的 API 参考文档，请参阅[计费 API 文档](/zh/api-reference/organization/get-list-of-available-organizations#tag/Billing)。

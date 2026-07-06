@@ -1,0 +1,74 @@
+---
+title: 'Replica-aware 라우팅'
+slug: /manage/replica-aware-routing
+description: '캐시 재사용률을 높이기 위해 Replica-aware 라우팅을 사용하는 방법'
+keywords: ['클라우드', '스티키 엔드포인트', '스티키', '엔드포인트', '스티키 라우팅', '라우팅', 'Replica-aware 라우팅', 'session_id']
+doc_type: 'guide'
+noindex: true
+---
+
+import PrivatePreviewBadge from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+Replica-aware 라우팅(스티키 세션, 스티키 라우팅 또는 세션 어피니티라고도 함)은 관련 요청을 일관되게 동일한 ClickHouse 레플리카로 라우팅하여 캐시 재사용 가능성을 높입니다. 이는 best-effort 방식이며 격리를 보장하지는 않습니다.
+
+<Warning>
+  **프로토콜 지원 — HTTP/HTTPS만 지원**
+
+  Replica-aware 라우팅은 **HTTP/HTTPS 인터페이스** 위의 프록시 계층에서 `session_id` 쿼리 매개변수를 사용해 적용됩니다(아래 참조). 이는 **네이티브 프로토콜에서는 사용할 수 없습니다**(네이티브 포트, 예: 기본 네이티브 모드의 `clickhouse-go` 드라이버). 네이티브 프로토콜 클라이언트에서 스티키 라우팅이 필요하다면 해당 워크로드를 대신 HTTP 인터페이스를 통해 연결하십시오. `clickhouse-go`(v2)의 경우 연결 설정에서 `Protocol: clickhouse.HTTP`를 지정하십시오.
+</Warning>
+
+<div id="http-based-routing">
+  ## HTTP 기반 라우팅 (`session_id`)
+</div>
+
+워크로드를 특정 레플리카에 고정하려면 HTTPS 인터페이스에서 `session_id` 쿼리 매개변수를 설정합니다. 프록시는 요청을 파싱하고 `session_id`에 일관 해싱을 적용해 레플리카를 선택하므로, 동일한 `session_id`를 사용하는 모든 요청은 클러스터 토폴로지가 변경되기 전까지 동일한 서버로 라우팅됩니다.
+
+```bash
+echo 'SELECT hostName()' | curl \
+  -H 'X-ClickHouse-User: default' -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/?session_id=my-workload-1' -d @-
+```
+
+`session_id=my-workload-1`를 포함한 모든 요청은 동일한 레플리카로 전달됩니다. 다른 `session_id` 값은 독립적으로 해시되므로 동일한 레플리카로 전달될 수도 있고 다른 레플리카로 전달될 수도 있습니다. 즉, 매핑은 일관되지만 특정 값이 어떤 레플리카에 매핑되는지는 선택할 수 없습니다.
+
+<div id="subdomain-based-routing-deprecated">
+  ## 하위 도메인 기반 라우팅(지원 중단됨)
+</div>
+
+<Danger>
+  **지원 중단됨**
+
+  아래의 하위 도메인 기반 메커니즘은 **지원 중단**되었으며, 새로운 서비스에서는 더 이상 활성화되지 않습니다. 이 방식은 확장성이 없습니다(각 sticky endpoint마다 자체 TLS 인증서가 필요합니다). 대신 [HTTP 기반 `session_id` 메서드](#http-based-routing)를 사용하십시오.
+</Danger>
+
+이전에는 Replica-aware 라우팅을 활성화하면 서비스 호스트명에 와일드카드 하위 도메인을 추가로 사용할 수 있었습니다. 호스트명이 `abcxyz123.us-west-2.aws.clickhouse.cloud`인 서비스의 경우, `*.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`(예: `aaa.sticky.abcxyz123.us-west-2.aws.clickhouse.cloud`)와 일치하는 모든 호스트명은 Envoy가 해시를 사용해 일관되게 특정 레플리카로 라우팅했습니다. 원래 호스트명은 기본 라우팅 알고리즘인 `LEAST_CONNECTION` load balancing을 계속 사용했습니다.
+
+<div id="limitations-of-replica-aware-routing">
+  ## Replica-aware 라우팅의 한계
+</div>
+
+<div id="replica-aware-routing-does-not-guarantee-isolation">
+  ### Replica-aware 라우팅은 격리를 보장하지 않습니다
+</div>
+
+서비스에 어떤 형태로든 변경이나 중단이 발생하면(예: 버전 업그레이드, 크래시, 수직 스케일링 등의 이유로 서버 파드가 재시작되거나 서버가 스케일 아웃/인되는 경우) 라우팅 해시 링이 변경됩니다. 그러면 동일한 `session_id`를 공유하는 요청이 다른 서버 파드로 라우팅될 수 있습니다.
+
+<div id="replica-aware-routing-does-not-work-out-of-the-box-with-private-link">
+  ### Replica-aware 라우팅은 Private Link에서 별도 설정 없이 바로 작동하지 않습니다
+</div>
+
+더 이상 권장되지 않는 하위 도메인 메서드를 사용할 경우, 고객은 새로운 호스트명 패턴에 대해 이름 해석이 동작하도록 DNS 레코드를 수동으로 추가해야 합니다. 이를 잘못 구성하면 서버 부하가 불균형해질 수 있습니다.
+
+<div id="replica-aware-routing-requires-http">
+  ### Replica-aware 라우팅에는 HTTP 프로토콜이 필요합니다
+</div>
+
+Sticky 라우팅은 `session_id` 쿼리 매개변수를 기준으로 하며, 이 매개변수는 HTTP/HTTPS 인터페이스에만 존재합니다. 네이티브 바이너리 프로토콜에는 프록시가 해시에 사용할 수 있는 이러한 매개변수가 없으므로, 네이티브 프로토콜을 통해서는 Replica-aware 라우팅을 사용할 수 없습니다. 네이티브 프로토콜을 사용하는 클라이언트는 이 기능을 사용하려면 관련 워크로드를 HTTP 인터페이스로 옮겨야 합니다.
+
+<div id="configuring-replica-aware-routing">
+  ## Replica-aware 라우팅 설정
+</div>
+
+Replica-aware 라우팅을 활성화하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

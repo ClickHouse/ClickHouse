@@ -1,0 +1,442 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-metrics
+title: '使用 ClickStack 监控 Kafka 指标'
+sidebarTitle: 'Kafka 指标'
+description: '使用 ClickStack 监控 Kafka 指标'
+doc_type: 'guide'
+keywords: ['Kafka', '指标', 'OTEL', 'ClickStack', 'JMX']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简述**
+
+  借助 OTel JMX Metric Gatherer 在 ClickStack 中监控 Apache Kafka 的性能指标。包含演示数据集和预置仪表盘。
+</Info>
+
+<div id="existing-kafka">
+  ## 与现有 Kafka 部署集成
+</div>
+
+运行 OpenTelemetry JMX Metric Gatherer 容器，即可监控现有的 Kafka 部署，收集指标并通过 OTLP 将其发送到 ClickStack。
+
+如果您想先测试此集成而不修改现有设置，请跳转到[演示数据集部分](#demo-dataset)。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* 正在运行的 ClickStack 实例
+* 已启用 JMX 的现有 Kafka 安装 (版本 2.0 或更高)
+* ClickStack 与 Kafka 之间的网络连通性 (JMX 端口 9999，Kafka 端口 9092)
+* OpenTelemetry JMX Metric Gatherer JAR (下载说明见下文)
+
+<Steps>
+  <Step>
+    #### 获取 ClickStack API key
+
+    JMX Metric Gatherer 会将数据发送到 ClickStack 的 OTLP 端点，而该端点需要身份验证。
+
+    1. 在你的 ClickStack URL 中打开 HyperDX (例如 `http://localhost:8080`)
+    2. 如有需要，创建账户或登录
+    3. 前往 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+
+    5. 将其设置为环境变量：
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### 下载 OpenTelemetry JMX 指标收集器
+
+    下载 JMX 指标收集器 JAR：
+
+    ```bash
+    curl -L -o opentelemetry-jmx-metrics.jar \
+      https://github.com/open-telemetry/opentelemetry-java-contrib/releases/download/v1.32.0/opentelemetry-jmx-metrics.jar
+    ```
+  </Step>
+
+  <Step>
+    #### 验证 Kafka JMX 是否已启用
+
+    确保已在 Kafka 消息代理上启用 JMX。对于 Docker 部署：
+
+    ```yaml
+    services:
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        environment:
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          # ... 其他 Kafka 配置
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+    ```
+
+    对于非 Docker 部署，请在 Kafka 启动时进行以下设置：
+
+    ```bash
+    export JMX_PORT=9999
+    ```
+
+    确认 JMX 可访问：
+
+    ```bash
+    netstat -an | grep 9999
+    ```
+  </Step>
+
+  <Step>
+    #### 使用 Docker Compose 部署 JMX Metric Gatherer
+
+    本示例展示了一个包含 Kafka、JMX Metric Gatherer 和 ClickStack 的完整配置。请调整服务名称和端点，使其与现有部署保持一致：
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+
+      kafka:
+        image: confluentinc/cp-kafka:latest
+        hostname: kafka
+        container_name: kafka
+        environment:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:9092'
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://kafka:9092,CONTROLLER://kafka:29093'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+          JMX_PORT: 9999
+          KAFKA_JMX_HOSTNAME: kafka
+          KAFKA_JMX_OPTS: '-Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.authenticate=false -Dcom.sun.management.jmxremote.ssl=false -Djava.rmi.server.hostname=kafka -Dcom.sun.management.jmxremote.rmi.port=9999'
+        ports:
+          - "9092:9092"
+          - "9999:9999"
+        networks:
+          - monitoring
+
+      kafka-jmx-exporter:
+        image: eclipse-temurin:11-jre
+        depends_on:
+          - kafka
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./opentelemetry-jmx-metrics.jar:/app/opentelemetry-jmx-metrics.jar
+        command: >
+          sh -c "java
+          -Dotel.jmx.service.url=service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi
+          -Dotel.jmx.target.system=kafka
+          -Dotel.metrics.exporter=otlp
+          -Dotel.exporter.otlp.protocol=http/protobuf
+          -Dotel.exporter.otlp.endpoint=http://clickstack:4318
+          -Dotel.exporter.otlp.headers=authorization=\${CLICKSTACK_API_KEY}
+          -Dotel.resource.attributes=service.name=kafka,kafka.broker.id=broker-0
+          -Dotel.jmx.interval.milliseconds=10000
+          -jar /app/opentelemetry-jmx-metrics.jar"
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    **关键配置参数：**
+
+    * `service:jmx:rmi:///jndi/rmi://kafka:9999/jmxrmi` - JMX 连接 URL (使用你的 Kafka 主机名)
+    * `otel.jmx.target.system=kafka` - 启用 Kafka 专用指标
+    * `http://clickstack:4318` - OTLP HTTP 端点 (使用你的 ClickStack 主机名)
+    * `authorization=\${CLICKSTACK_API_KEY}` - 用于身份验证的 API key (必需)
+    * `service.name=kafka,kafka.broker.id=broker-0` - 用于过滤的资源属性
+    * `10000` - 采集间隔 (毫秒，10 秒)
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证指标
+
+    登录 HyperDX，确认指标正在持续写入：
+
+    1. 进入 Chart Explorer
+    2. 搜索 `kafka.message.count` 或 `kafka.partition.count`
+    3. 指标应每 10 秒出现一次
+
+    **需要验证的关键指标：**
+
+    * `kafka.message.count` - 已处理的消息总数
+    * `kafka.partition.count` - 分区总数
+    * `kafka.partition.under_replicated` - 集群健康时应为 0
+    * `kafka.network.io` - 网络吞吐量
+    * `kafka.request.time.*` - 请求延迟百分位数
+
+    要产生一些活动并填充更多指标：
+
+    ```bash
+    # 创建测试 topic
+    docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+    # 发送测试消息
+    echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+    ```
+
+    <Note>
+      在 Kafka 容器内运行 Kafka 客户端命令 (如 kafka-topics、kafka-console-producer 等) 时，请在命令前加上 `unset JMX_PORT &&`，以避免 JMX 端口冲突。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在配置生产系统之前先测试 Kafka Metrics 集成的用户，我们提供了一个预先生成的演示数据集，其中包含逼真的 Kafka 指标变化模式。
+
+<Steps>
+  <Step>
+    #### 下载样本指标数据集
+
+    下载预先生成的指标文件 (29 小时的 Kafka 指标，包含逼真的变化模式) ：
+
+    ```bash
+    # 下载 gauge 指标（分区数量、队列大小、延迟、消费者滞后）
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-gauge.csv
+
+    # 下载 sum 指标（消息速率、字节速率、请求次数）
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/kafka-metrics-sum.csv
+    ```
+
+    该数据集模拟了单消息代理电商 Kafka 集群中的真实指标模式：
+
+    * **06:00-08:00：早间流量上升** - 流量从夜间基线快速攀升
+    * **10:00-10:15：限时闪购** - 流量骤增至正常水平的 3.5 倍
+    * **11:30：部署事件** - 消费者滞后激增至 12 倍，并出现副本不足的分区
+    * **14:00-15:30：购物高峰** - 流量持续维持在基线的 2.8 倍
+    * **17:00-17:30：下班后高峰** - 出现第二波流量峰值
+    * **18:45：消费者再平衡** - 再平衡期间滞后激增至 6 倍
+    * **20:00-22:00：晚间回落** - 流量快速下降至夜间水平
+  </Step>
+
+  <Step>
+    #### 启动 ClickStack
+
+    启动一个 ClickStack 实例：
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### 将指标加载到 ClickStack 中
+
+    将这些指标直接加载到 ClickHouse：
+
+    ```bash
+    # 加载 gauge 指标（分区数量、队列大小、延迟、消费者滞后）
+    cat kafka-metrics-gauge.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_gauge FORMAT CSVWithNames"
+
+    # 加载 sum 指标（消息速率、字节速率、请求次数）
+    cat kafka-metrics-sum.csv | docker exec -i clickstack-demo \
+      clickhouse-client --query "INSERT INTO otel_metrics_sum FORMAT CSVWithNames"
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证指标
+
+    加载完成后，查看这些指标最快的方式是使用预构建仪表盘。
+
+    继续前往 [仪表盘与可视化](#dashboards) 部分，导入仪表盘，一次查看所有 Kafka 指标。
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据的时间范围为 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)**。请将时间范围设置为 **2025-11-04 16:00:00 - 2025-11-07 16:00:00**，以确保无论你位于何处都能看到这些演示指标。看到指标后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘与可视化
+</div>
+
+为帮助你快速开始使用 ClickStack 监控 Kafka，我们提供了 Kafka 指标所需的关键可视化内容。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-metrics-dashboard.json'} download="kafka-metrics-dashboard.json" eventName="docs.kafka_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预置仪表盘
+
+    1. 打开 HyperDX，进入“仪表盘”部分
+    2. 点击右上角省略号菜单中的 **Import Dashboard**
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+
+    3. 上传 `kafka-metrics-dashboard.json` 文件，然后点击 **Finish Import**
+
+    <Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="完成导入对话框" />
+  </Step>
+
+  <Step>
+    #### 查看仪表盘
+
+    仪表盘创建完成后，所有可视化都将预先配置好：
+
+    <Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka 指标仪表盘" />
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (请根据你的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="no-metrics">
+  ### HyperDX 中没有显示任何指标
+</div>
+
+**确认已设置 API key，并已将其传递给容器：**
+
+```bash
+# 检查环境变量
+echo $CLICKSTACK_API_KEY
+
+# 验证容器中是否存在该变量
+docker exec <jmx-exporter-container> env | grep CLICKSTACK_API_KEY
+```
+
+如果缺失，请设置后重启：
+
+```bash
+export CLICKSTACK_API_KEY=your-api-key-here
+docker compose up -d kafka-jmx-exporter
+```
+
+**检查指标是否已发送到 ClickHouse：**
+
+```bash
+docker exec <clickstack-container> clickhouse-client --query "
+SELECT DISTINCT MetricName 
+FROM otel_metrics_sum 
+WHERE ServiceName = 'kafka' 
+LIMIT 10
+"
+```
+
+如果没有看到任何结果，请检查 JMX exporter 的日志：
+
+```bash
+docker compose logs kafka-jmx-exporter | grep -i "error\|connection" | tail -10
+```
+
+**触发 Kafka 活动以生成指标：**
+
+```bash
+# 创建测试 topic
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
+
+# 发送测试消息
+echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
+```
+
+<div id="auth-errors">
+  ### 身份验证错误
+</div>
+
+如果你看到 `Authorization failed` 或 `401 Unauthorized`：
+
+1. 在 HyperDX UI 中检查 API key (Settings → API Keys → Ingestion API Key)
+2. 重新导出并重启：
+
+```bash
+export CLICKSTACK_API_KEY=your-correct-api-key
+docker compose down
+docker compose up -d
+```
+
+<div id="port-conflicts">
+  ### Kafka 客户端命令的端口冲突
+</div>
+
+在 Kafka 容器内运行 Kafka 命令时，你可能会看到：
+
+```bash
+Error: Port already in use: 9999
+```
+
+在命令前面加上 `unset JMX_PORT &&`：
+
+```bash
+docker exec kafka bash -c "unset JMX_PORT && kafka-topics --list --bootstrap-server kafka:9092"
+```
+
+<div id="network-issues">
+  ### 网络连通性问题
+</div>
+
+如果 JMX exporter 的日志中显示 `Connection refused`：
+
+请确认所有容器都连接到同一个 Docker 网络：
+
+```bash
+docker compose ps
+docker network inspect <network-name>
+```
+
+测试连通性：
+
+```bash
+# 从 JMX exporter 到 ClickStack
+docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null > /dev/tcp/clickstack/4318' && echo 'Connected' || echo 'Failed'"
+```
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键指标设置[告警](/zh/clickstack/features/alerts) (如分区副本不足、消费者滞后增加、请求延迟突增)
+* 针对特定场景创建更多仪表盘 (如按 topic 划分的吞吐量、消费者组监控)
+* 通过添加具有唯一 `kafka.broker.id` 资源属性的额外 JMX Metric Gatherer 实例，监控多个 Kafka 消息代理
+
+<div id="going-to-production">
+  ## 用于生产环境
+</div>
+
+本指南将指标直接从 JMX Metric Gatherer 发送到 ClickStack 的 OTLP 端点，这种方式很适合测试和小规模部署。
+
+对于生产环境，建议将您自己的 OpenTelemetry Collector 以 agent 形式部署，用于接收来自 JMX Exporter 的指标并将其转发到 ClickStack。这样可以提供批次处理能力、弹性以及集中式配置管理。
+
+有关生产环境的部署模式和 collector 配置示例，请参见 [使用 OpenTelemetry 摄取](/zh/clickstack/ingesting-data/opentelemetry)。

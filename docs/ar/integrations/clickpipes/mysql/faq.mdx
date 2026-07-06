@@ -1,0 +1,96 @@
+---
+sidebarTitle: 'الأسئلة الشائعة'
+description: 'الأسئلة الشائعة حول ClickPipes for MySQL.'
+slug: /integrations/clickpipes/mysql/faq
+title: 'الأسئلة الشائعة حول ClickPipes for MySQL'
+doc_type: 'reference'
+keywords: ['الأسئلة الشائعة حول ClickPipes for MySQL', 'استكشاف أخطاء ClickPipes for MySQL وإصلاحها', 'النسخ المتماثل من MySQL إلى ClickHouse', 'دعم ClickPipes for MySQL', 'MySQL CDC ClickHouse']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="does-the-clickpipe-support-mariadb">
+  ### هل يدعم MySQL ClickPipe ‏MariaDB؟
+</div>
+
+نعم، يدعم MySQL ClickPipe ‏MariaDB 10.0 وما بعده. وإعداده مشابه جدًا لـ MySQL، إذ يستخدم GTID النسخ المتماثل افتراضيًا.
+
+<div id="does-the-clickpipe-support-planetscale-vitess">
+  ### هل يدعم MySQL ClickPipe أيًا من PlanetScale أو Vitess أو TiDB؟
+</div>
+
+لا، فهذه الخدمات لا تدعم واجهة برمجة تطبيقات binlog الخاصة بـ MySQL.
+
+<div id="how-is-replication-managed">
+  ### كيف تُدار عملية النسخ المتماثل؟
+</div>
+
+ندعم كلاً من النسخ المتماثل `GTID` و`FilePos`. وعلى عكس Postgres، لا توجد `slot` لإدارة الإزاحة. وبدلاً من ذلك، يجب تهيئة خادم MySQL لديك بحيث تكون فترة الاحتفاظ بـ binlog كافية. إذا أصبحت إزاحتنا داخل binlog غير صالحة *(على سبيل المثال، إذا ظل الـ mirror متوقفًا مؤقتًا لفترة طويلة، أو حدث failover لقاعدة البيانات أثناء استخدام النسخ المتماثل `FilePos`)*، فستحتاج إلى إعادة مزامنة الـ pipe. واحرص على تحسين materialized views التي تعتمد على جداول الوجهة، لأن الاستعلامات غير الفعّالة قد تُبطئ عملية الإدخال وتتسبب في تراجعها إلى ما بعد فترة الاحتفاظ.
+
+ومن الممكن أيضًا أن تقوم قاعدة بيانات غير نشطة بتدوير log file من دون أن تتيح لـ ClickPipes التقدّم إلى إزاحة أحدث. وقد تحتاج إلى إعداد جدول heartbeat مع تحديثات مجدولة بانتظام.
+
+في بداية التحميل الأولي، نسجّل إزاحة binlog التي سنبدأ منها. ويجب أن تظل هذه الإزاحة صالحة عند اكتمال التحميل الأولي حتى يتمكن CDC من التقدّم. إذا كنت تُدخل كمية كبيرة من البيانات، فتأكد من تهيئة فترة احتفاظ مناسبة لـ binlog. وأثناء إعداد الجداول، يمكنك تسريع التحميل الأولي عبر تهيئة *استخدام مفتاح partitioning مخصص للتحميل الأولي* للجداول الكبيرة ضمن الإعدادات المتقدمة، حتى نتمكن من تحميل جدول واحد بالتوازي.
+
+<div id="binlog-event-exceeded-max-allowed-packet">
+  ### لماذا يفشل الـ pipe الخاص بي بسبب خطأ في binlog مرتبط بـ max_allowed_packet؟
+</div>
+
+إذا فشل الـ pipe الخاص بك مع ظهور خطأ مشابه لما يلي:
+
+```text
+MySQL execute error: ERROR 1236 (HY000): log event entry exceeded max_allowed_packet;
+Increase max_allowed_packet on source
+```
+
+هذا يعني أن حدث binlog واحدًا (يمثل تغييرًا في صف واحد) أكبر من إعداد [`max_allowed_packet`](https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet) على خادم MySQL لديك. وبما أن الخادم لا يمكنه إرسال حدث يتجاوز هذا الحد، تتوقف قراءة تدفق binlog ولا يعود بإمكان CDC التقدم.
+
+يحدث هذا غالبًا بسبب صفوف تحتوي على قيم `BLOB` أو `TEXT` أو `JSON` كبيرة. لحل هذه المشكلة:
+
+* **زِد قيمة `max_allowed_packet` على المصدر.** ارفعها لتكون أكبر من حجم أكبر تغيير صف لديك — وعادةً ما يكون تعيينها إلى الحد الأقصى `1G` آمنًا:
+  ```sql
+  SET GLOBAL max_allowed_packet = 1073741824; -- 1 GiB
+  ```
+  اضبطها أيضًا في تهيئة الخادم لديك (مثل `my.cnf` أو `DB Parameter Group`) حتى تبقى سارية بعد إعادة التشغيل.
+* **إذا كان صف واحد أكبر من 1G:** أعد مزامنة الـ pipe.
+
+<div id="tls-certificate-validation-error">
+  ### لماذا يظهر لي خطأ في التحقق من شهادة TLS عند الاتصال بـ MySQL؟
+</div>
+
+عند الاتصال بـ MySQL، قد تواجه أخطاء في الشهادة مثل `x509: certificate is not valid for any names` أو `x509: certificate signed by unknown authority`. يحدث ذلك لأن ClickPipes يفعّل تشفير TLS افتراضيًا.
+
+لديك عدة خيارات لمعالجة هذه المشكلات:
+
+1. **عيّن حقل TLS Host** - إذا كان اسم المضيف في الاتصال مختلفًا عن الاسم الموجود في الشهادة (وهذا شائع مع AWS PrivateLink عبر Endpoint Service)، فعيّن &quot;TLS Host (optional)&quot; بحيث يطابق الاسم الشائع في الشهادة (CN) أو Subject Alternative Name ‏(SAN).
+
+2. **ارفع Root CA الخاص بك** - ينطبق هذا على خوادم MySQL التي تستخدم جهات إصدار شهادات داخلية أو Google Cloud SQL ضمن إعداد CA الافتراضي لكل مثيل. لمزيد من المعلومات حول كيفية الوصول إلى شهادات Google Cloud SQL، راجع [هذا القسم](/ar/integrations/clickpipes/mysql/source/gcp#download-root-ca-certificate-gcp-mysql).
+
+3. **اضبط شهادة الخادم** - حدّث SSL certificate الخاصة بخادمك لتتضمن جميع أسماء المضيفين المستخدمة في الاتصال، واستخدم جهة إصدار شهادات موثوقة.
+
+4. **تخطَّ التحقق من الشهادة** - في MySQL أو MariaDB المستضاف ذاتيًا، إذ توفّر الإعدادات الافتراضية شهادة موقعة ذاتيًا لا يمكننا التحقق منها ([MySQL](https://dev.mysql.com/doc/refman/8.4/en/creating-ssl-rsa-files-using-mysql.html#creating-ssl-rsa-files-using-mysql-automatic)، [MariaDB](https://mariadb.com/kb/en/securing-connections-for-client-and-server/#enabling-tls-for-mariadb-server)). الاعتماد على هذه الشهادة يشفّر البيانات أثناء النقل، لكنه ينطوي على خطر انتحال هوية الخادم. نوصي باستخدام شهادات موقعة على نحو صحيح في بيئات production، لكن هذا الخيار مفيد للاختبار على مثيل لمرة واحدة أو عند الاتصال ببنية تحتية قديمة.
+
+<div id="do-you-support-schema-changes">
+  ### هل تدعمون تغييرات المخطط؟
+</div>
+
+يُرجى الرجوع إلى صفحة [ClickPipes for MySQL: دعم تمرير تغييرات المخطط](/ar/integrations/clickpipes/mysql/schema-changes) لمزيد من المعلومات.
+
+<div id="support-on-delete-cascade">
+  ### هل تدعمون نسخ عمليات الحذف المتسلسل للمفاتيح الخارجية في MySQL `ON DELETE CASCADE`؟
+</div>
+
+نظرًا إلى الكيفية التي [يتعامل بها MySQL مع عمليات الحذف المتسلسل](https://dev.mysql.com/doc/refman/8.0/en/innodb-and-mysql-replication.html)، فإن هذه العمليات لا تُكتب في binlog. لذلك لا يمكن لـ ClickPipes (أو لأي أداة CDC) نسخها. وقد يؤدي ذلك إلى عدم اتساق البيانات. ويُنصح باستخدام المشغلات بدلًا من ذلك لدعم عمليات الحذف المتسلسل.
+
+<div id="replicate-table-dot">
+  ### لماذا لا يمكنني نسخ جدولي المتماثل إذا كان يحتوي على نقطة؟
+</div>
+
+يوجد في PeerDB حاليًا قيد يتمثل في عدم دعم النسخ المتماثل عندما تحتوي معرّفات الجدول المصدر — أي اسم المخطط أو اسم الجدول — على نقاط، إذ لا يستطيع PeerDB في هذه الحالة التمييز بين المخطط والجدول لأنه يفصل عند النقطة.
+ويجري العمل على إتاحة إدخال المخطط والجدول كلٌّ على حدة لتجاوز هذا القيد.
+
+<div id="include-excluded-columns">
+  ### هل يمكنني تضمين الأعمدة التي استبعدتها في البداية من النسخ المتماثل؟
+</div>
+
+هذا غير مدعوم بعد. كحل بديل، يمكنك [إعادة مزامنة الجدول](/ar/integrations/clickpipes/mysql/table-resync) الذي تريد تضمين أعمدته.

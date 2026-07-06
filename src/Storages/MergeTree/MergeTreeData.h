@@ -52,6 +52,7 @@ const size_t DEFAULT_DELAYED_STREAMS_FOR_PARALLEL_WRITE = 100;
 
 struct AlterCommand;
 class AlterCommands;
+class ASTFunction;
 class InterpreterSelectQuery;
 class MergeTreePartsMover;
 class MergeTreeDataMergerMutator;
@@ -74,6 +75,9 @@ enum class MergeTreePartMinMaxIndexColumns : uint64_t;
 
 class MarkCache;
 using MarkCachePtr = std::shared_ptr<MarkCache>;
+
+/// Throws if an index or primary-key expression list contains a duplicate sub-expression (unless allow_suspicious_indices)
+void checkSuspiciousIndices(const ASTFunction * index_function);
 
 /// Auxiliary struct holding information about the future merged or mutated part.
 struct EmergingPartInfo
@@ -475,6 +479,20 @@ public:
         void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
 
         String getModeName() const;
+
+        /// True when both tables would merge a part with identical semantics, i.e. every
+        /// field that feeds the merge transforms matches. Used to decide whether an adopted
+        /// part's merge level may be preserved (see getLevelForAdoptedPart).
+        bool hasSameMergeSemantics(const MergingParams & rhs) const
+        {
+            return mode == rhs.mode
+                && sign_column == rhs.sign_column
+                && is_deleted_column == rhs.is_deleted_column
+                && columns_to_sum == rhs.columns_to_sum
+                && version_column == rhs.version_column
+                && allow_tuple_element_aggregation == rhs.allow_tuple_element_aggregation
+                && graphite_params == rhs.graphite_params;
+        }
     };
 
     /// Attach the table corresponding to the directory in full_path inside policy (must end with /), with the given columns.
@@ -1118,6 +1136,15 @@ public:
     MergeTreeData & checkStructureAndGetMergeTreeData(const StoragePtr & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
     MergeTreeData & checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const;
 
+    /// Level for a part adopted from `source_data` (ATTACH/REPLACE PARTITION FROM, CLONE AS,
+    /// MOVE PARTITION TO TABLE). Preserve the source level only when this table merges parts
+    /// identically; otherwise reset to 0 so FINAL/OPTIMIZE re-merge the lone part instead of
+    /// trusting it as already-merged (issue #106798).
+    UInt32 getLevelForAdoptedPart(const MergeTreeData & source_data, UInt32 source_level) const
+    {
+        return merging_params.hasSameMergeSemantics(source_data.merging_params) ? source_level : 0;
+    }
+
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> cloneAndLoadDataPart(
         const MergeTreeData::DataPartPtr & src_part,
         const String & tmp_part_prefix,
@@ -1147,7 +1174,7 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
-    StorageMetadataPtr getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of
     /// the on-disk `metadata_version.txt` file. When true, the file is not written for new parts.
@@ -1259,7 +1286,7 @@ public:
     std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> createEmptyPart(
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
-        const MergeTreeTransactionPtr & txn);
+        const MergeTreeTransactionPtr & txn) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1660,6 +1687,14 @@ protected:
         bool allow_nullable_key_,
         ContextPtr local_context) const;
 
+    /// Runs the same metadata validation as `setProperties` but without publishing
+    /// `new_metadata`. Lets `alter()` validate against freshly changed settings before
+    /// the durable commit.
+    void checkMetadataProperties(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata,
+        ContextPtr local_context) const;
+
     void setProperties(
         const StorageInMemoryMetadata & new_metadata,
         const StorageInMemoryMetadata & old_metadata,
@@ -1722,6 +1757,7 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
     void checkTableCanBeDropped(ContextPtr query_context) const override;
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;

@@ -1,0 +1,1324 @@
+---
+slug: /materialized-view/incremental-materialized-view
+title: '증분형 materialized view'
+description: '증분형 materialized view를 사용해 쿼리 성능을 높이는 방법'
+keywords: ['증분형 materialized views', '쿼리 성능 향상', '쿼리 최적화']
+score: 10000
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="background">
+  ## 배경
+</div>
+
+증분형 materialized view(Materialized Views)를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있으므로 `SELECT` 쿼리를 더 빠르게 실행할 수 있습니다.
+
+Postgres와 같은 트랜잭션 데이터베이스와 달리 ClickHouse materialized view는 테이블에 데이터 블록이 삽입될 때 해당 블록에 대해 쿼리를 실행하는 트리거일 뿐입니다. 이 쿼리의 결과는 두 번째 &quot;대상&quot; 테이블에 삽입됩니다. 이후 더 많은 행이 삽입되면 결과가 다시 대상 테이블로 전달되고, 그곳에서 중간 결과가 갱신되고 머지됩니다. 이렇게 머지된 결과는 원본 데이터 전체에 대해 쿼리를 실행한 결과와 같습니다.
+
+Materialized Views의 주된 목적은 대상 테이블에 삽입되는 결과가 행에 대한 집계, 필터링 또는 변환 결과를 나타내도록 하는 데 있습니다. 이러한 결과는 대개 원본 데이터보다 더 작은 형태로 표현됩니다(집계의 경우 부분 스케치). 또한 대상 테이블에서 결과를 읽는 쿼리도 단순해지므로, 동일한 계산을 원본 데이터에 직접 수행할 때보다 쿼리 시간이 더 빨라집니다. 즉 계산 비용(따라서 쿼리 지연 시간)을 쿼리 시점에서 삽입 시점으로 옮길 수 있습니다.
+
+ClickHouse의 materialized view는 기반 테이블로 데이터가 유입되면 실시간으로 갱신되며, 지속적으로 업데이트되는 인덱스와 비슷하게 동작합니다. 이는 Materialized Views가 일반적으로 갱신이 필요한 정적인 쿼리 스냅샷인 다른 데이터베이스와는 대조적입니다(ClickHouse의 [갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)와 유사합니다).
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 다이어그램" />
+
+<div id="example">
+  ## 예시
+</div>
+
+예시에서는 [&quot;Schema Design&quot;](/ko/guides/clickhouse/data-modelling/schema-design)에 설명된 Stack Overflow 데이터셋을 사용합니다.
+
+특정 게시물의 일별 찬성 및 반대 Votes 수를 구하고 싶다고 가정해 보겠습니다.
+
+```sql
+CREATE TABLE votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
+```
+
+[`toStartOfDay`](/ko/reference/functions/regular-functions/date-time-functions#toStartOfDay) 함수 덕분에 ClickHouse에서 비교적 간단하게 작성할 수 있는 쿼리입니다:
+
+```sql
+SELECT toStartOfDay(CreationDate) AS day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY day
+ORDER BY day ASC
+LIMIT 10
+```
+
+```response
+┌─────────────────day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 00:00:00 │       6 │         0 │
+│ 2008-08-01 00:00:00 │     182 │        50 │
+│ 2008-08-02 00:00:00 │     436 │       107 │
+│ 2008-08-03 00:00:00 │     564 │       100 │
+│ 2008-08-04 00:00:00 │    1306 │       259 │
+│ 2008-08-05 00:00:00 │    1368 │       269 │
+│ 2008-08-06 00:00:00 │    1701 │       211 │
+│ 2008-08-07 00:00:00 │    1544 │       211 │
+│ 2008-08-08 00:00:00 │    1241 │       212 │
+│ 2008-08-09 00:00:00 │     576 │        46 │
+└─────────────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.133 sec. Processed 238.98 million rows, 2.15 GB (1.79 billion rows/s., 16.14 GB/s.)
+Peak memory usage: 363.22 MiB.
+```
+
+이 쿼리는 ClickHouse 덕분에 이미 빠르지만, 더 개선할 수 있을까요?
+
+삽입 시점에 materialized view를 사용하여 이를 컴퓨트하려면 결과를 저장할 테이블이 필요합니다. 이 테이블은 하루에 1개의 행만 유지해야 합니다. 기존 날짜에 대한 업데이트가 수신되면 나머지 컬럼들이 해당 날짜의 기존 행에 머지되어야 합니다. 증분 상태의 머지가 이루어지려면 나머지 컬럼들의 부분 상태가 저장되어 있어야 합니다.
+
+이를 위해 ClickHouse의 특수 엔진 유형인 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree)가 필요합니다. 이 엔진은 동일한 순서 지정 키를 가진 모든 행을 숫자 컬럼의 합산 값을 포함하는 단일 행으로 대체합니다. 아래 테이블은 날짜가 동일한 행을 머지하고 모든 숫자 컬럼의 값을 합산합니다:
+
+```sql
+CREATE TABLE up_down_votes_per_day
+(
+  `Day` Date,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY Day
+```
+
+materialized view를 시연하기 위해, votes 테이블이 비어 있고 아직 데이터가 없는 상태라고 가정합니다. materialized view는 `votes`에 삽입된 데이터에 대해 위의 `SELECT`를 수행하고, 그 결과를 `up_down_votes_per_day`로 전송합니다.
+
+```sql
+CREATE MATERIALIZED VIEW up_down_votes_per_day_mv TO up_down_votes_per_day AS
+SELECT toStartOfDay(CreationDate)::Date AS Day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY Day
+```
+
+여기서 `TO` 절은 결과가 전송될 대상, 즉 `up_down_votes_per_day`를 지정하는 핵심 부분입니다.
+
+앞서 수행한 삽입으로 Votes 테이블을 다시 채울 수 있습니다.
+
+```sql
+INSERT INTO votes SELECT toUInt32(Id) AS Id, toInt32(PostId) AS PostId, VoteTypeId, CreationDate, UserId, BountyAmount
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 111.964 sec. Processed 477.97 million rows, 3.89 GB (4.27 million rows/s., 34.71 MB/s.)
+Peak memory usage: 283.49 MiB.
+```
+
+완료되면 `up_down_votes_per_day`의 크기를 확인할 수 있습니다. 하루에 1개의 행이 있어야 합니다:
+
+```sql
+SELECT count()
+FROM up_down_votes_per_day
+FINAL
+```
+
+```response
+┌─count()─┐
+│    5723 │
+└─────────┘
+```
+
+여기서는 쿼리 결과를 저장하여 행 수를 `votes`의 2억 3,800만 개에서 5000개로 효과적으로 줄였습니다. 그러나 여기서 핵심은 `votes` 테이블에 새로운 투표가 삽입되면 해당 날짜의 새 값이 `up_down_votes_per_day`로 전달되고, 그곳에서 백그라운드에서 비동기적으로 자동 머지되어 날짜별로 행이 1개만 유지된다는 점입니다. 따라서 `up_down_votes_per_day`는 항상 작고 최신 상태로 유지됩니다.
+
+행 머지는 비동기적으로 수행되므로 사용자가 쿼리할 때는 하루에 투표가 2개 이상 있을 수 있습니다. 아직 머지되지 않은 행이 쿼리 시점에 머지되도록 하려면 두 가지 방법이 있습니다:
+
+* 테이블 이름에 `FINAL` 수정자를 사용합니다. 위의 count 쿼리에서 이 방법을 사용했습니다.
+* 최종 테이블에서 사용한 정렬 키, 즉 `CreationDate`를 기준으로 집계하고 메트릭을 합산합니다. 일반적으로 이 방법이 더 효율적이고 유연합니다(테이블을 다른 용도로도 사용할 수 있음). 반면 앞의 방법은 일부 쿼리에서 더 단순할 수 있습니다. 아래에서는 두 방법을 모두 보여줍니다:
+
+```sql
+SELECT
+        Day,
+        UpVotes,
+        DownVotes
+FROM up_down_votes_per_day
+FINAL
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+10 rows in set. Elapsed: 0.004 sec. Processed 8.97 thousand rows, 89.68 KB (2.09 million rows/s., 20.89 MB/s.)
+Peak memory usage: 289.75 KiB.
+```
+
+```sql
+SELECT Day, sum(UpVotes) AS UpVotes, sum(DownVotes) AS DownVotes
+FROM up_down_votes_per_day
+GROUP BY Day
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 │       6 │         0 │
+│ 2008-08-01 │     182 │        50 │
+│ 2008-08-02 │     436 │       107 │
+│ 2008-08-03 │     564 │       100 │
+│ 2008-08-04 │    1306 │       259 │
+│ 2008-08-05 │    1368 │       269 │
+│ 2008-08-06 │    1701 │       211 │
+│ 2008-08-07 │    1544 │       211 │
+│ 2008-08-08 │    1241 │       212 │
+│ 2008-08-09 │     576 │        46 │
+└────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.010 sec. Processed 8.97 thousand rows, 89.68 KB (907.32 thousand rows/s., 9.07 MB/s.)
+Peak memory usage: 567.61 KiB.
+```
+
+쿼리 시간이 0.133초에서 0.004초로 단축되어, 25배가 넘는 성능 향상을 얻었습니다!
+
+<Warning>
+  **중요: `ORDER BY` = `GROUP BY`**
+
+  대부분의 경우, `SummingMergeTree` 또는 `AggregatingMergeTree` 테이블 엔진을 사용하는 경우 materialized view 변환에서 `GROUP BY` 절에 사용하는 컬럼은 대상 테이블의 `ORDER BY` 절에 사용하는 컬럼과 일관되어야 합니다. 이러한 엔진은 백그라운드 머지 작업 중에 동일한 값을 가진 행을 머지할 때 `ORDER BY` 컬럼에 의존합니다. `GROUP BY` 컬럼과 `ORDER BY` 컬럼이 서로 맞지 않으면 쿼리 성능 저하, 비효율적인 머지, 심지어 데이터 불일치까지 발생할 수 있습니다.
+</Warning>
+
+<div id="a-more-complex-example">
+  ### 좀 더 복잡한 예시
+</div>
+
+위 예시에서는 materialized view를 사용해 하루당 2개의 합계를 계산하고 유지합니다. 합계는 부분 상태를 유지하기 가장 쉬운 집계 형태입니다. 새 값이 들어오면 기존 값에 더하기만 하면 되기 때문입니다. 하지만 ClickHouse Materialized Views는 모든 집계 유형에 사용할 수 있습니다.
+
+이제 날짜별로 Posts의 몇 가지 통계를 계산하려고 한다고 가정해 보겠습니다. 예를 들어 `Score`의 99.9백분위수와 `CommentCount`의 평균을 계산할 수 있습니다. 이를 계산하는 쿼리는 다음과 같을 수 있습니다:
+
+```sql
+SELECT
+        toStartOfDay(CreationDate) AS Day,
+        quantile(0.999)(Score) AS Score_99th,
+        avg(CommentCount) AS AvgCommentCount
+FROM posts
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌─────────────────Day─┬────────Score_99th─┬────AvgCommentCount─┐
+│ 2024-03-31 00:00:00 │  5.23700000000008 │ 1.3429811866859624 │
+│ 2024-03-30 00:00:00 │                 5 │ 1.3097158891616976 │
+│ 2024-03-29 00:00:00 │  5.78899999999976 │ 1.2827635327635327 │
+│ 2024-03-28 00:00:00 │                 7 │  1.277746158224246 │
+│ 2024-03-27 00:00:00 │ 5.738999999999578 │ 1.2113264918282023 │
+│ 2024-03-26 00:00:00 │                 6 │ 1.3097536945812809 │
+│ 2024-03-25 00:00:00 │                 6 │ 1.2836721018539201 │
+│ 2024-03-24 00:00:00 │ 5.278999999999996 │ 1.2931667891256429 │
+│ 2024-03-23 00:00:00 │ 6.253000000000156 │  1.334061135371179 │
+│ 2024-03-22 00:00:00 │ 9.310999999999694 │ 1.2388059701492538 │
+└─────────────────────┴───────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.113 sec. Processed 59.82 million rows, 777.65 MB (528.48 million rows/s., 6.87 GB/s.)
+Peak memory usage: 658.84 MiB.
+```
+
+앞서와 마찬가지로, 새 posts가 `posts` 테이블에 삽입될 때 위 쿼리를 실행하는 materialized view를 생성할 수 있습니다.
+
+예시를 위해, 그리고 S3에서 posts 데이터를 로드하지 않기 위해 `posts`와 동일한 스키마를 가진 복제 테이블 `posts_null`을 생성하겠습니다. 하지만 이 테이블은 데이터를 전혀 저장하지 않으며, 행이 삽입될 때 materialized view에서만 사용됩니다. 데이터가 저장되지 않도록 하려면 [`Null` 테이블 엔진 유형](/ko/reference/engines/table-engines/special/null)을 사용할 수 있습니다.
+
+```sql
+CREATE TABLE posts_null AS posts ENGINE = Null
+```
+
+Null table engine는 강력한 최적화 기능입니다. `/dev/null`과 비슷하다고 생각하면 됩니다. materialized view는 `posts_null` 테이블이 삽입 시점에 행을 받으면 요약 통계를 계산해 저장합니다. 즉, 이것은 단지 트리거 역할만 합니다. 하지만 원시 데이터는 저장되지 않습니다. 이 경우에는 원본 posts도 여전히 저장하는 것이 좋겠지만, 이 접근 방식은 원시 데이터의 저장 오버헤드를 피하면서 집계를 계산하는 데 사용할 수 있습니다.
+
+따라서 materialized view는 다음과 같습니다:
+
+```sql
+CREATE MATERIALIZED VIEW post_stats_mv TO post_stats_per_day AS
+       SELECT toStartOfDay(CreationDate) AS Day,
+       quantileState(0.999)(Score) AS Score_quantiles,
+       avgState(CommentCount) AS AvgCommentCount
+FROM posts_null
+GROUP BY Day
+```
+
+집계 함수 끝에 접미사 `State`를 붙인 점에 유의하십시오. 이렇게 하면 최종 결과 대신 함수의 집계 상태가 반환됩니다. 여기에는 이 부분 상태를 다른 상태와 머지할 수 있도록 하는 추가 정보가 포함됩니다. 예를 들어 평균의 경우 해당 컬럼의 개수와 합계가 포함됩니다.
+
+> 부분 집계 상태는 올바른 결과를 계산하는 데 필요합니다. 예를 들어 평균을 계산할 때 하위 범위들의 평균을 단순히 다시 평균내면 잘못된 결과가 나옵니다.
+
+이제 이러한 부분 집계 상태를 저장하는 이 뷰 `post_stats_per_day`의 대상 테이블을 생성합니다:
+
+```sql
+CREATE TABLE post_stats_per_day
+(
+  `Day` Date,
+  `Score_quantiles` AggregateFunction(quantile(0.999), Int32),
+  `AvgCommentCount` AggregateFunction(avg, UInt8)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Day
+```
+
+앞서 `SummingMergeTree`는 개수를 저장하는 데 충분했지만, 다른 함수에는 더 고급 엔진 유형인 [`AggregatingMergeTree`](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)가 필요합니다.
+ClickHouse가 집계 상태(aggregate states)를 저장한다는 점을 인식하도록, `Score_quantiles`와 `AvgCommentCount`를 `AggregateFunction` 유형으로 정의하고, 부분 상태의 함수 원본과 원본 컬럼의 유형을 지정합니다. `SummingMergeTree`와 마찬가지로 동일한 `ORDER BY` 키 값을 가진 행은 머지됩니다(위 예시에서는 `Day`).
+
+materialized view를 통해 `post_stats_per_day`를 채우려면, `posts`의 모든 행을 `posts_null`에 삽입하면 됩니다:
+
+```sql
+INSERT INTO posts_null SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 13.329 sec. Processed 119.64 million rows, 76.99 GB (8.98 million rows/s., 5.78 GB/s.)
+```
+
+> 프로덕션 환경에서는 일반적으로 materialized view를 `posts` 테이블에 연결합니다. 여기서는 null 테이블을 보여주기 위해 `posts_null`을 사용했습니다.
+
+최종 쿼리에서는 함수에 `Merge` 접미사를 사용해야 합니다(컬럼이 부분 집계 상태를 저장하기 때문입니다):
+
+```sql
+SELECT
+        Day,
+        quantileMerge(0.999)(Score_quantiles),
+        avgMerge(AvgCommentCount)
+FROM post_stats_per_day
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+여기서는 `FINAL` 대신 `GROUP BY`를 사용합니다.
+
+<div id="other-applications">
+  ## 기타 활용 사례
+</div>
+
+위에서는 주로 materialized view를 사용해 데이터의 부분 집계를 점진적으로 갱신함으로써 계산 시점을 쿼리 시점에서 삽입 시점으로 옮기는 방식에 초점을 맞추었습니다. 이러한 일반적인 사용 사례 외에도 구체화된 뷰는 다양하게 활용할 수 있습니다.
+
+<div id="filtering-and-transformation">
+  ### 필터링 및 변환
+</div>
+
+경우에 따라 삽입 시 행과 컬럼의 일부만 선택해 삽입하고 싶을 수 있습니다. 이 경우 `posts_null` 테이블로 먼저 삽입한 다음, `posts` 테이블에 삽입하기 전에 `SELECT` 쿼리로 행을 필터링할 수 있습니다. 예를 들어 `posts` 테이블의 `Tags` 컬럼을 변환하려는 경우를 가정해 보겠습니다. 이 컬럼에는 파이프(`|`)로 구분된 태그 이름 목록이 들어 있습니다. 이를 배열로 변환하면 개별 태그 값을 기준으로 더 쉽게 집계할 수 있습니다.
+
+> 이 변환은 `INSERT INTO SELECT`를 실행할 때 수행할 수도 있습니다. materialized view를 사용하면 이 로직을 ClickHouse DDL로 캡슐화하고 `INSERT`는 단순하게 유지하면서, 새로 들어오는 모든 행에 변환을 적용할 수 있습니다.
+
+이 변환을 위한 materialized view는 아래와 같습니다.
+
+```sql
+CREATE MATERIALIZED VIEW posts_mv TO posts AS
+        SELECT * EXCEPT Tags, arrayFilter(t -> (t != ''), splitByChar('|', Tags)) as Tags FROM posts_null
+```
+
+<div id="lookup-table">
+  ### 룩업 테이블
+</div>
+
+ClickHouse 순서 지정 키를 선택할 때는 해당 테이블의 액세스 패턴을 고려해야 합니다. 필터 및 집계 절에 자주 사용되는 컬럼을 정렬 키에 포함하는 것이 좋습니다. 하지만 사용자의 액세스 패턴이 더 다양해 하나의 컬럼 집합으로 포괄할 수 없는 시나리오에서는 이것이 제약이 될 수 있습니다. 예를 들어, 다음 `comments` 테이블을 살펴보겠습니다:
+
+```sql
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+```response
+0 rows in set. Elapsed: 46.357 sec. Processed 90.38 million rows, 11.14 GB (1.95 million rows/s., 240.22 MB/s.)
+```
+
+여기서 순서 지정 키는 `PostId`로 필터링하는 `쿼리`에 맞게 테이블(table)을 최적화합니다.
+
+특정 `UserId`를 기준으로 필터링하고 해당 사용자의 평균 `Score`를 계산하려는 경우를 가정해 보겠습니다:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.778 sec. Processed 90.38 million rows, 361.59 MB (116.16 million rows/s., 464.74 MB/s.)
+Peak memory usage: 217.08 MiB.
+```
+
+빠르기는 하지만(ClickHouse 기준으로는 데이터가 작습니다), 처리된 행 수가 9,038만 개인 것을 보면 전체 테이블 스캔이 필요하다는 점을 알 수 있습니다. 더 큰 데이터셋에서는 materialized view를 사용해 필터링 컬럼 `UserId`에 대한 순서 지정 키 값 `PostId`를 조회할 수 있습니다. 그런 다음 이 값을 사용해 효율적으로 조회할 수 있습니다.
+
+이 예시에서 materialized view는 매우 단순하게 구성할 수 있으며, 삽입 시 `comments`에서 `PostId`와 `UserId`만 선택합니다. 이렇게 생성된 결과는 다시 `UserId`를 기준으로 정렬된 `comments_posts_users` 테이블로 전송됩니다. 아래에서는 `Comments` 테이블의 null 버전을 생성한 뒤, 이를 사용해 뷰와 `comments_posts_users` 테이블을 채웁니다:
+
+```sql
+CREATE TABLE comments_posts_users (
+  PostId UInt32,
+  UserId Int32
+) ENGINE = MergeTree ORDER BY UserId
+
+CREATE TABLE comments_null AS comments
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW comments_posts_users_mv TO comments_posts_users AS
+SELECT PostId, UserId FROM comments_null
+
+INSERT INTO comments_null SELECT * FROM comments
+```
+
+```response
+0 rows in set. Elapsed: 5.163 sec. Processed 90.38 million rows, 17.25 GB (17.51 million rows/s., 3.34 GB/s.)
+```
+
+이제 이 뷰를 서브쿼리에서 사용해 앞서 살펴본 쿼리를 더 빠르게 실행할 수 있습니다:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE PostId IN (
+        SELECT PostId
+        FROM comments_posts_users
+        WHERE UserId = 8592047
+) AND UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 88.61 thousand rows, 771.37 KB (7.09 million rows/s., 61.73 MB/s.)
+```
+
+<div id="chaining">
+  ### 체이닝 / 캐스케이딩 materialized views
+</div>
+
+materialized view를 체이닝(또는 캐스케이딩)하여 복잡한 워크플로를 구성할 수 있습니다.
+자세한 내용은 가이드 [&quot;캐스케이딩 materialized views&quot;](/ko/concepts/features/materialized-views/cascading-materialized-views)를 참조하십시오.
+
+<div id="materialized-views-and-joins">
+  ## materialized view와 JOIN
+</div>
+
+<Info>
+  **갱신 가능 구체화 뷰**
+
+  다음 내용은 증분형 materialized view에만 적용됩니다. 갱신 가능 구체화 뷰는 대상 데이터셋 전체에 대해 주기적으로 쿼리를 실행하며, JOIN을 완전히 지원합니다. 결과 최신성이 다소 낮아져도 괜찮다면 복잡한 JOIN에는 이 방식을 사용하는 것을 고려하십시오.
+</Info>
+
+ClickHouse의 증분형 materialized view는 `JOIN` 작업을 완전히 지원하지만, 한 가지 중요한 제약이 있습니다: **materialized view는 원본 테이블(쿼리에서 가장 왼쪽에 있는 테이블)에 대한 삽입에서만 트리거됩니다.** JOIN의 오른쪽 테이블은 데이터가 변경되더라도 업데이트를 트리거하지 않습니다. 이 동작은 데이터가 삽입 시점에 집계되거나 변환되는 **증분형** materialized view를 만들 때 특히 중요합니다.
+
+증분형 materialized view가 `JOIN`을 사용해 정의되면, `SELECT` 쿼리에서 가장 왼쪽에 있는 테이블이 원본 테이블 역할을 합니다. 이 테이블에 새 행이 삽입되면 ClickHouse는 새로 삽입된 행에 대해서만 materialized view 쿼리를 실행합니다. 이 실행 중 JOIN의 오른쪽 테이블은 전체를 읽지만, 해당 테이블의 변경만으로는 뷰가 트리거되지 않습니다.
+
+이 동작으로 인해 Materialized View의 JOIN은 정적인 차원 데이터에 대한 스냅샷 조인과 비슷합니다.
+
+이 방식은 참조 테이블이나 차원 테이블로 데이터를 보강할 때 효과적입니다. 하지만 오른쪽 테이블(예: 사용자 메타데이터)이 업데이트되더라도 materialized view는 소급해 갱신되지 않습니다. 업데이트된 데이터를 보려면 원본 테이블에 새 데이터가 삽입되어야 합니다.
+
+<div id="materialized-views-and-joins-example">
+  ### 예시
+</div>
+
+[Stack Overflow 데이터셋](/ko/guides/clickhouse/data-modelling/schema-design)을 사용해 구체적인 예시를 살펴보겠습니다. `users` 테이블의 사용자 표시 이름을 포함해 **사용자별 일일 배지 수**를 계산하기 위해 materialized view를 사용하겠습니다.
+
+다시 말씀드리면, 테이블 스키마는 다음과 같습니다:
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `DisplayName` LowCardinality(String),
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `Location` LowCardinality(String),
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32
+)
+ENGINE = MergeTree
+ORDER BY Id;
+```
+
+`users` 테이블에 이미 데이터가 채워져 있다고 가정하겠습니다:
+
+```sql
+INSERT INTO users
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet');
+```
+
+materialized view와 이에 연결된 대상 테이블은 다음과 같이 정의됩니다:
+
+```sql
+CREATE TABLE daily_badges_by_user
+(
+    Day Date,
+    UserId Int32,
+    DisplayName LowCardinality(String),
+    Gold UInt32,
+    Silver UInt32,
+    Bronze UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY (DisplayName, UserId, Day);
+
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user AS
+SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+<Info>
+  **그룹화 및 정렬 정합성**
+
+  materialized view의 `GROUP BY` 절에는 `SummingMergeTree` 대상 테이블의 `ORDER BY`와 일치하도록 `DisplayName`, `UserId`, `Day`가 포함되어야 합니다. 이렇게 해야 행이 올바르게 집계되고 머지됩니다. 이들 중 하나라도 빠지면 잘못된 결과가 발생하거나 머지가 비효율적으로 수행될 수 있습니다.
+</Info>
+
+이제 `badges`를 채우면 뷰가 트리거되어 `daily_badges_by_user` 테이블이 채워집니다.
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 433.762 sec. Processed 1.16 billion rows, 28.50 GB (2.67 million rows/s., 65.70 MB/s.)
+```
+
+특정 사용자가 획득한 배지를 확인하려면 다음 쿼리를 작성할 수 있습니다.
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+8 rows in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 642.14 KB (1.86 million rows/s., 36.44 MB/s.)
+```
+
+이제 이 사용자에게 새 배지가 부여되고 행이 삽입되면, materialized view가 업데이트됩니다:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2025-04-13 │ 2936484 │ gingerwizard │    1 │      0 │      0 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+9 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 642.27 KB (1.96 million rows/s., 38.50 MB/s.)
+```
+
+<Warning>
+  여기서는 삽입 지연 시간에 유의하십시오. 삽입되는 사용자 행은 전체 `users` 테이블과 조인되므로 삽입 성능에 상당한 영향을 줍니다. 이를 해결하는 방법은 아래의 [&quot;필터와 조인에서 원본 테이블 사용하기&quot;](/ko/concepts/features/materialized-views/incremental-materialized-view#using-source-table-in-filters-and-joins-in-materialized-views)에서 설명합니다.
+</Warning>
+
+반대로 새 사용자에 대한 배지를 먼저 삽입한 다음 해당 사용자의 행을 삽입하면, materialized view는 해당 사용자의 메트릭을 반영하지 못합니다.
+
+```sql
+INSERT INTO badges VALUES (53505059, 23923286, 'Good Answer', now(), 'Bronze', 0);
+INSERT INTO users VALUES (23923286, 1, now(),  'brand_new_user', now(), 'UK', 1, 1, 0);
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user';
+```
+
+```response
+0 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 644.32 KB (1.98 million rows/s., 38.94 MB/s.)
+```
+
+이 경우 뷰는 사용자 행이 아직 존재하지 않을 때의 배지 삽입에 대해서만 실행됩니다. 예상대로 해당 사용자에게 배지를 하나 더 삽입하면 행이 삽입됩니다:
+
+```sql
+INSERT INTO badges VALUES (53505060, 23923286, 'Teacher', now(), 'Bronze', 0);
+
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user'
+```
+
+```response
+┌────────Day─┬───UserId─┬─DisplayName────┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2025-04-13 │ 23923286 │ brand_new_user │    0 │      0 │      1 │
+└────────────┴──────────┴────────────────┴──────┴────────┴────────┘
+
+1 row in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 644.48 KB (1.87 million rows/s., 36.72 MB/s.)
+```
+
+다만, 이 결과는 올바르지 않습니다.
+
+<div id="join-best-practices">
+  ### materialized view에서 JOIN 사용 모범 사례
+</div>
+
+* **가장 왼쪽 테이블을 트리거로 사용하십시오.** materialized view는 `SELECT` 문의 왼쪽에 있는 테이블만 트리거합니다. 오른쪽 테이블의 변경은 업데이트를 트리거하지 않습니다.
+
+* **조인할 데이터를 미리 삽입하십시오.** 원본 테이블에 행을 삽입하기 전에 조인 대상 테이블에 데이터가 존재하는지 확인하십시오. JOIN은 삽입 시점에 평가되므로, 데이터가 없으면 일치하지 않는 행이나 NULL이 발생합니다.
+
+* **JOIN으로 가져오는 컬럼을 제한하십시오.** 메모리 사용량을 최소화하고 삽입 시점의 지연 시간을 줄이려면 조인된 테이블에서 필요한 컬럼만 선택하십시오(아래 참조).
+
+* **삽입 시점 성능을 평가하십시오.** JOIN은 삽입 비용을 증가시키며, 특히 오른쪽 테이블이 큰 경우 그 영향이 더 큽니다. 실제 운영 환경을 대표하는 데이터로 삽입 속도를 벤치마크하십시오.
+
+* **단순 lookup에는 Dictionaries를 우선 사용하십시오**. 비용이 큰 JOIN 연산을 피하려면 키-값 lookup(예: 사용자 ID에서 이름으로)에 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하십시오.
+
+* **머지 효율을 위해 `GROUP BY`와 `ORDER BY`를 일치시키십시오.** `SummingMergeTree` 또는 `AggregatingMergeTree`를 사용할 때는 효율적인 행 머지가 가능하도록 대상 테이블의 `GROUP BY`가 `ORDER BY` 절과 일치해야 합니다.
+
+* **명시적인 컬럼 alias를 사용하십시오.** 테이블 간에 같은 컬럼 이름이 겹치는 경우 alias를 사용해 모호성을 방지하고 대상 테이블에서 올바른 결과를 보장하십시오.
+
+* **삽입량과 빈도를 고려하십시오.** JOIN은 중간 수준의 삽입 workload에서는 잘 작동합니다. 높은 처리량의 수집이 필요한 경우에는 스테이징 테이블, 사전 조인, 또는 Dictionaries 및 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)와 같은 다른 접근 방식을 고려하십시오.
+
+<div id="using-source-table-in-filters-and-joins-in-materialized-views">
+  ### 필터와 조인에서 원본 테이블 사용
+</div>
+
+ClickHouse에서 materialized view를 사용할 때는 materialized view의 쿼리 실행 중 원본 테이블이 어떻게 처리되는지 이해하는 것이 중요합니다. 구체적으로, materialized view의 쿼리에서 원본 테이블은 삽입된 데이터 블록으로 대체됩니다. 이 동작을 정확히 이해하지 못하면 예상치 못한 결과가 발생할 수 있습니다.
+
+<div id="example-scenario">
+  #### 예시 시나리오
+</div>
+
+다음과 같은 구성을 가정해 보겠습니다:
+
+```sql
+CREATE TABLE t0 (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw1_inner (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw2_inner (`c0` Int) ENGINE = Memory;
+
+CREATE VIEW vt0 AS SELECT * FROM t0;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN ( SELECT * FROM t0 ) AS x ON t0.c0 = x.c0;
+
+CREATE MATERIALIZED VIEW mvw2 TO mvw2_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN vt0 ON t0.c0 = vt0.c0;
+
+INSERT INTO t0 VALUES (1),(2),(3);
+
+INSERT INTO t0 VALUES (1),(2),(3),(4),(5);
+
+SELECT * FROM mvw1;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  5 │
+└────┘
+```
+
+```sql
+SELECT * FROM mvw2;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  8 │
+└────┘
+```
+
+<div id="explanation">
+  #### 설명
+</div>
+
+위 예시에는 비슷한 작업을 수행하지만 원본 테이블 `t0`를 참조하는 방식에 약간 차이가 있는 두 개의 Materialized View `mvw1`과 `mvw2`가 있습니다.
+
+`mvw1`에서는 테이블 `t0`를 JOIN 오른쪽의 `(SELECT * FROM t0)` 서브쿼리 안에서 직접 참조합니다. 데이터가 `t0`에 삽입되면 materialized view의 쿼리는 `t0`가 삽입된 데이터 블록으로 대체된 상태로 실행됩니다. 즉, JOIN 연산은 테이블 전체가 아니라 새로 삽입된 행에 대해서만 수행됩니다.
+
+두 번째 경우처럼 `vt0`를 조인하면, 뷰는 `t0`의 모든 데이터를 읽습니다. 따라서 JOIN 연산은 새로 삽입된 블록뿐 아니라 `t0`의 모든 행을 기준으로 수행됩니다.
+
+핵심적인 차이는 ClickHouse가 materialized view의 쿼리에서 원본 테이블을 처리하는 방식에 있습니다. materialized view가 삽입에 의해 트리거되면 원본 테이블(이 경우 `t0`)은 삽입된 데이터 블록으로 대체됩니다. 이 동작은 쿼리를 최적화하는 데 활용할 수 있지만, 예상하지 못한 결과를 방지하려면 주의해서 검토해야 합니다.
+
+<div id="use-cases-and-caveats">
+  ### 사용 사례와 주의사항
+</div>
+
+실제 환경에서는 이러한 동작을 활용해 원본 테이블 데이터의 일부만 처리하면 되는 materialized view를 최적화할 수 있습니다. 예를 들어, 다른 테이블과 조인하기 전에 하위 쿼리(subquery)를 사용해 원본 테이블을 필터링할 수 있습니다. 이렇게 하면 materialized view가 처리하는 데이터 양을 줄여 성능 향상에 도움이 됩니다.
+
+```sql
+CREATE TABLE t0 (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t1 (id UInt32, description String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES (1, 'A'), (2, 'B'), (3, 'C');
+
+CREATE TABLE mvw1_target_table (id UInt32, value String, description String) ENGINE = MergeTree() ORDER BY id;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_target_table AS
+SELECT t0.id, t0.value, t1.description
+FROM t0
+JOIN (SELECT * FROM t1 WHERE t1.id IN (SELECT id FROM t0)) AS t1
+ON t0.id = t1.id;
+```
+
+이 예시에서 `IN (SELECT id FROM t0)` 서브쿼리로 만든 집합에는 새로 삽입된 행만 있으므로, 이를 기준으로 `t1`을 필터링하는 데 도움이 될 수 있습니다.
+
+<div id="example-with-stack-overflow">
+  #### Stack Overflow 예시
+</div>
+
+사용자별 **일일 배지 수**를 계산하고 `users` 테이블의 표시 이름도 포함하는 [앞서 살펴본 materialized view 예시](/ko/concepts/features/materialized-views/incremental-materialized-view#example)를 살펴보겠습니다.
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+이 뷰는 `badges` 테이블의 삽입 지연 시간에 큰 영향을 주었습니다. 예:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+앞서 설명한 방식을 사용하면 이 뷰를 최적화할 수 있습니다. 삽입된 badge 행의 사용자 ID를 사용해 `users` 테이블에 필터를 추가하겠습니다:
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN
+(
+    SELECT
+        Id,
+        DisplayName
+    FROM users
+    WHERE Id IN (
+        SELECT UserId
+        FROM badges
+    )
+) AS u ON b.UserId = u.Id
+GROUP BY
+    Day,
+    b.UserId,
+    u.DisplayName
+```
+
+이렇게 하면 초기 배지 데이터 삽입 속도가 빨라질 뿐만 아니라:
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 132.118 sec. Processed 323.43 million rows, 4.69 GB (2.45 million rows/s., 35.49 MB/s.)
+Peak memory usage: 1.99 GiB.
+```
+
+하지만 이는 앞으로 배지를 삽입하는 작업도 효율적이라는 의미입니다:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 0.583 sec.
+```
+
+위 작업에서는 사용자 id `2936484`에 대해 users 테이블에서 1개의 행만 조회됩니다. 이 조회 역시 테이블 정렬 키인 `Id`를 통해 최적화됩니다.
+
+<div id="materialized-views-and-unions">
+  ## materialized view와 union
+</div>
+
+`UNION ALL` 쿼리는 여러 원본 테이블의 데이터를 단일 결과 집합으로 결합할 때 일반적으로 사용됩니다.
+
+`UNION ALL`은 증분형 materialized view에서 직접 지원되지 않지만, 각 `SELECT` 분기별로 별도의 materialized view를 생성하고 그 결과를 공유 대상 테이블에 기록하면 동일한 효과를 얻을 수 있습니다.
+
+이 예시에서는 Stack Overflow 데이터셋을 사용합니다. 아래의 `badges` 및 `comments` 테이블은 사용자가 획득한 배지와 게시물에 작성한 댓글을 나타냅니다:
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+```
+
+다음 `INSERT INTO` 명령으로 데이터를 삽입할 수 있습니다:
+
+```sql
+INSERT INTO stackoverflow.badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.comments SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+각 사용자의 마지막 활동을 보여주는 사용자 활동 통합 뷰를 만들기 위해 이 두 테이블을 결합한다고 가정해 보겠습니다:
+
+```sql
+SELECT
+ UserId,
+ argMax(description, event_time) AS last_description,
+ argMax(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+LIMIT 10
+```
+
+이 쿼리의 결과를 저장할 대상 테이블이 있다고 가정하겠습니다. 결과가 올바르게 머지되도록 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블 엔진과 [AggregateFunction](/ko/reference/data-types/aggregatefunction)을 사용한다는 점에 유의하십시오:
+
+```sql
+CREATE TABLE user_activity
+(
+    `UserId` String,
+    `last_description` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `activity_type` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `last_activity` SimpleAggregateFunction(max, DateTime64(3, 'UTC'))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY UserId
+```
+
+`badges` 또는 `comments`에 새 행이 삽입될 때마다 이 테이블이 업데이트되도록 하려면, 가장 단순한 방법으로는 앞서의 union 쿼리를 사용해 materialized view를 생성하려고 할 수 있습니다:
+
+```sql
+CREATE MATERIALIZED VIEW user_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(description, event_time) AS last_description,
+ argMaxState(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+```
+
+구문상으로는 유효하지만, 의도하지 않은 결과가 발생합니다. 이 뷰는 `comments` 테이블에 삽입이 일어날 때만 실행됩니다. 예시:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+`badges` 테이블에 삽입해도 뷰가 트리거되지 않으므로 `user_activity`는 업데이트를 받지 못합니다:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+이를 해결하려면 각 SELECT 문에 대해 materialized view를 하나씩 생성하면 됩니다:
+
+```sql
+DROP TABLE user_activity_mv;
+TRUNCATE TABLE user_activity;
+
+CREATE MATERIALIZED VIEW comment_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Text, CreationDate) AS last_description,
+ argMaxState('comment', CreationDate) AS activity_type,
+    max(CreationDate) AS last_activity
+FROM stackoverflow.comments
+GROUP BY UserId;
+
+CREATE MATERIALIZED VIEW badges_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Name, Date) AS last_description,
+ argMaxState('badge', Date) AS activity_type,
+    max(Date) AS last_activity
+FROM stackoverflow.badges
+GROUP BY UserId;
+```
+
+이제 어느 테이블에 삽입해도 올바른 결과가 나옵니다. 예를 들어, `comments` 테이블에 삽입하면 다음과 같습니다:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 10:18:47.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+마찬가지로 `badges` 테이블에 삽입된 내용은 `user_activity` 테이블에도 반영됩니다:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ gingerwizard │ badge         │ 2025-04-15 10:20:18.000 │
+└─────────┴──────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="materialized-views-parallel-vs-sequential">
+  ## 병렬 처리와 순차 처리
+</div>
+
+이전 예시에서 보았듯이, 하나의 테이블은 여러 Materialized View의 source로 사용할 수 있습니다. 이들의 실행 순서는 설정 [`parallel_view_processing`](/ko/reference/settings/session-settings#parallel_view_processing)에 따라 달라집니다.
+
+기본적으로 이 설정값은 `0`(`false`)이며, 이 경우 Materialized View는 `uuid` 순서에 따라 순차적으로 실행됩니다.
+
+예를 들어, 다음과 같은 `source` 테이블과 3개의 Materialized View가 있고, 각각이 행을 `target` 테이블로 전송한다고 가정해 보겠습니다:
+
+```sql
+CREATE TABLE source
+(
+    `message` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE target
+(
+    `message` String,
+    `from` String,
+    `now` DateTime64(9),
+    `sleep` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE MATERIALIZED VIEW mv_2 TO target
+AS SELECT
+    message,
+    'mv2' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_3 TO target
+AS SELECT
+    message,
+    'mv3' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_1 TO target
+AS SELECT
+    message,
+    'mv1' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+```
+
+각 뷰는 자신의 이름과 삽입 시각을 포함한 상태로 `target` 테이블에 행을 삽입하기 전에 각각 1초씩 대기한다는 점에 유의하십시오.
+
+`source` 테이블에 행 하나를 삽입하는 데는 약 3초가 걸리며, 각 뷰는 순차적으로 실행됩니다:
+
+```sql
+INSERT INTO source VALUES ('test')
+```
+
+```response
+1 row in set. Elapsed: 3.786 sec.
+```
+
+각 행에서 도착한 행은 `SELECT`로 확인할 수 있습니다:
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 14:52:01.306162309 │
+│ test    │ mv1  │ 2025-04-15 14:52:02.307693521 │
+│ test    │ mv2  │ 2025-04-15 14:52:03.309250283 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.015 sec.
+```
+
+이는 뷰의 `uuid`와 동일합니다:
+
+```sql
+SELECT
+    name,
+ uuid
+FROM system.tables
+WHERE name IN ('mv_1', 'mv_2', 'mv_3')
+ORDER BY uuid ASC
+```
+
+```response
+┌─name─┬─uuid─────────────────────────────────┐
+│ mv_3 │ ba5e36d0-fa9e-4fe8-8f8c-bc4f72324111 │
+│ mv_1 │ b961c3ac-5a0e-4117-ab71-baa585824d43 │
+│ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
+└──────┴──────────────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+반대로, `parallel_view_processing=1`이 활성화된 상태에서 행을 삽입하면 어떻게 되는지 살펴보겠습니다. 이 설정이 활성화되면 뷰가 병렬로 실행되므로, 행이 대상 테이블에 도착하는 순서는 보장되지 않습니다:
+
+```sql
+TRUNCATE target;
+SET parallel_view_processing = 1;
+
+INSERT INTO source VALUES ('test');
+```
+
+```response
+1 row in set. Elapsed: 1.588 sec.
+```
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 19:47:32.242937372 │
+│ test    │ mv1  │ 2025-04-15 19:47:32.243058183 │
+│ test    │ mv2  │ 2025-04-15 19:47:32.337921800 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+각 뷰에서 도착하는 행의 순서가 동일해 보이지만, 각 행의 삽입 시점이 서로 비슷한 것에서 알 수 있듯이 이는 보장되지 않습니다. 또한 삽입 성능이 향상되었다는 점에도 유의하십시오.
+
+<div id="materialized-views-when-to-use-parallel">
+  ### 병렬 처리를 사용해야 하는 경우
+</div>
+
+위에서 설명한 것처럼 `parallel_view_processing=1`을 활성화하면 삽입 처리량을 크게 높일 수 있습니다. 특히 하나의 테이블에 여러 materialized view가 연결된 경우 효과가 큽니다. 하지만 다음과 같은 트레이드오프를 이해하는 것이 중요합니다.
+
+* **삽입 부하 증가**: 모든 구체화된 뷰가 동시에 실행되므로 CPU 및 메모리 사용량이 증가합니다. 각 뷰가 무거운 계산이나 조인을 수행하면 시스템에 과부하가 걸릴 수 있습니다.
+* **엄격한 실행 순서 필요**: 드문 워크플로에서는 뷰 실행 순서가 중요할 수 있습니다(예: 연쇄된 종속성). 이런 경우 병렬 실행으로 인해 상태 불일치나 경쟁 상태(race condition)가 발생할 수 있습니다. 이를 피하도록 설계할 수는 있지만, 이러한 구성은 취약하며 향후 버전에서 깨질 수 있습니다.
+
+<Info>
+  **과거 기본값과 안정성**
+
+  순차 실행은 오류 처리의 복잡성 때문에 오랫동안 기본값이었습니다. 과거에는 하나의 materialized view에서 실패가 발생하면 다른 뷰가 실행되지 못할 수 있었습니다. 최신 버전에서는 block별로 실패를 격리하도록 개선되었지만, 순차 실행은 여전히 실패 동작을 더 명확하게 파악할 수 있게 해줍니다.
+</Info>
+
+일반적으로 다음과 같은 경우 `parallel_view_processing=1`을 활성화하십시오.
+
+* 서로 독립적인 여러 구체화된 뷰가 있는 경우
+* 삽입 성능을 최대화하려는 경우
+* 시스템이 동시 뷰 실행을 감당할 수 있는지 파악하고 있는 경우
+
+다음과 같은 경우에는 비활성화된 상태로 두십시오.
+
+* 구체화된 뷰가 서로 종속되어 있는 경우
+* 예측 가능하고 순서가 보장된 실행이 필요한 경우
+* 삽입 동작을 디버깅하거나 감사할 때 결정론적으로 재현되기를 원하는 경우
+
+<div id="materialized-views-common-table-expressions-ctes">
+  ## materialized view와 공통 테이블 표현식(CTE)
+</div>
+
+**비재귀적** 공통 테이블 표현식(CTE)은 materialized view에서 지원됩니다.
+
+<Info>
+  **공통 테이블 표현식(CTE)는 **구체화되지 않습니다**
+
+  ClickHouse는 CTE를 구체화하지 않습니다. 대신 CTE 정의를 쿼리에 직접 대입하므로, 동일한 표현식이 여러 번 평가될 수 있습니다(CTE를 두 번 이상 사용하는 경우).
+</Info>
+
+다음 예시에서는 각 게시물 유형의 일별 활동을 계산합니다.
+
+```sql
+CREATE TABLE daily_post_activity
+(
+    Day Date,
+ PostType String,
+ PostsCreated SimpleAggregateFunction(sum, UInt64),
+ AvgScore AggregateFunction(avg, Int32),
+ TotalViews SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Day, PostType);
+
+CREATE MATERIALIZED VIEW daily_post_activity_mv TO daily_post_activity AS
+WITH filtered_posts AS (
+    SELECT
+ toDate(CreationDate) AS Day,
+ PostTypeId,
+ Score,
+ ViewCount
+    FROM posts
+    WHERE Score > 0 AND PostTypeId IN (1, 2)  -- 질문 또는 답변
+)
+SELECT
+    Day,
+    CASE PostTypeId
+        WHEN 1 THEN 'Question'
+        WHEN 2 THEN 'Answer'
+    END AS PostType,
+    count() AS PostsCreated,
+    avgState(Score) AS AvgScore,
+    sum(ViewCount) AS TotalViews
+FROM filtered_posts
+GROUP BY Day, PostTypeId;
+```
+
+엄밀히 말해 여기서는 CTE가 꼭 필요하지는 않지만, 예시를 위해 사용했으며 뷰는 예상대로 동작합니다:
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```sql
+SELECT
+    Day,
+    PostType,
+    avgMerge(AvgScore) AS AvgScore,
+    sum(PostsCreated) AS PostsCreated,
+    sum(TotalViews) AS TotalViews
+FROM daily_post_activity
+GROUP BY
+    Day,
+    PostType
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─PostType─┬───────────AvgScore─┬─PostsCreated─┬─TotalViews─┐
+│ 2024-03-31 │ Question │ 1.3317757009345794 │          214 │       9728 │
+│ 2024-03-31 │ Answer   │ 1.4747191011235956 │          356 │          0 │
+│ 2024-03-30 │ Answer   │ 1.4587912087912087 │          364 │          0 │
+│ 2024-03-30 │ Question │ 1.2748815165876777 │          211 │       9606 │
+│ 2024-03-29 │ Question │ 1.2641509433962264 │          318 │      14552 │
+│ 2024-03-29 │ Answer   │ 1.4706927175843694 │          563 │          0 │
+│ 2024-03-28 │ Answer   │  1.601637107776262 │          733 │          0 │
+│ 2024-03-28 │ Question │ 1.3530864197530865 │          405 │      24564 │
+│ 2024-03-27 │ Question │ 1.3225806451612903 │          434 │      21346 │
+│ 2024-03-27 │ Answer   │ 1.4907539118065434 │          703 │          0 │
+└────────────┴──────────┴────────────────────┴──────────────┴────────────┘
+
+결과 10행. 경과 시간: 0.013초. 처리된 행: 11.45천 행, 663.87 KB (866.53천 행/초, 50.26 MB/초)
+최대 메모리 사용량: 989.53 KiB.
+```
+
+ClickHouse에서 CTE는 인라인되므로, 최적화 과정에서 쿼리에 사실상 복사해 붙여 넣은 것처럼 처리되며 **구체화되지 않습니다**. 이는 다음을 의미합니다:
+
+* CTE가 원본 테이블(즉, materialized view가 attached 상태인 테이블)이 아닌 다른 테이블을 참조하고 `JOIN` 또는 `IN` 절에서 사용되면, 트리거가 아니라 서브쿼리 또는 조인처럼 동작합니다.
+* materialized view는 여전히 주 원본 테이블에 대한 삽입에서만 트리거되지만, CTE는 삽입이 일어날 때마다 다시 실행되므로, 특히 참조하는 테이블이 큰 경우 불필요한 오버헤드가 발생할 수 있습니다.
+
+예를 들어,
+
+```sql
+WITH recent_users AS (
+  SELECT Id FROM stackoverflow.users WHERE CreationDate > now() - INTERVAL 7 DAY
+)
+SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
+```
+
+이 경우 users CTE는 posts에 데이터를 삽입할 때마다 다시 평가되며, 새 users가 삽입되어도 materialized view는 업데이트되지 않고 posts에 삽입될 때만 업데이트됩니다.
+
+일반적으로 CTE는 materialized view가 attached 상태인 동일한 원본 테이블을 대상으로 하는 로직에 사용하거나, 참조하는 테이블이 작고 성능 병목을 일으킬 가능성이 낮아야 합니다. 또는 [materialized view에서 JOIN을 사용할 때와 동일한 최적화](/ko/concepts/features/materialized-views/incremental-materialized-view#join-best-practices)를 고려하십시오.

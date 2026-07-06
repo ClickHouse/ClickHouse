@@ -1,0 +1,38 @@
+---
+title: 'ClickPipe에 특정 테이블 추가'
+description: 'ClickPipe에 특정 테이블을 추가하는 데 필요한 단계를 설명합니다.'
+sidebarTitle: '테이블 추가'
+slug: /integrations/clickpipes/mysql/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+특정 테이블을 파이프에 추가하면 유용한 경우가 있습니다. 이러한 필요는 트랜잭션 또는 분석 워크로드가 커질수록 점점 더 흔해집니다.
+
+<div id="add-tables-steps">
+  ## ClickPipe에 특정 테이블을 추가하는 단계
+</div>
+
+다음 단계에 따라 수행할 수 있습니다.
+
+1. 파이프를 [일시 중지](/ko/integrations/clickpipes/mysql/pause-and-resume)합니다.
+2. &quot;Edit Table settings&quot;를 클릭합니다.
+3. 추가할 테이블을 찾습니다. 검색창에서 검색하여 찾을 수 있습니다.
+4. 체크박스를 클릭해 테이블을 선택합니다.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. &quot;Update&quot;를 클릭합니다.
+6. 업데이트가 성공하면 파이프 상태는 순서대로 `Setup`, `Snapshot`, `Running`으로 변경됩니다. 테이블의 초기 적재는 **Tables** 탭에서 확인할 수 있습니다.
+
+<Info>
+  기존 테이블의 CDC는 새 테이블의 스냅샷이 완료되면 자동으로 재개됩니다.
+</Info>

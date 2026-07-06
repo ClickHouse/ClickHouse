@@ -1014,8 +1014,8 @@ namespace
                         "Unable to parse fragment {} from {} because char {} is expected but {} provided",
                         fragment,
                         std::string_view(cur, end - cur),
-                        String(expected, 1),
-                        String(*cur, 1))
+                        String(1, expected),
+                        String(1, *cur))
 
                 ++cur;
                 return cur;
@@ -1034,7 +1034,7 @@ namespace
                         "Unable to parse fragment {} from {} because {} is not a number",
                         fragment,
                         std::string_view(cur, end - cur),
-                        String(*cur, 1))
+                        String(1, *cur))
 
                 ++cur;
                 return cur;

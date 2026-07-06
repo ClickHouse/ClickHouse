@@ -1,0 +1,49 @@
+---
+noindex: true
+title: "Configurer les alertes pour ClickHouse"
+sidebarTitle: "Configurer les alertes"
+description: "Configurez les cibles de scraping Prometheus et les alertes pour ClickHouse Server, Keeper et l’opérateur."
+---
+
+Configurez les cibles de scraping Prometheus et les alertes pour ClickHouse Server, Keeper et l’opérateur.
+
+<div id="set-up-prometheus-scrape-targets-for-clickhouse-server">
+  ## Configurer les cibles de scraping Prometheus pour le ClickHouse Server
+</div>
+
+Les pods ClickHouse Server incluent des annotations `prometheus.io/*` qui exposent des métriques de base. Pour obtenir l’ensemble complet des métriques (y compris `ClickHouse_CustomMetrics_*`), configurez le point de terminaison `:8123/metrics` comme cible de scraping Prometheus sur chaque pod serveur à l’aide d’un PodMonitor ou d’un équivalent.
+
+Ce point de terminaison **nécessite une authentification**. Authentifiez-vous avec un utilisateur dédié disposant de privilèges en lecture seule.
+
+<div id="set-up-podmonitor-for-keeper">
+  ## Configurer PodMonitor pour Keeper
+</div>
+
+Créez un PodMonitor qui cible le point de terminaison `:8001/metrics` des pods Keeper afin de collecter les métriques de Keeper.
+
+<div id="alert-rules">
+  ## Règles d&#39;alerte
+</div>
+
+Pour la liste complète des définitions d&#39;alerte recommandées (expressions Prometheus, seuils et actions), consultez [reference/metrics-and-alerts.md](/fr/products/clickhouse-private/reference/metrics-and-alerts-reference).
+
+Les alertes clés incluent :
+
+| Alerte                                      | Métrique                                               | Objectif                                                                    |
+| ------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------------- |
+| opérateur sans réconciliation                | `last_cluster_reconcile`                               | L&#39;opérateur n&#39;a pas effectué de réconciliation dans le délai attendu |
+| Erreurs de réconciliation de l&#39;opérateur | `controller_runtime_reconcile_errors_total`            | Le taux d&#39;erreur dépasse 5 % des tentatives de réconciliation           |
+| Parties détachées corrompues                | `ClickHouse_CustomMetric_NumberOfBrokenDetachedParts`  | Plus de 100 parties détachées corrompues pendant plus de 60 minutes         |
+| Perte de données                            | `ClickHouse_CustomMetric_LostPartCount`                | Des parties perdues ont été détectées (perte de données potentielle)        |
+| Serveur bloqué lors de l&#39;arrêt          | `ClickHouseMetrics_IsServerShuttingDown`               | Le serveur est en cours d&#39;arrêt depuis plus d&#39;une heure             |
+| Réplicas de table en lecture seule          | `ClickHouse_CustomMetric_TableReadOnlyDurationSeconds` | Table en mode lecture seule depuis plus d&#39;une heure                     |
+
+<div id="standard-kubernetes-alerts">
+  ## Alertes Kubernetes standards
+</div>
+
+En plus des alertes spécifiques à ClickHouse, ajoutez des alertes Kubernetes standards pour :
+
+* Les pods en boucle de redémarrage après plantage
+* Les pods non planifiables
+* D&#39;autres problèmes d&#39;infrastructure propres à votre environnement

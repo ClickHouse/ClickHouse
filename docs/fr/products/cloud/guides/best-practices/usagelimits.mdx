@@ -1,0 +1,43 @@
+---
+slug: /cloud/bestpractices/usage-limits
+sidebarTitle: 'Limites de service'
+title: "Limites d'utilisation"
+description: "Décrit les limites d'utilisation recommandées dans ClickHouse Cloud"
+doc_type: 'reference'
+keywords: ["limites d'utilisation", 'quotas', 'bonnes pratiques', 'gestion des ressources', 'fonctionnalités cloud']
+---
+
+Bien que ClickHouse soit connu pour sa rapidité et sa fiabilité, des performances optimales
+s&#39;obtiennent dans certaines limites de fonctionnement. Par exemple, un trop grand nombre de tables,
+de bases de données ou de parts peut nuire aux performances. Pour éviter cela, ClickHouse
+Cloud impose des limites sur plusieurs dimensions opérationnelles.
+Le détail de ces garde-fous figure ci-dessous.
+
+<Tip>
+  Si vous avez atteint l&#39;un de ces garde-fous, il est possible que vous
+  mettiez en œuvre votre cas d&#39;usage d&#39;une manière non optimisée. Contactez notre équipe d&#39;assistance et
+  nous serons ravis de vous aider à affiner votre cas d&#39;usage pour éviter de dépasser ces garde-fous,
+  ou d&#39;examiner avec vous comment les augmenter de manière contrôlée.
+</Tip>
+
+| Dimension                         | Limite                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| **Bases de données**              | 1000                                                                                                                |
+| **Tables**                        | 5000                                                                                                                |
+| **Colonnes**                      | ∼1000 (le format wide est préférable au format compact)                                                             |
+| **Partitions**                    | 50k                                                                                                                 |
+| **Parts**                         | 10k (voir le paramètre [`max_parts_in_total`](/fr/products/cloud/guides/cloud-compatibility#max_parts_in_total-10000)) |
+| **Taille de part**                | 150gb                                                                                                               |
+| **Services par organisation**     | 20 (souple)                                                                                                         |
+| **Services par warehouse**        | 5 (souple)                                                                                                          |
+| **Réplicas par service**          | 20 (souple)                                                                                                         |
+| **Faible cardinalité**            | 10k ou moins                                                                                                        |
+| **Clés primaires dans une table** | 4-5 qui filtrent suffisamment les données                                                                           |
+| **Concurrence des requêtes**      | 1000 (par réplica)                                                                                                  |
+| **Ingestion par lot**             | tout ce qui dépasse 1M sera divisé par le système en blocks de 1M de lignes                                         |
+
+<Note>
+  Pour les services à réplica unique, le nombre maximal de bases de données est limité à
+  100, et le nombre maximal de tables est limité à 500. En outre, le stockage
+  des services du niveau Basic est limité à 1 To.
+</Note>

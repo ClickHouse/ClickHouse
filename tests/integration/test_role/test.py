@@ -296,13 +296,13 @@ def test_introspection():
     ) == TSV([["R1", "local_directory"], ["R2", "local_directory"]])
 
     assert instance.query(
-        "SELECT * from system.grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY user_name, role_name, access_type, database, table, column, is_partial_revoke, grant_option"
+        "SELECT * from system.grants WHERE user_name IN ('A', 'B') OR role_name IN ('R1', 'R2') ORDER BY ALL"
     ) == TSV(
         [
-            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0],
-            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1],
-            ["\\N", "R2", "SELECT", "", "test", "table", "x", 1, 0],
-            ["\\N", "R2", "SELECT", "", "test", "table", "\\N", 0, 0],
+            ["A", "\\N", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
+            ["B", "\\N", "CREATE", "", "\\N", "\\N", "\\N", 0, 1, 0],
+            ["\\N", "R2", "SELECT", "", "test", "table", "x", 1, 0, 0],
+            ["\\N", "R2", "SELECT", "", "test", "table", "\\N", 0, 0, 0],
         ]
     )
 
