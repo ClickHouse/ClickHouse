@@ -1,0 +1,209 @@
+version: 1
+# ─── Registry saturation ──────────────────────────────────────────────────────
+# How many sessions and watches can a resource-constrained keeper sustain when
+# serving a service-discovery registry, and what degrades first?
+#
+# The workload models the classic ZooKeeper registry pattern: N clients each
+# hold one session with a children-watch on a shared registry path, re-list it
+# on every change, and read the member entries; membership churn fires the
+# children-watch on every watcher simultaneously (see workloads/registry_watch.yaml).
+#
+# All scenarios pin keeper containers to a small deployment shape
+# (opts: cpu_limit 4 / mem_limit 4g) so the results answer "what fits on a
+# constrained keeper" rather than "what fits on the CI host".
+#
+# The session ladder (c500 → c4000) keeps the workload mix constant and raises
+# only workload.clients (sessions + concurrency).  Gates get progressively
+# looser at higher rungs on purpose: the upper rungs are for observing where
+# degradation starts (mntr session/watch counts, container CPU/memory, p99),
+# not for a hard pass/fail.
+#
+# These scenarios are on-demand (not part of the nightly scenario files); run
+# them with KEEPER_SCENARIO_FILES=registry_saturation.yaml or -k '<id>'.
+defaults:
+  duration: 300
+  topology: 3
+scenarios:
+# ─── Session ladder ───────────────────────────────────────────────────────────
+- id: registry-sat-c500
+  name: Registry saturation (500 sessions)
+  description: Registry watch mix with 500 sessions across 3 nodes. Ladder rung 1; expected healthy.
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 500
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+- id: registry-sat-c1000
+  name: Registry saturation (1000 sessions)
+  description: Registry watch mix with 1000 sessions across 3 nodes. Ladder rung 2.
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 1000
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+- id: registry-sat-c2000
+  name: Registry saturation (2000 sessions)
+  description: Registry watch mix with 2000 sessions across 3 nodes. Ladder rung 3; relaxed gates, watch for degradation onset.
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 2000
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.2
+  - type: p99_le
+    max_ms: 20000
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+- id: registry-sat-c4000
+  name: Registry saturation (4000 sessions)
+  description: Registry watch mix with 4000 sessions across 3 nodes. Ladder rung 4; loose gates, primarily observational. Check host ulimit -n first (each session is one TCP connection from the bench host).
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 4000
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.3
+  - type: p99_le
+    max_ms: 30000
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+# ─── Watch fan-out ────────────────────────────────────────────────────────────
+- id: registry-watch-fanout
+  name: Registry watch fan-out (1000 sessions)
+  description: All 1000 sessions keep a watch armed on the same registry path; a small write weight mutates it, so every write fires ~sessions-count watches. Measures fan-out latency and watch-queue behavior.
+  workload:
+    config: workloads/registry_fanout.yaml
+    clients: 1000
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+  - type: p99_le
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+# ─── Session expiry storm ─────────────────────────────────────────────────────
+# Runs only with --faults.  The registry workload uses a 30 s client session
+# timeout; CPU starvation on all (already 4-CPU-pinned) nodes degrades keeper
+# enough for sessions to start expiring, then load returns to normal.  A single
+# cpu_hog is one busy-loop (one core), which a 4-CPU container shrugs off — so
+# run four in parallel per node to contend the full pinned CPU budget.
+# Answers: when an overloaded keeper causes mass session expiry among watchers,
+# do sessions/watches recover, and how does the error window look?  No p99 gate
+# — tail latency is unbounded under CPU starvation by design.
+- id: registry-expiry-storm
+  name: 'Registry expiry storm [fault: cpu_hog all]'
+  description: Registry watch mix (1000 sessions, 30 s session timeout) with CPU saturation (4 parallel hogs per node) on all nodes driving session expiry. Observational; error gate relaxed, no p99 gate.
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 1000
+  opts:
+    cpu_limit: 4
+    mem_limit: 4g
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults:
+  - kind: parallel
+    steps:
+    - kind: cpu_hog
+      'on': all
+      seconds: 120
+      target_parallel: true
+    - kind: cpu_hog
+      'on': all
+      seconds: 120
+      target_parallel: true
+    - kind: cpu_hog
+      'on': all
+      seconds: 120
+      target_parallel: true
+    - kind: cpu_hog
+      'on': all
+      seconds: 120
+      target_parallel: true
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.5
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print

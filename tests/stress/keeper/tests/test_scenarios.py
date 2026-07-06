@@ -204,6 +204,10 @@ def _build_bench_step(scenario, nodes, ctx, replay_path=""):
         # Extract config or replay from scenario
         wl.setdefault("config", scenario_wl.get("config"))
         wl.setdefault("replay", scenario_wl.get("replay"))
+        # Optional per-scenario client count (sessions + concurrency) overriding the
+        # workload YAML's `concurrency`; KEEPER_BENCH_CLIENTS still wins over both.
+        if scenario_wl.get("clients") is not None:
+            wl["clients"] = int(scenario_wl["clients"])
     
     # If no workload defined anywhere, use default
     if not wl:
@@ -828,6 +832,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             cfg_path=wl.get("config"),
             duration_s=scenario.get("duration"),
             replay_path=wl.get("replay"),
+            clients=wl.get("clients"),
         )
         
         fault_runner = None

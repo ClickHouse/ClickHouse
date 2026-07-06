@@ -1,0 +1,63 @@
+name: registry_watch
+# Service-discovery registry pattern: many clients each hold a session with a
+# children-watch on a shared registry path, re-list it whenever it changes, and
+# read every member entry. Membership churn (join/leave) fires the children-watch
+# on every watcher simultaneously.
+#
+# Request mix per client loop:
+#   - list the registry with a watch armed (dominant)
+#   - get each member entry (no watch on reads of the entries themselves)
+#   - rare create/remove churn under the registry (fires fan-out to all watchers)
+#
+# Value sizes: 100-300 bytes (registration payloads: endpoints, metadata).
+concurrency: 500
+report_delay: 0.0
+continue_on_error: true
+
+connections:
+  operation_timeout_ms: 30000
+  connection_timeout_ms: 400000
+  # Realistic client session timeout; also what an overloaded server needs to
+  # miss for sessions to start expiring (see registry-expiry-storm scenario).
+  session_timeout_ms: 30000
+
+setup:
+  node:
+    name: registry
+    node:
+      name: servers
+      node:
+      - repeat: 64
+        name:
+          random_string:
+            size: 12
+        data:
+          random_string:
+            size:
+              min_value: 100
+              max_value: 300
+
+generator:
+  requests:
+    list:
+      path: /registry/servers
+      watch_probability: 1.0
+      weight: 60
+
+    get:
+      path:
+      - children_of: /registry/servers
+      weight: 35
+
+    create:
+      path: /registry/servers
+      name_length:
+        min_value: 8
+        max_value: 16
+      data:
+        random_string:
+          size:
+            min_value: 100
+            max_value: 300
+      remove_factor: 0.5
+      weight: 5

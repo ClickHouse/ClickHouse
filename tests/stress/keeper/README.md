@@ -173,6 +173,55 @@ To add a read-heavy or write-heavy variant:
 4. Reference it in a scenario YAML (`workload: {config: workloads/read_heavy.yaml}`)
    or point at it via `KEEPER_WORKLOAD_CONFIG` for ad-hoc runs.
 
+## Registry saturation scenarios (on-demand)
+
+`scenarios/registry_saturation.yaml` probes session/watch limits of a
+resource-constrained keeper serving a service-discovery registry. The workload
+(`workloads/registry_watch.yaml`) models the classic ZooKeeper registry pattern:
+many clients each hold one session with a children-watch on a shared registry
+path (`/registry/servers`), re-list it whenever it changes, and read every
+member entry; membership churn fires the children-watch on every watcher
+simultaneously. `workloads/registry_fanout.yaml` is the fan-out variant where
+all sessions watch the same path and a low-rate writer fires ~sessions-count
+watch events per mutation.
+
+Scenarios:
+
+- `registry-sat-c500` / `-c1000` / `-c2000` / `-c4000` — session ladder; same
+  mix, only the session count rises. Upper rungs use relaxed gates on purpose:
+  they are for observing where degradation starts (`mntr` session/watch counts,
+  container CPU/memory, p99), not a hard pass/fail.
+- `registry-watch-fanout` — fan-out latency and watch-queue behavior at 1000
+  watching sessions.
+- `registry-expiry-storm` — runs only with faults enabled: `cpu_hog` on all
+  nodes starves keeper past the workload's 30 s session timeout, driving mass
+  session expiry among watchers, then load returns to normal.
+
+These scenarios are not part of the nightly scenario files; run them on demand:
+
+```bash
+export CLICKHOUSE_BINARY=$(pwd)/build/programs/clickhouse
+export PYTHONPATH=.:tests/stress:ci
+
+pytest -p no:cacheprovider --durations=0 -vv -s \
+  tests/stress/keeper/tests/test_scenarios.py \
+  -k 'registry-sat-c500 and default' \
+  --matrix-backends=default
+```
+
+Notes:
+
+- Each bench session is one TCP connection from the host, so check
+  `ulimit -n` before the higher rungs (c2000 needs >2k spare fds, c4000 >4k).
+- **Per-scenario knobs** used by these scenarios (available to any scenario):
+  - `workload.clients` — overrides the workload YAML's `concurrency`
+    (sessions + bench concurrency). Priority: `KEEPER_BENCH_CLIENTS` env >
+    `workload.clients` > workload YAML `concurrency`.
+  - `opts.cpu_limit` / `opts.mem_limit` — Docker resource limits for the
+    keeper containers (default backend only), to emulate small/constrained
+    keeper deployments. Defaults from the integration helper are
+    `cpus: 5` / `mem_limit: 12g`; the registry scenarios pin `4` / `4g`.
+
 ## Early comparison: Default vs RocksDB
 
 > **Note:** RocksDB storage support has been removed from Keeper, so the `rocks` backend is no
@@ -197,7 +246,8 @@ below for 15-minute results across all 10 scenarios and 3 backends.
 ## Reference
 
 - **Workload configs:** `tests/stress/keeper/workloads/` — one YAML per workload type.
-- **Scenarios:** `tests/stress/keeper/scenarios/` — `core_no_faults.yaml`, `core_faults.yaml`.
+- **Scenarios:** `tests/stress/keeper/scenarios/` — `core_no_faults.yaml`, `core_faults.yaml`,
+  `registry_saturation.yaml` (on-demand).
 - **Framework entry point:** `tests/stress/keeper/tests/test_scenarios.py`.
 - **Settings / timeouts:** `tests/stress/keeper/framework/core/settings.py`.
 

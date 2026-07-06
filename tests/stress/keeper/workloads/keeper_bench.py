@@ -93,7 +93,7 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s):
 class KeeperBench:
     """Runs keeper-bench workload on host. For ZooKeeper backend, uses node IPs and ZK-specific connection settings."""
     
-    def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False):
+    def __init__(self, nodes, ctx, cfg_path, duration_s, replay_path, secure=False, clients=None):
         # RaftKeeper uses same workload as default (multi-connection); only ZooKeeper uses single-conn + high timeouts
         is_zk = bool(nodes and getattr(nodes[0], "is_zookeeper", False))
         is_raftkeeper = bool(nodes and getattr(nodes[0], "is_raftkeeper", False))
@@ -106,6 +106,9 @@ class KeeperBench:
         self.duration_s = int(duration_s)
         self.replay_path = replay_path
         self.secure = bool(secure)
+        # Per-scenario client count (workload.clients); overrides the workload YAML's
+        # concurrency, is overridden by KEEPER_BENCH_CLIENTS (and forced to 1 for ZooKeeper).
+        self.clients = int(clients) if clients is not None else None
         self.patched_config_path = None
         self.output_json_path = None
         self.bench_output_path = None
@@ -271,6 +274,9 @@ class KeeperBench:
         self._wait_for_any_server(timeout_s=90)
         cfg_text = yaml.safe_load(Path(self.cfg_path).read_text(encoding="utf-8"))
         clients = int(cfg_text.get("concurrency", DEFAULT_CONCURRENCY))
+        if self.clients is not None:
+            print(f"[keeper][bench] Using clients={self.clients} from scenario workload")
+            clients = self.clients
         # ZooKeeper: single connection + high timeouts to avoid "Session expired".
         if self._is_zookeeper:
             clients = 1

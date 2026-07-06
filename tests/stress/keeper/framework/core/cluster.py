@@ -525,6 +525,17 @@ class ClusterBuilder:
             overrides_xml=opts.get("coord_overrides_xml"),
         )
 
+        # Optional per-scenario container resource limits (opts: cpu_limit / mem_limit),
+        # e.g. to emulate small/constrained keeper deployments.  Defaults come from
+        # the integration helper (cpus: 5, mem_limit: 12g) when unset.
+        resource_kwargs = {}
+        if opts.get("cpu_limit") is not None:
+            resource_kwargs["cpu_limit"] = opts["cpu_limit"]
+        if opts.get("mem_limit") is not None:
+            resource_kwargs["mem_limit"] = opts["mem_limit"]
+        if resource_kwargs:
+            print(f"[keeper][cluster] node resource limits: {resource_kwargs}")
+
         # Create nodes
         names = keeper_node_names(topology)
         start_sid = 1 if ID_BASE <= 0 else ID_BASE
@@ -543,6 +554,7 @@ class ClusterBuilder:
                     with_zookeeper=False,
                     stay_alive=True,
                     hostname=name,
+                    **resource_kwargs,
                 )
             )
 

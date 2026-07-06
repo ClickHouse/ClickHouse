@@ -1,0 +1,58 @@
+name: registry_fanout
+# Watch fan-out stress: every session keeps a watch armed on the same registry
+# path (list + get with watch_probability 1.0), while a small write weight
+# mutates the registry. Each mutation fires close to sessions-count watches at
+# once, so this measures fan-out latency and watch-queue behavior rather than
+# raw request throughput.
+#
+# Same tree as registry_watch.yaml; the difference is the mix: almost all
+# operations are watch-arming reads of the hot path, writes are the metronome.
+concurrency: 1000
+report_delay: 0.0
+continue_on_error: true
+
+connections:
+  operation_timeout_ms: 30000
+  connection_timeout_ms: 400000
+  session_timeout_ms: 30000
+
+setup:
+  node:
+    name: registry
+    node:
+      name: servers
+      node:
+      - repeat: 64
+        name:
+          random_string:
+            size: 12
+        data:
+          random_string:
+            size:
+              min_value: 100
+              max_value: 300
+
+generator:
+  requests:
+    list:
+      path: /registry/servers
+      watch_probability: 1.0
+      weight: 70
+
+    get:
+      path: /registry/servers
+      watch_probability: 1.0
+      weight: 27
+
+    create:
+      path: /registry/servers
+      name_length:
+        min_value: 8
+        max_value: 16
+      data:
+        random_string:
+          size:
+            min_value: 100
+            max_value: 300
+      remove_factor: 0.5
+      weight: 3

@@ -46,8 +46,14 @@ def validate_scenario(s):
     if "workload" in s:
         if not isinstance(wl, dict):
             errs.append("workload_not_dict")
-        elif "duration" in wl:
-            errs.append("workload_duration_not_supported")
+        else:
+            if "duration" in wl:
+                errs.append("workload_duration_not_supported")
+            if "clients" in wl:
+                try:
+                    int(wl.get("clients"))
+                except Exception:
+                    errs.append("workload_clients_not_int")
 
     return errs
 
