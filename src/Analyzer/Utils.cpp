@@ -30,6 +30,7 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Formats/FormatSettings.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -1537,11 +1538,23 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
                 "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
                 make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::DateTime64:
+        {
+            /// Serialize DateTime64 as ISO-8601 in UTC (e.g. 2023-10-29T00:30:00.000000000Z) and cast back
+            /// to the exact DateTime64 type. The default local date-time text is ambiguous across DST
+            /// overlaps in non-UTC time zones (two distinct UTC instants share one local string, and
+            /// parsing picks one side); the UTC ISO form is unambiguous and re-parses exactly. Casting to
+            /// the exact type also keeps it a valid Variant/Dynamic member.
+            FormatSettings format_settings;
+            format_settings.date_time_output_format = FormatSettings::DateTimeOutputFormat::ISO;
+            WriteBufferFromOwnString buf;
+            type->getDefaultSerialization()->serializeText(*column, row, buf, format_settings);
+            return makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(buf.str()), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::Time64:
-            /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
-            /// ticks via the carrier and cast back to the original type. Local date-time text would be
-            /// ambiguous across DST overlaps in non-UTC time zones (two UTC instants format alike, and
-            /// parsing picks one side), and a bare numeric literal would round through Float64.
+            /// Time64 has no time zone, but its native HHH:MM:SS.fff text is lossy for out-of-range tick
+            /// values, so serialize the exact decimal ticks via the carrier and cast back to Time64.
+            /// (A bare numeric literal would otherwise round through Float64.)
             return makeASTFunction(
                 "_CAST", makeExactDecimalCarrierAST((*column)[row]), make_intrusive<ASTLiteral>(type->getName()));
         case TypeIndex::Array:
