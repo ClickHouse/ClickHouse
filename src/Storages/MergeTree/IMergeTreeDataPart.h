@@ -246,11 +246,6 @@ public:
 
     bool isEmpty() const { return rows_count == 0; }
 
-    /// Compute part block id for zero level part. Otherwise throws an exception.
-    /// If token is not empty, block id is calculated based on it instead of block data
-    UInt128 getPartBlockIDHash() const;
-    String getNewPartBlockID() const;
-
     /// Returns true if it's a zero level part.
     bool isZeroLevel() const { return info.min_block == info.max_block; }
 
