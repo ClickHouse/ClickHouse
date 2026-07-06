@@ -528,6 +528,11 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 partition.block_with_partition.partition = MergeTreePartition(partition.temp_part->part->partition.value);
                 /// partition.temp_part is already finalized, no need to call cancel
                 partition.temp_part = writeNewTempPart(partition.block_with_partition);
+
+                /// If optimize_on_insert setting is true, the rewritten partition.block_with_partition
+                /// could become empty after merge and then no part is created.
+                if (!partition.temp_part->part)
+                    break;
             }
 
             // Do it before logging part to have correct elapsed time and profile events in PartLog
@@ -537,6 +542,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                     resolveQuorum(zookeeper, part);
             }
         }
+
+        /// The part is null if the retry loop above exited on a block that became empty after merge.
+        if (!partition.temp_part->part)
+            continue;
 
         // profile_events_scope has to be destroyed in the scope above
         auto counters_snapshot = std::make_shared<ProfileEvents::Counters::Snapshot>(partition.part_counters.getPartiallyAtomicSnapshot());
