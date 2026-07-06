@@ -32,16 +32,9 @@ node_s3 = cluster.add_instance(
     with_minio=True,
 )
 
-# These reviewer nits will be addressed after coverage is gathered, so we can
-# reveal and cover the whole pack of similar corner cases at once.
-# TODO reviewer-on-cluster-access: cover `DROP DETACHED TABLE ... ON CLUSTER`
-# uses detached-table `DROP_TABLE` access, not generic `DROP_TABLE | DROP_VIEW`.
-# TODO reviewer-metadata-dropped-queue: fault-inject `enqueueDroppedTableCleanup`
-# failure after metadata move and verify UUID/local state recovery.
-# TODO reviewer-replicated-metadata-mutex: prove detached storage wait does not
-# hold replicated database `metadata_mutex`.
-# TODO reviewer-replicated-stale-table-map: cover stale `table_in_map` with a
-# delayed replicated metadata update.
+# Stateless coverage checks `ON CLUSTER` access and cancellation rollback.
+# These integration cases stay grey-box: local metadata move, dropped queue,
+# `UNDROP`, restart recovery, and remote object cleanup.
 
 
 def list_objects(cluster, path="data/", hint="list_objects"):
