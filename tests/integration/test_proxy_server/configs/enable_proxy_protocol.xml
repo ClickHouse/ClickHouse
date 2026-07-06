@@ -1,0 +1,5 @@
+<clickhouse>
+    <!-- The clickhouse-proxy always prepends a PROXY protocol v1 header to the upstream connection,
+         so the upstream server must listen on a port that parses that header. -->
+    <tcp_with_proxy_port>9010</tcp_with_proxy_port>
+</clickhouse>

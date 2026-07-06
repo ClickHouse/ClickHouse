@@ -1,0 +1,49 @@
+<clickhouse>
+    <logger>
+        <level>trace</level>
+        <log>/var/log/clickhouse-server/clickhouse-proxy.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-proxy.err.log</errorlog>
+    </logger>
+
+    <tcp_port>9100</tcp_port>
+    <listen_host>0.0.0.0</listen_host>
+
+    <upstreams>
+        <clusters>
+            <cluster_a>
+                <replica>
+                    <host>node1</host>
+                    <tcp_port>9010</tcp_port>
+                </replica>
+            </cluster_a>
+            <cluster_b>
+                <replica>
+                    <host>node2</host>
+                    <tcp_port>9010</tcp_port>
+                </replica>
+            </cluster_b>
+        </clusters>
+    </upstreams>
+
+    <routing>
+        <rules>
+            <rule>
+                <database>route_b</database>
+                <action>
+                    <route_to>cluster_b</route_to>
+                </action>
+            </rule>
+            <rule>
+                <database>forbidden</database>
+                <action>
+                    <reject>true</reject>
+                </action>
+            </rule>
+        </rules>
+        <default>
+            <action>
+                <route_to>cluster_a</route_to>
+            </action>
+        </default>
+    </routing>
+</clickhouse>
