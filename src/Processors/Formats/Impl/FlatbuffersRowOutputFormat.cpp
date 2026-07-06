@@ -260,6 +260,59 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
 
     factory.markOutputFormatNotTTYFriendly("Flatbuffers");
     factory.setContentType("Flatbuffers", "application/octet-stream");
+
+    factory.setDocumentation("Flatbuffers", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+The `Flatbuffers` format serializes the result set as a single schema-less
+[FlexBuffers](https://flatbuffers.dev/flexbuffers.html) value (part of the FlatBuffers project).
+Note that this is a schema-less FlexBuffers payload, not a schema-based FlatBuffers buffer.
+
+The root value is a vector of rows, and each row is a vector of the column values in the order of
+the `SELECT`. The whole result is built in memory and written out at the end, so the format is not
+streaming: keep this in mind when exporting very large result sets.
+
+This format is only available when ClickHouse is built with the `flatbuffers` contrib library
+(which is enabled together with Arrow); it is not available in the fast test build.
+
+## Data types matching {#data-types-matching}
+
+| ClickHouse data type                                    | FlexBuffers value      |
+|---------------------------------------------------------|------------------------|
+| `UInt8`/`UInt16`/`UInt32`/`UInt64`, `Date`, `DateTime`  | `UInt`                 |
+| `Int8`/`Int16`/`Int32`/`Int64`, `Date32`, `DateTime64`  | `Int`                  |
+| `Enum8`/`Enum16`                                        | `Int`                  |
+| `(U)Int128`/`(U)Int256`                                 | `Blob`                 |
+| `Float32`                                               | `Float`                |
+| `Float64`                                               | `Double`               |
+| `Decimal32`/`Decimal64`                                 | `Int`                  |
+| `Decimal128`/`Decimal256`                               | `Blob`                 |
+| `String`, `FixedString`                                 | `String`               |
+| `UUID`                                                  | `String` (text form)   |
+| `IPv4`                                                  | `UInt`                 |
+| `IPv6`                                                  | `Blob`                 |
+| `Array`, `Tuple`                                        | `Vector`               |
+| `Nullable` (`NULL`), `Nothing`                          | `Null`                 |
+| `LowCardinality`                                        | (the underlying value) |
+
+A `Nullable` value that is not `NULL` is serialized as its underlying value. Other types (for
+example `Map`) are not supported and raise an exception.
+
+## Example usage {#example-usage}
+
+```bash
+$ clickhouse-client --query="SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers" > tmp.fb;
+```
+)DOCS_MD",
+        .examples = {{"Export to a file", "SELECT number, toString(number) FROM numbers(10) FORMAT Flatbuffers", ""}},
+        .introduced_in = {26, 7},
+        .related = {"MsgPack", "RowBinary", "Native"},
+    });
 }
 
 }
