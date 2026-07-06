@@ -192,8 +192,7 @@ ConnectionHolderPtr PoolWithFailover::get()
                 }
                 catch (const pqxx::broken_connection & pqxx_error)
                 {
-                    /// The failure is retried on other replicas / tries and reported to the caller
-                    /// via an exception at the end, so do not log it at error level here.
+                    /// The failure is propagated to the caller, who decides how severe it is.
                     LOG_WARNING(log, "Connection error: {}", pqxx_error.what());
                     error_message = PreformattedMessage::create(
                         "Try {}. Connection to {} failed with error: {}\n",

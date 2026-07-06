@@ -133,8 +133,6 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
     }
     catch (...)
     {
-        /// The failure is tolerated, so log at warning: an unreachable remote server must not
-        /// produce an error-level message on every system.tables scan.
         tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
     }
 
@@ -370,7 +368,6 @@ void DatabasePostgreSQL::removeOutdatedTables()
     }
     catch (...)
     {
-        /// The failure is tolerated (the task reschedules itself), so log at warning.
         tryLogCurrentException(__PRETTY_FUNCTION__, "", LogsLevel::warning);
 
         /** Avoid repeated interrupting other normal routines (they acquire locks!)
