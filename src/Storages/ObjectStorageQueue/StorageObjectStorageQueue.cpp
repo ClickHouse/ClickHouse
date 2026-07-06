@@ -27,6 +27,8 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueIFileMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueOrderedFileMetadata.h>
+#include <Storages/ObjectStorageQueue/ObjectStorageQueueFilenameParser.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
 #include <Storages/StreamingStorageRegistry.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueTableMetadata.h>
@@ -47,6 +49,7 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/randomSeed.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <Poco/Event.h>
 
@@ -111,6 +114,8 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
+    extern const ObjectStorageQueueSettingsBool cleanup_stale_partitions;
+    extern const ObjectStorageQueueSettingsUInt64 stale_partition_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
@@ -416,6 +421,36 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
         streaming_tasks.emplace_back(std::move(task));
     }
     max_files_override = 0;
+
+    /// Optional background cleanup of watermark nodes of stale (inactive and fully drained)
+    /// partitions. Only meaningful for ordered + regex partitioning. Safety does not depend on
+    /// `after_processing`: a node is removed only once the partition has no objects left in
+    /// storage, so nothing can be reprocessed. With `keep`/`tag` the processed objects normally
+    /// remain in the listing, so such partitions are simply kept until their objects are removed
+    /// out-of-band (e.g. by an object storage lifecycle policy).
+    cleanup_stale_partitions = (*queue_settings_)[ObjectStorageQueueSetting::cleanup_stale_partitions];
+    stale_partition_ttl_sec = (*queue_settings_)[ObjectStorageQueueSetting::stale_partition_ttl_sec];
+    if (cleanup_stale_partitions)
+    {
+        const auto & synced_table_metadata = temp_metadata->getTableMetadata();
+        const bool supported =
+            synced_table_metadata.getMode() == ObjectStorageQueueMode::ORDERED
+            && synced_table_metadata.getPartitioningMode() == ObjectStorageQueuePartitioningMode::REGEX;
+
+        if (!supported)
+        {
+            LOG_WARNING(
+                log,
+                "Setting `cleanup_stale_partitions` is ignored: it requires Ordered mode "
+                "with partitioning_mode='regex'");
+            cleanup_stale_partitions = false;
+        }
+        else
+        {
+            stale_partition_cleanup_task = getContext()->getSchedulePool().createTask(
+                getStorageID(), "ObjectStorageQueueStalePartitionCleanup", [this]{ staleCleanupThreadFunc(); });
+        }
+    }
 }
 
 void StorageObjectStorageQueue::startup()
@@ -474,6 +509,9 @@ void StorageObjectStorageQueue::startup()
     for (auto & task : streaming_tasks)
         task->activateAndSchedule();
 
+    if (cleanup_stale_partitions && stale_partition_cleanup_task)
+        stale_partition_cleanup_task->activateAndSchedule();
+
     startup_finished = true;
 }
 
@@ -498,6 +536,9 @@ void StorageObjectStorageQueue::shutdown(bool is_drop)
 
         for (auto & task : streaming_tasks)
             task->deactivate();
+
+        if (stale_partition_cleanup_task)
+            stale_partition_cleanup_task->deactivate();
 
         LOG_DEBUG(
             log, "Finished {} streaming tasks (took: {} ms)",
@@ -1003,6 +1044,101 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index)
 
     LOG_TEST(log, "Processed rows: {}", total_rows);
     return total_rows > 0;
+}
+
+void StorageObjectStorageQueue::staleCleanupThreadFunc()
+{
+    if (shutdown_called)
+        return;
+
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::staleCleanupThreadFunc");
+
+    try
+    {
+        /// Single cleaner across replicas.
+        const fs::path lock_path = zk_path / "stale_partitions_cleanup_lock";
+        auto zk_client = files_metadata->getZooKeeper();
+        auto lock = zkutil::EphemeralNodeHolder::tryCreate(lock_path, *zk_client->getKeeper(), "");
+
+        if (!lock)
+        {
+            LOG_TEST(log, "Stale partition cleanup is already running on another replica");
+        }
+        else
+        {
+            auto candidates = files_metadata->collectStalePartitionNodes(stale_partition_ttl_sec);
+            if (!candidates.empty())
+            {
+                /// A partition can be forgotten only if it has no objects left in storage: with
+                /// after_processing=delete/move a processed object leaves the listing scope, so an
+                /// empty partition means the queue processed everything (no lag, nothing in flight).
+                const auto live_partitions = getLivePartitionKeys();
+
+                size_t removed = 0;
+                for (const auto & candidate : candidates)
+                {
+                    if (shutdown_called)
+                        break;
+                    if (live_partitions.contains(candidate.partition_key))
+                        continue;
+                    if (files_metadata->tryRemoveWatermarkNode(candidate.node_path, candidate.version))
+                        ++removed;
+                }
+                LOG_DEBUG(
+                    log, "Stale partition cleanup: removed {} of {} candidate watermark node(s)",
+                    removed, candidates.size());
+            }
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to run stale partition cleanup");
+    }
+
+    if (!shutdown_called)
+    {
+        /// Runs rarely: roughly twice per TTL window, clamped to [5 min, 6 h].
+        const UInt64 reschedule_ms = std::clamp<UInt64>(
+            stale_partition_ttl_sec * 1000 / 2, 5 * 60 * 1000, 6 * 60 * 60 * 1000);
+        stale_partition_cleanup_task->scheduleAfter(reschedule_ms);
+    }
+}
+
+std::unordered_set<std::string> StorageObjectStorageQueue::getLivePartitionKeys() const
+{
+    std::unordered_set<std::string> keys;
+
+    const auto * parser = files_metadata->getFilenameParser();
+    if (!parser || !parser->isValid())
+        return keys;
+
+    size_t batch_size = 0;
+    {
+        std::lock_guard lock(mutex);
+        batch_size = list_objects_batch_size;
+    }
+
+    const auto & reading_path = configuration->getPathForRead();
+    auto iterator = object_storage->iterate(
+        reading_path.cutGlobs(configuration->supportsPartialPathPrefix()),
+        batch_size,
+        /* with_tags */ false,
+        /* start_after */ std::nullopt);
+
+    while (!shutdown_called)
+    {
+        auto batch = iterator->getCurrentBatchAndScheduleNext();
+        if (!batch.has_value())
+            break;
+
+        for (const auto & object : *batch)
+        {
+            if (auto partition_key = parser->parse(object->getPath()))
+                keys.insert(std::move(*partition_key));
+        }
+    }
+
+    return keys;
 }
 
 void StorageObjectStorageQueue::postProcess(const StoredObjects & successful_objects) const
@@ -1638,6 +1774,8 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
+    settings[ObjectStorageQueueSetting::cleanup_stale_partitions] = cleanup_stale_partitions;
+    settings[ObjectStorageQueueSetting::stale_partition_ttl_sec] = stale_partition_ttl_sec;
 
     auto cleanup_interval_ms = files_metadata->getCleanupIntervalMS();
     settings[ObjectStorageQueueSetting::cleanup_interval_min_ms] = static_cast<UInt32>(cleanup_interval_ms.first);

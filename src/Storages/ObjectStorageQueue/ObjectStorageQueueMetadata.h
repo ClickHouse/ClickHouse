@@ -175,6 +175,24 @@ public:
     /// Acquire (take unique ownership of) bucket for processing.
     ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr tryAcquireBucket(const Bucket & bucket);
 
+    /// A per-partition processed-watermark node that has been inactive for longer than a TTL.
+    struct StalePartitionNode
+    {
+        std::string node_path;
+        std::string partition_key;
+        int32_t version;
+    };
+
+    /// Enumerate per-partition watermark nodes (`buckets/{bucket}/processed/{partition}` or
+    /// `processed/{partition}`) whose last modification is older than `ttl_sec`. Only meaningful
+    /// when partitioning is enabled. The returned `version` pins the node for a safe removal.
+    std::vector<StalePartitionNode> collectStalePartitionNodes(UInt64 ttl_sec) const;
+
+    /// Remove a watermark node only if it still has `expected_version` (i.e. no commit advanced it
+    /// in the meantime). Returns true if removed, false if it was concurrently changed or already
+    /// gone (caller should treat that as "not stale anymore" and skip).
+    bool tryRemoveWatermarkNode(const std::string & node_path, int32_t expected_version);
+
     const String & getZooKeeperName() const { return zookeeper_name; }
     std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper() const { return getZooKeeper(log, zookeeper_name); }
     static std::shared_ptr<ZooKeeperWithFaultInjection> getZooKeeper(LoggerPtr log, const String & zookeeper_name);

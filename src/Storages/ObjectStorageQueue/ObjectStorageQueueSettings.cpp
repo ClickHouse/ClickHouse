@@ -46,6 +46,8 @@ namespace ErrorCodes
     DECLARE(Bool, deduplication_v2, true, "Deduplicate blocks in dependent materialized views using user token set as object_etag:chunk_offset", 0) \
     DECLARE(UInt32, persistent_processing_node_ttl_seconds, 6 * 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
+    DECLARE(Bool, cleanup_stale_partitions, false, "In Ordered mode with regex partitioning, periodically remove the per-partition processed-watermark nodes of partitions that have been inactive for `stale_partition_ttl_sec` and have no remaining objects in object storage. Default false.", 0) \
+    DECLARE(UInt64, stale_partition_ttl_sec, 24 * 60 * 60, "How long a partition must have had no processing activity (and no remaining objects in storage) before its watermark node is eligible for removal by `cleanup_stale_partitions`.", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
     DECLARE(UInt64, min_insert_block_size_bytes_for_materialized_views, 0, "Override for profile setting min_insert_block_size_bytes_for_materialized_views", 0) \

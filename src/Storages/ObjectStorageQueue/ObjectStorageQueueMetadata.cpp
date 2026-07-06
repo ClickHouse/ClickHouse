@@ -287,6 +287,93 @@ ObjectStorageQueueMetadata::Bucket ObjectStorageQueueMetadata::getBucketForPath(
     return ObjectStorageQueueOrderedFileMetadata::getBucketForPath(path, buckets_num, bucketing_mode, partitioning_mode, parser);
 }
 
+std::vector<ObjectStorageQueueMetadata::StalePartitionNode>
+ObjectStorageQueueMetadata::collectStalePartitionNodes(UInt64 ttl_sec) const
+{
+    std::vector<StalePartitionNode> result;
+
+    /// Per-partition watermark nodes only exist when partitioning is enabled.
+    if (partitioning_mode == ObjectStorageQueuePartitioningMode::NONE)
+        return result;
+
+    const bool use_buckets = useBucketsForProcessing();
+    const size_t num_buckets = use_buckets ? buckets_num : 1;
+    /// Keeper `Stat::mtime` is in milliseconds since the epoch.
+    const UInt64 now_ms = getCurrentTime() * 1000;
+
+    for (size_t bucket = 0; bucket < num_buckets; ++bucket)
+    {
+        const std::string processed_path = use_buckets
+            ? (zookeeper_path / "buckets" / toString(bucket) / "processed").string()
+            : (zookeeper_path / "processed").string();
+
+        Strings partitions;
+        Coordination::Error code = Coordination::Error::ZOK;
+        auto zk_retry = getKeeperRetriesControl(log);
+        zk_retry.retryLoop([&] { code = getZooKeeper()->tryGetChildren(processed_path, partitions); });
+
+        if (code == Coordination::Error::ZNONODE || partitions.empty())
+            continue;
+        if (code != Coordination::Error::ZOK)
+            throw zkutil::KeeperException::fromPath(code, processed_path);
+
+        std::vector<std::string> node_paths;
+        node_paths.reserve(partitions.size());
+        for (const auto & partition : partitions)
+            node_paths.push_back(processed_path + "/" + partition);
+
+        zkutil::ZooKeeper::MultiTryGetResponse responses;
+        zk_retry.resetFailures();
+        zk_retry.retryLoop([&] { responses = getZooKeeper()->tryGet(node_paths); });
+
+        for (size_t i = 0; i < responses.size(); ++i)
+        {
+            if (responses[i].error != Coordination::Error::ZOK)
+                continue;
+
+            const auto mtime_ms = static_cast<UInt64>(responses[i].stat.mtime);
+            /// Guard against clock skew (keeper clock ahead of ours): treat as not stale.
+            if (now_ms <= mtime_ms || (now_ms - mtime_ms) / 1000 <= ttl_sec)
+                continue;
+
+            result.push_back(StalePartitionNode{
+                .node_path = node_paths[i],
+                .partition_key = partitions[i],
+                .version = responses[i].stat.version});
+        }
+    }
+
+    LOG_TEST(log, "Collected {} stale partition watermark candidates (ttl: {}s)", result.size(), ttl_sec);
+    return result;
+}
+
+bool ObjectStorageQueueMetadata::tryRemoveWatermarkNode(const std::string & node_path, int32_t expected_version)
+{
+    Coordination::Requests requests;
+    requests.push_back(zkutil::makeRemoveRequest(node_path, expected_version));
+
+    Coordination::Responses responses;
+    Coordination::Error code = Coordination::Error::ZOK;
+    auto zk_retry = getKeeperRetriesControl(log);
+    zk_retry.retryLoop([&] { code = getZooKeeper()->tryMulti(requests, responses); });
+
+    if (code == Coordination::Error::ZOK)
+    {
+        LOG_TRACE(log, "Removed stale partition watermark node {} (version {})", node_path, expected_version);
+        return true;
+    }
+
+    /// A commit advanced the watermark (version changed) or the node is already gone:
+    /// the partition is not stale anymore, skip it without failing the cleanup pass.
+    if (code == Coordination::Error::ZBADVERSION || code == Coordination::Error::ZNONODE)
+    {
+        LOG_TEST(log, "Not removing watermark node {}: {}", node_path, code);
+        return false;
+    }
+
+    throw zkutil::KeeperMultiException(code, requests, responses);
+}
+
 std::optional<std::string> ObjectStorageQueueMetadata::getStartAfterForListing() const
 {
     /// Returning std::nullopt is a best-effort fallback: listing proceeds from the prefix and remains correct.

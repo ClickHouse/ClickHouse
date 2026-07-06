@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <optional>
+#include <unordered_set>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -165,6 +166,10 @@ private:
     std::vector<BackgroundSchedulePoolTaskHolder> streaming_tasks;
     std::atomic<size_t> max_files_override{0};
 
+    BackgroundSchedulePoolTaskHolder stale_partition_cleanup_task;
+    bool cleanup_stale_partitions = false;
+    UInt64 stale_partition_ttl_sec = 0;
+
     LoggerPtr log;
 
     void startup() override;
@@ -197,6 +202,11 @@ private:
     void threadFunc(size_t streaming_tasks_index);
     /// A subset of logic executed by threadFunc.
     bool streamToViews(size_t streaming_tasks_index);
+    /// Background task: remove watermark nodes of stale (inactive and fully drained) partitions.
+    void staleCleanupThreadFunc();
+    /// Partition keys that currently have objects in object storage; used to confirm a partition
+    /// is fully drained before its watermark node is removed.
+    std::unordered_set<std::string> getLivePartitionKeys() const;
     /// Apply after_processing action to successfully processed files.
     void postProcess(const StoredObjects & successful_objects) const;
     /// Commit processed files to keeper as either successful or unsuccessful.
