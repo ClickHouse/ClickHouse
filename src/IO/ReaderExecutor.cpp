@@ -1346,13 +1346,29 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        /// Streaming keeps the segment's downloader across tiles so a reader can consume the
-        /// committed prefix while this worker fills more (see `CacheWriter::writeStreaming`).
-        out_stats.add(Stats::BytesPushedToCacheSync,
-            streaming ? writer->writeStreaming(std::move(slice)) : writer->write(std::move(slice)));
+        out_stats.add(Stats::BytesPushedToCacheSync, fill_lane.write(*writer, std::move(slice), streaming));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
+}
+
+size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && slice, bool streaming)
+{
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    {
+        std::lock_guard lock(active_mutex);
+        for (const auto * w : active_writers)
+            chassert(w != &writer && "concurrent writes to one CacheWriter - the machine slot's exclusion broke");
+        active_writers.push_back(&writer);
+    }
+    SCOPE_EXIT({
+        std::lock_guard lock(active_mutex);
+        std::erase(active_writers, &writer);
+    });
+#endif
+    /// Streaming keeps the segment's downloader across tiles so a reader can consume the
+    /// committed prefix while this worker fills more (see `CacheWriter::writeStreaming`).
+    return streaming ? writer.writeStreaming(std::move(slice)) : writer.write(std::move(slice));
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
@@ -1930,6 +1946,20 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
 
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
 {
+    /// A writer the in-flight machine holds as a fill target is ON LOAN: its worker streams
+    /// into it from the pool thread, and an `UpperCacheRead`'s `into` cell IS a Remote
+    /// retrieve's cell - the same `CacheWriter`. Skip it (handed fills are opportunistic;
+    /// a skipped down-fill lands on a later pass or the next plan) - the exclusion the old
+    /// borrow protocol provided, and the invariant `FillLane`'s guard pins.
+    const auto on_loan = [&](const CacheWriter * w)
+    {
+        if (!machine)
+            return false;
+        for (const auto & v : machine->writer_views)
+            if (v.writer == w)
+                return true;
+        return false;
+    };
     for (const auto & r : read_plan.schedule.retrieves)
     {
         if (r.source == PlanSchedule::Source::Remote)
@@ -1942,7 +1972,7 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                 continue;
             for (auto & w : read_plan.bufs[wt.entry].writers)
             {
-                if (!w.writer)
+                if (!w.writer || on_loan(w.writer.get()))
                     continue;
                 const size_t lo = std::max({served_range.offset, r.range.offset, w.writer->range().offset, wt.cell.offset});
                 const size_t hi = std::min({served_range.end(), r.range.end(), w.writer->range().end(), wt.cell.end()});
@@ -1953,7 +1983,7 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                     continue;
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                const size_t written = w.writer->write(std::move(slice));
+                const size_t written = fill_lane.write(*w.writer, std::move(slice), /*streaming=*/false);
                 if (r.source == PlanSchedule::Source::HandedChain)
                 {
                     out_stats.add(Stats::BytesPromoted, written);

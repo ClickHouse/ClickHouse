@@ -831,6 +831,34 @@ private:
         ReaderExecutor & ex;
     };
 
+    /// The FILL LANE: the one gate every cache-cell write passes through - the WRITE side of
+    /// the pipe (the display is the read side; the two-cursors model's fill front,
+    /// `tmp/reader-executor-two-cursors/DESIGN.md`). Every producer of cell bytes - the
+    /// worker's streaming tiles, the collect's put completion, the synchronous assembled
+    /// push, and the serve's handed fills - lands its bytes through `write`, so ordering,
+    /// exclusion, and (later) the fill cursor and pin have ONE owner. T1 scope: the choke
+    /// point plus the consolidated debug guard for the invariant the single machine slot
+    /// provides today - no two threads ever write the same `CacheWriter` concurrently
+    /// (the pool worker streams only its machine's fill targets; every other producer runs
+    /// on the serve thread). Connection / pin / cursor ownership arrives in T2/T4.
+    class FillLane
+    {
+    public:
+        /// Land `slice` into `writer` (streaming keeps the segment's downloader across
+        /// tiles); returns the bytes the writer took. The sole caller of the writer's
+        /// write verbs.
+        size_t write(CacheWriter & writer, ChainedBuffers && slice, bool streaming);
+
+#if defined(DEBUG_OR_SANITIZER_BUILD)
+    private:
+        /// The exclusion guard: a same-writer concurrent write means the machine slot's
+        /// mutual exclusion was broken somewhere upstream - loud here, silent corruption
+        /// (interleaved frontier appends) otherwise.
+        std::mutex active_mutex;
+        VectorWithMemoryTracking<const CacheWriter *> active_writers;
+#endif
+    };
+
     /// Coverage by the plan's held write buffers' committed ranges only (the read-only twin of
     /// `recreditCommittedPrefixes`: no read, no stats). A byte a SIBLING downloaded is NOT in
     /// this executor's per-writer committed set, so it reads as uncovered here - which is what
@@ -1044,6 +1072,7 @@ private:
     std::unique_ptr<IFetchMachineRunner> local_runner;
     /// The display (see the class doc): holds only a back-reference, safe to initialize here.
     Display display{*this};
+    FillLane fill_lane;
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the
