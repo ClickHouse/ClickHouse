@@ -469,6 +469,7 @@ void ObjectStorageQueueSource::FileIterator::filterProcessableFiles(ObjectInfos 
             paths,
             metadata->getPath(),
             metadata->getBucketsNum(),
+            metadata->getBucketsPerPartition(),
             zookeeper_name,
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
@@ -589,6 +590,7 @@ void ObjectStorageQueueSource::FileIterator::returnForRetry(ObjectInfoPtr object
         const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
             object_info->getPath(),
             buckets_num,
+            metadata->getBucketsPerPartition(),
             metadata->getBucketingMode(),
             metadata->getPartitioningMode(),
             metadata->getFilenameParser());
@@ -855,6 +857,7 @@ ObjectStorageQueueSource::FileIterator::getNextKeyFromAcquiredBucket(size_t proc
             const auto bucket = ObjectStorageQueueMetadata::getBucketForPath(
                 object_info->getPath(),
                 buckets_num,
+                metadata->getBucketsPerPartition(),
                 metadata->getBucketingMode(),
                 metadata->getPartitioningMode(),
                 metadata->getFilenameParser());
