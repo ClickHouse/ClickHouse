@@ -574,6 +574,14 @@ void SerializationVariant::deserializeBinaryBulkWithMultipleStreams(
         auto * discriminators_state = checkAndGetState<DeserializeBinaryBulkStateVariantDiscriminators>(variant_state->discriminators_state);
         size_t prev_size = col.getLocalDiscriminatorsPtr()->size();
 
+        /// The local discriminators column may still be shared with the deserialize state of one of
+        /// this Variant's subcolumns: when the full column is read before a subcolumn, its
+        /// discriminators are put into the substreams cache as is and the subcolumn adopts the same
+        /// column from the cache. Go through IColumn::mutate so a shared column is cloned before both
+        /// branches below append to it in place via assumeMutable, otherwise a later discontinuous
+        /// range would reallocate the buffer still referenced by the subcolumn state.
+        col.getLocalDiscriminatorsPtr() = IColumn::mutate(std::move(col.getLocalDiscriminatorsPtr()));
+
         /// Deserialize discriminators according to serialization mode.
         /// Don't skip rows_offset rows now, because we will need to calculate offsets for variants later.
         /// We will apply rows_offset on discriminators later.

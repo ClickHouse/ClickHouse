@@ -2,8 +2,11 @@
 -- deserialization state of a Variant element (and its null map) while it is still shared with
 -- the state of another subcolumn of the same Variant through the substreams cache. The
 -- discontiguous key ranges make one block span several `readRows` calls, so later ranges append
--- to the shared column. Covers both BASIC and COMPACT discriminator serialization modes. The
--- corruption is only observable as UAF under ASan; the assertions below pin the correct results.
+-- to the shared column. Covers both BASIC and COMPACT discriminator serialization modes. It also
+-- covers reading the full Variant column together with one of its subcolumns: the full-column
+-- reader shares its local discriminators with the subcolumn state through the same cache, so a
+-- later range must break the sharing before appending in place. The corruption is only observable
+-- as UAF under ASan; the assertions below pin the correct results.
 
 DROP TABLE IF EXISTS t_variant_discr_basic;
 DROP TABLE IF EXISTS t_variant_discr_compact;
@@ -55,6 +58,33 @@ WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
 SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
 
 SELECT sum(v.String.null), sum(v.UInt64), count()
+FROM t_variant_discr_compact
+WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
+   OR (k >= 1920 AND k < 2240) OR (k >= 2560 AND k < 2880) OR (k >= 3200 AND k < 3520)
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+
+-- Full Variant column read together with an extracted element subcolumn: `toString(v)` reads the
+-- whole Variant and shares its local discriminators with the `v.UInt64` subcolumn state.
+SELECT sum(length(toString(v))), sum(v.UInt64), count()
+FROM t_variant_discr_basic
+WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
+   OR (k >= 1920 AND k < 2240) OR (k >= 2560 AND k < 2880) OR (k >= 3200 AND k < 3520)
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+
+-- Full Variant column read together with an extracted null-map subcolumn.
+SELECT sum(length(toString(v))), sum(v.String.null), count()
+FROM t_variant_discr_basic
+WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
+   OR (k >= 1920 AND k < 2240) OR (k >= 2560 AND k < 2880) OR (k >= 3200 AND k < 3520)
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+
+SELECT sum(length(toString(v))), sum(v.UInt64), count()
+FROM t_variant_discr_compact
+WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
+   OR (k >= 1920 AND k < 2240) OR (k >= 2560 AND k < 2880) OR (k >= 3200 AND k < 3520)
+SETTINGS max_threads = 1, max_block_size = 65536, optimize_functions_to_subcolumns = 0;
+
+SELECT sum(length(toString(v))), sum(v.String.null), count()
 FROM t_variant_discr_compact
 WHERE (k >= 0 AND k < 320) OR (k >= 640 AND k < 960) OR (k >= 1280 AND k < 1600)
    OR (k >= 1920 AND k < 2240) OR (k >= 2560 AND k < 2880) OR (k >= 3200 AND k < 3520)
