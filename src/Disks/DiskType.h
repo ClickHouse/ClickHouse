@@ -40,7 +40,7 @@ MetadataStorageType metadataTypeFromString(const String & type);
 
 struct DataSourceDescription
 {
-    DataSourceType type;
+    DataSourceType type{};
     ObjectStorageType object_storage_type = ObjectStorageType::None;
     MetadataStorageType metadata_type = MetadataStorageType::None;
 

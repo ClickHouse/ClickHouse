@@ -10,6 +10,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ParserSelectQuery.h>
 #include <Parsers/ParserSampleRatio.h>
+#include <Parsers/ParserStreamSettings.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Core/Joins.h>
 
@@ -114,6 +115,15 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
     }
 
+    /// STREAM [CURSOR '{...}']
+    if (ParserKeyword(Keyword::STREAM).ignore(pos, expected))
+    {
+        ParserStreamSettings stream_settings_p;
+
+        if (!stream_settings_p.parse(pos, res->stream_settings, expected))
+            return false;
+    }
+
     if (res->database_and_table_name)
         res->children.emplace_back(res->database_and_table_name);
     if (res->table_function)
@@ -124,10 +134,12 @@ bool ParserTableExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         res->children.emplace_back(res->sample_size);
     if (res->sample_offset)
         res->children.emplace_back(res->sample_offset);
+    if (res->stream_settings)
+        res->children.emplace_back(res->stream_settings);
     if (res->column_aliases)
         res->children.emplace_back(res->column_aliases);
 
-    assert(res->database_and_table_name || res->table_function || res->subquery);
+    chassert(res->database_and_table_name || res->table_function || res->subquery);
 
     node = res;
     return true;

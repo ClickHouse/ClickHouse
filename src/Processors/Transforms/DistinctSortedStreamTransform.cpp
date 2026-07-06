@@ -1,5 +1,7 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 
+#include <Core/SortCursor.h>
+
 namespace DB
 {
 
@@ -112,17 +114,6 @@ void DistinctSortedStreamTransform::saveLatestKey(const size_t row_pos)
     }
 }
 
-bool DistinctSortedStreamTransform::isKey(const size_t key_pos, const size_t row_pos) const
-{
-    for (size_t i = 0; i < sorted_columns.size(); ++i)
-    {
-        const int res = sorted_columns[i]->compareAt(key_pos, row_pos, *sorted_columns[i], sorted_columns_descr[i].nulls_direction);
-        if (res != 0)
-            return false;
-    }
-    return true;
-}
-
 bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_pos) const
 {
     for (size_t i = 0, s = sorted_columns.size(); i < s; ++i)
@@ -145,37 +136,6 @@ bool DistinctSortedStreamTransform::isLatestKeyFromPrevChunk(const size_t row_po
     return true;
 }
 
-template<typename Predicate>
-size_t DistinctSortedStreamTransform::getRangeEnd(size_t begin, size_t end, Predicate pred) const
-{
-    assert(begin < end);
-
-    const size_t linear_probe_threadhold = 16;
-    size_t linear_probe_end = begin + linear_probe_threadhold;
-    linear_probe_end = std::min(linear_probe_end, end);
-
-    for (size_t pos = begin; pos < linear_probe_end; ++pos)
-    {
-        if (!pred(begin, pos))
-            return pos;
-    }
-
-    size_t low = linear_probe_end;
-    size_t high = end - 1;
-    while (low <= high)
-    {
-        size_t mid = low + (high - low) / 2;
-        if (pred(begin, mid))
-            low = mid + 1;
-        else
-        {
-            high = mid - 1;
-            end = mid;
-        }
-    }
-    return end;
-}
-
 std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(const size_t chunk_rows, IColumnFilter & filter)
 {
     /// prev_chunk_latest_key is empty on very first transform() call
@@ -184,7 +144,7 @@ std::pair<size_t, size_t> DistinctSortedStreamTransform::continueWithPrevRange(c
         return {0, 0};
 
     size_t output_rows = 0;
-    const size_t range_end = getRangeEnd(0, chunk_rows, [&](size_t, size_t row_pos) { return isLatestKeyFromPrevChunk(row_pos); });
+    const size_t range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, 0, chunk_rows);
     if (other_columns.empty())
         std::fill(filter.begin(), filter.begin() + range_end, 0); /// skip rows already included in distinct on previous transform()
     else
@@ -221,7 +181,7 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     while (range_end != chunk_rows)
     {
         // find new range [range_begin, range_end)
-        range_end = getRangeEnd(range_begin, chunk_rows, [&](size_t key_pos, size_t row_pos) { return isKey(key_pos, row_pos); });
+        range_end = getEqualRangeEndAssumeSorted(sorted_columns, sorted_columns_descr, range_begin, chunk_rows);
 
         // update filter for range
         if (other_columns.empty())

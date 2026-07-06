@@ -94,6 +94,9 @@ def main():
             "icebergs3",
             "icebergazure",
             "iceberglocal",
+            "paimons3",
+            "paimonazure",
+            "paimonlocal",
             "merge",
             "distributed",
             "dictionary",
@@ -163,7 +166,7 @@ def main():
 
     allow_hardcoded_inserts = random.choice([True, False])
     min_nested_rows = random.randint(0, 5)
-    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 100)
+    max_nested_rows = min_nested_rows + (5 if allow_hardcoded_inserts else 30)
     min_insert_rows = random.randint(1, 100)
     max_insert_rows = min_insert_rows + (10 if allow_hardcoded_inserts else 3000)
     min_string_length = random.randint(0, 100)
@@ -221,6 +224,7 @@ def main():
         "fuzz_floating_points": random.choice([True, False]),
         "enable_fault_injection_settings": random.randint(1, 4) == 1,
         "enable_force_settings": random.randint(1, 4) == 1,
+        "enable_time_settings": random.randint(1, 5) == 1,
         # Don't compare for correctness yet, false positives maybe
         "use_dump_table_oracle": (1 if random.randint(1, 3) == 1 else 0),
         "test_with_fill": random.randint(1, 10) == 1,
@@ -266,7 +270,6 @@ def main():
         "hot_table_settings": [
             "allow_coalescing_columns_in_partition_or_order_key",
             # "allow_experimental_replacing_merge_with_cleanup",
-            "allow_experimental_reverse_key",
             "allow_floating_point_partition_key",
             "allow_nullable_key",
             "allow_summing_columns_in_partition_or_order_key",

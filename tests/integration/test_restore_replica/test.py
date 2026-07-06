@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from helpers.cluster import ClickHouseCluster, ClickHouseKiller
+from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import assert_eq_with_retry
 
 
@@ -188,3 +188,52 @@ def test_restore_replica_alive_replicas(start_cluster):
 
     check_after_restoration()
     drop_tables()
+
+
+def test_restore_replica_keeps_duplicate_parts(start_cluster):
+    zk = cluster.get_kazoo_client("zoo1")
+    drop_tables()
+
+    try:
+        for node in nodes:
+            node.query(
+                """
+                CREATE TABLE test(n UInt32)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/test/', '{replica}')
+                ORDER BY tuple()
+                SETTINGS replicated_deduplication_window = 0,
+                    replicated_deduplication_window_for_async_inserts = 0;
+                """.format(
+                    replica=node.name
+                )
+            )
+
+        node_1.query("SYSTEM STOP MERGES test")
+
+        node_1.query("INSERT INTO test VALUES (0)")
+        node_1.query("INSERT INTO test VALUES (0)")
+        node_1.query(
+            """
+            ALTER TABLE test MODIFY SETTING replicated_deduplication_window = 10000,
+                replicated_deduplication_window_for_async_inserts = 10000
+            """
+        )
+
+        assert node_1.query("SELECT count() FROM test") == "2\n"
+        assert (
+            node_1.query("SELECT count() FROM system.parts WHERE table = 'test' AND active")
+            == "2\n"
+        )
+
+        expected = node_1.query("SELECT count(), sum(sipHash64(*)) FROM test")
+
+        zk_rmr_with_retries(zk, "/clickhouse/tables/test")
+        assert zk.exists("/clickhouse/tables/test") is None
+
+        node_1.query("SYSTEM RESTART REPLICA test")
+        node_1.query("SYSTEM RESTORE REPLICA test")
+
+        assert node_1.query("SELECT count() FROM test") == "2\n"
+        assert node_1.query("SELECT count(), sum(sipHash64(*)) FROM test") == expected
+    finally:
+        drop_tables()

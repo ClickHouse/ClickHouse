@@ -6,8 +6,6 @@ title: 'Settings Overview'
 doc_type: 'reference'
 ---
 
-# Settings Overview
-
 ## Overview {#overview}
 
 :::note

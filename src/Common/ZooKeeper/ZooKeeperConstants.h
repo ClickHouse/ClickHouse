@@ -38,6 +38,7 @@ enum class OpNum : int32_t
     Reconfig = 16,
     CheckWatch = 17,
     RemoveWatch = 18,
+    CreateTTL = 21,
     MultiRead = 22,
     Auth = 100,
     SetWatch = 101,

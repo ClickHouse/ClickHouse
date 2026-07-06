@@ -8,6 +8,13 @@
 #include <Analyzer/IQueryTreeNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Core/Block.h>
+#include <Planner/PlannerActionsVisitor.h>
+
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Core/Settings.h>
@@ -16,13 +23,16 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -37,12 +47,15 @@ namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
+    extern const SettingsUInt64 max_bytes_to_transfer;
+    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
+    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -453,8 +466,6 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
-    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(mutable_context, false), mutable_context, /*async_insert=*/false);
-
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
@@ -466,9 +477,33 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     builder->resize(1);
     builder->addTransform(std::move(squashing));
 
+    /// Fill the temporary table for the `GLOBAL IN` / `GLOBAL JOIN` subquery and at the
+    /// same time enforce `max_rows_to_transfer` / `max_bytes_to_transfer` — see Issue
+    /// #103333. We reuse `CreatingSetsTransform` (the same transform the old analyzer
+    /// uses inside `DelayedCreatingSetsStep`): with `set_and_key->set` left null it
+    /// only writes the materialized rows into `external_table` and applies
+    /// `network_transfer_limits` after `materializeBlock`, raising
+    /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
+    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
+    /// behaviour in lockstep with the old analyzer.
+    const auto & subquery_settings = mutable_context->getSettingsRef();
+    SizeLimits network_transfer_limits(
+        subquery_settings[Setting::max_rows_to_transfer],
+        subquery_settings[Setting::max_bytes_to_transfer],
+        subquery_settings[Setting::transfer_overflow_mode]);
+
+    auto set_and_key = std::make_shared<SetAndKey>();
+    set_and_key->external_table = external_storage;
+
+    builder->addCreatingSetsTransform(
+        std::make_shared<const Block>(Block{}),
+        std::move(set_and_key),
+        network_transfer_limits,
+        /* prepared_sets_cache = */ nullptr);
+
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    pipeline.complete(std::move(table_out));
+    pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
     CompletedPipelineExecutor executor(pipeline);
     if (mutable_context->hasQueryContext())
     {
@@ -762,6 +797,171 @@ void rewriteJoinToGlobalJoin(QueryTreeNodePtr query_tree_to_modify, ContextPtr c
 {
     RewriteJoinToGlobalJoinVisitor visitor(context);
     visitor.visit(query_tree_to_modify);
+}
+
+namespace
+{
+
+/// Replace ALIAS column nodes with their defining expression. The action name computed afterwards then matches the name
+/// the shard's ActionsDAG assigns (the shard works on the inlined query tree).
+class InlineAliasColumnsForNamingVisitor : public InDepthQueryTreeVisitor<InlineAliasColumnsForNamingVisitor>
+{
+    static QueryTreeNodePtr getColumnNodeAliasExpression(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node || !column_node->hasExpression())
+            return nullptr;
+
+        const auto & column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || column_source->getNodeType() == QueryTreeNodeType::JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::CROSS_JOIN
+                           || column_source->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+            return nullptr;
+
+        auto column_expression = column_node->getExpression();
+        column_expression->setAlias(column_node->getColumnName());
+        return column_expression;
+    }
+
+public:
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        if (auto column_expression = getColumnNodeAliasExpression(node))
+            node = column_expression;
+    }
+};
+
+String actionNameAfterAliasInlining(const QueryTreeNodePtr & node, const PlannerContext & planner_context)
+{
+    auto node_clone = node->clone();
+    InlineAliasColumnsForNamingVisitor visitor;
+    visitor.visit(node_clone);
+
+    /// `buildQueryTreeForShard` performs one more naming-relevant rewrite after inlining ALIAS columns:
+    /// `ReplaceLongConstWithScalarVisitor` turns over-threshold constants into `__getScalar('<hash>')` calls
+    /// (controlled by `optimize_const_name_size`). Mirror it here with the same guard so the computed action
+    /// name matches the shard header for duplicate constant ALIAS expressions that exceed the threshold.
+    const auto max_const_name_size = planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size];
+    if (max_const_name_size >= 0)
+    {
+        ReplaceLongConstWithScalarVisitor scalar_visitor(planner_context.getQueryContext(), max_const_name_size);
+        scalar_visitor.visit(node_clone);
+    }
+
+    return calculateActionNodeName(node_clone, planner_context, /*use_column_identifier_as_action_node_name=*/true);
+}
+
+/// Build a map from every expression node's identifier-based action name (the name the initiator uses) to its action
+/// name after inlining ALIAS columns (the name the shard uses). Nested subqueries are skipped: their columns live in a
+/// different scope.
+class CollectAliasNameTranslationVisitor : public InDepthQueryTreeVisitor<CollectAliasNameTranslationVisitor>
+{
+public:
+    CollectAliasNameTranslationVisitor(const PlannerContext & planner_context_, std::unordered_map<String, String> & translation_)
+        : planner_context(planner_context_)
+        , translation(translation_)
+    {
+    }
+
+    void visitImpl(QueryTreeNodePtr & node)
+    {
+        auto node_type = node->getNodeType();
+        if (node_type != QueryTreeNodeType::COLUMN && node_type != QueryTreeNodeType::FUNCTION && node_type != QueryTreeNodeType::CONSTANT)
+            return;
+
+        auto identifier_name = calculateActionNodeName(node, planner_context, /*use_column_identifier_as_action_node_name=*/true);
+        if (translation.contains(identifier_name))
+            return;
+
+        translation.emplace(std::move(identifier_name), actionNameAfterAliasInlining(node, planner_context));
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr & /*parent*/, const QueryTreeNodePtr & child)
+    {
+        return child->getNodeType() != QueryTreeNodeType::QUERY && child->getNodeType() != QueryTreeNodeType::UNION;
+    }
+
+private:
+    const PlannerContext & planner_context;
+    std::unordered_map<String, String> & translation;
+};
+
+}
+
+std::optional<ActionsDAG> buildShardCollapseFanOut(
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const Block & shard_header,
+    const Block & expected_header)
+{
+    if (!planner_context || !query_tree)
+        return {};
+
+    /// The shard-side deduplication can only remove columns, so a recognized collapse has a strictly smaller shard header.
+    if (shard_header.columns() == 0 || shard_header.columns() >= expected_header.columns())
+        return {};
+
+    std::unordered_map<String, String> identifier_to_inlined_name;
+    {
+        QueryTreeNodePtr query_tree_for_visit = query_tree;
+        CollectAliasNameTranslationVisitor visitor(*planner_context, identifier_to_inlined_name);
+        visitor.visit(query_tree_for_visit);
+    }
+
+    std::unordered_map<String, size_t> shard_name_to_index;
+    shard_name_to_index.reserve(shard_header.columns());
+    for (size_t i = 0; i < shard_header.columns(); ++i)
+        shard_name_to_index.emplace(shard_header.getByPosition(i).name, i);
+
+    std::vector<size_t> shard_index_for_expected(expected_header.columns());
+    std::vector<bool> shard_column_used(shard_header.columns(), false);
+    bool collapse_detected = false;
+
+    for (size_t i = 0; i < expected_header.columns(); ++i)
+    {
+        const auto & expected_name = expected_header.getByPosition(i).name;
+
+        String inlined_name = expected_name;
+        if (auto it = identifier_to_inlined_name.find(expected_name); it != identifier_to_inlined_name.end())
+            inlined_name = it->second;
+
+        auto shard_it = shard_name_to_index.find(inlined_name);
+        if (shard_it == shard_name_to_index.end())
+            return {}; /// Cannot explain this column; let the caller fall back to its default reconciliation.
+
+        shard_index_for_expected[i] = shard_it->second;
+        shard_column_used[shard_it->second] = true;
+        if (inlined_name != expected_name)
+            collapse_detected = true;
+    }
+
+    if (!collapse_detected)
+        return {};
+
+    for (bool used : shard_column_used)
+        if (!used)
+            return {}; /// Some shard column is unaccounted for; fall back to be safe.
+
+    ActionsDAG dag;
+    std::vector<const ActionsDAG::Node *> shard_input_nodes;
+    shard_input_nodes.reserve(shard_header.columns());
+    for (size_t i = 0; i < shard_header.columns(); ++i)
+    {
+        const auto & column = shard_header.getByPosition(i);
+        shard_input_nodes.push_back(&dag.addInput(column.name, column.type));
+    }
+
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.reserve(expected_header.columns());
+    for (size_t i = 0; i < expected_header.columns(); ++i)
+    {
+        const auto & expected_name = expected_header.getByPosition(i).name;
+        const auto * source_node = shard_input_nodes[shard_index_for_expected[i]];
+        outputs.push_back(&dag.addAlias(*source_node, expected_name));
+    }
+
+    dag.getOutputs() = std::move(outputs);
+    return dag;
 }
 
 }

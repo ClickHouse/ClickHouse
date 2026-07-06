@@ -205,10 +205,10 @@ private:
     /// Day nums are the same in all time zones. 1970-01-01 is 0 and so on.
     /// Table is relatively large, so better not to place the object on stack.
     /// In comparison to std::vector, plain array is cheaper by one indirection.
-    Values lut[DATE_LUT_SIZE + 1];
+    Values lut[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
 
     /// Same as above but with dates < 1970-01-01 saturated to 1970-01-01.
-    Values lut_saturated[DATE_LUT_SIZE + 1];
+    Values lut_saturated[DATE_LUT_SIZE + 1]; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - fully assigned in constructor
 
     /// Year number after DATE_LUT_MIN_YEAR -> LUTIndex in lut for start of year.
     LUTIndex years_lut[DATE_LUT_YEARS];
@@ -600,6 +600,10 @@ public:
 
     unsigned toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
 
+    unsigned toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
+    unsigned toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const;
+
     unsigned toMinute(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
@@ -969,14 +973,18 @@ public:
     }
 
     /// We count all hour-length intervals, unrelated to offset changes.
-    ALWAYS_INLINE Time toRelativeHourNum(Time t) const
+    /// `NO_SANITIZE_UNDEFINED` because the addition can overflow `Time` for out-of-range arguments
+    /// (e.g. a `DateTime64` close to the limits of `Int64`); the wrapped-around result is meaningless
+    /// but harmless, like for the `add*` functions below.
+    NO_SANITIZE_UNDEFINED ALWAYS_INLINE Time toRelativeHourNum(Time t) const
     {
         if (t >= 0 && offset_is_whole_number_of_hours_during_epoch)
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
         /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -987,9 +995,10 @@ public:
 
     /// The same formula is used for positive time (after Unix epoch) and negative time (before Unix epoch).
     /// It's needed for correct work of dateDiff function.
-    Time toStableRelativeHourNum(Time t) const
+    NO_SANITIZE_UNDEFINED Time toStableRelativeHourNum(Time t) const
     {
-        return (t + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD + 86400 - offset_at_start_of_epoch) / 3600 - (DATE_LUT_ADD / 3600);
     }
 
     template <typename DateOrTime>
@@ -998,9 +1007,10 @@ public:
         return toStableRelativeHourNum(lut[toLUTIndex(v)].date);
     }
 
-    Time toRelativeMinuteNum(Time t) const /// NOLINT
+    NO_SANITIZE_UNDEFINED Time toRelativeMinuteNum(Time t) const /// NOLINT
     {
-        return (t + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
+        /// Sum in UInt64 to avoid signed overflow UB on extreme t; non-negative for any representable time, so the result is unchanged.
+        return static_cast<Time>(static_cast<UInt64>(t) + DATE_LUT_ADD) / 60 - (DATE_LUT_ADD / 60);
     }
 
     template <typename DateOrTime>
@@ -1292,14 +1302,14 @@ public:
     struct TimeComponents
     {
         bool is_negative = false;
-        uint64_t hour;
-        uint8_t minute;
-        uint8_t second;
+        uint64_t hour{};
+        uint8_t minute{};
+        uint8_t second{};
     };
 
     struct DateTimeComponents
     {
-        DateComponents date;
+        DateComponents date{};
         TimeComponents time;
     };
 

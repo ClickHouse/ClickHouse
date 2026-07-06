@@ -1,0 +1,20 @@
+--- system.databases always shows remote databases, regardless of the setting ---
+MySQL
+PostgreSQL
+MySQL
+PostgreSQL
+--- system.tables hides PostgreSQL by default (count must be 0 without contacting the server) ---
+0
+--- system.tables hides MySQL by default ---
+0
+--- system.columns hides PostgreSQL by default ---
+0
+--- system.columns hides MySQL by default ---
+0
+--- system.completions does not list remote databases by default (count must be 0 without contacting the server) ---
+0
+--- the old setting name still works as an alias ---
+0
+--- system.settings exposes both the new name and the alias ---
+show_data_lake_catalogs_in_system_tables	show_remote_databases_in_system_tables
+show_remote_databases_in_system_tables	

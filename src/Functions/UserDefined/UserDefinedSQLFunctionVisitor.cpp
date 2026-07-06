@@ -1,14 +1,16 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
 #include <stack>
-#include <unordered_map>
 #include <unordered_set>
+
+#include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
+#include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -55,7 +57,7 @@ void UserDefinedSQLFunctionVisitor::visit(ASTPtr & ast, ContextPtr context_)
 
     if (const auto * function = ast->template as<ASTFunction>())
     {
-        std::unordered_set<std::string> udf_in_replace_process;
+        UnorderedSetWithMemoryTracking<std::string> udf_in_replace_process;
         auto replace_result = tryToReplaceFunction(*function, udf_in_replace_process, context_);
         if (replace_result)
             ast = replace_result;
@@ -71,7 +73,7 @@ bool isVariadic(const ASTPtr & arg)
 }
 }
 
-ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, std::unordered_set<std::string> & udf_in_replace_process, ContextPtr context_)
+ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & function, UnorderedSetWithMemoryTracking<std::string> & udf_in_replace_process, ContextPtr context_)
 {
     if (udf_in_replace_process.contains(function.name))
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -86,6 +88,9 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto & function_arguments = function_arguments_list->children;
 
     auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+
+    if (!create_function_query && user_defined_function->as<ASTCreateWasmFunctionQuery>())
+        return nullptr;
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
@@ -120,7 +125,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
             function_core_expression->children.at(1)->getColumnName(),
             function.name);
 
-    std::unordered_map<std::string, ASTPtr> identifier_name_to_function_argument;
+    UnorderedMapWithMemoryTracking<std::string, ASTPtr> identifier_name_to_function_argument;
 
     for (size_t parameter_index = 0; parameter_index < identifiers_raw.size(); ++parameter_index)
     {
@@ -145,7 +150,10 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
         MarkTableIdentifiersVisitor(identifiers_data).visit(function_body_to_update);
 
         /// Common subexpression elimination. Rewrite rules.
-        QueryNormalizer::Data normalizer_data(aliases, {}, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
+        /// `source_columns` must be a named local: `QueryNormalizer::Data` stores `source_columns_set`
+        /// by reference, so a `{}` temporary would dangle once this statement ends.
+        NameSet source_columns;
+        QueryNormalizer::Data normalizer_data(aliases, source_columns, true, QueryNormalizer::ExtractedSettings(context_->getSettingsRef()), true, false);
         QueryNormalizer(normalizer_data).visit(function_body_to_update);
     }
 

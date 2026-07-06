@@ -143,26 +143,29 @@ FORMAT Null"
 
 # Compare planning time on the Merge table against a single underlying table.
 # Pre-fix, planning was O(N * query_tree_size), so merge-table latency scaled with N.
+# With N=200 underlying tables this would be ~100x-200x slower than a single-table query.
 # Post-fix, the Merge planner shares the cloned query tree across tables of identical
 # structure, so merge-table latency stays close to single-table latency.
-# A loose 10x ratio is enough to catch the regression while tolerating CI noise.
+# A loose 20x ratio is enough to catch the regression while tolerating CI noise.
+# The single-table timed run is fast (~250-400ms) and small absolute fluctuations cause
+# large ratio swings under parallel CI load, so the threshold needs comfortable margin.
 QUERY_SINGLE_TIMING="${QUERY/t_merge_perf_all/t_merge_perf_0}"
 
 # Warm up the data-side cache with a small query so the timed runs measure planning.
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM ${CLICKHOUSE_DATABASE}.t_merge_perf_0 FORMAT Null"
 
 T_START=$(date +%s%N)
-$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 10 -q "$QUERY" >/dev/null || { echo "FAIL: query on merge table timed out" >&2; exit 1; }
+$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 30 -q "$QUERY" >/dev/null || { echo "FAIL: query on merge table timed out" >&2; exit 1; }
 T_END=$(date +%s%N)
 TIME_MERGE_NS=$((T_END - T_START))
 
 T_START=$(date +%s%N)
-$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 10 -q "$QUERY_SINGLE_TIMING" >/dev/null || { echo "FAIL: query on single table timed out" >&2; exit 1; }
+$CLICKHOUSE_CLIENT --max_query_size 1048576 --max_execution_time 30 -q "$QUERY_SINGLE_TIMING" >/dev/null || { echo "FAIL: query on single table timed out" >&2; exit 1; }
 T_END=$(date +%s%N)
 TIME_SINGLE_NS=$((T_END - T_START))
 
-if [ "$TIME_MERGE_NS" -gt $((TIME_SINGLE_NS * 10)) ]; then
-    echo "FAIL: merge-table query (${TIME_MERGE_NS}ns) is more than 10x slower than single-table query (${TIME_SINGLE_NS}ns)" >&2
+if [ "$TIME_MERGE_NS" -gt $((TIME_SINGLE_NS * 20)) ]; then
+    echo "FAIL: merge-table query (${TIME_MERGE_NS}ns) is more than 20x slower than single-table query (${TIME_SINGLE_NS}ns)" >&2
     exit 1
 fi
 echo "OK"

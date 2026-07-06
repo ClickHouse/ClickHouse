@@ -51,7 +51,6 @@ ASTPtr ASTProjectionSelectQuery::clone() const
 void ASTProjectionSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
 {
     frame.current_select = this;
-    frame.need_parens = false;
     frame.expression_list_prepend_whitespace = true;
 
     std::string indent_str = s.one_line ? "" : std::string(4 * frame.indent, ' ');

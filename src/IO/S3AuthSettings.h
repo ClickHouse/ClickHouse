@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
@@ -61,7 +62,7 @@ struct S3AuthSettings
     HTTPHeaderEntries headers;
     HTTPHeaderEntries access_headers;
 
-    std::unordered_set<std::string> users;
+    UnorderedSetWithMemoryTracking<std::string> users;
     ServerSideEncryptionKMSConfig server_side_encryption_kms_config;
 
     void serialize(WriteBuffer & out, ContextPtr context) const;

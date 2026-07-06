@@ -58,7 +58,8 @@ enum class LakeFormat
 {
     All = 0,
     Iceberg = 1,
-    DeltaLake = 2
+    DeltaLake = 2,
+    Paimon = 3
 };
 
 enum class LakeStorage
@@ -162,7 +163,7 @@ public:
     uint32_t replica_counter = 0;
     uint32_t shard_counter = 0;
     uint32_t backup_number = 0;
-    DatabaseEngineValues deng;
+    DatabaseEngineValues deng{};
     DetachStatus attached = DetachStatus::ATTACHED;
     IntegrationCall integration = IntegrationCall::None;
     /// For DataLakeCatalog
@@ -319,6 +320,16 @@ public:
 
     bool isAnyIcebergEngine() const;
 
+    bool isPaimonS3Engine() const;
+
+    bool isPaimonAzureEngine() const;
+
+    bool isPaimonLocalEngine() const;
+
+    bool isAnyPaimonEngine() const;
+
+    bool isAnyLakeEngine() const;
+
     bool isOnS3() const;
 
     bool isOnAzure() const;
@@ -403,8 +414,6 @@ public:
     uint32_t constr_counter = 0;
     std::unordered_map<String, SQLColumn> cols;
     std::unordered_map<String, SQLColumn> staged_cols;
-    std::unordered_set<String> constrs;
-    std::unordered_set<String> staged_constrs;
     std::unordered_map<String, String> frozen_partitions;
 
     SQLTable()

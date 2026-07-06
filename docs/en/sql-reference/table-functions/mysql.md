@@ -8,8 +8,6 @@ title: 'mysql'
 doc_type: 'reference'
 ---
 
-# mysql Table Function
-
 Allows `SELECT` and `INSERT` queries to be performed on data that are stored on a remote MySQL server.
 
 ## Syntax {#syntax}
@@ -30,7 +28,7 @@ mysql({host:port, database, table, user, password[, replace_query, on_duplicate_
 | `replace_query`     | Flag that converts `INSERT INTO` queries to `REPLACE INTO`. Possible values:<br/>    - `0` - The query is executed as `INSERT INTO`.<br/>    - `1` - The query is executed as `REPLACE INTO`.                                                                          |
 | `on_duplicate_clause` | The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query. Can be specified only with `replace_query = 0` (if you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception).<br/>    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`<br/>    `on_duplicate_clause` here is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause. |
 
-Arguments also can be passed using [named collections](operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
+Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
@@ -53,7 +51,7 @@ SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 
 A table object with the same columns as the original MySQL table.
 
 :::note
-Some data types of MySQL can be mapped to different ClickHouse types - this is addressed by query-level setting [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
+Some data types of MySQL can be mapped to different ClickHouse types - this is addressed by query-level setting [mysql_datatypes_support_level](/operations/settings/settings.md#mysql_datatypes_support_level)
 :::
 
 :::note
@@ -86,7 +84,7 @@ Selecting data from ClickHouse:
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
 ```
 
-Or using [named collections](operations/named-collections.md):
+Or using [named collections](/operations/named-collections.md):
 
 ```sql
 CREATE NAMED COLLECTION creds AS
@@ -102,6 +100,35 @@ SELECT * FROM mysql(creds, table='test');
 ┌─int_id─┬─float─┐
 │      1 │     2 │
 └────────┴───────┘
+```
+
+### `enable_compression` {#enable-compression}
+
+Enables compression for the MySQL protocol connection.
+
+Default value: `false`.
+
+This setting applies to:
+
+- the `mysql` table function;
+- the `MySQL` table engine;
+- the `MySQL` database engine;
+- named collections used by MySQL integrations.
+
+When enabled, ClickHouse requests compression for the connection.
+
+Example:
+
+```sql
+SELECT *
+FROM mysql(
+    'mysql80:3306',
+    'clickhouse',
+    'test_table',
+    'root',
+    'password',
+    SETTINGS enable_compression = 1
+);
 ```
 
 Replacing and inserting:
@@ -147,7 +174,7 @@ WHERE id > (SELECT max(id) FROM mysql_copy);
 
 - [The 'MySQL' table engine](../../engines/table-engines/integrations/mysql.md)
 - [Using MySQL as a dictionary source](/sql-reference/statements/create/dictionary/sources/mysql)
-- [mysql_datatypes_support_level](operations/settings/settings.md#mysql_datatypes_support_level)
-- [mysql_map_fixed_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
-- [mysql_map_string_to_text_in_show_columns](operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
-- [mysql_max_rows_to_insert](operations/settings/settings.md#mysql_max_rows_to_insert)
+- [mysql_datatypes_support_level](/operations/settings/settings.md#mysql_datatypes_support_level)
+- [mysql_map_fixed_string_to_text_in_show_columns](/operations/settings/settings.md#mysql_map_fixed_string_to_text_in_show_columns)
+- [mysql_map_string_to_text_in_show_columns](/operations/settings/settings.md#mysql_map_string_to_text_in_show_columns)
+- [mysql_max_rows_to_insert](/operations/settings/settings.md#mysql_max_rows_to_insert)

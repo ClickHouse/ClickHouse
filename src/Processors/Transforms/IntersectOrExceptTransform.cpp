@@ -38,29 +38,80 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
         output.push(std::move(current_output_chunk));
     }
 
-    if (finished_second_input)
-    {
-        if (inputs.front().isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-    }
-    else if (inputs.back().isFinished())
-    {
-        finished_second_input = true;
-    }
-
     if (!has_input)
     {
-        InputPort & input = finished_second_input ? inputs.front() : inputs.back();
+        while (true)
+        {
+            if (stage == Stage::ReadLeftInput)
+            {
+                auto & input = inputs.front();
 
-        input.setNeeded();
-        if (!input.hasData())
-            return Status::NeedData;
+                if (input.isFinished())
+                {
+                    inputs.back().close();
+                    output.finish();
+                    return Status::Finished;
+                }
 
-        current_input_chunk = input.pull();
-        has_input = true;
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (stage == Stage::ReadRightInput)
+            {
+                auto & input = inputs.back();
+
+                if (input.isFinished())
+                {
+                    if (isIntersectOperator() && !has_right_input_rows)
+                    {
+                        inputs.front().close();
+                        output.finish();
+                        return Status::Finished;
+                    }
+
+                    stage = Stage::ReadRemainingLeftInput;
+                    continue;
+                }
+
+                input.setNeeded();
+                if (!input.hasData())
+                    return Status::NeedData;
+
+                current_input_chunk = input.pull();
+                has_input = true;
+                break;
+            }
+
+            if (has_left_input_chunk)
+            {
+                current_input_chunk = std::move(left_input_chunk);
+                has_left_input_chunk = false;
+                has_input = true;
+                break;
+            }
+
+            auto & input = inputs.front();
+
+            if (input.isFinished())
+            {
+                output.finish();
+                return Status::Finished;
+            }
+
+            input.setNeeded();
+            if (!input.hasData())
+                return Status::NeedData;
+
+            current_input_chunk = input.pull();
+            has_input = true;
+            break;
+        }
     }
 
     return Status::Ready;
@@ -69,8 +120,18 @@ IntersectOrExceptTransform::Status IntersectOrExceptTransform::prepare()
 
 void IntersectOrExceptTransform::work()
 {
-    if (!finished_second_input)
+    if (stage == Stage::ReadLeftInput)
     {
+        if (current_input_chunk.hasRows())
+        {
+            left_input_chunk = std::move(current_input_chunk);
+            has_left_input_chunk = true;
+            stage = Stage::ReadRightInput;
+        }
+    }
+    else if (stage == Stage::ReadRightInput)
+    {
+        has_right_input_rows |= current_input_chunk.hasRows();
         accumulate(std::move(current_input_chunk));
     }
     else

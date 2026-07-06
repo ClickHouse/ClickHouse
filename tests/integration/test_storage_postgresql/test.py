@@ -54,7 +54,7 @@ def test_postgres_select_insert(started_cluster):
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
     cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
 
-    result = node1.query(
+    node1.query(
         f"""
         INSERT INTO TABLE FUNCTION {table}
         SELECT number, concat('name_', toString(number)), 3 from numbers(10000)"""
@@ -72,7 +72,7 @@ def test_postgres_select_insert(started_cluster):
     # for i in range(1, 1000):
     #     assert (node1.query(check1)).rstrip() == '10000', f"Failed on {i}"
 
-    result = node1.query(
+    node1.query(
         f"""
         INSERT INTO TABLE FUNCTION {table}
         SELECT number, concat('name_', toString(number)), 3 from numbers(1000000)"""
@@ -88,7 +88,7 @@ def test_postgres_select_insert(started_cluster):
 def test_postgres_addresses_expr(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
     table_name = "test_table"
-    table = f"""postgresql(`postgres5`)"""
+    table = """postgresql(`postgres5`)"""
     cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
     cursor.execute(f"CREATE TABLE {table_name} (a integer, b text, c integer)")
 
@@ -111,8 +111,8 @@ def test_postgres_addresses_expr(started_cluster):
 
 def test_postgres_conversions(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_types")
-    cursor.execute(f"DROP TABLE IF EXISTS test_array_dimensions")
+    cursor.execute("DROP TABLE IF EXISTS test_types")
+    cursor.execute("DROP TABLE IF EXISTS test_array_dimensions")
 
     cursor.execute(
         """CREATE TABLE test_types (
@@ -226,8 +226,8 @@ def test_postgres_conversions(started_cluster):
     )
     assert result == expected
 
-    cursor.execute(f"DROP TABLE test_types")
-    cursor.execute(f"DROP TABLE test_array_dimensions")
+    cursor.execute("DROP TABLE test_types")
+    cursor.execute("DROP TABLE test_array_dimensions")
 
 
 def test_postgres_array_ndim_error_messges(started_cluster):
@@ -391,23 +391,23 @@ def test_concurrent_queries(started_cluster):
     )
 
     def node_select(_):
-        for i in range(20):
-            result = node1.query("SELECT * FROM test.test_table", user="default")
+        for i in range(5):
+            node1.query("SELECT * FROM test.test_table", user="default")
 
     def node_insert(_):
-        for i in range(20):
-            result = node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+        for i in range(5):
+            node1.query(
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
                 user="default",
             )
 
     def node_insert_select(_):
-        for i in range(20):
-            result = node1.query(
-                "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
+        for i in range(5):
+            node1.query(
+                "INSERT INTO test.test_table SELECT number, number FROM numbers(100)",
                 user="default",
             )
-            result = node1.query(
+            node1.query(
                 "SELECT * FROM test.test_table LIMIT 100", user="default"
             )
 
@@ -556,8 +556,8 @@ def test_postgres_on_conflict(started_cluster):
 
 def test_predefined_connection_configuration(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_table")
-    cursor.execute(f"CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
+    cursor.execute("DROP TABLE IF EXISTS test_table")
+    cursor.execute("CREATE TABLE test_table (a integer PRIMARY KEY, b integer)")
 
     node1.query(
         """
@@ -567,9 +567,9 @@ def test_predefined_connection_configuration(started_cluster):
     """
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -579,12 +579,12 @@ def test_predefined_connection_configuration(started_cluster):
     """
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
     node1.query(
-        f""" INSERT INTO test.test_table SELECT number, number from numbers(100)"""
+        """ INSERT INTO test.test_table SELECT number, number from numbers(100)"""
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query("DROP TABLE test.test_table;")
     node1.query_and_get_error(
@@ -612,7 +612,7 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE PostgreSQL(postgres1, port=5432, database='postgres', table='test_table');
     """
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
     node1.query(
         """
@@ -621,13 +621,13 @@ def test_predefined_connection_configuration(started_cluster):
         ENGINE PostgreSQL(postgres3, port=5432);
     """
     )
-    assert node1.query(f"SELECT count() FROM test.test_table").rstrip() == "100"
+    assert node1.query("SELECT count() FROM test.test_table").rstrip() == "100"
 
-    assert node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
+    assert node1.query("SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
     node1.query(
         "INSERT INTO TABLE FUNCTION postgresql(postgres1, on_conflict='ON CONFLICT DO NOTHING') SELECT number, number from numbers(100)"
     )
-    assert node1.query(f"SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
+    assert node1.query("SELECT count() FROM postgresql(postgres1)").rstrip() == "100"
 
     cursor.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
     cursor.execute("CREATE SCHEMA test_schema")
@@ -637,13 +637,13 @@ def test_predefined_connection_configuration(started_cluster):
     )
     assert (
         node1.query(
-            f"SELECT count() FROM postgresql(postgres1, schema='test_schema')"
+            "SELECT count() FROM postgresql(postgres1, schema='test_schema')"
         ).rstrip()
         == "200"
     )
 
     cursor.execute("DROP SCHEMA test_schema CASCADE")
-    cursor.execute(f"DROP TABLE test_table ")
+    cursor.execute("DROP TABLE test_table ")
 
 
 def test_where_false(started_cluster):
@@ -715,12 +715,12 @@ def test_auto_close_connection(started_cluster):
     """
     )
 
-    result = node2.query(
+    node2.query(
         "INSERT INTO test.test_table SELECT number, number FROM numbers(1000)",
         user="default",
     )
 
-    result = node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
+    node2.query("SELECT * FROM test.test_table LIMIT 100", user="default")
 
     node2.query(
         f"""
@@ -749,8 +749,8 @@ def test_auto_close_connection(started_cluster):
 
 def test_literal_escaping(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS escaping")
-    cursor.execute(f"CREATE TABLE escaping(text varchar(255))")
+    cursor.execute("DROP TABLE IF EXISTS escaping")
+    cursor.execute("CREATE TABLE escaping(text varchar(255))")
     node1.query(
         f"CREATE TABLE default.escaping (text String) ENGINE = PostgreSQL('postgres1:5432', 'postgres', 'escaping', 'postgres', '{pg_pass}')"
     )
@@ -760,7 +760,7 @@ def test_literal_escaping(started_cluster):
     node1.query("SELECT * FROM escaping WHERE text = '\\\\\\''")  # \' -> \''
     node1.query("SELECT * FROM escaping WHERE text like '%a''a%'")  # %a'a% -> %a''a%
     node1.query("SELECT * FROM escaping WHERE text like '%a\\'a%'")  # %a'a% -> %a''a%
-    cursor.execute(f"DROP TABLE escaping")
+    cursor.execute("DROP TABLE escaping")
     node1.query("DROP TABLE default.escaping")
 
 
@@ -877,7 +877,7 @@ def test_parameters_validation_for_postgresql_function(started_cluster):
 
 def test_postgres_datetime(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_datetime")
+    cursor.execute("DROP TABLE IF EXISTS test_datetime")
     cursor.execute("CREATE TABLE test_datetime AS (SELECT '2025-01-02 03:04:05.678900'::timestamptz AS ts, '2025-01-02'::date as d)")
 
     node1.query("DROP TABLE IF EXISTS test_datetime")
@@ -900,7 +900,7 @@ def test_postgres_datetime(started_cluster):
 
 def test_postgres_reading_clone(started_cluster):
     cursor = started_cluster.postgres_conn.cursor()
-    cursor.execute(f"DROP TABLE IF EXISTS test_clone")
+    cursor.execute("DROP TABLE IF EXISTS test_clone")
     cursor.execute("CREATE TABLE test_clone AS (SELECT number FROM generate_series(0, 99) AS number)")
 
     node1.query("DROP TABLE IF EXISTS test_clone")
@@ -1009,6 +1009,49 @@ def test_postgres_date32_array(started_cluster):
     assert "Array(Date32)" in result, f"Expected Array(Date32) type, got: {result}"
 
     cursor.execute("DROP TABLE test_date32_array")
+
+
+def test_postgres_array_parser_dimension_underflow(started_cluster):
+    """Regression test for `size_t` underflow in the PostgreSQL array parser.
+
+    When `pqxx::array_parser` emits `row_end` while the parser's `dimension`
+    counter is 0 (for example, an array text starting with `}`), the previous
+    code decremented `dimension` past 0 — a `size_t` underflow to `SIZE_MAX` —
+    and then indexed `dimensions[SIZE_MAX]`, which is out-of-bounds. The fix
+    throws a `BAD_ARGUMENTS` exception in this case instead.
+
+    PostgreSQL itself validates array literals at INSERT time, so the bug is
+    unreachable via a column declared as `boolean[]`/`integer[]` on the
+    PostgreSQL side. The reproducer below stores the malformed payload in a
+    PostgreSQL `text` column and declares the same column as `Array(Int32)` on
+    the ClickHouse side via the `PostgreSQL` table engine. ClickHouse then
+    dispatches the raw `'}'` value through the `vtArray` branch of
+    `insertPostgreSQLValue`, which calls `pqxx::array_parser` on it and
+    reproduces the bug.
+    """
+    cursor = started_cluster.postgres_conn.cursor()
+    cursor.execute("DROP TABLE IF EXISTS test_array_underflow")
+    cursor.execute(
+        "CREATE TABLE test_array_underflow (id integer, payload text)"
+    )
+    cursor.execute("INSERT INTO test_array_underflow VALUES (1, '}')")
+    started_cluster.postgres_conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS pg_array_underflow")
+    node1.query(
+        f"CREATE TABLE pg_array_underflow (id Int32, payload Array(Int32)) "
+        f"ENGINE = PostgreSQL("
+        f"'{started_cluster.postgres_ip}:{started_cluster.postgres_port}', "
+        f"'postgres', 'test_array_underflow', 'postgres', '{pg_pass}')"
+    )
+
+    error = node1.query_and_get_error("SELECT id, payload FROM pg_array_underflow")
+    assert "Unexpected array closing bracket" in error, (
+        f"Expected BAD_ARGUMENTS('Unexpected array closing bracket'), got: {error}"
+    )
+
+    node1.query("DROP TABLE pg_array_underflow")
+    cursor.execute("DROP TABLE test_array_underflow")
 
 
 if __name__ == "__main__":

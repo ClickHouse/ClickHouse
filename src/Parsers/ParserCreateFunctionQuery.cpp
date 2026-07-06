@@ -107,6 +107,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
         std::optional<ParserKeyword> s_from{Keyword::FROM};
         std::optional<ParserKeyword> s_hash{Keyword::SHA256_HASH};
         std::optional<ParserKeyword> s_abi{Keyword::ABI};
+        std::optional<ParserKeyword> s_deterministic{Keyword::DETERMINISTIC};
 
         /// Parse fields in any order, but only once each
         while (true)
@@ -183,6 +184,11 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
                 if (!ParserStringLiteral{}.parse(pos, hash_ast, expected))
                     return false;
                 create_function_query->setModuleHash(hash_ast);
+            }
+            else if (s_deterministic && s_deterministic->ignore(pos, expected))
+            {
+                s_deterministic.reset();
+                create_function_query->is_deterministic = true;
             }
             else
             {

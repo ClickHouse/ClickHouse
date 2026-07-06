@@ -12,6 +12,8 @@
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
+#include <optional>
+
 #if USE_SSL
 #    include <Common/Crypto/X509Certificate.h>
 #endif
@@ -63,6 +65,15 @@ bool authenticateUserByHTTP(
     std::unique_ptr<Credentials> & request_credentials,
     const HTTPHandlerConnectionConfig & connection_config,
     ContextPtr global_context,
+    LoggerPtr log);
+bool authenticateUserByHTTP(
+    const HTTPServerRequest & request,
+    const HTMLForm & params,
+    HTTPServerResponse & response,
+    Session & session,
+    std::unique_ptr<Credentials> & request_credentials,
+    const HTTPHandlerConnectionConfig & connection_config,
+    ContextPtr global_context,
     LoggerPtr log)
 {
     /// Get the credentials created by the previous call of authenticateUserByHTTP() while handling the previous HTTP request.
@@ -89,6 +100,17 @@ bool authenticateUserByHTTP(
     std::string spnego_challenge;
 #if USE_SSL
     X509Certificate::Subjects certificate_subjects;
+
+    /// Capture the TLS client certificate (if the client presented one) regardless of the selected
+    /// authentication method, so that session_log records it even when the connection authenticates
+    /// by another method (headers, basic, query parameters, config) or the login fails.
+    /// Mirrors the native protocol path in TCPHandler::receiveHello.
+    std::optional<X509Certificate> peer_certificate;
+    if (request.havePeerCertificate())
+    {
+        peer_certificate = request.peerCertificate();
+        session.setClientCertificate(*peer_certificate);
+    }
 #endif
 
     if (config_credentials)
@@ -111,11 +133,8 @@ bool authenticateUserByHTTP(
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
-        if (request.havePeerCertificate())
-        {
-            auto certificate = X509Certificate(request.peerCertificate());
-            certificate_subjects = certificate.extractAllSubjects();
-        }
+        if (peer_certificate)
+            certificate_subjects = peer_certificate->extractAllSubjects();
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,

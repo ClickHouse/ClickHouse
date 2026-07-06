@@ -17,7 +17,7 @@ To declare a column of `QBit` type, use the following syntax:
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – the type of each vector element. The allowed types are `BFloat16`, `Float32` and `Float64`
+* `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
 
 ## Creating QBit {#creating-qbit}
@@ -36,6 +36,29 @@ SELECT vec FROM test ORDER BY id;
 │ [9,10,11,12,13,14,15,16] │
 └──────────────────────────┘
 ```
+
+## Converting arrays to QBit {#converting-arrays-to-qbit}
+
+Arrays convert to `QBit` when the array length matches the `QBit` dimension. The array's element type does not need to match the `QBit` element type. Any numeric element type is converted to it automatically. This lets you move an existing column of embeddings straight into a `QBit` column:
+
+```sql
+CREATE TABLE embeddings (id UInt32, embedding Array(Float32)) ENGINE = Memory;
+INSERT INTO embeddings VALUES (1, [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]), (2, [0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]);
+
+CREATE TABLE vectors (id UInt32, vec QBit(Float32, 8)) ENGINE = Memory;
+INSERT INTO vectors SELECT id, embedding FROM embeddings;
+
+SELECT * FROM vectors ORDER BY id;
+```
+
+```text
+┌─id─┬─vec───────────────────────────────┐
+│  1 │ [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8] │
+│  2 │ [0.8,0.7,0.6,0.5,0.4,0.3,0.2,0.1] │
+└────┴───────────────────────────────────┘
+```
+
+The conversion also works explicitly with `CAST`, for example `CAST(embedding AS QBit(Float32, 8))`.
 
 ## QBit subcolumns {#qbit-subcolumns}
 
@@ -57,6 +80,7 @@ SELECT bin(vec.1) FROM test;
 
 The number of accessible subcolumns depends on the element type:
 
+* `Int8`: 8 subcolumns (1-8)
 * `BFloat16`: 16 subcolumns (1-16)
 * `Float32`: 32 subcolumns (1-32)
 * `Float64`: 64 subcolumns (1-64)

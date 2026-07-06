@@ -235,11 +235,11 @@ BlockIO InterpreterShowTablesQuery::execute()
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
-    if (DatabaseCatalog::instance().isDatalakeCatalog(database))
+    if (DatabaseCatalog::instance().isRemoteDatabase(database))
     {
-        /// HACK: force the setting so that system.tables includes tables from the requested data lake catalog.
-        /// system.databases already shows all catalogs unconditionally, so no override is needed for SHOW DATABASES.
-        query_context->setSetting("show_data_lake_catalogs_in_system_tables", true);
+        /// Explicit SHOW TABLES should include tables from the requested remote database.
+        /// system.databases already shows all databases unconditionally, so no override is needed for SHOW DATABASES.
+        query_context->setSetting("show_remote_databases_in_system_tables", true);
     }
     return executeQuery(rewritten_query, std::move(query_context), QueryFlags{ .internal = true }).second;
 }
@@ -249,6 +249,7 @@ BlockIO InterpreterShowTablesQuery::execute()
 ///     SQL tests can take advantage of this.
 
 
+void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

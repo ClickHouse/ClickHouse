@@ -1,40 +1,48 @@
 """
-Workflow hook that blocks merge whenever any job has posted an error or
-warning to the workflow-level report (``Result.ext["errors"]`` /
+Workflow hook that posts a GH commit status summarising errors and warnings
+from the workflow-level report (``Result.ext["errors"]`` /
 ``Result.ext["warnings"]`` on the top-level workflow result).
 
-Warnings are treated as blocking on purpose: if a job decides to surface a
-warning on the workflow page, it is something a human should acknowledge
-before the PR is merged.  After the issue is reviewed (and, if appropriate,
-fixed in a follow-up), the merge can proceed by re-running CI once the
-warning is no longer produced.
+The hook itself never fails so that it does not block the post-hook step;
+the commit status it posts (FAIL when issues are present) is what blocks
+the merge.  After the issue is reviewed and fixed, re-running CI will post
+a new OK status once the error/warning is no longer produced.
 """
 
-import sys
-
+from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 
+STATUS_NAME = "Report messages"
+
 
 def check():
-    info = Info()
-    workflow_result = Result.from_fs(info.workflow_name)
-    ext = workflow_result.ext
+    try:
+        info = Info()
+        workflow_result = Result.from_fs(info.workflow_name)
+        ext = workflow_result.ext
 
-    errors = ext.get("errors", [])
-    warnings = ext.get("warnings", [])
+        errors = ext.get("errors", [])
+        warnings = ext.get("warnings", [])
 
-    ok = True
-    for item in errors:
-        print(f"ERROR: {item.get('message', '')} (from: {item.get('from', '')})")
-        ok = False
-    for item in warnings:
-        print(f"WARNING: {item.get('message', '')} (from: {item.get('from', '')})")
-        ok = False
+        for item in errors:
+            print(f"ERROR: {item.get('message', '')} (from: {item.get('from', '')})")
+        for item in warnings:
+            print(f"WARNING: {item.get('message', '')} (from: {item.get('from', '')})")
 
-    return ok
+        if errors or warnings:
+            parts = []
+            if errors:
+                parts.append(f"{len(errors)} error(s)")
+            if warnings:
+                parts.append(f"{len(warnings)} warning(s)")
+            description = ", ".join(parts)
+            GH.post_commit_status(
+                name=STATUS_NAME, status=Result.Status.FAIL, description=description, url=""
+            )
+    except Exception as e:
+        print(f"WARNING: check_report_messages failed: {e}")
 
 
 if __name__ == "__main__":
-    if not check():
-        sys.exit(1)
+    check()

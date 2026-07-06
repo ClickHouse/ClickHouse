@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -169,6 +170,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
+
     if (node.type_hint)
         chassert(node.requested);
     if (schema_idx >= file_metadata.schema.size())
@@ -567,6 +583,18 @@ bool SchemaConverter::processSubtreeArrayInner(TraversalNode & node)
              node.element->num_children == 1); // caller checked this
     /// (type_hint is already unwrapped to be element type, because of REPEATED)
     TraversalNode subnode = node.prepareToRecurse(SchemaContext::ListElement, node.type_hint);
+
+    if (column_mapper && schema_idx < file_metadata.schema.size())
+    {
+        const auto & elem_schema = file_metadata.schema.at(schema_idx);
+        if (elem_schema.__isset.field_id)
+        {
+            const auto & field_id_map = column_mapper->getFieldIdToClickHouseName();
+            if (auto it = field_id_map.find(elem_schema.field_id); it != field_id_map.end())
+                subnode.name = std::string(it->second);
+        }
+    }
+
     processSubtree(subnode);
 
     if (!node.requested || !subnode.output_idx.has_value())
@@ -886,6 +914,14 @@ void SchemaConverter::processPrimitiveColumn(
         return;
     }
 
+    if (type_hint && type_hint->getName() == "Geometry" && type == parq::Type::BYTE_ARRAY)
+    {
+        GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
+        out_inferred_type = getGeoDataType(GeoType::Mixed);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        return;
+    }
+
     if (logical.__isset.STRING || logical.__isset.JSON || logical.__isset.BSON ||
         logical.__isset.ENUM || converted == CONV::UTF8 || converted == CONV::JSON ||
         converted == CONV::BSON || converted == CONV::ENUM)
@@ -915,7 +951,7 @@ void SchemaConverter::processPrimitiveColumn(
             }
         }
 
-        size_t physical_bits;
+        size_t physical_bits = 0;
         if (type == parq::Type::INT32)
             physical_bits = 32;
         else if (type == parq::Type::INT64)
@@ -972,7 +1008,7 @@ void SchemaConverter::processPrimitiveColumn(
         /// types as timestamps, since clickhouse doesn't have time-of-day type.
         /// E.g. time of day 12:34:56.789 turns into timestamp 1970-01-01 12:34:56.789.
 
-        UInt32 scale;
+        UInt32 scale = 0;
         if (logical.TIMESTAMP.unit.__isset.MILLIS || logical.TIME.unit.__isset.MILLIS || converted == CONV::TIMESTAMP_MILLIS || converted == CONV::TIME_MILLIS)
             scale = 3;
         else if (logical.TIMESTAMP.unit.__isset.MICROS || logical.TIME.unit.__isset.MICROS || converted == CONV::TIMESTAMP_MICROS || converted == CONV::TIME_MICROS)
