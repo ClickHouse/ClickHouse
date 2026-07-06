@@ -27,14 +27,18 @@ The initial BYOC setup can be performed using either a CloudFormation template o
 
 #### Terraform Module 
 
-[BYOC Terraform module](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)
+Use the [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) module:
 
 ```hcl
 module "clickhouse_onboarding" {
-  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
-  byoc_env = "production"
+  source      = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=v1.2.0"
+  external_id = "<external-id-provided-by-clickhouse>"
 }
 ```
+
+<Note>
+The module was previously distributed as a tarball at `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. That URL remains available but is deprecated — use the GitHub module above.
+</Note>
 
 ### Set up BYOC infrastructure 
 
@@ -119,7 +123,7 @@ In ClickHouse BYOC account,
 3. Click the Edit button under the Routes tab.
 4. Click Add another route.
 5. Enter the CIDR range of the target VPC for the Destination.
-6. Select “Peering Connection” and the ID of the peering connection for the Target.
+6. Select "Peering Connection" and the ID of the peering connection for the Target.
 
 <br />
 
@@ -134,7 +138,7 @@ In the peering AWS account,
 3. Click the Edit button under the Routes tab.
 4. Click Add another route.
 5. Enter the CIDR range of the ClickHouse VPC for the Destination.
-6. Select “Peering Connection” and the ID of the peering connection for the Target.
+6. Select "Peering Connection" and the ID of the peering connection for the Target.
 
 <br />
 
