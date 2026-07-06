@@ -628,7 +628,7 @@ void ReaderExecutor::initDecryption()
     /// plain one-shot source read (no long connection, no plan) suffices.
     ChainedBuffers header_chain = fetchGapsFromSource(ByteRange{0, data_start_offset},
         /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
-        /*lc=*/nullptr, /*stop=*/nullptr, stats);
+        /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
 
     /// Under size-unknown sources `fetchGapsFromSource` latches `reached_eof`
     /// on short returns instead of throwing, so an empty chain means
@@ -1086,7 +1086,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         {
             const ByteRange piece{off, std::min(step, run_hi - off)};
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
-                m.extent_snapshot, &m.long_conn, &m, m.stats);
+                m.extent_snapshot, &m.long_conn, &m, /*may_open_long=*/m.inline_serve, m.stats);
             pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
             led_bytes.append(std::move(run));
             if (m.interrupt_requested.load(std::memory_order_relaxed))
@@ -1099,7 +1099,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
 
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
-    std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats)
+    std::optional<LongConnection> * lc, const MachineBase * stop, bool may_open_long, Stats & out_stats)
 {
     /// PURE source fetch: read the WHOLE window from the source as one contiguous
     /// physical run (short at EOF or at an interrupt point). No cache
@@ -1122,6 +1122,29 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
     {
         LOG_TRACE(log, "fetchGapsFromSource: source read object={}, offset={}, size={}",
             pr.object.remote_path, pr.object_offset, pr.size);
+
+        /// The ONE connection-policy point: at each OBJECT-piece start, open a long connection
+        /// when it is convenient (`openLongIfWarranted`: the predicted reach warrants one, a
+        /// slot is free, and a held unusable channel is dropped first) - so a run that crosses
+        /// an object boundary opens the tail object's connection with ITS own reach. Only in
+        /// FOREGROUND context (`may_open_long`: the foreground itself and INLINE machines, which
+        /// run on the serve thread) - the foreground stays the sole opener; a pool worker
+        /// carries what its launch gave it. The policy operates on the executor's `long_conn`
+        /// slot, so an inline machine's carried connection is borrowed into it and handed back.
+        if (may_open_long && lc)
+        {
+            const bool borrowed = lc != &long_conn;
+            if (borrowed)
+                long_conn = takeLong(*lc);
+            /// Hand back even when the policy throws (its drop path DRAINS over the network): a
+            /// connection stranded in the executor slot while a machine is in flight would break
+            /// the "foreground holds none mid-flight" invariant at the next collect.
+            SCOPE_EXIT({
+                if (borrowed)
+                    *lc = takeLong(long_conn);
+            });
+            openLongIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
+        }
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
         /// `getOrSet` that would segment-align a miss runs later, in `assembleAndWriteBack`).
@@ -1703,8 +1726,11 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
     /// is left for `readFromSource`, which serves up to the bound and reopens for any remainder;
     /// dropping it here would degrade the window to a one-shot and reopen only on the NEXT
     /// window, doubling the GET count of every cold run that follows a wide cached gap.
+    /// `canStartServing` compares against the connection's OBJECT-LOCAL state, so the check
+    /// takes `object_offset` (a physical position here would offset the comparison by the
+    /// preceding blobs' size on a multi-blob file and drop a perfectly continuable channel).
     if (long_conn && !(long_conn->servesObject(object.remote_path)
-            && long_conn->canStartServing(phys_offset, min_bytes_for_seek)))
+            && long_conn->canStartServing(object_offset, min_bytes_for_seek)))
         dropLong(long_conn, out_stats);
     if (!shouldOpenLong(phys_offset))
         return;
@@ -2213,17 +2239,8 @@ ChainedBuffers ReaderExecutor::serveWindowInline(size_t ri, ByteRange window)
     /// gap has no writer, and a sibling-held segment's write is skipped).
     ChainedBuffers src;
     for (const auto & g : covered.subtract(fetch_window))
-    {
-        auto physical_ranges = offset_map.map(g);
-        size_t logical_pos = g.offset;
-        for (const auto & pr : physical_ranges)
-        {
-            openLongIfWarranted(pr.object, pr.object_offset, logical_pos, stats);
-            src.append(fetchGapsFromSource(ByteRange{logical_pos, pr.size}, /*from_prefetch=*/false,
-                reached_eof, level, read_extent_end, &long_conn, /*stop=*/nullptr, stats));
-            logical_pos += pr.size;
-        }
-    }
+        src.append(fetchGapsFromSource(g, /*from_prefetch=*/false, reached_eof, level, read_extent_end,
+            &long_conn, /*stop=*/nullptr, /*may_open_long=*/true, stats));
     if (!src.empty())
         assembleAndWriteBack(fetch_window, window, src, result, covered, /*push_to_writers=*/true, stats);
 

@@ -562,9 +562,13 @@ private:
     /// EOF-short one and must neither latch EOF nor throw (the flag is checked FIRST).
     /// `lc` (nullable) is the long connection to DRAIN if it can serve a piece - the
     /// worker passes its machine's payload, never the foreground's.
+    /// `may_open_long` is the ONE connection-policy point: at each object-piece start, open a
+    /// long connection when convenient (`openLongIfWarranted`) and reuse it for what follows.
+    /// True only in FOREGROUND context (the foreground and inline machines, which run on the
+    /// serve thread) - a pool worker never opens; it carries what its launch gave it.
     ChainedBuffers fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
         bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
-        std::optional<LongConnection> * lc, const MachineBase * stop, Stats & out_stats);
+        std::optional<LongConnection> * lc, const MachineBase * stop, bool may_open_long, Stats & out_stats);
 
     /// The machine fetch step (runs on the worker thread): elect the FileCache downloader
     /// over the window's fill-target `writer_views`, fetch the LED runs from the source via
