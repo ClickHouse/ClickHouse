@@ -123,28 +123,29 @@ private:
 
 using TokenToPositionListMap = StringHashMap<PositionListBuilder>;
 
-/// Struct-of-arrays form of a roaringish position list, used on the query/decode path.
-///
-/// Decoding de-interleaves the on-disk AoS entries straight into these three lanes — no temp
-/// buffers, no SoA->AoS copy — so the decoded footprint is just the data (12 bytes/entry).
-/// Phrase search consumes this form directly, computing the (doc_id, group) merge key inline.
-/// Entries are sorted ascending by key() and unique per (doc_id, group).
+/// Struct-of-arrays form of a roaringish position list (query/decode path). The (doc_id, group)
+/// merge key is materialized into a single 64-bit `keys` lane so scalar and SIMD kernels compare a
+/// contiguous UInt64 instead of recomputing `(doc_id << 32) | group`. Entries are sorted ascending
+/// by key and unique per bucket; positions are UInt32 so group <= 0x07FFFFFF and `key + 1` (the
+/// boundary-crossing phase) never carries into the doc_id field.
 struct PositionList
 {
-    PaddedPODArray<UInt32> doc;
-    PaddedPODArray<UInt32> group;
+    PaddedPODArray<UInt64> keys;
     PaddedPODArray<UInt32> bitmap;
 
-    size_t size() const { return doc.size(); }
-    bool empty() const { return doc.empty(); }
-    void clear() { doc.clear(); group.clear(); bitmap.clear(); }
-    void resize(size_t n) { doc.resize(n); group.resize(n); bitmap.resize(n); }
-    void reserve(size_t n) { doc.reserve(n); group.reserve(n); bitmap.reserve(n); }
+    size_t size() const { return keys.size(); }
+    bool empty() const { return keys.empty(); }
+    void clear() { keys.clear(); bitmap.clear(); }
+    void resize(size_t n) { keys.resize(n); bitmap.resize(n); }
+    void reserve(size_t n) { keys.reserve(n); bitmap.reserve(n); }
 
-    /// (doc_id, group) intersection key.
-    UInt64 key(size_t i) const { return (static_cast<UInt64>(doc[i]) << 32) | group[i]; }
+    UInt64 key(size_t i) const { return keys[i]; }
 
-    void pushBack(UInt32 d, UInt32 g, UInt32 b) { doc.push_back(d); group.push_back(g); bitmap.push_back(b); }
+    static UInt32 keyToDoc(UInt64 k) { return static_cast<UInt32>(k >> 32); }
+    static UInt32 keyToGroup(UInt64 k) { return static_cast<UInt32>(k); }
+
+    void pushBack(UInt32 d, UInt32 g, UInt32 b) { keys.push_back((static_cast<UInt64>(d) << 32) | g); bitmap.push_back(b); }
+    void pushBackKey(UInt64 k, UInt32 b) { keys.push_back(k); bitmap.push_back(b); }
 };
 
 }
