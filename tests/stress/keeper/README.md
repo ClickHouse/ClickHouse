@@ -1,8 +1,8 @@
 # Keeper Stress Tests
 
 Scenario-driven stress-testing framework for ClickHouse Keeper. Runs keeper-bench
-workloads against a 3-node cluster (default Keeper, Apache ZooKeeper,
-or RaftKeeper backends), optionally with fault injection.
+workloads against a 3-node cluster (Keeper in-memory, Keeper with on-disk node storage,
+Apache ZooKeeper, or RaftKeeper backends), optionally with fault injection.
 
 ## Current setup
 
@@ -12,8 +12,8 @@ or RaftKeeper backends), optionally with fault injection.
   `concurrency`, `connections` (host:port per node with sessions distributed), and
   `timelimit` (from `--duration`). Request mix, setup tree, and value sizes come from
   the workload YAML.
-- **Backends:** `default` (NuRaft log store), `zookeeper` (Apache ZooKeeper),
-  `raftkeeper` (JDRaftKeeper).
+- **Backends:** `default` (NuRaft log store), `lsmt` (Keeper with on-disk node storage,
+  `use_new_storage`), `zookeeper` (Apache ZooKeeper), `raftkeeper` (JDRaftKeeper).
 
 **Example patched config sent to keeper-bench** (`[keeper][bench][config patched]` in logs):
 
@@ -126,7 +126,7 @@ pytest -p no:cacheprovider --durations=0 -vv -s \
 pytest -p no:cacheprovider --durations=0 -vv -s \
   tests/stress/keeper/tests/test_scenarios.py \
   -k 'prod-mix-fault' \
-  --matrix-backends=default,zookeeper
+  --matrix-backends=default,lsmt
 ```
 
 **Key options:**
@@ -136,14 +136,14 @@ pytest -p no:cacheprovider --durations=0 -vv -s \
 | `CLICKHOUSE_BINARY` | Path to `clickhouse` binary used by keeper-bench. |
 | `PYTHONPATH=.:tests/stress:ci` | Required so `keeper.*` and `ci.*` imports resolve. |
 | `-k 'prod-mix-no-fault and default'` | Filter by scenario name and/or backend. |
-| `--matrix-backends=default,zookeeper` | Backends to test (comma-separated). |
+| `--matrix-backends=default,lsmt` | Backends to test (comma-separated). |
 | `--matrix-topologies=3` | Node count (default 3). |
 | `--seed N` | Reproducible fault randomization. |
 | `KEEPER_DURATION` | Override scenario duration in seconds. |
 | `KEEPER_FAULTS` | `true`/`false` — override fault injection toggle. |
 | `KEEPER_WORKLOAD_CONFIG` | Path to a workload YAML to use instead of the scenario's default. |
 
-Available backends: `default`, `zookeeper`, `raftkeeper`.
+Available backends: `default`, `lsmt`, `zookeeper`, `raftkeeper`.
 
 ## Changing workload
 
@@ -177,8 +177,8 @@ To add a read-heavy or write-heavy variant:
 
 > **Note:** RocksDB storage support has been removed from Keeper, so the `rocks` backend is no
 > longer available. The RocksDB results recorded here and in the tables below are kept for
-> historical reference only. A replacement storage backend is coming soon, and this README will
-> be updated with new benchmark results once it lands.
+> historical reference only. A replacement storage backend (`use_new_storage`) is coming soon, and
+> this README will be updated with new benchmark results once it lands.
 
 Early no-fault results at two concurrency levels (3-node cluster, `prod-mix` workload):
 
@@ -204,8 +204,8 @@ below for 15-minute results across all 10 scenarios and 3 backends.
 ## Benchmark Results
 
 > **Note:** The RocksDB (`rocks`) columns below are historical. RocksDB storage support has been
-> removed from Keeper; the `rocks` backend is no longer available. A replacement is coming soon,
-> and this section will be refreshed with new benchmark results once it lands.
+> removed from Keeper; the `rocks` backend is no longer available. A replacement is coming soon
+> (`use_new_storage`), and this section will be refreshed with new benchmark results once it lands.
 
 All results at 640 concurrency, 3-node cluster, 15-minute runs.
 
