@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'Vision'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: 'Vision'
+description: 'مدخلات الصور والفهم البصري في ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Vision', 'مدخلات الصور', 'متعدد الوسائط']
+doc_type: 'مرجع'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+يتيح Vision للمستخدمين رفع الصور ليحللها الوكيل. ثم يمرّر الوكيل الصورة إلى نموذج يدعم Vision، ليصف محتواها أو يلخّصه أو يجيب عن أسئلة بشأنه.
+
+<div id="enable-it">
+  ## تمكين إمكانات Vision
+</div>
+
+لا تعمل Vision إلا مع النماذج التي تدعم مدخلات الصور. إذا كان النموذج المحدد لا يدعم مدخلات الصور، فسيتم تعطيل عنصر الرفع في حقل كتابة الرسالة. انتقل إلى نموذج يدعم Vision لإعادة تفعيله.
+
+<div id="use-it">
+  ## استخدم إمكانات Vision
+</div>
+
+انقر على أيقونة مشبك الورق في أسفل يسار حقل كتابة الرسالة، ثم اختر **التحميل إلى المزوّد** لإرفاق صورة، مثل لقطة شاشة أو صورة فوتوغرافية أو مخطط بياني أو رسم توضيحي. بعد ذلك، اطرح أي سؤال يتطلب قراءة الصورة: *&quot;ما الخطأ في خطة هذا الاستعلام؟&quot;*، *&quot;انسخ النص الظاهر في لقطة الشاشة هذه،&quot;* أو *&quot;قارن لوحة المعلومات هذه بلوحة الأسبوع الماضي.&quot;*
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="حقل كتابة الرسالة مع فتح قائمة مشبك الورق، وتظهر فيها خيارات التحميل إلى المزوّد، والتحميل كنص، والتحميل إلى بيئة البرمجة" size="lg" />
+
+يتعامل الوكيل مع الصورة على أنها جزء من سياق الرسالة، لذا يمكن لأسئلة المتابعة في التبادل نفسه الإشارة إلى ما رآه من دون الحاجة إلى إعادة تحميلها.
+
+<div id="combine-with-other-tools">
+  ## ادمج Vision مع الأدوات الأخرى
+</div>
+
+يتكامل Vision بشكل جيد مع [code interpreter](/ar/products/cloud/features/ai-ml/agents/builder/code-interpreter) لإجراء تحليل قائم على الصور — فعلى سبيل المثال، يقرأ الوكيل الأرقام من لقطة شاشة ثم يشغّل Python لحساب المجاميع — وكذلك مع [web search](/ar/products/cloud/features/ai-ml/agents/builder/web-search) عندما تتضمن الصورة شيئًا يحتاج النموذج إلى البحث عنه.

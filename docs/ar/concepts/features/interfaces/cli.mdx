@@ -1,0 +1,804 @@
+---
+description: 'توثيق clickhousectl، واجهة سطر الأوامر لـ ClickHouse: المحلي والسحابي'
+sidebarTitle: 'clickhousectl'
+slug: /interfaces/cli
+title: 'clickhousectl'
+doc_type: 'مرجع'
+---
+
+`clickhousectl` هو واجهة سطر الأوامر لـ ClickHouse: المحلي والسحابي.
+
+باستخدام `clickhousectl` يمكنك:
+
+* تثبيت إصدارات ClickHouse المحلية وإدارتها
+* تشغيل خوادم ClickHouse المحلية وإدارتها
+* تشغيل مثيلات Postgres المحلية وإدارتها
+* تنفيذ الاستعلامات على خوادم ClickHouse
+* إعداد ClickHouse Cloud وإنشاء عناقيد ClickHouse مُدارة سحابيًا
+* إنشاء خدمات Postgres في ClickHouse Cloud وإدارتها
+* إدارة موارد ClickHouse Cloud
+* إنشاء ClickPipes لإدخال البيانات وإدارتها (S3, Kafka, Kinesis, Postgres, MySQL, MongoDB, BigQuery)
+* تثبيت ClickHouse agent skills الرسمية في وكلاء البرمجة المدعومين
+* نقل بيئة تطوير ClickHouse المحلية إلى السحابة
+
+يساعد `clickhousectl` المستخدمين ووكلاء الذكاء الاصطناعي على التطوير باستخدام ClickHouse.
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+<div id="quick-install">
+  ### التثبيت السريع
+</div>
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+يقوم برنامج التثبيت النصي بتنزيل الإصدار المناسب لنظام التشغيل لديك وتثبيته في `~/.local/bin/clickhousectl`. كما يُنشئ تلقائيًا أيضًا اسمًا مستعارًا `chctl` لتسهيل الاستخدام.
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+* macOS ‏(aarch64, x86&#95;64) أو Linux ‏(aarch64, x86&#95;64)
+* تتطلب أوامر Cloud [مفتاح واجهة برمجة تطبيقات الخاص بـ ClickHouse Cloud](/ar/products/cloud/features/admin-features/api/api-overview)
+
+<div id="local">
+  ## محلي
+</div>
+
+<div id="installing-versions">
+  ### تثبيت إصدارات ClickHouse وإدارتها
+</div>
+
+يقوم `clickhousectl` بتنزيل الملفات التنفيذية لـ ClickHouse من `builds.clickhouse.com`، مع الرجوع إلى `packages.clickhouse.com` (Linux) أو [إصدارات GitHub](https://github.com/ClickHouse/ClickHouse/releases) ‏(macOS) إذا لم يكن الإصدار متاحًا هناك.
+
+```bash
+# Install a version
+clickhousectl local install latest          # Latest release (recommended)
+clickhousectl local install 26.5            # Latest 26.5.x.x
+clickhousectl local install 26.5.2.39       # Exact version
+
+# List versions
+clickhousectl local list                    # Installed versions
+clickhousectl local list --remote           # Available for download
+
+# Manage default version
+clickhousectl local use latest              # Latest release (installs if needed, recommended)
+clickhousectl local use 26.5                # Latest 26.5.x.x (installs if needed)
+clickhousectl local use 26.5.2.39           # Exact version
+clickhousectl local use latest --no-global  # Set default but don't touch ~/.local/bin/clickhouse
+clickhousectl local which                   # Show current default
+
+# Remove a version
+clickhousectl local remove 26.5.2.39
+```
+
+يقوم `local use` أيضًا بإنشاء رابط رمزي في `~/.local/bin/clickhouse` يشير إلى الملف التنفيذي للإصدار المحدد، بحيث يصبح الأمر `clickhouse` العادي (مثل `clickhouse local` و`clickhouse client`) متاحًا على `PATH`. مرّر `--no-global` لتخطي ذلك. إذا كان هناك ملف عادي موجود بالفعل في ذلك المسار، فسيُترك كما هو مع عرض تحذير. كما أن `local remove` للإصدار الافتراضي النشط يزيل الرابط الرمزي أيضًا.
+
+<div id="binary-storage">
+  #### تخزين الملفات التنفيذية لـ ClickHouse
+</div>
+
+تُخزَّن الملفات التنفيذية لـ ClickHouse في مستودع عام، بحيث يمكن لعدة مشاريع استخدامها دون تكرار التخزين. وتُخزَّن هذه الملفات في `~/.clickhouse/`:
+
+```bash
+~/.clickhouse/
+├── versions/
+│   └── 26.5.2.39/
+│       └── clickhouse
+└── default              # tracks the active version
+```
+
+<div id="initializing-project">
+  ### إعداد مشروع
+</div>
+
+```bash
+clickhousectl local init
+```
+
+يُهيِّئ `init` دليل العمل الحالي لديك باستخدام بنية مجلدات قياسية لملفات مشروع ClickHouse وPostgres. وهو أمر اختياري؛ إذ يمكنك استخدام بنية المجلدات الخاصة بك إذا كنت تفضّل ذلك.
+
+ينشئ البنية التالية:
+
+```bash
+clickhouse/
+├── tables/                 # Table definitions (CREATE TABLE ...)
+├── materialized_views/     # Materialized view definitions
+├── queries/                # Saved queries
+└── seed/                   # Seed data / INSERT statements
+
+postgres/
+├── tables/                 # Table definitions (CREATE TABLE ...)
+├── views/                  # View definitions
+├── functions/              # Function definitions
+├── queries/                # Saved queries
+└── seed/                   # Seed data / INSERT statements
+```
+
+<div id="running-queries">
+  ### تنفيذ الاستعلامات
+</div>
+
+```bash
+# Connect to a running server with clickhouse-client
+clickhousectl local client                           # Connects to "default" server
+clickhousectl local client --name dev                # Connects to "dev" server
+clickhousectl local client --query "SHOW DATABASES"  # Run a query
+clickhousectl local client --queries-file schema.sql # Run queries from a file
+clickhousectl local client --host remote-host --port 9000  # Connect to a specific host/port
+```
+
+<div id="managing-servers">
+  ### إنشاء خوادم ClickHouse وإدارتها
+</div>
+
+ابدأ مثيلات خادم ClickHouse وأدرها. يحصل كل خادم على مجلد بيانات معزول خاص به في `.clickhouse/servers/<name>/data/`.
+
+```bash
+# Start a server (runs in background by default)
+clickhousectl local server start                          # Named "default"
+clickhousectl local server start --name dev               # Named "dev"
+clickhousectl local server start --version stable         # Use a specific version (installs if needed, doesn't change default)
+clickhousectl local server start --foreground             # Run in foreground (-F / --fg)
+clickhousectl local server start --http-port 8124 --tcp-port 9001  # Explicit ports
+clickhousectl local server start --config-file querylog          # Apply a named custom config
+
+# List all servers (running and stopped)
+clickhousectl local server list
+clickhousectl local server list --global                  # List servers across all projects
+
+# Stop servers
+clickhousectl local server stop default                   # Stop by name
+clickhousectl local server stop default --global          # Stop from any project
+clickhousectl local server stop-all                       # Stop all running servers
+
+# Remove a stopped server and its data
+clickhousectl local server remove test
+
+# Write connection env vars to a .env file
+clickhousectl local server dotenv                         # From "default" server → .env
+clickhousectl local server dotenv --name dev              # From "dev" server → .env
+clickhousectl local server dotenv --local                 # Write to .env.local instead
+```
+
+**تسمية الخادم:** بدون `--name`، يُسمّى الخادم الأول &quot;default&quot;. وإذا كان &quot;default&quot; قيد التشغيل بالفعل، فسيُولَّد اسم عشوائي (مثل &quot;bold-crane&quot;). استخدم `--name` للحصول على معرّفات ثابتة يمكنك تشغيلها وإيقافها مرارًا.
+
+**المنافذ:** المنافذ الافتراضية هي HTTP 8123 وTCP 9000. وإذا كانت هذه المنافذ مستخدمة بالفعل، فستُخصَّص منافذ متاحة تلقائيًا وتُعرض في المخرجات. استخدم `--http-port` و`--tcp-port` لتعيين منافذ محددة صراحةً.
+
+**إدارة الخوادم العامة:** استخدم `--global` مع `list` و`stop` و`stop-all` للعمل على مستوى جميع المشاريع على مستوى النظام. يعرض `server list --global` جميع خوادم ClickHouse قيد التشغيل، مع عمود Project يوضّح الدليل الذي ينتمي إليه كل خادم.
+
+<div id="custom-config-files">
+  #### ملفات config مخصّصة للخوادم المحلية
+</div>
+
+تبدأ الخوادم المحلية بإعدادات افتراضية مناسبة، لكنك قد تحتاج أحيانًا إلى تغيير أحد الإعدادات. ضع ملف config في `~/.clickhouse/configs/` وطبّقه بالاسم عند بدء تشغيل خادم:
+
+```bash
+mkdir -p ~/.clickhouse/configs
+cat > ~/.clickhouse/configs/querylog.yaml <<'EOF'
+query_log:
+    database: system
+    table: query_log
+EOF
+
+# See which configs are available
+clickhousectl local server configs
+
+# Start a server with one applied
+clickhousectl local server start --config-file querylog
+```
+
+يُطبَّق الملف المُسمّى **فوق الإعدادات الافتراضية المضمّنة في ClickHouse** (عبر `config.d`)، لذلك لا يحتاج إلا إلى تضمين الإعدادات التي تريد تغييرها، ولا حاجة إلى إعادة إنشاء ملف config كامل. يمكن أن تكون الملفات بصيغة `.xml` أو `.yaml` أو `.yml`، ويمكنك الإشارة إليها بالاسم سواء مع الامتداد أو بدونه.
+
+<div id="project-local-data">
+  #### مجلد البيانات الخاص بالمشروع
+</div>
+
+توجد جميع بيانات الخادم داخل `.clickhouse/` في مجلد المشروع:
+
+```bash
+.clickhouse/
+├── .gitignore              # auto-created, ignores everything
+├── credentials.json        # cloud API credentials (if configured)
+└── servers/
+    ├── default/
+    │   └── data/           # ClickHouse data files for "default" server
+    └── dev/
+        └── data/           # ClickHouse data files for "dev" server
+```
+
+لكل خادم مُسمّى مجلد بيانات خاص به، لذا تكون الخوادم معزولة تمامًا عن بعضها البعض. تظل البيانات محفوظة بين عمليات إعادة التشغيل. أوقِف الخادم وشغّله بالاسم لمتابعة العمل من حيث توقفت. استخدم `clickhousectl local server remove <name>` لحذف بيانات الخادم نهائيًا.
+
+<div id="local-postgres">
+  ### تشغيل Postgres محليًا
+</div>
+
+بالإضافة إلى ClickHouse، يمكن لـ `clickhousectl` تشغيل مثيلات Postgres محلية وإدارتها. ويعتمد Postgres المحلي على Docker، لذا يجب أن يكون Docker مثبّتًا وقيد التشغيل. ويُعرَّف كل مثيل باسمه وإصداره الرئيسي، لذلك يمكن تشغيل عدة إصدارات من Postgres جنبًا إلى جنب، مع أدلة بيانات منفصلة لكل منها.
+
+```bash
+# Optionally pre-pull a Postgres image (supports 17, 18 and tags like 18-alpine)
+clickhousectl local install postgres@18
+
+# Start an instance (defaults to postgres:18 on port 5432)
+clickhousectl local postgres start
+clickhousectl local postgres start --name dev --version 17 --port 5433
+clickhousectl local postgres start --user app --password s3cret --database myapp
+clickhousectl local postgres start -e POSTGRES_INITDB_ARGS=--data-checksums
+
+# Connect with psql
+clickhousectl local postgres client --name dev
+clickhousectl local postgres client --name dev --query "SELECT 1"
+
+# Export connection variables to a .env file
+clickhousectl local postgres dotenv --name dev
+
+# Stop (preserves data) and remove (deletes data)
+clickhousectl local postgres stop dev
+clickhousectl local postgres remove dev
+```
+
+<div id="authentication">
+  ## المصادقة
+</div>
+
+قم بالمصادقة إلى ClickHouse Cloud باستخدام مفاتيح واجهة برمجة تطبيقات (موصى بها) أو OAuth (عبر المتصفح).
+
+إذا لم يكن لديك حساب ClickHouse Cloud بعد، فإن `clickhousectl cloud auth signup` يفتح صفحة التسجيل في متصفحك.
+
+<div id="api-key">
+  ### مفتاح/سرّ واجهة برمجة تطبيقات (موصى به)
+</div>
+
+تُعد مفاتيح واجهة برمجة تطبيقات الطريقة الموصى بها للمصادقة، خصوصًا عند تشغيل واجهة سطر الأوامر بواسطة وكيل ذكاء اصطناعي. يمكنك [إنشاء مفاتيح واجهة برمجة تطبيقات محددة النطاق](/ar/products/cloud/features/admin-features/api/openapi) تمنح فقط الصلاحيات التي تختارها (للقراءة فقط أو للقراءة/الكتابة)، ويرتبط كل مفتاح بمنظمة واحدة. وهذا يجعلها وسيلة آمنة قائمة على مبدأ أقلّ الامتيازات لمنح واجهة سطر الأوامر حق الوصول.
+
+```bash
+# Non-interactive (CI-friendly)
+clickhousectl cloud auth login --api-key YOUR_KEY --api-secret YOUR_SECRET
+
+# Interactive prompt
+clickhousectl cloud auth login --interactive
+```
+
+تُحفَظ بيانات الاعتماد في `.clickhouse/credentials.json` (ضمن المشروع فقط).
+
+يمكنك أيضًا استخدام متغيرات البيئة، سواء كانت مُصدَّرة في جلستك:
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+أو ضعه في ملف `.env` ضمن دليل العمل الحالي:
+
+```env
+CLICKHOUSE_CLOUD_API_KEY=your-key
+CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+أو مرّر بيانات الاعتماد مباشرةً عبر خيارات سطر الأوامر مع أي أمر:
+
+```bash
+clickhousectl cloud --api-key KEY --api-secret SECRET ...
+```
+
+<div id="oauth-login">
+  ### تسجيل الدخول باستخدام OAuth
+</div>
+
+```bash
+clickhousectl cloud auth login
+```
+
+سيفتح هذا متصفحك لإجراء المصادقة عبر تدفّق أجهزة OAuth. تُحفَظ الرموز المميّزة في `.clickhouse/tokens.json` ‏(project-local).
+
+<Note>
+  إن وصول OAuth حاليًا **للقراءة فقط**، ويتيح الوصول إلى **جميع المؤسسات التي تنتمي إليها**. للحصول على حق الكتابة، أو لحصر نطاق واجهة سطر الأوامر في مؤسسة واحدة، [أنشئ مفتاح واجهة برمجة تطبيقات مقيّد النطاق](#api-key) بدلًا من ذلك.
+</Note>
+
+<div id="auth-status">
+  ### حالة المصادقة وتسجيل الخروج
+</div>
+
+```bash
+clickhousectl cloud auth status    # Show current auth state
+clickhousectl cloud auth logout    # Clear all saved credentials (credentials.json & tokens.json)
+```
+
+ترتيب البحث عن بيانات الاعتماد: خيارات واجهة سطر الأوامر &gt; `.clickhouse/credentials.json` &gt; متغيرات البيئة المُصدَّرة &gt; ملف `.env` &gt; رموز OAuth.
+
+<div id="debug-credentials">
+  ### تصحيح الأخطاء لمعرفة مصدر بيانات الاعتماد المستخدم
+</div>
+
+مرِّر `--debug` إلى أي أمر `cloud` لعرض مصدر بيانات الاعتماد الذي تم تحديده (و`URL` الخاص بواجهة برمجة التطبيقات) في stderr قبل تشغيل الأمر.
+
+```bash
+clickhousectl cloud --debug service list
+# [debug] auth source: credentials file (.clickhouse/credentials.json)
+# [debug] api url: https://api.clickhouse.cloud/v1
+# ... normal output ...
+```
+
+<div id="cloud">
+  ## Cloud
+</div>
+
+أدِر خدمات ClickHouse Cloud عبر واجهة برمجة التطبيقات.
+
+<div id="organizations">
+  ### المنظمات
+</div>
+
+```bash
+clickhousectl cloud org list              # List organizations
+clickhousectl cloud org get <org-id>      # Get organization details
+clickhousectl cloud org update <org-id> --name "Renamed Org"
+clickhousectl cloud org update <org-id> \
+  --remove-private-endpoint pe-1,cloud-provider=aws,region=us-east-1 \
+  --enable-core-dumps false
+clickhousectl cloud org prometheus <org-id> --filtered-metrics true
+clickhousectl cloud org usage <org-id> \
+  --from-date 2024-01-01 \
+  --to-date 2024-01-31
+```
+
+<div id="services">
+  ### الخدمات
+</div>
+
+```bash
+# List services
+clickhousectl cloud service list
+
+# Get service details
+clickhousectl cloud service get <service-id>
+
+# Create a service (minimal)
+clickhousectl cloud service create --name my-service
+
+# Create with scaling options
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1 \
+  --min-replica-memory-gb 8 \
+  --max-replica-memory-gb 32 \
+  --num-replicas 2
+
+# Create with specific IP allowlist
+clickhousectl cloud service create --name my-service \
+  --ip-allow 10.0.0.0/8 \
+  --ip-allow 192.168.1.0/24
+
+# Create from backup
+clickhousectl cloud service create --name restored-service --backup-id <backup-uuid>
+
+# Create with release channel
+clickhousectl cloud service create --name my-service --release-channel fast
+
+# Create with GA request-only extras
+clickhousectl cloud service create --name my-service \
+  --tag env=prod \
+  --enable-endpoint mysql \
+  --private-preview-terms-checked \
+  --enable-core-dumps true
+
+# Start/stop a service
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# Run SQL over HTTP via the Query API (no local clickhouse binary needed)
+clickhousectl cloud service query --name my-service --query "SELECT 1"
+clickhousectl cloud service query --id <service-id> --query "SELECT count() FROM system.tables" --format JSONEachRow
+clickhousectl cloud service query --name my-service --queries-file schema.sql   # "-" reads from stdin
+clickhousectl cloud service query --name my-service --database mydb --query "SHOW TABLES"
+echo "SELECT 1+1" | clickhousectl cloud service query --name my-service
+
+# Update service metadata and patches
+clickhousectl cloud service update <service-id> \
+  --name my-renamed-service \
+  --add-ip-allow 10.0.0.0/8 \
+  --remove-ip-allow 0.0.0.0/0 \
+  --add-private-endpoint-id pe-1 \
+  --release-channel fast \
+  --enable-endpoint mysql \
+  --add-tag env=staging \
+  --transparent-data-encryption-key-id tde-key-1 \
+  --enable-core-dumps false
+
+# Update replica scaling
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3 \
+  --idle-scaling true \
+  --idle-timeout-minutes 10
+
+# Reset password with generated credentials
+clickhousectl cloud service reset-password <service-id>
+
+# Delete a service (must be stopped first)
+clickhousectl cloud service delete <service-id>
+
+# Force delete: stops a running service then deletes
+clickhousectl cloud service delete <service-id> --force
+```
+
+<div id="service-create-options">
+  #### خيارات إنشاء الخدمة
+</div>
+
+| الخيار                                     | الوصف                                                                |
+| ------------------------------------------ | -------------------------------------------------------------------- |
+| `--name`                                   | اسم الخدمة (مطلوب)                                                   |
+| `--provider`                               | موفّر Cloud: `aws`، `gcp`، `azure` (الافتراضي: `aws`)                |
+| `--region`                                 | المنطقة (الافتراضي: `us-east-1`)                                     |
+| `--min-replica-memory-gb`                  | الحد الأدنى للذاكرة لكل نسخة متماثلة بالجيجابايت (8-356، بمضاعفات 4) |
+| `--max-replica-memory-gb`                  | الحد الأقصى للذاكرة لكل نسخة متماثلة بالجيجابايت (8-356، بمضاعفات 4) |
+| `--num-replicas`                           | عدد النسخ المتماثلة (1-20)                                           |
+| `--idle-scaling`                           | السماح بالتوسّع إلى الصفر (الافتراضي: `true`)                        |
+| `--idle-timeout-minutes`                   | الحد الأدنى لمهلة الخمول بالدقائق (&gt;= 5)                          |
+| `--ip-allow`                               | نطاق IP بتنسيق CIDR المسموح به (يمكن تكراره، الافتراضي: `0.0.0.0/0`) |
+| `--backup-id`                              | معرّف النسخة الاحتياطية المطلوب الاستعادة منها                       |
+| `--release-channel`                        | قناة الإصدار: `slow`، `default`، `fast`                              |
+| `--data-warehouse-id`                      | معرّف مستودع البيانات (للنسخ المتماثلة للقراءة)                      |
+| `--readonly`                               | جعل الخدمة للقراءة فقط                                               |
+| `--encryption-key`                         | مفتاح تشفير القرص الخاص بالعميل                                      |
+| `--encryption-role`                        | دور ARN لتشفير القرص                                                 |
+| `--enable-tde`                             | تمكين Transparent Data Encryption                                    |
+| `--compliance-type`                        | الامتثال: `hipaa`، `pci`                                             |
+| `--profile`                                | ملف تعريف المثيل (`enterprise`)                                      |
+| `--tag`                                    | إضافة وسم خدمة GA (`key` أو `key=value`)                             |
+| `--enable-endpoint` / `--disable-endpoint` | تبديل نقاط نهاية خدمة GA (حاليًا `mysql`)                            |
+| `--private-preview-terms-checked`          | قبول شروط المعاينة الخاصة عند الحاجة                                 |
+| `--enable-core-dumps`                      | تمكين أو تعطيل جمع تفريغات الذاكرة الأساسية للخدمة                   |
+
+<div id="query-api-auth-modes">
+  #### أوضاع مصادقة واجهة برمجة تطبيقات الاستعلام
+</div>
+
+تُعد `cloud service query` الطريقة القياسية لتشغيل SQL على خدمة سحابية عبر HTTP، من دون الحاجة إلى ملف `clickhouse` التنفيذي أو كلمة مرور الخدمة. وهي تعمل مع وضعي بيانات الاعتماد كليهما:
+
+* **مصادقة مفتاح واجهة برمجة تطبيقات** (قراءة + كتابة SQL): عند تشغيل `cloud service query` للمرة الأولى على خدمة لا يتوفر لها مفتاح مخزَّن، فإنه يوفّر endpoint لواجهة برمجة تطبيقات الاستعلام لتلك الخدمة وينشئ مفتاح واجهة برمجة تطبيقات مخصصًا مرتبطًا بها. ويُخزَّن المفتاح (`keyId` و`keySecret` و`endpointId`) في `.clickhouse/credentials.json` ضمن `service_query_keys.<service-id>`. ويقتصر نطاق هذا المفتاح على خدمة واحدة، لذا يمكنه القراءة والكتابة (SELECT وINSERT وDDL) على تلك الخدمة، لكنه لا يمكنه الوصول إلى أي خدمة أخرى في المؤسسة. مرِّر `--no-auto-enable` لكي يفشل بدلًا من توفيره تلقائيًا.
+* **OAuth** (`cloud auth login`): يُشغَّل الاستعلام بهويتك أنت، تمامًا كما في SQL-console على الويب. تكون أذونات SQL الخاصة بك على الخدمة **للقراءة فقط** عند استخدام OAuth. ولا يتم توفير أو تخزين مفتاح واجهة برمجة تطبيقات الاستعلام في هذا الوضع. وليس للخيار `--no-auto-enable` أي تأثير في هذا الوضع.
+
+يؤدي الاستعلام عن خدمة **idled** إلى تنشيطها تلقائيًا في كلا وضعي المصادقة (قد يستغرق الاستعلام الأول دقيقة). أما الخدمة **stopped** فلا يتم تنشيطها مطلقًا: يفشل الاستعلام مع تلميح لتشغيل `cloud service start`. عيّن `CLICKHOUSE_CLOUD_QUERY_HOST` لتجاوز مضيف واجهة برمجة تطبيقات الاستعلام المُشتق.
+
+<div id="query-endpoints">
+  #### إدارة نقاط نهاية الاستعلام
+</div>
+
+```bash
+clickhousectl cloud service query-endpoint get <service-id>
+clickhousectl cloud service query-endpoint create <service-id> \
+  --role admin \
+  --open-api-key key-1 \
+  --allowed-origins https://app.example.com
+clickhousectl cloud service query-endpoint delete <service-id>
+```
+
+<div id="private-endpoints">
+  #### إدارة نقطة النهاية الخاصة
+</div>
+
+```bash
+clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
+clickhousectl cloud service private-endpoint get-config <service-id>
+```
+
+<div id="backup-config">
+  #### تهيئة النسخ الاحتياطي
+</div>
+
+```bash
+clickhousectl cloud service backup-config get <service-id>
+clickhousectl cloud service backup-config update <service-id> \
+  --backup-period-hours 24 \
+  --backup-retention-period-hours 720 \
+  --backup-start-time 02:00
+```
+
+<div id="postgres-services">
+  ### خدمات Postgres
+</div>
+
+يمكن لـ `clickhousectl` أيضًا إنشاء خدمات [ClickHouse Cloud Postgres](/ar/products/managed-postgres/overview) وإدارتها، وذلك على غرار أوامر خدمة ClickHouse المذكورة أعلاه.
+
+```bash
+# List and inspect
+clickhousectl cloud postgres list
+clickhousectl cloud postgres list --filter state=running
+clickhousectl cloud postgres get <pg-id>
+
+# Create a service
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size m7i.2xlarge \
+  --pg-version 17 \
+  --ha-type sync
+
+# Update and delete
+clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
+clickhousectl cloud postgres update <pg-id> --add-tag env=prod --remove-tag legacy
+clickhousectl cloud postgres delete <pg-id>
+
+# Connection certificates
+clickhousectl cloud postgres certs get <pg-id>                   # raw PEM to stdout
+clickhousectl cloud postgres certs get <pg-id> --output ca.pem   # write to a file
+
+# Configuration
+clickhousectl cloud postgres config get <pg-id>
+clickhousectl cloud postgres config replace <pg-id> --file cfg.json
+clickhousectl cloud postgres config patch <pg-id> --set max_connections=500
+
+# Reset the password
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# Lifecycle: restart and high-availability promotion/switchover
+clickhousectl cloud postgres restart <pg-id>
+clickhousectl cloud postgres promote <pg-id>
+clickhousectl cloud postgres switchover <pg-id>
+
+# Read replicas and point-in-time restore
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+```
+
+<div id="postgres-create-options">
+  #### خيارات إنشاء خدمة Postgres
+</div>
+
+| الخيار                     | الوصف                                              |
+| -------------------------- | -------------------------------------------------- |
+| `--name`                   | اسم الخدمة (مطلوب)                                 |
+| `--region`                 | المنطقة، على سبيل المثال `us-east-1` (مطلوب)       |
+| `--size`                   | حجم المثيل، على سبيل المثال `m7i.2xlarge` (مطلوب)  |
+| `--provider`               | موفر الخدمة السحابية (الافتراضي: `aws`)            |
+| `--pg-version`             | الإصدار الرئيسي: `18`، `17`                        |
+| `--ha-type`                | التوفّر العالي: `none`، `async`، `sync`            |
+| `--tag`                    | وسم المورد `key` أو `key=value` (يمكن تكراره)      |
+| `--pg-config-file`         | مسار إلى ملف JSON يحتوي على كائن `PgConfig`        |
+| `--pg-bouncer-config-file` | مسار إلى ملف JSON يحتوي على كائن `PgBouncerConfig` |
+
+<div id="backups">
+  ### النسخ الاحتياطية
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="clickpipes">
+  ### ClickPipes
+</div>
+
+أدِر ClickPipes لإدخال البيانات إلى ClickHouse Cloud من مصادر خارجية.
+
+```bash
+# List ClickPipes for a service
+clickhousectl cloud clickpipe list <service-id>
+
+# Get ClickPipe details
+clickhousectl cloud clickpipe get <service-id> <clickpipe-id>
+
+# Start/stop/resync a ClickPipe
+clickhousectl cloud clickpipe start <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe stop <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe resync <service-id> <clickpipe-id>   # CDC pipes only
+
+# Delete a ClickPipe
+clickhousectl cloud clickpipe delete <service-id> <clickpipe-id>
+
+# Update scaling
+clickhousectl cloud clickpipe scale <service-id> <clickpipe-id> \
+  --replicas 2 --cpu-millicores 250 --memory-gb 1
+
+# Get/update settings
+clickhousectl cloud clickpipe settings get <service-id> <clickpipe-id>
+clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
+  --streaming-max-insert-wait-ms 10000
+```
+
+<div id="creating-clickpipes">
+  #### إنشاء ClickPipes
+</div>
+
+لكل نوع من أنواع المصادر أمرٌ فرعي خاص به ضمن `clickpipe create`:
+
+```bash
+# From S3 / object storage
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name my-s3-pipe \
+  --source-url 'https://bucket.s3.us-east-1.amazonaws.com/data/**' \
+  --format JSONEachRow \
+  --database default --table events \
+  --column "event_id:Int64" --column "name:String"
+
+# From Google Cloud Storage (object storage)
+clickhousectl cloud clickpipe create object-storage <service-id> \
+  --name my-gcs-pipe \
+  --storage-type gcs \
+  --source-url 'https://storage.googleapis.com/bucket/data/**' \
+  --format JSONEachRow \
+  --service-account-file ./sa-key.json \
+  --database default --table events \
+  --column "event_id:Int64" --column "name:String"
+
+# From Kafka / Redpanda / Confluent / MSK
+clickhousectl cloud clickpipe create kafka <service-id> \
+  --name my-kafka-pipe \
+  --brokers 'broker:9092' --topics events \
+  --format JSONEachRow \
+  --kafka-type redpanda \
+  --auth SCRAM-SHA-256 --username user --password pass \
+  --ca-certificate ./ca.crt \
+  --database default --table events \
+  --column "event_id:Int64" --column "name:String"
+
+# From Amazon Kinesis
+clickhousectl cloud clickpipe create kinesis <service-id> \
+  --name my-kinesis-pipe \
+  --stream-name events --region us-east-1 \
+  --format JSONEachRow \
+  --auth IAM_USER --access-key-id AKIA... --secret-key ... \
+  --database default --table events \
+  --column "event_id:Int64" --column "name:String"
+
+# From PostgreSQL (CDC)
+clickhousectl cloud clickpipe create postgres <service-id> \
+  --name my-pg-pipe \
+  --host db.example.com --pg-database mydb \
+  --username pguser --password pgpass \
+  --table-mapping "public.users:public_users" \
+  --table-mapping "public.orders:public_orders"
+
+# From MySQL (CDC)
+clickhousectl cloud clickpipe create mysql <service-id> \
+  --name my-mysql-pipe \
+  --host mysql.example.com \
+  --username root --password pass \
+  --table-mapping "mydb.users:mydb_users"
+
+# From MongoDB (CDC)
+clickhousectl cloud clickpipe create mongodb <service-id> \
+  --name my-mongo-pipe \
+  --uri 'mongodb+srv://cluster.example.net/mydb' \
+  --username mongouser --password mongopass \
+  --table-mapping "mydb.users:mydb_users"
+
+# From BigQuery (snapshot)
+clickhousectl cloud clickpipe create bigquery <service-id> \
+  --name my-bq-pipe \
+  --service-account-file ./sa-key.json \
+  --staging-path gs://bucket/staging \
+  --table-mapping "dataset.table:target_table"
+```
+
+استخدم `clickhousectl cloud clickpipe create <source> --help` للاطّلاع على القائمة الكاملة للخيارات لكل نوع من المصادر.
+
+<div id="members">
+  ### الأعضاء
+</div>
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud member get <user-id>
+clickhousectl cloud member update <user-id> --role-id <role-id>
+clickhousectl cloud member remove <user-id>
+```
+
+<div id="invitations">
+  ### الدعوات
+</div>
+
+```bash
+clickhousectl cloud invitation list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+clickhousectl cloud invitation get <invitation-id>
+clickhousectl cloud invitation delete <invitation-id>
+```
+
+<div id="keys">
+  ### المفاتيح
+</div>
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key get <key-id>
+clickhousectl cloud key create --name ci-key --role-id <role-id> --ip-allow 10.0.0.0/8
+clickhousectl cloud key update <key-id> \
+  --name renamed-key \
+  --expires-at 2025-12-31T00:00:00Z \
+  --state disabled \
+  --ip-allow 0.0.0.0/0
+clickhousectl cloud key delete <key-id>
+```
+
+<div id="activity">
+  ### Activity
+</div>
+
+```bash
+clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
+clickhousectl cloud activity get <activity-id>
+```
+
+<div id="json-output">
+  ### مخرجات JSON
+</div>
+
+استخدم الخيار `--json` لطباعة الاستجابات بتنسيق JSON.
+
+```bash
+clickhousectl cloud --json service list
+clickhousectl cloud --json service get <service-id>
+```
+
+يكتشف `clickhousectl` تلقائيًا سياقات coding-agent (Claude Code وCursor وCodex وGemini CLI وGoose وDevin وأي أداة تضبط متغير البيئة القياسي `AGENT`) ويطبع JSON إلى stdout تلقائيًا من دون الحاجة إلى تعيين `--json`.
+
+<div id="exit-codes">
+  ### رموز الخروج
+</div>
+
+تتبع رموز الخروج الاصطلاحات المتبعة في واجهة سطر الأوامر `gh`:
+
+| الرمز | المعنى                                                                       |
+| ----- | ---------------------------------------------------------------------------- |
+| `0`   | نجاح                                                                         |
+| `1`   | خطأ (أي شيء غير مصنّف أدناه)                                                 |
+| `2`   | تم الإلغاء (أوقفه المستخدم)                                                  |
+| `4`   | المصادقة مطلوبة (لا توجد بيانات اعتماد، 401/403، عمليات كتابة عبر OAuth فقط) |
+
+<div id="skills">
+  ## Skills
+</div>
+
+ثبّت حزمة ClickHouse Agent Skills الرسمية من [ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills).
+
+```bash
+# Default: interactive mode for humans, choose scope, then choose agents
+clickhousectl skills
+
+# Non-interactive: install into every supported project-local agent folder
+clickhousectl skills --all
+
+# Non-interactive: install only into detected agents
+clickhousectl skills --detected-only
+
+# Non-interactive: install into every supported global agent folder
+clickhousectl skills --global --all
+
+# Non-interactive: install into specific project-local agents
+clickhousectl skills --agent claude --agent codex
+```
+
+<div id="non-interactive-flags">
+  ### علامات الوضع غير التفاعلي
+</div>
+
+| العلامة           | الوصف                                                        |
+| ----------------- | ------------------------------------------------------------ |
+| `--agent <name>`  | ثبّت Skills لوكيل معيّن (يمكن تكرارها)                       |
+| `--global`        | استخدم النطاق العام؛ وإذا لم تُحدَّد، فسيُستخدم نطاق المشروع |
+| `--all`           | ثبّت Skills لجميع الوكلاء المدعومين                          |
+| `--detected-only` | ثبّت Skills للوكلاء المدعومين الذين اكتشفهم النظام           |
+
+<div id="self-update">
+  ## التحديث الذاتي
+</div>
+
+يمكن لـ `clickhousectl` تحديث نفسه إلى أحدث إصدار:
+
+```bash
+# Update to the latest version
+clickhousectl update
+
+# Check for updates without installing
+clickhousectl update --check
+```
+
+تتحقق واجهة سطر الأوامر أيضًا من التحديثات في الخلفية (بحد أقصى مرة كل 24 ساعة) ويعرض إشعارًا عند توفر إصدار أحدث.

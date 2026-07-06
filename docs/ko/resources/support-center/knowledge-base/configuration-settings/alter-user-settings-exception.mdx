@@ -1,0 +1,41 @@
+---
+title: 사용자 설정 변경 시 발생하는 예외
+description: 사용자 설정을 변경할 때 발생하는 예외 처리
+date: 2023-08-26
+tags: ['설정', '오류 및 예외']
+keywords: ['예외', '사용자 설정']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-cannot-update-user-default-in-usersxml-because-this-storage-is-readonly-access_storage_readonly">
+  ## DB::Exception: 이 스토리지가 읽기 전용이므로 users.xml에서 사용자 `default`를 업데이트할 수 없습니다. (ACCESS_STORAGE_READONLY)
+</div>
+
+사용자 설정을 변경하려고 하면 위와 같은 예외가 발생할 수 있습니다.
+
+이 오류를 해결하기 위해 다음 몇 가지 사항을 확인해 보십시오:
+
+<div id="edit-usersxml-directly">
+  ## users.xml 직접 편집
+</div>
+
+특정 사용자의 원하는 설정을 `/etc/clickhouse-server/users.d` 아래의 `users.xml` 파일에서 직접 편집하거나 추가할 수 있습니다.
+
+`users.xml`에 관한 자세한 내용은 [여기](/ko/concepts/features/configuration/settings/settings-profiles)를 참조하십시오.
+
+<div id="create-another-user">
+  ## 다른 사용자 생성하기
+</div>
+
+지정한 설정으로 다른 사용자를 생성한 후, 새 사용자로 ClickHouse에 연결할 수 있습니다.
+
+사용자 생성 방법은 [이 페이지](/ko/reference/statements/create/user)에서 확인하십시오.
+
+<div id="enable-sql-driven-access-control">
+  ## SQL 기반 액세스 제어 활성화
+</div>
+
+`default` 사용자에 대해 SQL 기반 액세스 제어 및 계정 관리를 활성화할 수 있습니다. 활성화 단계는 이 [페이지](/ko/concepts/features/security/access-rights#enabling-access-control)에 설명되어 있습니다.

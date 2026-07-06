@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: '投入生产环境'
+sidebarTitle: '生产环境'
+description: '将 ClickStack 投入生产环境'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', '生产环境', '部署', '最佳实践', '运维']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
+
+在生产环境中部署 ClickStack 时，还需额外考虑一些事项，以确保安全性、稳定性以及配置无误。具体考虑因素会因所使用的版本——开源版或托管版——而有所不同。
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    对于生产部署，建议使用[托管 ClickStack](/zh/clickstack/getting-started/managed)。它默认采用符合行业标准的[安全实践](/zh/products/cloud/features/security)，包括增强的加密、身份验证与连接能力，以及托管访问控制；此外还提供以下优势：
+
+    * 计算资源可独立于存储自动扩缩容
+    * 基于对象存储的低成本、近乎无限的数据保留能力
+    * 能够借助仓库独立隔离读写工作负载
+    * 集成式身份验证
+    * 自动化[备份](/zh/products/cloud/features/backups/overview)
+    * 无缝升级
+
+    **使用托管 ClickStack 时，请遵循 ClickHouse Cloud 的这些[最佳实践](/zh/products/cloud/guides/production-readiness)。**
+
+    ### 保护摄取
+
+    默认情况下，在开源发行版之外部署 ClickStack OpenTelemetry Collector 时，它并未启用安全保护，且其 OTLP 端口无需身份验证。
+
+    要保护摄取，请在部署 collector 时通过 `OTLP_AUTH_TOKEN` 环境变量指定身份验证令牌。更多详情，请参阅[&quot;保护 collector&quot;](/zh/clickstack/ingesting-data/collector#securing-the-collector)。
+
+    #### 创建摄取用户
+
+    建议为 OTel collector 创建一个专用用户，用于向托管 ClickHouse 摄取数据，并确保摄取数据发送到特定数据库，例如 `otel`。更多详情，请参阅[&quot;创建摄取用户&quot;](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user)。
+
+    ### 配置生存时间 (TTL)
+
+    请确保已为你的托管 ClickStack 部署[正确配置](/zh/clickstack/managing/ttl#modifying-ttl)[生存时间 (TTL)](/zh/clickstack/managing/ttl)。它决定数据的保留时长——默认的 3 天通常需要调整。
+
+    ### 估算资源
+
+    <ResourceEstimation />
+
+    有关如何针对你的环境进一步优化容量估算假设的更多详情，请参阅[&quot;针对你的环境细化容量假设&quot;](/zh/clickstack/managing/estimating-resources#refining-sizing-assumptions)。
+
+    #### 隔离可观测性工作负载
+
+    如果你要将 ClickStack 添加到一个**现有的 ClickHouse Cloud 服务**中，而该服务已经承载了其他工作负载 (例如实时应用分析) ，则强烈建议隔离可观测性流量。
+
+    使用 [**托管仓库**](/zh/products/cloud/features/infrastructure/warehouses) 创建一个专用于 ClickStack 的**子服务**。这样你就可以：
+
+    * 将摄取和查询负载与现有应用隔离
+    * 独立扩缩容可观测性工作负载
+    * 防止可观测性查询影响生产分析
+    * 在需要时跨服务共享相同的底层数据
+
+    这种方法可确保现有工作负载不受影响，同时让 ClickStack 能随着可观测性数据的增长独立扩展。
+
+    对于更大规模的部署或需要自定义容量建议的场景，请联系支持团队以获得更精确的估算。
+  </Tab>
+
+  <Tab title="ClickStack 开源版">
+    ### 网络与端口安全
+
+    默认情况下，Docker Compose 会在宿主机上暴露端口，使其可从容器外部访问——即使启用了 `ufw` (Uncomplicated Firewall) 等工具也不例外。这一行为源于 Docker 网络栈的工作机制：若未进行显式配置，它可以绕过宿主机级别的防火墙规则。
+
+    **建议：**
+
+    仅开放生产环境所需的端口，通常包括 OTLP 端点、API 服务器和前端。
+
+    例如，删除或注释掉 `docker-compose.yml` 文件中不必要的端口映射：
+
+    ```yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8080:8080"  # Only if needed for the API
+    # Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+    ```
+
+    有关隔离容器和加固访问控制的详细信息，请参阅 [Docker 网络文档](https://docs.docker.com/network/)。
+
+    ### Session Secret 配置
+
+    在生产环境中，必须为 ClickStack UI (HyperDX) 的 `EXPRESS_SESSION_SECRET` 环境变量设置一个强随机值，以保护会话数据、防止篡改。
+
+    以下是如何将其添加到应用服务的 `docker-compose.yml` 文件中：
+
+    ```yaml
+      app:
+        image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+        ports:
+          - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+          - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+        environment:
+          FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+          HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+          HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+          HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+          HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          MINER_API_URL: 'http://miner:5123'
+          MONGO_URI: 'mongodb://db:27017/hyperdx'
+          NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+          OTEL_SERVICE_NAME: 'hdx-oss-api'
+          USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+          EXPRESS_SESSION_SECRET: "super-secure-random-string"
+        networks:
+          - internal
+        depends_on:
+          - ch-server
+          - db1
+    ```
+
+    您可以使用 `openssl` 生成一个高强度 Secret：
+
+    ```shell
+    openssl rand -hex 32
+    ```
+
+    避免将 Secret 提交到源代码管理系统。在生产环境中，建议使用环境变量管理工具 (例如 Docker Secrets、HashiCorp Vault 或针对特定环境的 CI/CD 配置) 。
+
+    ### 安全摄取
+
+    所有数据摄取均应通过 ClickStack 发行版 OpenTelemetry (OTel) collector 所暴露的 OTLP 端口进行。默认情况下，需要使用启动时生成的安全摄取 API key。向 OTel 端口发送数据时必须提供此 key，可在 HyperDX UI 的 `Team Settings → API Keys` 中找到。
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="摄取密钥" size="lg" />
+
+    此外，建议为 OTLP 端点启用 TLS。
+
+    #### 创建摄取用户
+
+    建议为 OTel collector 创建专用用户，用于将数据摄取到 ClickHouse，并确保摄取数据发送至指定数据库 (例如 `otel`) 。详情请参阅 [&quot;创建摄取用户&quot;](/zh/clickstack/ingesting-data/collector#creating-an-ingestion-user)。
+
+    ### ClickHouse
+
+    自行管理 ClickHouse 实例的用户应遵循以下最佳实践。
+
+    #### 安全最佳实践
+
+    如果您自行管理 ClickHouse 实例，务必启用 **TLS**、强制身份验证，并遵循访问加固的最佳实践。请参阅[此博客文章](https://www.wiz.io/blog/clickhouse-and-wiz)，了解真实环境中的错误配置案例及其规避方法。
+
+    ClickHouse OSS 开箱即用，提供强大的安全功能。但这些功能需要进行配置：
+
+    * 通过 `tcp_port_secure` 和 `config.xml` 中的 `<openSSL>` **启用 TLS**。参见 [guides/sre/configuring-tls](/zh/concepts/features/security/tls/configuring-tls)。
+    * **为** `default` **用户设置高强度密码**，或将其禁用。
+    * **避免将 ClickHouse 对外暴露**，除非你明确打算这样做。默认情况下，除非修改 `listen_host`，否则 ClickHouse 只会绑定到 `localhost`。
+    * **使用身份验证方法**，例如密码、证书、SSH 密钥或[外部身份验证器](/zh/concepts/features/security/external-authenticators/index)。
+    * **使用 IP 过滤和 `HOST` 子句来限制访问**。参见 [sql-reference/statements/create/user#user-host](/zh/reference/statements/create/user#user-host)。
+    * **启用基于角色的访问控制 (RBAC)&#x20;**，以授予细粒度权限。参见 [operations/access-rights](/zh/concepts/features/security/access-rights)。
+    * **使用** [配额](/zh/concepts/features/configuration/server-config/quotas)、[profile](/zh/concepts/features/configuration/settings/settings-profiles) **和只读模式来实施配额与限制**。
+    * **对静态数据进行加密**，并使用安全的外部存储。请参见 [operations/storing-data](/zh/concepts/features/configuration/server-config/storing-data) 和 [cloud/security/CMEK](/zh/products/cloud/guides/security/cmek)。
+    * **避免将凭证硬编码。** 请在 ClickHouse Cloud 中使用 [命名集合](/zh/concepts/features/configuration/server-config/named-collections) 或 IAM 角色。
+    * **审核访问情况和查询**，使用[系统日志](/zh/reference/system-tables/query_log)和[会话日志](/zh/reference/system-tables/session_log)。
+
+    另请参阅[外部身份验证器](/zh/concepts/features/security/external-authenticators/index)和[查询复杂度设置](/zh/concepts/features/configuration/settings/query-complexity)，了解用户管理及查询/资源限制的相关内容。
+
+    #### ClickStack UI 的用户权限
+
+    ClickStack UI 使用的 ClickHouse 用户只需具备 `readonly` 权限，并能够修改以下设置：
+
+    * `max_rows_to_read` (至少达到 100 万)
+    * `read_overflow_mode`
+    * `cancel_http_readonly_queries_on_client_close`
+    * `wait_end_of_query`
+
+    默认情况下，OSS 和 ClickHouse Cloud 中的 `default` 用户均已具备这些权限，但建议您另行创建一个拥有这些权限的新用户。
+
+    ### 配置生存时间 (TTL)
+
+    请确保已为您的 ClickStack 部署[适当配置](/zh/clickstack/managing/ttl#modifying-ttl)[生存时间 (TTL)](/zh/clickstack/managing/ttl)。该设置控制数据的保留时长——默认值为 3 天，通常需要根据实际需求进行修改。
+
+    ### MongoDB 使用指南
+
+    请参阅官方 [MongoDB 安全检查清单](https://www.mongodb.com/docs/manual/administration/security-checklist/)。
+  </Tab>
+</Tabs>

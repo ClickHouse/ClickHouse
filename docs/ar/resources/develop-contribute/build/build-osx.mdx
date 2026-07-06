@@ -1,0 +1,114 @@
+---
+description: 'دليل لبناء ClickHouse من الشيفرة المصدرية على أنظمة macOS'
+sidebarTitle: 'البناء على macOS لأجل macOS'
+slug: /development/build-osx
+title: 'البناء على macOS لأجل macOS'
+keywords: ['MacOS', 'Mac', 'build']
+doc_type: 'guide'
+---
+
+<Info>
+  **دليل البناء هذا مخصص للمساهمين الذين يجرون تعديلات على ClickHouse نفسه.**
+
+  إذا كنت لا تغيّر الشيفرة المصدرية لـ ClickHouse، فيمكنك تثبيت ClickHouse الجاهز مسبقًا كما هو موضح في [Quick Start](/ar/get-started/setup/install).
+</Info>
+
+يمكن تجميع ClickHouse على macOS x86&#95;64 ‏(Intel) وarm64 ‏(Apple Silicon) على macOS 10.15 ‏(Catalina) أو أحدث.
+
+أما المصرّف، فالمعتمد فقط هو Clang من Homebrew.
+
+<div id="install-prerequisites">
+  ## تثبيت المتطلبات الأساسية
+</div>
+
+أولًا، راجع [وثائق المتطلبات الأساسية](/ar/resources/develop-contribute/introduction/developer-instruction).
+
+بعد ذلك، ثبّت [Homebrew](https://brew.sh/) ثم شغّل
+
+ثم شغّل:
+
+```bash
+brew update
+brew install ccache cmake ninja libtool gettext llvm lld binutils grep findutils nasm bash rust rustup
+```
+
+<Note>
+  تستخدم Apple نظام ملفات غير حساس لحالة الأحرف افتراضيًا. ورغم أن هذا لا يؤثر عادةً في التجميع (خصوصًا أن عمليات البناء من الصفر ستعمل)، فقد يسبب التباسًا في عمليات مثل `git mv`.
+  إذا كنت تعمل بجدية على التطوير في macOS، فتأكد من تخزين الشيفرة المصدرية على وحدة تخزين حساسة لحالة الأحرف، وراجع مثلًا [هذه التعليمات](https://brianboyko.medium.com/a-case-sensitive-src-folder-for-mac-programmers-176cc82a3830).
+</Note>
+
+<div id="build-clickhouse">
+  ## بناء ClickHouse
+</div>
+
+لبناء ClickHouse، يجب استخدام مصرّف Clang الخاص بـ Homebrew:
+
+```bash
+cd ClickHouse
+mkdir build
+export PATH=$(brew --prefix llvm)/bin:$PATH
+cmake -S . -B build
+cmake --build build
+# The resulting binary will be created at: build/programs/clickhouse
+```
+
+<Note>
+  إذا واجهت أخطاء من نوع `ld: archive member '/' not a mach-o file in ...` أثناء مرحلة الربط، فقد تحتاج
+  إلى استخدام llvm-ar عبر ضبط الوسيط `-DCMAKE_AR=/opt/homebrew/opt/llvm/bin/llvm-ar`.
+</Note>
+
+<div id="caveats">
+  ## ملاحظات مهمة
+</div>
+
+إذا كنت تنوي تشغيل `clickhouse-server`، فتأكّد من زيادة قيمة المتغيّر `maxfiles` على النظام.
+
+<Note>
+  ستحتاج إلى استخدام sudo.
+</Note>
+
+للقيام بذلك، أنشئ الملف `/Library/LaunchDaemons/limit.maxfiles.plist` بالمحتوى التالي:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+        "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>limit.maxfiles</string>
+    <key>ProgramArguments</key>
+    <array>
+      <string>launchctl</string>
+      <string>limit</string>
+      <string>maxfiles</string>
+      <string>524288</string>
+      <string>524288</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ServiceIPC</key>
+    <false/>
+  </dict>
+</plist>
+```
+
+عيّن للملف الأذونات الصحيحة:
+
+```bash
+sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+تحقّق من صحة الملف:
+
+```bash
+plutil /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+حمِّل الملف (أو أعد التشغيل):
+
+```bash
+sudo launchctl load -w /Library/LaunchDaemons/limit.maxfiles.plist
+```
+
+للتحقق من عمله، استخدم الأمر `ulimit -n` أو `launchctl limit maxfiles`.
