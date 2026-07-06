@@ -515,6 +515,15 @@ Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(VirtualsKind kind, Vir
     return res;
 }
 
+ColumnsDescription StorageInMemoryMetadata::getColumnsWithVirtuals() const
+{
+    ColumnsDescription res = columns;
+    for (const auto & virtual_column : virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All))
+        if (!res.has(virtual_column.name))
+            res.add(virtual_column);
+    return res;
+}
+
 Block StorageInMemoryMetadata::getSampleBlock() const
 {
     Block res;
