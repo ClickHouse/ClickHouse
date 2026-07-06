@@ -16,14 +16,30 @@ SETTINGS index_granularity = 8;
 -- selects every group with a = 0 (the 3rd row's a), i.e. 100 rows.
 INSERT INTO t_agg_in_order_limit_with_ties SELECT number % 10 AS a, number AS b FROM numbers(1000) ORDER BY a, b;
 
+-- Pin the single-stream path. The row-exact limit_hint check lives in
+-- AggregatingInOrderTransform (cur_block_size + res_rows >= limit_hint); the multi-stream
+-- FinishAggregatingInOrderTransform enforces the limit per finalized group batch
+-- (finalized_group_batches >= limit_hint) and can overshoot into the whole a = 0 tie group
+-- even with a broken guard. max_threads = 1 alone does not force this: in-order reads open
+-- one ordered stream per part, so we also rely on the single INSERT above (one part). Assert
+-- the pipeline is on AggregatingInOrderTransform with no FinishAggregatingInOrderTransform, so
+-- removing the WITH TIES guard deterministically collapses the first query to 3, not 100.
+SELECT countIf(explain LIKE '%AggregatingInOrderTransform%') > 0
+   AND countIf(explain LIKE '%FinishAggregatingInOrderTransform%') = 0
+FROM (
+    EXPLAIN PIPELINE
+    SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
+    SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1
+);
+
 -- Push-down enabled: the WITH TIES guard must keep the full tie group (100 rows, not 3).
 SELECT count() FROM (
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1;
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 1, max_threads = 1;
 
 -- Push-down disabled: control producing the same 100 rows.
 SELECT count() FROM (
     SELECT a, count() FROM t_agg_in_order_limit_with_ties GROUP BY a, b ORDER BY a ASC LIMIT 3 WITH TIES
-) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0;
+) SETTINGS optimize_aggregation_in_order = 1, optimize_aggregation_in_order_limit = 0, max_threads = 1;
 
 DROP TABLE t_agg_in_order_limit_with_ties;
