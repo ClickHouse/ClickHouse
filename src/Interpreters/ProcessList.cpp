@@ -889,7 +889,12 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
             res.peak_threads_usage = thread_group->getPeakThreadsUsage();
         }
         if (get_profile_events)
+        {
+            /// Charge the final interval of the memory-usage integral before snapshotting, so `MemoryCredits`
+            /// includes the time memory was held between the last allocation/free and now (e.g. at QueryFinish).
+            thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
+        }
     }
 
     if (get_settings)

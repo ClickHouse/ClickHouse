@@ -49,6 +49,11 @@ namespace DB
     class PageCache;
 }
 
+namespace ProfileEvents
+{
+    class Counters;
+}
+
 /** Tracks memory consumption.
   * It throws an exception if amount of consumed memory become greater than certain limit.
   * The same memory tracker could be simultaneously used in different threads.
@@ -131,7 +136,13 @@ private:
     bool updatePeak(Int64 will_be, bool log_memory_usage);
     void logMemoryUsage(Int64 current) const;
 
-    /// Accumulate the `MemoryCredits` profile event: the integral of memory usage over time.
+    /// Compute and return the `MemoryCredits` increment (bytes * microseconds) for the interval that just
+    /// elapsed, advancing the last-update timestamp. `current_amount` is the amount held during that interval.
+    /// Returns 0 when nothing should be charged (not the outermost Process tracker, first update, or no memory
+    /// held). This does the accounting only; the caller decides which profile counters to charge.
+    UInt64 takeMemoryCreditsDelta(Int64 current_amount);
+
+    /// Accumulate the `MemoryCredits` profile event on allocation/free, charging the current thread's counters.
     /// `current_amount` is the amount that was held during the interval that just elapsed.
     void updateMemoryCredits(Int64 current_amount);
 
@@ -190,6 +201,12 @@ public:
     {
         return peak.load(std::memory_order_relaxed);
     }
+
+    /// Charge the final interval of the `MemoryCredits` integral (the time memory was held between the last
+    /// allocation/free and now) into the given profile counters. Meant to be called on the query's outermost
+    /// Process tracker right before its thread group's counters are snapshotted at query finish, so the event
+    /// reflects the whole execution instead of stopping at the last allocation/free. A no-op on other trackers.
+    void flushMemoryCredits(ProfileEvents::Counters & counters);
 
     void setSoftLimit(Int64 value);
     void setHardLimit(Int64 value);

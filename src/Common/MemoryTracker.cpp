@@ -689,21 +689,20 @@ AllocationTrace MemoryTracker::free(Int64 size, double _sample_probability)
 }
 
 
-void MemoryTracker::updateMemoryCredits(Int64 current_amount)
+UInt64 MemoryTracker::takeMemoryCreditsDelta(Int64 current_amount)
 {
     /// MemoryCredits is the integral of memory usage over time, measured in bytes * microseconds.
     /// It is accumulated only for the outermost Process-level tracker of a query or merge: the one whose
     /// parent is not itself a Process tracker. Its `amount` already aggregates all nested allocations, so
     /// charging there integrates the whole memory of the query. Nested Process trackers (created for
     /// materialized views or async-insert flushes, whose parent is the enclosing query's Process tracker)
-    /// must be skipped: a single allocation traverses every Process tracker in the chain, and each call to
-    /// `ProfileEvents::increment` lands on the same thread's counters, so charging more than once would
-    /// double-count. This also keeps the value independent of the depth of the tracker hierarchy and leaves
-    /// the much hotter Global/Thread allocation paths untouched (they only pay a single branch).
+    /// must be skipped: a single allocation traverses every Process tracker in the chain, so charging more
+    /// than once would double-count. This also keeps the value independent of the depth of the tracker
+    /// hierarchy and leaves the much hotter Global/Thread allocation paths untouched (they only pay a branch).
     if (level != VariableContext::Process)
-        return;
+        return 0;
     if (const auto * loaded_parent = parent.load(std::memory_order_relaxed); loaded_parent && loaded_parent->level == VariableContext::Process)
-        return;
+        return 0;
 
     /// Advance the timestamp on every allocation and free so the next interval is always measured from
     /// this point. This is done before the checks below so that the very first allocation (which finds
@@ -719,7 +718,29 @@ void MemoryTracker::updateMemoryCredits(Int64 current_amount)
     /// The atomic exchange makes each elapsed interval be counted exactly once, with no gaps or overlaps,
     /// even when several threads of the same query allocate or free memory concurrently.
     if (prev != 0 && current_amount > 0 && now > prev)
-        ProfileEvents::increment(ProfileEvents::MemoryCredits, static_cast<Int64>(static_cast<UInt64>(current_amount) * (now - prev)));
+        return static_cast<UInt64>(current_amount) * (now - prev);
+    return 0;
+}
+
+
+void MemoryTracker::updateMemoryCredits(Int64 current_amount)
+{
+    /// Called from alloc/free on a query's own thread, so charge the current thread's profile counters;
+    /// they propagate up to the query's thread group.
+    if (const UInt64 delta = takeMemoryCreditsDelta(current_amount))
+        ProfileEvents::increment(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
+}
+
+
+void MemoryTracker::flushMemoryCredits(ProfileEvents::Counters & counters)
+{
+    /// Called right before the query-finish snapshot of the thread group's counters. Allocations and frees
+    /// only advance the integral on transitions, so a query that still holds memory at finish would otherwise
+    /// lose the final segment (from the last alloc/free until now). Charge it here using the currently held
+    /// `amount`. The snapshot may be taken on a foreign thread (e.g. SHOW PROCESSLIST, query metric log), so
+    /// charge the passed-in thread-group counters directly instead of the current thread's counters.
+    if (const UInt64 delta = takeMemoryCreditsDelta(amount.load(std::memory_order_relaxed)))
+        counters.increment(ProfileEvents::MemoryCredits, static_cast<Int64>(delta));
 }
 
 
