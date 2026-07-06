@@ -534,7 +534,10 @@ def test_force_filesystem_cache_on_merges(cluster):
                 boundary_alignment = '1Ki',
                 max_size = '10Gi',
                 max_elements = 10000000,
-                load_metadata_threads = 30);
+                load_metadata_threads = 30),
+            -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default builds
+            -- statistics that are read through the cache on merge, changing the cache read counts.
+            auto_statistics_types='';
             """
         )
 
