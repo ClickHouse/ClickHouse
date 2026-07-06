@@ -10,6 +10,6 @@ INSERT INTO test_iso_variant FORMAT JSONEachRow {"v": new ISODate("2024-05-29T23
 
 INSERT INTO test_iso_variant FORMAT JSONEachRow {"v": "plain string"};
 
-SELECT v, variantType(v) FROM test_iso_variant;
+SELECT v, variantType(v) FROM test_iso_variant ORDER BY variantType(v), toString(v);
 
 DROP TABLE test_iso_variant;
