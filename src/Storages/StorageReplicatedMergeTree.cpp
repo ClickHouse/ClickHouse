@@ -231,6 +231,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 max_replicated_sends_network_bandwidth;
     extern const MergeTreeSettingsUInt64 merge_selecting_sleep_ms;
     extern const MergeTreeSettingsFloat merge_selecting_sleep_slowdown_factor;
+    extern const MergeTreeSettingsUInt64 replicated_merge_selecting_partitions_batch_size;
     extern const MergeTreeSettingsBool min_age_to_force_merge_on_partition_only;
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 min_relative_delay_to_measure;
@@ -4338,6 +4339,28 @@ bool StorageReplicatedMergeTree::partIsAssignedToBackgroundOperation(const DataP
     return queue.isVirtualPart(part);
 }
 
+PartitionIdsHint StorageReplicatedMergeTree::pickMergeSelectingPartitionsBatch(size_t batch_size)
+{
+    /// Called under merge_selecting_mutex.
+    /// Rebuild the round-robin ring when it is exhausted (a full pass completed) or empty, so that
+    /// partitions created since the last pass are picked up and removed ones fall out.
+    if (merge_selecting_partitions_pos >= merge_selecting_partitions_ring.size())
+    {
+        auto partition_ids = getAllPartitionIds();
+        merge_selecting_partitions_ring.assign(partition_ids.begin(), partition_ids.end());
+        std::sort(merge_selecting_partitions_ring.begin(), merge_selecting_partitions_ring.end());
+        merge_selecting_partitions_pos = 0;
+    }
+
+    PartitionIdsHint batch;
+    const size_t remaining = merge_selecting_partitions_ring.size() - merge_selecting_partitions_pos;
+    const size_t count = std::min<size_t>(batch_size, remaining);
+    for (size_t i = 0; i < count; ++i)
+        batch.insert(merge_selecting_partitions_ring[merge_selecting_partitions_pos++]);
+
+    return batch;
+}
+
 void StorageReplicatedMergeTree::mergeSelectingTask()
 {
     if (!is_leader)
@@ -4424,6 +4447,17 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
         PartitionIdsHint partitions_to_merge_in;
         if (can_assign_merge)
         {
+            /// When partition-batch selection is enabled, bound the discovery scan to a round-robin
+            /// batch of partitions instead of examining all of them. Forced whole-partition merges rely
+            /// on statistics gathered from all partitions, so keep full discovery when they are enabled.
+            const UInt64 partitions_batch_size = (*storage_settings_ptr)[MergeTreeSetting::replicated_merge_selecting_partitions_batch_size];
+            const bool use_partitions_batch = partitions_batch_size > 0
+                && !(*storage_settings_ptr)[MergeTreeSetting::min_age_to_force_merge_on_partition_only];
+
+            std::optional<PartitionIdsHint> partitions_batch;
+            if (use_partitions_batch)
+                partitions_batch = pickMergeSelectingPartitionsBatch(partitions_batch_size);
+
             auto local_merge_pred = std::make_shared<ReplicatedMergeTreeLocalMergePredicate>(queue);
             partitions_to_merge_in = merger_mutator.getPartitionsThatMayBeMerged(
                 std::make_shared<ReplicatedMergeTreePartsCollector>(*this, local_merge_pred),
@@ -4434,7 +4468,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                     /*aggressive_=*/false,
                     /*range_filter_=*/nullptr,
                     /*storage_id_=*/getStorageID()
-                ));
+                ),
+                partitions_batch);
 
             if (partitions_to_merge_in.empty())
                 can_assign_merge = false;

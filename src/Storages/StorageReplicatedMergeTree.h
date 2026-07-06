@@ -504,6 +504,11 @@ private:
 
     UInt64 merge_selecting_sleep_ms;
 
+    /// Round-robin partition selection state for mergeSelectingTask, used when
+    /// `replicated_merge_selecting_partitions_batch_size` is enabled. Guarded by `merge_selecting_mutex`.
+    std::vector<String> merge_selecting_partitions_ring;
+    size_t merge_selecting_partitions_pos = 0;
+
     /// A task that marks finished mutations as done.
     BackgroundSchedulePoolTaskHolder mutations_finalizing_task;
 
@@ -735,6 +740,13 @@ private:
     /** Selects the parts to merge and writes to the log.
       */
     void mergeSelectingTask();
+
+    /** Picks up to `batch_size` partitions in round-robin order for merge selection.
+      * Refreshes the round-robin ring when a full pass completes, so partitions created since the
+      * last pass are covered and removed ones fall out.
+      * Call when merge_selecting_mutex is locked.
+      */
+    PartitionIdsHint pickMergeSelectingPartitionsBatch(size_t batch_size);
 
     /// Checks if some mutations are done and marks them as done.
     void mutationsFinalizingTask();
