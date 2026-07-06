@@ -130,7 +130,7 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
     if (const auto * set_query = ast->as<ASTSetQuery>())
     {
-        InterpreterSetQuery(set_query->ptr(), context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+        InterpreterSetQuery(set_query->clone(), context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
     else if (const auto * select_query = ast->as<ASTSelectQuery>())
     {
