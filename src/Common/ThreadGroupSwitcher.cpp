@@ -1,4 +1,5 @@
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/CurrentThread.h>
@@ -7,9 +8,15 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char thread_group_switcher_post_attach_failure[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 ThreadGroupPtr getCurrentThreadGroup()
@@ -50,11 +57,34 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
 
         CurrentThread::attachToGroup(thread_group);
         setThreadName(thread_name);
+
+        /// Simulate a failure after the attach succeeded (e.g. setThreadName throwing),
+        /// to verify the catch block detaches from the target group and restores the
+        /// previous one instead of leaving the thread attached to the failed target.
+        fiu_do_on(FailPoints::thread_group_switcher_post_attach_failure,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure after attachToGroup");
+        });
     }
     catch (...)
     {
         /// Unexpected. For caller's convenience avoid throwing exceptions.
         DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        try
+        {
+            LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
+            /// The attach may have succeeded before a later step (e.g. setThreadName) threw,
+            /// leaving the thread on the target group. Detach it first.
+            if (CurrentThread::getGroup() == thread_group)
+                CurrentThread::detachFromGroupIfNotDetached();
+            /// Restore the previous group for allow_existing_group=true callers.
+            if (prev_thread_group && !CurrentThread::getGroup())
+                CurrentThread::attachToGroup(prev_thread_group);
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
         thread_group = nullptr;
         prev_thread_group = nullptr;
     }

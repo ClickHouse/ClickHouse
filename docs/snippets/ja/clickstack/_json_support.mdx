@@ -1,0 +1,24 @@
+---
+title: JSON サポート
+---
+
+<div id="json-type-support">
+  ## JSON type サポート
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **ベータ機能 - 本番環境には対応していません**
+
+  **ClickStack** における JSON type サポートは**ベータ機能**です。JSON type 自体は ClickHouse 25.3+ で本番利用可能ですが、ClickStack への統合は現在も活発に開発が進められており、制限があったり、今後変更されたり、不具合が含まれていたりする可能性があります。
+</Warning>
+
+ClickStack はバージョン `2.0.4` 以降、[JSON type](/ja/reference/formats/JSON/JSON) のベータサポートを提供しています。
+
+この型の利点については、[JSON type の利点](/ja/clickstack/ingesting-data/schema/map-vs-json) を参照してください。
+
+JSON type サポートを有効にするには、次の環境変数を設定する必要があります。
+
+* `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` - OTel collector でのサポートを有効にし、JSON type を使用してスキーマが作成されるようにします。
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` (ClickStack Open Source のみ) - ClickStack UI アプリケーションでのサポートを有効にし、JSON データをクエリできるようにします。

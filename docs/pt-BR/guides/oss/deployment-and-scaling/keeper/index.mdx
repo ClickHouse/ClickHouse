@@ -1,0 +1,1509 @@
+---
+slug: /guides/sre/keeper/clickhouse-keeper
+
+sidebarTitle: 'Configurando o ClickHouse Keeper'
+keywords: ['Keeper', 'ZooKeeper', 'clickhouse-keeper']
+description: 'ClickHouse Keeper, ou clickhouse-keeper, substitui o ZooKeeper e oferece replicação e coordenação.'
+title: 'ClickHouse Keeper'
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/pt-BR/_self_managed_only_automated.mdx';
+
+<SelfManaged />
+
+O ClickHouse Keeper fornece o sistema de coordenação para a [replicação](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de dados e a execução de consultas de [DDL distribuído](/pt-BR/reference/statements/distributed-ddl). O ClickHouse Keeper é compatível com o ZooKeeper.
+
+<div id="implementation-details">
+  ### Detalhes de implementação
+</div>
+
+O ZooKeeper é um dos primeiros sistemas de coordenação open-source amplamente conhecidos. Ele é implementado em Java e tem um modelo de dados simples e poderoso. O algoritmo de coordenação do ZooKeeper, ZooKeeper Atomic Broadcast (ZAB), não fornece garantias de linearizabilidade para leituras, porque cada nó do ZooKeeper atende às leituras localmente. Diferentemente do ZooKeeper, o ClickHouse Keeper é escrito em C++ e usa a [implementação](https://github.com/eBay/NuRaft) do [algoritmo RAFT](https://raft.github.io/). Esse algoritmo permite linearizabilidade para leituras e escritas e tem várias implementações open-source em diferentes linguagens.
+
+Por padrão, o ClickHouse Keeper fornece as mesmas garantias que o ZooKeeper: escritas linearizáveis e leituras não linearizáveis. Ele tem um protocolo cliente-servidor compatível, portanto qualquer cliente ZooKeeper padrão pode ser usado para interagir com o ClickHouse Keeper. Snapshots e logs têm um formato incompatível com o ZooKeeper, mas a ferramenta `clickhouse-keeper-converter` permite converter dados do ZooKeeper em snapshots do ClickHouse Keeper. O protocolo entre servidores no ClickHouse Keeper também é incompatível com o ZooKeeper, portanto um cluster misto de ZooKeeper / ClickHouse Keeper é impossível.
+
+O ClickHouse Keeper oferece suporte a listas de controle de acesso (ACLs) da mesma forma que o [ZooKeeper](https://zookeeper.apache.org/doc/r3.1.2/zookeeperProgrammers.html#sc_ZooKeeperAccessControl). O ClickHouse Keeper oferece suporte ao mesmo conjunto de permissões e tem os mesmos esquemas internos: `world`, `auth` e `digest`. O esquema de autenticação `digest` usa o par `username:password`; a senha é codificada em Base64.
+
+<Note>
+  Integrações externas não são suportadas.
+</Note>
+
+<div id="configuration">
+  ### Configuração
+</div>
+
+O ClickHouse Keeper pode ser usado como um substituto independente do ZooKeeper ou como uma parte interna do servidor ClickHouse. Em ambos os casos, a configuração usa praticamente o mesmo arquivo `.xml`.
+
+<div id="keeper-configuration-settings">
+  #### Configurações do Keeper
+</div>
+
+A principal tag de configuração do ClickHouse Keeper é `<keeper_server>` e tem os seguintes parâmetros:
+
+| Parâmetro                           | Descrição                                                                                                                                                                                                                                                                                 | Padrão                                                                                                       |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `tcp_port`                          | Porta para um cliente se conectar.                                                                                                                                                                                                                                                        | `2181`                                                                                                       |
+| `tcp_port_secure`                   | Porta segura para uma conexão SSL entre o cliente e o servidor Keeper.                                                                                                                                                                                                                    | -                                                                                                            |
+| `server_id`                         | ID exclusivo do servidor; cada participante do cluster ClickHouse Keeper deve ter um número exclusivo (1, 2, 3...).                                                                                                                                                                       | -                                                                                                            |
+| `log_storage_path`                  | Caminho para os logs de coordenação; assim como no ZooKeeper, é melhor armazenar os logs em nós pouco sobrecarregados.                                                                                                                                                                    | -                                                                                                            |
+| `snapshot_storage_path`             | Caminho para os snapshots de coordenação.                                                                                                                                                                                                                                                 | -                                                                                                            |
+| `enable_reconfiguration`            | Ativa a reconfiguração dinâmica do cluster via [`reconfig`](#reconfiguration).                                                                                                                                                                                                            | `False`                                                                                                      |
+| `max_memory_usage_soft_limit`       | Soft limit, em bytes, para o uso máximo de memória do Keeper.                                                                                                                                                                                                                             | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                               |
+| `max_memory_usage_soft_limit_ratio` | Se `max_memory_usage_soft_limit` não estiver definido ou estiver definido como zero, usaremos esse valor para definir o soft limit padrão.                                                                                                                                                | `0.9`                                                                                                        |
+| `cgroups_memory_observer_wait_time` | Se `max_memory_usage_soft_limit` não estiver definido ou estiver definido como `0`, usaremos esse intervalo para observar a quantidade de memória física. Quando essa quantidade mudar, recalcularemos o soft limit de memória do Keeper com base em `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                         |
+| `http_control`                      | Configuração da interface de [controle HTTP](#http-control).                                                                                                                                                                                                                              | -                                                                                                            |
+| `digest_enabled`                    | Ativa a verificação de consistência de dados em tempo real.                                                                                                                                                                                                                               | `True`                                                                                                       |
+| `create_snapshot_on_exit`           | Cria um snapshot durante o desligamento.                                                                                                                                                                                                                                                  | -                                                                                                            |
+| `hostname_checks_enabled`           | Ativa verificações de consistência de hostname para a configuração do cluster (por exemplo, se `localhost` for usado com endpoints remotos).                                                                                                                                              | `True`                                                                                                       |
+| `four_letter_word_white_list`       | Lista de permissões de comandos 4lw.                                                                                                                                                                                                                                                      | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
+| `enable_ipv6`                       | Ativa o IPv6.                                                                                                                                                                                                                                                                             | `True`                                                                                                       |
+
+Outros parâmetros comuns são herdados da configuração do servidor ClickHouse (`listen_host`, `logger` e assim por diante).
+
+<div id="internal-coordination-settings">
+  #### Configurações internas de coordenação
+</div>
+
+As configurações internas de coordenação ficam na seção `<keeper_server>.<coordination_settings>` e têm os seguintes parâmetros:
+
+| Parameter                          | Description                                                                                                                                                                                                                 | Default          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `operation_timeout_ms`             | Tempo limite para uma única operação do cliente (ms)                                                                                                                                                                        | `10000`          |
+| `min_session_timeout_ms`           | Tempo limite mínimo da sessão do cliente (ms)                                                                                                                                                                               | `10000`          |
+| `session_timeout_ms`               | Tempo limite máximo da sessão do cliente (ms)                                                                                                                                                                               | `100000`         |
+| `dead_session_check_period_ms`     | Com que frequência o ClickHouse Keeper verifica sessões expiradas e as remove (ms)                                                                                                                                          | `500`            |
+| `heart_beat_interval_ms`           | Com que frequência um líder do ClickHouse Keeper envia heartbeats aos seguidores (ms)                                                                                                                                       | `500`            |
+| `election_timeout_lower_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele pode iniciar uma eleição de líder. Deve ser menor ou igual a `election_timeout_upper_bound_ms`. O ideal é que não sejam iguais.               | `1000`           |
+| `election_timeout_upper_bound_ms`  | Se o seguidor não receber um heartbeat do líder dentro desse intervalo, ele deverá iniciar uma eleição de líder.                                                                                                          | `2000`           |
+| `rotate_log_storage_interval`      | Quantos registros de log armazenar em um único arquivo.                                                                                                                                                                     | `100000`         |
+| `reserved_log_items`               | Quantos registros de log de coordenação armazenar antes da compactação.                                                                                                                                                     | `100000`         |
+| `snapshot_distance`                | Com que frequência o ClickHouse Keeper criará novos snapshots (em número de registros nos logs).                                                                                                                            | `100000`         |
+| `snapshots_to_keep`                | Quantos snapshots manter.                                                                                                                                                                                                   | `3`              |
+| `stale_log_gap`                    | Limite a partir do qual o líder considera o seguidor desatualizado e envia o snapshot para ele em vez dos logs.                                                                                                            | `10000`          |
+| `fresh_log_gap`                    | Quando o nó passa a ser considerado atualizado.                                                                                                                                                                             | `200`            |
+| `max_requests_batch_size`          | Tamanho máximo do batch em número de requisições antes de ser enviado ao RAFT.                                                                                                                                              | `100`            |
+| `force_sync`                       | Chama `fsync` a cada gravação no log de coordenação.                                                                                                                                                                        | `true`           |
+| `quorum_reads`                     | Executa requisições de leitura como gravações em todo o consenso RAFT, com velocidade semelhante.                                                                                                                           | `false`          |
+| `raft_logs_level`                  | Nível de logging em texto sobre coordenação (trace, debug etc.).                                                                                                                                                            | `system default` |
+| `auto_forwarding`                  | Permite encaminhar requisições de gravação dos seguidores para o líder.                                                                                                                                                     | `true`           |
+| `shutdown_timeout`                 | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                            | `5000`           |
+| `startup_timeout`                  | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                              | `30000`          |
+| `async_replication`                | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores | `false`          |
+| `latest_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                  | `1GiB`           |
+| `commit_logs_cache_size_threshold` | Tamanho total máximo do cache em memória das entradas de log necessárias em seguida para commit                                                                                                                             | `500MiB`         |
+| `disk_move_retries_wait_ms`        | Quanto tempo esperar entre retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos                                                                                                             | `1000`           |
+| `disk_move_retries_during_init`    | Quantidade de retries após uma falha ocorrida enquanto um arquivo estava sendo movido entre discos durante a inicialização                                                                                                  | `100`            |
+| `experimental_use_rocksdb`         | Usa rocksdb como armazenamento backend                                                                                                                                                                                      | `0`              |
+
+A configuração de quórum fica na seção `<keeper_server>.<raft_configuration>` e contém a descrição dos servidores.
+
+O único parâmetro para todo o quórum é `secure`, que habilita conexão criptografada para a comunicação entre os participantes do quórum. O parâmetro pode ser definido como `true` se uma conexão SSL for necessária para a comunicação interna entre os nós, ou deixado sem especificação caso contrário.
+
+Os principais parâmetros de cada `<server>` são:
+
+* `id` — Identificador do servidor em um quórum.
+* `hostname` — Hostname em que este servidor está localizado.
+* `port` — Porta na qual este servidor aceita conexões.
+* `can_become_leader` — Defina como `false` para configurar o servidor como `learner`. Se omitido, o valor será `true`.
+
+<Note>
+  Em caso de mudança na topologia do seu cluster ClickHouse Keeper (por exemplo, ao substituir um servidor), certifique-se de manter consistente o mapeamento de `server_id` para `hostname` e evite trocar ou reutilizar um `server_id` existente para servidores diferentes (por exemplo, isso pode acontecer se você depender de scripts de automação para implantar o ClickHouse Keeper)
+
+  Se o host de uma instância do Keeper puder mudar, recomendamos definir e usar um hostname em vez de endereços IP. Alterar o hostname equivale a remover e adicionar o servidor novamente, o que, em alguns casos, pode ser impossível (por exemplo, por não haver instâncias do Keeper suficientes para quórum).
+</Note>
+
+<Note>
+  `async_replication` é desabilitado por padrão para evitar quebrar a compatibilidade com versões anteriores. Se todas as instâncias do Keeper no cluster estiverem executando uma versão com suporte a `async_replication` (v23.9+), recomendamos habilitá-lo, pois isso pode melhorar o desempenho sem desvantagens.
+</Note>
+
+Exemplos de configuração de quórum com três nós podem ser encontrados nos [testes de integração](https://github.com/ClickHouse/ClickHouse/tree/master/tests/integration) com o prefixo `test_keeper_`. Exemplo de configuração para o servidor #1:
+
+```xml
+<keeper_server>
+    <tcp_port>2181</tcp_port>
+    <server_id>1</server_id>
+    <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+    <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+    <coordination_settings>
+        <operation_timeout_ms>10000</operation_timeout_ms>
+        <session_timeout_ms>30000</session_timeout_ms>
+        <raft_logs_level>trace</raft_logs_level>
+    </coordination_settings>
+
+    <raft_configuration>
+        <server>
+            <id>1</id>
+            <hostname>zoo1</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>2</id>
+            <hostname>zoo2</hostname>
+            <port>9234</port>
+        </server>
+        <server>
+            <id>3</id>
+            <hostname>zoo3</hostname>
+            <port>9234</port>
+        </server>
+    </raft_configuration>
+</keeper_server>
+```
+
+<div id="how-to-run">
+  ### Como executar
+</div>
+
+O ClickHouse Keeper vem incluído no pacote do servidor ClickHouse; basta adicionar a configuração de `<keeper_server>` ao seu `/etc/your_path_to_config/clickhouse-server/config.xml` e iniciar o servidor ClickHouse como de costume. Se você quiser executar o standalone ClickHouse Keeper, poderá iniciá-lo de forma semelhante com:
+
+```bash
+clickhouse-keeper --config /etc/your_path_to_config/config.xml
+```
+
+Se você não tiver o link simbólico (`clickhouse-keeper`), poderá criá-lo ou especificar `keeper` como argumento para `clickhouse`:
+
+```bash
+clickhouse keeper --config /etc/your_path_to_config/config.xml
+```
+
+<div id="four-letter-word-commands">
+  ### Comandos de quatro letras
+</div>
+
+O ClickHouse Keeper também oferece comandos 4lw que são praticamente os mesmos do ZooKeeper. Cada comando é composto por quatro letras, como `mntr`, `stat` etc. Há outros comandos interessantes: `stat` fornece informações gerais sobre o servidor e os clientes conectados, `srvr` fornece detalhes adicionais sobre o servidor, e `cons` fornece detalhes adicionais sobre as conexões.
+
+Os comandos 4lw têm uma configuração de lista de permissões, `four_letter_word_white_list`, cujo valor padrão é `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+
+Você pode enviar os comandos ao ClickHouse Keeper via telnet ou nc, pela porta do cliente.
+
+```bash
+echo mntr | nc localhost 9181
+```
+
+Abaixo estão os comandos 4lw detalhados:
+
+* `ruok`: Testa se o servidor está em execução sem apresentar erros. O servidor responderá com `imok` se estiver em execução. Caso contrário, não responderá de forma alguma. Uma resposta `imok` não indica necessariamente que o servidor entrou no quórum, apenas que o processo do servidor está ativo e associado à porta de cliente especificada. Use &quot;stat&quot; para ver detalhes sobre o estado em relação ao quórum e informações sobre conexões de clientes.
+
+```response
+imok
+```
+
+* `mntr`: Gera uma lista de variáveis que podem ser usadas para monitorar o estado de saúde do cluster.
+
+```response
+zk_version      v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     68
+zk_packets_sent 68
+zk_num_alive_connections        1
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  4
+zk_watch_count  1
+zk_ephemerals_count     0
+zk_approximate_data_size        723
+zk_open_file_descriptor_count   310
+zk_max_file_descriptor_count    10240
+zk_followers    0
+zk_synced_followers     0
+```
+
+* `srvr`: Lista todos os detalhes do servidor.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Latency min/avg/max: 0/0/0
+Received: 2
+Sent : 2
+Connections: 1
+Outstanding: 0
+Zxid: 34
+Mode: leader
+Node count: 4
+```
+
+* `stat`: Exibe detalhes resumidos do servidor e dos clientes conectados.
+
+```response
+ClickHouse Keeper version: v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+Clients:
+ 192.168.1.1:52852(recved=0,sent=0)
+ 192.168.1.1:52042(recved=24,sent=48)
+Latency min/avg/max: 0/0/0
+Received: 4
+Sent : 4
+Connections: 1
+Outstanding: 0
+Zxid: 36
+Mode: leader
+Node count: 4
+```
+
+* `srst`: Zera as estatísticas do servidor. O comando afetará o resultado de `srvr`, `mntr` e `stat`.
+
+```response
+Server stats reset.
+```
+
+* `conf`: Imprime detalhes da configuração do servidor.
+
+```response
+server_id=1
+tcp_port=2181
+four_letter_word_white_list=*
+log_storage_path=./coordination/logs
+snapshot_storage_path=./coordination/snapshots
+max_requests_batch_size=100
+session_timeout_ms=30000
+operation_timeout_ms=10000
+dead_session_check_period_ms=500
+heart_beat_interval_ms=500
+election_timeout_lower_bound_ms=1000
+election_timeout_upper_bound_ms=2000
+reserved_log_items=1000000000000000
+snapshot_distance=10000
+auto_forwarding=true
+shutdown_timeout=5000
+startup_timeout=240000
+raft_logs_level=information
+snapshots_to_keep=3
+rotate_log_storage_interval=100000
+stale_log_gap=10000
+fresh_log_gap=200
+max_requests_batch_size=100
+quorum_reads=false
+force_sync=false
+compress_logs=true
+compress_snapshots_with_zstd_format=true
+configuration_change_tries_count=20
+```
+
+* `cons`: Liste os detalhes completos de conexão/sessão de todos os clientes conectados a este servidor. Inclui informações como o número de pacotes recebidos/enviados, ID da sessão, latências das operações, última operação executada etc...
+
+```response
+ 192.168.1.1:52163(recved=0,sent=0,sid=0xffffffffffffffff,lop=NA,est=1636454787393,to=30000,lzxid=0xffffffffffffffff,lresp=0,llat=0,minlat=0,avglat=0,maxlat=0)
+ 192.168.1.1:52042(recved=9,sent=18,sid=0x0000000000000001,lop=List,est=1636454739887,to=30000,lcxid=0x0000000000000005,lzxid=0x0000000000000005,lresp=1636454739892,llat=0,minlat=0,avglat=0,maxlat=0)
+```
+
+* `crst`: Zera as estatísticas de conexão/sessão de todas as conexões.
+
+```response
+Connection stats reset.
+```
+
+* `envi`: Exibe detalhes sobre o ambiente do servidor
+
+```response
+Environment:
+clickhouse.keeper.version=v21.11.1.1-prestable-7a4a0b0edef0ad6e0aa662cd3b90c3f4acf796e7
+host.name=ZBMAC-C02D4054M.local
+os.name=Darwin
+os.arch=x86_64
+os.version=19.6.0
+cpu.count=12
+user.name=root
+user.home=/Users/JackyWoo/
+user.dir=/Users/JackyWoo/project/jd/clickhouse/cmake-build-debug/programs/
+user.tmp=/var/folders/b4/smbq5mfj7578f2jzwn602tt40000gn/T/
+```
+
+* `dirs`: Mostra o tamanho total, em bytes, dos arquivos de snapshot e de log
+
+```response
+snapshot_dir_size: 0
+log_dir_size: 3875
+```
+
+* `isro`: Verifica se o servidor está em modo somente leitura. O servidor responderá com `ro` se estiver em modo somente leitura ou `rw` caso contrário.
+
+```response
+rw
+```
+
+* `wchs`: Exibe informações resumidas sobre os watches do servidor.
+
+```response
+1 connections watching 1 paths
+Total watches:1
+```
+
+* `wchc`: Lista informações detalhadas sobre watches do servidor, por sessão. Isso gera uma lista de sessões (conexões) com os watches (caminhos) associados. Observe que, dependendo do número de watches, essa operação pode ser custosa (afetar o desempenho do servidor); use-a com cuidado.
+
+```response
+0x0000000000000001
+    /clickhouse/task_queue/ddl
+```
+
+* `wchp`: Lista informações detalhadas sobre watches do servidor, por caminho. A saída é uma lista de caminhos (znodes) com as sessões associadas. Observe que, dependendo do número de watches, essa operação pode ser custosa (ou seja, pode impactar o desempenho do servidor); use-a com cuidado.
+
+```response
+/clickhouse/task_queue/ddl
+    0x0000000000000001
+```
+
+* `dump`: Lista as sessões em aberto e os nós efêmeros. Isso só funciona no nó líder.
+
+```response
+Sessions dump (2):
+0x0000000000000001
+0x0000000000000002
+Sessions with Ephemerals (1):
+0x0000000000000001
+ /clickhouse/task_queue/ddl
+```
+
+* `csnp`: Agenda uma tarefa de criação de snapshot. Em caso de sucesso, retorna o último índice do log confirmado do snapshot agendado; em caso de falha, retorna `Failed to schedule snapshot creation task.`. O comando `lgif` pode ajudar a determinar se o snapshot foi concluído.
+
+```response
+100
+```
+
+* `lgif`: informações de log do Keeper. `first_log_idx` : meu primeiro índice de log no armazenamento de logs; `first_log_term` : meu primeiro termo do log; `last_log_idx` : meu último índice de log no armazenamento de logs; `last_log_term` : meu último termo do log; `last_committed_log_idx` : meu último índice de log confirmado na máquina de estado; `leader_committed_log_idx` : índice de log confirmado do líder, do meu ponto de vista; `target_committed_log_idx` : índice de log de destino que deve ser confirmado; `last_snapshot_idx` : o maior índice de log confirmado no último snapshot.
+
+```response
+first_log_idx   1
+first_log_term  1
+last_log_idx    101
+last_log_term   1
+last_committed_log_idx  100
+leader_committed_log_idx    101
+target_committed_log_idx    101
+last_snapshot_idx   50
+```
+
+* `rqld`: Solicitação para se tornar o novo líder. Retorna `Sent leadership request to leader.` se a solicitação for enviada ou `Failed to send leadership request to leader.` se ela não for enviada. Se o nó já for o líder, o resultado será o mesmo de quando a solicitação é enviada.
+
+```response
+Sent leadership request to leader.
+```
+
+* `ftfl`: Lista todas as feature flags e indica se estão ativadas para a instância do Keeper.
+
+```response
+filtered_list   1
+multi_read  1
+check_not_exists    0
+```
+
+* `ydld`: Solicitação para abrir mão da liderança e se tornar seguidor. Se o servidor que receber a solicitação for o líder, ele primeiro pausará as operações de gravação, aguardará até que o sucessor (o líder atual nunca pode ser o sucessor) conclua a sincronização com o Log mais recente e, então, renunciará. O sucessor será escolhido automaticamente. Retorna `Sent yield leadership request to leader.` se a solicitação for enviada ou `Failed to send yield leadership request to leader.` se a solicitação não for enviada. Se o nó já for um seguidor, o resultado será o mesmo de quando a solicitação é enviada.
+
+```response
+Sent yield leadership request to leader.
+```
+
+* `pfev`: Retorna os valores de todos os eventos coletados. Para cada evento, retorna o nome, o valor e a descrição do evento.
+
+```response
+FileOpen        62      Número de arquivos abertos.
+Seek    4       Número de vezes que a função 'lseek' foi chamada.
+ReadBufferFromFileDescriptorRead        126     Número de leituras (read/pread) de um file descriptor. Não inclui sockets.
+ReadBufferFromFileDescriptorReadFailed  0       Número de vezes que a leitura (read/pread) de um file descriptor falhou.
+ReadBufferFromFileDescriptorReadBytes   178846  Número de bytes lidos de file descriptors. Se o arquivo estiver compactado, exibirá o tamanho dos dados compactados.
+WriteBufferFromFileDescriptorWrite      7       Número de gravações (write/pwrite) em um file descriptor. Não inclui sockets.
+WriteBufferFromFileDescriptorWriteFailed        0       Número de vezes que a gravação (write/pwrite) em um file descriptor falhou.
+WriteBufferFromFileDescriptorWriteBytes 153     Número de bytes gravados em file descriptors. Se o arquivo estiver compactado, exibirá o tamanho dos dados compactados.
+FileSync        2       Número de vezes que a função F_FULLFSYNC/fsync/fdatasync foi chamada para arquivos.
+DirectorySync   0       Número de vezes que a função F_FULLFSYNC/fsync/fdatasync foi chamada para diretórios.
+FileSyncElapsedMicroseconds     12756   Tempo total aguardando a syscall F_FULLFSYNC/fsync/fdatasync para arquivos.
+DirectorySyncElapsedMicroseconds        0       Tempo total aguardando a syscall F_FULLFSYNC/fsync/fdatasync para diretórios.
+ReadCompressedBytes     0       Número de bytes (quantidade de bytes antes da descompactação) lidos de fontes compactadas (arquivos, rede).
+CompressedReadBufferBlocks      0       Número de blocks compactados (blocks de dados compactados de forma independente entre si) lidos de fontes compactadas (arquivos, rede).
+CompressedReadBufferBytes       0       Número de bytes não compactados (quantidade de bytes após a descompactação) lidos de fontes compactadas (arquivos, rede).
+AIOWrite        0       Número de gravações com a interface AIO do Linux ou FreeBSD
+AIOWriteBytes   0       Número de bytes gravados com a interface AIO do Linux ou FreeBSD
+...
+```
+
+<div id="http-control">
+  ### Controle HTTP
+</div>
+
+O ClickHouse Keeper fornece uma interface HTTP para verificar se uma réplica está pronta para receber tráfego. Ela pode ser usada em ambientes de Cloud, como o [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
+
+Exemplo de configuração que habilita o endpoint `/ready`:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <http_control>
+            <port>9182</port>
+            <readiness>
+                <endpoint>/ready</endpoint>
+            </readiness>
+        </http_control>
+    </keeper_server>
+</clickhouse>
+```
+
+<div id="feature-flags">
+  ### Feature flags
+</div>
+
+O Keeper é totalmente compatível com o ZooKeeper e seus clientes, mas também introduz alguns recursos e tipos de requisição exclusivos que podem ser usados pelo ClickHouse client.
+Como esses recursos podem introduzir alterações incompatíveis com versões anteriores, a maioria deles vem desativada por padrão e pode ser ativada usando a configuração `keeper_server.feature_flags`.
+Todos os recursos podem ser desativados explicitamente.
+Se você quiser ativar um novo recurso no seu cluster do Keeper, recomendamos primeiro atualizar todas as instâncias do Keeper no cluster para uma versão que ofereça suporte ao recurso e só então ativar o próprio recurso.
+
+Exemplo de configuração de feature flag que desativa `multi_read` e ativa `check_not_exists`:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <feature_flags>
+            <multi_read>0</multi_read>
+            <check_not_exists>1</check_not_exists>
+        </feature_flags>
+    </keeper_server>
+</clickhouse>
+```
+
+Os seguintes recursos estão disponíveis:
+
+| Recurso                | Descrição                                                                                                                                                             | Padrão |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `multi_read`           | Suporte para requisição de leitura múltipla                                                                                                                           | `1`    |
+| `filtered_list`        | Suporte para requisição de listagem que filtra os resultados pelo tipo de nó (efêmero ou persistente)                                                                 | `1`    |
+| `check_not_exists`     | Suporte para a requisição `CheckNotExists`, que garante que o nó não exista                                                                                           | `1`    |
+| `create_if_not_exists` | Suporte para a requisição `CreateIfNotExists`, que tentará criar um nó caso ele não exista. Se ele já existir, nenhuma alteração será aplicada e `ZOK` será retornado | `1`    |
+| `remove_recursive`     | Suporte para a requisição `RemoveRecursive`, que remove o nó junto com sua subárvore                                                                                  | `1`    |
+
+<Note>
+  Alguns dos feature flags vêm habilitados por padrão a partir da versão 25.7.
+  A forma recomendada de atualizar o Keeper para a versão 25.7+ é primeiro atualizar para a versão 24.9+.
+</Note>
+
+<div id="migration-from-zookeeper">
+  ### Migração do ZooKeeper
+</div>
+
+A migração sem interrupção do ZooKeeper para o ClickHouse Keeper não é possível. É preciso parar o cluster do ZooKeeper, converter os dados e iniciar o ClickHouse Keeper. A ferramenta `clickhouse-keeper-converter` converte logs e snapshots do ZooKeeper em um snapshot do ClickHouse Keeper. Ela requer o ZooKeeper 3.4 ou posterior.
+
+<div id="pre-migration-preparation">
+  #### Preparação para a migração
+</div>
+
+A migração exige interromper a ingestão de dados. Planeje uma janela de manutenção antes de começar.
+
+Antes de parar o ZooKeeper, interrompa as tarefas em segundo plano do ClickHouse que modificam os metadados de coordenação. Por exemplo:
+
+```sql
+SYSTEM STOP MERGES;
+```
+
+Registre as métricas de comparação antes da migração para poder verificar a consistência depois.
+
+<div id="migration-steps">
+  #### Etapas da migração
+</div>
+
+1. Interrompa a ingestão de dados em todos os nós do ClickHouse.
+
+2. Interrompa todas as tarefas em segundo plano em todos os nós do ClickHouse (veja [acima](#pre-migration-preparation)).
+
+3. Interrompa todos os nós do ZooKeeper.
+
+4. Opcional, mas recomendado: identifique o nó líder do ZooKeeper, inicie-o e interrompa-o novamente. Isso força o ZooKeeper a gravar um snapshot consistente em disco antes da conversão.
+
+5. Execute `clickhouse-keeper-converter` no nó líder. Se você tiver o binário completo do ClickHouse instalado, use o subcomando `keeper-converter` (`clickhouse keeper-converter`). Se nenhum dos dois estiver disponível, [baixe o binário](/getting-started/quick-start/oss#install-clickhouse).
+
+```bash
+clickhouse-keeper-converter \
+  --zookeeper-logs-dir /var/lib/zookeeper/version-2 \
+  --zookeeper-snapshots-dir /var/lib/zookeeper/version-2 \
+  --output-dir /path/to/clickhouse/keeper/snapshots
+```
+
+6. Copie o snapshot para todos os nós do ClickHouse Keeper. O snapshot deve estar presente em todos os nós antes de qualquer um ser iniciado — se um nó for iniciado sem um snapshot, ele poderá se eleger líder com estado vazio.
+
+7. Atualize a configuração do ClickHouse para apontar para o novo cluster do Keeper.
+
+8. Inicie o ClickHouse Keeper em todos os nós e, em seguida, reinicie o ClickHouse.
+
+9. Compare as métricas com sua linha de base pré-migração para verificar a consistência.
+
+10. Retome as tarefas em segundo plano e reinicie a ingestão de dados.
+
+<div id="consolidating-multiple-zookeeper-clusters">
+  #### Consolidando vários clusters do ZooKeeper
+</div>
+
+Se você usa vários clusters do ZooKeeper — por exemplo, um por grupo de shards — pode consolidá-los em um único cluster do ClickHouse Keeper. A ferramenta oficial `clickhouse-keeper-converter` só oferece suporte a conversões um para um (um cluster do ZooKeeper para um snapshot do Keeper), portanto a consolidação exige modificar o código-fonte do conversor para mesclar vários snapshots:
+
+1. Execute `clickhouse-keeper-converter` separadamente em cada cluster do ZooKeeper, gravando cada saída em um diretório distinto.
+2. Desserialize os arquivos de snapshot sequencialmente. Ao mesclar, recalcule os valores de `numChildren` para evitar conflitos de IDs de nós entre espaços de nomes de diferentes clusters de origem.
+3. Grave a saída mesclada no diretório de snapshots de destino do ClickHouse Keeper.
+
+<div id="handling-encryption-and-acls">
+  #### Como lidar com criptografia e ACLs
+</div>
+
+O ClickHouse Keeper oferece suporte aos mesmos esquemas de ACL do ZooKeeper (`world`, `auth`, `digest`). A forma de lidar com ACLs durante a conversão depende da sua configuração do ZooKeeper:
+
+* **Totalmente criptografado ou totalmente sem criptografia**: Converta diretamente. O conversor preserva as informações de ACL existentes.
+* **Parcialmente criptografado**: Antes de converter, atribua privilégios de superadministrador a uma conta e limpe as ACLs com `setAcl -R` nos paths afetados. Converta e, em seguida, reative a criptografia no ClickHouse Keeper, se necessário.
+
+<div id="verifying-the-migration">
+  #### Verificando a migração
+</div>
+
+Após iniciar o ClickHouse Keeper e reiniciar o ClickHouse, compare suas principais métricas com a linha de base pré-migração para confirmar que a migração foi bem-sucedida.
+
+Ao consolidar vários clusters do ZooKeeper, distinga entre:
+
+* **Caminhos comuns**: caminhos presentes em vários clusters de origem com dados idênticos — eles devem ser deduplicados no resultado consolidado.
+* **Caminhos diferenciados**: caminhos que existem apenas em clusters específicos (por exemplo, em `/clickhouse/tables` para cada grupo de shards) — eles devem ser preservados a partir da origem correta.
+
+Evite percorrer diretamente grandes árvores do ZooKeeper para fazer essa comparação. Em vez disso, grave todos os caminhos convertidos em um arquivo durante a conversão.
+
+<div id="post-migration-tuning">
+  #### Ajustes pós-migração
+</div>
+
+Após a migração, considere ajustar estas configurações para clusters maiores ou com maior vazão:
+
+| Configuração                          | Padrão  | Recomendado | Observações                                                |
+| ------------------------------------- | ------- | ----------- | ---------------------------------------------------------- |
+| `max_requests_batch_size`             | `100`   | `10000`     | Aumente para clusters com muitas partes ou muitos shards   |
+| `force_sync`                          | `true`  | `false`     | Gravações assíncronas de logs melhoram a vazão             |
+| `compress_logs`                       | `false` | `true`      | Comprime arquivos de log do Raft para reduzir I/O de disco |
+| `compress_snapshots_with_zstd_format` | `true`  | —           | Já habilitado por padrão; comprime snapshots com zstd      |
+
+Essas configurações são definidas em `coordination_settings` na sua [configuração do Keeper](#internal-coordination-settings).
+
+<div id="recovering-after-losing-quorum">
+  ### Recuperação após perder quórum
+</div>
+
+Como o ClickHouse Keeper usa Raft, ele pode tolerar uma certa quantidade de falhas de nós, dependendo do tamanho do cluster.
+Por exemplo, em um cluster de 3 nós, ele continuará funcionando corretamente se apenas 1 nó falhar.
+
+A configuração do cluster pode ser alterada dinamicamente, mas há algumas limitações. A reconfiguração também depende do Raft,
+portanto, para adicionar/remover um nó do cluster, você precisa ter quórum. Se muitos nós do cluster falharem ao mesmo tempo, sem nenhuma chance
+de iniciá-los novamente, o Raft deixará de funcionar e não permitirá reconfigurar seu cluster da forma convencional.
+
+Ainda assim, o ClickHouse Keeper tem um modo de recuperação que permite reconfigurar o cluster à força com apenas 1 nó.
+Isso deve ser feito apenas como último recurso, se você não conseguir iniciar seus nós novamente nem iniciar uma nova instância no mesmo endpoint.
+
+Pontos importantes antes de continuar:
+
+* Certifique-se de que os nós com falha não possam se conectar ao cluster novamente.
+* Não inicie nenhum dos novos nós até que isso seja especificado nas etapas.
+
+Depois de garantir que tudo acima está correto, você precisa fazer o seguinte:
+
+1. Escolha um único nó Keeper para ser seu novo líder. Lembre-se de que os dados desse nó serão usados em todo o cluster, por isso recomendamos usar um nó com o estado mais atualizado.
+2. Antes de fazer qualquer outra coisa, faça um backup das pastas `log_storage_path` e `snapshot_storage_path` do nó escolhido.
+3. Reconfigure o cluster em todos os nós que você pretende usar.
+4. Envie o comando de quatro letras `rcvr` para o nó escolhido, o que colocará o nó em modo de recuperação, OU pare a instância do Keeper no nó escolhido e inicie-a novamente com o argumento `--force-recovery`.
+5. Um por um, inicie as instâncias do Keeper nos novos nós, garantindo que `mntr` retorne `seguidor` para `zk_server_state` antes de iniciar o próximo.
+6. Enquanto estiver em modo de recuperação, o nó líder retornará uma mensagem de erro para o comando `mntr` até atingir quórum com os novos nós e recusará quaisquer solicitações do cliente e dos seguidores.
+7. Depois que o quórum for atingido, o nó líder voltará ao modo normal de operação, aceitando todas as solicitações usando a verificação do Raft com `mntr`, que deve retornar `leader` para `zk_server_state`.
+
+<div id="using-disks-with-keeper">
+  ## Usando discos com Keeper
+</div>
+
+O Keeper oferece suporte a um subconjunto de [discos externos](/pt-BR/concepts/features/configuration/server-config/storing-data) para armazenar snapshots, arquivos de log e o arquivo de estado.
+
+Os tipos de disco compatíveis são:
+
+* s3&#95;plain
+* s3
+* local
+
+A seguir, um exemplo de definições de disco contidas em uma configuração.
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <log_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/logs/</path>
+            </log_local>
+            <log_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/logs/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </log_s3_plain>
+            <snapshot_local>
+                <type>local</type>
+                <path>/var/lib/clickhouse/coordination/snapshots/</path>
+            </snapshot_local>
+            <snapshot_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/snapshots/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </snapshot_s3_plain>
+            <state_s3_plain>
+                <type>s3_plain</type>
+                <endpoint>https://some_s3_endpoint/state/</endpoint>
+                <access_key_id>ACCESS_KEY</access_key_id>
+                <secret_access_key>SECRET_KEY</secret_access_key>
+            </state_s3_plain>
+        </disks>
+    </storage_configuration>
+</clickhouse>
+```
+
+Para usar um disco para logs, a configuração `keeper_server.log_storage_disk` deve ser definida com o nome do disco.
+Para usar um disco para snapshots, a configuração `keeper_server.snapshot_storage_disk` deve ser definida com o nome do disco.
+Além disso, `keeper_server.latest_log_storage_disk` pode ser usado para os logs mais recentes, e `keeper_server.latest_snapshot_storage_disk`, para os snapshots mais recentes.
+Nesse caso, o Keeper moverá automaticamente os arquivos para os discos corretos quando novos logs ou snapshots forem criados.
+Para usar um disco para o arquivo de estado, a configuração `keeper_server.state_storage_disk` deve ser definida com o nome do disco.
+
+Mover arquivos entre discos é seguro, e não há risco de perda de dados se o Keeper parar no meio da transferência.
+Até que o arquivo seja completamente movido para o novo disco, ele não é excluído do disco antigo.
+
+O Keeper com `keeper_server.coordination_settings.force_sync` definido como `true` (`true` por padrão) não consegue atender a algumas garantias em todos os tipos de disco.
+No momento, apenas discos do tipo `local` oferecem suporte à sincronização persistente.
+Se `force_sync` for usado, `log_storage_disk` deverá ser um disco `local` se `latest_log_storage_disk` não for usado.
+Se `latest_log_storage_disk` for usado, ele deverá ser sempre um disco `local`.
+Se `force_sync` estiver desabilitado, discos de todos os tipos poderão ser usados em qualquer configuração.
+
+Uma possível configuração de armazenamento para uma instância do Keeper poderia ser a seguinte:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <log_storage_disk>log_s3_plain</log_storage_disk>
+        <latest_log_storage_disk>log_local</latest_log_storage_disk>
+
+        <snapshot_storage_disk>snapshot_s3_plain</snapshot_storage_disk>
+        <latest_snapshot_storage_disk>snapshot_local</latest_snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+Esta instância armazenará todos os logs, exceto o mais recente, no disco `log_s3_plain`, enquanto o log mais recente ficará no disco `log_local`.
+A mesma lógica se aplica aos snapshots: todos os snapshots, exceto o mais recente, serão armazenados em `snapshot_s3_plain`, enquanto o snapshot mais recente ficará no disco `snapshot_local`.
+
+<div id="changing-disk-setup">
+  ### Alterando a configuração de disco
+</div>
+
+<Warning>
+  Antes de aplicar uma nova configuração de disco, faça manualmente um backup de todos os logs e snapshots do Keeper.
+</Warning>
+
+Se uma configuração de disco em camadas estiver definida (usando discos separados para os arquivos mais recentes), o Keeper tentará mover automaticamente os arquivos para os discos corretos na inicialização.
+Aplica-se a mesma garantia de antes: até que o arquivo seja completamente movido para o novo disco, ele não é excluído do disco antigo, portanto, é seguro
+reiniciar várias vezes.
+
+Se for necessário mover arquivos para um disco totalmente novo (ou passar de uma configuração com 2 discos para uma configuração com um único disco), é possível usar várias definições de `keeper_server.old_snapshot_storage_disk` e `keeper_server.old_log_storage_disk`.
+
+A configuração a seguir mostra como passar da configuração anterior com 2 discos para uma nova configuração com um único disco:
+
+```xml
+<clickhouse>
+    <keeper_server>
+        <old_log_storage_disk>log_local</old_log_storage_disk>
+        <old_log_storage_disk>log_s3_plain</old_log_storage_disk>
+        <log_storage_disk>log_local2</log_storage_disk>
+
+        <old_snapshot_storage_disk>snapshot_s3_plain</old_snapshot_storage_disk>
+        <old_snapshot_storage_disk>snapshot_local</old_snapshot_storage_disk>
+        <snapshot_storage_disk>snapshot_local2</snapshot_storage_disk>
+    </keeper_server>
+</clickhouse>
+```
+
+Ao iniciar, todos os arquivos de log serão movidos de `log_local` e `log_s3_plain` para o disco `log_local2`.
+Além disso, todos os arquivos de snapshot serão movidos de `snapshot_local` e `snapshot_s3_plain` para o disco `snapshot_local2`.
+
+<div id="configuring-logs-cache">
+  ## Configurando o cache de logs
+</div>
+
+Para minimizar a quantidade de dados lidos do disco, o Keeper mantém entradas de log em cache na memória.
+Se as solicitações forem grandes, as entradas de log consumirão memória demais, então o volume de logs em cache é limitado.
+O limite é controlado por estas duas configurações:
+
+* `latest_logs_cache_size_threshold` - tamanho total dos logs mais recentes armazenados no cache
+* `commit_logs_cache_size_threshold` - tamanho total dos logs subsequentes que precisam ser confirmados em seguida
+
+Se os valores padrão forem grandes demais, você pode reduzir o uso de memória diminuindo essas duas configurações.
+
+<Note>
+  Você pode usar o comando `pfev` para verificar a quantidade de logs lidos de cada cache e do arquivo.
+  Você também pode usar métricas do endpoint do Prometheus para acompanhar o tamanho atual de ambos os caches.
+</Note>
+
+<div id="prometheus">
+  ## Prometheus
+</div>
+
+O Keeper pode expor dados de métricas para coleta pelo [Prometheus](https://prometheus.io).
+
+Configurações:
+
+* `endpoint` – Endpoint HTTP para a coleta de métricas pelo servidor Prometheus. Deve começar com &#39;/&#39;.
+* `port` – Porta do `endpoint`.
+* `metrics` – Sinalizador que define se as métricas da tabela [system.metrics](/pt-BR/reference/system-tables/metrics) serão expostas.
+* `events` – Sinalizador que define se as métricas da tabela [system.events](/pt-BR/reference/system-tables/events) serão expostas.
+* `asynchronous_metrics` – Sinalizador que define se os valores atuais das métricas da tabela [system.asynchronous&#95;metrics](/pt-BR/reference/system-tables/asynchronous_metrics) serão expostos.
+
+**Exemplo**
+
+```xml highlight={5-11}
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>9363</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+</clickhouse>
+```
+
+Verifique (substitua `127.0.0.1` pelo endereço IP ou pelo hostname do seu servidor ClickHouse):
+
+```bash
+curl 127.0.0.1:9363/metrics
+```
+
+Consulte também a [integração com Prometheus do ClickHouse Cloud](/pt-BR/products/cloud/features/monitoring/prometheus).
+
+<div id="clickhouse-keeper-user-guide">
+  ## Guia do usuário do ClickHouse Keeper
+</div>
+
+Este guia apresenta configurações simples e mínimas para configurar o ClickHouse Keeper, com um exemplo de como testar operações distribuídas. Este exemplo é executado em 3 nós Linux.
+
+<div id="1-configure-nodes-with-keeper-settings">
+  ### 1. Configure os nós com as configurações do Keeper
+</div>
+
+1. Instale 3 instâncias do ClickHouse em 3 hosts (`chnode1`, `chnode2`, `chnode3`). (Consulte o [Quick Start](/pt-BR/get-started/setup/install) para mais detalhes sobre a instalação do ClickHouse.)
+
+2. Em cada nó, adicione a seguinte entrada para permitir a comunicação externa por meio da interface de rede.
+   ```xml
+   <listen_host>0.0.0.0</listen_host>
+   ```
+
+3. Adicione a seguinte configuração do ClickHouse Keeper aos três servidores, atualizando a configuração `<server_id>` em cada servidor; para `chnode1`, seria `1`, para `chnode2`, seria `2` e assim por diante.
+
+   ```xml
+   <keeper_server>
+       <tcp_port>9181</tcp_port>
+       <server_id>1</server_id>
+       <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+       <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+
+       <coordination_settings>
+           <operation_timeout_ms>10000</operation_timeout_ms>
+           <session_timeout_ms>30000</session_timeout_ms>
+           <raft_logs_level>warning</raft_logs_level>
+       </coordination_settings>
+
+       <raft_configuration>
+           <server>
+               <id>1</id>
+               <hostname>chnode1.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>2</id>
+               <hostname>chnode2.domain.com</hostname>
+               <port>9234</port>
+           </server>
+           <server>
+               <id>3</id>
+               <hostname>chnode3.domain.com</hostname>
+               <port>9234</port>
+           </server>
+       </raft_configuration>
+   </keeper_server>
+   ```
+
+   Estas são as configurações básicas usadas acima:
+
+   | Parâmetro                 | Descrição                                                                         | Exemplo                                             |
+   | ------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------- |
+   | tcp&#95;port              | porta a ser usada pelos clientes do Keeper                                        | 9181, equivalente padrão ao 2181, como no ZooKeeper |
+   | server&#95;id             | identificador de cada servidor do ClickHouse Keeper usado na configuração do Raft | 1                                                   |
+   | coordination&#95;settings | seção de parâmetros como timeouts                                                 | timeouts: 10000, nível de log: trace                |
+   | server                    | definição do servidor participante                                                | lista com a definição de cada servidor              |
+   | raft&#95;configuration    | configurações de cada servidor no cluster do Keeper                               | servidor e configurações de cada um                 |
+   | id                        | ID numérico do servidor para os serviços do Keeper                                | 1                                                   |
+   | hostname                  | hostname, IP ou FQDN de cada servidor no cluster do Keeper                        | `chnode1.domain.com`                                |
+   | port                      | porta usada para escutar conexões entre servidores do Keeper                      | 9234                                                |
+
+4. Habilite o componente Zookeeper. Ele usará o mecanismo ClickHouse Keeper:
+
+   ```xml
+       <zookeeper>
+           <node>
+               <host>chnode1.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode2.domain.com</host>
+               <port>9181</port>
+           </node>
+           <node>
+               <host>chnode3.domain.com</host>
+               <port>9181</port>
+           </node>
+       </zookeeper>
+   ```
+
+   Estas são as configurações básicas usadas acima:
+
+   | Parâmetro | Descrição                                            | Exemplo                                    |
+   | --------- | ---------------------------------------------------- | ------------------------------------------ |
+   | node      | lista de nós para conexões com o ClickHouse Keeper   | entrada de configuração para cada servidor |
+   | host      | hostname, IP ou FQDN de cada nó do ClickHouse Keeper | `chnode1.domain.com`                       |
+   | port      | porta do cliente do ClickHouse Keeper                | 9181                                       |
+
+5. Reinicie o ClickHouse e verifique se cada instância do Keeper está em execução. Execute o comando a seguir em cada servidor. O comando `ruok` retorna `imok` se o Keeper estiver em execução e funcionando corretamente:
+   ```bash
+   # echo ruok | nc localhost 9181; echo
+   imok
+   ```
+
+6. O banco de dados `system` tem uma tabela chamada `zookeeper` que contém os detalhes das suas instâncias do ClickHouse Keeper. Vamos ver essa tabela:
+
+   ```sql
+   SELECT *
+   FROM system.zookeeper
+   WHERE path IN ('/', '/clickhouse')
+   ```
+
+   A tabela tem esta aparência:
+
+   ```response
+   ┌─name───────┬─value─┬─czxid─┬─mzxid─┬───────────────ctime─┬───────────────mtime─┬─version─┬─cversion─┬─aversion─┬─ephemeralOwner─┬─dataLength─┬─numChildren─┬─pzxid─┬─path────────┐
+   │ clickhouse │       │   124 │   124 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        2 │        0 │              0 │          0 │           2 │  5693 │ /           │
+   │ task_queue │       │   125 │   125 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        1 │        0 │              0 │          0 │           1 │   126 │ /clickhouse │
+   │ tables     │       │  5693 │  5693 │ 2022-03-07 00:49:34 │ 2022-03-07 00:49:34 │       0 │        3 │        0 │              0 │          0 │           3 │  6461 │ /clickhouse │
+   └────────────┴───────┴───────┴───────┴─────────────────────┴─────────────────────┴─────────┴──────────┴──────────┴────────────────┴────────────┴─────────────┴───────┴─────────────┘
+   ```
+
+<div id="2--configure-a-cluster-in-clickhouse">
+  ### 2.  Configure um cluster no ClickHouse
+</div>
+
+1. Vamos configurar um cluster simples com 2 shards e apenas uma réplica em 2 dos nós. O terceiro nó será usado para atingir o quórum exigido pelo ClickHouse Keeper. Atualize a configuração em `chnode1` e `chnode2`. O cluster a seguir define 1 shard em cada nó, totalizando 2 shards sem replicação. Neste exemplo, parte dos dados ficará em um nó e parte ficará no outro:
+
+   ```xml
+       <remote_servers>
+           <cluster_2S_1R>
+               <shard>
+                   <replica>
+                       <host>chnode1.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+               <shard>
+                   <replica>
+                       <host>chnode2.domain.com</host>
+                       <port>9000</port>
+                       <user>default</user>
+                       <password>ClickHouse123!</password>
+                   </replica>
+               </shard>
+           </cluster_2S_1R>
+       </remote_servers>
+   ```
+
+   | Parâmetro | Descrição                                                                  | Exemplo                                  |
+   | --------- | -------------------------------------------------------------------------- | ---------------------------------------- |
+   | shard     | lista de réplicas na definição do cluster                                  | lista de réplicas de cada shard          |
+   | replica   | lista de configurações de cada réplica                                     | entradas de configuração de cada réplica |
+   | host      | hostname, IP ou FQDN do servidor que hospedará a réplica do shard          | `chnode1.domain.com`                     |
+   | port      | porta usada para comunicação pelo protocolo TCP nativo                     | 9000                                     |
+   | user      | nome de usuário que será usado para autenticação nas instâncias do cluster | default                                  |
+   | password  | senha do usuário definida para permitir conexões às instâncias do cluster  | `ClickHouse123!`                         |
+
+2. Reinicie o ClickHouse e verifique se o cluster foi criado:
+
+   ```sql
+   SHOW clusters;
+   ```
+
+   Você deverá ver seu cluster:
+
+   ```response
+   ┌─cluster───────┐
+   │ cluster_2S_1R │
+   └───────────────┘
+   ```
+
+<div id="3-create-and-test-distributed-table">
+  ### 3. Criar e testar tabela distribuída
+</div>
+
+1. Crie um novo banco de dados no novo cluster usando o cliente ClickHouse em `chnode1`. A cláusula `ON CLUSTER` cria automaticamente o banco de dados em ambos os nós.
+   ```sql
+   CREATE DATABASE db1 ON CLUSTER 'cluster_2S_1R';
+   ```
+
+2. Crie uma nova tabela no banco de dados `db1`. Mais uma vez, `ON CLUSTER` cria a tabela em ambos os nós.
+   ```sql
+   CREATE TABLE db1.table1 on cluster 'cluster_2S_1R'
+   (
+       `id` UInt64,
+       `column1` String
+   )
+   ENGINE = MergeTree
+   ORDER BY column1
+   ```
+
+3. No nó `chnode1`, adicione algumas linhas:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (1, 'abc'),
+       (2, 'def')
+   ```
+
+4. Adicione algumas linhas no nó `chnode2`:
+   ```sql
+   INSERT INTO db1.table1
+       (id, column1)
+   VALUES
+       (3, 'ghi'),
+       (4, 'jkl')
+   ```
+
+5. Observe que executar uma instrução `SELECT` em cada nó mostra apenas os dados desse nó. Por exemplo, em `chnode1`:
+
+   ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: 7ef1edbc-df25-462b-a9d4-3fe6f9cb0b6d
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+
+   2 rows in set. Elapsed: 0.006 sec.
+   ```
+
+   Em `chnode2`:
+
+6. ```sql
+   SELECT *
+   FROM db1.table1
+   ```
+
+   ```response
+   Query id: c43763cc-c69c-4bcc-afbe-50e764adfcbf
+
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+   ```
+
+7. Você pode criar uma tabela `Distributed` para representar os dados nos dois shards. As tabelas com o table engine `Distributed` não armazenam dados próprios, mas permitem o processamento distribuído de consultas em vários servidores. As leituras acessam todos os shards, e as gravações podem ser distribuídas entre eles. Execute a seguinte consulta em `chnode1`:
+   ```sql
+   CREATE TABLE db1.dist_table (
+       id UInt64,
+       column1 String
+   )
+   ENGINE = Distributed(cluster_2S_1R,db1,table1)
+   ```
+
+8. Observe que consultar `dist_table` retorna todas as quatro linhas de dados dos dois shards:
+
+   ```sql
+   SELECT *
+   FROM db1.dist_table
+   ```
+
+   ```response
+   Query id: 495bffa0-f849-4a0c-aeea-d7115a54747a
+
+   ┌─id─┬─column1─┐
+   │  1 │ abc     │
+   │  2 │ def     │
+   └────┴─────────┘
+   ┌─id─┬─column1─┐
+   │  3 │ ghi     │
+   │  4 │ jkl     │
+   └────┴─────────┘
+
+   4 rows in set. Elapsed: 0.018 sec.
+   ```
+
+<div id="summary">
+  ### Resumo
+</div>
+
+Este guia mostrou como configurar um cluster usando o ClickHouse Keeper. Com o ClickHouse Keeper, você pode configurar clusters e definir tabelas distribuídas que podem ser replicadas entre os shards.
+
+<div id="configuring-clickhouse-keeper-with-unique-paths">
+  ## Configurando o ClickHouse Keeper com caminhos exclusivos
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### Descrição
+</div>
+
+Este artigo descreve como usar a configuração da macro interna `{uuid}`
+para criar entradas exclusivas no ClickHouse Keeper ou ZooKeeper. Caminhos exclusivos
+ajudam ao criar e remover tabelas com frequência, pois
+isso evita ter de esperar vários minutos até que a coleta de lixo do Keeper
+remova entradas de caminho, já que, sempre que um caminho é criado, um novo `uuid` é usado
+nesse caminho; os caminhos nunca são reutilizados.
+
+<div id="example-environment">
+  ### Ambiente de Example
+</div>
+
+Um cluster de três nós que será configurado para ter o ClickHouse Keeper
+em todos os três nós e o ClickHouse em dois deles. Isso fornece ao
+ClickHouse Keeper três nós (incluindo um nó de desempate) e
+um único shard do ClickHouse composto por duas réplicas.
+
+| node                    | descrição                             |
+| ----------------------- | ------------------------------------- |
+| `chnode1.marsnet.local` | nó de dados - cluster `cluster_1S_2R` |
+| `chnode2.marsnet.local` | nó de dados - cluster `cluster_1S_2R` |
+| `chnode3.marsnet.local` | nó de desempate do ClickHouse Keeper  |
+
+Configuração de Example para o cluster:
+
+```xml
+    <remote_servers>
+        <cluster_1S_2R>
+            <shard>
+                <replica>
+                    <host>chnode1.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+                <replica>
+                    <host>chnode2.marsnet.local</host>
+                    <port>9440</port>
+                    <user>default</user>
+                    <password>ClickHouse123!</password>
+                    <secure>1</secure>
+                </replica>
+            </shard>
+        </cluster_1S_2R>
+    </remote_servers>
+```
+
+<div id="procedures-to-set-up-tables-to-use-uuid">
+  ### Procedimentos para configurar tabelas para usarem `{uuid}`
+</div>
+
+1. Configure as macros em cada servidor
+   exemplo para o servidor 1:
+
+```xml
+    <macros>
+        <shard>1</shard>
+        <replica>replica_1</replica>
+    </macros>
+```
+
+<Note>
+  Observe que definimos macros para `shard` e `réplica`, mas `{uuid}` não está definido aqui — ele já vem embutido, então não é necessário defini-lo.
+</Note>
+
+2. Crie um banco de dados
+
+```sql
+CREATE DATABASE db_uuid
+      ON CLUSTER 'cluster_1S_2R'
+      ENGINE Atomic;
+```
+
+```response
+CREATE DATABASE db_uuid ON CLUSTER cluster_1S_2R
+ENGINE = Atomic
+
+Query id: 07fb7e65-beb4-4c30-b3ef-bd303e5c42b5
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+3. Crie uma tabela no cluster usando as macros e `{uuid}`
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}' )
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+Query id: 8f542664-4548-4a02-bd2a-6f2c973d0dc4
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+4. Crie uma tabela distribuída
+
+```sql
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1' );
+```
+
+```response
+CREATE TABLE db_uuid.dist_uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = Distributed('cluster_1S_2R', 'db_uuid', 'uuid_table1')
+
+Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```
+
+<div id="testing">
+  ### Teste
+</div>
+
+1. Insira dados no primeiro nó (por exemplo, `chnode1`)
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 1, 'abc');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: 0f178db7-50a6-48e2-9a1b-52ed14e6e0f9
+
+Ok.
+
+1 row in set. Elapsed: 0.033 sec.
+```
+
+2. Insira dados no segundo nó (por exemplo, `chnode2`)
+
+```sql
+INSERT INTO db_uuid.uuid_table1
+   ( id, column1)
+   VALUES
+   ( 2, 'def');
+```
+
+```response
+INSERT INTO db_uuid.uuid_table1 (id, column1) FORMAT Values
+
+Query id: edc6f999-3e7d-40a0-8a29-3137e97e3607
+
+Ok.
+
+1 row in set. Elapsed: 0.529 sec.
+```
+
+3. Visualize os registros usando a tabela distribuída
+
+```sql
+SELECT * FROM db_uuid.dist_uuid_table1;
+```
+
+```response
+SELECT *
+FROM db_uuid.dist_uuid_table1
+
+Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+└────┴─────────┘
+┌─id─┬─column1─┐
+│  2 │ def     │
+└────┴─────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+<div id="alternatives">
+  ### Alternativas
+</div>
+
+O caminho de replicação padrão pode ser definido previamente por macros e também com `{uuid}`
+
+1. Defina o padrão das tabelas em cada nó
+
+```xml
+<default_replica_path>/clickhouse/tables/{shard}/db_uuid/{uuid}</default_replica_path>
+<default_replica_name>{replica}</default_replica_name>
+```
+
+<Tip>
+  Você também pode definir uma macro `{database}` em cada nó, caso os nós sejam usados para bancos de dados específicos.
+</Tip>
+
+2. Crie a tabela sem parâmetros explícitos:
+
+```sql
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER 'cluster_1S_2R'
+   (
+     id UInt64,
+     column1 String
+   )
+   ENGINE = ReplicatedMergeTree
+   ORDER BY (id);
+```
+
+```response
+CREATE TABLE db_uuid.uuid_table1 ON CLUSTER cluster_1S_2R
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree
+ORDER BY id
+
+Query id: ab68cda9-ae41-4d6d-8d3b-20d8255774ee
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                0 │
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+
+2 rows in set. Elapsed: 1.175 sec.
+```
+
+3. Verifique se ele usou as mesmas configurações da configuração padrão
+
+```sql
+SHOW CREATE TABLE db_uuid.uuid_table1;
+```
+
+```response
+SHOW CREATE TABLE db_uuid.uuid_table1
+
+CREATE TABLE db_uuid.uuid_table1
+(
+    `id` UInt64,
+    `column1` String
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/db_uuid/{uuid}', '{replica}')
+ORDER BY id
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+<div id="troubleshooting">
+  ### Solução de problemas
+</div>
+
+Exemplo de comando para obter informações da tabela e o UUID:
+
+```sql
+SELECT * FROM system.tables
+WHERE database = 'db_uuid' AND name = 'uuid_table1';
+```
+
+Comando de exemplo para obter informações sobre a tabela no ZooKeeper usando o UUID da tabela acima
+
+```sql
+SELECT * FROM system.zookeeper
+WHERE path = '/clickhouse/tables/1/db_uuid/9e8a3cc2-0dec-4438-81a7-c3e63ce2a1cf/replicas';
+```
+
+<Note>
+  O banco de dados deve ser `Atomic`; se você estiver atualizando de uma versão anterior, o
+  banco de dados `default` provavelmente será do tipo `Ordinary`.
+</Note>
+
+Para verificar:
+
+Por exemplo,
+
+```sql
+SELECT name, engine FROM system.databases WHERE name = 'db_uuid';
+```
+
+```response
+SELECT
+    name,
+    engine
+FROM system.databases
+WHERE name = 'db_uuid'
+
+Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
+
+┌─name────┬─engine─┐
+│ db_uuid │ Atomic │
+└─────────┴────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+<div id="reconfiguration">
+  ## Reconfiguração dinâmica do ClickHouse Keeper
+</div>
+
+<SelfManaged />
+
+<div id="description">
+  ### Descrição
+</div>
+
+O ClickHouse Keeper oferece suporte parcial ao comando [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
+do ZooKeeper para reconfiguração dinâmica do cluster se `keeper_server.enable_reconfiguration` estiver ativado.
+
+<Note>
+  Se essa configuração estiver desativada, você poderá reconfigurar o cluster alterando manualmente a seção
+  `raft_configuration` da réplica. Certifique-se de editar os arquivos em todas as réplicas, pois somente o líder aplicará as alterações.
+  Como alternativa, você pode enviar uma consulta `reconfig` por meio de qualquer cliente compatível com ZooKeeper.
+</Note>
+
+Um nó virtual `/keeper/config` contém a última configuração do cluster confirmada no seguinte formato:
+
+```text
+server.id = server_host:server_port[;server_type][;server_priority]
+server.id2 = ...
+...
+```
+
+* Cada entrada de servidor é separada por uma quebra de linha.
+* `server_type` é `participant` ou `learner` ([learner](https://github.com/eBay/NuRaft/blob/master/docs/readonly_member.md) não participa das eleições de líder).
+* `server_priority` é um inteiro não negativo que indica [quais nós devem ser priorizados nas eleições de líder](https://github.com/eBay/NuRaft/blob/master/docs/leader_election_priority.md).
+  Prioridade 0 significa que o servidor nunca será líder.
+
+Exemplo:
+
+```sql
+:) get /keeper/config
+server.1=zoo1:9234;participant;1
+server.2=zoo2:9234;participant;1
+server.3=zoo3:9234;participant;1
+```
+
+Você pode usar o comando `reconfig` para adicionar novos servidores, remover os existentes e alterar as
+prioridades dos servidores atuais. Veja alguns exemplos (usando `clickhouse-keeper-client`):
+
+```bash
+# Adicionar dois novos servidores
+reconfig add "server.5=localhost:123,server.6=localhost:234;learner"
+# Remover outros dois servidores
+reconfig remove "3,4"
+# Alterar a prioridade do servidor existente para 8
+reconfig add "server.5=localhost:5123;participant;8"
+```
+
+E aqui estão exemplos de `kazoo`:
+
+```python
+# Adicionar dois novos servidores, remover dois outros servidores
+reconfig(joining="server.5=localhost:123,server.6=localhost:234;learner", leaving="3,4")
+
+# Alterar a prioridade do servidor existente para 8
+reconfig(joining="server.5=localhost:5123;participant;8", leaving=None)
+```
+
+Os servidores em `joining` devem estar no formato de servidor descrito acima. As entradas de servidor devem ser separadas por vírgulas.
+Ao adicionar novos servidores, você pode omitir `server_priority` (o valor padrão é 1) e `server_type` (o valor padrão
+é `participant`).
+
+Se quiser alterar a prioridade de um servidor existente, adicione-o a `joining` com a prioridade desejada.
+O host, a porta e o tipo do servidor devem ser iguais aos da configuração existente do servidor.
+
+Os servidores são adicionados e removidos na ordem em que aparecem em `joining` e `leaving`.
+Todas as atualizações de `joining` são processadas antes das atualizações de `leaving`.
+
+Há algumas ressalvas na implementação da reconfiguração do Keeper:
+
+* Apenas a reconfiguração incremental é suportada. Requisições com `new_members` não vazio são recusadas.
+
+  A implementação do ClickHouse Keeper depende da API do NuRaft para alterar a composição dinamicamente. O NuRaft oferece uma forma de
+  adicionar um único servidor ou remover um único servidor, um de cada vez. Isso significa que cada alteração na configuração
+  (cada parte de `joining`, cada parte de `leaving`) deve ser decidida separadamente. Portanto, não há
+  reconfiguração em lote, pois isso seria enganoso para os usuários finais.
+
+  Alterar o tipo do servidor (participant/learner) também não é possível, já que isso não é suportado pelo NuRaft, e
+  a única forma seria remover e adicionar o servidor, o que, novamente, seria enganoso.
+
+* Você não pode usar o valor `znodestat` retornado.
+
+* O campo `from_version` não é usado. Todas as requisições com `from_version` definido são recusadas.
+  Isso ocorre porque `/keeper/config` é um nó virtual, o que significa que ele não é armazenado em
+  armazenamento persistente, mas sim gerado em tempo real com a configuração de nó especificada para cada requisição.
+  Essa decisão foi tomada para não duplicar dados, já que o NuRaft já armazena essa configuração.
+
+* Diferentemente do ZooKeeper, não há como esperar a reconfiguração do cluster enviando um comando `sync`.
+  A nova configuração será aplicada *eventualmente*, mas sem garantias de tempo.
+
+* O comando `reconfig` pode falhar por vários motivos. Você pode verificar o estado do cluster e ver se a atualização
+  foi aplicada.
+
+<div id="converting-a-single-node-keeper-into-a-cluster">
+  ## Convertendo um keeper de nó único em um cluster
+</div>
+
+Às vezes, é necessário expandir um nó keeper experimental para formar um cluster. Veja a seguir como fazer isso passo a passo em um cluster de 3 nós:
+
+* **IMPORTANTE**: novos nós devem ser adicionados em lotes menores que o quórum atual; caso contrário, eles elegerão um líder entre si. Neste exemplo, eles são adicionados um a um.
+* O nó keeper existente deve ter o parâmetro de configuração `keeper_server.enable_reconfiguration` habilitado.
+* Inicie um segundo nó com a nova configuração completa do cluster keeper.
+* Depois que ele iniciar, adicione-o ao nó 1 usando [`reconfig`](#reconfiguration).
+* Em seguida, inicie um terceiro nó e adicione-o usando [`reconfig`](#reconfiguration).
+* Atualize a configuração do `clickhouse-server`, adicionando o novo nó keeper, e reinicie-o para aplicar as alterações.
+* Atualize a configuração do Raft no nó 1 e, opcionalmente, reinicie-o.
+
+Para se familiarizar com o processo, aqui está um [repositório sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
+
+<div id="unsupported-features">
+  ## Recursos não suportados
+</div>
+
+Embora o ClickHouse Keeper tenha como objetivo ser totalmente compatível com o ZooKeeper, alguns recursos ainda não foram implementados (embora o desenvolvimento continue em andamento):
+
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) não oferece suporte ao retorno do objeto `Stat`
+* [`create`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#create\(java.lang.String,byte%5B%5D,java.util.List,org.apache.zookeeper.CreateMode,org.apache.zookeeper.data.Stat\)) não oferece suporte a [TTL](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/CreateMode.html#PERSISTENT_WITH_TTL)
+* [`addWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#addWatch\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.AddWatchMode\)) não funciona com watches [`PERSISTENT`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/AddWatchMode.html#PERSISTENT)
+* [`removeWatch`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeWatches\(java.lang.String,org.apache.zookeeper.Watcher,org.apache.zookeeper.Watcher.WatcherType,boolean\)) e [`removeAllWatches`](https://zookeeper.apache.org/doc/r3.9.1/apidocs/zookeeper-server/org/apache/zookeeper/ZooKeeper.html#removeAllWatches\(java.lang.String,org.apache.zookeeper.Watcher.WatcherType,boolean\)) não têm suporte
+* `setWatches` não tem suporte
+* A criação de znodes do tipo [`CONTAINER`](https://zookeeper.apache.org/doc/r3.5.1-alpha/api/org/apache/zookeeper/CreateMode.html) não tem suporte
+* A [`autenticação SASL`](https://cwiki.apache.org/confluence/display/ZOOKEEPER/Zookeeper+and+SASL) não tem suporte

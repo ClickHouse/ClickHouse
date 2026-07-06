@@ -1,0 +1,343 @@
+---
+slug: /use-cases/observability/clickstack/integrations/kafka-logs
+title: 'ClickStackでKafkaログを監視'
+sidebarTitle: 'Kafkaログ'
+description: 'ClickStackでKafkaログを監視'
+doc_type: 'guide'
+keywords: ['Kafka', 'ログ', 'OTEL', 'ClickStack', 'broker監視', 'Log4j']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OTel `filelog` receiver を使用して、ClickStack で Kafka broker のログ (Log4j フォーマット) を収集して可視化します。デモデータセットとあらかじめ用意されたダッシュボードが含まれています。
+</Info>
+
+<div id="existing-kafka">
+  ## 既存のKafkaとのインテグレーション
+</div>
+
+このセクションでは、ClickStack OTel collector の設定を変更し、既存の Kafka 環境から Kafka ブローカーのログを ClickStack に送信するよう設定する方法を説明します。
+既存環境の設定を行う前に Kafkaログ インテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/kafka-logs#demo-dataset) セクションにある事前設定済みの環境とサンプルデータでテストできます。
+
+<div id="prerequisites">
+  ### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス
+* 既存の Kafka インストール環境 (バージョン 2.0 以降)
+* Kafka のログファイル (`server.log`、`controller.log` など) へのアクセス
+
+<Steps>
+  <Step>
+    #### Kafka のログ設定を確認する
+
+    Kafka は Log4j を使用しており、ログは `kafka.logs.dir` システムプロパティまたは `LOG_DIR` 環境変数で指定されたディレクトリに書き込まれます。ログファイルの保存場所を確認してください。
+
+    ```bash
+    # デフォルトの場所
+    ls $KAFKA_HOME/logs/      # 標準の Apache Kafka（デフォルトは <install-dir>/logs/）
+    ls /var/log/kafka/        # RPM/DEB パッケージインストール
+    ```
+
+    主な Kafka のログファイル:
+
+    * **`server.log`**: 一般的なブローカーのログ (起動、接続、レプリケーション、エラー)
+    * **`controller.log`**: コントローラー固有のイベント (リーダー選出、パーティションの再割り当て)
+    * **`state-change.log`**: パーティションおよびレプリカの状態遷移
+
+    Kafka のデフォルトの Log4j パターンでは、次のような行が出力されます:
+
+    ```text
+    [2026-03-09 14:23:45,123] INFO [KafkaServer id=0] started (kafka.server.KafkaServer)
+    ```
+
+    <Note>
+      Docker ベースの Kafka デプロイメント (例: `confluentinc/cp-kafka`) では、デフォルトの Log4j 設定に含まれるのはコンソール appender のみで、file appender はありません。そのため、logs は stdout にしか出力されません。`filelog` receiver を使用するには、`log4j.properties` に file appender を追加するか、stdout をパイプする (例: `| tee /var/log/kafka/server.log`) ことで、logs をファイルにリダイレクトする必要があります。
+    </Note>
+  </Step>
+
+  <Step>
+    #### Kafka 用のカスタム OTel collector 設定を作成する
+
+    ClickStack では、カスタム設定ファイルをマウントし、環境変数を設定することで、ベースの OpenTelemetry Collector 設定を拡張できます。このカスタム設定は、HyperDX が OpAMP 経由で管理するベース設定にマージされます。
+
+    以下の内容で、`kafka-logs-monitoring.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    receivers:
+      filelog/kafka:
+        include:
+          - /var/log/kafka/server.log
+          - /var/log/kafka/controller.log  # オプション。log4j が別ファイルアペンダーで設定されている場合のみ存在する
+          - /var/log/kafka/state-change.log  # optional, same as above
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-production"
+
+    service:
+      pipelines:
+        logs/kafka:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    <Note>
+      * カスタム設定で定義するのは、新しい receiver とパイプラインだけです。プロセッサ (`memory_limiter`、`transform`、`batch`) とエクスポーター (`clickhouse`) は、ベースの ClickStack 設定ですでに定義されているため、名前を参照するだけで済みます。
+      * `multiline` 設定により、スタックトレースが 1 つのログエントリとして取り込まれます。
+      * この設定では、collector の起動時に既存のログをすべて読み込むため、`start_at: beginning` を使用しています。本番環境へのデプロイでは、collector の再起動時にログを再取り込みしないよう、`start_at: end` に変更してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### ClickStack でカスタム設定を読み込むように構成する
+
+    既存の ClickStack デプロイメントでカスタム collector の設定を有効にするには、次の対応が必要です。
+
+    1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
+    2. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定する
+    3. collector が Kafka のログを読み取れるように、Kafka のログディレクトリをマウントする
+
+    <Tabs>
+      <Tab title="Docker Compose">
+        ClickStack のデプロイメント設定を更新します。
+
+        ```yaml
+        services:
+          clickstack:
+            # ... 既存の設定 ...
+            environment:
+              - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+              # ... その他の環境変数 ...
+            volumes:
+              - ./kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+              - /var/log/kafka:/var/log/kafka:ro
+              # ... その他のボリューム ...
+        ```
+      </Tab>
+
+      <Tab title="Docker Run (All-in-One Image)">
+        Docker で all-in-one イメージを使用している場合は、次を実行します。
+
+        ```bash
+        docker run --name clickstack \
+          -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -v "$(pwd)/kafka-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log/kafka:/var/log/kafka:ro \
+          clickhouse/clickstack-all-in-one:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <Note>
+      ClickStack collector に Kafka のログファイルを読み取るための適切な権限があることを確認してください。本番環境では、読み取り専用マウント (`:ro`) を使用し、最小権限の原則に従ってください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Searchビュー" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="ログビュー" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番環境のシステムを設定する前に、事前に生成されたサンプルデータセットを使って Kafkaログ インテグレーションをテストします。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルのログファイルをダウンロードします。
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/kafka/server.log
+    ```
+  </Step>
+
+  <Step>
+    #### テスト用の collector 設定を作成する
+
+    以下の内容で、`kafka-logs-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > kafka-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/kafka:
+        include:
+          - /tmp/kafka-demo/server.log
+        start_at: beginning
+        multiline:
+          line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
+        operators:
+          - type: regex_parser
+            regex: '^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3})\] (?P<severity>\w+) (?P<message>.*)'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.timestamp
+              layout: '%Y-%m-%d %H:%M:%S,%L'
+            severity:
+              parse_from: attributes.severity
+
+          - type: move
+            from: attributes.message
+            to: body
+
+          - type: add
+            field: attributes.source
+            value: "kafka-demo"
+
+          - type: add
+            field: resource["service.name"]
+            value: "kafka-demo"
+
+    service:
+      pipelines:
+        logs/kafka-demo:
+          receivers: [filelog/kafka]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモ用のログと設定を使用して ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/kafka-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/server.log:/tmp/kafka-demo/server.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    ## HyperDX でログを確認する
+
+    ClickStack が起動したら、次の手順を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウントの作成が必要な場合があります)
+    2. Search view に移動し、ログソースを `Logs` に設定します
+    3. 時間範囲を **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるように設定します
+
+    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Log view" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/kafka-logs-dashboard.json'} download="kafka-logs-dashboard.json" eventName="docs.kafka_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>してダッシュボード設定を取得します
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
+    1. HyperDX を開き、Dashboards セクションに移動します。
+    2. 右上の三点メニューから「Import Dashboard」をクリックします。
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポート" />
+
+    3. kafka-logs-dashboard.json ファイルをアップロードし、インポートを完了します。
+
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Kafkaログ ダッシュボードのインポート完了" />
+  </Step>
+
+  <Step>
+    #### ダッシュボードが作成され、すべての可視化が事前に設定された状態になります
+
+    デモデータセットでは、時間範囲に **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)** が含まれるよう設定します。
+
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafkaログ のダッシュボード例" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+**実際に適用されているconfigに、filelog receiverが含まれていることを確認します。**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**collector のエラーを確認する:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log
+```
+
+**Kafka のログ形式が想定どおりのパターンに一致していることを確認します。**
+
+```bash
+tail -1 /var/log/kafka/server.log
+```
+
+Kafka のインストールでカスタムの Log4j パターンを使用している場合は、`regex_parser` の正規表現もそれに合わせて調整してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なイベント (ブローカー障害、レプリケーションエラー、コンシューマグループの問題) に備えて[アラート](/ja/clickstack/features/alerts)を設定します
+* 包括的な Kafka 監視のために[Kafka メトリクス](/ja/clickstack/integration-examples/kafka-metrics)と組み合わせます
+* 特定のユースケース (コントローライベント、パーティション再割り当て) 向けに追加の[ダッシュボード](/ja/clickstack/features/dashboards/overview)を作成します
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、素早くセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を利用しています。本番環境のデプロイメントでは、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

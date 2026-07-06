@@ -73,6 +73,106 @@ void registerInputFormatLineAsString(FormatFactory & factory)
     {
         return std::make_shared<LineAsStringRowInputFormat>(std::make_shared<const Block>(sample), buf, params);
     });
+
+    factory.setDocumentation("LineAsString", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✔     | ✔      |       |
+
+## Description {#description}
+
+The `LineAsString` format interprets every line of input data as a single string value. 
+This format can only be parsed for a table with a single field of type [String](/sql-reference/data-types/string.md). 
+The remaining columns must be set to [`DEFAULT`](/sql-reference/statements/create/table.md/#default), [`MATERIALIZED`](/sql-reference/statements/create/view#materialized-view), or omitted.
+
+## Example usage {#example-usage}
+
+```sql title="Query"
+DROP TABLE IF EXISTS line_as_string;
+CREATE TABLE line_as_string (field String) ENGINE = Memory;
+INSERT INTO line_as_string FORMAT LineAsString "I love apple", "I love banana", "I love orange";
+SELECT * FROM line_as_string;
+```
+
+```text title="Response"
+┌─field─────────────────────────────────────────────┐
+│ "I love apple", "I love banana", "I love orange"; │
+└───────────────────────────────────────────────────┘
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
+
+    factory.setDocumentation("LineAsStringWithNames", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format but prints the header row with column names.
+
+## Example usage {#example-usage}
+
+```sql title="Query"
+CREATE TABLE example (
+    name String,
+    value Int32
+)
+ENGINE = Memory;
+
+INSERT INTO example VALUES ('John', 30), ('Jane', 25), ('Peter', 35);
+
+SELECT * FROM example FORMAT LineAsStringWithNames;
+```
+
+```response title="Response"
+name    value
+John    30
+Jane    25
+Peter    35
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
+
+    factory.setDocumentation("LineAsStringWithNamesAndTypes", Documentation{
+        .description = R"DOCS_MD(
+| Input | Output | Alias |
+|-------|--------|-------|
+| ✗     | ✔      |       |
+
+## Description {#description}
+
+The `LineAsStringWithNames` format is similar to the [`LineAsString`](./LineAsString.md) format 
+but prints two header rows: one with column names, the other with types.
+
+## Example usage {#example-usage}
+
+```sql title="Query"
+CREATE TABLE example (
+    name String,
+    value Int32
+)
+ENGINE = Memory;
+
+INSERT INTO example VALUES ('John', 30), ('Jane', 25), ('Peter', 35);
+
+SELECT * FROM example FORMAT LineAsStringWithNamesAndTypes;
+```
+
+```response title="Response"
+name    value
+String    Int32
+John    30
+Jane    25
+Peter    35
+```
+
+## Format settings {#format-settings}
+)DOCS_MD"});
 }
 
 

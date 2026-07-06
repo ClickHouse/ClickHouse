@@ -9,7 +9,11 @@ in `cherry_pick.py` / `pr_info.py` and are passed in by the caller, so this
 module stays the single source of truth for *which branches* a PR reaches
 without duplicating *what the labels are called*.
 """
+import re
 from typing import List, Optional, Sequence, Set, Tuple
+
+# Version-specific backport label, e.g. `v25.12-must-backport`.
+VERSION_LABEL_RE = re.compile(r"^v(\d+)\.(\d+)-must-backport$")
 
 
 def version_key(version: str) -> Tuple[int, ...]:
@@ -26,28 +30,32 @@ def branch_version(branch: str) -> Tuple[int, ...]:
     return version_key(branch.replace("release/", ""))
 
 
-def must_backport_label(branch: str) -> str:
-    """The version-specific backport label for a release branch."""
-    return f"v{branch.replace('release/', '')}-must-backport"
+def label_version(label: str) -> Optional[Tuple[int, ...]]:
+    """A version-specific backport label to its version: `v25.12-must-backport`
+    -> `(25, 12)`. Returns `None` for any other label."""
+    match = VERSION_LABEL_RE.fullmatch(label)
+    if match is None:
+        return None
+    return (int(match.group(1)), int(match.group(2)))
 
 
-def backport_floor(
-    pr_labels: Sequence[str], release_branches: Sequence[str]
-) -> Optional[Tuple[int, ...]]:
+def backport_floor(pr_labels: Sequence[str]) -> Optional[Tuple[int, ...]]:
     """
-    The lowest version among the PR's *active* version-specific backport labels
+    The lowest version among the PR's version-specific backport labels
     (`v<MAJOR>.<MINOR>-must-backport`), or `None` if there are none.
 
     A version-specific label marks the OLDEST release the PR must reach, so the
     minimum of them is the floor: the PR is backported to that release and to
-    every newer active release branch. Only labels that match an active release
-    branch are considered, so a stale label for an end-of-life release can never
-    widen the floor.
+    every newer active release branch. The named release does NOT need to be
+    active itself -- a label for an end-of-life release (e.g. `v25.12` when only
+    the 26.x line and the 25.8 LTS are active) still pulls the fix forward into
+    every active release after it, so upgrading from that release never silently
+    loses the fix.
     """
     floors = [
-        branch_version(branch)
-        for branch in release_branches
-        if must_backport_label(branch) in pr_labels
+        version
+        for version in (label_version(label) for label in pr_labels)
+        if version is not None
     ]
     return min(floors) if floors else None
 
@@ -78,7 +86,7 @@ def select_backport_branches(
       version request always proceeds.
     """
     labels = set(pr_labels)
-    floor = backport_floor(pr_labels, release_branches)
+    floor = backport_floor(pr_labels)
     # The branches a version-specific label expands to: the floor release and
     # every newer active branch. Such a label overrides the `rolling_out` skip
     # for exactly these branches.
@@ -104,10 +112,13 @@ def select_backport_branches(
         ]
         return branches, skipped
 
-    # Version-specific labels only. The floor is one of the active release
-    # branches, so `covered_by_floor` is never empty here.
+    # Version-specific labels only. `covered_by_floor` is the floor release and
+    # every newer active branch. It is normally non-empty -- the search that
+    # feeds this function only selects PRs whose floor is not newer than the
+    # newest active release -- but it may be empty if a PR carries only a label
+    # newer than every active release; the caller skips such PRs gracefully.
     assert floor is not None, (
         "select_backport_branches called without a general backport label and "
-        f"without an active version-specific label; labels: {sorted(labels)}"
+        f"without a version-specific label; labels: {sorted(labels)}"
     )
     return [branch for branch in release_branches if branch in covered_by_floor], []

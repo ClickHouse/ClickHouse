@@ -1,0 +1,120 @@
+---
+description: 'Installer ClickHouse sur MacOS'
+keywords: ['ClickHouse', 'installer', 'Linux', 'tar']
+sidebarTitle: 'Autres Linux'
+slug: /install/linux_other
+title: 'Installer ClickHouse avec des archives tgz'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/fr/recommendations.mdx';
+
+> Il est recommandé d’utiliser les archives `tgz` officielles précompilées pour toutes les distributions Linux lorsque l’installation de paquets `deb` ou `rpm` n’est pas possible.
+
+<Steps>
+  <Step>
+    ## Consulter les recommandations
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## Télécharger et installer la dernière version stable
+
+    La version requise peut être téléchargée avec `curl` ou `wget` depuis le dépôt https://packages.clickhouse.com/tgz/.
+    Les archives téléchargées doivent ensuite être extraites et installées à l’aide des scripts d’installation.
+
+    Voici un exemple montrant comment installer la dernière version stable.
+
+    <Note>
+      Pour les environnements de production, il est recommandé d’utiliser la dernière version `stable`.
+      Vous trouverez le numéro de version sur cette [page GitHub](https://github.com/ClickHouse/ClickHouse/tags),
+      avec le suffixe `-stable`.
+    </Note>
+  </Step>
+
+  <Step>
+    ## Obtenir la dernière version de ClickHouse
+
+    Récupérez la dernière version de ClickHouse depuis GitHub et stockez-la dans la variable `LATEST_VERSION`.
+
+    ```bash
+    LATEST_VERSION=$(curl -s https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/utils/list-versions/version_date.tsv | \
+        grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | sort -V -r | head -n 1)
+    export LATEST_VERSION
+    ```
+  </Step>
+
+  <Step>
+    ## Détecter l’architecture de votre système
+
+    Détectez l’architecture du système et définissez la variable ARCH en conséquence :
+
+    ```bash
+    case $(uname -m) in
+      x86_64) ARCH=amd64 ;;         # Pour les processeurs Intel/AMD 64 bits
+      aarch64) ARCH=arm64 ;;        # Pour les processeurs ARM 64 bits
+      *) echo "Architecture inconnue $(uname -m)"; exit 1 ;; # Quitte si l’architecture n’est pas prise en charge
+    esac
+    ```
+  </Step>
+
+  <Step>
+    ## Télécharger les archives tar pour chaque composant ClickHouse
+
+    Téléchargez les archives tar de chaque composant ClickHouse. La boucle essaie d’abord les
+    paquets spécifiques à l’architecture, puis se rabat sur les paquets génériques.
+
+    ```bash
+    for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
+    do
+      curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION-${ARCH}.tgz" \
+        || curl -fO "https://packages.clickhouse.com/tgz/stable/$PKG-$LATEST_VERSION.tgz"
+    done
+    ```
+  </Step>
+
+  <Step>
+    ## Extraire et installer les paquets
+
+    Exécutez les commandes ci-dessous pour extraire et installer les paquets suivants :
+
+    * `clickhouse-common-static`
+
+    ```bash
+    # Extraire et installer le paquet clickhouse-common-static
+    tar -xzvf "clickhouse-common-static-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-common-static-$LATEST_VERSION.tgz"
+    sudo "clickhouse-common-static-$LATEST_VERSION/install/doinst.sh"
+    ```
+
+    * `clickhouse-common-static-dbg`
+
+    ```bash
+    # Extraire et installer le paquet de symboles de débogage
+    tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-common-static-dbg-$LATEST_VERSION.tgz"
+    sudo "clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh"
+    ```
+
+    * `clickhouse-server`
+
+    ```bash
+    # Extraire et installer le paquet serveur avec sa configuration
+    tar -xzvf "clickhouse-server-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-server-$LATEST_VERSION.tgz"
+    sudo "clickhouse-server-$LATEST_VERSION/install/doinst.sh" configure
+    sudo /etc/init.d/clickhouse-server start  # Démarrer le serveur
+    ```
+
+    * `clickhouse-client`
+
+    ```bash
+    # Extraire et installer le paquet client
+    tar -xzvf "clickhouse-client-$LATEST_VERSION-${ARCH}.tgz" \
+      || tar -xzvf "clickhouse-client-$LATEST_VERSION.tgz"
+    sudo "clickhouse-client-$LATEST_VERSION/install/doinst.sh"
+    ```
+  </Step>
+</Steps>

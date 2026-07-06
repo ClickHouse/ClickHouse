@@ -1,0 +1,44 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'Overview page for the ClickHouse Operator - a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.'
+doc_type: 'guide'
+sidebarTitle: 'Overview'
+---
+
+The ClickHouse Operator is a Kubernetes operator that automates the deployment, configuration, and management of ClickHouse clusters and ClickHouse Keeper clusters on Kubernetes.
+It provides declarative cluster management through custom resources, enabling users to easily create highly-available ClickHouse deployments.
+
+The Operator handles the full lifecycle of ClickHouse clusters including scaling, upgrades, and configuration management.
+
+## Features {#features}
+
+- **ClickHouse Cluster Management**: Create and manage ClickHouse clusters
+- **ClickHouse Keeper Integration**: Built-in support for ClickHouse Keeper clusters for distributed coordination
+- **Storage Provisioning**: Customizable persistent volume claims with storage class selection
+- **High Availability**: Fault tolerant installations for ClickHouse and Keeper clusters
+- **Security**: Built-in security features TLS/SSL support for secure cluster communication
+- **Monitoring**: Prometheus metrics integration for observability
+
+## Installation {#installation}
+
+Choose your preferred installation method:
+
+- [Manifests Installation](/products/kubernetes-operator/install/kubectl) - Install using kubectl/kustomize
+- [Helm Installation](/products/kubernetes-operator/install/helm) - Install using Helm charts
+- [Operator Lifecycle Manager (OLM) Installation](/products/kubernetes-operator/install/olm) - Install using OLM
+
+## Guides {#guides}
+
+- **[Introduction](/products/kubernetes-operator/guides/introduction)** - General overview of ClickHouse Operator concepts
+- **[Configuration Guide](/products/kubernetes-operator/guides/configuration)** - Configure ClickHouse and Keeper clusters
+- **[Monitoring](/products/kubernetes-operator/guides/monitoring)** - Prometheus metrics and health probes for the operator
+- **[Scaling](/products/kubernetes-operator/guides/scaling)** - Scale replicas, shards, and Keeper quorum
+- **[Securing with TLS](/products/kubernetes-operator/guides/tls)** - Encrypt clusters end-to-end with cert-manager
+- **[Network policies](/products/kubernetes-operator/guides/network-policies)** - Restrict ingress to the operator's metrics and webhook endpoints
+
+## Reference {#reference}
+
+- **[API Reference](/products/kubernetes-operator/reference/api-reference)** - Complete API documentation for custom resources

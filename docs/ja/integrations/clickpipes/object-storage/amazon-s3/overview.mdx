@@ -1,0 +1,275 @@
+---
+sidebarTitle: '概要'
+description: 'オブジェクトストレージを ClickHouse Cloud にシームレスに接続できます。'
+slug: /integrations/clickpipes/object-storage/s3/overview
+title: 'Amazon S3 と ClickHouse Cloud の統合'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+S3 ClickPipe は、Amazon S3 および S3 互換オブジェクトストアから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ高い耐障害性を備えた手段を提供します。**一回限り** と **継続的インジェスト** の両方を、exactly-once セマンティクスでサポートしています。
+
+S3 ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから管理することもできます。
+
+<div id="supported-data-sources">
+  ## サポート対象のデータソース
+</div>
+
+| 名前                                     | ロゴ                                                                                          | 詳細                                                                                                                                                |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Amazon S3**                          | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Amazon S3 ロゴ" width="32" />   | 継続的インジェストでは、デフォルトで [辞書式順序](#continuous-ingestion-lexicographical-order) が必要ですが、[任意の順序でファイルを取り込む](#continuous-ingestion-any-order) ように設定することもできます。 |
+| **Cloudflare R2** <br /> *S3 互換*       | <img src="/images/integrations/logos/cloudflare.svg" alt="Cloudflare R2 ロゴ" width="32" />   | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
+| **DigitalOcean Spaces** <br /> *S3 互換* | <img src="/images/integrations/logos/digitalocean.svg" alt="Digital Ocean ロゴ" width="32" /> | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
+| **OVH Object Storage** <br /> *S3 互換*  | <img src="/images/integrations/logos/ovh.webp" alt="Cloud ストレージ ロゴ" width="32" />            | 継続的インジェストでは [辞書式順序](#continuous-ingestion-lexicographical-order) が必要です。順不同モードはサポートされていません。                                                        |
+
+<Tip>
+  オブジェクトストレージサービスプロバイダーごとに URL 形式や API 実装が異なるため、すべての S3 互換サービスがそのままサポートされているわけではありません。上記に記載のないサービスで問題が発生している場合は、[弊社チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+</Tip>
+
+<div id="supported-formats">
+  ## 対応フォーマット
+</div>
+
+* [JSON](/ja/reference/formats/JSON/JSON)
+* [CSV](/ja/reference/formats/CSV/CSV)
+* [TSV](/ja/reference/formats/TabSeparated/TabSeparated)
+* [Parquet](/ja/reference/formats/Parquet/Parquet)
+* [Avro](/ja/reference/formats/Avro/Avro)
+
+<div id="features">
+  ## 機能
+</div>
+
+<div id="one-time-ingestion">
+  ### 一回限りのインジェスト
+</div>
+
+デフォルトでは、S3 ClickPipe は、指定したバケット内でパターンに一致するすべてのファイルを、1 回のバッチ処理で ClickHouse の宛先テーブルに読み込みます。インジェスト タスクが完了すると、ClickPipe は自動的に停止します。この一回限りのインジェスト モードでは exactly-once セマンティクスが提供されるため、各ファイルは重複なく確実に処理されます。
+
+<div id="continuous-ingestion">
+  ### 継続的インジェスト
+</div>
+
+継続的インジェストが有効な場合、ClickPipes は指定されたパスからデータを継続的に取り込みます。インジェスト順を決める際、S3 ClickPipe はデフォルトでファイルの暗黙の[辞書式順序](#continuous-ingestion-lexicographical-order)を使用します。また、バケットに接続された [Amazon SQS](https://aws.amazon.com/sqs/) キューを使って、ファイルを[任意の順序](#continuous-ingestion-any-order)で取り込むように設定することもできます。
+
+<div id="continuous-ingestion-lexicographical-order">
+  #### 辞書式順序
+</div>
+
+デフォルトでは、S3 ClickPipe はファイルが バケット に辞書式順序で追加されることを前提としており、この暗黙の順序に基づいてファイルを順次取り込みます。つまり、新しいファイルは、最後に取り込まれたファイルよりも辞書順で後にある必要があります。たとえば、`file1`、`file2`、`file3` という名前のファイルは順番に取り込まれますが、新たに `file 0` が バケット に追加されても、ファイル名が最後に取り込まれたファイルより辞書順で後ではないため、**無視**されます。
+
+このモードでは、S3 ClickPipe は指定した path 内の**すべてのファイル**を初期ロードし、その後、設定可能な間隔 (デフォルトでは 30 秒) で新しいファイルをポーリングします。特定のファイルや時点からインジェストを開始することは**できません**。ClickPipes は常に、指定した path 内のすべてのファイルを読み込みます。
+
+<div id="continuous-ingestion-any-order">
+  #### 任意の順序
+</div>
+
+<Tip>
+  手順については、[継続的インジェスト向けの順不同モードの設定](/ja/integrations/clickpipes/object-storage/amazon-s3/unordered-mode)を参照してください。
+</Tip>
+
+S3 ClickPipe は、バケットに接続された [Amazon SQS](https://aws.amazon.com/sqs/) キューを設定し、必要に応じてイベントルーターとして [Amazon EventBridge](https://aws.amazon.com/eventbridge/) を使用することで、暗黙的な順序を持たないファイルを取り込めるように設定できます。これにより、ClickPipes はオブジェクト作成イベントを監視し、ファイル名の規則に関係なく新しいファイルを取り込めます。
+
+<Note>
+  順不同モードは Amazon S3 で**のみ**サポートされており、パブリックバケットや S3 互換サービスでは**サポートされません**。利用するには、バケットに接続された [Amazon SQS](https://aws.amazon.com/sqs/) キューを設定し、必要に応じてイベントルーターとして [Amazon EventBridge](https://aws.amazon.com/eventbridge/) を使用する必要があります。
+</Note>
+
+このモードでは、S3 ClickPipe は選択したパス内の**すべてのファイル**を初期ロードし、その後、指定したパスに一致するキュー内の `ObjectCreated:*` イベントを監視します。すでに認識済みのファイルに対するメッセージ、パスに一致しないファイル、または別の種類のイベントは**無視**されます。
+
+<Note>
+  イベントにプレフィックス/サフィックスを設定するかどうかは任意です。設定する場合は、ClickPipe に設定したパスと一致していることを確認してください。S3 では、同じイベントタイプに対して重複する複数の通知ルールは許可されません。
+</Note>
+
+ファイルは、`max insert bytes` または `max file count` で設定された閾値に達した時点、または設定可能な間隔 (デフォルトでは 30 秒) の経過後に取り込まれます。特定のファイルまたは時点からインジェストを開始することは**できません**。ClickPipes は常に選択したパス内のすべてのファイルをロードします。DLQ が設定されている場合、失敗したメッセージは再度エンキューされ、DLQ の `maxReceiveCount` パラメータで設定された回数まで再処理されます。
+
+<Tip>
+  失敗したメッセージのデバッグや再試行をしやすくするため、SQS キューには **Dead-Letter-Queue (DLQ)** を設定することを強く推奨します。
+</Tip>
+
+<div id="eb-to-sqs">
+  ##### EventBridge から SQS へ
+</div>
+
+S3 イベント通知を [Amazon EventBridge](https://aws.amazon.com/eventbridge/) 経由で SQS に送信することもできます。EventBridge は、より高度なイベントフィルタリングや複数ターゲットへのファンアウトをサポートしており、S3 の「各プレフィックス・各イベントタイプにつき通知ルールは 1 つまで」という制限も受けないため、ほとんどのユースケースで推奨される方法です。手順については、[継続的インジェストの順不同モードの設定](/ja/integrations/clickpipes/object-storage/amazon-s3/unordered-mode) を参照してください。
+
+<div id="sns-to-sqs">
+  ##### SNS から SQS へ
+</div>
+
+S3 イベント通知は、SNS トピックを介して SQS に送信することもできます。これは、S3 → SQS の直接的なインテグレーションの制限に達した場合に利用できます。この場合は、[raw message delivery](https://docs.aws.amazon.com/sns/latest/dg/sns-large-payload-raw-message-delivery.html) オプションを有効にする必要があります。
+
+<div id="file-pattern-matching">
+  ### ファイルパターンマッチング
+</div>
+
+Object Storage 用 ClickPipes では、ファイルパターンマッチングに POSIX 標準を使用します。すべてのパターンは**大文字と小文字を区別**し、バケット名の後ろにある**フルパス**全体に対して照合されます。パフォーマンス向上のため、できるだけ具体的なパターンを使用してください (例: `*.csv` ではなく `data-2024-*.csv`) 。
+
+<div id="supported-patterns">
+  #### 対応しているパターン
+</div>
+
+| パターン           | 説明                                                 | 例                   | 一致するパス                                                            |
+| -------------- | -------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `?`            | **ちょうど 1 文字**に一致します (`/` を除く)                      | `data-?.csv`        | `data-1.csv`, `data-a.csv`, `data-x.csv`                          |
+| `*`            | **0 文字以上**に一致します (`/` を除く)                         | `data-*.csv`        | `data-1.csv`, `data-001.csv`, `data-report.csv`, `data-.csv`      |
+| `**` <br /> 再帰 | **0 文字以上**に一致します (`/` を含む) 。**ディレクトリを再帰的に走査**できます。 | `logs/**/error.log` | `logs/error.log`, `logs/2024/error.log`, `logs/2024/01/error.log` |
+
+**例:**
+
+* `https://bucket.s3.amazonaws.com/folder/*.csv`
+* `https://bucket.s3.amazonaws.com/logs/**/data.json`
+* `https://bucket.s3.amazonaws.com/file-?.parquet`
+* `https://bucket.s3.amazonaws.com/data-2024-*.csv.gz`
+
+<div id="unsupported-patterns">
+  #### サポートされていないパターン
+</div>
+
+| パターン        | 説明      | 例                      | 代替手段                                     |
+| ----------- | ------- | ---------------------- | ---------------------------------------- |
+| `{abc,def}` | ブレース展開  | `{logs,data}/file.csv` | パスごとに個別の ClickPipes を作成してください。           |
+| `{N..M}`    | 数値範囲の展開 | `file-{1..100}.csv`    | `file-*.csv` または `file-?.csv` を使用してください。 |
+
+**例:**
+
+* `https://bucket.s3.amazonaws.com/{documents-01,documents-02}.json`
+* `https://bucket.s3.amazonaws.com/file-{1..100}.csv`
+* `https://bucket.s3.amazonaws.com/{logs,metrics}/data.parquet`
+
+<div id="exactly-once-semantics">
+  ### exactly-once セマンティクス
+</div>
+
+大規模なデータセットを取り込む際には、さまざまな障害が発生する可能性があり、その結果、データの一部だけが挿入されたり、重複データが発生したりすることがあります。Object Storage 用 ClickPipes は挿入失敗に対して耐性があり、exactly-once セマンティクスを提供します。これは、一時的な「ステージングテーブル」を使用して実現されます。データはまずステージングテーブルに挿入されます。この挿入中に問題が発生した場合は、ステージングテーブルを TRUNCATE し、クリーンな状態から挿入を再試行できます。挿入が正常に完了した場合にのみ、ステージングテーブル内のパーティションがターゲットテーブルへ移動されます。この戦略の詳細については、[こちらのブログ記事](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3)をご覧ください。
+
+<div id="virtual-columns">
+  ### 仮想カラム
+</div>
+
+どのファイルが取り込まれたかを追跡するには、`_file` 仮想カラムをカラムマッピングのリストに含めます。`_file` 仮想カラムにはソースオブジェクトのファイル名が含まれており、どのファイルが処理されたかをクエリで確認できます。
+
+<div id="access-control">
+  ## アクセス制御
+</div>
+
+<div id="permissions">
+  ### 権限
+</div>
+
+S3 ClickPipe は、パブリックバケットとプライベートバケットに対応しています。[Requester Pays](https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html) バケットは **サポートされていません**。
+
+<div id="s3-bucket">
+  #### S3 バケット
+</div>
+
+バケットポリシーで、次のアクションを許可する必要があります。
+
+* [`s3:GetObject`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)
+* [`s3:ListBucket`](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectsV2.html)
+
+<div id="sqs-queue">
+  #### SQS キュー
+</div>
+
+[順不同モード](#continuous-ingestion-any-order)を使用する場合、SQS のキューポリシーで次のアクションを許可する必要があります。
+
+* [`sqs:ReceiveMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ReceiveMessage.html)
+* [`sqs:DeleteMessage`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_DeleteMessage.html)
+* [`sqs:GetQueueAttributes`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_GetQueueAttributes.html)
+* [`sqs:ListQueues`](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/APIReference/API_ListQueues.html)
+
+<div id="authentication">
+  ### 認証
+</div>
+
+<div id="iam-credentials">
+  #### IAM 認証情報
+</div>
+
+[アクセスキー](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)を使用して認証するには、ClickPipe 接続の設定時に **Authentication method** で `Credentials` を選択します。次に、アクセスキー ID (例: `AKIAIOSFODNN7EXAMPLE`) とシークレットアクセスキー (例: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) を、それぞれ `Access key` と `Secret key` に入力します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="S3 ClickPipes の IAM 認証情報" size="lg" border />
+
+<div id="iam-role">
+  #### IAM role
+</div>
+
+[ロールベースのアクセス制御](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)を使用して認証するには、ClickPipe 接続の設定時に **Authentication method** で `IAM role` を選択します。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="S3 ClickPipes の IAM 認証" size="lg" border />
+
+S3 へのアクセスに必要な信頼ポリシーを持つ[ロールを作成する](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)には、[このガイド](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)に従ってください。次に、`IAM role ARN` に IAM role の ARN を入力します。
+
+<div id="network-access">
+  ### ネットワークアクセス
+</div>
+
+S3 ClickPipes では、メタデータの検出とデータのインジェストに、それぞれ ClickPipes サービスと ClickHouse Cloud サービスという 2 つの異なるネットワーク経路を使用します。追加のネットワークセキュリティ層を設定する場合 (たとえばコンプライアンス上の理由など) 、**両方の経路に対してネットワークアクセスを設定する必要があります**。
+
+* **IP ベースのアクセス制御**では、S3 バケットポリシーで、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips)に記載されている ClickPipes サービスのリージョンの静的 IP と、ClickHouse Cloud サービスの[静的 IP](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) の両方を許可する必要があります。ご利用の ClickHouse Cloud リージョンの静的 IP を取得するには、ターミナルを開いて次を実行します。
+
+  ```bash
+  # <your-region> をご利用の ClickHouse Cloud リージョンに置き換えます
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .egress_ips[]'
+  ```
+
+* **VPC エンドポイントベースのアクセス制御**では、S3 バケットは ClickHouse Cloud サービスと同じリージョンに配置されている必要があり、`GetObject` オペレーションは ClickHouse Cloud サービスの VPC Endpoint ID に制限する必要があります。ご利用の ClickHouse Cloud リージョンの VPC エンドポイントを取得するには、ターミナルを開いて次を実行します。
+
+  ```bash
+  # <your-region> をご利用の ClickHouse Cloud リージョンに置き換えます
+  curl -s https://api.clickhouse.cloud/static-ips.json | jq -r '.aws[] | select(.region == "<your-region>") | .s3_endpoints[]'
+  ```
+
+<div id="advanced-settings">
+  ## 高度な設定
+</div>
+
+ClickPipes には、ほとんどのユースケースの要件を満たす適切なデフォルト設定が用意されています。さらに細かい調整が必要な場合は、以下の設定を変更できます。
+
+| 設定                                   | デフォルト値  | 説明                                                                                                                |
+| ------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------- |
+| `Max insert bytes`                   | 10GB    | 1 回の挿入バッチで処理するバイト数。                                                                                               |
+| `Max file count`                     | 100     | 1 回の挿入バッチで処理するファイルの最大数。                                                                                           |
+| `Max threads`                        | auto(3) | ファイル処理に使用する[同時実行スレッドの最大数](/ja/reference/settings/session-settings#max_threads)。                                      |
+| `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
+| `Min insert block size bytes`        | 1GB     | テーブルに挿入できる[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
+| `Max download threads`               | 4       | [同時実行ダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                                  |
+| `Object storage polling interval`    | 30s     | ClickHouse クラスターにデータを挿入するまでの最大待機時間を設定します。                                                                         |
+| `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
+| `Parallel view processing`           | false   | アタッチされたビューへのプッシュを[順次ではなく並列で](/ja/reference/settings/session-settings#parallel_view_processing)有効にするかどうか。             |
+| `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列処理するかどうか。                                                                                      |
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
+
+<div id="scaling">
+  ### スケーリング
+</div>
+
+Object Storage 用 ClickPipes は、[設定済みの垂直オートスケーリング設定](/ja/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling)によって決まる最小の ClickHouse service サイズに基づいてスケールされます。ClickPipe のサイズは、パイプの作成時に決定されます。以降に ClickHouse service の設定を変更しても、ClickPipe のサイズには影響しません。
+
+大規模な取り込みジョブのスループットを向上させるには、ClickPipe を作成する前に ClickHouse service をスケールしておくことを推奨します。
+
+<div id="known-limitations">
+  ## 既知の制約事項
+</div>
+
+<div id="file-size">
+  ### ファイルサイズ
+</div>
+
+ClickPipes が取り込みを試みるのは、サイズが**10GB以下**のオブジェクトのみです。ファイルが 10GB を超える場合は、ClickPipes 専用のエラーテーブルにエラーが追記されます。
+
+<div id="compatibility">
+  ### 互換性
+</div>
+
+S3 互換であっても、一部のサービスでは、S3 ClickPipe で解釈できない URL 形式が使われていたり (例: Backblaze B2) 、継続的で順不同のインジェストのためにプロバイダー固有のキューサービスとのインテグレーションが必要になったりします。[サポートされているデータソース](#supported-data-sources)に記載のないサービスで問題が発生している場合は、[当社チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+<div id="view-support">
+  ### ビューのサポート
+</div>
+
+ターゲットテーブル上のmaterialized viewもサポートされています。ClickPipesは、ターゲットテーブルだけでなく、それに依存するすべてのmaterialized viewに対してもステージングテーブルを作成します。
+
+non-materialized viewに対してはステージングテーブルを作成しません。つまり、1つ以上の下流のmaterialized viewを持つターゲットテーブルがある場合、それらのmaterialized viewでは、ターゲットテーブルのデータをview経由で選択しないようにしてください。そうしないと、materialized view内のデータが欠落する可能性があります。

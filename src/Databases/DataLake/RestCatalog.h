@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -128,7 +129,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
-    mutable std::optional<AccessToken> access_token;
+    mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -163,6 +164,8 @@ protected:
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+
+    void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -185,6 +188,7 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
+        const std::string & bearer_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -197,9 +201,15 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    String getBearerToken() const;
+
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
+    /// Set from `onelake_bearer_token`.
+    String bearer_token;
 };
 
 class BigLakeCatalog : public RestCatalog

@@ -1,0 +1,113 @@
+---
+title: 'الاستعلام عن قاعدة بيانات النظام في ClickHouse'
+slug: /cloud/monitoring/system-tables
+description: 'راقب ClickHouse Cloud من خلال الاستعلام مباشرةً عن جداول النظام'
+keywords: ['السحابة', 'المراقبة', 'جداول النظام', 'query_log', 'clusterAllReplicas', 'لوحة معلومات observability']
+sidebarTitle: 'جداول النظام'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تأتي جميع مثيلات ClickHouse مع مجموعة من [جداول النظام](/ar/reference/system-tables/overview) ضمن قاعدة البيانات `system`، وتحتوي على معلومات حول:
+
+* حالات الخادم وعملياته وبيئته.
+* العمليات الداخلية للخادم.
+* الخيارات المستخدمة عند بناء الملف التنفيذي `ClickHouse`.
+
+ويكون الاستعلام المباشر عن هذه الجداول مفيدًا في مراقبة عمليات نشر ClickHouse، ولا سيما لأغراض الاستقصاء الداخلي المتعمق وتصحيح الأخطاء.
+
+<div id="using-cloud-console">
+  ## استخدام وحدة تحكم ClickHouse Cloud
+</div>
+
+تأتي وحدة تحكم ClickHouse Cloud مزودةً بـ [SQL console](/ar/products/cloud/features/sql-console-features/sql-console) و[أدوات لوحات المعلومات](/ar/products/cloud/features/sql-console-features/dashboards) التي يمكن استخدامها للاستعلام من جداول النظام. على سبيل المثال، يوضّح الاستعلام أدناه عدد الأجزاء الجديدة التي أُنشئت خلال الساعتين الماضيتين ومدى تكرار إنشائها:
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **المزيد من الاستعلامات النموذجية**
+
+  لمزيد من استعلامات المراقبة، راجع الموارد التالية:
+
+  * [استعلامات مفيدة لاستكشاف الأخطاء وإصلاحها](/ar/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [مراقبة استعلامات insert واستكشاف أخطائها وإصلاحها](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [مراقبة استعلامات select واستكشاف أخطائها وإصلاحها](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  يمكنك أيضًا استخدام هذه الاستعلامات [لإنشاء لوحة معلومات مخصصة](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud) في Cloud Console.
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## لوحة observability المتقدمة المضمّنة
+</div>
+
+يأتي ClickHouse مزودًا بميزة لوحة observability متقدمة مضمّنة يمكن الوصول إليها عبر `$HOST:$PORT/dashboard` (يتطلب اسم المستخدم وكلمة المرور)، وتعرض مقاييس Cloud Overview الموجودة في `system.dashboards`.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="لوحة observability المتقدمة الأصلية" border />
+
+<Note>
+  تتطلب لوحة المعلومات هذه مصادقة مباشرة على ClickHouse instance، وهي منفصلة عن [لوحة المعلومات المتقدمة في Cloud Console](/ar/products/cloud/features/monitoring/cloud-console#advanced-dashboard)، التي يمكن الوصول إليها عبر واجهة مستخدم Cloud Console دون مصادقة إضافية.
+</Note>
+
+لمزيد من المعلومات حول التصورات المتاحة وكيفية استخدامها في استكشاف الأخطاء وإصلاحها، راجع [وثائق لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard).
+
+<div id="querying-across-nodes">
+  ## الاستعلام عبر العقد والإصدارات
+</div>
+
+للحصول على رؤية شاملة للعنقود بأكمله، يمكن للمستخدمين الاستفادة من الدالة `clusterAllReplicas` بالاقتران مع الدالة `merge`. تتيح الدالة `clusterAllReplicas` تنفيذ استعلامات على جداول النظام عبر جميع النسخ المتماثلة داخل العنقود &quot;default&quot;، مع تجميع البيانات الخاصة بكل عقدة في نتيجة موحدة. وعند استخدامها مع الدالة `merge`، يمكن الاستفادة منها لاستهداف جميع بيانات النظام الخاصة بجدول معين ضمن عنقود.
+
+على سبيل المثال، للعثور على أطول 5 استعلامات تشغيلًا عبر جميع النسخ المتماثلة خلال الساعة الماضية:
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+يكتسب هذا النهج أهمية خاصة في مراقبة العمليات على مستوى المجموعة بأكملها واستكشاف أخطائها وإصلاحها، مما يتيح للمستخدمين تحليل حالة نشر ClickHouse Cloud وأدائه بفعالية.
+
+لمزيد من التفاصيل، راجع [الاستعلام عبر العُقد](/ar/reference/system-tables/overview#querying-across-nodes).
+
+<div id="system-considerations">
+  ## اعتبارات النظام
+</div>
+
+<Warning>
+  يؤدي الاستعلام المباشر عن جداول النظام إلى فرض عبءٍ من الاستعلامات على خدمة الإنتاج لديك، ويمنع مثيلات ClickHouse Cloud من الدخول في حالة خمول (مما قد يؤثر في التكاليف)، كما يربط توافر المراقبة بصحة نظام الإنتاج. وإذا فشل نظام الإنتاج، فقد تتأثر المراقبة أيضًا.
+</Warning>
+
+للمراقبة التشغيلية لبيئة الإنتاج في الوقت الفعلي مع عزلٍ تشغيلي، فكّر في استخدام [نقطة نهاية المقاييس المتوافقة مع Prometheus](/ar/products/cloud/features/monitoring/prometheus) أو [لوحات معلومات Cloud Console](/ar/products/cloud/features/monitoring/cloud-console)، إذ يستخدم كلاهما مقاييس جُمعت مسبقًا ولا يرسلان استعلامات إلى الخدمة الأساسية.
+
+<div id="related">
+  ## صفحات ذات صلة
+</div>
+
+* [مرجع جداول النظام](/ar/reference/system-tables/overview) — مرجع شامل لجميع جداول النظام المتاحة
+* [مراقبة Cloud Console](/ar/products/cloud/features/monitoring/cloud-console) — لوحات معلومات جاهزة دون إعداد مسبق ولا تؤثر على أداء الخدمة
+* [نقطة نهاية Prometheus](/ar/products/cloud/features/monitoring/prometheus) — صدّر المقاييس إلى أدوات المراقبة الخارجية
+* [لوحة المعلومات المتقدمة](/ar/products/cloud/features/monitoring/advanced-dashboard) — مرجع تفصيلي للمرئيات في لوحة المعلومات

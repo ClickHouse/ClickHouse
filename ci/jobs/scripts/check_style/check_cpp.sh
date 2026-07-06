@@ -15,6 +15,12 @@
 LC_ALL="en_US.UTF-8"
 ROOT_PATH=$(git rev-parse --show-toplevel)
 EXCLUDE='build/|integration/|widechar_width/|glibc-compatibility/|poco/|memcpy/|consistent-hashing|benchmark|tests/.*\.cpp$|programs/keeper-bench/example\.yaml|src/Storages/ObjectStorage/DataLakes/Iceberg/AvroSchema\.h'
+# Heuristic style checks must skip the verbatim Markdown documentation embedded into
+# the format source files as R"DOCS_MD( ... )DOCS_MD" raw-string literals (literal tabs
+# in TabSeparated/TSV examples, Pretty result tables indented by one to three spaces,
+# trailing whitespace inherited from the Markdown pages, etc.). Hits inside those raw
+# strings are filtered out by this helper rather than excluding whole files.
+FILTER_DOCS="python3 $ROOT_PATH/ci/jobs/scripts/check_style/filter_embedded_docs.py"
 EXCLUDE_DOCS='Settings\.cpp|FormatFactorySettings\.h'
 
 # Pre-compute file lists to avoid repeated find+grep
@@ -48,13 +54,13 @@ rg $@ -n --glob '*.h' --glob '*.cpp' \
     '((\b(class|struct|namespace|enum|if|for|while|else|throw|switch)\b.*|\)(\s*const)?(\s*noexcept)?(\s*override)?\s*))\{$|^ {1,3}[^\* ]\S|^\s*\b(if|else if|if constexpr|else if constexpr|for|while|catch|switch)\b\(|\( [^\s\\]|\S \)' \
     $ROOT_PATH/{src,base,programs,utils} |
 # a curly brace not in a new line, but not for the case of C++11 init or agg. initialization | number of ws not a multiple of 4, but not in the case of comment continuation | missing whitespace after for/if/while... before opening brace | whitespaces inside braces
-    rg -v '//|\s+\*|\$\(\(| \)"' && echo "^ style error on this line"
+    rg -v '//|\s+\*|\$\(\(| \)"' | $FILTER_DOCS && echo "^ style error on this line"
 # single-line comment | continuation of a multiline comment | a typical piece of embedded shell code | something like ending of raw string literal
 } > "$O.01" 2>&1 &
 
 # 02: Tabs and namespace comments
 {
-xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -F $'\t' && echo '^ tabs are not allowed'
+xargs < "$STYLE_TMPDIR/all_excluded" rg $@ -H -n -F $'\t' | $FILTER_DOCS && echo '^ tabs are not allowed'
 
 # // namespace comments are unneeded
 result=$(xargs < "$STYLE_TMPDIR/all_excluded" rg $@ '}\s*//+\s*namespace\s*' 2>/dev/null)
@@ -77,6 +83,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::end
     ProfileEvents::increment
     ProfileEvents::incrementNoTrace
+    ProfileEvents::incrementSignalSafe
     ProfileEvents::incrementForLogMessage
     ProfileEvents::incrementLoggerElapsedNanoseconds
     ProfileEvents::getName
@@ -94,6 +101,7 @@ EXTERN_TYPES_EXCLUDES=(
     ProfileEvents::checkCPUOverload
     ProfileEvents::getDocumentation
     ProfileEvents::NAME
+    ProfileEvents::setUserPerCPUEnabled
 
     CurrentMetrics::add
     CurrentMetrics::max
@@ -106,6 +114,7 @@ EXTERN_TYPES_EXCLUDES=(
     CurrentMetrics::end
     CurrentMetrics::Increment
     CurrentMetrics::Metric
+    CurrentMetrics::METRIC
     CurrentMetrics::values
     CurrentMetrics::Value
     CurrentMetrics::keeper_metrics
@@ -126,9 +135,12 @@ EXTERN_TYPES_EXCLUDES=(
 # and this matches with zkutil::CreateMode
 grep -v -e 'src/Common/ZooKeeper/Types.h' -e 'src/Coordination/KeeperConstants.cpp' "$STYLE_TMPDIR/all_excluded" > "$STYLE_TMPDIR/extern_files"
 
-# Extract declarations: "filepath:D TYPE NAME"
+# Extract declarations: "filepath:D TYPE NAME [NOLINT]"
+# A trailing NOLINT comment marks the declaration as used elsewhere: it still counts as a
+# declaration (so same-file usages and duplicates are checked), but is exempt from the
+# "defined but not used" check below.
 xargs < "$STYLE_TMPDIR/extern_files" rg -o --no-line-number \
-    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);' -r 'D $1 $2' > "$STYLE_TMPDIR/extern_combined"
+    'extern const (int|Event|Metric) ([_A-Za-z0-9]+);(?:.*?(NOLINT))?' -r 'D $1 $2 $3' > "$STYLE_TMPDIR/extern_combined"
 
 # Extract usages (skipping comment lines): "filepath:U NS NAME"
 xargs < "$STYLE_TMPDIR/extern_files" rg --no-line-number \
@@ -165,6 +177,7 @@ BEGIN {
         ns = type_to_ns[p[2]]
         key = file SUBSEP ns SUBSEP p[3]
         decl[key]++
+        if (p[4] == "NOLINT") used[key] = 1
     } else {
         key = file SUBSEP p[2] SUBSEP p[3]
         used[key] = 1
@@ -211,7 +224,7 @@ xargs < "$STYLE_TMPDIR/all_excluded" grep -F '!",' | grep . && echo "No need for
 
 # 06b: Trailing whitespaces
 {
-xargs < "$STYLE_TMPDIR/all_excluded" grep -n ' $' | grep . && echo "^ Trailing whitespaces."
+xargs < "$STYLE_TMPDIR/all_excluded" grep -Hn ' $' | $FILTER_DOCS && echo "^ Trailing whitespaces."
 } > "$O.06b" 2>&1 &
 
 # 07a: Forbidden patterns in nobase_excluded (part 1)
@@ -247,10 +260,18 @@ xargs < "$STYLE_TMPDIR/nobase_excluded" rg -e ' close\(.*fd' -e ' ::close\(' | g
 {
 directories_to_lint_std_containers_usages=(
     src/AggregateFunctions
+    src/BridgeHelper
     src/Columns
     src/Compression
+    src/Core/MySQL
+    src/Core/PostgreSQL
+    src/Core/Streaming
+    src/Core/YTsaurus
+    src/Core/examples
+    src/Core/fuzzers
     src/Daemon
     src/Dictionaries
+    src/Examples
     src/Functions
     src/IO
     src/Loggers
@@ -284,6 +305,7 @@ std_cerr_cout_excludes=(
     src/Processors/IProcessor.cpp
     src/Client/ClientApplicationBase.cpp
     src/Common/ProgressIndication.h
+    src/Common/Scheduler/Debug.h
     src/Client/LineReader.h
     src/Client/ReplxxLineReader.h
     src/Client/Suggest.cpp
@@ -385,7 +407,7 @@ join -v1 <(grep '\.h$' "$STYLE_TMPDIR/nobase_all" | sed 's:.*/::'  | sort -u) <(
 # 14: Abbreviation checks and error message style
 {
 # Wrong spelling of abbreviations, e.g. SQL is right, Sql is wrong. XMLHttpRequest is very wrong.
-xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|TcpExtListenOverflows' &&
+xargs < "$STYLE_TMPDIR/all_excluded" rg 'Sql|Html|Xml|Cpu|Tcp|Udp|Http|Db|Json|Yaml' | grep -v -E 'RabbitMQ|Azure|Aws|aws|Avro|IO/S3|ai::JsonValue|IcebergWrites|arrow::flight|SqlInfo|CommandGetSqlInfo|CommandGetDbSchemas|commandGetDbSchemas|ArrowFlightSql|FlightSql.html|TcpExtListenOverflows' &&
     echo "Abbreviations such as SQL, XML, HTTP, should be in all caps. For example, SQL is right, Sql is wrong. XMLHttpRequest is very wrong."
 
 xargs < "$STYLE_TMPDIR/all_excluded" grep -F -i 'ErrorCodes::LOGICAL_ERROR, "Logical error:' &&

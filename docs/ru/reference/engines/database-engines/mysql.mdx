@@ -1,0 +1,187 @@
+---
+description: 'Позволяет подключаться к базам данных на удалённом сервере MySQL и выполнять
+  запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и MySQL.'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="mysql-database-engine">
+  # Движок базы данных MySQL
+</div>
+
+<CloudNotSupportedBadge />
+
+Позволяет подключаться к базам данных на удалённом сервере MySQL и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и MySQL.
+
+Движок базы данных `MySQL` передаёт запросы на сервер MySQL, поэтому вы можете выполнять такие операции, как `SHOW TABLES` или `SHOW CREATE TABLE`.
+
+Следующие запросы не поддерживаются:
+
+* `RENAME`
+* `CREATE TABLE`
+* `ALTER`
+
+<div id="creating-a-database">
+  ## Создание базы данных
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**Параметры движка**
+
+* `host:port` — адрес сервера MySQL.
+* `database` — имя удалённой базы данных.
+* `user` — имя пользователя MySQL.
+* `password` — пароль пользователя.
+
+**Настройки**
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+Включает сжатие zlib для подключения по протоколу MySQL. Если установлено значение `1`, ClickHouse запрашивает у сервера MySQL сжатие на уровне протокола.
+
+Значение по умолчанию: `0`.
+
+Пример:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="data_types-support">
+  ## Поддерживаемые типы данных
+</div>
+
+| MySQL                            | ClickHouse                                       |
+| -------------------------------- | ------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ru/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/ru/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/ru/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/ru/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ru/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/ru/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/ru/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/ru/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/ru/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/ru/reference/data-types/float)           |
+| DATE                             | [Date](/ru/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/ru/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/ru/reference/data-types/fixedstring) |
+
+Все остальные типы данных MySQL преобразуются в [String](/ru/reference/data-types/string).
+
+Тип [Nullable](/ru/reference/data-types/nullable) поддерживается.
+
+<div id="global-variables-support">
+  ## Поддержка глобальных переменных
+</div>
+
+Для лучшей совместимости к глобальным переменным можно обращаться в стиле MySQL — как `@@identifier`.
+
+Поддерживаются следующие переменные:
+
+* `version`
+* `max_allowed_packet`
+
+<Note>
+  На данный момент эти переменные являются заглушками и ни с чем не связаны.
+</Note>
+
+Пример:
+
+```sql
+SELECT @@version;
+```
+
+<div id="examples-of-use">
+  ## Примеры использования
+</div>
+
+Таблица в MySQL:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+База данных в ClickHouse, которая обменивается данными с сервером MySQL:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
