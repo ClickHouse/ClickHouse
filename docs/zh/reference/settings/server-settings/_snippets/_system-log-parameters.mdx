@@ -1,0 +1,33 @@
+---
+title: 系统日志参数
+---
+
+以下设置可通过子标签配置：
+
+| Setting                            | Description                                                                                                                 | Default             | Note                                                              |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| `database`                         | 数据库名称。                                                                                                                      |                     |                                                                   |
+| `table`                            | 系统表名称。                                                                                                                      |                     |                                                                   |
+| `engine`                           | 系统表的 [MergeTree 引擎定义](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)。 |                     | 如果定义了 `partition_by` 或 `order_by`，则不能使用。如果未指定，则默认使用 `MergeTree`   |
+| `partition_by`                     | 系统表的[自定义分区键](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。                                    |                     | 如果为系统表指定了 `engine`，则应直接在 &#39;engine&#39; 内指定 `partition_by` 参数   |
+| `ttl`                              | 指定表的 [生存时间 (TTL)](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)。                  |                     | 如果为系统表指定了 `engine`，则应直接在 &#39;engine&#39; 内指定 `ttl` 参数            |
+| `order_by`                         | 系统表的[自定义排序键](/zh/reference/engines/table-engines/mergetree-family/mergetree#order_by)。如果定义了 `engine`，则不能使用。                    |                     | 如果为系统表指定了 `engine`，则应直接在 &#39;engine&#39; 内指定 `order_by` 参数       |
+| `storage_policy`                   | 该表要使用的存储策略名称 (可选) 。                                                                                                         |                     | 如果为系统表指定了 `engine`，则应直接在 &#39;engine&#39; 内指定 `storage_policy` 参数 |
+| `settings`                         | 控制 MergeTree 行为的[附加参数](/zh/reference/engines/table-engines/mergetree-family/mergetree#settings) (可选) 。                         |                     | 如果为系统表指定了 `engine`，则应直接在 &#39;engine&#39; 内指定 `settings` 参数       |
+| `flush_interval_milliseconds`      | 将数据从内存缓冲区刷新到表中的时间间隔。                                                                                                        | `7500`              |                                                                   |
+| `max_size_rows`                    | 日志的最大行数。当未刷新的日志数量达到 max&#95;size 时，日志将被转储到磁盘。                                                                               | `1048576`           |                                                                   |
+| `reserved_size_rows`               | 为日志预分配的内存大小 (按行数计) 。                                                                                                        | `8192`              |                                                                   |
+| `buffer_size_rows_flush_threshold` | 行数阈值。达到该阈值时，会在后台启动将日志刷新到磁盘的操作。                                                                                              | `max_size_rows / 2` |                                                                   |
+| `flush_on_crash`                   | 设置发生崩溃时是否将日志转储到磁盘。                                                                                                          | `false`             |                                                                   |
+
+此外，以下服务器级设置控制所有系统日志表的默认刷新策略：
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| 设置                   | 描述                                                       | 默认值     |
+| -------------------- | -------------------------------------------------------- | ------- |
+| `skip_alias_columns` | 当为 `true` 时，系统日志表 schema 中会省略 ALIAS 列。S3 支持的系统日志必须启用此设置。 | `false` |

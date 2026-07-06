@@ -32,6 +32,7 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
+    bool precise_float_parsing = true;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -227,8 +228,10 @@ struct FormatSettings
         bool allow_single_quotes = true;
         bool allow_double_quotes = true;
         bool serialize_tuple_into_separate_columns = true;
+        bool header_serialize_tuple_into_separate_columns = true;
         bool deserialize_separate_columns_into_tuple = true;
         bool empty_as_default = false;
+        bool missing_nullable_as_empty_string = false;
         bool crlf_end_of_line = false;
         bool allow_cr_end_of_line = false;
         bool enum_as_number = false;
@@ -620,6 +623,7 @@ struct FormatSettings
     struct
     {
         UnsupportedGeometryHandling unsupported_geometry_handling = UnsupportedGeometryHandling::Throw;
+        bool validate_geometry = true;
     } geojson{};
 
 };

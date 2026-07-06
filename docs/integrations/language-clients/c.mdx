@@ -1,0 +1,453 @@
+---
+sidebarTitle: 'C'
+keywords: ['c', 'native protocol', 'native format', 'header-only', 'embedded', 'tcp', 'block decode']
+slug: /integrations/c
+description: 'Header-only C client for the ClickHouse native protocol, designed for embedding.'
+title: 'ClickHouse C client'
+doc_type: 'reference'
+---
+
+`clickhouse-c` is a header-only C client for the ClickHouse [native protocol](/concepts/features/interfaces/tcp).
+The source and per-header reference are in the [GitHub repository](https://github.com/ClickHouse/clickhouse-c).
+
+Unlike the higher-level clients, it does little for you on purpose. The core header decodes and
+encodes [Native](/reference/formats/Native) format blocks over an I/O callback you supply. You own
+the socket, TLS context, allocator, retries, and connection pooling. That makes it small enough to
+embed: including `clickhouse.h` alone pulls in no link-time dependencies beyond libc.
+
+<Note>
+This library is under active development. v1 decodes core ClickHouse types.
+Report limitations or missing functionality through the [issue tracker](https://github.com/ClickHouse/clickhouse-c/issues).
+Understand however that this library is missing functionality by design.
+</Note>
+
+## What the library doesn't do {#non-goals}
+
+These are deliberate non-goals. Handle them in your application or with a sibling library:
+
+- HTTP protocol. Wrap libcurl directly for the [HTTP interface](/concepts/features/interfaces/http).
+- DNS resolution, endpoint failover, connection pooling, retry, and backoff.
+- TLS context lifecycle. The OpenSSL backend uses an `SSL` you have already connected.
+- Threading. Each `chc_client` is single-threaded by design.
+- Async I/O inside the library. The blocking client calls `chc_io.read` synchronously. For an
+  event-loop client that performs no I/O itself, use the [ioless client](#async-client).
+
+## How the library is organized {#headers}
+
+`clickhouse-c` ships as a flat set of headers. Each header holds both declarations and implementation,
+guarded by a sentinel macro. Pick the headers your build needs.
+
+| Header | Purpose | Link flags |
+|---|---|---|
+| [`clickhouse.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse.md) | Core: types, errors, allocator, I/O vtable, type-name parser, block reader, and writer | — |
+| [`clickhouse-client.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-client.md) | TCP packet loop: Hello, Query, Data, EndOfStream, Exception, Progress, Pong | — |
+| [`clickhouse-async.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-async.md) | Ioless client: the same packet loop driven by caller byte submission, no socket | — |
+| [`clickhouse-compression.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-compression.md) | Compressed-frame layout, CityHash128, codec dispatch, and `LZ4`/`ZSTD` adapters | `-llz4 -lzstd` |
+| [`clickhouse-posix-io.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-posix-io.md) | I/O backend over blocking `read(2)`/`write(2)` | — |
+| [`clickhouse-openssl.h`](https://github.com/ClickHouse/clickhouse-c/blob/main/doc/clickhouse-openssl.md) | I/O backend over `SSL_read`/`SSL_write` | `-lssl -lcrypto` |
+
+## Required server setting {#server-setting}
+
+The decoder reads printable type names from the wire, so they must be encoded as text. ClickHouse
+writes them as text by default, but pin the setting on your queries so a server or session profile
+that sets it to binary can't break decoding:
+
+```plaintext
+output_format_native_encode_types_in_binary_format = 0
+```
+
+## Adding it to your project {#adding-to-project}
+
+There's no package to install, so you should vendor the headers into your tree via a git submodule or a copy.
+Exactly one translation unit defines `CHC_IMPLEMENTATION` and pulls in the implementation;
+every other unit includes the same headers for declarations only.
+
+```c
+/* clickhouse_impl.c */
+#define CHC_IMPLEMENTATION
+#include "clickhouse.h"
+#include "clickhouse-posix-io.h"
+#include "clickhouse-client.h"
+#include "clickhouse-compression.h"
+```
+
+```c
+/* every other TU */
+#include "clickhouse.h"
+#include "clickhouse-client.h"
+```
+
+Define `CHC_PROVIDE_STDLIB_ALLOC` before including `clickhouse.h` to use `chc_alloc_stdlib`.
+Define `CHC_NO_LZ4` or `CHC_NO_ZSTD` for `clickhouse-compression.h` to drop a lz4/zstd dependencies.
+
+## Connecting over TCP {#connecting-over-tcp}
+
+To talk to a ClickHouse server you set up the socket yourself, wrap it in a `chc_io`, and hand that
+to `chc_client_init`, which runs the Hello handshake synchronously. The library does no DNS,
+failover, reconnection, or pooling — those are caller concerns.
+
+```c
+int fd = socket(AF_INET, SOCK_STREAM, 0);
+int one = 1;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof one);
+
+struct sockaddr_in sa = {};
+sa.sin_family      = AF_INET;
+sa.sin_port        = htons(9000);
+sa.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+connect(fd, (struct sockaddr *) &sa, sizeof sa);
+
+chc_alloc al = chc_alloc_stdlib();
+chc_posix_io state;
+chc_io io;
+chc_posix_io_init(&state, &io, fd, NULL, NULL);
+
+chc_client *client = NULL;
+chc_client_opts opts = {
+    .user     = "default",
+    .password = "",
+    .database = "default",
+};
+chc_err err = {};
+if (chc_client_init(&client, &opts, &al, &io, &err) != CHC_OK) {
+    fprintf(stderr, "connect: %s\n", err.msg);
+    chc_client_close(client);   /* safe to call on the NULL-on-failure handle */
+    return 1;
+}
+
+const chc_server_info *info = chc_client_server_info(client);
+printf("connected to %s %llu.%llu.%llu\n", info->display_name,
+       (unsigned long long) info->version_major,
+       (unsigned long long) info->version_minor,
+       (unsigned long long) info->version_patch);
+```
+
+Each `chc_client` is single-threaded and wraps one connection. The library calls the `chc_io`
+callbacks synchronously; what those callbacks do underneath (`epoll`, `io_uring`,
+`WaitLatchOrSocket`) is up to you.
+
+## Running a query {#running-a-query}
+
+Send the query, then drain packets until `CHC_PKT_END_OF_STREAM`. Use `chc_client_send_query_ex` to
+attach the [required server setting](#server-setting); the bare `chc_client_send_query` sends an
+empty settings list and inherits whatever the server defaults to.
+
+```c
+chc_query_setting settings[] = {
+    { .name = "output_format_native_encode_types_in_binary_format", .value = "0" },
+};
+chc_query_opts qopts = { .settings = settings, .n_settings = 1 };
+
+const char *sql = "SELECT number, toString(number * number) FROM numbers(5)";
+if (chc_client_send_query_ex(client, sql, strlen(sql), &qopts, &err) != CHC_OK) {
+    fprintf(stderr, "query: %s\n", err.msg);
+    return 1;
+}
+
+for (;;) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        break;
+    }
+
+    if (pkt.kind == CHC_PKT_DATA) {
+        for (size_t r = 0; r < chc_block_n_rows(pkt.block); r++)
+            for (size_t c = 0; c < chc_block_n_columns(pkt.block); c++)
+                print_value(chc_block_column_type(pkt.block, c),
+                            chc_block_column(pkt.block, c), r);
+    } else if (pkt.kind == CHC_PKT_EXCEPTION) {
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    }
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+```
+
+Server exceptions arrive as `CHC_PKT_EXCEPTION` packets, not as a non-OK return from
+`chc_client_recv_packet`. Only transport-level failures return non-OK. The first `CHC_PKT_DATA`
+packet of a result is a header block describing the schema with zero rows; data blocks follow.
+`chc_packet_clear` frees the packet's block or exception — null those fields on the packet first to
+take ownership instead.
+
+## Reading column data {#reading-column-data}
+
+Blocks are column-oriented. Each column has a physical layout, returned by `chc_column_layout`, that
+you dispatch on; its declared type comes from `chc_block_column_type`. Composite layouts nest, so
+reading a `Nullable(Array(String))` means unwrapping the nullable, walking the array offsets, then
+slicing the string data.
+
+| Layout | Accessors |
+|---|---|
+| `CHC_COL_FIXED` | `chc_column_fixed_data(c, &elem_size)` — `n_rows * elem_size` little-endian bytes |
+| `CHC_COL_STRING` | `chc_column_string_data(c)`, `chc_column_string_offsets(c)` — `offsets[i]` is row `i`'s exclusive end in host byte order; row 0 starts at 0 |
+| `CHC_COL_NULLABLE` | `chc_column_null_map(c)` (one byte per row, 1 = `NULL`), `chc_column_nullable_inner(c)` |
+| `CHC_COL_ARRAY` | `chc_column_array_offsets(c)` (cumulative ends), `chc_column_array_values(c)`; `Map` decodes as `Array(Tuple(K, V))` |
+| `CHC_COL_TUPLE` | `chc_column_tuple_arity(c)`, `chc_column_tuple_child(c, i)` — each child has the same row count |
+| `CHC_COL_LOW_CARDINALITY` | `chc_column_lc_key_size(c)` (1/2/4/8), `chc_column_lc_keys(c)`, `chc_column_lc_dict(c)`; dictionary slot 0 is the default value |
+
+A reader for plain numeric, string, and nullable columns:
+
+```c
+void print_value(const chc_type *t, const chc_column *c, size_t row)
+{
+    if (chc_column_layout(c) == CHC_COL_NULLABLE) {
+        if (chc_column_null_map(c)[row]) { fputs("\\N", stdout); return; }
+        print_value(chc_type_child(t, 0), chc_column_nullable_inner(c), row);
+        return;
+    }
+
+    switch (chc_column_layout(c)) {
+    case CHC_COL_FIXED: {
+        /* fixed_data is a raw little-endian byte slab. memcpy into a typed
+           local to avoid unaligned loads and strict-aliasing UB, then
+           byte-swap on big-endian hosts. */
+        size_t es;
+        const uint8_t *p = chc_column_fixed_data(c, &es) + row * es;
+        switch (chc_type_kind(t)) {
+        case CHC_UINT64: { uint64_t v; memcpy(&v, p, sizeof v); printf("%" PRIu64, v); break; }
+        case CHC_INT32:  { int32_t  v; memcpy(&v, p, sizeof v); printf("%" PRId32, v); break; }
+        case CHC_FLOAT64: { double  v; memcpy(&v, p, sizeof v); printf("%g", v); break; }
+        /* ... remaining numeric kinds ... */
+        default: break;
+        }
+        break;
+    }
+    case CHC_COL_STRING: {
+        const uint8_t  *bytes   = chc_column_string_data(c);
+        const uint64_t *offsets = chc_column_string_offsets(c);
+        uint64_t start = row == 0 ? 0 : offsets[row - 1];
+        fwrite(bytes + start, 1, (size_t) (offsets[row] - start), stdout);
+        break;
+    }
+    default: break;
+    }
+}
+```
+
+`CHC_COL_FIXED` data is little-endian on the wire; on big-endian hosts you byte-swap multi-byte
+integers yourself. Offsets and LowCardinality keys are already swapped to host order at decode time.
+UUIDs are two little-endian `UInt64` halves, IPv4 is a 4-byte little-endian integer, and IPv6 is
+network byte order. `DateTime64` ticks are UTC — the timezone in the type is metadata only.
+
+When ingesting from an untrusted peer, call `chc_column_validate` on each column before traversing
+it. `chc_block_read` doesn't validate cross-field invariants such as array offsets and
+LowCardinality keys, so a forged block could otherwise read past inner-column bounds.
+
+## Inserting data {#inserting-data}
+
+Build a block with `chc_block_builder`, then hand it to `chc_client_send_data`. The builder records
+pointers rather than copying, so the column slabs must outlive the send. An INSERT sends the query,
+waits for the server's header block, sends one or more data blocks, then sends an empty block to
+terminate the stream.
+
+```c
+const char *sql = "INSERT INTO greetings (id, message) VALUES";
+chc_client_send_query(client, sql, strlen(sql), "", 0, &err);
+
+/* Wait for the server's header block (schema, 0 rows). */
+bool got_header = false;
+while (!got_header) {
+    chc_packet pkt = {};
+    if (chc_client_recv_packet(client, &pkt, &err) != CHC_OK) {
+        fprintf(stderr, "recv: %s\n", err.msg);
+        return 1;
+    }
+    chc_packet_kind kind = pkt.kind;
+    if (kind == CHC_PKT_DATA) got_header = true;
+    else if (kind == CHC_PKT_EXCEPTION && pkt.exception)
+        fprintf(stderr, "server: %s\n", pkt.exception->display_text);
+    chc_packet_clear(client, &pkt);
+    if (kind == CHC_PKT_EXCEPTION || kind == CHC_PKT_END_OF_STREAM) return 1;  /* no header coming */
+}
+
+chc_block_builder *bb = NULL;
+chc_block_builder_init(&bb, &al, &err);
+
+uint64_t ids[3] = { 1, 2, 3 };
+chc_type *u64 = NULL;
+chc_type_parse("UInt64", 6, &al, &u64, &err);
+chc_block_builder_append_fixed(bb, "id", 2, u64, ids, 3, &err);
+
+/* String columns: cumulative exclusive end offsets + a packed byte slab. */
+uint64_t offsets[3] = { 5, 11, 20 };   /* "hello", "buenas", "goedendag" */
+const uint8_t bytes[] = "hellobuenasgoedendag";
+chc_block_builder_append_string(bb, "message", 7, offsets, bytes, 3, &err);
+
+chc_client_send_data(client, bb, &err);   /* the populated block */
+chc_client_send_data(client, NULL, &err); /* empty block ends the INSERT */
+
+/* Drain to EndOfStream. */
+for (;;) {
+    chc_packet pkt = {};
+    chc_client_recv_packet(client, &pkt, &err);
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    chc_packet_clear(client, &pkt);
+    if (done) break;
+}
+
+chc_block_builder_destroy(bb);
+chc_type_destroy(u64, &al);
+```
+
+`chc_block_builder_append_fixed` takes `n_rows * elem_size` little-endian bytes;
+`chc_block_builder_append_string` takes cumulative exclusive end offsets in host byte order over a
+packed slab. Routing the builder through `chc_client_send_data` rather than the lower-level
+`chc_block_write` lets the client set the block options from the negotiated revision and apply
+compression.
+
+## Compression {#compression}
+
+Pass a compression mode and a filled codec in `chc_client_opts`. The client decompresses incoming
+Data packets and compresses outgoing ones. The compression header ships `LZ4` and `ZSTD` adapters;
+each init only fills its own slots, so call both to support either.
+
+```c
+#include "clickhouse-compression.h"
+
+chc_codec codec = {};
+chc_lz4_codec_init(&codec);
+chc_zstd_codec_init(&codec);
+
+chc_client_opts opts = {
+    .user        = "default",
+    .compression = CHC_COMP_LZ4,   /* or CHC_COMP_ZSTD */
+    .codec       = &codec,
+};
+```
+
+To use a compression library the project doesn't ship a binding for, fill a `chc_codec` yourself;
+the vtable is declared in `clickhouse-compression.h`.
+
+## TLS {#tls}
+
+`clickhouse-openssl.h` provides a `chc_io` backend over `SSL_read`/`SSL_write`. You drive OpenSSL:
+the library never creates an `SSL_CTX`, verifies certificates, sets SNI, or calls `SSL_connect` /
+`SSL_shutdown`. By the time `chc_io.read` fires, the handshake must be complete.
+
+```c
+#include "clickhouse-openssl.h"
+
+SSL *ssl = /* connected, handshake complete */;
+chc_openssl_io state;
+chc_io io;
+chc_openssl_io_init(&state, &io, ssl, NULL, NULL);
+/* hand &io to chc_client_init, same as the POSIX backend */
+```
+
+[ClickHouse Cloud](/products/cloud/getting-started/intro) and other TLS-enabled deployments use the native protocol on
+port 9440. Both backends accept an optional `check_cancel` callback, polled between reads, and a
+read deadline via `chc_openssl_io_set_deadline` / `chc_posix_io_set_deadline`.
+
+## Ioless (async) client {#async-client}
+
+`clickhouse-async.h` is an ioless variant of the TCP client for event loops. It never touches a
+socket: you submit the bytes you've received and drain the bytes it wants to send, driving `epoll`,
+`io_uring`, or `WaitLatchOrSocket` yourself. The options, packet types, and block builder are the
+same as the blocking client.
+
+`chc_async_client_init` does no I/O and can't block. The handshake runs afterward as a resumable
+state machine, as does every send and receive. When a parse runs past the bytes you've submitted, the
+call returns `CHC_WOULD_BLOCK` instead of blocking — submit more inbound bytes and call again, and the
+parser resumes mid-block.
+
+```c
+#include "clickhouse-async.h"
+
+chc_async_client *c = NULL;
+chc_client_opts opts = { .user = "default" };
+chc_async_client_init(&c, &opts, &al, &err);
+
+for (;;) {
+    int rc = chc_async_handshake(c, &err);
+    if (rc == CHC_OK) break;
+    if (rc != CHC_WOULD_BLOCK) break;   /* hard error */
+    pump(c);   /* drain pending_out to the socket; feed received bytes to chc_async_submit */
+}
+
+chc_async_send_query(c, sql, strlen(sql), "", 0, &err);
+
+for (;;) {
+    chc_packet pkt = {};
+    int rc = chc_async_recv_packet(c, &pkt, &err);
+    if (rc == CHC_WOULD_BLOCK) { pump(c); continue; }
+    if (rc != CHC_OK) break;
+
+    bool done = pkt.kind == CHC_PKT_END_OF_STREAM;
+    if (pkt.kind == CHC_PKT_DATA && pkt.block) { /* read columns as above */ }
+    chc_async_packet_clear(c, &pkt);
+    if (done) break;
+}
+```
+
+Your `pump` moves bytes both ways. Outbound, `chc_async_pending_out` hands back a pointer and length
+into the queued bytes; after the socket accepts some, call `chc_async_consume_out` with that count, a
+partial write is fine. Inbound, feed socket reads to `chc_async_submit`. Sends never block or apply
+backpressure, so watch the pending-out length and stop issuing sends when it grows too large.
+
+A working liburing driver is in
+[`test/test_async_uring.c`](https://github.com/ClickHouse/clickhouse-c/blob/main/test/test_async_uring.c).
+
+## Memory and the allocator {#allocator}
+
+Every entry point takes a `chc_alloc` vtable, so allocation rides on whatever scheme the host uses.
+
+```c
+typedef struct chc_alloc {
+    void *ud;
+    void *(*alloc)  (void *ud, size_t bytes);
+    void *(*realloc)(void *ud, void *p, size_t old_bytes, size_t new_bytes);
+    void  (*free)   (void *ud, void *p, size_t bytes);
+} chc_alloc;
+```
+
+Define `CHC_PROVIDE_STDLIB_ALLOC` before including `clickhouse.h` and call `chc_alloc_stdlib()` for a
+standard `malloc`-backed allocator.
+
+## Errors and server exceptions {#errors}
+
+Functions return `CHC_OK` (0) or a nonzero `CHC_ERR_*` code. The code is the return value; a
+caller-stack-allocated `chc_err` carries the human-readable message. The library never heap-allocates
+an error.
+
+```c
+typedef struct chc_err {
+    int  server_code;           /* set when the return code is CHC_ERR_SERVER */
+    char msg[CHC_ERR_MSG_LEN];  /* NUL-terminated, default 256 bytes */
+    char server_name[64];       /* ClickHouse exception class, if SERVER */
+} chc_err;
+```
+
+Server-side query errors aren't `chc_err` failures. They arrive on the packet stream as
+`CHC_PKT_EXCEPTION`, carrying the server's `code`, `display_text`, and `stack_trace`. Reserve
+`chc_err` checking for transport, protocol, and decode failures.
+
+## Supported data types {#supported-types}
+
+The block reader decodes:
+
+- `Int8`–`Int256`, `UInt8`–`UInt256`
+- `Float32`, `Float64`, `BFloat16`
+- `Bool`
+- `Decimal32`, `Decimal64`, `Decimal128`, `Decimal256`
+- `Date`, `Date32`, `DateTime`, `DateTime64`, `Time`, `Time64`
+- `String`, `FixedString(N)`
+- `UUID`, `IPv4`, `IPv6`
+- `Enum8`, `Enum16`
+- `Nullable(T)`, `Array(T)`, `Tuple(...)`, `Map(K, V)`, `Nested(...)`
+- `LowCardinality(T)`
+- `Interval`
+- `QBit(...)`
+- `Point`, `Ring`, `Polygon`, `MultiPolygon`
+- `SimpleAggregateFunction(f, T)`, which decodes as its inner `T`
+- `JSON` and `Object('json')`, as `String` columns under string serialization (see below)
+
+`JSON` and `Object('json')` decode only when the query sets `output_format_native_write_json_as_string=1`.
+Each row arrives as one JSON document in a `CHC_COL_STRING` column, so the string accessors read it;
+the builder writes the same shape with `chc_block_builder_append_json_string`. Any other JSON
+serialization version returns `CHC_ERR_TYPE` naming the setting.
+
+`Variant`, `Dynamic`, `AggregateFunction` aren't yet decoded and return `CHC_ERR_TYPE`;
+cast them to `String` server-side as a fallback.

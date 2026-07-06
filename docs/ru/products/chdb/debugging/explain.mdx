@@ -1,0 +1,487 @@
+---
+title: 'Метод explain()'
+sidebarTitle: 'explain()'
+slug: /chdb/debugging/explain
+description: 'Просмотр планов выполнения DataStore с помощью метода explain()'
+keywords: ['chdb', 'DataStore', 'explain', 'выполнение', 'план', 'sql']
+doc_type: 'reference'
+---
+
+Метод `explain()` показывает план выполнения запроса DataStore, помогая понять, какие операции будут выполнены и какой SQL будет сгенерирован.
+
+<div id="basic">
+  ## Базовое использование
+</div>
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+query = (ds
+    .filter(ds['amount'] > 1000)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean']})
+    .sort('sum', ascending=False)
+)
+
+# Просмотр плана выполнения
+query.explain()
+```
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```python
+explain(verbose=False) -> None
+```
+
+**Параметры:**
+
+| Параметр  | Тип  | По умолчанию | Описание                             |
+| --------- | ---- | ------------ | ------------------------------------ |
+| `verbose` | bool | `False`      | Показывать дополнительные метаданные |
+
+<div id="output-format">
+  ## Формат вывода
+</div>
+
+<div id="standard">
+  ### Стандартный вывод
+</div>
+
+```text
+================================================================================
+Execution Plan (in execution order)
+================================================================================
+
+ [1] 📊 Data Source: file('sales.csv', 'csv')
+
+Operations:
+────────────────────────────────────────────────────────────────────────────────
+    ️  Segment 1 [chDB] (from source): Operations 2-5
+    ️  Note: SQL operations after Pandas ops use Python() table function
+
+ [2] 🚀 [chDB] WHERE: "amount" > 1000
+ [3] 🚀 [chDB] GROUP BY: region
+ [4] 🚀 [chDB] AGGREGATE: sum(amount), avg(amount)
+ [5] 🚀 [chDB] ORDER BY: sum DESC
+
+────────────────────────────────────────────────────────────────────────────────
+Final State: 📊 Pending (lazy, not yet executed)
+             └─> Will execute when print(), .to_df(), .execute() is called
+
+────────────────────────────────────────────────────────────────────────────────
+Generated SQL Query:
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT region, SUM(amount) AS sum, AVG(amount) AS mean
+FROM file('sales.csv', 'csv')
+WHERE "amount" > 1000
+GROUP BY region
+ORDER BY sum DESC
+
+================================================================================
+```
+
+<div id="icons">
+  ### Условные обозначения
+</div>
+
+| Значок | Значение            |
+| ------ | ------------------- |
+| 📊     | Источник данных     |
+| 🚀     | операция chDB (SQL) |
+| 🐼     | операция pandas     |
+
+<div id="verbose">
+  ### Подробный вывод
+</div>
+
+```python
+query.explain(verbose=True)
+```
+
+Подробный режим показывает дополнительные сведения для каждой операции, включая полный SQL-запрос с механизмами внутреннего отслеживания порядка строк.
+
+***
+
+<div id="phases">
+  ## Три фазы выполнения
+</div>
+
+В выводе explain операции показаны в трех фазах:
+
+<div id="phase-1">
+  ### Фаза 1: Построение SQL-запроса (в ленивом режиме)
+</div>
+
+Операции, которые компилируются в SQL:
+
+```text
+  1. Source: file('sales.csv', 'CSVWithNames')
+  2. Filter: amount > 1000      
+  3. GroupBy: region
+  4. Aggregate: sum(amount)
+```
+
+<div id="phase-2">
+  ### Фаза 2: Точка выполнения
+</div>
+
+Когда срабатывает триггер:
+
+```text
+  5. Execute SQL -> DataFrame
+     Trigger: to_df() called
+```
+
+<div id="phase-3">
+  ### Этап 3: Операции с DataFrame
+</div>
+
+Операции после выполнения:
+
+```text
+  6. [pandas] pivot_table(...)
+  7. [pandas] apply(custom_func)
+```
+
+***
+
+<div id="understanding">
+  ## Разбор плана
+</div>
+
+<div id="source">
+  ### Сведения об источнике
+</div>
+
+```text
+Source: file('sales.csv', 'CSVWithNames')
+```
+
+* `file()` - табличная функция ClickHouse `file()`
+* `'CSVWithNames'` - файловый формат с заголовком
+
+Другие типы источников:
+
+```text
+Source: s3('bucket/data.parquet', ...)
+Source: mysql('host', 'db', 'table', ...)
+Source: __dataframe__  (pandas DataFrame input)
+```
+
+<div id="filter">
+  ### Операции фильтрации
+</div>
+
+```text
+Filter: amount > 1000 AND status = 'active'
+```
+
+Показывает предложение WHERE, которое будет использовано.
+
+<div id="groupby">
+  ### GroupBy и Aggregate
+</div>
+
+```text
+GroupBy: region, category
+Aggregate: sum(amount), avg(amount), count(id)
+```
+
+Показывает столбцы в GROUP BY и агрегатные функции.
+
+<div id="sort">
+  ### Операции сортировки
+</div>
+
+```text
+Sort: sum DESC, region ASC
+```
+
+Отображает предложение ORDER BY.
+
+<div id="limit">
+  ### Ограничение операций
+</div>
+
+```text
+Limit: 10
+Offset: 100
+```
+
+Показывает LIMIT и OFFSET.
+
+***
+
+<div id="engine">
+  ## Информация о движке
+</div>
+
+В подробном режиме можно увидеть, какой движок будет использоваться:
+
+```text
+Filter: amount > 1000
+  - Engine: chdb
+  - Pushdown: Yes
+
+Apply: custom_function
+  - Engine: pandas
+  - Pushdown: No
+```
+
+<div id="pushdown">
+  ### Pushdown
+</div>
+
+* **Да**: Операция будет выполнена на стороне источника данных (SQL)
+* **Нет**: Для выполнения операции требуется pandas
+
+***
+
+<div id="examples">
+  ## Примеры
+</div>
+
+<div id="example-simple">
+  ### Простой запрос
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+ds = pd.read_csv("data.csv")
+ds.filter(ds['age'] > 25).explain()
+```
+
+```text
+================================================================================
+Execution Plan (in execution order)
+================================================================================
+
+ [1] 📊 Data Source: file('data.csv', 'csv')
+
+Operations:
+────────────────────────────────────────────────────────────────────────────────
+    ️  Segment 1 [chDB] (from source): Operations 2-2
+
+ [2] 🚀 [chDB] WHERE: "age" > 25
+
+────────────────────────────────────────────────────────────────────────────────
+Generated SQL Query:
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT * FROM file('data.csv', 'csv') WHERE "age" > 25
+
+================================================================================
+```
+
+<div id="example-complex">
+  ### Сложная агрегация
+</div>
+
+```python
+query = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .select('region', 'category', 'amount')
+    .groupby('region', 'category')
+    .agg({
+        'amount': ['sum', 'mean', 'count']
+    })
+    .sort('sum', ascending=False)
+    .limit(20)
+)
+query.explain()
+```
+
+```text
+================================================================================
+Execution Plan (in execution order)
+================================================================================
+
+ [1] 📊 Data Source: file('sales.csv', 'csv')
+
+Operations:
+────────────────────────────────────────────────────────────────────────────────
+    ️  Segment 1 [chDB] (from source): Operations 2-8
+
+ [2] 🚀 [chDB] WHERE: "date" >= '2024-01-01'
+ [3] 🚀 [chDB] WHERE: "amount" > 100
+ [4] 🚀 [chDB] SELECT: region, category, amount
+ [5] 🚀 [chDB] GROUP BY: region, category
+ [6] 🚀 [chDB] AGGREGATE: sum(amount), avg(amount), count(amount)
+ [7] 🚀 [chDB] ORDER BY: sum DESC
+ [8] 🚀 [chDB] LIMIT: 20
+
+────────────────────────────────────────────────────────────────────────────────
+Generated SQL Query:
+────────────────────────────────────────────────────────────────────────────────
+
+SELECT region, category, 
+       SUM(amount) AS sum, 
+       AVG(amount) AS mean, 
+       COUNT(amount) AS count
+FROM file('sales.csv', 'csv')
+WHERE "date" >= '2024-01-01' AND "amount" > 100
+GROUP BY region, category
+ORDER BY sum DESC
+LIMIT 20
+
+================================================================================
+```
+
+<div id="example-mixed">
+  ### Сочетание SQL и pandas
+</div>
+
+Когда операции нельзя полностью выразить в SQL, план показывает несколько сегментов:
+
+```python
+query = (ds
+    .filter(ds['age'] > 25)           # SQL
+    .groupby('city')                   # SQL
+    .agg({'salary': 'mean'})           # SQL
+    .apply(lambda x: x * 1.1)          # pandas (вызывает разбиение на сегменты)
+    .filter(ds['mean'] > 50000)        # SQL (новый сегмент)
+)
+query.explain()
+```
+
+```text
+================================================================================
+Execution Plan (в порядке исполнения)
+================================================================================
+
+ [1] 📊 Data Source: file('data.csv', 'csv')
+
+Operations:
+────────────────────────────────────────────────────────────────────────────────
+    ️  Segment 1 [chDB] (из источника): Операции 2–4
+    ️  Segment 2 [Pandas] (на DataFrame): Операция 5
+    ️  Segment 3 [chDB] (на DataFrame): Операция 6
+    ️  Note: SQL-операции после операций Pandas используют табличную функцию Python()
+
+ [2] 🚀 [chDB] WHERE: "age" > 25
+ [3] 🚀 [chDB] GROUP BY: city
+ [4] 🚀 [chDB] AGGREGATE: avg(salary)
+ [5] 🐼 [Pandas] APPLY: lambda
+ [6] 🚀 [chDB] WHERE: "mean" > 50000
+
+================================================================================
+```
+
+***
+
+<div id="debugging">
+  ## Отладка с помощью explain()
+</div>
+
+<div id="debug-filter">
+  ### Проверьте логику фильтрации
+</div>
+
+```python
+# Проверьте правильность фильтра
+query = ds.filter((ds['age'] > 25) & (ds['city'] == 'NYC'))
+query.explain()
+# Вывод: Filter: age > 25 AND city = 'NYC'
+```
+
+<div id="debug-select">
+  ### Проверьте выбор столбца
+</div>
+
+```python
+# Проверка отсечения столбцов
+query = ds.select('name', 'age').filter(ds['age'] > 25)
+query.explain()
+# Вывод: SELECT name, age FROM ... WHERE age > 25
+```
+
+<div id="debug-agg">
+  ### Разберитесь с агрегацией
+</div>
+
+```python
+# Проверка функций агрегации
+query = ds.groupby('dept').agg({'salary': ['sum', 'mean', 'std']})
+query.explain()
+# Вывод: SELECT dept, SUM(salary), AVG(salary), stddevPop(salary)
+```
+
+***
+
+<div id="best-practices">
+  ## Рекомендации
+</div>
+
+<div id="best-practice-1">
+  ### 1. Проводите проверку перед выполнением крупных запросов
+</div>
+
+```python
+# Всегда сначала используйте explain для больших данных
+query = ds.complex_pipeline()
+query.explain()  # Проверить план
+
+# Если план выглядит корректным
+result = query.to_df()  # Выполнить
+```
+
+<div id="best-practice-2">
+  ### 2. Используйте Verbose для отладки
+</div>
+
+```python
+# Когда что-то идёт не так
+query.explain(verbose=True)
+# Показывает выбор движка и информацию о pushdown
+```
+
+<div id="best-practice-3">
+  ### 3. Сравнение с `to_sql()`
+</div>
+
+```python
+# explain() показывает план
+query.explain()
+
+# to_sql() показывает только SQL
+print(query.to_sql())
+
+# Оба метода полезны для разных целей
+```
+
+<div id="best-practice-4">
+  ### 4. Проверьте, применяется ли pushdown
+</div>
+
+```python
+# Подробный режим показывает, выполняется ли pushdown операций
+query.explain(verbose=True)
+
+# Если Pushdown: No, операция выполняется в pandas
+# Рассмотрите возможность переструктурирования запроса для повышения производительности
+```

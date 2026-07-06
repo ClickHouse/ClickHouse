@@ -3,7 +3,6 @@
 import os
 import re
 import socket
-import subprocess
 import sys
 import threading
 import traceback
@@ -54,13 +53,8 @@ EXPECTED_ANSWER = """{\\n\\t"login": "ClickHouse",\\n\\t"id": 54801242,\\n\\t"na
 # accessible from clickhouse server.
 #####################################################################################
 
-# IP-address of this host accessible from the outside world. Get the first one
-try:
-    HTTP_SERVER_HOST = (
-        subprocess.check_output(["hostname", "-i"]).decode("utf-8").strip().split()[0]
-    )
-except:
-    HTTP_SERVER_HOST = "127.0.0.1"
+# Resolve CLICKHOUSE_HOST to a numeric IP (is_ipv6 needs one); getaddrinfo keeps IPv4 and IPv6 working.
+HTTP_SERVER_HOST = socket.getaddrinfo(os.environ.get("CLICKHOUSE_HOST", "127.0.0.1"), None)[0][4][0]
 IS_IPV6 = is_ipv6(HTTP_SERVER_HOST)
 HTTP_SERVER_PORT = get_local_port(HTTP_SERVER_HOST, IS_IPV6)
 

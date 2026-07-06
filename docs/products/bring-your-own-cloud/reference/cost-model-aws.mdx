@@ -1,0 +1,41 @@
+---
+title: 'BYOC cost model (AWS)'
+slug: /cloud/reference/byoc/cost-model-aws
+sidebarTitle: 'Cost model (AWS)'
+keywords: ['BYOC', 'bring your own cloud', 'AWS', 'cost', 'billing', 'TCO', 'pricing', 'EC2', 'S3', 'EBS']
+description: 'How ClickHouse Cloud charges and AWS infrastructure charges combine into total cost of ownership for a BYOC deployment'
+doc_type: 'reference'
+---
+
+A ClickHouse BYOC deployment generates two independent bills:
+
+1. **ClickHouse Cloud charges** — billed by ClickHouse for your ClickHouse services, based on total memory allocation.
+2. **AWS infrastructure charges** — billed by AWS directly to your AWS account for every resource the BYOC deployment provisions there.
+
+This page describes how each is calculated and how they combine into total cost of ownership (TCO).
+
+## ClickHouse Cloud charges {#clickhouse-cloud-charges}
+
+ClickHouse Cloud charges are based on total memory allocation. [Contact the team](https://clickhouse.com/cloud/bring-your-own-cloud) to understand how this applies to your setup.
+
+## AWS infrastructure charges {#aws-infrastructure-charges}
+
+AWS bills your account directly for every resource provisioned by BYOC. ClickHouse doesn't mark up or resell AWS capacity. See [Billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services) for the full mandatory and optional service inventory.
+
+The dominant cost drivers, in typical descending order of contribution to a BYOC bill, are:
+
+1. **Amazon EC2** — worker instances backing the EKS managed node groups. Standard Graviton families (for example, `m7g`) are used by default. Family and count scale with your service's allocated memory and node group autoscaling.
+2. **Amazon S3** — storage of ClickHouse table data and backups in your buckets. Charged per GB-month plus per-request and inter-region transfer fees.
+3. **Amazon EBS** — gp3 volumes attached to worker nodes for OS, container images, and ClickHouse logs.
+4. **NAT Gateway and cross-AZ data transfer** — egress from private subnets, plus traffic between availability zones (multi-AZ deployments replicate data across AZs).
+5. **Amazon EKS** — flat per cluster-hour control plane fee.
+6. **Elastic Load Balancing (NLB)** — per LCU-hour for client ingress traffic.
+7. **CloudWatch Logs, Route 53, KMS, VPC endpoints** — generally a small fraction of the total bill, but vary with workload.
+
+For current AWS list prices, see the per-service pricing pages on [aws.amazon.com](https://aws.amazon.com/pricing/).
+
+## Related {#related}
+
+- [Billable AWS services](/products/bring-your-own-cloud/reference/billable-aws-services) — full inventory of AWS services BYOC provisions
+- [AWS service limits and quotas](/products/bring-your-own-cloud/reference/aws-service-limits) — quotas to verify before deployment
+- [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) — components ClickHouse Cloud deploys in your account

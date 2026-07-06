@@ -1,0 +1,198 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: 'Session Replay Demo'
+description: 'تطبيق تجريبي تفاعلي يوضح كيفية تهيئة تطبيق ويب لاستخدام ميزة إعادة تشغيل الجلسات في ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'إعادة تشغيل الجلسات', 'Browser SDK', 'عرض توضيحي', 'observability', 'instrumentation']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Info>
+  **باختصار**
+
+  يشرح هذا الدليل كيفية تزويد تطبيق ويب بإمكانات إعادة تشغيل الجلسات باستخدام ClickStack Browser SDK. وعلى عكس مجموعات البيانات النموذجية الأخرى التي تحمّل بيانات مُولَّدة مسبقًا، يوفّر هذا العرض التوضيحي تطبيقًا تفاعليًا تنشئ فيه بيانات الجلسة من خلال تفاعلاتك الخاصة.
+
+  الوقت المطلوب: 10-15 دقيقة
+</Info>
+
+<div id="overview">
+  ## نظرة عامة
+</div>
+
+يُعد [التطبيق التجريبي لإعادة تشغيل الجلسات](https://github.com/ClickHouse/clickstack-session-replay-demo) مستكشفًا للوثائق مبنيًا باستخدام JavaScript الخام. ويوضح مدى بساطة إضافة instrumentation لإعادة تشغيل الجلسات — إذ يكفي وسم `script` واحد واستدعاء تهيئة واحد لالتقاط جميع تفاعلات المستخدم تلقائيًا.
+
+يتضمن المستودع فرعين:
+
+* **`main`** — مُعدّ بالكامل ومزوّد بالـ instrumentation وجاهز للاستخدام فورًا
+* **`pre-instrumented`** — نسخة نظيفة من دون instrumentation، مع تعليقات في الشيفرة توضّح مواضع إضافتها
+
+يستخدم هذا الدليل فرع `main` أولًا لمشاهدة إعادة تشغيل الجلسات أثناء العمل، ثم يستعرض شيفرة الـ instrumentation حتى تتمكن من تطبيق النمط نفسه على تطبيقك.
+
+للاطلاع على مزيد من الخلفية حول إعادة تشغيل الجلسات وكيف تندرج ضمن ClickStack، راجع صفحة ميزة [Session Replay](/ar/clickstack/features/session-replay).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+* تثبيت Docker وDocker Compose
+* توفّر المنافذ 3000 و4317 و4318 و8080
+
+<div id="running-the-demo">
+  ## تشغيل العرض التوضيحي
+</div>
+
+<Steps>
+  <Step>
+    ### استنسخ المستودع
+
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step>
+    ### ابدأ ClickStack
+
+    ```shell
+    docker-compose up -d clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### احصل على مفتاح API الخاص بك
+
+    1. افتح HyperDX على [http://localhost:8080](http://localhost:8080)
+    2. أنشئ حسابًا أو سجّل الدخول إذا لزم الأمر
+    3. انتقل إلى **Team Settings → API Keys**
+    4. انسخ **مفتاح API للاستيعاب** الخاص بك
+
+    <Image img="/images/clickstack/api-key.webp" alt="مفتاح API في ClickStack" />
+
+    5. عيّنه كمتغير بيئة:
+
+    ```shell
+    export CLICKSTACK_API_KEY='your-api-key-here'
+    ```
+  </Step>
+
+  <Step>
+    ### ابدأ التطبيق التجريبي
+
+    ```shell
+    docker-compose --profile demo up demo-app
+    ```
+
+    <Note>
+      تأكد من تشغيل هذا الأمر في الطرفية نفسها التي صدّرت فيها المتغير `CLICKSTACK_API_KEY`.
+    </Note>
+
+    افتح [http://localhost:3000](http://localhost:3000) في متصفحك وتفاعل مع التطبيق — ابحث عن الموضوعات، وصفِّ حسب الفئة، واستعرض أمثلة الشيفرة، وأضف العناصر إلى الإشارات المرجعية.
+
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="التطبيق التجريبي لإعادة تشغيل الجلسة" />
+
+    تُلتقط جميع التفاعلات تلقائيًا بواسطة ClickStack Browser SDK.
+  </Step>
+
+  <Step>
+    ### شاهد إعادة تشغيل جلستك
+
+    ارجع إلى HyperDX على [http://localhost:8080](http://localhost:8080) وانتقل إلى **Client Sessions** من الشريط الجانبي الأيسر.
+
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="البحث في إعادة تشغيل الجلسة" />
+
+    يُفترض أن تظهر جلستك في القائمة مع مدتها وعدد الأحداث فيها. انقر على الزر ▶️ لإعادة تشغيلها.
+
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="إعادة تشغيل الجلسة" />
+
+    بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل في المخطط الزمني.
+  </Step>
+</Steps>
+
+<div id="instrumentation">
+  ## إعداد أدوات الرصد
+</div>
+
+يوضح التطبيق التجريبي مدى قلة الشيفرة المطلوبة لتفعيل إعادة تشغيل الجلسة. وكل ما يلزم هو إضافتان إلى التطبيق:
+
+**1. تضمين SDK (`app/public/index.html`):**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. هيّئ ClickStack (`app/public/js/app.js`):**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+وكل ما عدا ذلك هو مجرد كود تطبيق عادي. يلتقط SDK تلقائيًا جميع تفاعلات المستخدم، وسجلات وحدة التحكم، وطلبات الشبكة، والأخطاء — لذلك لا حاجة إلى أي إعداد إضافي للرصد.
+
+<div id="try-it-yourself">
+  ### جرّبه بنفسك
+</div>
+
+لإضافة إمكانات الرصد إلى التطبيق من الصفر، بدّل إلى الفرع `pre-instrumented`:
+
+```shell
+git checkout pre-instrumented
+```
+
+يحتوي هذا الفرع على التطبيق نفسه ولكن من دون أي تهيئة لجمع بيانات الرصد الخاصة بـ ClickStack. تشير تعليقات الشيفرة في `app/public/index.html` و`app/public/js/app.js` بدقة إلى الموضع الذي ينبغي فيه إضافة مقتطعي الشيفرة المذكورين أعلاه. بعد إضافتهما، أعد تشغيل التطبيق التجريبي وستبدأ تفاعلاتك بالظهور في ClickStack.
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="sessions-not-appearing">
+  ### عدم ظهور الجلسات في HyperDX
+</div>
+
+1. تحقّق من وحدة تحكم المتصفح بحثًا عن أخطاء
+2. تأكّد من أن ClickStack قيد التشغيل: `docker-compose ps`
+3. تأكّد من ضبط مفتاح API: `echo $CLICKSTACK_API_KEY`
+4. اضبط النطاق الزمني في عرض Client Sessions (جرّب **آخر 15 دقيقة**)
+5. أجرِ إعادة تحميل كاملة للمتصفح: `Cmd+Shift+R` (Mac) أو `Ctrl+Shift+R` (Windows/Linux)
+
+<div id="401-errors">
+  ### أخطاء 401 Unauthorized
+</div>
+
+لم يتم ضبط مفتاح API بشكل صحيح. تأكد من أنك:
+
+1. صدّرته في الطرفية: `export CLICKSTACK_API_KEY='your-key'`
+2. بدأت التطبيق التجريبي في **نفس الطرفية** التي صدّرته فيها
+3. حصلت على المفتاح من HyperDX UI (وليس سلسلة أُنشئت عشوائيًا)
+
+<div id="cleanup">
+  ## التنظيف
+</div>
+
+أوقِف الخدمات:
+
+```bash
+docker-compose down
+```
+
+احذف جميع البيانات:
+
+```bash
+docker-compose down -v
+```
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+* [إعادة تشغيل الجلسة](/ar/clickstack/features/session-replay) — نظرة عامة على الميزة، وخيارات SDK، وضوابط الخصوصية
+* [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser) — خيارات SDK الكاملة والتهيئة المتقدمة
+* [بدء استخدام ClickStack](/ar/clickstack/getting-started/index) — انشر ClickStack وأدخِل أولى بياناتك
+* [جميع مجموعات البيانات النموذجية](/ar/clickstack/example-datasets/index) — مجموعات بيانات نموذجية وأدلة أخرى
