@@ -1,0 +1,103 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-payg
+title: 'AWS Marketplace PAYG'
+description: 'Suscríbase a ClickHouse Cloud a través de AWS Marketplace (PAYG).'
+keywords: ['aws', 'marketplace', 'facturación', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Comience con ClickHouse Cloud en el [AWS Marketplace](https://aws.amazon.com/marketplace) mediante una oferta pública de pago por uso (PAYG).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Una cuenta de AWS con permisos de compra habilitados por su administrador de facturación.
+* Para realizar la compra, debe haber iniciado sesión en AWS Marketplace con esta cuenta.
+* Para conectar una organización de ClickHouse a su suscripción, debe ser administrador de esa organización.
+
+<div id="steps-to-sign-up">
+  ## Pasos para registrarse
+</div>
+
+<Steps>
+  <Step>
+    ### Busca ClickHouse Cloud - Pago por uso
+
+    Ve a [AWS Marketplace](https://aws.amazon.com/marketplace) y busca “ClickHouse Cloud - Pay As You Go”.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-1.webp" alt="Búsqueda de ClickHouse en AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### Ver las opciones de compra
+
+    Haz clic en el [listing](https://aws.amazon.com/marketplace/pp/prodview-p4gwofrqpkltu) y luego en **View purchase options**.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-2.webp" alt="Ver opciones de compra en AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### Suscríbete
+
+    En la siguiente pantalla, haz clic en Subscribe.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-3.webp" alt="Suscripción en AWS Marketplace" border />
+  </Step>
+
+  <Step>
+    ### Configura tu cuenta
+
+    En este punto, la configuración aún no está completa y la facturación de tu organización de ClickHouse Cloud todavía no se realiza a través del marketplace. Ahora debes hacer clic en Set up your account en tu suscripción de AWS Marketplace para ir a ClickHouse Cloud y completar la configuración.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-4.webp" alt="Configura tu cuenta" border />
+
+    Una vez que se te redirija a ClickHouse Cloud, puedes iniciar sesión con una cuenta existente o registrarte con una cuenta nueva. Este paso es muy importante para que podamos vincular tu organización de ClickHouse Cloud con la facturación de AWS Marketplace.
+
+    <Info>
+      **Nuevos usuarios de ClickHouse Cloud**
+
+      Si eres un usuario nuevo de ClickHouse Cloud, sigue los pasos que se indican a continuación.
+    </Info>
+
+    <Accordion title="Pasos para usuarios nuevos">
+      Si eres un usuario nuevo de ClickHouse Cloud, haz clic en Register al final de la página. Se te pedirá que crees un usuario nuevo y verifiques tu correo electrónico. Después de verificarlo, puedes salir de la página de inicio de sesión de ClickHouse Cloud e iniciar sesión con el nuevo nombre de usuario en https://console.clickhouse.cloud.
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-5.webp" size="md" alt="Registro en ClickHouse Cloud" />
+
+      <Info>
+        **Usuarios nuevos**
+
+        También tendrás que proporcionar información básica sobre tu empresa. Consulta las capturas de pantalla a continuación.
+      </Info>
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="Antes de comenzar" />
+
+      <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="Antes de comenzar, continuación" />
+    </Accordion>
+
+    Si ya eres usuario de ClickHouse Cloud, simplemente inicia sesión con tus credenciales.
+  </Step>
+
+  <Step>
+    ### Agrega la suscripción de AWS Marketplace a una organización
+
+    Después de iniciar sesión correctamente, puedes decidir si crear una organización nueva para facturar esta suscripción de AWS Marketplace o elegir una organización existente para facturarla a esta suscripción.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="Agregar suscripción de AWS Marketplace" border />
+
+    Después de completar este paso, tu organización quedará conectada a esta suscripción de AWS y todo el uso se facturará a través de tu cuenta de AWS.
+
+    Puedes confirmarlo en la página de billing de la organización en la UI de ClickHouse, donde verás que la facturación ya está vinculada a AWS Marketplace.
+
+    <Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-9.webp" size="lg" alt="Confirmar página de facturación" border />
+  </Step>
+</Steps>
+
+<div id="support">
+  ## Soporte
+</div>
+
+Si tienes algún problema, ponte en contacto con [nuestro equipo de soporte](https://clickhouse.com/support/program).

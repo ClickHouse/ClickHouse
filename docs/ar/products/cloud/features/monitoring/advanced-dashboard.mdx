@@ -1,0 +1,297 @@
+---
+description: 'لوحة المعلومات المتقدمة في ClickHouse Cloud'
+keywords: ['المراقبة', 'إمكانية الملاحظة', 'لوحة المعلومات المتقدمة', 'لوحة المعلومات', 'لوحة معلومات
+    إمكانية الملاحظة']
+sidebarTitle: 'لوحة المعلومات المتقدمة'
+slug: /cloud/manage/monitor/advanced-dashboard
+title: 'لوحة المعلومات المتقدمة في ClickHouse Cloud'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تُعد مراقبة نظام قاعدة بياناتك في بيئة الإنتاج أمرًا بالغ الأهمية
+لفهم حالة النشر لديك، حتى تتمكن من منع الانقطاعات أو معالجتها.
+
+تُعد لوحة المعلومات المتقدمة أداة خفيفة الوزن صُممت لتمنحك رؤى معمّقة
+حول نظام ClickHouse وبيئته، مما يساعدك على استباق
+اختناقات الأداء وأعطال النظام وأوجه القصور.
+
+تتوفر لوحة المعلومات المتقدمة في كلٍّ من ClickHouse OSS (مفتوح المصدر)
+وCloud. في هذه المقالة، سنوضح لك كيفية استخدام لوحة المعلومات المتقدمة في
+Cloud.
+
+<div id="accessing-the-advanced-dashboard">
+  ## الوصول إلى لوحة المعلومات المتقدمة
+</div>
+
+يمكن الوصول إلى لوحة المعلومات المتقدمة بالانتقال إلى:
+
+* اللوحة الجانبية اليسرى
+  * `Monitoring` → `Advanced dashboard`
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+
+<div id="accessing-the-native-advanced-dashboard">
+  ## الوصول إلى لوحة المعلومات المتقدمة الأصلية
+</div>
+
+يمكن الوصول إلى لوحة المعلومات المتقدمة الأصلية بالانتقال إلى:
+
+* اللوحة الجانبية اليسرى
+  * `Monitoring` → `Advanced dashboard`
+  * النقر على `You can still access the native advanced dashboard.`
+
+سيؤدي ذلك إلى فتح لوحة المعلومات المتقدمة الأصلية في علامة تبويب جديدة. وستحتاج إلى
+المصادقة للوصول إلى لوحة المعلومات.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+
+يرتبط بكل تصوّر استعلام SQL يزوّده بالبيانات. يمكنك
+تعديل هذا الاستعلام بالنقر على أيقونة القلم.
+
+<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+
+<div id="out-of-box-visualizations">
+  ## التصورات الجاهزة
+</div>
+
+صُمِّمت المخططات الافتراضية في لوحة المعلومات المتقدمة لتوفير
+رؤية آنية لنظام ClickHouse لديك. فيما يلي قائمة تتضمن وصفًا
+لكل مخطط. وقد جُمِّعت ضمن ثلاث فئات لتسهيل التنقل بينها.
+
+<div id="clickhouse-specific">
+  ### خاص بـ ClickHouse
+</div>
+
+صُمِّمت هذه المقاييس لمراقبة صحة وأداء
+مثيل ClickHouse لديك.
+
+| المقياس                          | الوصف                                                                                        |
+| -------------------------------- | -------------------------------------------------------------------------------------------- |
+| الاستعلامات في الثانية           | يتتبّع معدل الاستعلامات التي تجري معالجتها                                                   |
+| الصفوف المقروءة/ثانية            | يشير إلى عدد الصفوف التي تقرؤها الاستعلامات                                                  |
+| الصفوف المُدرجة/ثانية            | يقيس معدل إدخال البيانات                                                                     |
+| إجمالي أجزاء MergeTree           | يُظهر عدد الأجزاء النشطة في جداول MergeTree، مما يساعد على تحديد عمليات الإدراج غير المجمّعة |
+| الحد الأقصى لعدد الأجزاء لكل قسم | يبرز الحد الأقصى لعدد الأجزاء في أي قسم                                                      |
+| الاستعلامات قيد التشغيل          | يعرض عدد الاستعلامات التي تُنفَّذ حاليًا                                                     |
+| البايتات المقروءة في الثانية     | يشير إلى حجم البيانات التي تقرؤها الاستعلامات                                                |
+
+<div id="system-health-specific">
+  ### خاص بصحة النظام
+</div>
+
+تُعد مراقبة النظام الأساسي مهمة بقدر أهمية مراقبة ClickHouse نفسه.
+
+| المقياس                   | الوصف                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------ |
+| IO Wait                   | يتتبع أوقات انتظار الإدخال/الإخراج                                                   |
+| CPU Wait                  | يقيس التأخيرات الناتجة عن التنافس على موارد CPU                                      |
+| Read From Disk            | يتتبع عدد البايتات المقروءة من الأقراص أو أجهزة الكتل                                |
+| Read From Filesystem      | يتتبع عدد البايتات المقروءة من نظام الملفات، بما في ذلك ذاكرة التخزين المؤقت للصفحات |
+| Memory (tracked, bytes)   | يوضح استخدام الذاكرة للعمليات التي يتتبعها ClickHouse                                |
+| Load Average (15 minutes) | يعرض متوسط الحمل الحالي خلال آخر 15 دقيقة في النظام                                  |
+| OS CPU Usage (Userspace)  | استخدام CPU أثناء تشغيل شيفرة userspace                                              |
+| OS CPU Usage (Kernel)     | استخدام CPU أثناء تشغيل شيفرة النواة                                                 |
+
+<div id="clickhouse-cloud-specific">
+  ## خاص بـ ClickHouse Cloud
+</div>
+
+يخزّن ClickHouse Cloud البيانات باستخدام تخزين الكائنات (من نوع S3). ويمكن أن تساعد مراقبة هذه
+الواجهة في اكتشاف المشكلات.
+
+| المقياس                                       | الوصف                                            |
+| --------------------------------------------- | ------------------------------------------------ |
+| انتظار قراءة S3                               | يقيس زمن استجابة طلبات القراءة إلى S3            |
+| أخطاء قراءة S3 في الثانية                     | يتتبع معدل أخطاء القراءة                         |
+| القراءة من S3 (بايت/ثانية)                    | يتتبع معدل قراءة البيانات من تخزين S3            |
+| طلبات كتابة القرص إلى S3/ثانية                | يراقب تكرار عمليات الكتابة إلى تخزين S3          |
+| طلبات قراءة القرص من S3/ثانية                 | يراقب تكرار عمليات القراءة من تخزين S3           |
+| معدل إصابة ذاكرة التخزين المؤقت للصفحات       | معدل إصابة ذاكرة التخزين المؤقت للصفحات          |
+| معدل إصابة ذاكرة التخزين المؤقت لنظام الملفات | معدل إصابة ذاكرة التخزين المؤقت لنظام الملفات    |
+| حجم ذاكرة التخزين المؤقت لنظام الملفات        | الحجم الحالي لذاكرة التخزين المؤقت لنظام الملفات |
+| بايتات إرسال الشبكة/ثانية                     | يتتبع السرعة الحالية لحركة مرور الشبكة الواردة   |
+| بايتات استقبال الشبكة/ثانية                   | يتتبع السرعة الحالية لحركة مرور الشبكة الصادرة   |
+| اتصالات الشبكة المتزامنة                      | يتتبع عدد اتصالات الشبكة المتزامنة الحالية       |
+
+<div id="identifying-issues-with-the-advanced-dashboard">
+  ## تحديد المشكلات باستخدام لوحة المعلومات المتقدمة
+</div>
+
+إن إتاحة هذا العرض في الوقت الفعلي لصحة خدمة ClickHouse لديك تساعد كثيرًا
+على الحد من المشكلات قبل أن تؤثر في أعمالك أو على المساعدة في حلها. وفيما يلي
+بعض المشكلات التي يمكنك رصدها باستخدام لوحة المعلومات المتقدمة.
+
+<div id="unbatched-inserts">
+  ### عمليات الإدراج غير المجمّعة
+</div>
+
+كما هو موضح في [وثائق أفضل الممارسات](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)، يُوصى دائمًا
+بإدراج البيانات إلى ClickHouse بشكل مجمّع متى أمكن تنفيذ ذلك بصورة متزامنة.
+
+يؤدي الإدراج المجمّع مع حجم Batch مناسب إلى تقليل عدد الأجزاء التي يتم إنشاؤها
+أثناء إدخال البيانات، مما ينتج عنه عمليات كتابة أكثر كفاءة على الأقراص وعدد أقل من
+عمليات الدمج.
+
+المقاييس الأساسية لاكتشاف عمليات الإدراج غير المُحسّنة هي **Inserted Rows/sec** و
+**Max Parts for Partition**
+
+<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="عمليات الإدراج غير المجمّعة" />
+
+يوضح المثال أعلاه ارتفاعين حادين في **Inserted Rows/sec** و **Max Parts for Partition**
+بين الساعة 13 والساعة 14. يشير هذا إلى أننا ندخل البيانات بسرعة معقولة.
+
+ثم نرى ارتفاعًا حادًا كبيرًا آخر في **Max Parts for Partition** بعد الساعة 16، ولكن
+مع انخفاض شديد في **Inserted Rows/sec**. يتم إنشاء الكثير من الأجزاء مع
+كمية ضئيلة جدًا من البيانات المُولَّدة، مما يشير إلى أن حجم هذه الأجزاء
+غير مثالي.
+
+<div id="resource-intensive-query">
+  ### استعلام كثيف الموارد
+</div>
+
+من الشائع تشغيل استعلامات SQL تستهلك قدرًا كبيرًا من الموارد، مثل
+CPU أو الذاكرة. ومع ذلك، من المهم مراقبة هذه الاستعلامات وفهم
+تأثيرها على الأداء العام لعملية النشر.
+
+قد يشير تغيّر مفاجئ في استهلاك الموارد من دون تغيّر في معدل نقل
+الاستعلامات إلى تنفيذ استعلامات أكثر كلفة. وبحسب نوع الاستعلامات
+التي تشغّلها، قد يكون هذا متوقعًا، لكن من المفيد رصدها من لوحة
+المعلومات المتقدمة.
+
+فيما يلي مثال على وصول استخدام CPU إلى ذروته من دون تغيّر ملحوظ في
+عدد الاستعلامات المنفذة في الثانية.
+
+<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="استعلام كثيف الموارد" />
+
+<div id="bad-primary-key-design">
+  ### تصميم سيّئ للمفتاح الأساسي
+</div>
+
+هناك مشكلة أخرى يمكنك رصدها باستخدام لوحة المعلومات المتقدمة، وهي سوء تصميم المفتاح الأساسي.
+كما هو موضح في [&quot;A practical introduction to primary indexes in ClickHouse&quot;](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)،
+فإن اختيار مفتاح أساسي يلائم حالة استخدامك على أفضل نحو يحسّن الأداء بشكل كبير
+من خلال تقليل عدد الصفوف التي يحتاج ClickHouse إلى قراءتها لتنفيذ الاستعلام.
+
+ومن المقاييس التي يمكنك متابعتها لرصد التحسينات المحتملة في المفاتيح الأساسية
+**عدد الصفوف المحددة في الثانية**. فقد تشير الزيادة المفاجئة في عدد الصفوف المحددة
+إلى زيادة عامة في إجمالي إنتاجية الاستعلامات، كما قد تشير أيضًا إلى وجود استعلامات
+تحدد عددًا كبيرًا من الصفوف لتنفيذها.
+
+<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="استعلام كثيف الموارد" />
+
+وباستخدام الطابع الزمني كعامل تصفية، يمكنك العثور على الاستعلامات التي نُفذت وقت
+الذروة في جدول `system.query_log`.
+
+على سبيل المثال، شغّل استعلامًا يعرض جميع الاستعلامات التي نُفذت بين الساعة 11 صباحًا
+والساعة 11 صباحًا في يوم معيّن لفهم أي الاستعلامات تقرأ عددًا كبيرًا جدًا من الصفوف:
+
+```sql title="Query"
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM system.query_log
+WHERE has(databases, 'default') AND (event_time >= '2024-12-23 11:20:00') AND (event_time <= '2024-12-23 11:30:00') AND (type = 'QueryFinish')
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response title="Response"
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:22:55
+query_duration_ms: 37407
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:26:50
+query_duration_ms: 7325
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:24:10
+query_duration_ms: 3270
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:28:10
+query_duration_ms: 2786
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+```
+
+في هذا المثال، نرى الاستعلام نفسه يُنفَّذ على
+الجدولين `amazon_reviews_no_pk` و`amazon_reviews_pk`. ويمكن الاستنتاج أن
+أحدهم كان يختبر خيار المفتاح الأساسي للجدول `amazon_reviews`.

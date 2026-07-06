@@ -1,0 +1,112 @@
+---
+description: '`executable` 表函数根据你在脚本中定义的用户自定义函数 (UDF) 的输出创建表，该脚本会将行输出到 **stdout**。'
+keywords: ['udf', '用户自定义函数', 'ClickHouse', 'executable', '表', '函数']
+sidebarTitle: 'executable'
+slug: /engines/table-functions/executable
+title: 'executable'
+doc_type: 'reference'
+---
+
+`executable` 表函数根据你在脚本中定义的用户自定义函数 (UDF) 的输出创建表，该脚本会将行输出到 **stdout**。可执行脚本存储在 `users_scripts` 目录中，并且可以从任何来源读取数据。请确保你的 ClickHouse server 已安装运行该可执行脚本所需的全部依赖包。例如，如果它是 Python 脚本，请确保 server 已安装所需的 Python 软件包。
+
+你也可以选择包含一个或多个输入查询，将其结果流式传输到 **stdin** 供脚本读取。
+
+<Note>
+  普通 UDF 函数与 `executable` 表函数及 `Executable` 表引擎之间的一个关键区别在于，普通 UDF 函数无法改变行数。例如，如果输入为 100 行，那么结果也必须返回 100 行。使用 `executable` 表函数或 `Executable` 表引擎时，你的脚本可以执行任意所需的数据转换，包括复杂的聚合。
+</Note>
+
+<div id="syntax">
+  ## 语法
+</div>
+
+`executable` 表函数需要三个参数，并可接受一个可选的输入查询列表：
+
+```sql
+executable(script_name, format, structure, [input_query...] [,SETTINGS ...])
+```
+
+* `script_name`：脚本文件名。保存在 `user_scripts` 文件夹中 (即 `user_scripts_path` 设置的默认文件夹)
+* `format`：生成表的格式
+* `structure`：生成表的结构
+* `input_query`：可选的查询 (或 collection 或 queries) ，其结果会通过 **stdin** 传递给脚本
+
+<Note>
+  如果你会使用相同的输入查询重复调用同一个脚本，建议考虑使用 [`Executable` 表引擎](/zh/reference/engines/table-engines/special/executable)。
+</Note>
+
+下面这个 Python 脚本名为 `generate_random.py`，保存在 `user_scripts` 文件夹中。它读取一个数字 `i`，并输出 `i` 个随机字符串，每个字符串前面都有一个以制表符分隔的数字：
+
+```python
+#!/usr/local/bin/python3.9
+
+import sys
+import string
+import random
+
+def main():
+
+    # 读取输入值
+    for number in sys.stdin:
+        i = int(number)
+
+        # 生成一些随机行
+        for id in range(0, i):
+            letters = string.ascii_letters
+            random_string =  ''.join(random.choices(letters ,k=10))
+            print(str(id) + '\t' + random_string + '\n', end='')
+
+        # 将结果输出到标准输出
+        sys.stdout.flush()
+
+if __name__ == "__main__":
+    main()
+```
+
+调用该脚本，生成 10 个随机字符串：
+
+```sql
+SELECT * FROM executable('generate_random.py', TabSeparated, 'id UInt32, random String', (SELECT 10))
+```
+
+响应如下：
+
+```response
+┌─id─┬─random─────┐
+│  0 │ xheXXCiSkH │
+│  1 │ AqxvHAoTrl │
+│  2 │ JYvPCEbIkY │
+│  3 │ sWgnqJwGRm │
+│  4 │ fTZGrjcLon │
+│  5 │ ZQINGktPnd │
+│  6 │ YFSvGGoezb │
+│  7 │ QyMJJZOOia │
+│  8 │ NfiyDDhmcI │
+│  9 │ REJRdJpWrg │
+└────┴────────────┘
+```
+
+<div id="settings">
+  ## 设置
+</div>
+
+* `send_chunk_header` - 控制在发送待处理数据块之前，是否先发送行数。默认值为 `false`。
+* `pool_size` — 池大小。如果将 `pool_size` 指定为 0，则不限制池大小。默认值为 `16`。
+* `max_command_execution_time` — 处理数据块时，可执行脚本命令的最长执行时间。单位为秒。默认值为 10。
+* `command_termination_timeout` — 可执行脚本应包含主读写循环。表函数销毁后，管道会关闭；可执行文件将在 `command_termination_timeout` 秒内自行退出，超时后 ClickHouse 将向子进程发送 SIGTERM 信号。单位为秒。默认值为 10。
+* `command_read_timeout` - 从命令的 stdout 读取数据的超时时间，单位为毫秒。默认值为 10000。
+* `command_write_timeout` - 向命令的 stdin 写入数据的超时时间，单位为毫秒。默认值为 10000。
+
+<div id="passing-query-results-to-a-script">
+  ## 将查询结果传给脚本
+</div>
+
+请务必参阅 `Executable` 表引擎中关于[如何将查询结果传给脚本](/zh/reference/engines/table-engines/special/executable#passing-query-results-to-a-script)的示例。下面介绍如何使用 `executable` 表函数执行该示例中的同一脚本：
+
+```sql
+SELECT * FROM executable(
+    'sentiment.py',
+    TabSeparated,
+    'id UInt64, sentiment Float32',
+    (SELECT id, comment FROM hackernews WHERE id > 0 AND comment != '' LIMIT 20)
+);
+```

@@ -151,7 +151,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     else
         tokens_cache = std::make_shared<TextIndexTokensCache>(cache_policy, local_cache_max_size, 0, 1.0);
 
-    if (settings[Setting::use_text_index_header_cache])
+    use_global_header_cache = settings[Setting::use_text_index_header_cache];
+    if (use_global_header_cache)
         header_cache = context_->getTextIndexHeaderCache();
     else
         header_cache = std::make_shared<TextIndexHeaderCache>(cache_policy, local_cache_max_size, 0, 1.0);

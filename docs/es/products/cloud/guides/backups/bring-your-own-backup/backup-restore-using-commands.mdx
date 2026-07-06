@@ -1,0 +1,224 @@
+---
+sidebarTitle: 'Copia de seguridad o restauración mediante comandos'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: Realizar una copia de seguridad o restaurar una copia de seguridad mediante comandos
+description: 'Página que describe cómo realizar una copia de seguridad o restaurar una copia de seguridad con su propio bucket mediante comandos'
+doc_type: 'guide'
+keywords: ['copias de seguridad', 'recuperación ante desastres', 'protección de datos', 'restaurar', 'funciones de la nube']
+---
+
+Puede utilizar los comandos `BACKUP` y `RESTORE` para exportar copias de seguridad a sus buckets de almacenamiento,
+además de crear o restaurar copias de seguridad [a través de la interfaz de usuario](/es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+En esta guía se incluyen comandos para los tres CSP.
+
+<div id="requirements">
+  ## Requisitos
+</div>
+
+Necesitará los siguientes datos para exportar/restaurar copias de seguridad en su propio bucket de almacenamiento de CSP:
+
+<Tabs>
+  <Tab title="AWS">
+    1. Endpoint de AWS S3, con el formato: `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       Por ejemplo: `s3://testchbackups.s3.amazonaws.com/`
+       Donde:
+       * `testchbackups` es el nombre del bucket de S3 al que se exportarán las copias de seguridad.
+       * `backups` es un subdirectorio opcional.
+    2. Clave de acceso y secreto de AWS. También se admite la autenticación basada en roles de AWS y puede usarse en lugar de la clave de acceso y el secreto de AWS, como se describe en la sección anterior.
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. Endpoint de GCS, con el formato: `https://storage.googleapis.com/<bucket_name>/`
+    2. Clave de acceso HMAC y secreto HMAC.
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. Cadena de conexión de Azure Storage.
+    2. Nombre del contenedor de Azure en la cuenta de almacenamiento.
+    3. Blob de Azure dentro del contenedor.
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## Copia de seguridad / Restauración de una DB específica
+</div>
+
+Aquí mostramos cómo hacer la copia de seguridad y la restauración de una *sola* base de datos.
+Consulta el [resumen de comandos de copia de seguridad](/es/concepts/features/backup-restore/overview#command-summary) para ver los comandos de copia de seguridad completa y restauración.
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="COPIA DE SEGURIDAD">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    Donde `uuid` es un identificador único que se utiliza para diferenciar un conjunto de copias de seguridad.
+
+    <Note>
+      Deberás usar un `uuid` distinto para cada copia de seguridad nueva en este subdirectorio; de lo contrario, recibirás un error `BACKUP_ALREADY_EXISTS`.
+      Por ejemplo, si haces copias de seguridad diarias, tendrás que usar un `uuid` nuevo cada día.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURAR">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="COPIA DE SEGURIDAD">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    Donde `uuid` es un identificador único que se usa para identificar la copia de seguridad.
+
+    <Note>
+      Deberá usar un `uuid` distinto para cada copia de seguridad nueva en este subdirectorio; de lo contrario, recibirá el error `BACKUP_ALREADY_EXISTS`.
+      Por ejemplo, si realiza copias de seguridad diarias, deberá usar un `uuid` nuevo cada día.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURAR">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="COPIA DE SEGURIDAD">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<cadena de conexión del endpoint de AzureBlobStorage>',
+      '<contenedor>',
+      '<blob>/<>'
+    )
+    ```
+
+    Donde `uuid` es un identificador único que se utiliza para identificar la copia de seguridad.
+
+    <Note>
+      Deberás usar un `uuid` diferente para cada copia de seguridad nueva en este subdirectorio; de lo contrario, obtendrás un error `BACKUP_ALREADY_EXISTS`.
+      Por ejemplo, si haces copias de seguridad diarias, tendrás que usar un `uuid` nuevo cada día.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURAR">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<cadena de conexión del endpoint de AzureBlobStorage>',
+      '<contenedor>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## Copia de seguridad / Restauración de todo el servicio
+</div>
+
+Para hacer una copia de seguridad de todo el servicio, use los comandos siguientes.
+Esta copia de seguridad contendrá todos los datos de usuario y los datos del sistema de las entidades creadas, perfiles de configuración, políticas de roles, cuotas y funciones.
+A continuación se muestran para AWS S3.
+Puede utilizar estos comandos con la sintaxis descrita anteriormente para realizar copias de seguridad en GCS y Azure Blob Storage.
+
+<Tabs>
+  <Tab title="COPIA DE SEGURIDAD">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    donde `uuid` es un identificador único que se utiliza para identificar la copia de seguridad.
+  </Tab>
+
+  <Tab title="RESTAURAR">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="¿Qué ocurre con las copias de seguridad en mi almacenamiento de objetos en la nube? ¿ClickHouse las limpia en algún momento?">
+  Le ofrecemos la posibilidad de exportar copias de seguridad a su bucket; sin embargo, no limpiamos ni eliminamos ninguna de las copias de seguridad una vez escritas. Usted es responsable de gestionar el ciclo de vida de las copias de seguridad en su bucket, lo que incluye eliminarlas, archivarlas según sea necesario o moverlas a un almacenamiento más económico para optimizar el costo total.
+</Accordion>
+
+<Accordion title="¿Qué ocurre con el proceso de restauración si muevo algunas de las copias de seguridad existentes a otra ubicación?">
+  Si se mueve alguna copia de seguridad a otra ubicación, será necesario actualizar el comando de restauración para que apunte a la nueva ubicación donde se almacenan las copias de seguridad.
+</Accordion>
+
+<Accordion title="¿Qué ocurre si cambio las credenciales necesarias para acceder al almacenamiento de objetos?">
+  Tendrá que actualizar las credenciales modificadas en la UI para que las copias de seguridad vuelvan a realizarse correctamente.
+</Accordion>
+
+<Accordion title="¿Qué ocurre si cambio la ubicación a la que exporto mis copias de seguridad externas?">
+  Tendrá que actualizar la nueva ubicación en la UI, y las copias de seguridad comenzarán a realizarse en esa nueva ubicación. Las copias de seguridad antiguas permanecerán en la ubicación original.
+</Accordion>
+
+<Accordion title="¿Cómo puedo deshabilitar las copias de seguridad externas en un servicio para el que las habilité?">
+  Para deshabilitar las copias de seguridad externas de un servicio, vaya a la pantalla de configuración del servicio y haga clic en Change external backup. En la pantalla siguiente, haga clic en Remove setup para deshabilitar las copias de seguridad externas del servicio.
+</Accordion>

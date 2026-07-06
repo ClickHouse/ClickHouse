@@ -1,0 +1,73 @@
+---
+sidebarTitle: '個人データへのアクセス'
+slug: /cloud/manage/personal-data-access
+title: '個人データへのアクセス'
+description: '登録ユーザーは、連絡先情報を含むご自身のアカウントに関する個人データを閲覧および管理できます。'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '個人データ', 'DSAR', 'データ主体アクセス要求', 'プライバシーポリシー', 'GDPR']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="intro">
+  ## はじめに
+</div>
+
+登録ユーザーは、連絡先情報を含むご自身の個人アカウントデータを ClickHouse で表示および管理できます。ロールによっては、組織内の他のユーザーの連絡先情報、API key の詳細、その他の関連情報にもアクセスできる場合があります。これらの情報は、ClickHouse コンソールからセルフサービスで直接管理できます。
+
+**データ主体アクセス要求 (DSAR) とは**
+
+お住まいの地域によっては、ClickHouse プライバシーポリシー に記載されているとおり、適用法令に基づき、ClickHouse が保有するご自身の個人データに関して追加の権利 (Data Subject Rights) が認められる場合があります。Data Subject Rights を行使する手続きは、データ主体アクセス要求 (DSAR) と呼ばれます。
+
+**個人データの範囲**
+
+ClickHouse が収集する個人データの詳細とその利用方法については、ClickHouse の プライバシーポリシー をご確認ください。
+
+<div id="self-service">
+  ## セルフサービス
+</div>
+
+デフォルトでは、ClickHouse では、ユーザーが ClickHouse コンソールから自分の個人データを直接確認できます。
+
+以下は、ClickHouse がアカウント設定時およびサービス利用時に収集するデータの概要と、特定の個人データを ClickHouse コンソール内のどこで確認できるかをまとめたものです。
+
+| 場所/URL                                                       | 説明                        | 個人データ         |
+| ------------------------------------------------------------ | ------------------------- | ------------- |
+| https://auth.clickhouse.cloud/u/signup/                      | アカウント登録                   | メールアドレス、パスワード |
+| https://console.clickhouse.cloud/profile                     | 一般的なユーザープロフィール情報          | 名前、メールアドレス    |
+| https://console.clickhouse.cloud/organizations/OrgID/members | 組織内のユーザー一覧                | 名前、メールアドレス    |
+| https://console.clickhouse.cloud/organizations/OrgID/keys    | APIキーの一覧とその作成者            | メールアドレス       |
+| https://console.clickhouse.cloud/organizations/OrgID/audit   | アクティビティログ (各ユーザーの操作一覧)    | メールアドレス       |
+| https://console.clickhouse.cloud/organizations/OrgID/billing | 請求情報と請求書                  | 請求先住所、メールアドレス |
+| https://console.clickhouse.cloud/support                     | ClickHouse Support とのやり取り | 名前、メールアドレス    |
+
+注: `OrgID` を含む URL は、お使いのアカウント固有の `OrgID` に合わせて更新する必要があります。
+
+<div id="current-customers">
+  ### 現在ご利用中のお客様
+</div>
+
+当社のアカウントをお持ちで、セルフサービスでも個人データに関する問題が解決しない場合は、プライバシーポリシーに基づき、データ主体アクセス要求 (DSAR) を提出できます。提出するには、ClickHouse アカウントにログインして、[サポートケースを作成](https://console.clickhouse.cloud/support)してください。これにより、当社でご本人確認を行いやすくなり、お客様のリクエストへの対応を円滑に進められます。
+
+サポートケースには、必ず以下の内容を含めてください。
+
+| フィールド | リクエストに含めるテキスト                      |
+| ----- | ---------------------------------- |
+| 件名    | Data Subject Access Request (DSAR) |
+| 説明    | ClickHouse に検索、収集、提供してほしい情報の詳細な説明。 |
+
+<Image img="/images/cloud/security/support-case-form.webp" size="sm" alt="ClickHouse Cloud のサポートケースフォーム" border />
+
+<div id="individuals-without-an-account">
+  ### アカウントをお持ちでない方
+</div>
+
+当社のアカウントをお持ちでなく、上記のセルフサービス オプションでも個人データに関する問題が解決しない場合で、プライバシーポリシーに基づくデータ主体アクセス要求を希望される場合は、[privacy@clickhouse.com](mailto:privacy@clickhouse.com) 宛てにメールでご申請いただけます。
+
+<div id="identity-verification">
+  ## 本人確認
+</div>
+
+電子メールでデータ主体アクセス要求を提出された場合、当社は、お客様の本人確認とご要望の処理のために、追加の情報のご提供をお願いすることがあります。適用される法令により、当社がお客様のご要望をお断りすることが求められる場合、または認められる場合があります。ご要望をお断りする場合は、法的な制限の範囲内で、その理由をお知らせします。
+
+詳細については、[ClickHouse プライバシーポリシー](https://clickhouse.com/legal/privacy-policy)をご確認ください。

@@ -363,7 +363,8 @@ void considerEnablingParallelReplicas(
                 ReadFromMergeTree * local_replica_plan_reading_step = findReadingStep(*final_node_in_replica_plan);
                 if (!local_replica_plan_reading_step)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find ReadFromMergeTree step in local parallel replicas plan");
-                chassert(local_replica_plan_reading_step->getAnalyzedResult() == nullptr);
+                /// The step may already carry an analysis (planner runs index analysis on it when
+                /// parallel_replicas_min_number_of_rows_per_replica > 0); overwrite it to reuse the single-replica one.
                 local_replica_plan_reading_step->setAnalyzedResult(analysis);
                 moveSetsFromLocalPlanToReplicasPlan(query_plan, *plan_with_parallel_replicas);
                 query_plan.replaceNodeWithPlan(query_plan.getRootNode(), std::move(*plan_with_parallel_replicas));

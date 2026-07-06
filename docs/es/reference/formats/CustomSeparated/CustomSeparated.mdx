@@ -1,0 +1,103 @@
+---
+alias: []
+description: 'Documentación sobre el formato CustomSeparated'
+input_format: true
+keywords: ['CustomSeparated']
+output_format: true
+slug: /interfaces/formats/CustomSeparated
+title: 'CustomSeparated'
+doc_type: 'referencia'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Similar a [Template](/es/reference/formats/Template/Template), pero imprime o lee todos los nombres y tipos de las columnas, y utiliza la regla de escape de la configuración [format&#95;custom&#95;escaping&#95;rule](/es/reference/settings/formats#format_custom_escaping_rule) y los delimitadores de las siguientes configuraciones:
+
+* [format&#95;custom&#95;field&#95;delimiter](/es/reference/settings/formats#format_custom_field_delimiter)
+* [format&#95;custom&#95;row&#95;before&#95;delimiter](/es/reference/settings/formats#format_custom_row_before_delimiter)
+* [format&#95;custom&#95;row&#95;after&#95;delimiter](/es/reference/settings/formats#format_custom_row_after_delimiter)
+* [format&#95;custom&#95;row&#95;between&#95;delimiter](/es/reference/settings/formats#format_custom_row_between_delimiter)
+* [format&#95;custom&#95;result&#95;before&#95;delimiter](/es/reference/settings/formats#format_custom_result_before_delimiter)
+* [format&#95;custom&#95;result&#95;after&#95;delimiter](/es/reference/settings/formats#format_custom_result_after_delimiter)
+
+<Note>
+  No utiliza las configuraciones de reglas de escape ni los delimitadores de las cadenas de formato.
+</Note>
+
+También existe el formato [`CustomSeparatedIgnoreSpaces`](/es/reference/formats/CustomSeparated/CustomSeparatedIgnoreSpaces), que es similar a [TemplateIgnoreSpaces](/es/reference/formats/Template/TemplateIgnoreSpaces).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Inserción de datos
+</div>
+
+Usa el siguiente archivo de texto, llamado `football.txt`:
+
+```text
+row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+Configure los ajustes del delimitador personalizado:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+Inserte los datos:
+
+```sql
+INSERT INTO football FROM INFILE 'football.txt' FORMAT CustomSeparated;
+```
+
+<div id="reading-data">
+  ### Lectura de datos
+</div>
+
+Configure los ajustes personalizados del delimitador:
+
+```sql
+SET format_custom_row_before_delimiter = 'row(';
+SET format_custom_row_after_delimiter = ')';
+SET format_custom_field_delimiter = ';';
+SET format_custom_row_between_delimiter = ',';
+SET format_custom_escaping_rule = 'Quoted';
+```
+
+Lea datos con el formato `CustomSeparated`:
+
+```sql
+SELECT *
+FROM football
+FORMAT CustomSeparated
+```
+
+La salida estará en el formato personalizado configurado:
+
+```text
+row('2022-04-30';2021;'Sutton United';'Bradford City';1;4),row('2022-04-30';2021;'Swindon Town';'Barrow';2;1),row('2022-04-30';2021;'Tranmere Rovers';'Oldham Athletic';2;0),row('2022-05-02';2021;'Port Vale';'Newport County';1;2),row('2022-05-02';2021;'Salford City';'Mansfield Town';2;2),row('2022-05-07';2021;'Barrow';'Northampton Town';1;3),row('2022-05-07';2021;'Bradford City';'Carlisle United';2;0),row('2022-05-07';2021;'Bristol Rovers';'Scunthorpe United';7;0),row('2022-05-07';2021;'Exeter City';'Port Vale';0;1),row('2022-05-07';2021;'Harrogate Town A.F.C.';'Sutton United';0;2),row('2022-05-07';2021;'Hartlepool United';'Colchester United';0;2),row('2022-05-07';2021;'Leyton Orient';'Tranmere Rovers';0;1),row('2022-05-07';2021;'Mansfield Town';'Forest Green Rovers';2;2),row('2022-05-07';2021;'Newport County';'Rochdale';0;2),row('2022-05-07';2021;'Oldham Athletic';'Crawley Town';3;3),row('2022-05-07';2021;'Stevenage Borough';'Salford City';4;2),row('2022-05-07';2021;'Walsall';'Swindon Town';0;3)
+```
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>
+
+Configuración adicional:
+
+| Configuración                                                                                                                                                        | Descripción                                                                                                                                                       | Valor predeterminado |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| [input&#95;format&#95;custom&#95;detect&#95;header](/es/reference/settings/formats#input_format_custom_detect_header)                                                   | habilita la detección automática de un encabezado con nombres y tipos, si existe.                                                                                 | `true`               |
+| [input&#95;format&#95;custom&#95;skip&#95;trailing&#95;empty&#95;lines](/es/reference/settings/formats#input_format_custom_skip_trailing_empty_lines)                   | omite las líneas vacías del final del archivo.                                                                                                                    | `false`              |
+| [input&#95;format&#95;custom&#95;allow&#95;variable&#95;number&#95;of&#95;columns](/es/reference/settings/formats#input_format_custom_allow_variable_number_of_columns) | permite un número variable de columnas en el formato CustomSeparated, ignora las columnas adicionales y usa valores predeterminados para las columnas que faltan. | `false`              |
