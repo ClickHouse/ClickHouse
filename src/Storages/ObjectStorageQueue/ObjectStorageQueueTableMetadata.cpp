@@ -26,6 +26,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
+    extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
 
@@ -73,6 +74,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , partition_component(engine_settings[ObjectStorageQueueSetting::partition_component])
     , after_processing(engine_settings[ObjectStorageQueueSetting::after_processing])
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
+    , parallel_inserts(engine_settings[ObjectStorageQueueSetting::parallel_inserts])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
@@ -109,6 +111,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
     json.set("processing_threads_num", processing_threads_num.load());
+    json.set("parallel_inserts", parallel_inserts.load());
     json.set("buckets", buckets.load());
     json.set("format_name", format_name);
     json.set("columns", columns);
@@ -206,6 +209,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , after_processing(actionFromString(json->getValue<String>("after_processing")))
     , loading_retries(getOrDefault(json, "loading_retries", "", 10ULL))
     , processing_threads_num(getOrDefault(json, "processing_threads_num", "s3queue_", 1ULL))
+    , parallel_inserts(getOrDefault(json, "parallel_inserts", "s3queue_", false))
     , tracked_files_limit(getOrDefault(json, "tracked_files_limit", "s3queue_", 0ULL))
     , tracked_files_ttl_sec(getOrDefault(json, "tracked_files_ttl_sec", "", getOrDefault(json, "tracked_file_ttl_sec", "s3queue_", 0ULL)))
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
@@ -235,6 +239,19 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, "{}", message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
+    }
+
+    if (parallel_inserts != from_zk.parallel_inserts)
+    {
+        auto log = getLogger("ObjectStorageQueueTableMetadata");
+        LOG_WARNING(
+            log,
+            "Using `parallel_inserts` from keeper: {} (local: {}). "
+            "This setting is fixed at table creation; to change it, "
+            "recreate the table with a new `keeper_path`.",
+            from_zk.parallel_inserts.load(), parallel_inserts.load());
+
+        parallel_inserts = from_zk.parallel_inserts.load();
     }
 }
 
