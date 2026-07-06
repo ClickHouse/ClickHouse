@@ -161,6 +161,12 @@ bool S3TablesCatalog::tryGetTableMetadata(
     /// `vended_credentials=0` (which leaves `requiresCredentials()` == false). Otherwise
     /// reads can lose the catalog endpoint/credentials and fail with auth or routing errors.
 
+    /// Credentials are short-lived and must be refreshed as they expire. This method is called
+    /// per table access (`DatabaseDataLake::tryGetTableImpl` builds a fresh storage each time and
+    /// does not cache the result), so credentials are effectively re-fetched on every use: the
+    /// vended path below re-reads them from the catalog via `RestCatalog::tryGetTableMetadata`, and
+    /// the IAM fallback calls `credentials_provider->GetAWSCredentials`, which the AWS SDK refreshes
+    /// on expiry.
     bool need_credentials = true;
     if (result.hasStorageCredentials())
     {

@@ -197,9 +197,11 @@ RestCatalog::RestCatalog(
         DB::HTTPHeaderEntries header_to_check{auth_header.value()};
         getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
-    Poco::URI::QueryParameters config_params = {{"warehouse", warehouse}};
-    auto config_buf = RestCatalog::createReadBuffer(CONFIG_ENDPOINT, config_params, /* headers */ {});
-    config = parseCatalogConfigResponse(std::move(config_buf));
+    /// `loadConfig` reaches the virtual `createReadBuffer`, but no catalog constructed through this
+    /// ctor (`OneLakeCatalog`, `BigLakeCatalog`) overrides it, so the base implementation is the intended
+    /// target. `S3TablesCatalog` overrides it and uses the separate ctor, calling `loadConfig` afterwards.
+    /// NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
+    config = loadConfig();
 }
 
 RestCatalog::RestCatalog(
@@ -224,11 +226,7 @@ RestCatalog::Config RestCatalog::loadConfig()
 {
     Poco::URI::QueryParameters params = {{"warehouse", warehouse}};
     auto buf = createReadBuffer(CONFIG_ENDPOINT, params, /* headers */ {});
-    return parseCatalogConfigResponse(std::move(buf));
-}
 
-RestCatalog::Config RestCatalog::parseCatalogConfigResponse(DB::ReadWriteBufferFromHTTPPtr buf) const
-{
     std::string json_str;
     readJSONObjectPossiblyInvalid(json_str, *buf);
 
@@ -609,7 +607,7 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 {
     const auto & context = getContext();
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(base_url / endpoint, /* enable_url_encoding */ false);
     if (!params.empty())
         url.setQueryParameters(params);
@@ -1156,7 +1154,7 @@ void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr r
     DB::HTTPHeaderEntries headers = getAuthHeaders(/* update_token = */ true);
     headers.emplace_back("Content-Type", "application/json");
 
-    /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
+    /// enable_url_encoding=false to allow using tables with encoded sequences in names like 'foo%2Fbar'
     Poco::URI url(endpoint, /* enable_url_encoding */ false);
 
     auto wb = DB::BuilderRWBufferFromHTTP(url)

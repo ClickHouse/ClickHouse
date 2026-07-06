@@ -96,7 +96,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
-    extern const SettingsBool allow_experimental_database_s3_tables;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsBool log_queries;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
@@ -1187,11 +1186,11 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::S3_TABLES:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_s3_tables])
+                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                                    "DatabaseDataLake with S3 Tables catalog is experimental. "
-                                    "To allow its usage, enable setting allow_experimental_database_s3_tables");
+                                    "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
                 }
 
                 engine_func->name = "Iceberg";
