@@ -1024,8 +1024,21 @@ private:
 
     struct DataValidationTasks : public IStorage::DataValidationTasksBase
     {
-        explicit DataValidationTasks(DataPartsVector && parts_, BackgroundSchedulePoolPausableTask::PauseHolderPtr && pause_)
-            : pause(std::move(pause_)), parts(std::move(parts_)), it(parts.begin())
+        /// Keeper retry parameters are captured from the query context in getCheckTaskList()
+        /// (checkDataNext() has no context of its own) so that per-part checks can retry
+        /// retriable Keeper errors instead of reporting a healthy part broken.
+        explicit DataValidationTasks(
+            DataPartsVector && parts_,
+            BackgroundSchedulePoolPausableTask::PauseHolderPtr && pause_,
+            UInt64 keeper_max_retries_,
+            UInt64 keeper_retry_initial_backoff_ms_,
+            UInt64 keeper_retry_max_backoff_ms_)
+            : pause(std::move(pause_))
+            , keeper_max_retries(keeper_max_retries_)
+            , keeper_retry_initial_backoff_ms(keeper_retry_initial_backoff_ms_)
+            , keeper_retry_max_backoff_ms(keeper_retry_max_backoff_ms_)
+            , parts(std::move(parts_))
+            , it(parts.begin())
         {}
 
         DataPartPtr next()
@@ -1045,6 +1058,10 @@ private:
         /// Pauses the part check thread while this object exists.
         /// Safe to destroy from any thread (unlike unique_lock which has thread affinity).
         BackgroundSchedulePoolPausableTask::PauseHolderPtr pause;
+
+        UInt64 keeper_max_retries;
+        UInt64 keeper_retry_initial_backoff_ms;
+        UInt64 keeper_retry_max_backoff_ms;
 
         mutable std::mutex mutex;
         DataPartsVector parts;

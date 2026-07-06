@@ -16,6 +16,7 @@
 #include <Common/ThreadFuzzer.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/escapeForFileName.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
@@ -264,6 +265,7 @@ namespace FailPoints
     extern const char rmt_delay_execute_drop_range[];
     extern const char replicated_table_remove_zk_before_get_children[];
     extern const char replicated_table_remove_zk_before_final_multi[];
+    extern const char check_data_part_zk_hardware_error[];
 }
 
 namespace ErrorCodes
@@ -10262,7 +10264,13 @@ IStorage::DataValidationTasksPtr StorageReplicatedMergeTree::getCheckTaskList(
         data_parts = getVisibleDataPartsVector(local_context);
 
     auto pause = part_check_thread.temporaryPause();
-    return std::make_unique<DataValidationTasks>(std::move(data_parts), std::move(pause));
+    const auto & settings = local_context->getSettingsRef();
+    return std::make_unique<DataValidationTasks>(
+        std::move(data_parts),
+        std::move(pause),
+        settings[Setting::keeper_max_retries],
+        settings[Setting::keeper_retry_initial_backoff_ms],
+        settings[Setting::keeper_retry_max_backoff_ms]);
 }
 
 std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidationTasksPtr & check_task_list)
@@ -10272,15 +10280,52 @@ std::optional<CheckResult> StorageReplicatedMergeTree::checkDataNext(DataValidat
         throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
 
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::checkDataNext");
-    if (auto part = assert_cast<DataValidationTasks *>(check_task_list.get())->next())
+    auto * tasks = assert_cast<DataValidationTasks *>(check_task_list.get());
+    if (auto part = tasks->next())
     {
         try
         {
-            return part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            /// Checking a part on a replicated table reconciles the local part against ZooKeeper.
+            /// A transient Keeper hardware error (connection loss, session expired) during that
+            /// reconciliation must not be reported as a broken part: retry it like other Keeper
+            /// operations. On retry exhaustion the Keeper error is re-thrown (not swallowed into a
+            /// spurious CheckResult(false)) so the query surfaces a retriable error instead of 0.
+            ZooKeeperRetriesInfo retries_info{
+                tasks->keeper_max_retries,
+                tasks->keeper_retry_initial_backoff_ms,
+                tasks->keeper_retry_max_backoff_ms,
+                nullptr};
+            ZooKeeperRetriesControl retries_ctl("checkDataNext", log.load(), retries_info);
+
+            std::optional<CheckResult> result;
+            retries_ctl.retryLoop([&]
+            {
+                /// Bail out immediately when the table is shutting down. A Keeper hardware error is
+                /// expected while the session is being torn down, but retrying it here (with backoff)
+                /// would delay CHECK from returning and block shutdown. Throwing ABORTED (a
+                /// DB::Exception, not a Coordination::Exception) leaves the retry loop at once and is
+                /// reported as a failed check result, matching the pre-existing shutdown behavior.
+                if (shutdown_called || partial_shutdown_called)
+                    throw Exception(ErrorCodes::ABORTED, "Table shutdown was called");
+                fiu_do_on(FailPoints::check_data_part_zk_hardware_error,
+                {
+                    throw zkutil::KeeperException(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (check_data_part_zk_hardware_error)");
+                });
+                result = part_check_thread.checkPartAndFix(part->name, /* recheck_after */nullptr, /* throw_on_broken_projection */true);
+            });
+            return result;
         }
         catch (const Exception & ex)
         {
             tryLogCurrentException(log, __PRETTY_FUNCTION__);
+            /// A retriable error survived the retry loop (transient Keeper hardware error, network
+            /// error, etc.): propagate it so the caller reports a retriable error rather than a
+            /// spurious "part is broken" result. Genuine corruption keeps the historical behavior
+            /// (reported as CheckResult). During shutdown we deliberately throw ABORTED to bail out
+            /// of the retry loop; isRetryableException treats ABORTED as retriable, so guard on the
+            /// shutdown flags to keep reporting a prompt failed result instead of blocking shutdown.
+            if (!shutdown_called && !partial_shutdown_called && isRetryableException(std::current_exception()))
+                throw;
             return CheckResult(part->name, false, "Check of part finished with error: '" + ex.message() + "'");
         }
     }
