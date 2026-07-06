@@ -1,0 +1,101 @@
+---
+title: Améliorer les performances de recherche dans les Map avec ClickHouse
+description: Découvrez comment optimiser les recherches dans les colonnes Map de ClickHouse pour améliorer les performances des requêtes en matérialisant des clés spécifiques dans des colonnes autonomes.
+date: 2022-10-30
+tags: ['Performances et optimisations']
+keywords: ['Performances des Map']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## Problème
+</div>
+
+Une recherche dans une Map, telle que `a['key']`, a une complexité linéaire (comme indiqué [ici](/fr/reference/data-types/map)) et peut s&#39;avérer inefficace. En effet, sélectionner une valeur associée à une clé donnée dans une table nécessiterait de parcourir toutes les clés (~M) de toutes les lignes (N) de la colonne Map, soit ~MxN recherches.
+
+Une recherche dans une Map peut être 10x plus lente qu&#39;une colonne String. L&#39;expérience ci-dessous montre également un ralentissement d&#39;environ 10x pour une requête à froid, ainsi qu&#39;un écart de plusieurs ordres de grandeur dans le volume de données traitées (7.21 MB contre 5.65 GB).
+
+```sql
+-- create table with SpanNAme as String and ResourceAttributes as Map
+DROP TABLE IF EXISTS tbl;
+CREATE TABLE tbl (
+    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
+    `TraceId` String CODEC (ZSTD(1)),
+    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
+    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
+    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
+
+-- create UDF to generate random Map data for ResourceAttributes
+DROP FUNCTION IF EXISTS genmap;
+CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
+
+-- check that genmap is working as intended
+SELECT genmap(10)::Map(String, String);
+
+-- insert 1M rows
+INSERT INTO tbl
+SELECT
+    now() - randUniform(1, 1000000.) as Timestamp,
+    randomPrintableASCII(2) as TraceId,
+    randomPrintableASCII(2) as ServiceName,
+    rand32() as Duration,
+    randomPrintableASCII(2) as SpanName,
+    genmap(rand64()%500)::Map(String, String) as ResourceAttributes
+FROM numbers(1_000_000);
+
+-- querying for SpanName is faster
+-- [cold] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    SpanName
+FROM tbl
+GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- query for ResourceAttributes is slower
+-- [cold] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    ResourceAttributes['1'] as hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+```
+
+**Solution**
+Pour améliorer la requête, nous pouvons ajouter une autre colonne, avec pour valeur par défaut celle d&#39;une clé spécifique de la colonne Map, puis la matérialiser afin de renseigner cette valeur pour les lignes existantes. De cette façon, nous extrayons et stockons la valeur nécessaire au moment de l&#39;insertion, ce qui accélère la recherche au moment de l&#39;exécution de la requête.
+
+```sql
+-- solution is to add a column with value defaulting to a particular key in Map
+ALTER TABLE tbl ADD COLUMN hostname LowCardinality(String) DEFAULT ResourceAttributes['1'];
+ALTER TABLE tbl MATERIALIZE COLUMN hostname;
+
+-- query for hostname (new column) is now faster
+-- [cold] 0 rows in set. Elapsed: 2.215 sec. Processed 1.00 million rows, 21.67 MB (451.52 thousand rows/s., 9.78 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.541 sec. Processed 1.00 million rows, 21.67 MB (1.85 million rows/s., 40.04 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- drop cache to run query cold
+SYSTEM DROP FILESYSTEM CACHE;
+```

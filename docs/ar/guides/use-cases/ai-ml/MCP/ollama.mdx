@@ -1,0 +1,220 @@
+---
+slug: /use-cases/AI/MCP/ollama
+sidebarTitle: 'دمج Ollama'
+title: 'إعداد ClickHouse MCP server لاستخدامه مع Ollama'
+description: 'يشرح هذا الدليل كيفية إعداد Ollama لاستخدامه مع ClickHouse MCP server.'
+keywords: ['AI', 'Ollama', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+> يشرح هذا الدليل كيفية استخدام ClickHouse MCP server مع Ollama.
+
+<Steps>
+  <Step>
+    ## ثبّت Ollama
+
+    Ollama عبارة عن مكتبة لتشغيل نماذج اللغة الكبيرة (LLMs) على جهازك الخاص.
+    وهي توفّر [مجموعة واسعة من النماذج](https://ollama.com/library) كما أنها سهلة الاستخدام.
+
+    يمكنك تنزيل Ollama لنظام Mac أو Windows أو Linux من [صفحة التنزيل](https://ollama.com/download).
+
+    بمجرد تشغيل Ollama، سيُشغِّل خادمًا محليًا في الخلفية يمكنك استخدامه لتشغيل النماذج.
+    كما يمكنك تشغيل الخادم يدويًا باستخدام `ollama serve`.
+
+    بعد التثبيت، يمكنك تنزيل نموذج إلى جهازك كما يلي:
+
+    ```bash
+    ollama pull qwen3:8b
+    ```
+
+    سيؤدي ذلك إلى تنزيل النموذج إلى جهازك المحلي إذا لم يكن موجودًا.
+    وبمجرد تنزيله، يمكنك تشغيل النموذج على النحو التالي:
+
+    ```bash
+    ollama run qwen3:8b
+    ```
+
+    <Note>
+      لن تعمل مع خوادم MCP إلا [النماذج التي تدعم الأدوات](https://ollama.com/search?c=tools).
+    </Note>
+
+    يمكننا عرض النماذج التي نزّلناها كما يلي:
+
+    ```bash
+    ollama ls
+    ```
+
+    ```text
+    NAME                       ID              SIZE      MODIFIED
+    qwen3:latest               500a1f067a9f    5.2 GB    3 days ago
+    ```
+
+    يمكننا استخدام الأمر التالي لمعرفة المزيد من المعلومات حول النموذج الذي نزّلناه:
+
+    ```bash
+    ollama show qwen3
+    ```
+
+    ```text
+      Model
+        architecture        qwen3
+        parameters          8.2B
+        context length      40960
+        embedding length    4096
+        quantization        Q4_K_M
+
+      Capabilities
+        completion
+        tools
+
+      Parameters
+        repeat_penalty    1
+        stop              "<|im_start|>"
+        stop              "<|im_end|>"
+        temperature       0.6
+        top_k             20
+        top_p             0.95
+
+      License
+        Apache License
+        Version 2.0, January 2004
+    ```
+
+    يمكننا أن نرى من هذا الناتج أن نموذج qwen3 الافتراضي يحتوي على أكثر قليلًا من 8 مليارات مُعامِل.
+  </Step>
+
+  <Step>
+    ## تثبيت MCPHost
+
+    حتى وقت كتابة هذا النص (يوليو 2025)، لا تتوفر وظيفة مدمجة لاستخدام Ollama مع خوادم MCP.
+    ومع ذلك، يمكننا استخدام [MCPHost](https://github.com/mark3labs/mcphost) لتشغيل نماذج Ollama مع خوادم MCP.
+
+    MCPHost هو تطبيق مكتوب بلغة Go، لذا ستحتاج إلى التأكد من [تثبيت Go](https://go.dev/doc/install) على جهازك.
+    بعد ذلك، يمكنك تثبيت MCPHost بتشغيل الأمر التالي:
+
+    ```bash
+    go install github.com/mark3labs/mcphost@latest
+    ```
+
+    سيُثبَّت الملف التنفيذي ضمن `~/go/bin`، لذا نحتاج إلى التأكد من أن هذا المجلد مُضاف إلى مسار `PATH` لدينا.
+  </Step>
+
+  <Step>
+    ## إعداد ClickHouse MCP server
+
+    يمكننا إعداد خوادم MCP باستخدام MCPHost في ملفات YAML أو JSON.
+    سيبحث MCPHost عن ملفات التهيئة في دليلك الرئيسي بالترتيب التالي:
+
+    1. `.mcphost.yml` أو `.mcphost.json`  (مفضّل)
+    2. `.mcp.yml` أو `.mcp.json` (للتوافق مع الإصدارات السابقة)
+
+    وهو يستخدم صياغة مشابهة لتلك المستخدمة في ملف تهيئة MCP القياسي.
+    فيما يلي مثال على تهيئة ClickHouse MCP server، وسنحفظه في الملف `~/.mcphost.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-ch": {
+          "type": "local",
+          "command": ["uv",
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ]
+        }
+      }
+    }
+    ```
+
+    الفرق الرئيسي عن ملف تهيئة MCP القياسي هو أننا نحتاج إلى تحديد `type`.
+    ويُستخدم هذا النوع للإشارة إلى نوع النقل الذي يستخدمه خادم MCP.
+
+    * `local` → نقل stdio
+    * `remote` → نقل متدفق
+    * `builtin` → نقل ضمن العملية
+
+    سنحتاج أيضًا إلى تهيئة متغيرات البيئة التالية:
+
+    ```bash
+    export CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    export CLICKHOUSE_USER=demo
+    export CLICKHOUSE_PASSWORD=""
+    ```
+
+    <Note>
+      من الناحية النظرية، يُفترض أن تتمكن من تحديد هذه المتغيرات تحت المفتاح `environment` في ملف تهيئة MCP، لكننا وجدنا أن ذلك لا ينجح.
+    </Note>
+  </Step>
+
+  <Step>
+    ## تشغيل MCPHost
+
+    بمجرد تكوين ClickHouse MCP server، يمكنك تشغيل MCPHost بتنفيذ الأمر التالي:
+
+    ```bash
+    mcphost --model ollama:qwen3
+    ```
+
+    أو، إذا أردتَ أن يستخدم ملف إعدادات محددًا:
+
+    ```bash
+    mcphost --model ollama:qwen3 --config ~/.mcphost.json 
+    ```
+
+    <Warning>
+      إذا لم تُحدِّد `--model`، فسيبحث MCPHost في متغيرات البيئة عن `ANTHROPIC_API_KEY` وسيستخدم النموذج `anthropic:claude-sonnet-4-20250514`.
+    </Warning>
+
+    يُفترض أن تظهر المخرجات التالية:
+
+    ```text
+      ┃                                                                                     ┃
+      ┃  Model loaded: ollama (qwen3)                                                       ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Model loaded successfully on GPU                                                   ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Loaded 3 tools from MCP servers                                                    ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      Enter your prompt (Type /help for commands, Ctrl+C to quit, ESC to cancel generation)
+    ```
+
+    يمكننا استخدام الأمر `/servers` لعرض خوادم MCP:
+
+    ```text
+      ┃                                                                                      ┃
+      ┃  ## Configured MCP servers                                                           ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch                                                                           ┃
+      ┃   MCPHost System (10:00)                                                             ┃
+      ┃
+    ```
+
+    واستخدم `/tools` لعرض الأدوات المتاحة:
+
+    ```text
+      ┃  ## Available Tools                                                                  ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch__list_databases                                                           ┃
+      ┃  2. mcp-ch__list_tables                                                              ┃
+      ┃  3. mcp-ch__run_select_query
+    ```
+
+    يمكننا بعد ذلك أن نطرح على النموذج أسئلة حول قواعد البيانات/الجداول المتاحة في ClickHouse SQL playground.
+
+    ومن واقع خبرتنا، عند استخدام نماذج أصغر (يحتوي نموذج qwen3 الافتراضي على 8 مليارات معلمة)، ستحتاج إلى أن تكون أكثر تحديدًا بشأن ما تريد منه أن يفعله.
+    فعلى سبيل المثال، ستحتاج إلى أن تطلب منه صراحةً إدراج قواعد البيانات والجداول، بدلًا من أن تطلب منه مباشرةً تنفيذ استعلام على جدول معيّن.
+    ويمكنك التخفيف جزئيًا من هذه المشكلة باستخدام نموذج أكبر (مثل qwen3:14b)، لكن ذلك سيعمل ببطء أكبر على الأجهزة الاستهلاكية.
+  </Step>
+</Steps>

@@ -1,0 +1,112 @@
+---
+slug: /parts
+title: 'テーブルのパーツ'
+description: 'ClickHouseにおけるデータパーツとは'
+keywords: ['パーツ']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="what-are-table-parts-in-clickhouse">
+  ## ClickHouse のテーブルのパーツとは何ですか？
+</div>
+
+<br />
+
+ClickHouse の [MergeTree engine family](/ja/reference/engines/table-engines/mergetree-family/index) に含まれる各テーブルのデータは、ディスク上では不変の `data parts` の集合として構成されています。
+
+これを説明するために、イギリスで売買された不動産の取引日、町、通り、価格を記録した [この](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) テーブル ([UK property prices dataset](/ja/get-started/sample-datasets/uk-price-paid) をもとに調整) を使用します：
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street);
+```
+
+このテーブルは、ClickHouse SQL Playground で[クエリを実行](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZTs\&run_query=true\&tab=results)できます。
+
+テーブルに一連の行が挿入されるたびに、データパーツが作成されます。以下の図はその概要を示したものです。
+
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+
+<br />
+
+ClickHouse server が上の図に示した 4 行のサンプル insert (たとえば [INSERT INTO ステートメント](/ja/reference/statements/insert-into) 経由) を処理すると、いくつかのステップが実行されます。
+
+① **ソート**: 行はテーブルのソートキー `(town, street)` に従ってソートされ、ソート後の行に対して [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes) が生成されます。
+
+② **分割**: ソート済みのデータはカラムごとに分割されます。
+
+③ **圧縮**: 各カラムは[圧縮](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)されます。
+
+④ **ディスクへの書き込み**: 圧縮されたカラムは、insert のデータパーツを表す新しいディレクトリ内に、バイナリのカラムファイルとして保存されます。スパースプライマリインデックスも圧縮され、同じディレクトリに格納されます。
+
+テーブルで使用しているエンジンによっては、ソートとあわせて追加の変換が行われる[場合があります](/ja/reference/settings/session-settings)。
+
+データパーツは自己完結型であり、中央カタログがなくても内容を解釈するために必要なすべてのメタデータを含んでいます。スパースプライマリインデックスに加え、パーツには、セカンダリの[データスキッピングインデックス](/ja/concepts/features/performance/skip-indexes/skipping-indexes)、[カラム STATISTICS](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere)、チェックサム、min-max 索引 ([パーティション化](/ja/concepts/core-concepts/partitions) を使用している場合) など、さらに[多くの](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104)メタデータが含まれます。
+
+<div id="part-merges">
+  ## パーツのマージ
+</div>
+
+テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
+
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+
+<br />
+
+初期パーツ数とマージのオーバーヘッドを最小限に抑えるため、データベースクライアントでは、たとえば一度に 20,000 行を挿入するようにタプルをまとめて挿入するか、[非同期挿入モード](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)を使用することが[推奨されています](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)。このモードでは、ClickHouse は同じテーブルに対する複数の受信 INSERT の行をバッファリングし、バッファサイズが設定可能なしきい値を超えるか、タイムアウトになるまで、新しいパーツを作成しません。
+
+<div id="monitoring-table-parts">
+  ## テーブルのパーツの監視
+</div>
+
+[仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns) `_part` を使用すると、サンプルテーブルで現在存在するすべてのアクティブなパーツの一覧を[クエリ](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results)できます。
+
+```sql
+SELECT _part
+FROM uk.uk_price_paid_simple
+GROUP BY _part
+ORDER BY _part ASC;
+```
+
+```response
+   ┌─_part───────┐
+1. │ all_0_5_1   │
+2. │ all_12_17_1 │
+3. │ all_18_23_1 │
+4. │ all_6_11_1  │
+   └─────────────┘
+```
+
+上記のクエリは、ディスク上のディレクトリ名を取得します。各ディレクトリは、テーブルのアクティブなデータパーツを表しています。これらのディレクトリ名の各部分にはそれぞれ特定の意味があり、さらに詳しく知りたい方のために[こちら](https://github.com/ClickHouse/ClickHouse/blob/f90551824bb90ade2d8a1d8edd7b0a3c0a459617/src/Storages/MergeTree/MergeTreeData.h#L130)で説明されています。
+
+別の方法として、ClickHouse はすべてのテーブルのすべてのパーツに関する情報を [system.parts](/ja/reference/system-tables/parts) システムテーブルで追跡しており、次のクエリは、上記の例のテーブルについて、現在アクティブなすべてのパーツ、そのマージレベル、およびそれらのパーツに格納されている行数の一覧を[返します](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results)。
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+マージレベルは、そのパーツが追加でマージされるたびに1ずつ増加します。レベルが0であれば、これはまだマージされていない新しいパーツであることを示します。

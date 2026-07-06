@@ -724,6 +724,12 @@ The setting is written inline between `WHATIF` and the `SELECT` — there is no 
 
 If no hypothetical indexes are defined for the table, `EXPLAIN WHATIF` reports `status: not_applicable` with a hint to create one.
 
+**Combined row (multiple candidates)**
+
+When two or more candidates are evaluated empirically, `EXPLAIN WHATIF` appends one extra block named `(combined: idx_a, idx_b, ...)` after the per-candidate rows. It reports the joint benefit of having *all* of those indexes at once: a real read keeps a granule only if it survives *every* skip index, so the combined estimate is the intersection of the candidates' surviving granules. Its `skip_ratio` is therefore at least as high as the best single candidate — complementary indexes prune more together, while redundant ones leave it unchanged.
+
+Only candidates with `source: empirical` contribute, because the combined row is built by intersecting their per-granule survival sets. Candidates estimated `statistical` or `applicability_only` have no per-granule data and are excluded; consequently the combined block appears only when at least two candidates produced an empirical estimate, and is omitted otherwise (for example under `empirical = 0`). Its estimation fields read the same as a per-candidate empirical block, except `elapsed_us` is `0` — the combined estimate is derived from the per-candidate scans, not a new scan. The synthetic `(combined: ...)` name is a report label only and cannot be used with `force_data_skipping_indices`.
+
 **Empirical example**
 
 ```sql

@@ -630,6 +630,9 @@ Enables or disables creating a new file on each insert in azure engine tables
     DECLARE(Bool, s3_check_objects_after_upload, false, R"(
 Check each uploaded object to s3 with head request to be sure that upload was successful
 )", 0) \
+    DECLARE(Bool, s3_validate_etag_on_read, true, R"(
+When reading an object from S3 (or an S3-compatible store such as GCS), check that every GET request returns the same ETag that was observed when the object was listed. A single file read issues many ranged GET requests; if the object is overwritten in place between them (for example by an external writer rewriting a fixed key), the reads can otherwise be stitched together from two different object generations and surface as a corrupted checksum or parse error. When a mismatch is detected the read fails with `S3_OBJECT_CHANGED_DURING_READ` instead of returning inconsistent data. Disable only for workloads that intentionally read objects that are being overwritten and can tolerate inconsistent reads.
+)", 0) \
     DECLARE(Bool, azure_check_objects_after_upload, false, R"(
 Check each uploaded object in azure blob storage to be sure that upload was successful
 )", 0) \
@@ -1158,6 +1161,12 @@ Compile some scalar functions and operators to native code.
     DECLARE(UInt64, min_count_to_compile_expression, 3, R"(
 Minimum count of executing same expression before it is get compiled.
 )", 0) \
+    DECLARE(Bool, compile_regular_expressions, true, R"(
+Compile simple regular expressions used in functions like `match` and `extract` to native code. Patterns outside the supported subset transparently fall back to the general engine.
+)", 0) \
+    DECLARE(UInt64, min_count_to_compile_regular_expression, 3, R"(
+Minimum count of executing same regular expression before it is get compiled.
+)", 0) \
     DECLARE(Bool, compile_aggregate_expressions, true, R"(
 Enables or disables JIT-compilation of aggregate functions to native code. Enabling this setting can improve the performance.
 
@@ -1311,19 +1320,7 @@ See also:
     DECLARE(Bool, skip_unavailable_shards, false, R"(
 Enables or disables silently skipping of unavailable shards.
 
-Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
-
-- ClickHouse can't connect to replica for any reason.
-
-    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
-
-- Replica can't be resolved through DNS.
-
-    If replica's hostname can't be resolved through DNS, it can indicate the following situations:
-
-    - Replica's host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
-
-    - Configuration error. ClickHouse configuration file contains a wrong hostname.
+The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.
 
 Possible values:
 
@@ -1334,6 +1331,18 @@ Possible values:
 - 0 — skipping disabled.
 
     If a shard is unavailable, ClickHouse throws an exception.
+)", 0) \
+    \
+    DECLARE(SkipUnavailableShardsMode, skip_unavailable_shards_mode, SkipUnavailableShardsMode::UNAVAILABLE_OR_TABLE_MISSING, R"(
+Controls which exceptions from a remote shard are silently ignored when `skip_unavailable_shards` is enabled. The setting has no effect when `skip_unavailable_shards = 0`.
+
+Possible values:
+
+- `unavailable` — Only connection-related errors are ignored. A shard is considered unavailable when ClickHouse cannot connect to any of its replicas, or when a replica's hostname cannot be resolved through DNS.
+
+- `unavailable_or_table_missing` — In addition to `unavailable`, errors caused by a missing table or database on the shard are ignored. This is useful while a table is being created or dropped across a cluster. This is the default and matches the historical behavior of `skip_unavailable_shards`, which also treated a shard whose table does not exist as unavailable.
+
+- `unavailable_or_exception_before_processing` — In addition to `unavailable`, any exception received from a shard before it returned any data block to the initiator is ignored. An exception that arrives after the shard already returned some data is always rethrown. Note that "before it returned any data" is checked at the initiator: a shard that performs a blocking computation (for example an aggregation, sort, or `LIMIT BY`) may process rows and fail before emitting any block, in which case its partial work is silently discarded and the query returns a result built from the remaining shards. This is therefore the most permissive mode and should be used with care.
 )", 0) \
     \
     DECLARE(UInt64, max_skip_unavailable_shards_num, 0, R"(
@@ -1741,6 +1750,16 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0) \
+    DECLARE(Bool, use_partition_minmax_for_primary_key_pruning, true, R"(
+Use partition minmax index bounds to prune more granules during primary key analysis for `MergeTree` tables, when a primary key column is also an input column of the partition key.
+
+For example, in a `MergeTree` table with `ORDER BY (id, event_time)` and `PARTITION BY toYYYYMM(event_time)`, ClickHouse will use the partition minmax index on `event_time` during primary key index analysis to make more informed granule-pruning decisions.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
     DECLARE(Bool, force_primary_key, false, R"(
 Disables query execution if indexing by the primary key is not possible.
 
@@ -1876,7 +1895,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 ```
 )", 0) \
     DECLARE(Bool, per_part_index_stats, false, R"(
-        Logs index statistics per part
+Logs index statistics per part
 )", 0) \
     DECLARE(Bool, materialize_statistics_on_insert, false, R"(
 If INSERTs build and insert statistics. If disabled, statistics will be build and stored during merges or by explicit MATERIALIZE STATISTICS
@@ -2167,7 +2186,7 @@ That setting has three possible values:
 - disable — Deduplication is disabled for `INSERT INTO` query.
 - enable — Deduplication is enabled for `INSERT INTO` query.
 - backward_compatible_choice — Deduplication is enabled if `insert_deduplicate` or `async_insert_deduplicate` are enabled for specific insert type.
-    )", 0) \
+)", 0) \
 \
     DECLARE(DeduplicateInsertSelectMode, deduplicate_insert_select, DeduplicateInsertSelectMode::ENABLE_WHEN_POSSIBLE, R"(
 Enables or disables block deduplication of `INSERT SELECT` (for Replicated\* tables).
@@ -2177,7 +2196,7 @@ That setting has four possible values:
 - force_enable — Deduplication is enabled for `INSERT SELECT` query. If select result is not stable, exception is thrown.
 - enable_when_possible — Deduplication is enabled if `insert_deduplicate` is enable and select result is stable, otherwise disabled.
 - enable_even_for_bad_queries - Deduplication is enabled if `insert_deduplicate` is enable. If select result is not stable, warning is logged, but query is executed with deduplication. This option is for backward compatibility. Consider to use other options instead as it may lead to unexpected results.
-    )", 0) \
+)", 0) \
 \
     DECLARE(Bool, insert_deduplicate, true, R"(
 Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
@@ -2352,11 +2371,11 @@ Headers that are set by the server by default and not overridden by this setting
 
 The setting allows you to set a header to a constant value. Currently there is no way to set a header to a dynamically calculated value.
 
-Neither names or values can contain ASCII control characters.
+Neither names nor values can contain ASCII control characters.
 
 If you implement a UI application which allows users to modify settings but at the same time makes decisions based on the returned headers, it is recommended to restrict this setting to readonly.
 
-Example: `SET http_response_headers = '{"Content-Type": "image/png"}'`
+Example: `SET http_response_headers = $${'Content-Type': 'image/png'}$$`
 )", 0) \
     \
     DECLARE(String, count_distinct_implementation, "uniqExact", R"(
@@ -2479,14 +2498,14 @@ For single JOIN in case of identifier ambiguity prefer left table
 )", IMPORTANT) \
     \
 DECLARE(BoolAuto, query_plan_join_swap_table, Field("auto"), R"(
-    Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
-    - 'auto': Let the planner decide which table to use as the build table.
-    - 'false': Never swap tables (the right table is the build table).
-    - 'true': Always swap tables (the left table is the build table).
+Determine which side of the join should be the build table (also called inner, the one inserted into the hash table for a hash join) in the query plan. This setting is supported only for `ALL` join strictness with the `JOIN ON` clause. Possible values are:
+- 'auto': Let the planner decide which table to use as the build table.
+- 'false': Never swap tables (the right table is the build table).
+- 'true': Always swap tables (the left table is the build table).
 )", 0) \
 DECLARE(UInt64, query_plan_optimize_join_order_limit, 10, R"(
-    Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
-    Value is the maximum number of tables to optimize.
+Optimize the order of joins within the same subquery. Currently only supported for very limited cases.
+Value is the maximum number of tables to optimize.
 )", 0) \
 DECLARE(UInt64, query_plan_optimize_join_order_max_searched_plans, 100000, R"(
 Maximum number of partial plans the join order optimizer may enumerate before giving up and falling back to the next algorithm in `query_plan_optimize_join_order_algorithm`.
@@ -2507,7 +2526,7 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
     \
     DECLARE(Bool, query_plan_join_shard_by_pk_ranges, false, R"(
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash and full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
- )", 0) \
+)", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
@@ -2780,10 +2799,10 @@ Possible values:
 
 - Positive integer number, in nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-            - 10000000 (100 times a second) nanoseconds and less for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+  - 10000000 (100 times a second) nanoseconds and less for single queries.
+  - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
 
@@ -2800,10 +2819,10 @@ Possible values:
 
 - A positive integer number of nanoseconds.
 
-    Recommended values:
+  Recommended values:
 
-            - 10000000 (100 times a second) nanoseconds and more for single queries.
-            - 1000000000 (once a second) for cluster-wide profiling.
+  - 10000000 (100 times a second) nanoseconds and more for single queries.
+  - 1000000000 (once a second) for cluster-wide profiling.
 
 - 0 for turning off the timer.
 
@@ -3668,7 +3687,7 @@ and [`max_server_memory_usage`](/operations/server-configuration-parameters/sett
 It represents the soft memory limit when the hard limit is reached on the global level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
-Read more about [memory overcommit](memory-overcommit.md).
+Read more about [memory overcommit](/operations/settings/memory-overcommit).
 )", 0) \
     DECLARE(UInt64, max_memory_usage_for_user, 0, R"(
 The maximum amount of RAM to use for running a user's queries on a single server. Zero means unlimited.
@@ -3693,7 +3712,7 @@ SELECT getSetting('max_memory_usage_for_user');
 It represents the soft memory limit when the hard limit is reached on the user level.
 This value is used to compute the overcommit ratio for the query.
 Zero means skip the query.
-Read more about [memory overcommit](memory-overcommit.md).
+Read more about [memory overcommit](/operations/settings/memory-overcommit).
 )", 0) \
     DECLARE(UInt64, max_untracked_memory, (4 * 1024 * 1024), R"(
 Small allocations and deallocations are grouped in thread local variable and tracked or profiled only when an amount (in absolute value) becomes larger than the specified value. If the value is higher than 'memory_profiler_step' it will be effectively lowered to 'memory_profiler_step'.
@@ -3739,7 +3758,7 @@ Using this setting allows more precise collection of data for a large number of 
     DECLARE(UInt64, memory_usage_overcommit_max_wait_microseconds, 5'000'000, R"(
 Maximum time thread will wait for memory to be freed in the case of memory overcommit on a user level.
 If the timeout is reached and memory is not freed, an exception is thrown.
-Read more about [memory overcommit](memory-overcommit.md).
+Read more about [memory overcommit](/operations/settings/memory-overcommit).
 )", 0) \
     \
     DECLARE(UInt64, reserve_memory, 0, R"(
@@ -3845,13 +3864,13 @@ Approximate probability of failure for a keeper request during backup or restore
 Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries. It takes place only for backup/restore.
 )", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_initial_backoff_ms, 25, R"(
-    Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
+Initial backoff delay in milliseconds before the first retry attempt during backup and restore. Each subsequent retry increases the delay exponentially, up to the maximum specified by `backup_restore_s3_retry_max_backoff_ms`
 )", 0) \
     DECLARE(UInt64, backup_restore_s3_retry_max_backoff_ms, 5000, R"(
-    Maximum delay in milliseconds between retries during backup and restore operations.
+Maximum delay in milliseconds between retries during backup and restore operations.
 )", 0) \
     DECLARE(Float, backup_restore_s3_retry_jitter_factor, .1f, R"(
-    Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
+Jitter factor applied to the retry backoff delay in Aws::Client::RetryStrategy during backup and restore operations. The computed backoff delay is multiplied by a random factor in the range [1.0, 1.0 + jitter], up to the maximum `backup_restore_s3_retry_max_backoff_ms`. Must be in [0.0, 1.0] interval
 )", 0) \
     DECLARE(UInt64, max_backup_bandwidth, 0, R"(
 The maximum read speed in bytes per second for particular backup on server. Zero means unlimited.
@@ -3932,7 +3951,7 @@ If set to any negative value, it will take the value `collect_interval_milliseco
 To disable the collection of a single query, set `query_metric_log_interval` to 0.
 
 Default value: -1
-    )", 0) \
+)", 0) \
     DECLARE(Bool, regexp_dict_allow_hyperscan, true, R"(
 Allow regexp_tree dictionary using Hyperscan library.
 )", 0) \
@@ -4072,6 +4091,9 @@ Possible values:
 **See Also**
 
 - [GROUP BY optimization](/sql-reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
+)", 0) \
+    DECLARE(Bool, optimize_aggregation_in_order_limit, true, R"(
+When enabled and aggregation in order is active, pushes LIMIT into the aggregation step to enable early termination after producing enough groups. This reduces the amount of data read when ORDER BY matches the GROUP BY key prefix. May reduce the value reported by `rows_before_limit_at_least`; use `exact_rows_before_limit` if exact counts are needed.
 )", 0) \
     DECLARE(Bool, enable_sharding_aggregator, false, R"(
 Enables sharded `GROUP BY` optimization that distributes rows across threads by hashing the grouping key, so each thread aggregates a disjoint subset of keys without a merge phase.
@@ -4253,13 +4275,13 @@ Formatters '%c', '%l' and '%k' in function 'parseDateTime' parse months and hour
 )", 0) \
     DECLARE(Bool, parsedatetime_e_requires_space_padding, false, R"(
 Formatter '%e' in function 'parseDateTime' expects that single-digit days are space-padded, e.g., ' 2' is accepted but '2' raises an error.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, formatdatetime_format_without_leading_zeros, false, R"(
 Formatters '%c', '%l' and '%k' in function 'formatDateTime' print months and hours without leading zeros.
 )", 0) \
     DECLARE(Bool, formatdatetime_e_with_space_padding, false, R"(
 Formatter '%e' in function 'formatDateTime' prints single-digit days with a leading space, e.g. ' 2' instead of '2'.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, least_greatest_legacy_null_behavior, false, R"(
 If enabled, functions 'least' and 'greatest' return NULL if one of their arguments is NULL.
 )", 0) \
@@ -4404,6 +4426,12 @@ Approximate probability of failing internal (for replication) PostgreSQL queries
 )", 0) \
     DECLARE(UInt64, glob_expansion_max_elements, 1000, R"(
 Maximum number of allowed addresses (For external storages, table functions, etc).
+)", 0) \
+    DECLARE(Bool, allow_experimental_url_wildcard_from_index_pages, false, R"(
+Allow experimental wildcard expansion for `url()` and `ENGINE = URL` from HTTP index pages.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, url_wildcard_max_directories_to_read, 100000, R"(
+Maximum number of directories that can be traversed while expanding URL wildcards from index pages.
 )", 0) \
     DECLARE(UInt64, odbc_bridge_connection_pool_size, 16, R"(
 Connection pool size for each connection settings string in ODBC bridge.
@@ -4807,8 +4835,8 @@ Enables or disables the deduplication check for materialized views that receive 
 
 Possible values:
 
-      0 — Disabled.
-      1 — Enabled.
+- 0 — Disabled.
+- 1 — Enabled.
 
 When enabled, ClickHouse performs deduplication of blocks in materialized views that depend on Replicated\* tables.
 This setting is useful for ensuring that materialized views do not contain duplicate data when the insertion operation is being retried due to a failure.
@@ -5490,7 +5518,7 @@ If true, include only column names and types into result of DESCRIBE query
 If true, mutations (UPDATEs and DELETEs) which are not materialized in data part will be applied on SELECTs.
 )", 0) \
     DECLARE_WITH_ALIAS(Bool, enable_lightweight_update, true, R"(
-    Allow to use lightweight updates.
+Allow to use lightweight updates.
 )", BETA, allow_experimental_lightweight_update) \
     DECLARE(Bool, apply_patch_parts, true, R"(
 If true, patch parts (that represent lightweight updates) are applied on SELECTs.
@@ -5786,7 +5814,7 @@ DECLARE(Bool, execute_exists_as_scalar_subquery, true, R"(
 Execute non-correlated EXISTS subqueries as scalar subqueries. As for scalar subqueries, the cache is used, and the constant folding applies to the result.
 
 Cloud default value: `0`.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, optimize_rewrite_regexp_functions, true, R"(
 Rewrite regular expression related functions into simpler and more efficient forms
 )", 0) \
@@ -6206,6 +6234,9 @@ Allow to convert ANY JOIN to SEMI or ANTI JOIN if filter after JOIN always evalu
 )", 0) \
     DECLARE(Bool, query_plan_merge_filter_into_join_condition, true, R"(
 Allow to merge filter into `JOIN` condition and convert `CROSS JOIN` to `INNER`.
+)", 0) \
+    DECLARE(Bool, query_plan_merge_expression_into_join, true, R"(
+Allow to merge expressions into JOIN step during join reordering optimization.
 )", 0) \
     DECLARE(Bool, query_plan_convert_join_to_in, false, R"(
 Allow to convert `JOIN` to subquery with `IN` if output columns tied to only left table. May cause wrong results with non-ANY JOINs (e.g. ALL JOINs which is the default).
@@ -6628,8 +6659,8 @@ Use userspace page cache when distributed cache is used.
 Use userspace page cache when reading from local disks. Used for testing, unlikely to improve performance in practice. Requires local_filesystem_read_method = 'pread' or 'read'. Doesn't disable the OS page cache; min_bytes_to_use_direct_io can be used for that. Only affects regular tables, not file() table function or File() table engine.
 )", 0) \
     DECLARE(Bool, use_page_cache_for_object_storage, false, R"(
-    Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
-    )", 0) \
+Use userspace page cache when reading from object storage table functions (s3, azure, hdfs) and table engines (S3, Azure, HDFS).
+)", 0) \
     DECLARE(Bool, read_from_page_cache_if_exists_otherwise_bypass_cache, false, R"(
 Use userspace page cache in passive mode, similar to read_from_filesystem_cache_if_exists_otherwise_bypass_cache.
 )", 0) \
@@ -7409,9 +7440,12 @@ Query Iceberg table using the specific snapshot id.
     DECLARE(Bool, allow_experimental_geo_types_in_iceberg, false, R"(
 Allow parsing Iceberg `geometry` and `geography` field types as ClickHouse `Geometry` (Variant) type.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, show_remote_databases_in_system_tables, false, R"(
-Enables showing remote databases (data lake catalogs, MySQL, PostgreSQL) in system tables.
-)", 0, show_data_lake_catalogs_in_system_tables) \
+    DECLARE(Bool, show_data_lake_catalogs_in_system_tables, false, R"(
+Enables showing data lake catalogs in system tables.
+)", 0) \
+    DECLARE(Bool, show_remote_databases_in_system_tables, true, R"(
+Enables showing `MySQL` and `PostgreSQL` databases in system tables.
+)", 0) \
     DECLARE(Bool, delta_lake_enable_expression_visitor_logging, false, R"(
 Enables Test level logs of DeltaLake expression visitor. These logs can be too verbose even for test logging.
 )", 0) \
@@ -7635,13 +7669,13 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested, true, R"(
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the new analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
-    )", 0) \
+)", 0) \
     \
     DECLARE(Timezone, session_timezone, "", R"(
 Sets the implicit time zone of the current session or query.
@@ -7746,6 +7780,9 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 )", 0) \
     DECLARE(Bool, optimize_and_compare_chain, true, R"(
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+)", 0) \
+    DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
+Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
 )", 0) \
     DECLARE(Bool, push_external_roles_in_interserver_queries, true, R"(
 Enable pushing user roles from originator to other nodes while performing a query.
@@ -7906,35 +7943,35 @@ Samples can also be stored in system.trace_log using config jemalloc_collect_glo
 See [Allocation Profiling](/operations/allocation-profiling))", 0) \
     DECLARE(Bool, jemalloc_collect_profile_samples_in_trace_log, false, R"(
 Collect jemalloc allocation and deallocation samples in trace log.
-    )", 0) \
+)", 0) \
     DECLARE(JemallocProfileFormat, jemalloc_profile_text_output_format, JemallocProfileFormat::Collapsed, R"(
 Output format for jemalloc heap profile in system.jemalloc_profile_text table. Can be: 'raw' (raw profile), 'symbolized' (jeprof format with symbols), or 'collapsed' (FlameGraph format).
-    )", 0) \
+)", 0) \
     DECLARE(Bool, jemalloc_profile_text_symbolize_with_inline, true, R"(
 Whether to include inline frames when symbolizing jemalloc heap profile. When enabled, inline frames are included which can slow down symbolization process drastically; when disabled, they are skipped. Only affects 'symbolized' and 'collapsed' output formats.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, jemalloc_profile_text_collapsed_use_count, false, R"(
 When using the 'collapsed' output format for jemalloc heap profile, aggregate by allocation count instead of bytes. When false (default), each stack is weighted by live bytes; when true, by live allocation count.
-    )", 0) \
+)", 0) \
     DECLARE_WITH_ALIAS(Int32, os_threads_nice_value_query, 0, R"(
 Linux nice value for query processing threads. Lower values mean higher CPU priority.
 
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
-    )", 0, os_thread_priority) \
+)", 0, os_thread_priority) \
     DECLARE(Int32, os_threads_nice_value_materialized_view, 0, R"(
 Linux nice value for materialized view threads. Lower values mean higher CPU priority.
 
 Requires CAP_SYS_NICE capability, otherwise no-op.
 
 Possible values: -20 to 19.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, show_processlist_include_internal, 1, R"(
 Show internal auxiliary processes in the `SHOW PROCESSLIST` query output.
 
 Internal processes include dictionary reloads, refreshable materialized view reloads, auxiliary `SELECT`s executed in `SHOW ...` queries, auxiliary `CREATE DATABASE ...` queries executed internally to accommodate broken tables and more.
-    )", 0) \
+)", 0) \
     DECLARE(Bool, use_roaring_bitmap_iceberg_positional_deletes, false, R"(
 Use roaring bitmap for iceberg positional deletes.
 )", 0) \
@@ -7943,7 +7980,7 @@ If enabled, injects 'ORDER BY rand()' into SELECT queries without ORDER BY claus
 Applied only for subquery depth = 0. Subqueries and INSERT INTO ... SELECT are not affected.
 If the top-level construct is UNION, 'ORDER BY rand()' is injected into all children independently.
 Only useful for testing and development (missing ORDER BY is a source of non-deterministic query results).
-    )", 0) \
+)", 0) \
     DECLARE(Int64, optimize_const_name_size, 256, R"(
 Replace with scalar and use hash as a name for large constants (size is estimated by the name length).
 
@@ -8103,30 +8140,27 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
-    DECLARE(Bool, use_text_index_tokens_cache, false, R"(
-Whether to use a cache of deserialized text index token infos.
+    DECLARE(Bool, use_text_index_tokens_cache, true, R"(
+Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, use_text_index_header_cache, false, R"(
-Whether to use a cache of deserialized text index header.
+    DECLARE(Bool, use_text_index_header_cache, true, R"(
+Whether to cache deserialized text index headers in memory.
 Using the text index header cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
     DECLARE(Bool, use_text_index_postings_cache, false, R"(
-Whether to use a cache of deserialized text index posting lists.
+Whether to cache deserialized text index deserialized posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(Bool, allow_experimental_text_index_lazy_apply, false, R"(
-If set to true, allow using the lazy posting list apply mode for text index queries.
-)", EXPERIMENTAL) \
     DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::MATERIALIZE, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' (default) eagerly decodes posting lists into Roaring Bitmaps.
-'lazy' uses cursor-based on-demand decoding (requires V2 index format and allow_experimental_text_index_lazy_apply).
+'lazy' uses cursor-based on-demand decoding (requires an index format with a serialized codec).
 )", 0) \
-    DECLARE(Float, text_index_density_threshold, 0.2f, R"(
-Density threshold for algorithm selection in lazy posting list mode.
-Below threshold: leapfrog intersection. At or above: brute-force bitmap.
-)", 0) \
+    DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
+Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
+Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
+)", 0, text_index_density_threshold) \
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \
@@ -8247,8 +8281,8 @@ Experimental table engine for integration with YTsaurus.
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \
 DECLARE(Bool, allow_experimental_ytsaurus_dictionary_source, false, R"(
-    Experimental dictionary source for integration with YTsaurus.
-    )", EXPERIMENTAL) \
+Experimental dictionary source for integration with YTsaurus.
+)", EXPERIMENTAL) \
     DECLARE(Bool, distributed_plan_force_shuffle_aggregation, false, R"(
 Use Shuffle aggregation strategy instead of PartialAggregation + Merge in distributed query plan.
 )", EXPERIMENTAL) \
@@ -8312,14 +8346,15 @@ Use Paimon partition pruning for Paimon table functions
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_object_storage_queue_hive_partitioning, false, R"(
 Allow to use hive partitioning with S3Queue/AzureQueue engines
-    )", EXPERIMENTAL) \
+)", EXPERIMENTAL) \
 DECLARE(JoinOrderAlgorithm, query_plan_optimize_join_order_algorithm, "greedy", R"(
 Specifies which JOIN order algorithms to attempt during query plan optimization. The following algorithms are available:
- - `greedy` - basic greedy algorithm - works fast but might not produce the best join order
- - `dpsize` - implements DPsize algorithm currently only for inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates
- - `dphyp` - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
+ - 'greedy' - basic greedy algorithm - works fast but might not produce the best join order
+ - 'dpsize' - implements DPsize algorithm currently only for Inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
+ - 'dpsub' - implements DPsub algorithm which supports both inner and non-inner joins - considers all possible join orders and finds the most optimal one but might be slow for queries with many tables and join predicates.
+ - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
-    )", EXPERIMENTAL) \
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'
 )", EXPERIMENTAL) \
@@ -8398,6 +8433,7 @@ Maximum number of texts to include in a single HTTP request made by `aiEmbed`. T
     MAKE_OBSOLETE(M, Bool, allow_experimental_bfloat16_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_inverted_index, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_vector_similarity_index, true) \
+    MAKE_OBSOLETE(M, Bool, allow_experimental_text_index_lazy_apply, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_statistic, false) \
     MAKE_OBSOLETE(M, Bool, enable_vector_similarity_index, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_qbit_type, true) \

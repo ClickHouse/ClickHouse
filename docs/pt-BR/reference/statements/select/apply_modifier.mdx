@@ -1,0 +1,34 @@
+---
+description: 'Documentação que descreve o modificador APPLY, que permite invocar uma função para cada linha retornada por uma expressão de tabela externa de uma consulta.'
+sidebarTitle: 'APPLY'
+slug: /sql-reference/statements/select/apply-modifier
+title: 'Modificador APPLY'
+keywords: ['APPLY', 'modificador']
+doc_type: 'reference'
+---
+
+> Permite invocar uma função para cada linha retornada por uma expressão de tabela externa de uma consulta.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+<div id="example">
+  ## Exemplo
+</div>
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
