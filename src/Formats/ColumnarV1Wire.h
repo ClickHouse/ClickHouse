@@ -187,7 +187,15 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
                 "only 1/2/4/8-byte fixed-width types are supported (e.g. UUID, IPv6, "
                 "Int128/UInt128, Decimal128/256, and FixedString of any length are not): {}",
                 size, type->getName());
+        return;
     }
+    // Explicit deny-by-default: every type this wire format actually knows how to encode
+    // returns above. Anything else (Dynamic, JSON/Object, AggregateFunction(...), and any
+    // future type kind) must be rejected here too, or it silently falls through as
+    // "supported" and only fails once buildColDescriptor reaches its fixed-width fallback
+    // and calls sizeOfValueIfFixed()/getRawData() on a column that has neither.
+    throw Exception(ErrorCodes::INCORRECT_DATA,
+        "COLUMNAR_V1/ColumnBinary: type is not supported: {}", type->getName());
 }
 
 // ── COL_COMPLEX recursive helpers ────────────────────────────────────────────
