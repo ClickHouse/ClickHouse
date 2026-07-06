@@ -1,0 +1,174 @@
+---
+description: 'Documentación sobre los tipos de datos de coma flotante en ClickHouse: Float32,
+  Float64 y BFloat16'
+sidebarTitle: 'Float32 | Float64 | BFloat16'
+slug: /sql-reference/data-types/float
+title: 'Tipos Float32 | Float64 | BFloat16'
+doc_type: 'reference'
+---
+
+<Note>
+  Si necesitas cálculos precisos, especialmente si trabajas con datos financieros o empresariales que requieren una alta precisión, deberías considerar usar [Decimal](/es/reference/data-types/decimal) en su lugar.
+
+  Los [números de coma flotante](https://en.wikipedia.org/wiki/IEEE_754) pueden dar lugar a resultados imprecisos, como se muestra a continuación:
+
+  ```sql
+  CREATE TABLE IF NOT EXISTS float_vs_decimal
+  (
+     my_float Float64,
+     my_decimal Decimal64(3)
+  )
+  ENGINE=MergeTree
+  ORDER BY tuple();
+
+  # Generar 1 000 000 números aleatorios con 2 posición decimal y almacenarlos como float y como decimal
+  INSERT INTO float_vs_decimal SELECT round(randCanonical(), 3) AS res, res FROM system.numbers LIMIT 1000000;
+  ```
+
+  ```sql
+  SELECT sum(my_float), sum(my_decimal) FROM float_vs_decimal;
+
+  ┌──────sum(my_float)─┬─sum(my_decimal)─┐
+  │ 499693.60500000004 │      499693.605 │
+  └────────────────────┴─────────────────┘
+
+  SELECT sumKahan(my_float), sumKahan(my_decimal) FROM float_vs_decimal;
+
+  ┌─sumKahan(my_float)─┬─sumKahan(my_decimal)─┐
+  │         499693.605 │           499693.605 │
+  └────────────────────┴──────────────────────┘
+  ```
+</Note>
+
+A continuación se muestran los tipos equivalentes en ClickHouse y en C:
+
+* `Float32` — `float`.
+* `Float64` — `double`.
+
+En ClickHouse, los tipos Float tienen los siguientes alias:
+
+* `Float32` — `FLOAT`, `REAL`, `SINGLE`.
+* `Float64` — `DOUBLE`, `DOUBLE PRECISION`.
+
+Al crear tablas, se pueden establecer parámetros numéricos para números de coma flotante (p. ej., `FLOAT(12)`, `FLOAT(15, 22)`, `DOUBLE(12)`, `DOUBLE(4, 18)`), pero ClickHouse los ignora.
+
+<div id="using-floating-point-numbers">
+  ## Uso de números de coma flotante
+</div>
+
+* Los cálculos con números de coma flotante pueden producir errores de redondeo.
+
+{/* */}
+
+```sql
+SELECT 1 - 0.9
+
+┌───────minus(1, 0.9)─┐
+│ 0.09999999999999998 │
+└─────────────────────┘
+```
+
+* El resultado del cálculo depende del método de cálculo (el tipo de procesador y la arquitectura del sistema).
+* Los cálculos en coma flotante pueden dar lugar a valores como infinito (`Inf`) y &quot;no es un número&quot; (`NaN`). Esto debe tenerse en cuenta al procesar los resultados de los cálculos.
+* Al interpretar números de coma flotante a partir de texto, es posible que el resultado no sea el número representable por la máquina más cercano.
+
+<div id="nan-and-inf">
+  ## NaN e Inf
+</div>
+
+A diferencia del SQL estándar, ClickHouse admite las siguientes categorías de números de coma flotante:
+
+* `Inf` – Infinito.
+
+{/* */}
+
+```sql
+SELECT 0.5 / 0
+
+┌─divide(0.5, 0)─┐
+│            inf │
+└────────────────┘
+```
+
+* `-Inf` — Infinito negativo.
+
+{/* */}
+
+```sql
+SELECT -0.5 / 0
+
+┌─divide(-0.5, 0)─┐
+│            -inf │
+└─────────────────┘
+```
+
+* `NaN` — No es un número.
+
+{/* */}
+
+```sql
+SELECT 0 / 0
+
+┌─divide(0, 0)─┐
+│          nan │
+└──────────────┘
+```
+
+Consulte las reglas de ordenación de `NaN` en la sección [cláusula ORDER BY](/es/reference/statements/select/order-by).
+
+<div id="nan-values-in-set-semantics">
+  ## Valores `NaN` en la semántica de conjuntos
+</div>
+
+El estándar IEEE 754 define `NaN` de modo que la comparación escalar `NaN = NaN` devuelve `false`.
+ClickHouse sigue esa regla para el operador `=`.
+
+Sin embargo, `NaN` no es un único valor; es cualquier patrón de bits cuyo exponente está compuesto solo por unos y cuya
+mantisa no es cero. Distintas operaciones y distintas arquitecturas de CPU pueden producir valores `NaN`
+con diferentes bits de signo o diferentes contenidos en la mantisa. Por ejemplo:
+
+* `0./0.` produce un `NaN` cuyo bit de signo es 1 en la mayoría de las plataformas x86.
+* El literal `nan` produce un `NaN` cuyo bit de signo es 0.
+* Después de [PR #98230](https://github.com/ClickHouse/ClickHouse/pull/98230), la ruta NEON de AArch64 para
+  `log` devuelve un `NaN` cuyo bit de signo difiere del `log` escalar de glibc con entradas negativas.
+
+Las tablas hash de ClickHouse comparan las claves byte a byte, por lo que distintos patrones de bits de `NaN` se asignan mediante hash a
+distintas cubetas y se tratan como valores distintos en operaciones con semántica de conjuntos, incluidas
+`DISTINCT`, `GROUP BY`, `uniqExact`, `countDistinct` y equi-`JOIN` sobre una clave `Float`:
+
+```sql
+SELECT countDistinct(arrayJoin([0./0., nan, log(-1.)]));
+-- May return 2 or 3 depending on architecture and build, even though all three inputs are NaN.
+```
+
+Esto es coherente con IEEE 754 (cada `NaN` es distinto de cualquier otro valor, incluido él mismo),
+pero puede resultar sorprendente. Si necesita que las operaciones con semántica de conjuntos traten todos los valores `NaN` como iguales,
+llévelos a una forma canónica en la consulta:
+
+```sql
+-- Replace every NaN with a single canonical NaN value
+SELECT countDistinct(if(isNaN(x), CAST('nan' AS Float64), x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 1.
+
+-- Or exclude NaN values from the set entirely
+SELECT countDistinct(if(isNaN(x), NULL, x))
+FROM (SELECT arrayJoin([0./0., nan, log(-1.)]) AS x);
+-- Returns 0.
+```
+
+El mismo enfoque también se aplica a las claves de `DISTINCT`, `GROUP BY` y `JOIN`.
+
+<div id="bfloat16">
+  ## BFloat16
+</div>
+
+`BFloat16` es un tipo de dato de coma flotante de 16 bits con exponente de 8 bits, bit de signo y mantisa de 7 bits.
+Es útil para aplicaciones de aprendizaje automático e IA.
+
+ClickHouse admite conversiones entre `Float32` y `BFloat16`, que
+pueden realizarse mediante las funciones [`toFloat32()`](/es/reference/functions/regular-functions/type-conversion-functions#toFloat32) o [`toBFloat16`](/es/reference/functions/regular-functions/type-conversion-functions#toBFloat16).
+
+<Note>
+  La mayoría de las demás operaciones no son compatibles.
+</Note>

@@ -1,0 +1,29 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # 自定义项
+</div>
+
+用于自定义 Mintlify 站点外观和行为的脚本。
+这些脚本通过 `docs.json` 中的 `scripts` 数组加载，并会在每个页面上运行。
+
+更多信息，请参阅 Mintlify 的[自定义脚本文档](https://www.mintlify.com/docs/customize/custom-scripts)。
+
+<div id="scripts">
+  ## 脚本
+</div>
+
+* `ask-ai-button.js` — 调整 Ask-AI 按钮的样式和行为。
+* `cookie-banner.js` — 注入并管理 Cookie 同意横幅。
+* `custom-footer.js` — 渲染自定义站点页脚 (`#ch-custom-footer`) 。
+* `inkeep-init.js` — 用 Inkeep 搜索模态框替换 Mintlify 的原生搜索 (⌘K / 导航栏搜索框) 。仅替换搜索；AI Chat 仍由 Kapa 提供。
+* `kapa-init.js` — 引导 Kapa.ai RAG 小组件。
+* `navbar-cta.js` — 在导航栏中添加“开始使用”CTA。
+* `clickhouse-sql-lexer-wasm.js` — 将 ClickHouse 的 SQL 词法分析器 (由 `src/Parsers/Lexer.cpp` 编译为 WebAssembly) 以 base64 全局变量的形式暴露出来。快照来自 ClickHouse 的 `programs/server/play.html`；如果上游词法分析器或关键字列表发生变化，请重新提取。
+* `clickhouse-sql-highlight.js` — 使用 WASM 词法分析器重新高亮 `language="sql"` 代码块 (采用 ClickHouse 原生配色，与 play.html / ClickHouse 客户端保持一致) ，替代 Shiki。必须在 `clickhouse-sql-lexer-wasm.js` 之后加载。其他语言则保持 Shiki 的渲染结果不变。
+* `quickstart-back-link.js` — 在快速入门页面中，将自动生成的“所有快速入门”徽章从正文顶部移到标题上方的页眉中 (面包屑位置) 。
+
+要接入新脚本，请将一个 `{ "src": "/_site/customizations/<name>.js" }`
+条目添加到 `docs.json` 顶层的 `scripts` 数组中。

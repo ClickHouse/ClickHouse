@@ -1,0 +1,86 @@
+---
+description: 'Движок позволяет импортировать и экспортировать данные в SQLite, а также поддерживает запросы
+  к таблицам SQLite напрямую из ClickHouse.'
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'Движок таблицы SQLite'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Движок позволяет импортировать данные из SQLite и экспортировать их в SQLite, а также выполнять запросы к таблицам SQLite напрямую из ClickHouse.
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**Параметры движка**
+
+* `db_path` — Путь к файлу SQLite с базой данных.
+* `table` — Имя таблицы в базе данных SQLite.
+
+<div id="data-types-support">
+  ## Поддержка типов данных
+</div>
+
+Если в определении таблицы явно указать типы столбцов ClickHouse, из столбцов SQLite TEXT можно разобрать следующие типы ClickHouse:
+
+* [Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32)
+* [DateTime](/ru/reference/data-types/datetime), [DateTime64](/ru/reference/data-types/datetime64)
+* [UUID](/ru/reference/data-types/uuid)
+* [Enum8, Enum16](/ru/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/ru/reference/data-types/decimal)
+* [FixedString](/ru/reference/data-types/fixedstring)
+* Все целочисленные типы ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ru/reference/data-types/int-uint))
+* [Float32, Float64](/ru/reference/data-types/float)
+
+Сопоставление типов по умолчанию см. в разделе [движок базы данных SQLite](/ru/reference/engines/database-engines/sqlite#data_types-support).
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+Показан запрос на создание таблицы SQLite:
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+Возвращает данные из таблицы:
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**См. также**
+
+* [SQLite](/ru/reference/engines/database-engines/sqlite) движок
+* [sqlite](/ru/reference/functions/table-functions/sqlite) табличная функция

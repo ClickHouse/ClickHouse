@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/EscapingRuleUtils.h>

@@ -1,0 +1,112 @@
+---
+slug: /parts
+title: 'Parts de table'
+description: 'Que sont les data parts dans ClickHouse'
+keywords: ['part']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="what-are-table-parts-in-clickhouse">
+  ## Que sont les parts de table dans ClickHouse ?
+</div>
+
+<br />
+
+Les données de chaque table de la [famille de moteurs MergeTree de ClickHouse](/fr/reference/engines/table-engines/mergetree-family/index) sont organisées sur disque sous forme d’une collection de `data parts` immuables.
+
+Pour l’illustrer, nous utilisons [cette](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGU\&run_query=true\&tab=results) table (adaptée du [jeu de données sur les prix de l’immobilier au Royaume-Uni](/fr/get-started/sample-datasets/uk-price-paid)) qui recense la date, la ville, la rue et le prix des biens vendus au Royaume-Uni :
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street);
+```
+
+Vous pouvez [interroger cette table](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZTs\&run_query=true\&tab=results) dans notre ClickHouse SQL Playground.
+
+Une data part est créée chaque fois qu&#39;un ensemble de lignes est inséré dans la table. Le schéma suivant l&#39;illustre :
+
+<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+
+<br />
+
+Lorsqu&#39;un serveur ClickHouse traite l&#39;exemple d&#39;insertion avec 4 lignes (par ex. via une [instruction INSERT INTO](/fr/reference/statements/insert-into)) illustré dans le schéma ci-dessus, il effectue plusieurs étapes :
+
+① **Tri** : Les lignes sont triées selon la clé de tri de la table `(town, street)`, et un [index primaire sparse](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les lignes triées.
+
+② **Découpage** : Les données triées sont réparties en colonnes.
+
+③ **Compression** : Chaque colonne est [compressée](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema).
+
+④ **Écriture sur disque** : Les colonnes compressées sont enregistrées sous forme de fichiers binaires de colonnes dans un nouveau répertoire représentant la data part de l&#39;insertion. L&#39;index primaire sparse est également compressé et stocké dans le même répertoire.
+
+Selon le moteur spécifique de la table, des transformations supplémentaires [peuvent](/fr/reference/settings/session-settings) avoir lieu en parallèle du tri.
+
+Les data parts sont autonomes et incluent toutes les métadonnées nécessaires pour interpréter leur contenu sans nécessiter de catalogue central. Au-delà de l&#39;index primaire sparse, les parts contiennent des métadonnées supplémentaires, telles que des [index secondaires de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes), des [statistiques de colonnes](https://clickhouse.com/blog/clickhouse-release-23-11#column-statistics-for-prewhere), des checksums, des index min-max (si le [partitionnement](/fr/concepts/core-concepts/partitions) est utilisé), et [plus encore](https://github.com/ClickHouse/ClickHouse/blob/a065b11d591f22b5dd50cb6224fab2ca557b4989/src/Storages/MergeTree/MergeTreeData.h#L104).
+
+<div id="part-merges">
+  ## Fusions de parts
+</div>
+
+Pour gérer le nombre de parts par table, une tâche de [fusion en arrière-plan](/fr/concepts/core-concepts/merges) combine périodiquement les petites parts en parts plus volumineuses jusqu&#39;à atteindre une taille compressée [configurable](/fr/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool) (généralement ~150 Go). Les parts fusionnées sont marquées comme inactives puis supprimées après un intervalle de temps [configurable](/fr/reference/settings/merge-tree-settings#old_parts_lifetime). Au fil du temps, ce processus crée une structure hiérarchique de parts fusionnées, d&#39;où le nom de table MergeTree :
+
+<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+
+<br />
+
+Pour réduire au minimum le nombre de parts initiales et le surcoût des fusions, les clients de base de données sont [encouragés](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) soit à insérer des tuples en bloc, par exemple 20 000 lignes à la fois, soit à utiliser le [mode d&#39;insert asynchrone](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse), dans lequel ClickHouse met en tampon les lignes de plusieurs INSERT vers la même table et ne crée une nouvelle part qu&#39;une fois que la taille du tampon dépasse un seuil configurable ou qu&#39;un timeout expire.
+
+<div id="monitoring-table-parts">
+  ## Surveillance des parts de table
+</div>
+
+Vous pouvez [interroger](https://sql.clickhouse.com/?query=U0VMRUNUIF9wYXJ0CkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKR1JPVVAgQlkgX3BhcnQKT1JERVIgQlkgX3BhcnQgQVNDOw\&run_query=true\&tab=results) la liste de toutes les parts actives existantes de notre table d’exemple à l’aide de la [colonne virtuelle](/fr/reference/engines/table-engines/index#table_engines-virtual_columns) `_part`:
+
+```sql
+SELECT _part
+FROM uk.uk_price_paid_simple
+GROUP BY _part
+ORDER BY _part ASC;
+```
+
+```response
+   ┌─_part───────┐
+1. │ all_0_5_1   │
+2. │ all_12_17_1 │
+3. │ all_18_23_1 │
+4. │ all_6_11_1  │
+   └─────────────┘
+```
+
+La requête ci-dessus récupère les noms des répertoires sur le disque, chaque répertoire représentant une data part active de la table. Les éléments qui composent ces noms de répertoire ont une signification précise, documentée [ici](https://github.com/ClickHouse/ClickHouse/blob/f90551824bb90ade2d8a1d8edd7b0a3c0a459617/src/Storages/MergeTree/MergeTreeData.h#L130) pour ceux qui souhaitent approfondir.
+
+Sinon, ClickHouse conserve des informations sur toutes les parts de toutes les tables dans la table système [system.parts](/fr/reference/system-tables/parts), et la requête suivante [renvoie](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results), pour notre table d’exemple ci-dessus, la liste de toutes les parts actuellement actives, leur niveau de fusion et le nombre de lignes stockées dans ces parts :
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+Le niveau de fusion augmente d’une unité à chaque fusion supplémentaire de la part. Un niveau de 0 indique qu’il s’agit d’une nouvelle part qui n’a pas encore été fusionnée.

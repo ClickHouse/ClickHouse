@@ -1,0 +1,28 @@
+---
+title: '¿ClickHouse admite consultas federadas?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/federated
+description: 'ClickHouse admite una amplia gama de consultas federadas e híbridas'
+doc_type: 'reference'
+keywords: ['federated', 'hybrid', 'postgres', 'mysql', 'sqlite', 'odbc', 'jdbc']
+---
+
+ClickHouse ofrece la compatibilidad más completa con consultas federadas y ejecución híbrida de consultas de entre las bases de datos analíticas.
+
+Admite consultas sobre bases de datos externas:
+
+* PostgreSQL
+* MySQL
+* MongoDB
+* Redis
+* cualquier fuente de datos ODBC
+* cualquier fuente de datos JDBC
+* cualquier fuente de datos Arrow Flight
+* fuentes de datos en streaming, como Kafka y RabbitMQ
+* lagos de datos, como Iceberg, Delta Lake, Apache Hudi, Apache Paimon
+* archivos externos ubicados en almacenamiento compartido, como AWS S3, GCS, Minio, Cloudflare R2, Azure Blob Storage, Alicloud OSS y Tencent COS, así como en almacenamiento local, con una amplia variedad de formatos de datos
+
+ClickHouse puede combinar múltiples fuentes de datos distintas en una sola consulta. También ofrece una opción de ejecución híbrida de consultas, que combina recursos locales y delega parte de la consulta en máquinas remotas.
+
+Cabe destacar que ClickHouse puede acelerar las consultas sobre fuentes de datos externas sin mover los datos. Por ejemplo, una consulta de agregación sobre MySQL se procesará más rápido si se ejecuta en ClickHouse, porque la sobrecarga del movimiento de datos se compensa con un motor de consultas más rápido.

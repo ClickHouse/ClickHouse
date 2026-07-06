@@ -1,0 +1,40 @@
+---
+slug: /use-cases/observability/clickstack/event_patterns
+title: 'Event patterns avec ClickStack'
+sidebarTitle: 'Event patterns'
+description: 'Event patterns avec ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'event patterns', 'analyse des logs', 'recherche de motifs', 'observabilité']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les Event patterns dans ClickStack vous permettent de comprendre rapidement de grands volumes de logs ou de traces en regroupant automatiquement les messages similaires. Ainsi, au lieu d’examiner des millions d’événements individuels, vous n’avez plus qu’à passer en revue un petit nombre de groupes pertinents.
+
+<Image img="/images/use-cases/observability/event_patterns.webp" alt="Event patterns" size="lg" />
+
+Il devient ainsi bien plus facile d’identifier quelles erreurs ou quels avertissements sont nouveaux, lesquels reviennent régulièrement et lesquels provoquent des pics soudains du volume de logs. Comme les patterns sont générés dynamiquement, vous n’avez pas besoin de définir des expressions régulières ni de maintenir des règles de parsing - ClickStack s’adapte automatiquement à vos événements, quel que soit leur format.
+
+Au-delà de la réponse aux incidents, cette vue d’ensemble vous aide aussi à repérer les sources de logs trop verbeuses que vous pouvez réduire pour diminuer les coûts, à découvrir les différents types de logs produits par un service et à déterminer plus rapidement si le système émet déjà les signaux qui vous intéressent.
+
+<div id="accessing-event-patterns">
+  ## Accéder à Event patterns
+</div>
+
+La fonctionnalité **Event patterns** est disponible directement dans le panneau **Search** de ClickStack.
+
+Dans le sélecteur **Analysis Mode** situé en haut à gauche, choisissez **Event patterns** pour passer de la table de résultats standard à une vue regroupant les événements similaires.
+
+<Image img="/images/use-cases/observability/event_patterns_highlight.webp" alt="Event patterns" size="lg" />
+
+Cela constitue une alternative à l’onglet **Results Table** par défaut, qui permet de faire défiler chaque log ou trace individuellement.
+
+<div id="recommendations">
+  ## Recommandations
+</div>
+
+Les Event patterns sont plus efficaces lorsqu’ils sont appliqués à des **sous-ensembles ciblés** de vos données. Par exemple, si vous filtrez sur un seul service avant d’activer les Event patterns, vous ferez généralement ressortir des messages plus pertinents et plus intéressants que si vous les appliquez à des milliers de services à la fois.
+
+Ils sont également particulièrement utiles pour résumer les messages d’erreur, en regroupant les erreurs répétées dont les ID ou les payloads varient en clusters concis.
+
+Pour voir un exemple concret, découvrez comment les Event patterns sont utilisés dans le [Remote Demo Dataset](/fr/clickstack/example-datasets/remote-demo-data#identify-error-patterns).

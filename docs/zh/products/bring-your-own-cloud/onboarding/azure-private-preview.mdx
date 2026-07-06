@@ -1,0 +1,74 @@
+---
+title: 'Azure 私有预览'
+slug: /cloud/reference/byoc/onboarding/azure-private-preview
+sidebarTitle: 'Azure（私有预览）'
+keywords: ['BYOC', '云', '自备 Cloud', 'azure']
+description: '使用 Terraform 模块和跨租户身份验证，在 Azure 上为 ClickHouse BYOC 进行引导式配置'
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  Azure 上的 BYOC 目前处于 **私有预览** 阶段。如需参与，请[联系 ClickHouse 团队](https://clickhouse.com/cloud/bring-your-own-cloud)。
+</Note>
+
+<div id="overview">
+  ## 概述
+</div>
+
+Azure 上的 BYOC 让您可以在自己的 Azure 订阅中运行 ClickHouse。接入流程使用一个 Terraform 模块，用于配置跨租户身份验证；这是 ClickHouse Cloud 的预配器在您的租户和订阅中创建并管理 Azure 资源所必需的。
+
+部署的其他方面——例如[架构](/zh/products/bring-your-own-cloud/overview/architecture)、[网络安全](/zh/products/bring-your-own-cloud/reference/network-security)、[功能](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview#features)和[连接](/zh/products/bring-your-own-cloud/configuration/connect)——与 AWS 和 GCP 的 BYOC 方案大体相似；更多详情请参阅这些页面。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 用于托管 BYOC 部署的 Azure **订阅**和**租户**
+* 需要提供给 ClickHouse 团队的 **订阅 ID** 和 **租户 ID**
+
+<div id="onboarding">
+  ## 接入流程
+</div>
+
+<Steps>
+  <Step>
+    ### 1. 应用 Terraform 模块
+
+    要开始进行 Azure BYOC 接入，请在你的**目标租户和订阅**中应用 ClickHouse 提供的 [适用于 Azure 的 Terraform 模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure)。
+
+    所需变量和应用步骤请参考该模块的文档。应用完成后，该模块会在你的 Azure 环境中配置所需的身份和权限。
+  </Step>
+
+  <Step>
+    ### 2. 向 ClickHouse 提供 ID
+
+    请与 ClickHouse 团队共享以下信息：
+
+    * **目标订阅 ID** — 将创建 BYOC 资源的 Azure 订阅
+    * **目标租户 ID** — 拥有该订阅的 Azure AD (Entra) 租户
+    * **区域** — 你希望部署 ClickHouse 服务的 Azure 区域。
+    * **VNet CIDR 范围** — 你希望用于 BYOC VNet 的 IP 地址范围。
+
+    ClickHouse 团队将使用这些信息来创建 BYOC 基础设施并完成接入流程
+  </Step>
+</Steps>
+
+<div id="cross-tenant-auth">
+  ### 跨租户身份验证的工作原理
+</div>
+
+遵循 [Azure 关于跨租户身份验证的指南](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)，此 Terraform 模块会：
+
+1. **预配一个多租户应用程序**，并在目标租户中将其创建为 **企业应用程序** (服务主体)
+2. **为该应用程序分配所需权限**，并将范围限定在目标订阅内
+
+这样一来，ClickHouse Cloud 控制平面便可在你的订阅中创建和管理 Azure 资源 (例如资源组、AKS、存储和网络) ，而无需将你的 Azure 凭据存储在 ClickHouse 中。
+
+如需进一步了解 Azure 中的多租户应用和跨租户场景，请参阅：
+
+* [Microsoft Entra ID 中的单租户和多租户应用](https://learn.microsoft.com/en-us/entra/identity-platform/single-and-multi-tenant-apps)
+* [授权跨租户访问 (Azure SignalR 示例) ](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-howto-authorize-cross-tenant)

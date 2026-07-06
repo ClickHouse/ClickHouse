@@ -1,0 +1,373 @@
+---
+slug: /data-modeling/schema-design
+title: 'Diseño de esquemas'
+description: 'Optimización del esquema de ClickHouse para mejorar el rendimiento de las consultas'
+keywords: ['esquema', 'diseño de esquemas', 'optimización de consultas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Comprender un diseño de esquema eficaz es clave para optimizar el rendimiento de ClickHouse e implica tomar decisiones que a menudo conllevan concesiones; el enfoque óptimo depende de las consultas que se ejecuten, así como de factores como la frecuencia de actualización de los datos, los requisitos de latencia y el volumen de datos. Esta guía ofrece una visión general de las buenas prácticas de diseño de esquemas y de las técnicas de modelado de datos para optimizar el rendimiento de ClickHouse.
+
+<div id="stack-overflow-dataset">
+  ## Stack Overflow dataset
+</div>
+
+Para los ejemplos de esta guía, usamos un subconjunto del Stack Overflow dataset. Incluye todas las publicaciones, votos, usuarios, comentarios e insignias de Stack Overflow desde 2008 hasta abril de 2024. Estos datos están disponibles en Parquet con los esquemas que se muestran a continuación, en el bucket de S3 `s3://datasets-documentation/stackoverflow/parquet/`:
+
+> Las claves primarias y las relaciones indicadas no se aplican mediante restricciones (Parquet es un formato de archivo, no de tabla) y solo muestran cómo se relacionan los datos y qué claves únicas tienen.
+
+<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Esquema de Stack Overflow" />
+
+<br />
+
+El Stack Overflow dataset contiene varias tablas relacionadas. En cualquier tarea de modelado de datos, recomendamos a los usuarios centrarse primero en cargar su tabla principal. No tiene por qué ser necesariamente la tabla más grande, sino aquella sobre la que espera realizar la mayoría de las consultas analíticas. Esto le permitirá familiarizarse con los principales conceptos y tipos de ClickHouse, algo especialmente importante si proviene de un entorno principalmente OLTP. Es posible que esta tabla deba remodelarse a medida que se añadan tablas adicionales para aprovechar al máximo las funcionalidades de ClickHouse y obtener un rendimiento óptimo.
+
+El esquema anterior, deliberadamente, no es óptimo para los fines de esta guía.
+
+<div id="establish-initial-schema">
+  ## Establecer el esquema inicial
+</div>
+
+Dado que la tabla `posts` será el destino de la mayoría de las consultas analíticas, nos centraremos en definir un esquema para esta tabla. Estos datos están disponibles en el bucket público de S3 `s3://datasets-documentation/stackoverflow/parquet/posts/*.parquet`, con un archivo por año.
+
+> Cargar datos desde S3 en formato Parquet es la forma más habitual y recomendada de cargar datos en ClickHouse. ClickHouse está optimizado para procesar Parquet y puede llegar a leer e insertar decenas de millones de filas por segundo desde S3.
+
+ClickHouse ofrece la capacidad de inferir esquemas para identificar automáticamente los tipos de un dataset. Esto es compatible con todos los formatos de datos, incluido Parquet. Podemos aprovechar esta funcionalidad para identificar los tipos de ClickHouse de estos datos mediante la función de tabla s3 y el comando [`DESCRIBE`](/es/reference/statements/describe-table). Tenga en cuenta que a continuación usamos el patrón glob `*.parquet` para leer todos los archivos de la carpeta `stackoverflow/parquet/posts`.
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name──────────────────┬─type───────────────────────────┐
+│ Id                    │ Nullable(Int64)               │
+│ PostTypeId            │ Nullable(Int64)               │
+│ AcceptedAnswerId      │ Nullable(Int64)               │
+│ CreationDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ Score                 │ Nullable(Int64)               │
+│ ViewCount             │ Nullable(Int64)               │
+│ Body                  │ Nullable(String)              │
+│ OwnerUserId           │ Nullable(Int64)               │
+│ OwnerDisplayName      │ Nullable(String)              │
+│ LastEditorUserId      │ Nullable(Int64)               │
+│ LastEditorDisplayName │ Nullable(String)              │
+│ LastEditDate          │ Nullable(DateTime64(3, 'UTC')) │
+│ LastActivityDate      │ Nullable(DateTime64(3, 'UTC')) │
+│ Title                 │ Nullable(String)              │
+│ Tags                  │ Nullable(String)              │
+│ AnswerCount           │ Nullable(Int64)               │
+│ CommentCount          │ Nullable(Int64)               │
+│ FavoriteCount         │ Nullable(Int64)               │
+│ ContentLicense        │ Nullable(String)              │
+│ ParentId              │ Nullable(String)              │
+│ CommunityOwnedDate    │ Nullable(DateTime64(3, 'UTC')) │
+│ ClosedDate            │ Nullable(DateTime64(3, 'UTC')) │
+└───────────────────────┴────────────────────────────────┘
+```
+
+> La [función de tabla S3](/es/reference/functions/table-functions/s3) permite consultar directamente desde ClickHouse los datos almacenados en S3. Esta función es compatible con todos los formatos de archivo que admite ClickHouse.
+
+Esto nos proporciona un esquema inicial no optimizado. De forma predeterminada, ClickHouse los asigna a tipos Nullable equivalentes. Podemos crear una tabla de ClickHouse con estos tipos mediante un sencillo comando `CREATE EMPTY AS SELECT`.
+
+```sql
+CREATE TABLE posts
+ENGINE = MergeTree
+ORDER BY () EMPTY AS
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+Algunos puntos importantes:
+
+Nuestra tabla posts está vacía después de ejecutar este comando. No se ha cargado ningún dato.
+Hemos especificado MergeTree como motor de la tabla. MergeTree es el motor de tabla de ClickHouse más habitual y probablemente el que más uses. Es la navaja suiza de ClickHouse: puede manejar PB de datos y sirve para la mayoría de los casos de uso analíticos. Existen otros motores de tabla para casos de uso como CDC, que requieren admitir actualizaciones eficientes.
+
+La cláusula `ORDER BY ()` significa que no tenemos ningún índice y, más concretamente, ningún orden en nuestros datos. Más adelante hablaremos de esto. Por ahora, basta con saber que todas las consultas requerirán un escaneo lineal.
+
+Para confirmar que la tabla se ha creado:
+
+```sql
+SHOW CREATE TABLE posts
+
+CREATE TABLE posts
+(
+        `Id` Nullable(Int64),
+        `PostTypeId` Nullable(Int64),
+        `AcceptedAnswerId` Nullable(Int64),
+        `CreationDate` Nullable(DateTime64(3, 'UTC')),
+        `Score` Nullable(Int64),
+        `ViewCount` Nullable(Int64),
+        `Body` Nullable(String),
+        `OwnerUserId` Nullable(Int64),
+        `OwnerDisplayName` Nullable(String),
+        `LastEditorUserId` Nullable(Int64),
+        `LastEditorDisplayName` Nullable(String),
+        `LastEditDate` Nullable(DateTime64(3, 'UTC')),
+        `LastActivityDate` Nullable(DateTime64(3, 'UTC')),
+        `Title` Nullable(String),
+        `Tags` Nullable(String),
+        `AnswerCount` Nullable(Int64),
+        `CommentCount` Nullable(Int64),
+        `FavoriteCount` Nullable(Int64),
+        `ContentLicense` Nullable(String),
+        `ParentId` Nullable(String),
+        `CommunityOwnedDate` Nullable(DateTime64(3, 'UTC')),
+        `ClosedDate` Nullable(DateTime64(3, 'UTC'))
+)
+ENGINE = MergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY tuple()
+```
+
+Con el esquema inicial ya definido, podemos cargar los datos con un `INSERT INTO SELECT`, leyendo los datos mediante la función de tabla S3. A continuación se cargan los datos de `posts` en unos 2 min en una instancia de ClickHouse Cloud de 8 núcleos.
+
+```sql
+INSERT INTO posts SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 148.140 sec. Processed 59.82 million rows, 38.07 GB (403.80 thousand rows/s., 257.00 MB/s.)
+```
+
+> La consulta anterior carga 60 millones de filas. Aunque para ClickHouse es un volumen pequeño, los usuarios con conexiones a internet más lentas quizá prefieran cargar un subconjunto de los datos. Para ello, basta con especificar los años que se quieren cargar mediante un patrón glob; por ejemplo, `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2008.parquet` o `https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/{2008, 2009}.parquet`. Consulte [aquí](/es/reference/functions/table-functions/file#globs-in-path) cómo pueden usarse los patrones glob para seleccionar subconjuntos de archivos.
+
+<div id="optimizing-types">
+  ## Optimización de tipos
+</div>
+
+Uno de los secretos del rendimiento de las consultas de ClickHouse es la compresión.
+
+Menos datos en disco significan menos E/S y, por tanto, consultas e inserciones más rápidas. La sobrecarga en CPU de cualquier algoritmo de compresión, en la mayoría de los casos, se ve ampliamente compensada por la reducción de E/S. Por lo tanto, al trabajar para garantizar que las consultas de ClickHouse sean rápidas, el primer objetivo debería ser mejorar la compresión de los datos.
+
+> Si quiere entender por qué ClickHouse comprime tan bien los datos, le recomendamos [este artículo](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema). En resumen, como base de datos orientada a columnas, los valores se escriben por columnas. Si estos valores están ordenados, los valores iguales quedan adyacentes entre sí. Los algoritmos de compresión aprovechan los patrones contiguos en los datos. Además, ClickHouse cuenta con códec y tipos de datos granulares que permiten ajustar aún más las técnicas de compresión.
+
+La compresión en ClickHouse se ve afectada por 3 factores principales: la clave de ordenación, los tipos de datos y los códec utilizados. Todo ello se configura a través del esquema.
+
+La mayor mejora inicial en compresión y query performance puede lograrse mediante un sencillo proceso de optimización de tipos. Se pueden aplicar unas pocas reglas simples para optimizar el esquema:
+
+* **Use tipos estrictos** - Nuestro esquema inicial usaba Strings para muchas columnas claramente numéricas. El uso de los tipos correctos garantiza la semántica esperada al filtrar y agregar. Lo mismo se aplica a los tipos de fecha, que se han proporcionado correctamente en los archivos Parquet.
+* **Evite las columnas Nullable** - De forma predeterminada, se ha asumido que las columnas anteriores eran Null. El tipo Nullable permite a las consultas distinguir entre un valor vacío y un valor Null. Esto crea una columna independiente de tipo UInt8. Esta columna adicional debe procesarse cada vez que un usuario trabaja con una columna nullable. Esto incrementa el espacio de almacenamiento utilizado y casi siempre afecta negativamente al rendimiento de consulta. Use Nullable solo si existe una diferencia entre el valor vacío predeterminado para un tipo y Null. Por ejemplo, un valor de 0 para los valores vacíos en la columna `ViewCount` probablemente será suficiente para la mayoría de las consultas y no afectará a los resultados. Si los valores vacíos deben tratarse de forma diferente, a menudo también pueden excluirse de las consultas con un filter.
+* **Use la precisión mínima para los tipos numéricos** - ClickHouse dispone de varios tipos numéricos diseñados para distintos rangos y niveles de precisión. Intente siempre minimizar el número de bits utilizados para representar una columna. Además de enteros de distinto tamaño, p. ej., Int16, ClickHouse ofrece variantes sin signo cuyo valor mínimo es 0. Estas pueden permitir usar menos bits para una columna; por ejemplo, UInt16 tiene un valor máximo de 65535, el doble que Int16. Siempre que sea posible, prefiera estos tipos frente a variantes con signo de mayor tamaño.
+* **Precisión mínima para tipos de fecha** - ClickHouse admite varios tipos de fecha y fecha-hora. Date y Date32 pueden utilizarse para almacenar fechas puras; este último admite un rango de fechas mayor a costa de usar más bits. DateTime y DateTime64 ofrecen compatibilidad con valores de fecha y hora. DateTime está limitado a granularidad de segundos y usa 32 bits. DateTime64, como su nombre sugiere, usa 64 bits pero ofrece compatibilidad hasta granularidad de nanosegundos. Como siempre, elija la versión más gruesa que sea aceptable para las consultas, minimizando el número de bits necesarios.
+* **Use LowCardinality** - Las columnas de Number, String, Date o DateTime con un número bajo de valores únicos pueden codificarse potencialmente usando el tipo LowCardinality. Este diccionario codifica valores, reduciendo el tamaño en disco. Considérelo para columnas con menos de 10k valores únicos.
+* **FixedString para casos especiales** - Las Strings de longitud fija pueden codificarse con el tipo FixedString, p. ej., códigos de idioma y de divisa. Esto es eficiente cuando los datos tienen una longitud de exactamente N bytes. En todos los demás casos, es probable que reduzca la eficiencia y se prefiere LowCardinality.
+* **Enums para validación de datos** - El tipo Enum puede utilizarse para codificar eficientemente tipos enumerados. Los Enums pueden ser de 8 o 16 bits, según el número de valores únicos que deban almacenar. Considere usarlo si necesita la validación asociada en insert time (los valores no declarados serán rechazados) o si desea realizar consultas que aprovechen un orden natural en los valores Enum; por ejemplo, imagine una columna de comentarios que contenga respuestas de usuarios `Enum(':(' = 1, ':|' = 2, ':)' = 3)`.
+
+> Consejo: Para encontrar el rango de todas las columnas y el número de valores distintos, puede usar la consulta simple `SELECT * APPLY min, * APPLY  max, * APPLY uniq FROM table FORMAT Vertical`. Recomendamos ejecutarla sobre un subconjunto más pequeño de los datos, ya que puede resultar costosa. Esta consulta requiere que los valores numéricos estén definidos al menos como tales para obtener un resultado preciso; es decir, no como String.
+
+Al aplicar estas reglas simples a nuestra tabla Posts, podemos identificar un tipo óptimo para cada columna:
+
+| Columna                 | Es numérica | Mín., máx.                                                   | Valores únicos | Nulos | Comentario                                                                                                                   | Tipo optimizado                                                                                                                                              |
+| ----------------------- | ----------- | ------------------------------------------------------------ | -------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PostTypeId`            | Sí          | 1, 8                                                         | 8              | No    |                                                                                                                              | `Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8)` |
+| `AcceptedAnswerId`      | Sí          | 0, 78285170                                                  | 12282094       | Sí    | Distinguir NULL del valor 0                                                                                                  | UInt32                                                                                                                                                       |
+| `CreationDate`          | No          | 2008-07-31 21:42:52.667000000, 2024-03-31 23:59:17.697000000 | *              | No    | No se requiere granularidad de milisegundos; use DateTime                                                                    | DateTime                                                                                                                                                     |
+| `Score`                 | Sí          | -217, 34970                                                  | 3236           | No    |                                                                                                                              | Int32                                                                                                                                                        |
+| `ViewCount`             | Sí          | 2, 13962748                                                  | 170867         | No    |                                                                                                                              | UInt32                                                                                                                                                       |
+| `Body`                  | No          | -                                                            | *              | No    |                                                                                                                              | String                                                                                                                                                       |
+| `OwnerUserId`           | Sí          | -1, 4056915                                                  | 6256237        | Sí    |                                                                                                                              | Int32                                                                                                                                                        |
+| `OwnerDisplayName`      | No          | -                                                            | 181251         | Sí    | Considerar NULL como una cadena vacía                                                                                        | String                                                                                                                                                       |
+| `LastEditorUserId`      | Sí          | -1, 9999993                                                  | 1104694        | Sí    | 0 es un valor no utilizado que puede usarse para NULL                                                                        | Int32                                                                                                                                                        |
+| `LastEditorDisplayName` | No          | *                                                            | 70952          | Sí    | Considere NULL como una cadena vacía. Se probó LowCardinality y no aportó beneficios                                         | String                                                                                                                                                       |
+| `LastEditDate`          | No          | 2008-08-01 13:24:35.051000000, 2024-04-06 21:01:22.697000000 | -              | No    | No se requiere granularidad de milisegundos; use DateTime                                                                    | DateTime                                                                                                                                                     |
+| `LastActivityDate`      | No          | 2008-08-01 12:19:17.417000000, 2024-04-06 21:01:22.697000000 | *              | No    | No se requiere granularidad de milisegundos; use DateTime                                                                    | DateTime                                                                                                                                                     |
+| `Title`                 | No          | -                                                            | *              | No    | Considerar NULL como una cadena vacía                                                                                        | String                                                                                                                                                       |
+| `Etiquetas`             | No          | -                                                            | *              | No    | Considerar NULL como una cadena vacía                                                                                        | String                                                                                                                                                       |
+| `AnswerCount`           | Sí          | 0, 518                                                       | 216            | No    | Considerar NULL y 0 como equivalentes                                                                                        | UInt16                                                                                                                                                       |
+| `CommentCount`          | Sí          | 0, 135                                                       | 100            | No    | Considerar NULL y 0 equivalentes                                                                                             | UInt8                                                                                                                                                        |
+| `FavoriteCount`         | Sí          | 0, 225                                                       | 6              | Sí    | Tratar NULL y 0 como equivalentes                                                                                            | UInt8                                                                                                                                                        |
+| `ContentLicense`        | No          | -                                                            | 3              | No    | LowCardinality supera a FixedString en rendimiento                                                                           | LowCardinality(String)                                                                                                                                       |
+| `ParentId`              | No          | *                                                            | 20696028       | Sí    | Considere NULL como una cadena vacía                                                                                         | String                                                                                                                                                       |
+| `CommunityOwnedDate`    | No          | 2008-08-12 04:59:35.017000000, 2024-04-01 05:36:41.380000000 | -              | Sí    | Considere 1970-01-01 como valor predeterminado para los valores NULL. No se requiere precisión de milisegundos; use DateTime | DateTime                                                                                                                                                     |
+| `ClosedDate`            | No          | 2008-09-04 20:56:44, 2024-04-06 18:49:25.393000000           | *              | Sí    | Considere usar 1970-01-01 como valor predeterminado para los NULL. No se requiere precisión de milisegundos; use DateTime    | DateTime                                                                                                                                                     |
+
+<br />
+
+Lo anterior nos da el siguiente esquema:
+
+```sql
+CREATE TABLE posts_v2
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+Podemos poblarla con un sencillo `INSERT INTO SELECT`, leyendo los datos de nuestra tabla anterior e insertándolos en esta:
+
+```sql
+INSERT INTO posts_v2 SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+No conservamos ningún valor NULL en nuestro nuevo esquema. El insert anterior los convierte implícitamente en los valores predeterminados de sus respectivos tipos: 0 para los enteros y un valor vacío para las cadenas. ClickHouse también convierte automáticamente cualquier valor numérico a la precisión de destino.
+Claves primarias (de ordenación) en ClickHouse
+Los usuarios que vienen de bases de datos OLTP suelen buscar el concepto equivalente en ClickHouse.
+
+<div id="choosing-an-ordering-key">
+  ## Elegir una clave de ordenación
+</div>
+
+A la escala a la que suele usarse ClickHouse, la eficiencia en el uso de memoria y disco es fundamental. Los datos se escriben en las tablas de ClickHouse en fragmentos conocidos como partes, y se aplican reglas para fusionar esas partes en segundo plano. En ClickHouse, cada parte tiene su propio índice primario. Cuando se fusionan las partes, también se fusionan los índices primarios de la parte resultante. El índice primario de una parte tiene una entrada de índice por cada grupo de filas; esta técnica se denomina indexación dispersa.
+
+<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="Indexación dispersa en ClickHouse" />
+
+La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en la compresión, lo que a su vez puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban de forma contigua permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de manera más eficaz.
+
+> Todas las columnas de una tabla se ordenarán según el valor de la clave de ordenación especificada, independientemente de si están incluidas en la propia clave. Por ejemplo, si `CreationDate` se utiliza como clave, el orden de los valores en todas las demás columnas corresponderá al orden de los valores de la columna `CreationDate`. Se pueden especificar varias claves de ordenación; esto ordenará con la misma semántica que una cláusula `ORDER BY` en una consulta `SELECT`.
+
+Se pueden aplicar algunas reglas sencillas para ayudar a elegir una clave de ordenación. A veces, las siguientes pueden entrar en conflicto, así que considérelas en este orden. Con este proceso puede identificar varias claves candidatas; normalmente, 4-5 suelen ser suficientes:
+
+* Seleccione columnas que se ajusten a sus filtros habituales. Si una columna se utiliza con frecuencia en cláusulas `WHERE`, priorice incluirla en su clave frente a aquellas que se usan con menos frecuencia.
+  Prefiera columnas que ayuden a excluir un gran porcentaje del total de filas al filtrar, reduciendo así la cantidad de datos que es necesario leer.
+* Prefiera columnas que probablemente estén muy correlacionadas con otras columnas de la tabla. Esto ayudará a garantizar que esos valores también se almacenen de forma contigua, lo que mejora la compresión.
+  Las operaciones `GROUP BY` y `ORDER BY` sobre columnas incluidas en la clave de ordenación pueden ser más eficientes en memoria.
+
+Al identificar el subconjunto de columnas para la clave de ordenación, declare las columnas en un orden específico. Este orden puede influir significativamente tanto en la eficiencia del filtrado sobre las columnas secundarias de la clave en las consultas como en la relación de compresión de los archivos de datos de la tabla. En general, lo mejor es ordenar las claves por cardinalidad ascendente. Esto debe equilibrarse con el hecho de que el filtrado en columnas que aparecen más tarde en la clave de ordenación será menos eficiente que el filtrado en las que aparecen antes en la tupla. Equilibre estos comportamientos y tenga en cuenta sus patrones de acceso (y, lo más importante, pruebe variantes).
+
+<div id="example">
+  ### Ejemplo
+</div>
+
+Aplicando las directrices anteriores a nuestra tabla `posts`, supongamos que nuestros usuarios desean realizar análisis con filtros por fecha y tipo de publicación; por ejemplo:
+
+&quot;¿Qué preguntas tuvieron más comentarios en los últimos 3 meses?&quot;.
+
+La consulta para esta pregunta usando nuestra tabla `posts_v2` anterior, con tipos optimizados pero sin clave de ordenación:
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v2
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────────┬─CommentCount─┐
+│ 78203063 │ How to avoid default initialization of objects in std::vector?     │               74 │
+│ 78183948 │ About memory barrier                                               │               52 │
+│ 77900279 │ Speed Test for Buffer Alignment: IBM's PowerPC results vs. my CPU │        49 │
+└──────────┴───────────────────────────────────────────────────────────────────┴──────────────
+
+10 rows in set. Elapsed: 0.070 sec. Processed 59.82 million rows, 569.21 MB (852.55 million rows/s., 8.11 GB/s.)
+Peak memory usage: 429.38 MiB.
+```
+
+> La consulta aquí es muy rápida, aunque se hayan escaneado linealmente los 60 millones de filas: ClickHouse es así de rápido :) Tendrás que confiar en nosotros: las claves de ordenación merecen la pena a escala de TB y PB.
+
+Seleccionemos las columnas `PostTypeId` y `CreationDate` como nuestras claves de ordenación.
+
+Quizá, en nuestro caso, esperemos que los usuarios siempre filtren por `PostTypeId`. Tiene una cardinalidad de 8 y representa la elección lógica como primera entrada de nuestra clave de ordenación. Dado que es probable que filtrar con granularidad de fecha sea suficiente (aunque también seguirá beneficiando a los filtros de fecha y hora), usamos `toDate(CreationDate)` como segundo componente de nuestra clave. Esto también producirá un índice más pequeño, ya que una fecha puede representarse con 16, lo que acelera el filtrado. La entrada final de nuestra clave es `CommentCount`, para ayudar a encontrar las publicaciones con más comentarios (la ordenación final).
+
+```sql
+CREATE TABLE posts_v3
+(
+        `Id` Int32,
+        `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime,
+        `Score` Int32,
+        `ViewCount` UInt32,
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime,
+        `LastActivityDate` DateTime,
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16,
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime,
+        `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+COMMENT 'Ordering Key'
+
+--rellenar la tabla desde la tabla existente
+
+INSERT INTO posts_v3 SELECT * FROM posts_v2
+```
+
+```response
+0 rows in set. Elapsed: 158.074 sec. Processed 59.82 million rows, 76.21 GB (378.42 thousand rows/s., 482.14 MB/s.)
+Peak memory usage: 6.41 GiB.
+```
+
+La consulta anterior reduce el tiempo de respuesta en más de 3 veces:
+
+```sql
+SELECT
+    Id,
+    Title,
+    CommentCount
+FROM posts_v3
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+ORDER BY CommentCount DESC
+LIMIT 3
+```
+
+```response
+10 rows in set. Elapsed: 0.020 sec. Processed 290.09 thousand rows, 21.03 MB (14.65 million rows/s., 1.06 GB/s.)
+```
+
+Para quienes estén interesados en las mejoras de compresión logradas con el uso de tipos específicos y claves de ordenación adecuadas, consulte [La compresión en ClickHouse](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse). Si necesita mejorar aún más la compresión, también le recomendamos la sección [Cómo elegir el códec de compresión de columna adecuado](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).
+
+<div id="next-data-modeling-techniques">
+  ## Siguiente: Técnicas de modelado de datos
+</div>
+
+Hasta ahora, solo hemos migrado una tabla. Aunque esto nos ha permitido introducir algunos conceptos fundamentales de ClickHouse, por desgracia la mayoría de los esquemas no son tan simples.
+
+En las demás guías que se enumeran a continuación, exploraremos varias técnicas para reestructurar nuestro esquema más amplio y obtener un rendimiento de consulta óptimo en ClickHouse. A lo largo de este proceso, buscamos que `Posts` siga siendo nuestra tabla central, sobre la que se ejecuten la mayoría de las consultas analíticas. Aunque las demás tablas pueden seguir consultándose de forma aislada, asumimos que la mayor parte de la analítica se realizará en el contexto de `posts`.
+
+> En esta sección, usamos variantes optimizadas de nuestras otras tablas. Aunque proporcionamos sus esquemas, por brevedad omitimos las decisiones que se tomaron. Estas se basan en las reglas descritas anteriormente, y dejamos al lector la tarea de inferirlas.
+
+Todos los enfoques siguientes buscan minimizar la necesidad de usar JOINs para optimizar las lecturas y mejorar el rendimiento de las consultas. Aunque ClickHouse admite plenamente los JOINs, recomendamos usarlos con moderación (2 o 3 tablas en una consulta con JOIN está bien) para lograr un rendimiento óptimo.
+
+> ClickHouse no tiene el concepto de claves foráneas. Esto no impide los joins, pero significa que la integridad referencial queda a cargo del usuario a nivel de aplicación. En sistemas OLAP como ClickHouse, la integridad de los datos suele gestionarse a nivel de la aplicación o durante el proceso de ingestión de datos, en lugar de imponerse desde la propia base de datos, donde supone una sobrecarga considerable. Este enfoque permite una mayor flexibilidad y una inserción de datos más rápida. Esto encaja con el enfoque de ClickHouse en la velocidad y la escalabilidad de las consultas de lectura e inserción sobre conjuntos de datos muy grandes.
+
+Para minimizar el uso de joins durante la consulta, los usuarios disponen de varias herramientas y enfoques:
+
+* [**Desnormalización de datos**](/es/guides/clickhouse/data-modelling/denormalization) - Desnormalice los datos combinando tablas y usando tipos complejos para relaciones que no sean 1:1. Esto suele implicar trasladar los joins del momento de la consulta al momento de la inserción.
+* [**Dictionaries**](/es/concepts/features/dictionaries/index) - Una funcionalidad específica de ClickHouse para gestionar joins directos y búsquedas de clave-valor.
+* [**Vistas materializadas incrementales**](/es/concepts/features/materialized-views/incremental-materialized-view) - Una funcionalidad de ClickHouse para trasladar el coste de un cálculo del momento de la consulta al momento de la inserción, incluida la capacidad de calcular valores agregados de forma incremental.
+* [**Vistas materializadas actualizables**](/es/concepts/features/materialized-views/refreshable-materialized-view) - Al igual que las vistas materializadas utilizadas en otros productos de base de datos, permiten calcular periódicamente los resultados de una consulta y mantener el resultado en caché.
+
+Exploramos cada uno de estos enfoques en su guía correspondiente, destacando cuándo conviene usar cada uno con un ejemplo que muestra cómo puede aplicarse para resolver preguntas del Stack Overflow dataset.

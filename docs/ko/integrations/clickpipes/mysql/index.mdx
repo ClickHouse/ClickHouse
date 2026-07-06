@@ -1,0 +1,144 @@
+---
+sidebarTitle: 'MySQL에서 ClickHouse로 데이터 수집'
+description: 'MySQL 또는 MariaDB 데이터베이스에서 ClickHouse Cloud로 데이터를 원활하게 수집합니다.'
+slug: /integrations/clickpipes/mysql
+title: 'MySQL에서 ClickHouse로 데이터 수집(CDC 사용)'
+doc_type: 'guide'
+keywords: ['MySQL', 'ClickPipes', 'CDC', '변경 데이터 캡처', '데이터베이스 복제']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  ClickPipes를 통해 MySQL에서 ClickHouse Cloud로 데이터를 수집하는 기능은 공개 베타입니다.
+</Info>
+
+MySQL ClickPipe는 MySQL 및 MariaDB 데이터베이스의 데이터를 ClickHouse Cloud로 수집할 수 있는 완전관리형의 안정적인 방식을 제공합니다. 일회성 수집을 위한 **대량 로드**와 지속적인 수집을 위한 **Change Data Capture (CDC)**를 모두 지원합니다.
+
+MySQL ClickPipes는 ClickPipes UI를 사용해 수동으로 배포하고 관리할 수 있으며, [OpenAPI](/ko/integrations/clickpipes/programmatic-access/openapi) 및 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)을 사용해 프로그래밍 방식으로도 배포하고 관리할 수 있습니다.
+
+<div id="prerequisites">
+  ## 사전 준비 사항
+</div>
+
+[//]: # "TODO 일회성 수집 파이프에는 binlog 복제 구성이 필요하지 않습니다. 이는 과거에 혼란을 초래한 적이 있으므로, 사용자가 부담을 느끼지 않도록 대량 로드에 필요한 최소 요구 사항도 제공해야 합니다."
+
+시작하려면 먼저 MySQL 데이터베이스가 binlog 복제에 맞게 올바르게 구성되어 있는지 확인해야 합니다. 구성 단계는 MySQL 배포 방식에 따라 다르므로, 아래의 해당 가이드를 따르십시오:
+
+<div id="supported-data-sources">
+  ### 지원되는 데이터 소스
+</div>
+
+| 이름                                                 | 로고 | 세부 정보                                                                                                              |
+| -------------------------------------------------- | -- | ------------------------------------------------------------------------------------------------------------------ |
+| **Amazon RDS MySQL** <br /> *1회 로드, CDC*           |    | [Amazon RDS MySQL](/ko/integrations/clickpipes/mysql/source/rds) 구성 가이드를 따르세요.                                        |
+| **Amazon Aurora MySQL** <br /> *1회 로드, CDC*        |    | [Amazon Aurora MySQL](/ko/integrations/clickpipes/mysql/source/aurora) 구성 가이드를 따르세요.                                  |
+| **Cloud SQL for MySQL** <br /> *1회 로드, CDC*        |    | [Cloud SQL for MySQL](/ko/integrations/clickpipes/mysql/source/gcp) 구성 가이드를 따르세요.                                     |
+| **Azure Flexible Server for MySQL** <br /> *1회 로드* |    | [Azure Flexible Server for MySQL](/ko/integrations/clickpipes/mysql/source/azure-flexible-server-mysql) 구성 가이드를 따르세요. |
+| **자체 호스팅 MySQL** <br /> *1회 로드, CDC*               |    | [Generic MySQL](/ko/integrations/clickpipes/mysql/source/generic) 구성 가이드를 따르세요.                                       |
+| **Amazon RDS MariaDB** <br /> *1회 로드, CDC*         |    | [Amazon RDS MariaDB](/ko/integrations/clickpipes/mysql/source/rds-maria) 구성 가이드를 따르세요.                                |
+| **자체 호스팅 MariaDB** <br /> *1회 로드, CDC*             |    | [Generic MariaDB](/ko/integrations/clickpipes/mysql/source/generic-maria) 구성 가이드를 따르세요.                               |
+
+소스 MySQL 데이터베이스 설정이 완료되면 ClickPipe 생성을 계속할 수 있습니다.
+
+<div id="create-your-clickpipe">
+  ## ClickPipe 생성
+</div>
+
+ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 계정이 없다면 [여기](https://cloud.clickhouse.com/)에서 가입할 수 있습니다.
+
+[//]: # "   TODO update image here"
+
+1. ClickHouse Cloud 콘솔에서 ClickHouse Cloud 서비스로 이동하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 서비스" size="lg" border />
+
+2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 다음 &quot;Set up a ClickPipe&quot;를 클릭하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+
+3. `MySQL CDC` 타일을 선택하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="MySQL 선택" size="lg" border />
+
+<div id="add-your-source-mysql-database-connection">
+  ### 소스 MySQL 데이터베이스 연결 추가
+</div>
+
+4. 사전 준비 단계에서 구성한 소스 MySQL 데이터베이스의 연결 정보를 입력합니다.
+
+<Info>
+  연결 정보를 추가하기 전에 방화벽 규칙에서 ClickPipes IP 주소를 허용 목록에 추가했는지 확인하십시오. 다음 페이지에서 [ClickPipes IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 확인할 수 있습니다.
+  자세한 내용은 [이 페이지 상단](#prerequisites)에 연결된 소스 MySQL 설정 가이드를 참조하십시오.
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="연결 정보 입력" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### (선택 사항) SSH 터널링 설정하기
+</div>
+
+소스 MySQL 데이터베이스에 공개적으로 접속할 수 없는 경우 SSH 터널링 정보를 지정할 수 있습니다.
+
+1. &quot;Use SSH Tunnelling&quot; 토글을 활성화합니다.
+
+2. SSH 연결 정보를 입력합니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 터널링" size="lg" border />
+
+3. 키 기반 authentication을 사용하려면 &quot;Revoke and generate key pair&quot;를 클릭하여 새 키 쌍을 생성한 다음, 생성된 public key를 SSH server의 `~/.ssh/authorized_keys`에 복사합니다.
+
+4. 연결을 확인하려면 &quot;Verify Connection&quot;을 클릭합니다.
+
+<Note>
+  ClickPipes가 SSH 터널을 설정할 수 있도록 SSH 배스천 호스트의 방화벽 규칙에서 [ClickPipes IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 허용 목록에 추가하십시오.
+</Note>
+
+연결 정보를 모두 입력한 후 `다음`을 클릭합니다.
+
+<div id="advanced-settings">
+  #### 고급 설정 구성
+</div>
+
+필요한 경우 고급 설정을 구성할 수 있습니다. 각 설정에 대한 간단한 설명은 다음과 같습니다.
+
+* **Sync interval**: ClickPipes가 변경 사항을 확인하기 위해 원본 데이터베이스를 폴링하는 인터벌입니다. 이 값은 대상 ClickHouse 서비스의 비용에 영향을 미치므로, 비용에 민감한 경우 더 큰 값(`3600` 초과)으로 유지하는 것이 좋습니다.
+* **Parallel threads for initial load**: 초기 스냅샷을 가져오는 데 사용할 병렬 worker 수입니다. 테이블 수가 많을 때 초기 스냅샷을 가져오는 데 사용할 병렬 worker 수를 제어하는 데 유용합니다. 이 설정은 테이블별로 적용됩니다.
+* **Pull batch size**: 단일 batch에서 가져올 행 수입니다. 이 설정은 best effort 기준으로 적용되므로, 모든 경우에 항상 반영되지는 않을 수 있습니다.
+* **Snapshot number of rows per partition**: 초기 스냅샷 중 각 파티션에서 가져올 행 수입니다. 테이블의 행 수가 많을 때 각 파티션에서 가져오는 행 수를 제어하는 데 유용합니다.
+* **Snapshot number of tables in parallel**: 초기 스냅샷 중 병렬로 가져올 테이블 수입니다. 테이블 수가 많을 때 병렬로 가져오는 테이블 수를 제어하는 데 유용합니다.
+
+<div id="configure-the-tables">
+  ### 테이블 구성
+</div>
+
+5. 여기에서 ClickPipe의 대상 데이터베이스를 선택할 수 있습니다. 기존 데이터베이스를 선택하거나 새 데이터베이스를 만들 수 있습니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="대상 데이터베이스 선택" size="lg" border />
+
+6. 원본 MySQL 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경하거나 특정 컬럼을 제외할 수도 있습니다.
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### 권한을 검토하고 ClickPipe를 시작합니다
+</div>
+
+7. 권한 드롭다운에서 &quot;Full access&quot; 역할을 선택한 다음 &quot;Complete Setup&quot;을 클릭하세요.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
+
+마지막으로, 일반적으로 발생하는 문제와 해결 방법에 대한 자세한 내용은 [&quot;ClickPipes for MySQL FAQ&quot;](/ko/integrations/clickpipes/mysql/faq) 페이지를 참조하세요.
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+[//]: # "TODO 기존 PostgreSQL용 가이드와 유사한 MySQL 전용 마이그레이션 가이드와 Best Practices를 작성합니다. 현재 마이그레이션 가이드가 MySQL 테이블 엔진을 안내하고 있는데, 이는 적절하지 않습니다."
+
+MySQL에서 ClickHouse Cloud로 데이터를 복제하도록 ClickPipe 설정을 완료했다면, 이제 최적의 성능을 위해 데이터를 어떻게 쿼리하고 모델링할지에 집중할 수 있습니다. MySQL CDC와 문제 해결에 관한 일반적인 질문은 [MySQL FAQs 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.

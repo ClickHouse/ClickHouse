@@ -1,5 +1,7 @@
 #include <cerrno>
 #include <ctime>
+#include <algorithm>
+#include <limits>
 #include <optional>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -10,6 +12,7 @@
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Common/filesystemHelpers.h>
+#include <poll.h>
 #include <sys/stat.h>
 #include <Interpreters/Context.h>
 
@@ -146,6 +149,34 @@ void ReadBufferFromFileDescriptor::prefetch(Priority)
     if (0 != posix_fadvise(fd, file_offset_of_buffer_end, internal_buffer.size(), POSIX_FADV_WILLNEED))
         throw ErrnoException(ErrorCodes::CANNOT_ADVISE, "Cannot posix_fadvise");
 #endif
+}
+
+bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
+{
+    if (hasPendingData())
+        return true;
+
+    pollfd poll_fd{};
+    poll_fd.fd = fd;
+    poll_fd.events = POLLIN | POLLPRI;
+
+    const auto timeout_milliseconds = static_cast<int>(
+        std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+
+    int result = 0;
+    do
+    {
+        result = ::poll(&poll_fd, 1, timeout_milliseconds);
+    } while (result < 0 && errno == EINTR);
+
+    if (result < 0)
+    {
+        ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+        ErrnoException::throwFromPath(
+            ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR, getFileName(), "Cannot poll file {}", getFileName());
+    }
+
+    return result > 0;
 }
 
 

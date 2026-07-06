@@ -11,6 +11,12 @@
 /// Maps tag name → list of znode paths created with that tag during setup.
 using TaggedPaths = std::unordered_map<std::string, std::vector<std::string>>;
 
+/// Returns child names of a znode by path. Used by PathGetter to resolve
+/// `children_of` references during generator startup. The default
+/// implementation (in Runner) queries a running Keeper; the storage-only
+/// runner supplies a callable that reads from an in-process KeeperStorage.
+using ListChildrenFn = std::function<std::vector<std::string>(const std::string &)>;
+
 
 struct NumberGetter
 {
@@ -55,7 +61,7 @@ struct PathGetter
     std::string getPath() const;
     std::string description() const;
 
-    void initialize(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths = nullptr);
+    void initialize(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setSeed(uint64_t seed) { rng.seed(seed); }
 private:
     std::vector<std::string> parent_paths;
@@ -74,8 +80,8 @@ Coordination::ACLs getDefaultACLs();
 struct ZooKeeperRequestWithCallbacks
 {
     Coordination::ZooKeeperRequestPtr request;
-    std::vector<std::function<void()>> on_success_callbacks;
-    std::vector<std::function<void()>> on_failure_callbacks;
+    /// Response may be nullptr, meaning some error.
+    std::function<void(const Coordination::Response *)> callback {};
 };
 
 struct RequestGenerator
@@ -88,7 +94,7 @@ struct RequestGenerator
 
     std::string description();
 
-    void startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths = nullptr);
+    void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setSeed(uint64_t seed);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
 
@@ -97,7 +103,7 @@ private:
     virtual void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) = 0;
     virtual std::string descriptionImpl() = 0;
     virtual ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) = 0;
-    virtual void startupImpl(Coordination::ZooKeeper &, const TaggedPaths *) {}
+    virtual void startupImpl(const ListChildrenFn &, const TaggedPaths *) {}
     virtual void setSeedImpl(uint64_t) {}
     virtual void setWatchCallbackImpl(Coordination::WatchCallbackPtr) {}
 
@@ -115,7 +121,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths) override;
+    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setSeedImpl(uint64_t seed) override;
 
     PathGetter parent_path;
@@ -140,7 +146,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths) override;
+    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
@@ -153,7 +159,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths) override;
+    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
@@ -168,7 +174,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths) override;
+    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setSeedImpl(uint64_t seed) override;
 
     PathGetter path;
@@ -187,7 +193,7 @@ struct RequestGetter
 
     RequestGeneratorPtr getRequestGenerator() const;
     std::string description() const;
-    void startup(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths = nullptr);
+    void startup(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths = nullptr);
     void setSeed(uint64_t seed);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     const std::vector<RequestGeneratorPtr> & requestGenerators() const;
@@ -204,7 +210,7 @@ private:
     void getFromConfigImpl(const std::string & key, const Poco::Util::AbstractConfiguration & config) override;
     std::string descriptionImpl() override;
     ZooKeeperRequestWithCallbacks generateImpl(const Coordination::ACLs & acls) override;
-    void startupImpl(Coordination::ZooKeeper & zookeeper, const TaggedPaths * tagged_paths) override;
+    void startupImpl(const ListChildrenFn & list_children, const TaggedPaths * tagged_paths) override;
     void setSeedImpl(uint64_t seed) override;
     void setWatchCallbackImpl(Coordination::WatchCallbackPtr callback) override;
 
@@ -217,7 +223,7 @@ class Generator
 public:
     Generator() = default;
 
-    void startup(const Poco::Util::AbstractConfiguration & config, Coordination::ZooKeeper & zookeeper, size_t thread_idx, const TaggedPaths * tagged_paths = nullptr);
+    void startup(const Poco::Util::AbstractConfiguration & config, const ListChildrenFn & list_children, size_t thread_idx, const TaggedPaths * tagged_paths = nullptr);
     void setWatchCallback(Coordination::WatchCallbackPtr callback);
     ZooKeeperRequestWithCallbacks generate();
 

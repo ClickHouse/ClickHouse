@@ -630,7 +630,11 @@ void AvroConfluentRowOutputFormat::write(const Columns & columns, size_t row_num
 {
     if (!schema_registered)
     {
-        schema_id = schema_registry->registerSchema(settings.avro.output_confluent_subject, serializer.getSchema(), settings.avro.schema_registry_timeouts);
+        schema_id = schema_registry->registerSchema(
+            settings.avro.output_confluent_subject,
+            serializer.getSchema(),
+            settings.avro.schema_registry_timeouts,
+            settings.avro.schema_registry_retry);
         schema_registered = true;
     }
 

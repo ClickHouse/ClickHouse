@@ -1,3 +1,7 @@
+-- Tags: no-parallel
+-- Tag no-parallel: depends on the server-level query condition cache entry written by the
+-- pre-warm query still being resident for the measured query (same reason as 04065, 04275).
+
 -- Previously, the logs looked like this:
 --
 -- (SelectExecutor): Key condition: unknown

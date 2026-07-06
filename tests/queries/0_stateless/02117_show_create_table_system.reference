@@ -1,7 +1,12 @@
 CREATE TABLE system.aggregate_function_combinators
 (
     `name` String,
-    `is_internal` UInt8
+    `is_internal` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemAggregateFunctionCombinators
 COMMENT 'Contains a list of all available aggregate function combinators, which could be applied to aggregate functions and change the way they work.'
@@ -112,6 +117,17 @@ CREATE TABLE system.current_roles
 )
 ENGINE = SystemCurrentRoles
 COMMENT 'Contains active roles of a current user. SET ROLE changes the contents of this table.'
+CREATE TABLE system.data_skipping_index_types
+(
+    `name` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDataSkippingIndexTypes
+COMMENT 'Contains a list of all available data skipping index types along with their embedded documentation.'
 CREATE TABLE system.data_skipping_indices
 (
     `database` String,
@@ -132,7 +148,12 @@ CREATE TABLE system.data_type_families
 (
     `name` String,
     `case_insensitive` UInt8,
-    `alias_to` String
+    `alias_to` String,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableDataTypeFamilies
 COMMENT 'Contains a list of all available native data types along with all the aliases used for compatibility with other DBMS.'
@@ -198,6 +219,18 @@ CREATE TABLE system.dictionaries
 )
 ENGINE = SystemDictionaries
 COMMENT 'Contains information about dictionaries.'
+CREATE TABLE system.dictionary_layouts
+(
+    `name` String,
+    `is_complex` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
+)
+ENGINE = SystemDictionaryLayouts
+COMMENT 'Contains a list of all available dictionary layouts along with their embedded documentation.'
 CREATE TABLE system.disks
 (
     `name` String,
@@ -300,7 +333,11 @@ CREATE TABLE system.formats
     `has_external_schema` UInt8,
     `prefers_large_blocks` UInt8,
     `supports_append` UInt8,
-    `supports_subsets_of_columns` UInt8
+    `supports_subsets_of_columns` UInt8,
+    `description` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemFormats
 COMMENT 'Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization.'
@@ -617,6 +654,7 @@ CREATE TABLE system.parts_columns
     `estimates.min` Nullable(String),
     `estimates.max` Nullable(String),
     `estimates.cardinality` Nullable(UInt64),
+    `estimates.null_count` Nullable(UInt64),
     `serialization_kind` String,
     `substreams` Array(String),
     `filenames` Array(String),
@@ -648,6 +686,7 @@ CREATE TABLE system.processes
     `os_user` String,
     `client_hostname` String,
     `client_name` String,
+    `client_agent` LowCardinality(String),
     `client_revision` UInt64,
     `client_version_major` UInt64,
     `client_version_minor` UInt64,
@@ -871,7 +910,9 @@ CREATE TABLE system.quotas
     `durations` Array(UInt32),
     `apply_to_all` UInt8,
     `apply_to_list` Array(String),
-    `apply_to_except` Array(String)
+    `apply_to_except` Array(String),
+    `ipv4_prefix_bits` Nullable(UInt8),
+    `ipv6_prefix_bits` Nullable(UInt8)
 )
 ENGINE = SystemQuotas
 COMMENT 'Contains information about quotas.'
@@ -1132,7 +1173,12 @@ CREATE TABLE system.table_engines
     `supports_ttl` UInt8,
     `supports_replication` UInt8,
     `supports_deduplication` UInt8,
-    `supports_parallel_insert` UInt8
+    `supports_parallel_insert` UInt8,
+    `description` String,
+    `syntax` String,
+    `examples` String,
+    `introduced_in` String,
+    `related` Array(String)
 )
 ENGINE = SystemTableEngines
 COMMENT 'Contains a list of all available table engines along with information whether a particular table engine supports some specific features (e.g. settings, skipping indices, projections, replication, TTL, deduplication, parallel insert, etc.)'

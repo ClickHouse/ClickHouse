@@ -1,0 +1,220 @@
+---
+slug: /use-cases/AI/MCP/ollama
+sidebarTitle: 'Ollama 통합'
+title: 'Ollama와 ClickHouse MCP 서버 설정'
+description: '이 가이드에서는 Ollama와 ClickHouse MCP 서버를 설정하는 방법을 설명합니다.'
+keywords: ['AI', 'Ollama', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+> 이 가이드에서는 Ollama와 ClickHouse MCP 서버를 사용하는 방법을 설명합니다.
+
+<Steps>
+  <Step>
+    ## Ollama 설치
+
+    Ollama는 로컬 머신에서 대규모 언어 모델(LLM)을 실행하기 위한 라이브러리입니다.
+    [다양한 모델을 제공](https://ollama.com/library)하며 사용하기도 쉽습니다.
+
+    Ollama는 [다운로드 페이지](https://ollama.com/download)에서 Mac, Windows 또는 Linux용으로 다운로드할 수 있습니다.
+
+    Ollama를 실행하면 백그라운드에서 로컬 서버가 시작되며, 이를 사용해 모델을 실행할 수 있습니다.
+    또는 `ollama serve`를 실행해 서버를 수동으로 시작할 수도 있습니다.
+
+    설치가 완료되면 다음과 같이 모델을 로컬 머신에 내려받을 수 있습니다:
+
+    ```bash
+    ollama pull qwen3:8b
+    ```
+
+    모델이 로컬 머신에 없으면 해당 모델을 로컬 머신으로 가져옵니다.
+    다운로드가 완료되면 다음과 같이 모델을 실행할 수 있습니다:
+
+    ```bash
+    ollama run qwen3:8b
+    ```
+
+    <Note>
+      MCP 서버에서는 [도구를 지원하는 모델](https://ollama.com/search?c=tools)만 작동합니다.
+    </Note>
+
+    다운로드한 모델 목록은 다음과 같이 확인할 수 있습니다:
+
+    ```bash
+    ollama ls
+    ```
+
+    ```text
+    NAME                       ID              SIZE      MODIFIED
+    qwen3:latest               500a1f067a9f    5.2 GB    3 days ago
+    ```
+
+    다운로드한 모델의 자세한 정보를 확인하려면 다음 명령을 사용할 수 있습니다:
+
+    ```bash
+    ollama show qwen3
+    ```
+
+    ```text
+      Model
+        architecture        qwen3
+        parameters          8.2B
+        context length      40960
+        embedding length    4096
+        quantization        Q4_K_M
+
+      Capabilities
+        completion
+        tools
+
+      Parameters
+        repeat_penalty    1
+        stop              "<|im_start|>"
+        stop              "<|im_end|>"
+        temperature       0.6
+        top_k             20
+        top_p             0.95
+
+      License
+        Apache License
+        Version 2.0, January 2004
+    ```
+
+    이 출력에서 기본 qwen3 모델의 매개변수가 80억 개를 약간 넘는다는 것을 확인할 수 있습니다.
+  </Step>
+
+  <Step>
+    ## MCPHost 설치
+
+    이 글을 작성하는 시점(2025년 7월)에는 Ollama를 MCP 서버와 함께 사용할 수 있는 네이티브 기능이 없습니다.
+    하지만 [MCPHost](https://github.com/mark3labs/mcphost)를 사용하면 Ollama 모델을 MCP 서버와 함께 실행할 수 있습니다.
+
+    MCPHost는 Go 애플리케이션이므로, 사용 중인 환경에 [Go가 설치되어 있어야 합니다](https://go.dev/doc/install).
+    그런 다음 아래 명령을 실행하여 MCPHost를 설치할 수 있습니다.
+
+    ```bash
+    go install github.com/mark3labs/mcphost@latest
+    ```
+
+    실행 파일은 `~/go/bin` 아래에 설치되므로, 해당 디렉터리가 경로에 포함되어 있는지 확인해야 합니다.
+  </Step>
+
+  <Step>
+    ## ClickHouse MCP 서버 구성
+
+    MCPHost를 사용하면 YAML 또는 JSON 파일에서 MCP 서버를 구성할 수 있습니다.
+    MCPHost는 홈 디렉터리에서 다음 순서대로 구성 파일을 찾습니다:
+
+    1. `.mcphost.yml` 또는 `.mcphost.json`  (권장)
+    2. `.mcp.yml` 또는 `.mcp.json` (이전 버전과의 호환성)
+
+    표준 MCP 설정 파일과 유사한 구문을 사용합니다.
+    다음은 `~/.mcphost.json` 파일에 저장할 ClickHouse MCP 서버 구성 예시입니다:
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-ch": {
+          "type": "local",
+          "command": ["uv",
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ]
+        }
+      }
+    }
+    ```
+
+    표준 MCP 설정 파일과의 주요 차이점은 `type`을 지정해야 한다는 점입니다.
+    `type`은 MCP Server에서 사용하는 전송 유형을 나타내는 데 사용됩니다.
+
+    * `local` → stdio 전송
+    * `remote` → streamable 전송
+    * `builtin` → inprocess 전송
+
+    또한 다음 환경 변수를 설정해야 합니다:
+
+    ```bash
+    export CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    export CLICKHOUSE_USER=demo
+    export CLICKHOUSE_PASSWORD=""
+    ```
+
+    <Note>
+      이론상 MCP 설정 파일의 `environment` 키 아래에 이러한 변수를 지정할 수 있어야 하지만, 실제로는 작동하지 않는 것으로 확인되었습니다.
+    </Note>
+  </Step>
+
+  <Step>
+    ## MCPHost 실행
+
+    ClickHouse MCP 서버 구성을 완료했다면 다음 명령으로 MCPHost를 실행할 수 있습니다.
+
+    ```bash
+    mcphost --model ollama:qwen3
+    ```
+
+    또는 특정 구성 파일을 사용하도록 하려면:
+
+    ```bash
+    mcphost --model ollama:qwen3 --config ~/.mcphost.json 
+    ```
+
+    <Warning>
+      `--model`을 지정하지 않으면 MCPHost는 환경 변수에서 `ANTHROPIC_API_KEY`를 찾고 `anthropic:claude-sonnet-4-20250514` 모델을 사용합니다.
+    </Warning>
+
+    다음과 같은 출력이 표시되어야 합니다:
+
+    ```text
+      ┃                                                                                     ┃
+      ┃  Model loaded: ollama (qwen3)                                                       ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Model loaded successfully on GPU                                                   ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      ┃                                                                                     ┃
+      ┃  Loaded 3 tools from MCP servers                                                    ┃
+      ┃   MCPHost System (09:52)                                                            ┃
+      ┃                                                                                     ┃
+
+      Enter your prompt (명령어는 /help, 종료는 Ctrl+C, 생성 취소는 ESC를 입력하세요)
+    ```
+
+    `/servers` 명령을 사용하여 MCP 서버를 확인할 수 있습니다:
+
+    ```text
+      ┃                                                                                      ┃
+      ┃  ## Configured MCP servers                                                           ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch                                                                           ┃
+      ┃   MCPHost System (10:00)                                                             ┃
+      ┃
+    ```
+
+    그리고 사용 가능한 도구 목록을 확인하려면 `/tools`를 사용합니다:
+
+    ```text
+      ┃  ## Available Tools                                                                  ┃
+      ┃                                                                                      ┃
+      ┃  1. mcp-ch__list_databases                                                           ┃
+      ┃  2. mcp-ch__list_tables                                                              ┃
+      ┃  3. mcp-ch__run_select_query
+    ```
+
+    그러면 ClickHouse SQL playground에서 사용할 수 있는 데이터베이스/테이블에 대해 모델에 질문할 수 있습니다.
+
+    경험상 더 작은 모델을 사용할 때는(기본 qwen3 모델은 80억 개의 매개변수를 가집니다) 원하는 작업을 더 구체적으로 지정해야 합니다.
+    예를 들어, 특정 테이블을 바로 쿼리하도록 요청하기보다는 먼저 데이터베이스와 테이블 목록을 보여 달라고 명시적으로 요청해야 합니다.
+    이 문제는 더 큰 모델(예: qwen3:14b)을 사용하면 어느 정도 완화할 수 있지만, 일반 소비자용 하드웨어에서는 더 느리게 실행됩니다.
+  </Step>
+</Steps>
