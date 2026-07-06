@@ -158,6 +158,20 @@ run_timeout_case()
         sleep 0.1
     done
 
+    # Bound the wait for the 8-second deadline: `CancellationChecker` can miss it entirely (its worker
+    # sleeps toward a stale earliest deadline and a newly appended earlier one does not re-arm the wait),
+    # and then the untracked INSERT would grind through the full ZSTD(22) block and trip the harness
+    # timeout instead of this test. Kill the query and fail with a diagnostic in that case.
+    local deadline_fired=0
+    for _ in $(seq 1 600); do
+        if ! kill -0 "$insert_pid" 2>/dev/null; then deadline_fired=1; break; fi
+        sleep 0.1
+    done
+    if [ "$deadline_fired" -eq 0 ]; then
+        echo "timeout wide: max_execution_time never fired within 60s, killing the query"
+        ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null
+    fi
+
     wait "$insert_pid" 2>/dev/null
 
     # The query may exit between polls, so a low in-flight maximum is not yet proof that the read phase
