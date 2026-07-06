@@ -912,16 +912,19 @@ void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * h
     /// Hash the same canonical per-row serialization `serializeValueIntoArena` produces (also used by
     /// DISTINCT / uniqExact / the hash-table key): a typed variant and the shared variant emit
     /// identical (null bit, type, binary value) bytes for the same logical value.
+    ///
+    /// Keep the `Arena` inside the loop: `serializeValueIntoArena` grows via `allocContinue`, which on
+    /// mid-row growth strands the pre-growth copy in a chunk `arena.rollback` cannot reclaim; reusing
+    /// one arena across the block would leak one such copy per growth step for wide values.
     const size_t n = row_end - row_begin;
-    Arena arena;
     for (size_t i = 0; i < n; ++i)
     {
+        Arena arena;
         const char * begin = nullptr;
         std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
         const UInt32 h = ::updateWeakHash32(
             reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
         hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
-        arena.rollback(serialized.size());
     }
 }
 
@@ -929,14 +932,15 @@ void ColumnDynamic::updateHashFast(SipHash & hash) const
 {
     /// Must match `computeHashInto`: hash the canonical, layout-invariant per-row serialization so a
     /// logically equal value hashes the same regardless of the typed-variant/shared-variant split.
+    /// Keep the `Arena` inside the loop (see `computeHashInto`): reusing one across the block leaks the
+    /// copies `allocContinue` strands on mid-row growth.
     const size_t rows = size();
-    Arena arena;
     for (size_t i = 0; i < rows; ++i)
     {
+        Arena arena;
         const char * begin = nullptr;
         std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
         hash.update(serialized.data(), serialized.size());
-        arena.rollback(serialized.size());
     }
 }
 

@@ -1211,16 +1211,19 @@ void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * ha
     /// uniqExact / the hash-table key), hash the same canonical per-row serialization: typed paths in
     /// sorted order, then dynamic paths and shared data merged in sorted path order. Both a dynamic
     /// path and a shared-data path emit identical `(path, binary value)` bytes for the same value.
+    ///
+    /// Keep the `Arena` inside the loop: `serializeValueIntoArena` grows via `allocContinue`, which on
+    /// mid-row growth strands the pre-growth copy in a chunk `arena.rollback` cannot reclaim; reusing
+    /// one arena across the block would leak one such copy per growth step for wide objects.
     const size_t n = row_end - row_begin;
-    Arena arena;
     for (size_t i = 0; i < n; ++i)
     {
+        Arena arena;
         const char * begin = nullptr;
         std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
         const UInt32 h = ::updateWeakHash32(
             reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
         hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
-        arena.rollback(serialized.size());
     }
 }
 
@@ -1228,14 +1231,15 @@ void ColumnObject::updateHashFast(SipHash & hash) const
 {
     /// Must match `computeHashInto`: hash the canonical, split-invariant per-row serialization so a
     /// logically equal object hashes the same regardless of the dynamic/shared_data split.
+    /// Keep the `Arena` inside the loop (see `computeHashInto`): reusing one across the block leaks the
+    /// copies `allocContinue` strands on mid-row growth.
     const size_t rows = size();
-    Arena arena;
     for (size_t i = 0; i < rows; ++i)
     {
+        Arena arena;
         const char * begin = nullptr;
         std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
         hash.update(serialized.data(), serialized.size());
-        arena.rollback(serialized.size());
     }
 }
 
