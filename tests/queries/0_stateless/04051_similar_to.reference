@@ -81,6 +81,10 @@
 1
 0
 1
+-- Top-level [: opens a bracket (not a class): a literal [ member after it is kept, not treated as a new bracket
+1
+1
+0
 -- Bracket expression containing metacharacter
 1
 1

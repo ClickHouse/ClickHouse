@@ -117,52 +117,46 @@ String similarToPatternToRegexp(std::string_view pattern)
             /// Keep unescaped brackets. Remember in bracket or not.
             /// We can avoid lookahead cost for class expression by this following rules:
             /// - [ (not [:) opens a bracket
-            /// - [: opens a maybe-class
+            /// - [: opens a maybe-class, but only when a bracket is already open
             /// - :] closes a maybe-class if it's opened, else closes a bracket
             /// - ] closes a maybe-class if it's opened, else closes a bracket
             case '[':
                 res += *pos;
-                if (pos + 1 < end)
+                /// A POSIX character class `[:name:]` only exists *inside* a bracket expression, so a
+                /// leading `[:` starts a maybe-class only when a bracket is already open (e.g. the inner
+                /// `[:digit:]` of `[[:digit:]]`). A top-level `[:` (e.g. `[:[]`) opens a bracket whose
+                /// first member is `:`, not a class.
+                if (in_bracket)
                 {
-                    switch (pos[1])
-                    {
-                        /// [: maybe class open
-                        case ':':
-                            maybe_in_class = true;
-                            break;
-                        /// [ bracket open
-                        default:
-                        {
-                            /// If we are already inside a bracket expression, `[` is a literal
-                            /// member (POSIX/RE2 syntax), not a new bracket open. Do not run the
-                            /// leading-`]` lookahead here — that would incorrectly consume the
-                            /// outer bracket's closing `]` (e.g. `[[]` would become an unterminated
-                            /// character class).
-                            if (in_bracket)
-                                break;
-                            in_bracket = true;
-                            /// POSIX rule: an `]` immediately after `[` or `[^` is a literal member,
-                            /// not the bracket terminator. Emit it as `\]` so re2 keeps the bracket open.
-                            size_t lookahead = 1;
-                            bool negated = false;
-                            if (pos[lookahead] == '^')
-                            {
-                                negated = true;
-                                ++lookahead;
-                            }
-                            if (pos + lookahead < end && pos[lookahead] == ']')
-                            {
-                                if (negated)
-                                    res += '^';
-                                res += "\\]";
-                                pos += lookahead;
-                            }
-                            break;
-                        }
-                    }
+                    /// Already inside a bracket expression:
+                    /// - `[:` may start a POSIX character class such as `[:digit:]`.
+                    /// - any other `[` is a literal member (POSIX/RE2 syntax), not a new bracket open, so
+                    ///   we must not run the leading-`]` lookahead below — that would incorrectly consume
+                    ///   the outer bracket's closing `]` (e.g. `[[]` would become an unterminated class).
+                    if (pos + 1 < end && pos[1] == ':')
+                        maybe_in_class = true;
                 }
                 else
+                {
+                    /// This `[` opens a bracket expression.
                     in_bracket = true;
+                    /// POSIX rule: an `]` immediately after `[` or `[^` is a literal member,
+                    /// not the bracket terminator. Emit it as `\]` so re2 keeps the bracket open.
+                    size_t lookahead = 1;
+                    bool negated = false;
+                    if (pos + lookahead < end && pos[lookahead] == '^')
+                    {
+                        negated = true;
+                        ++lookahead;
+                    }
+                    if (pos + lookahead < end && pos[lookahead] == ']')
+                    {
+                        if (negated)
+                            res += '^';
+                        res += "\\]";
+                        pos += lookahead;
+                    }
+                }
                 break;
             case ']':
                 if (maybe_in_class && pos - 1 > pattern.data())

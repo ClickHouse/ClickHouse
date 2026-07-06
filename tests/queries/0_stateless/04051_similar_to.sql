@@ -105,6 +105,11 @@ SELECT ':' SIMILAR TO '[:a]';                 -- Returns: 1
 SELECT 'b' SIMILAR TO '[:a]_';                -- Returns: 0
 SELECT 'ab' SIMILAR TO '[:a]_';               -- Returns: 1
 
+SELECT '-- Top-level [: opens a bracket (not a class): a literal [ member after it is kept, not treated as a new bracket';
+SELECT ':' SIMILAR TO '[:[]';                 -- Returns: 1
+SELECT '[' SIMILAR TO '[:[]';                 -- Returns: 1
+SELECT 'a' SIMILAR TO '[:[]';                 -- Returns: 0
+
 SELECT '-- Bracket expression containing metacharacter';
 SELECT '_' SIMILAR TO '[:_a]';                -- Returns: 1
 SELECT '_' SIMILAR TO '[_a:]';                -- Returns: 1
