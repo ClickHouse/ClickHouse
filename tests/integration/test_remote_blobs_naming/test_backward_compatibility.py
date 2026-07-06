@@ -256,7 +256,6 @@ def test_replicated_merge_tree(cluster, test_case):
                 SETTINGS
                     -- Changes the number of files
                     add_minmax_index_for_numeric_columns=0,
-                    auto_statistics_types='',
                     storage_policy='{storage_policy}',
                     allow_remote_fs_zero_copy_replication='{1 if zero_copy else 0}'
                 """
@@ -265,7 +264,13 @@ def test_replicated_merge_tree(cluster, test_case):
         [node_old, node_new], ["test_replicated_merge_tree"], [create_table_statement]
     ):
         node_old.query("INSERT INTO test_replicated_merge_tree VALUES (0, 'a')")
-        node_new.query("INSERT INTO test_replicated_merge_tree VALUES (1, 'b')")
+        # The new server materializes column statistics on INSERT by default, which would write an
+        # extra statistics.packed file and change the number of remote blobs. Disable it for this
+        # INSERT. It is a session setting (both versions understand it), unlike the table-level
+        # auto_statistics_types, which the old server does not know and would reject with UNKNOWN_SETTING.
+        node_new.query(
+            "INSERT INTO test_replicated_merge_tree VALUES (1, 'b') SETTINGS materialize_statistics_on_insert = 0"
+        )
 
         # node_old have to fetch metadata from node_new and vice versa
         node_old.query("SYSTEM SYNC REPLICA test_replicated_merge_tree")
