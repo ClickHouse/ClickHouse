@@ -2216,6 +2216,12 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     {
         sendDataFromStdin(sample, columns_description_for_query, parsed_query);
     }
+    else if (parsed_insert_query->returning_select)
+    {
+        /// For `INSERT ... RETURNING` with no inline/INFILE/stdin data and `throw_if_no_data_to_insert = 0`,
+        /// still send the empty insert-data terminator so the server can run the RETURNING subquery.
+        connection->sendData({}, "", false);
+    }
     else
         throw Exception(ErrorCodes::NO_DATA_TO_INSERT, "No data to insert");
 }

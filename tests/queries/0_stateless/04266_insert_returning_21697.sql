@@ -163,5 +163,12 @@ INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS profile='
 -- input() in the RETURNING subquery is rejected: its callbacks belong to the INSERT phase
 INSERT INTO t_insert_returning (id, name) RETURNING (SELECT * FROM input('x UInt8')) VALUES (205, 'input'); -- { serverError NOT_IMPLEMENTED }
 
+-- Query-result-cache settings are rejected in the RETURNING subquery (the delayed path does not run the
+-- regular executeQueryImpl cache wrappers)
+SELECT 'returning query cache rejection';
+TRUNCATE TABLE t_insert_returning;
+INSERT INTO t_insert_returning (id, name) RETURNING (SELECT 1 SETTINGS use_query_cache=1) VALUES (206, 'query_cache'); -- { serverError NOT_IMPLEMENTED }
+SELECT count() AS inserted_after_returning_query_cache FROM t_insert_returning WHERE id = 206;
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;

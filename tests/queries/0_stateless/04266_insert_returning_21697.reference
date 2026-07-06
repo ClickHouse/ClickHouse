@@ -47,3 +47,5 @@ returning union_default_mode
 1
 async insert rejection
 nested union settings rejection
+returning query cache rejection
+1

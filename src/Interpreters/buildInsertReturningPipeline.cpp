@@ -83,6 +83,11 @@ namespace
             "temporary_files_codec",
             "temporary_files_buffer_size",
             "use_concurrency_control",
+            "use_query_cache",
+            "enable_reads_from_query_cache",
+            "enable_writes_to_query_cache",
+            "query_cache_nondeterministic_function_handling",
+            "query_cache_system_table_handling",
             /// `profile` expands (via `Context::setSetting`) into an arbitrary set of setting changes
             /// that may include any of the above. Rejecting the profile name itself fail-closes that
             /// indirection without having to expand it here.
