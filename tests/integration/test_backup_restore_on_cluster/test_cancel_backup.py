@@ -626,6 +626,8 @@ def test_long_disconnection_stops_backup():
             "NETWORK_ERROR",
             "TABLE_IS_READ_ONLY",
             "NO_REPLICA_HAS_PART",
+            # A replica can briefly observe UNKNOWN_TABLE during backup teardown under a long ZooKeeper disconnection.
+            "UNKNOWN_TABLE",
         ]
         no_trash_checker.check_zookeeper = False
 
