@@ -666,9 +666,19 @@ std::pair<DayNum, DayNum> IMergeTreeDataPart::getMinMaxDate() const
 
         /// Same protection as `getMinMaxTime`: after `ALTER MODIFY COLUMN ... AFTER`
         /// reorders a partition-key column, the cached `minmax_idx_date_column_pos`
-        /// can point at a column of some other (non-`Date`) type whose bounds are
-        /// stored as `Int64` etc. `safeGet<UInt64>` would throw `BAD_GET`. Return
-        /// an empty range instead, matching the `pos == -1` and `Null` paths.
+        /// can point at a column of some other type whose bounds are stored with an
+        /// incompatible `Field` kind (e.g. `Int64`). `safeGet<UInt64>` would throw
+        /// `BAD_GET`, so return an empty range instead, matching the `pos == -1` and
+        /// `Null` paths.
+        ///
+        /// This only guards against an *incompatible* `Field` kind. It does NOT detect
+        /// a stale slot pointing at a non-`Date` column that happens to share `Date`'s
+        /// `UInt64` `Field` storage (e.g. a reordered `UInt64` partition-key column):
+        /// such a value is read as if it were a date and surfaces a misleading
+        /// `min_date` / `max_date` rather than an empty range. Distinguishing those
+        /// requires refreshing the cached per-part column position after the reorder
+        /// (per-part column-order persistence, to stay concurrency-safe with concurrent
+        /// `SELECT`s) and is left for the deeper follow-up fix.
         if (hyperrectangle.left.getType() != Field::Types::UInt64
             || hyperrectangle.right.getType() != Field::Types::UInt64)
             return {};
@@ -730,9 +740,18 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
         /// as a fatal-looking exception to the user even though the table itself is
         /// fine. Treat any unexpected `Field` type as "no usable time bounds for
         /// this part" and return an empty range — matching the `pos == -1` and the
-        /// `Null` bound paths. The deeper stale-position fix is a separate change
-        /// (it requires per-part column-order persistence to be concurrency-safe
-        /// with concurrent `SELECT`s).
+        /// `Null` bound paths.
+        ///
+        /// Note this only rescues the case where the stale slot has a `Field` kind
+        /// *incompatible* with `DateTime` (`UInt64`) / `DateTime64` (`Decimal64`).
+        /// A stale slot pointing at a non-time column that shares the same `Field`
+        /// storage — a reordered `UInt64` column read as `DateTime`, or a plain
+        /// `Decimal64` column read as `DateTime64` — is accepted by the branches
+        /// above and surfaces a misleading `min_time` / `max_time` rather than an
+        /// empty range. The deeper stale-position fix that would also cover those
+        /// requires refreshing the cached per-part column position after the reorder
+        /// (per-part column-order persistence, to be concurrency-safe with concurrent
+        /// `SELECT`s) and is left for a follow-up.
         return {};
     }
     return {};
