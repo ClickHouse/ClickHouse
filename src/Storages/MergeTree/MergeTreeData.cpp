@@ -5043,6 +5043,14 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
                     "and CLEAR would rewrite stored values without going through UNIQUE KEY dedup, "
                     "producing duplicate live keys. UNIQUE KEY columns: ({}).",
                     command.column_name, fmt::join(uk_column_names, ", "));
+
+            if (command.type == MutationCommand::RECOMPRESS_COLUMN)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "ALTER TABLE ... RECOMPRESS COLUMN `{}` is not supported on tables with UNIQUE KEY. "
+                    "Recompressing a Compact part (or a column that inherits the table's default codec) goes "
+                    "through a whole-part rewrite that does not preserve the `delete_bitmap_*.rbm` sidecars, "
+                    "which would resurrect deleted rows.",
+                    command.column_name);
         }
     }
 
