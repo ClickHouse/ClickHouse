@@ -1,0 +1,371 @@
+---
+title: Como fazer a ingestão de dados do Kafka para o ClickHouse
+description: "Aprenda a fazer a ingestão de dados de um tópico do Kafka para o ClickHouse usando o motor de tabela Kafka, visões materializadas e tabelas MergeTree."
+date: 2024-04-27
+tags: ['Ingestão de Dados']
+keywords: ['Kafka']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Este artigo apresenta o processo de envio de dados de um tópico Kafka para uma tabela do ClickHouse. Usaremos o feed de mudanças recentes da Wiki, que fornece um [fluxo de eventos](https://stream.wikimedia.org/v2/stream/recentchange) que representa alterações feitas em várias propriedades da Wikimedia. As etapas incluem:
+
+1. Como configurar o Kafka no Ubuntu
+2. Fazer a ingestão de um fluxo de dados em um tópico Kakfa
+3. Criar uma tabela do ClickHouse que se inscreve no tópico
+
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. Configurar o Kafka no Ubuntu
+</div>
+
+1. Crie uma **instância** Ubuntu **ec2** e conecte-se a ela via SSH:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+```
+
+2. Instale o Kafka (com base nas instruções disponíveis aqui: https://www.linode.com/docs/guides/how-to-install-apache-kafka-on-ubuntu/):
+
+```bash
+sudo apt update
+sudo apt install openjdk-11-jdk
+
+mkdir /home/ubuntu/kafka
+cd /home/ubuntu/kafka/
+
+wget https://downloads.apache.org/kafka/3.7.0/kafka_2.13-3.7.0.tgz
+
+tar -zxvf kafka_2.13-3.7.0.tgz
+```
+
+3. Inicie o ZooKeeper:
+
+```bash
+cd kafka_2.13-3.7.0
+bin/zookeeper-server-start.sh config/zookeeper.properties
+```
+
+4. Abra um novo terminal e inicie o Kafka:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+cd kafka/kafka_2.13-3.7.0/
+bin/kafka-server-start.sh config/server.properties
+```
+
+5. Abra um terceiro terminal e crie um tópico chamado wikimedia:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+cd kafka/kafka_2.13-3.7.0/
+
+bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
+```
+
+6. Você pode verificar se ele foi criado com sucesso da seguinte forma:
+
+```bash
+bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. Faça a ingestão do stream da Wikimedia no Kafka
+</div>
+
+1. Primeiro, precisamos de alguns utilitários:
+
+```bash
+sudo apt-get install librdkafka-dev libyajl-dev
+sudo apt-get install kafkacat
+```
+
+2. Os dados são enviados ao Kafka usando um comando **curl** inteligente que captura os eventos mais recentes da Wikimedia, extrai os dados em JSON e os envia para o tópico do Kafka:
+
+```bash
+curl -N https://stream.wikimedia.org/v2/stream/recentchange  | awk '/^data: /{gsub(/^data: /, ""); print}' | kafkacat -P -b localhost:9092 -t wikimedia
+```
+
+3. Você pode &quot;descrever&quot; o tópico:
+
+```bash
+bin/kafka-topics.sh --describe --topic wikimedia --bootstrap-server localhost:9092
+```
+
+4. Vamos verificar se tudo está funcionando consumindo alguns eventos:
+
+```bash
+bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-server localhost:9092
+```
+
+5. Pressione **Ctrl+c** para interromper o comando anterior.
+
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. Faça a ingestão dos dados no ClickHouse
+</div>
+
+1. Veja como são os dados recebidos:
+
+```json
+{
+	"$schema": "/mediawiki/recentchange/1.0.0",
+	"meta": {
+		"uri": "https://www.wikidata.org/wiki/Q45791749",
+		"request_id": "f64cfb17-04ba-4d09-8935-38ec6f0001c2",
+		"id": "9d7d2b5a-b79b-45ea-b72c-69c3b69ae931",
+		"dt": "2024-04-18T13:21:21Z",
+		"domain": "www.wikidata.org",
+		"stream": "mediawiki.recentchange",
+		"topic": "eqiad.mediawiki.recentchange",
+		"partition": 0,
+		"offset": 5032636513
+	},
+	"id": 2196113017,
+	"type": "edit",
+	"namespace": 0,
+	"title": "Q45791749",
+	"title_url": "https://www.wikidata.org/wiki/Q45791749",
+	"comment": "/* wbsetqualifier-add:1| */ [[Property:P1545]]: 20, Modify PubMed ID: 7292984 citation data from NCBI, Europe PMC and CrossRef",
+	"timestamp": 1713446481,
+	"user": "Cewbot",
+	"bot": true,
+	"notify_url": "https://www.wikidata.org/w/index.php?diff=2131981357&oldid=2131981341&rcid=2196113017",
+	"minor": false,
+	"patrolled": true,
+	"length": {
+		"old": 75618,
+		"new": 75896
+	},
+	"revision": {
+		"old": 2131981341,
+		"new": 2131981357
+	},
+	"server_url": "https://www.wikidata.org",
+	"server_name": "www.wikidata.org",
+	"server_script_path": "/w",
+	"wiki": "wikidatawiki",
+	"parsedcomment": "<span dir=\"auto\"><span class=\"autocomment\">Added qualifier: </span></span> <a href=\"/wiki/Property:P1545\" title=\"series ordinal | position of an item in its parent series (most frequently a 1-based index), generally to be used as a qualifier (different from &quot;rank&quot; defined as a class, and from &quot;ranking&quot; defined as a property for evaluating a quality).\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">series ordinal</span> <span class=\"wb-itemlink-id\">(P1545)</span></span></a>: 20, Modify PubMed ID: 7292984 citation data from NCBI, Europe PMC and CrossRef"
+}
+```
+
+2. Precisaremos do **motor de tabela Kafka** para extrair os dados do tópico do Kafka:
+
+```sql
+CREATE OR REPLACE TABLE wikiQueue
+(
+    `id` UInt32,
+    `type` String,
+    `title` String,
+    `title_url` String,
+    `comment` String,
+    `timestamp` UInt64,
+    `user` String,
+    `bot` Bool,
+    `server_url` String,
+    `server_name` String,
+    `wiki` String,
+    `meta` Tuple(uri String, id String, stream String, topic String, domain String)
+)
+ENGINE = Kafka(
+   'ec2.compute.amazonaws.com:9092',
+   'wikimedia',
+   'consumer-group-wiki',
+   'JSONEachRow'
+);
+```
+
+3. Por algum motivo, o **motor de tabela Kafka** parece pegar a URL pública do **ec2** e convertê-la em um nome DNS privado, então tive que adicioná-lo ao meu arquivo local `/etc/hosts`:
+
+```bash
+52.14.154.92  ip.us-east-2.compute.internal
+```
+
+4. Você pode ler de uma tabela do Kafka; basta habilitar uma configuração:
+
+```sql
+SELECT *
+FROM wikiQueue
+LIMIT 20
+FORMAT Vertical
+SETTINGS stream_like_engine_allow_direct_select = 1;
+```
+
+As linhas devem retornar já interpretadas corretamente com base nas colunas definidas na tabela **wikiQueue**:
+
+```response
+id:          2473996741
+type:        edit
+title:       File:Père-Lachaise - Division 6 - Cassereau 05.jpg
+title_url:   https://commons.wikimedia.org/wiki/File:P%C3%A8re-Lachaise_-_Division_6_-_Cassereau_05.jpg
+comment:     /* wbcreateclaim-create:1| */ [[d:Special:EntityPage/P921]]: [[d:Special:EntityPage/Q112327116]], [[:toollabs:quickstatements/#/batch/228454|batch #228454]]
+timestamp:   1713457283
+user:        Ameisenigel
+bot:         false
+server_url:  https://commons.wikimedia.org
+server_name: commons.wikimedia.org
+wiki:        commonswiki
+meta:        ('https://commons.wikimedia.org/wiki/File:P%C3%A8re-Lachaise_-_Division_6_-_Cassereau_05.jpg','01a832e2-24c5-4ccb-bd93-8e2c0e429418','mediawiki.recentchange','eqiad.mediawiki.recentchange','commons.wikimedia.org')
+```
+
+5. Precisamos de uma tabela **MergeTree** para armazenar esses eventos recebidos:
+
+```sql
+CREATE TABLE rawEvents (
+    id UInt64,
+    type LowCardinality(String),
+    comment String,
+    timestamp DateTime64(3, 'UTC'),
+    title_url String,
+    topic LowCardinality(String),
+    user String
+)
+ENGINE = MergeTree
+ORDER BY (type, timestamp);
+```
+
+6. Vamos definir uma visão materializada que é acionada quando ocorre um insert na tabela **Kafka** e envia os dados para a nossa tabela **rawEvents**:
+
+```sql
+CREATE MATERIALIZED VIEW rawEvents_mv TO rawEvents
+AS
+   SELECT
+       id,
+       type,
+       comment,
+       toDateTime(timestamp) AS timestamp,
+       title_url,
+       tupleElement(meta, 'topic') AS topic,
+       user
+FROM wikiQueue
+WHERE title_url <> '';
+```
+
+7. Você deve começar a ver dados chegando em **rawEvents** quase imediatamente:
+
+```sql
+SELECT count()
+FROM rawEvents;
+```
+
+8. Vamos ver algumas das linhas:
+
+```sql
+SELECT *
+FROM rawEvents
+LIMIT 5
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:        124842852
+type:      142
+comment:   Pere prlpz commented on "Plantilles Enciclopèdia Catalana" (Diria que no cal fer res als articles. Es pot actualitzar els enllaços que es facin servir a les referències (tot i que l'antic encara ha...)
+timestamp: 2024-04-18 16:22:29.000
+title_url: https://ca.wikipedia.org/wiki/Tema:Wu36d6vfsiuu4jsi
+topic:     eqiad.mediawiki.recentchange
+user:      Pere prlpz
+
+Row 2:
+──────
+id:        2473996748
+type:      categorize
+comment:   [[:File:Ruïne van een poortgebouw, RP-T-1976-29-6(R).jpg]] removed from category
+timestamp: 2024-04-18 16:21:20.000
+title_url: https://commons.wikimedia.org/wiki/Category:Pieter_Moninckx
+topic:     eqiad.mediawiki.recentchange
+user:      Warburg1866
+
+Row 3:
+──────
+id:        311828596
+type:      categorize
+comment:   [[:Cujo (película)]] añadida a la categoría
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://es.wikipedia.org/wiki/Categor%C3%ADa:Pel%C3%ADculas_basadas_en_obras_de_Stephen_King
+topic:     eqiad.mediawiki.recentchange
+user:      Beta15
+
+Row 4:
+──────
+id:        311828597
+type:      categorize
+comment:   [[:Cujo (película)]] eliminada de la categoría
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://es.wikipedia.org/wiki/Categor%C3%ADa:Trabajos_basados_en_obras_de_Stephen_King
+topic:     eqiad.mediawiki.recentchange
+user:      Beta15
+
+Row 5:
+──────
+id:        48494536
+type:      categorize
+comment:   [[:braiteremmo]] ajoutée à la catégorie
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://fr.wiktionary.org/wiki/Cat%C3%A9gorie:Wiktionnaire:Exemples_manquants_en_italien
+topic:     eqiad.mediawiki.recentchange
+user:      Àncilu bot
+```
+
+9. Vamos ver quais tipos de eventos estão chegando:
+
+```
+SELECT
+    type,
+    count()
+FROM rawEvents
+GROUP BY type
+```
+
+```response
+   ┌─type───────┬─count()─┐
+1. │ 142        │       1 │
+2. │ new        │    1003 │
+3. │ categorize │   12228 │
+4. │ log        │    1799 │
+5. │ edit       │   17142 │
+   └────────────┴─────────┘
+```
+
+Vamos definir uma visão materializada encadeada à visão materializada atual. Vamos acompanhar algumas estatísticas agregadas por minuto:
+
+```sql
+CREATE TABLE byMinute
+(
+    `dateTime` DateTime64(3, 'UTC') NOT NULL,
+    `users` AggregateFunction(uniq, String),
+    `pages` AggregateFunction(uniq, String),
+    `updates` AggregateFunction(sum, UInt32)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY dateTime;
+
+CREATE MATERIALIZED VIEW byMinute_mv TO byMinute
+AS SELECT
+    toStartOfMinute(timestamp) AS dateTime,
+    uniqState(user) AS users,
+    uniqState(title_url) AS pages,
+    sumState(toUInt32(1)) AS updates
+FROM rawEvents
+GROUP BY dateTime;
+```
+
+9. Precisaremos das funções **-Merge** para ver os resultados:
+
+```sql
+SELECT
+    dateTime AS dateTime,
+    uniqMerge(users) AS users,
+    uniqMerge(pages) AS pages,
+    sumMerge(updates) AS updates
+FROM byMinute
+GROUP BY dateTime
+ORDER BY dateTime DESC
+LIMIT 10;
+```

@@ -1,0 +1,166 @@
+---
+sidebarTitle: 'Glossaire'
+description: 'Cette page contient une liste de mots et d’expressions couramment utilisés relatifs à ClickHouse, ainsi que leurs définitions.'
+title: 'Glossaire'
+slug: /concepts/glossary
+keywords: ['glossaire', 'définitions', 'terminologie']
+doc_type: 'reference'
+---
+
+{/* no-glossary */}
+
+<div id="atomicity">
+  ## Atomicité
+</div>
+
+L’atomicité garantit qu’une transaction (une série d’opérations sur la base de données) est traitée comme une unité unique et indivisible. Cela signifie que soit toutes les opérations de la transaction sont effectuées, soit aucune ne l’est. Un exemple de transaction atomique est le transfert d’argent d’un compte bancaire à un autre. Si l’une des étapes du transfert échoue, la transaction échoue et l’argent reste sur le premier compte. L’atomicité garantit qu’aucune somme d’argent n’est perdue ni créée.
+
+<div id="block">
+  ## Bloc
+</div>
+
+Un bloc est une unité logique servant à organiser le traitement et le stockage des données. Chaque bloc contient des données au format colonnaire, traitées ensemble afin d’améliorer les performances lors de l’exécution des requêtes. En traitant les données par blocs, ClickHouse utilise efficacement les cœurs du CPU en réduisant les défauts de cache et en facilitant l’exécution vectorisée. ClickHouse utilise divers algorithmes de compression, tels que LZ4, ZSTD et Delta, pour compresser les données par blocs.
+
+<div id="cluster">
+  ## Cluster
+</div>
+
+Un ensemble de nœuds (serveurs) qui fonctionnent ensemble pour stocker et traiter les données.
+
+<div id="cmek">
+  ## CMEK
+</div>
+
+Les clés de chiffrement gérées par le client (CMEK) permettent aux clients d&#39;utiliser la clé de leur service de gestion des clés (KMS) pour chiffrer la clé de données du disque de ClickHouse et protéger leurs données au repos.
+
+<div id="dictionary">
+  ## Dictionnaire
+</div>
+
+Un dictionnaire est un ensemble de paires clé-valeur utile pour divers types de listes de référence. Il s&#39;agit d&#39;une fonctionnalité puissante qui permet d&#39;utiliser efficacement des dictionnaires dans les requêtes, ce qui est souvent plus performant que d&#39;utiliser un `JOIN` avec des tables de référence.
+
+<div id="distributed-table">
+  ## Table distribuée
+</div>
+
+Une table distribuée dans ClickHouse est un type particulier de table qui ne stocke pas elle-même les données, mais offre une vue unifiée pour le traitement distribué des requêtes sur plusieurs serveurs dans un cluster.
+
+<div id="granule">
+  ## Granule
+</div>
+
+Une granule est un lot de lignes dans un bloc non compressé. Lors de la lecture des données, ClickHouse accède aux granules, et non aux lignes individuelles, ce qui permet un traitement plus rapide des données dans les charges de travail analytiques. Une granule contient 8192 lignes par défaut. L&#39;index primaire contient une entrée par granule.
+
+<div id="incremental-materialized-view">
+  ## Vue matérialisée incrémentielle
+</div>
+
+Dans ClickHouse, une vue matérialisée incrémentielle est un type de vue matérialisée qui traite et agrège les données au moment de l&#39;insertion. Lorsque de nouvelles données sont insérées dans la table source, la vue matérialisée exécute une requête d&#39;agrégation SQL prédéfinie uniquement sur les blocs nouvellement insérés et écrit les résultats agrégés dans une table cible.
+
+<div id="lightweight-update">
+  ## Mise à jour légère
+</div>
+
+Dans ClickHouse, une mise à jour légère est une fonctionnalité expérimentale qui permet de mettre à jour des lignes d’une table à l’aide de la syntaxe SQL `UPDATE` standard. Cependant, au lieu de réécrire des colonnes entières ou des parties de données (comme avec les mutations traditionnelles), elle crée des « patch parts » ne contenant que les colonnes et les lignes mises à jour. Ces mises à jour sont immédiatement visibles dans les requêtes `SELECT` grâce à l’application des patchs, mais les données physiques ne sont mises à jour que lors des fusions ultérieures.
+
+<div id="mark-file">
+  ## Fichier de marques
+</div>
+
+Un fichier de marques dans ClickHouse est un fichier qui stocke des « marques », c’est-à-dire des entrées d’index qui permettent à ClickHouse de localiser rapidement l’emplacement de plages de données spécifiques dans les fichiers de données.
+
+<div id="materialized-view">
+  ## Vue matérialisée
+</div>
+
+Une vue matérialisée dans ClickHouse est un mécanisme qui exécute automatiquement une requête sur les données lorsqu’elles sont insérées dans une table source, et stocke les résultats transformés ou agrégés dans une table cible distincte afin d’accélérer l’exécution des requêtes.
+
+<div id="mergetree">
+  ## MergeTree
+</div>
+
+Un MergeTree dans ClickHouse est un moteur de table conçu pour des taux d’ingestion élevés et de grands volumes de données. C’est le principal moteur de stockage de ClickHouse, qui offre notamment le stockage colonnaire, le partitionnement personnalisé, des index primaires clairsemés et la prise en charge des fusions de données en arrière-plan.
+
+<div id="mutation">
+  ## Mutation
+</div>
+
+Dans ClickHouse, une mutation désigne une opération qui modifie ou supprime des données existantes dans une table, généralement à l’aide de commandes comme ALTER TABLE ... UPDATE ou ALTER TABLE ... DELETE. Les mutations sont implémentées sous forme de processus asynchrones en arrière-plan qui réécrivent l’intégralité des data parts affectées par la modification, au lieu de modifier les lignes en place.
+
+<div id="on-the-fly-mutation">
+  ## Mutation à la volée
+</div>
+
+Les mutations à la volée de ClickHouse permettent de rendre les mises à jour ou les suppressions visibles dans les requêtes SELECT suivantes immédiatement après l’envoi de la mutation, sans attendre la fin du processus de mutation en arrière-plan.
+
+<div id="parts">
+  ## Parts
+</div>
+
+Un fichier physique sur un disque qui stocke une partie des données d’une table. À ne pas confondre avec une partition, qui est une division logique des données d’une table créée à l’aide d’une clé de partitionnement.
+
+<div id="partitioning-key">
+  ## Clé de partitionnement
+</div>
+
+Dans ClickHouse, une clé de partitionnement est une expression SQL définie dans la clause PARTITION BY lors de la création d&#39;une table. Elle détermine comment les données sont réparties logiquement en partitions sur le disque. Chaque valeur unique de la clé de partitionnement forme sa propre partition physique, ce qui permet d&#39;effectuer efficacement des opérations de gestion des données, telles que la suppression, le déplacement ou l&#39;archivage de partitions entières.
+
+<div id="primary-key">
+  ## Clé primaire
+</div>
+
+Dans ClickHouse, une clé primaire détermine l’ordre dans lequel les données sont stockées sur le disque et sert à construire un index clairsemé qui accélère le filtrage des requêtes. Contrairement aux bases de données traditionnelles, la clé primaire dans ClickHouse ne garantit pas l’unicité : plusieurs lignes peuvent avoir la même valeur de clé primaire.
+
+<div id="projection">
+  ## Projection
+</div>
+
+Dans ClickHouse, une projection est une table cachée, maintenue automatiquement, qui stocke les données dans un ordre différent ou avec des agrégations précalculées afin d&#39;accélérer les requêtes, en particulier celles qui filtrent sur des colonnes ne figurant pas dans la clé primaire principale.
+
+<div id="refreshable-materialized-view">
+  ## Vue matérialisée avec rafraîchissement programmé
+</div>
+
+Une vue matérialisée avec rafraîchissement programmé est un type de vue matérialisée qui réexécute périodiquement sa requête sur l’ensemble du jeu de données et stocke le résultat dans une table cible. Contrairement aux vues matérialisées incrémentielles, les vues matérialisées avec rafraîchissement programmé sont mises à jour selon un calendrier et peuvent prendre en charge des requêtes complexes, notamment avec des JOIN et des UNION, sans restrictions.
+
+<div id="replica">
+  ## Réplique
+</div>
+
+Une copie des données stockées dans une base de données ClickHouse. Vous pouvez avoir autant de répliques d’un même jeu de données que nécessaire afin d’assurer la redondance et la fiabilité. Les répliques sont utilisées avec le moteur de table ReplicatedMergeTree, qui permet à ClickHouse de maintenir plusieurs copies des données synchronisées sur différents serveurs.
+
+<div id="shard">
+  ## Segment
+</div>
+
+Un sous-ensemble de données. ClickHouse comporte toujours au moins un segment pour vos données. Si vous ne répartissez pas les données sur plusieurs serveurs, elles seront stockées dans un seul segment. La répartition des données sur plusieurs serveurs permet de distribuer la charge si vous dépassez la capacité d’un seul serveur.
+
+<div id="skipping-index">
+  ## Index de saut
+</div>
+
+Les index de saut servent à stocker de petites quantités de métadonnées sur plusieurs granules consécutives, ce qui permet à ClickHouse d’éviter de parcourir des lignes non pertinentes. Les index de saut offrent une alternative légère aux projections.
+
+<div id="sorting-key">
+  ## Clé de tri
+</div>
+
+Dans ClickHouse, une clé de tri définit l’ordre physique des lignes sur disque. Si vous ne spécifiez pas de clé primaire, ClickHouse utilise la clé de tri comme clé primaire. Si vous spécifiez les deux, la clé primaire doit être un préfixe de la clé de tri.
+
+<div id="sparse-index">
+  ## Index clairsemé
+</div>
+
+Type d’indexation dans lequel l’index primaire contient une entrée pour un groupe de lignes, plutôt que pour une ligne unique. L’entrée correspondant à un groupe de lignes est appelée une marque. Avec les index clairsemés, ClickHouse identifie d’abord les groupes de lignes susceptibles de correspondre à la requête, puis les traite séparément pour trouver une correspondance. Ainsi, l’index primaire est suffisamment petit pour être chargé en mémoire.
+
+<div id="table-engine">
+  ## Moteur de table
+</div>
+
+Les moteurs de table dans ClickHouse déterminent comment les données sont écrites, stockées et lues. MergeTree est le moteur de table le plus courant et permet l&#39;insertion rapide de grandes quantités de données, qui sont ensuite traitées en arrière-plan.
+
+<div id="ttl">
+  ## TTL
+</div>
+
+Time To Live (TTL) est une fonctionnalité de ClickHouse qui déplace, supprime ou agrège automatiquement des colonnes ou des lignes après un certain délai. Cela vous permet de gérer le stockage plus efficacement, car vous pouvez supprimer, déplacer ou archiver les données auxquelles vous n’avez plus besoin d’accéder régulièrement.

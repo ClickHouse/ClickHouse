@@ -1,0 +1,55 @@
+---
+alias: []
+description: 'TemplateIgnoreSpaces 포맷 문서'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
+doc_type: 'reference'
+---
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Template`]와 유사하지만, 입력 스트림에서 구분 기호와 값 사이의 공백 문자를 건너뜁니다.
+하지만 포맷 문자열에 공백 문자가 포함되어 있으면 입력 스트림에도 해당 문자가 있어야 합니다.
+또한 일부 구분 기호를 별도의 파트로 나누어 그 사이의 공백을 무시할 수 있도록 빈 플레이스홀더(`${}` 또는 `${:None}`)를 지정할 수 있습니다.
+이러한 플레이스홀더는 공백 문자를 건너뛸 때만 사용됩니다.
+모든 행에서 컬럼 값의 순서가 같다면 이 포맷으로 `JSON`을 읽을 수 있습니다.
+
+<Note>
+  이 포맷은 입력에만 적합합니다.
+</Note>
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+다음 요청은 [JSON](/ko/reference/formats/JSON/JSON) 포맷의 출력 예시에 나온 데이터를 삽입하는 데 사용할 수 있습니다:
+
+```sql
+INSERT INTO table_name 
+SETTINGS
+    format_template_resultset = '/some/path/resultset.format',
+    format_template_row = '/some/path/row.format',
+    format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
+```
+
+```text title="/some/path/resultset.format"
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+
+```text title="/some/path/row.format"
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

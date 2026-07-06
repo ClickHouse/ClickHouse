@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Integración con un registro de esquemas'
+description: 'Cómo integrar ClickPipes con un registro de esquemas para gestionar esquemas.'
+slug: /integrations/clickpipes/kafka/schema-registries
+title: 'Registros de esquemas para Kafka ClickPipe'
+doc_type: 'guide'
+keywords: ['registros de esquemas', 'kafka', 'clickpipes', 'avro', 'confluent']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+ClickPipes permite la integración con un registro de esquemas para decodificar topics codificados con Avro y Protobuf.
+
+<div id="supported-schema-registries">
+  ## Registros de esquemas compatibles para Kafka ClickPipes
+</div>
+
+Se admiten registros de esquemas compatibles con la API de Confluent Schema Registry. Esto incluye:
+
+* Confluent Schema Registry
+* Redpanda Schema Registry
+
+ClickPipes aún no es compatible con AWS Glue Schema Registry ni con Azure Schema Registry. Si necesita compatibilidad con estos registros de esquemas, [póngase en contacto con nuestro equipo](https://clickhouse.com/company/contact?loc=clickpipes).
+
+<div id="schema-registry-configuration">
+  ## Configuración
+</div>
+
+Para integrar ClickPipes con un registro de esquemas durante la configuración, debe usar una de las siguientes opciones:
+
+1. Proporcione una ruta completa al `subject` del esquema (p. ej., `https://registry.example.com/subjects/events`)
+   * Opcionalmente, puede hacer referencia a una versión específica agregando `/versions/[version]` a la URL (de lo contrario, ClickPipes recuperará la versión más reciente).
+2. Proporcione una ruta completa al ID del esquema (p. ej., `https://registry.example.com/schemas/ids/1000`)
+3. Proporcione la URL raíz del registro de esquemas (p. ej., `https://registry.example.com`)
+
+<div id="network-connectivity">
+  ## Conectividad de red
+</div>
+
+ClickPipes se conecta al registro de esquemas por HTTPS en la URL que proporciones. El registro de esquemas no necesita ser accesible públicamente.
+
+Si accedes a los brókeres de Kafka mediante un [endpoint privado inverso](/es/integrations/clickpipes/aws-privatelink) (AWS PrivateLink o GCP Private Service Connect), el registro de esquemas puede usar la misma conectividad privada. ClickPipes resuelve el nombre de host del registro a través del DNS privado del endpoint privado inverso, por lo que un registro alojado de forma privada junto con tus brókeres será accesible siempre que su nombre de host se resuelva en las direcciones IP privadas del endpoint privado inverso (mediante el soporte de DNS privado del endpoint o una correspondencia de DNS privado personalizada).
+
+Ten en cuenta lo siguiente:
+
+* La URL del registro de esquemas debe usar `https://`.
+* Si el nombre de host del registro se resuelve en una dirección privada, debe ser accesible a través de un endpoint privado inverso seleccionado para el ClickPipe; de lo contrario, la comprobación de conectividad durante la configuración fallará.
+
+<div id="how-schema-registries-work">
+  ## Cómo funciona
+</div>
+
+ClickPipes recupera y aplica dinámicamente el esquema desde el registro de esquemas configurado.
+
+* Si el mensaje incluye un ID de esquema, se usará para recuperar el esquema.
+* Si el mensaje no incluye un ID de esquema, se usará el ID de esquema o el nombre del subject especificado en la configuración de ClickPipe para recuperar el esquema.
+* Si el mensaje se escribe sin un ID de esquema incrustado y en la configuración de ClickPipe no se especifica ningún ID de esquema ni nombre de subject, el esquema no se recuperará y el mensaje se omitirá; se registrará un `SOURCE_SCHEMA_ERROR` en la tabla de errores de ClickPipes.
+* Si el mensaje no se ajusta al esquema, se omitirá y se registrará un `DATA_PARSING_ERROR` en la tabla de errores de ClickPipes.
+* Solo para esquemas Protobuf: ClickPipes cargará todos los esquemas importados definidos como dependencias. Los esquemas Avro con referencias externas aún no son compatibles.
+
+<div id="schema-mapping">
+  ## Mapeo de esquemas
+</div>
+
+Se aplican las siguientes reglas al mapeo entre el esquema obtenido y la tabla de destino de ClickHouse:
+
+* Si el esquema contiene un campo que no está incluido en el mapeo de destino de ClickHouse, ese campo se ignora.
+* Si al esquema le falta un campo definido en el mapeo de destino de ClickHouse, la columna de ClickHouse se rellenará con un valor &quot;cero&quot;, como 0 o una cadena vacía. Tenga en cuenta que las expresiones `DEFAULT` no son compatibles.
+* Si el campo del esquema y la columna de ClickHouse son incompatibles, las inserciones de esa fila o mensaje fallarán, y el error se registrará en la tabla de errores de ClickPipes. Tenga en cuenta que se admiten varias conversiones implícitas (p. ej., entre tipos numéricos), pero no todas (p. ej., un campo de tipo registro de Avro no puede insertarse en una columna `Int32` de ClickHouse).

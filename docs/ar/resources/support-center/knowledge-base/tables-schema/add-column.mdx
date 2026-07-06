@@ -1,0 +1,218 @@
+---
+title: إضافة عمود إلى جدول
+description: في هذا الدليل، سنتعلّم كيفية إضافة عمود إلى جدول موجود.
+date: 2024-12-18
+tags: ['نمذجة البيانات']
+keywords: ['إضافة عمود']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## إضافة عمود إلى جدول
+</div>
+
+سنستخدم clickhouse-local:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+لنفترض أن لدينا الجدول التالي:
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+لنُضِف سجلًا واحدًا:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+والآن نفّذ استعلامًا على جدول `events`:
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## إضافة عمود جديد
+</div>
+
+لنفترض الآن أننا سنضيف عمودًا جديدًا باسم `favoriteNumber`، وسيكون من النوع `Float64`.
+يمكننا القيام بذلك باستخدام عبارة [`ALTER TABLE...ADD COLUMN`](/ar/reference/statements/alter/column#add-column):
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+إذا نفّذنا استعلامًا على جدول `events`، فسيظهر الناتج التالي:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+تكون القيمة الافتراضية للصف `Alexey` هي 7، لأن هذا العمود لم يكن موجودًا عند إضافة ذلك الصف.
+بعد ذلك، لنُضِف عمودًا آخر:
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+إذا نفّذنا استعلامًا على جدول `events`، فسنرى الناتج التالي:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## تعديل القيمة الافتراضية لعمود
+</div>
+
+إذا عدّلنا العمود `favoriteNumber` ليصبح من نوع مختلف باستخدام عبارة [`ALTER TABLE...MODIFY COLUMN`](/ar/reference/statements/alter/column#modify-column)، فتصبح الأمور أكثر إثارة للاهتمام:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+إذا نفّذنا استعلامًا على `events` مرة أخرى، فسنرى هذا الناتج:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+يحتفظ `Tyler` بالقيمة `7`، وهي القيمة الافتراضية التي كانت محددة عند إنشاء ذلك الصف.
+أما `Alexey` فيأخذ القيمة الافتراضية الجديدة `99` لأن العمود `favoriteNumber` لم يكن موجودًا عند إنشاء ذلك الصف.
+
+إذا أردنا أن يستخدم الصف `Alexey` القيمة الافتراضية الحالية فورًا، فعلينا استدعاء [`OPTIMIZE TABLE` ](/ar/reference/statements/optimize) لفرض كتابة القيم الافتراضية الحالية على القرص:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+بعد إتمام ذلك، لنفترض أننا غيّرنا القيمة الافتراضية مرة أخرى:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+ثم أدرِج صفًا آخر:
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+أخيرًا، لنُجري استعلامًا على `events` مرةً أخرى:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+يتخذ `Tanya` القيمة الافتراضية الجديدة `21`، بينما يحتفظ `Alexey` بالقيمة الافتراضية القديمة `99`.
+
+<div id="controlling-column-position-in-table">
+  ## التحكم في موضع العمود داخل الجدول
+</div>
+
+عند إضافة عمود جديد، يُضاف افتراضيًا إلى نهاية الجدول.
+لكن يمكننا استخدام العبارتين `FIRST` و`AFTER` للتحكم في موضع العمود.
+
+على سبيل المثال، إذا أردنا إضافة عمود باسم `favoriteColor` بعد العمود `name`، فيمكننا فعل ذلك على النحو التالي:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+لنُجرِ استعلامًا على `events`:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+وإذا أردنا إضافة عمود `favoriteDatabase` وجعله الأول في القائمة، فيمكننا فعل ذلك على النحو التالي:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+ولنلقِ نظرة على تعريف الجدول:
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```
