@@ -4393,6 +4393,51 @@ void checkVersionColumnTypesConversion(const IDataType * old_type, const IDataTy
 
 }
 
+void MergeTreeData::checkSortingKeyChangeIsPossibleWithPatchParts(
+    const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const
+{
+    UInt64 max_prefix_size = 0;
+    for (const auto & patch_part : getPatchPartsVectorForInternalUsage())
+    {
+        const auto & source_parts_set = patch_part->getSourcePartsSet();
+        if (source_parts_set.getFormatVersion() >= SourcePartsSetForPatch::V2_FORMAT_VERSION)
+            max_prefix_size = std::max(max_prefix_size, source_parts_set.getSortKeyPrefixSize());
+    }
+
+    if (max_prefix_size == 0)
+        return;
+
+    auto get_sorting_key_children = [](const StorageInMemoryMetadata & metadata) -> ASTs
+    {
+        auto expr_list_ast = metadata.getSortingKey().getOriginalExpressionList();
+        if (!expr_list_ast)
+            return {};
+        if (const auto * expr_list = expr_list_ast->as<ASTExpressionList>())
+            return expr_list->children;
+        return {};
+    };
+
+    const auto old_children = get_sorting_key_children(old_metadata);
+    const auto new_children = get_sorting_key_children(new_metadata);
+
+    /// `max_prefix_size <= old_children.size()` holds because every v2 patch captures the full
+    /// sort-key size at write time and this check forbids shrinking below it afterwards.
+    const size_t check_size = std::min<size_t>(max_prefix_size, old_children.size());
+
+    for (size_t i = 0; i < check_size; ++i)
+    {
+        if (i < new_children.size() && new_children[i]->formatWithSecretsOneLine() == old_children[i]->formatWithSecretsOneLine())
+            continue;
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot apply this change of the sorting key: table has patch parts created by lightweight updates "
+            "that were written with the first {} expression(s) of the current sorting key, "
+            "so these expressions must stay unchanged and may only be extended. "
+            "Materialize the patches first (ALTER TABLE ... APPLY PATCHES) and retry after patch parts are removed in the background",
+            max_prefix_size);
+    }
+}
+
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const
 {
     /// Reject schema-changing ALTER while a streaming query holds a subscription on this storage.
@@ -4517,6 +4562,9 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
 
     removeImplicitStatistics(new_metadata.columns);
     commands.apply(new_metadata, local_context);
+
+    if (std::any_of(commands.begin(), commands.end(), [](const AlterCommand & c) { return c.type == AlterCommand::MODIFY_ORDER_BY; }))
+        checkSortingKeyChangeIsPossibleWithPatchParts(new_metadata, old_metadata);
 
     const bool disk_setting_changed = new_metadata.settings_changes && MergeTreeSettings::isDiskSettingChanged(
         /*old_changes=*/old_metadata.hasSettingsChanges() ? old_metadata.getSettingsChanges()->as<const ASTSetQuery &>().changes : SettingsChanges{},
@@ -10623,15 +10671,19 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
     switch (source_parts_set.getFormatVersion())
     {
         case SourcePartsSetForPatch::V1_FORMAT_VERSION:
+        {
             metadata_snapshot = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
             break;
+        }
         case SourcePartsSetForPatch::V2_FORMAT_VERSION:
+        {
             auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
             const auto & main_sorting_key = main_metadata->getSortingKey();
             metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), main_sorting_key, source_parts_set.getSortKeyPrefixSize(), local_context);
             break;
+        }
         default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", source_parts_set.getFormatVersion());
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", static_cast<UInt32>(source_parts_set.getFormatVersion()));
     }
 
     return metadata_snapshot;

@@ -152,7 +152,7 @@ PatchParts SourcePartsSetForPatch::getPatchParts(const MergeTreePartInfo & origi
             {
                 .mode = PatchMode::MergeOnKey,
                 .part = patch_part,
-                .source_parts = {}, // source part name are not needed for MergeOnKey
+                .source_parts = {}, // source part names are not needed for MergeOnKey
                 .source_data_version = original_part.getDataVersion(),
                 .perform_alter_conversions = true,
                 .sorting_key = sorting_key_prefix_description,
@@ -238,14 +238,9 @@ SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & sou
     {
         const auto & set = part->getSourcePartsSet();
 
-        /// v1 and v2 patches live in different partitions (their partition-id hash differs), so
-        /// inputs to a patch-on-patch merge always share the same format version. For v2 the
-        /// sort-key prefix length is derived from the sort-key AST text, which is itself hashed
-        /// into the partition id — so two v2 patches in the same partition also have equal
-        /// prefix lengths *and* the same `sorting_key_prefix_description` (pointer equality is
-        /// not guaranteed, but the `KeyDescription` contents are). We copy the shared_ptr from
-        /// the first part so the merged set reuses the same cached `KeyDescription` without
-        /// re-building from metadata.
+        /// Inputs to a patch-on-patch merge always share the format version, prefix length and
+        /// `sorting_key_prefix_description` contents, because all of them are covered by the
+        /// partition-id hash. Copy them from the first part instead of rebuilding from metadata.
         if (!format_version_set)
         {
             merged_set.format_version = set.format_version;

@@ -312,21 +312,9 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderMergeOnKey::readPatches(
 {
     std::vector<PatchReadResultPtr> results;
 
-    /// When the caller's `patch_results` deque is empty — typically right after `MergeTreeReadersChain`
-    /// evicted every accumulated block on the main cursor advancing — `last_read_patch` is null and
-    /// this loop has to read ranges until `needNewPatch` says the last block's max sort-key has
-    /// caught up with the current main block's max. For a fresh patch reader whose sort-key range
-    /// starts far below the main cursor, that means traversing *every* range whose max is still
-    /// below `main_max`. Retaining each of those blocks in `results` pins ~8 marks of patch data
-    /// per traversed range; for a patch a few million rows wide this alone can hold hundreds of
-    /// MB per patch per thread until the next `readPatches` call gets to evict them from the
-    /// front of the deque (the blow-up the user hit at 96 patches, 60 GiB peak). The blocks are
-    /// also useless — they live entirely below `main_min`, so `MergeTreeReadersChain::readPatches`
-    /// would call `needOldPatch` → false → pop on the very next iteration.
-    ///
-    /// Drop such blocks inline. We still need to track `last_read_patch` so `needNewPatch` can
-    /// decide when to stop, so keep the most recent discarded block alive in a local holder
-    /// across iterations (its dtor runs when this function returns).
+    /// Blocks whose max sort-key is entirely below `main_min` are useless to retain, but keeping them
+    /// while this loop traverses many ranges can pin hundreds of MB of patch data per thread. Drop them
+    /// inline; keep only the most recent discarded block alive so `needNewPatch` can decide when to stop.
     PatchReadResultPtr last_discarded;
 
     while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch, result_header)))
@@ -389,9 +377,7 @@ static Block buildMainBlockWithSortKey(const Block & result_header, const Column
 bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
 {
     /// Need a new patch block if main's max sort-key has advanced past the last-read patch block's
-    /// max sort-key. For an empty sort key, every block is a single run; still follow the same
-    /// logic with a zero-column compare that always returns 0 → needNewPatch=false → we stream
-    /// the patch mark by mark as the main side advances.
+    /// max sort-key.
     const auto & old = typeid_cast<const PatchMergeOnKeyReadResult &>(old_patch);
 
     /// An empty patch block contributes nothing — always read the next mark if there is one.
@@ -399,8 +385,12 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
         return true;
 
     const auto & sorting_key = *patch_part.sorting_key;
+
+    /// Degenerate sort key (`ORDER BY tuple()`): every patch row can match every main block, so the
+    /// whole patch must be resident before the first apply — read all ranges eagerly (memory mirrors
+    /// the v1 Join mode). Returning false would silently lose updates from never-read ranges.
     if (sorting_key.column_names.empty())
-        return true;  /// No key — always read next mark if one exists.
+        return true;
 
     if (main_result.num_rows == 0)
         return false;
@@ -458,6 +448,8 @@ MergeTreePatchReaderPtr getPatchReader(PatchPartInfoForReader patch_part, MergeT
         case PatchMode::MergeOnKey:
             return std::make_unique<MergeTreePatchReaderMergeOnKey>(std::move(patch_part), std::move(reader));
     }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected patch parts mode {}", patch_part.mode);
 }
 
 }

@@ -872,9 +872,10 @@ Possible values:
   streaming `MergeOnKey` pass. Memory usage during apply is bounded by the largest equal-sort-key
   run instead of the whole patch size.
 
-Old-format patches on disk remain readable regardless of this setting. Must be kept at the default
-during rolling upgrades; switch to `v2` only after every replica has been upgraded to a version
-that recognises the v2 format.
+Old-format patches on disk remain readable regardless of this setting. During a rolling upgrade
+from a version that does not recognise the v2 format, keep `v1` (either via this setting or via
+the `compatibility` setting) until every replica has been upgraded; otherwise upgraded replicas
+may write v2 patch parts that not yet upgraded replicas cannot read.
 )", 0) \
     \
     DECLARE(UInt64, max_uncompressed_bytes_in_patches, 30ULL * 1024 * 1024 * 1024, R"(

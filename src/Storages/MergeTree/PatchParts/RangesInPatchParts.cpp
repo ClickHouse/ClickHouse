@@ -134,18 +134,11 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
-/// v2 patches. Find the patch mark ranges whose sort-key values intersect the sort-key range
-/// covered by `original_ranges` on the main part.
-///
-/// For each main range, binary-search the patch's primary index for the patch granules that
-/// cover `[main[range.begin], main[range.end]]`. The search compares over the full *common
-/// prefix* of the sort keys (not just the leading column) so tables with compound sort keys
-/// actually get a tight bound — comparing only column 0 would conflate all rows that share the
-/// same leading value and degrade pruning to nothing when the cardinality of column 0 is low.
-/// Per-range bounds are collected, sorted, and coalesced via `optimizeRanges` (same pattern
-/// the v1 Merge/Join modes use).
-/// Fall through to "every range" in the unusual cases where we can't get a bound (empty index,
-/// no common prefix, etc.) — correctness is preserved, only the perf benefit is lost.
+/// v2 patches. Finds the patch mark ranges whose sort-key values intersect the sort-key range
+/// covered by `original_ranges` on the main part: for each main range, binary-search the patch's
+/// primary index over the full common prefix of the sort keys, then coalesce via `optimizeRanges`.
+/// Falls back to "every range" when no bound can be obtained (empty index, no common prefix,
+/// etc.) — correctness is preserved, only the pruning benefit is lost.
 MarkRanges getRangesInPatchPartMergeOnKey(
     const DataPartPtr & original_part,
     const PatchPartInfoForReader & patch,
@@ -174,8 +167,11 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     if (!main_index || main_index->empty() || !patch_index || patch_index->empty())
         return emit_all_patch_ranges();
 
+    if (!patch.sorting_key)
+        return emit_all_patch_ranges();
+
     const auto & reverse_flags = patch.sorting_key->reverse_flags;
-    const size_t patch_sorting_key_prefix_size = patch.sorting_key ? patch.sorting_key->column_names.size() : 0;
+    const size_t patch_sorting_key_prefix_size = patch.sorting_key->column_names.size();
     const size_t common_prefix_size = std::min(main_index->size(), patch_sorting_key_prefix_size);
 
     if (common_prefix_size == 0)
@@ -228,14 +224,9 @@ MarkRanges getRangesInPatchPartMergeOnKey(
         const size_t patch_lo = lo > 0 ? lo - 1 : 0;
         size_t patch_hi;
 
-        /// upper_bound: first patch granule whose first-row sort-key is STRICTLY greater than
-        /// main row `main_end`. For an interior mark that's the next granule's first row —
-        /// a strict upper bound on the range's keys. For the FINAL mark, the writer stores
-        /// the *last row's* value rather than a past-the-end sentinel; using `>=` would then
-        /// drop patch granules whose first key equals that last-row value, even though main
-        /// has a matching row. Always use strict `>` so equal values are kept. When the main
-        /// range reaches the end of the part (`main_end == main_marks_count`) there is no
-        /// index row available at all — fall back to the full patch suffix.
+        /// upper_bound: first patch granule whose first-row sort-key is strictly greater than main
+        /// row `main_end`. Strict `>` is required: for the final mark the index stores the last
+        /// row's value (not a past-the-end sentinel), and `>=` would drop granules with equal keys.
 
         if (main_end == main_marks_count)
         {
@@ -347,12 +338,9 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
     {
-        /// v2 `MergeOnKey` pruning already returns a sort-key-tight range per task
-        /// (`getRangesInPatchPartMergeOnKey`). Intersecting that against the pre-split 8-mark
-        /// chunks from `ranges_by_name` would widen the read back out to a chunk boundary: e.g.
-        /// a 1-mark overlap would fetch the whole 8-mark chunk (~65 k rows) instead of the single
-        /// ~8 k-row granule that actually matters. Split the tight range ourselves, capped at
-        /// `max_granules_in_range`, so the reader still gets chunk-sized units without over-reading.
+        /// v2 `MergeOnKey` pruning already returns a sort-key-tight range per task. Intersecting it
+        /// with the pre-split chunks from `ranges_by_name` would widen the read back out to a chunk
+        /// boundary, so split the tight range ourselves, capped at `max_granules_in_range`.
         if (patch_parts[i].mode == PatchMode::MergeOnKey)
         {
             MarkRanges split;

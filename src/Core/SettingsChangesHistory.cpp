@@ -1282,6 +1282,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
@@ -1301,7 +1302,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         });
         addSettingsChanges(merge_tree_settings_changes_history, "26.5",
         {
-            {"patch_parts_version", "v2", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates."},
             {"part_minmax_index_columns", "partition_key_only", "partition_key_only", "New setting."},
             {"add_minmax_index_for_block_number_column", false, false, "New setting."},
             {"add_minmax_index_for_block_offset_column", false, false, "New setting."},
