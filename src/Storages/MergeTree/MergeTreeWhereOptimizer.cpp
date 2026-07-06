@@ -384,7 +384,7 @@ void MergeTreeWhereOptimizer::analyzeImpl(Conditions & res, const RPNBuilderTree
             && !cannotBeMoved(conjunct, where_optimizer_context)
             /// When use final, do not take into consideration the conditions with non-sorting keys. Because final select
             /// need to use all sorting keys, it will cause correctness issues if we filter other columns before final merge.
-            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
+            && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct, where_optimizer_context.context))
             /// Some identifiers can unable to support PREWHERE (usually because of different types in Merge engine)
             && columnsSupportPrewhere(info.columns)
             /// Do not move conditions involving all queried columns.
@@ -524,7 +524,7 @@ MergeTreeWhereOptimizer::Conditions MergeTreeWhereOptimizer::analyze(const RPNBu
                 !has_invalid_column
                 && !columns.empty()
                 && !cannotBeMoved(conjunct, where_optimizer_context)
-                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct))
+                && (!where_optimizer_context.is_final || isExpressionOverSortingKey(conjunct, where_optimizer_context.context))
                 && columnsSupportPrewhere(columns)
                 && columns.size() < queried_columns.size();
             res.emplace_back(std::move(cond));
@@ -691,11 +691,27 @@ bool MergeTreeWhereOptimizer::columnsSupportPrewhere(const NameSet & columns) co
     return true;
 }
 
-bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node) const
+static bool isFunctionDeterministic(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
+{
+    if (auto function_base = function_node.getFunctionBase())
+        return function_base->isDeterministic();
+
+    /// AST-based tree does not carry a resolved function, look it up by name.
+    auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
+    return function_resolver && function_resolver->isDeterministic();
+}
+
+bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNode & node, const ContextPtr & context) const
 {
     if (node.isFunction())
     {
         auto function_node = node.toFunctionNode();
+
+        /// A non-deterministic function (e.g. `rand`) is not a function of the sorting key:
+        /// its result can differ between row versions of one dedup group.
+        if (!isFunctionDeterministic(function_node, context))
+            return false;
+
         size_t arguments_size = function_node.getArgumentsSize();
 
         for (size_t i = 0; i < arguments_size; ++i)
@@ -706,7 +722,7 @@ bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNod
             if (argument.isConstant() || sorting_key_names.contains(argument_column_name))
                 continue;
 
-            if (!isExpressionOverSortingKey(argument))
+            if (!isExpressionOverSortingKey(argument, context))
                 return false;
         }
 
@@ -730,16 +746,6 @@ bool MergeTreeWhereOptimizer::isSubsetOfTableColumns(const NameSet & columns) co
     return true;
 }
 
-static bool isFunctionDeterministic(const RPNBuilderFunctionTreeNode & function_node, const ContextPtr & context)
-{
-    if (auto function_base = function_node.getFunctionBase())
-        return function_base->isDeterministic();
-
-    /// AST-based tree does not carry a resolved function, look it up by name.
-    auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
-    return function_resolver && function_resolver->isDeterministic();
-}
-
 bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, const WhereOptimizerContext & where_optimizer_context) const
 {
     if (node.isFunction())
@@ -749,11 +755,6 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const RPNBuilderTreeNode & node, con
 
         /// disallow arrayJoin expressions to be moved to PREWHERE for now
         if (function_name == "arrayJoin")
-            return true;
-
-        /// Under FINAL, a non-deterministic condition (e.g. one containing `rand`) can give different
-        /// verdicts to row versions of one dedup group and change which row survives the merge.
-        if (where_optimizer_context.is_final && !isFunctionDeterministic(function_node, where_optimizer_context.context))
             return true;
 
         /// Disallow GLOBAL IN conditions from being moved to PREWHERE.
