@@ -176,29 +176,17 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
         /// TODO: Create block_cache (if not memory-only mode) or update its settings if changed.
     }
 
-    const NodeRef ref = mutable_memtable->appendNode(node, /*strict=*/ true);
-
-    /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
-    /// no need for the per-entry spinlocks.)
     const NodePathHash hash = node.getOrCalculatePathHash();
-    if (auto * lookup = node_cache.map.find(hash))
+    auto * lookup = node_cache.map.find(hash);
+    std::optional<NodeAction> combined;
+
+    /// Validate `action` before mutating anything.
+    if (lookup)
     {
-        NodeRefCache::Entry & info = lookup->getMapped();
         /// The node already exists, so its history so far combines to Create.
         /// Combine that with the new action, strictly (e.g. asserts we don't Create it again).
-        std::optional<NodeAction> combined = combineActions(NodeAction::Create, node.action, /*strict=*/ true);
-        if (!combined)
-        {
-            /// Create + Remove: `node_cache` doesn't keep removed nodes.
-            node_cache.map.erase(hash);
-        }
-        else
-        {
-            chassert(*combined == NodeAction::Create); // Create + Update = Create
-            info.file_seqno = mutable_memtable->file_seqno;
-            info.block.store(ref.block);
-            info.node_offset = ref.offset;
-        }
+        combined = combineActions(NodeAction::Create, node.action, /*strict=*/ true);
+        chassert(!combined || combined == NodeAction::Create);
     }
     else
     {
@@ -206,7 +194,29 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
             throw DB::Exception(
                 DB::ErrorCodes::LOGICAL_ERROR, "Unexpected NodeAction {} for a node that doesn't exist",
                 uint32_t(node.action));
+    }
 
+    const NodeRef ref = mutable_memtable->appendNode(node, /*strict=*/ true);
+
+    /// Update `node_cache`. (We hold storage_mutex exclusively, so no concurrent readers;
+    /// no need for the per-entry spinlocks.)
+    if (lookup)
+    {
+        if (!combined)
+        {
+            /// Create + Remove: `node_cache` doesn't keep removed nodes.
+            node_cache.map.erase(hash);
+        }
+        else
+        {
+            NodeRefCache::Entry & info = lookup->getMapped();
+            info.file_seqno = mutable_memtable->file_seqno;
+            info.block.store(ref.block);
+            info.node_offset = ref.offset;
+        }
+    }
+    else
+    {
         NodeRefCache::Entry & info = node_cache.map[hash];
         info.file_seqno = mutable_memtable->file_seqno;
         info.block.store(ref.block);

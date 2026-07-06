@@ -135,8 +135,6 @@ NodeRef Memtable::appendNode(FullNode & node, bool strict)
         children[node.path.parentPath().calculateHash()].insertCombine(
             node.path.baseName(), node.action, arena, strict);
 
-    node_count_delta += nodeCountDelta(node.action);
-
     BlockPtr new_block;
     NodeRef ref;
     if (BlockData::appendNodeOrStartNewBlock(blocks.empty() ? nullptr : blocks.back(), node, target_block_size, new_block, ref))
@@ -144,6 +142,8 @@ NodeRef Memtable::appendNode(FullNode & node, bool strict)
         total_bytes += new_block->capacity;
         blocks.push_back(std::move(new_block));
     }
+    node_count_delta += nodeCountDelta(node.action);
+
     return ref;
 }
 
