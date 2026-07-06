@@ -11,7 +11,7 @@
 namespace DB
 {
 
-class FormatSettings;
+struct FormatSettings;
 
 /** Serializes the result set as a single schema-less Flatbuffers (FlexBuffers) value.
   *

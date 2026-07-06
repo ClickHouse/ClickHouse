@@ -246,6 +246,7 @@ void FlatbuffersRowOutputFormat::serializeField(const IColumn & column, const Da
     throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} is not supported for Flatbuffers output format", data_type->getName());
 }
 
+void registerOutputFormatFlatbuffers(FormatFactory & factory);
 void registerOutputFormatFlatbuffers(FormatFactory & factory)
 {
     factory.registerOutputFormat("Flatbuffers", [](
@@ -268,7 +269,10 @@ void registerOutputFormatFlatbuffers(FormatFactory & factory)
 namespace DB
 {
 class FormatFactory;
-void registerOutputFormatFlatbuffers(FormatFactory &) {}
+void registerOutputFormatFlatbuffers(FormatFactory &);
+void registerOutputFormatFlatbuffers(FormatFactory &)
+{
+}
 }
 
 #endif
