@@ -257,7 +257,7 @@ void MySQLHandler::run()
     try
     {
         Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
-            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8_general_ci);
+            auth_plugin->getName(), auth_plugin->getAuthPluginData(), CharacterSet::utf8mb4_0900_ai_ci);
         packet_endpoint->sendPacket<Handshake>(handshake);
 
         LOG_TRACE(log, "Sent handshake");

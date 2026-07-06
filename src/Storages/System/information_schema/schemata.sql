@@ -28,7 +28,7 @@ AS SELECT
     NULL                          AS default_character_set_schema,
     NULL                          AS default_character_set_name,
     NULL                          AS sql_path,
-    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific
+    'utf8mb4_0900_ai_ci'          AS default_collation_name, -- MySQL-specific; must match the collation advertised in the MySQL handshake (`CharacterSet::utf8mb4_0900_ai_ci` in `MySQLHandler`)
     'NO'                          AS default_encryption,      -- MySQL-specific
     catalog_name                  AS CATALOG_NAME,
     schema_name                   AS SCHEMA_NAME,

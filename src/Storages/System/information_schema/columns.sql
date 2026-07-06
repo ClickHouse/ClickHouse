@@ -94,7 +94,7 @@ AS SELECT
     comment AS column_comment,
     type AS column_type,
     if(is_in_primary_key, 'PRI', '') AS column_key,                          -- MySQL-specific
-    'select,insert,update,references' AS privileges,                         -- MySQL-specific
+    '' AS privileges,                                                        -- MySQL-specific; left empty until derived from the user's real grants (matches `InterpreterShowColumnsQuery`), since `system.columns` is visible to users with only `SHOW COLUMNS`
     if(default_kind IN ('MATERIALIZED', 'ALIAS'), default_expression, '')
                                       AS generation_expression,              -- MySQL-specific
     NULL AS srs_id,                                                          -- MySQL-specific
