@@ -83,3 +83,83 @@ FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
 SETTINGS join_algorithm = 'hash';
 
 DROP TABLE t_spill;
+
+-- The same invariant must hold for plain `Dynamic` keys. `compareAt` already treats a value in a
+-- typed variant and the same value in the shared variant as equal, but ColumnDynamic::computeHashInto
+-- used to forward to the raw ColumnVariant layout (discriminator + typed offset), so a value that
+-- lands in the shared variant in one row and a typed variant in another hashed differently. The
+-- `grace_hash` scatter and its temp-file spill both rely on that hash, so direct `Dynamic` join keys
+-- silently dropped matches (and a backward re-hash after a spill risks the FileBucket assertion).
+
+SET allow_experimental_dynamic_type = 1;
+
+DROP TABLE IF EXISTS d_typed;
+DROP TABLE IF EXISTS d_shared;
+DROP TABLE IF EXISTS d_both;
+
+-- `1::Int64` stored as a typed variant (Int64 fits the single dynamic slot).
+CREATE TABLE d_typed (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_typed VALUES (1::Int64);
+
+-- Same value `1::Int64`, but a String fills the single dynamic slot first, so `Int64` lands in the
+-- shared variant.
+CREATE TABLE d_shared (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_shared VALUES ('fillstr'), (1::Int64);
+
+-- Collect both physical representations of `1::Int64` into one table.
+CREATE TABLE d_both (k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO d_both SELECT k FROM d_typed;
+INSERT INTO d_both SELECT k FROM d_shared WHERE dynamicType(k) = 'Int64';
+
+-- One row keeps `Int64` as a typed variant, the other has it in the shared variant.
+SELECT 'dyn_splits',
+       countIf(NOT isDynamicElementInSharedData(k)),
+       countIf(isDynamicElementInSharedData(k))
+FROM d_both;
+
+-- Equality already treats them as equal.
+SELECT 'dyn_equal', (SELECT k FROM d_typed) = (SELECT k FROM d_shared WHERE dynamicType(k) = 'Int64');
+
+-- Hash-based joins must match the two representations (4 = 2 rows x 2 rows).
+SELECT 'dyn_hash', count() FROM d_both AS a INNER JOIN d_both AS b ON a.k = b.k SETTINGS join_algorithm = 'hash';
+SELECT 'dyn_parallel_hash', count() FROM d_both AS a INNER JOIN d_both AS b ON a.k = b.k SETTINGS join_algorithm = 'parallel_hash';
+SELECT 'dyn_grace_hash', count() FROM d_both AS a INNER JOIN d_both AS b ON a.k = b.k SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 4, max_block_size = 1;
+
+-- GROUP BY and DISTINCT must collapse them into a single group.
+SELECT 'dyn_group_by', count() FROM (SELECT k FROM d_both GROUP BY k);
+SELECT 'dyn_distinct', count() FROM (SELECT DISTINCT k FROM d_both);
+SELECT 'dyn_uniqExact', uniqExact(k) FROM d_both;
+
+DROP TABLE d_typed;
+DROP TABLE d_shared;
+DROP TABLE d_both;
+
+-- Grace-hash spill on a `Dynamic` key whose typed/shared split varies must not drop matches (the hash
+-- must be stable across the temp-file round-trip) and must not raise a FileBucket state-machine
+-- assertion. `s_typed` stores every key as a typed `Int64`; `s_shared` puts a String first so every
+-- `Int64` lands in the shared variant. Merged into one table, each key value 0..49 appears 20 times
+-- (10 typed + 10 shared), so the self-join is deterministic: 50 * 20 * 20 = 20000 matched pairs. The
+-- non-spilling hash join on the same data must agree.
+DROP TABLE IF EXISTS s_typed;
+DROP TABLE IF EXISTS s_shared;
+DROP TABLE IF EXISTS d_spill;
+CREATE TABLE s_typed (n UInt64, k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO s_typed SELECT number, (number % 50)::Int64 FROM numbers(500);
+CREATE TABLE s_shared (n UInt64, k Dynamic(max_types = 1)) ENGINE = Memory;
+INSERT INTO s_shared SELECT number, if(number = 0, 'fill'::Dynamic(max_types = 1), ((number - 1) % 50)::Int64::Dynamic(max_types = 1)) FROM numbers(501);
+CREATE TABLE d_spill (n UInt64, k Dynamic(max_types = 1)) ENGINE = MergeTree ORDER BY n
+    SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1;
+INSERT INTO d_spill SELECT n, k FROM s_typed;
+INSERT INTO d_spill SELECT n + 1000, k FROM s_shared WHERE dynamicType(k) = 'Int64';
+
+SELECT 'dyn_spill_grace', count()
+FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, max_joined_block_size_rows = 1;
+
+SELECT 'dyn_spill_hash', count()
+FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
+SETTINGS join_algorithm = 'hash';
+
+DROP TABLE s_typed;
+DROP TABLE s_shared;
+DROP TABLE d_spill;

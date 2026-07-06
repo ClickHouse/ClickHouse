@@ -17,6 +17,7 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Common/Arena.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 
@@ -893,6 +894,50 @@ void ColumnDynamic::updateHashWithValue(size_t n, SipHash & hash) const
 void ColumnDynamic::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
     variant_column_ptr->updateHashWithValueRange(begin, end, hash);
+}
+
+void ColumnDynamic::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// The hash must be representation-independent: a logically equal value must hash the same
+    /// regardless of whether it lives in a typed variant or the shared variant. Which section a
+    /// value lands in depends on insertion history (and can differ after a temp-file round-trip),
+    /// so hashing the raw `ColumnVariant` layout (discriminator + typed offset) produces different
+    /// hashes for equal values. This is not a mere partitioning nuisance: `compareAt` already treats
+    /// a typed variant and the shared variant as equal once they carry the same logical value, and
+    /// hash joins scatter and match keys by this hash, so a layout-dependent hash silently drops
+    /// matches for `Dynamic` join keys, while the grace-hash spill relies on a stable hash across the
+    /// temp-file round-trip (a value re-hashing to an earlier bucket after a spill triggers a
+    /// `FileBucket` state-machine assertion).
+    ///
+    /// Hash the same canonical per-row serialization `serializeValueIntoArena` produces (also used by
+    /// DISTINCT / uniqExact / the hash-table key): a typed variant and the shared variant emit
+    /// identical (null bit, type, binary value) bytes for the same logical value.
+    const size_t n = row_end - row_begin;
+    Arena arena;
+    for (size_t i = 0; i < n; ++i)
+    {
+        const char * begin = nullptr;
+        std::string_view serialized = serializeValueIntoArena(row_begin + i, arena, begin, /*settings=*/nullptr);
+        const UInt32 h = ::updateWeakHash32(
+            reinterpret_cast<const UInt8 *>(serialized.data()), serialized.size(), WEAK_HASH32_INITIAL_VALUE);
+        hash_out[i] = initial ? h : combineWeakHash32(h, hash_out[i]);
+        arena.rollback(serialized.size());
+    }
+}
+
+void ColumnDynamic::updateHashFast(SipHash & hash) const
+{
+    /// Must match `computeHashInto`: hash the canonical, layout-invariant per-row serialization so a
+    /// logically equal value hashes the same regardless of the typed-variant/shared-variant split.
+    const size_t rows = size();
+    Arena arena;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const char * begin = nullptr;
+        std::string_view serialized = serializeValueIntoArena(i, arena, begin, /*settings=*/nullptr);
+        hash.update(serialized.data(), serialized.size());
+        arena.rollback(serialized.size());
+    }
 }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

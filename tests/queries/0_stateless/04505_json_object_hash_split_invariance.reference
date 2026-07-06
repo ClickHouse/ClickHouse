@@ -8,3 +8,13 @@ distinct	1
 uniqExact	1
 spill_join_grace	20000
 spill_join_hash	20000
+dyn_splits	1	1
+dyn_equal	1
+dyn_hash	4
+dyn_parallel_hash	4
+dyn_grace_hash	4
+dyn_group_by	1
+dyn_distinct	1
+dyn_uniqExact	1
+dyn_spill_grace	20000
+dyn_spill_hash	20000
