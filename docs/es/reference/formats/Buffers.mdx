@@ -1,0 +1,114 @@
+---
+alias: []
+description: 'Documentación del formato Buffers'
+input_format: true
+keywords: ['Buffers']
+output_format: true
+slug: /interfaces/formats/Buffers
+title: 'Buffers'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+`Buffers` es un formato binario muy simple para el intercambio de datos **efímeros**, en el que tanto el consumidor como el productor ya conocen el esquema y el orden de las columnas.
+
+A diferencia de [Native](/es/reference/formats/Native), **no** almacena nombres ni tipos de columna, ni metadatos adicionales.
+
+En este formato, los datos se escriben y se leen por [bloques](/es/resources/develop-contribute/introduction/architecture#block) en formato binario. Buffers utiliza la misma representación binaria por columna que el formato [Native](/es/reference/formats/Native) y respeta la misma configuración del formato Native.
+
+Para cada bloque, se escribe la siguiente secuencia:
+
+1. Número de columnas (UInt64, little-endian).
+2. Número de filas (UInt64, little-endian).
+3. Para cada columna:
+
+* Tamaño total en bytes de los datos de columna serializados (UInt64, little-endian).
+* Bytes de los datos de columna serializados, exactamente igual que en el formato [Native](/es/reference/formats/Native).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Escribir en un archivo:
+
+```sql
+SELECT
+    number AS num,
+    number * number AS num_square
+FROM numbers(10)
+INTO OUTFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+Vuelva a leerlo especificando explícitamente los tipos de columna:
+
+```sql
+SELECT
+    *
+FROM file(
+    'squares.buffers',
+    'Buffers',
+    'col_1 UInt64, col_2 UInt64'
+);
+```
+
+```txt
+  ┌─col_1─┬─col_2─┐
+  │     0 │     0 │
+  │     1 │     1 │
+  │     2 │     4 │
+  │     3 │     9 │
+  │     4 │    16 │
+  │     5 │    25 │
+  │     6 │    36 │
+  │     7 │    49 │
+  │     8 │    64 │
+  │     9 │    81 │
+  └───────┴───────┘
+```
+
+Si tiene una tabla con los mismos tipos de columna, puede rellenarla directamente:
+
+```sql
+CREATE TABLE number_squares
+(
+    a UInt64,
+    b UInt64
+) ENGINE = Memory;
+
+INSERT INTO number_squares
+FROM INFILE 'squares.buffers'
+FORMAT Buffers;
+```
+
+Inspeccione la tabla:
+
+```sql
+SELECT * FROM number_squares;
+```
+
+```txt
+  ┌─a─┬──b─┐
+  │ 0 │  0 │
+  │ 1 │  1 │
+  │ 2 │  4 │
+  │ 3 │  9 │
+  │ 4 │ 16 │
+  │ 5 │ 25 │
+  │ 6 │ 36 │
+  │ 7 │ 49 │
+  │ 8 │ 64 │
+  │ 9 │ 81 │
+  └───┴────┘
+```
+
+<div id="format-settings">
+  ## Ajustes de formato
+</div>

@@ -174,7 +174,11 @@ BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
             return BinaryTypeIndex::UnnamedTuple;
         }
         case TypeIndex::QBit:
-            return BinaryTypeIndex::QBit;
+        {
+            /// Keep non-strided QBit on the original index so its encoding stays byte-identical (backward/forward compatible).
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            return qbit_type.getStride() == qbit_type.getDimension() ? BinaryTypeIndex::QBit : BinaryTypeIndex::QBitWithStride;
+        }
         case TypeIndex::Set:
             return BinaryTypeIndex::Set;
         case TypeIndex::Interval:
@@ -416,6 +420,14 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
             encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
             writeVarUInt(qbit_type.getDimension(), buf);
+            break;
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            const auto & qbit_type = assert_cast<const DataTypeQBit &>(*type);
+            encodeDataTypeImpl<encode_for_hash_calculation>(qbit_type.getElementType(), buf);
+            writeVarUInt(qbit_type.getDimension(), buf);
+            writeVarUInt(qbit_type.getStride(), buf);
             break;
         }
         case BinaryTypeIndex::Interval:
@@ -686,7 +698,32 @@ static DataTypePtr decodeDataType(ReadBuffer & buf, size_t & complexity)
             auto element_type = decodeDataType(buf, complexity);
             size_t dimension = 0;
             readVarUInt(dimension, buf);
-            return std::make_shared<DataTypeQBit>(element_type, dimension);
+            /// Non-strided QBit: the stride defaults to the dimension.
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
+        }
+        case BinaryTypeIndex::QBitWithStride:
+        {
+            auto element_type = decodeDataType(buf, complexity);
+            size_t dimension = 0;
+            readVarUInt(dimension, buf);
+            size_t stride = 0;
+            readVarUInt(stride, buf);
+            /// A strided QBit expands a tiny header into `element_size * (dimension / stride)` hidden FixedString
+            /// streams, which the DataTypeQBit constructor materializes eagerly (it builds the nested Tuple via
+            /// getDefaultSerialization). Charge those hidden streams to the complexity budget *before* constructing the
+            /// type, so a small header cannot force the wide nested type to be materialized under the default budget.
+            /// Only a well-formed strided header with a supported element type and at most MAX_STRIDE_GROUPS groups
+            /// reaches that materialization (this also keeps `element_size * num_strides` well within size_t); every
+            /// other header is rejected by the constructor before it allocates the wide type, so fall through to it for
+            /// the precise validation error in those cases.
+            if (DataTypeQBit::isSupportedElementType(element_type) && stride != 0 && dimension % stride == 0
+                && dimension / stride <= DataTypeQBit::MAX_STRIDE_GROUPS)
+            {
+                complexity += 8 * element_type->getSizeOfValueInMemory() * (dimension / stride);
+                if (max_complexity > 0 && complexity > max_complexity)
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Binary type decoding complexity limit exceeded: {} > {} (adjust input_format_binary_max_type_complexity)", complexity, max_complexity);
+            }
+            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
         }
         case BinaryTypeIndex::Set:
             return std::make_shared<DataTypeSet>();

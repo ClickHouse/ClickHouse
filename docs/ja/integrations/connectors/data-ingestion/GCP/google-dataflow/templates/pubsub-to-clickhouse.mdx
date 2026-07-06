@@ -1,0 +1,244 @@
+---
+sidebarTitle: 'Pub/Sub から ClickHouse へ'
+slug: /integrations/google-dataflow/templates/pubsub-to-clickhouse
+description: 'Google Dataflow テンプレートを使用すると、Pub/Sub から ClickHouse に JSON メッセージをストリーミングできます'
+title: 'Pub/Sub から ClickHouse への Dataflow テンプレート'
+doc_type: 'guide'
+keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'ストリーミング', 'デッドレター']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+Pub/Sub to ClickHouse テンプレートは、Pub/Sub サブスクリプションから JSON エンコードされたメッセージを読み取り、ClickHouse テーブルに書き込むストリーミング パイプラインです。
+パースに失敗したメッセージ、またはターゲット スキーマにマッピングできなかったメッセージは、デッドレターの宛先 (ClickHouse テーブル、Pub/Sub トピック、またはその両方) にルーティングされます。
+
+<div id="pipeline-requirements">
+  ## パイプラインの要件
+</div>
+
+* ソースの Pub/Sub サブスクリプションが存在している必要があります。
+* サブスクリプションにパブリッシュされるメッセージは、有効な JSON である必要があります。
+* ClickHouse のターゲットテーブルが存在している必要があり、そのカラム名は JSON ペイロード内のフィールド名と一致している必要があります。
+* ClickHouse ホストは、Dataflow の worker マシンからアクセス可能である必要があります。
+* 少なくとも 1 つのデッドレター宛先 (`clickHouseDeadLetterTable` または `deadLetterTopic`) を指定する必要があります。両方を指定した場合、処理に失敗したメッセージは両方の宛先に同時にルーティングされます。
+* `clickHouseDeadLetterTable` を設定する場合、デッドレターテーブルは [デッドレター処理](#dead-letter-handling) に示されているスキーマで、ClickHouse 内にあらかじめ存在している必要があります。
+* `deadLetterTopic` を設定する場合、Pub/Sub トピックはあらかじめ存在している必要があります。
+
+<div id="template-parameters">
+  ## Template パラメータ
+</div>
+
+<br />
+
+<br />
+
+| Parameter Name              | Parameter Description                                                                                                                          | Required | Notes                                                                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputSubscription`         | メッセージの読み取り元となる Pub/Sub サブスクリプション。例: `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`。                                                 | ✅        | メッセージは JSON エンコードされている必要があります。                                                                                                                          |
+| `clickHouseUrl`             | ClickHouse のエンドポイント URL。SSL 接続 (ClickHouse Cloud) には `https://`、非 SSL 接続には `http://` を使用します。例: `https://<HOST>:8443` または `http://<HOST>:8123`。 | ✅        | ClickHouse Cloud では、ポート `8443` の HTTPS エンドポイントを使用します。                                                                                                   |
+| `clickHouseDatabase`        | ターゲットテーブルが存在する ClickHouse データベースの名前。例: `default`。                                                                                              | ✅        |                                                                                                                                                         |
+| `clickHouseTable`           | データの書き込み先となる ClickHouse テーブルの名前。                                                                                                               | ✅        | パイプラインを実行する前に、テーブルが存在している必要があります。                                                                                                                       |
+| `clickHouseUsername`        | ClickHouse での認証に使用するユーザー名。                                                                                                                     | ✅        |                                                                                                                                                         |
+| `clickHousePassword`        | ClickHouse での認証に使用するパスワード。                                                                                                                     | ✅        |                                                                                                                                                         |
+| `clickHouseDeadLetterTable` | 失敗したメッセージの書き込み先となる ClickHouse テーブル。例: `my_table_dead_letter`。                                                                                  |          | `clickHouseDeadLetterTable` または `deadLetterTopic` の少なくとも一方を指定する必要があります。テーブルは、[デッドレター処理](#dead-letter-handling) に示されているデッドレターのスキーマで、あらかじめ作成されている必要があります。 |
+| `deadLetterTopic`           | 失敗したメッセージの公開先となる Pub/Sub トピック。例: `projects/<PROJECT_ID>/topics/<TOPIC_NAME>`。                                                                  |          | `clickHouseDeadLetterTable` または `deadLetterTopic` の少なくとも一方を指定する必要があります。失敗したペイロードは、`errorMessage` と `failedAt` をメッセージ属性として設定してトピックに公開されます。               |
+| `windowSeconds`             | 時間ベースのバッチ処理ウィンドウの継続時間 (秒) 。                                                                                                                    |          | `batchRowCount` との相互関係については [バッチ処理とウィンドウ化](#batching-and-windowing) を参照してください。どちらも設定されていない場合、組み合わせモードではデフォルト値の `30s` と `1000` 行が使用されます。                 |
+| `batchRowCount`             | ClickHouse へフラッシュする前に蓄積する行数。                                                                                                                   |          | `windowSeconds` との相互関係については [バッチ処理とウィンドウ化](#batching-and-windowing) を参照してください。                                                                          |
+| `maxInsertBlockSize`        | ClickHouse に送信する `INSERT` ステートメントあたりの最大行数。デフォルトは `1,000,000` です。                                                                               |          | `ClickHouseIO` オプションです。                                                                                                                                 |
+| `maxRetries`                | 失敗した ClickHouse への insert に対する最大再試行回数。デフォルトは `5` です。                                                                                           |          | `ClickHouseIO` オプションです。                                                                                                                                 |
+| `insertDeduplicate`         | レプリケートテーブルに対する `INSERT` クエリで重複排除を有効にするかどうか。デフォルトは `true` です。                                                                                   |          | `ClickHouseIO` オプションです。                                                                                                                                 |
+| `insertQuorum`              | レプリケートテーブルに対する `INSERT` クエリで、指定した数のレプリカが書き込みを確認し、データ追加が線形化されるまで待機します。`0` はクォーラム書き込みを無効にします。                                                    |          | `ClickHouseIO` オプションです。デフォルトのサーバー設定では無効です。                                                                                                              |
+| `insertDistributedSync`     | 有効にすると、分散テーブルへの `INSERT` クエリは、データがクラスター内のすべてのノードに送信されるまで待機します。デフォルトは `true` です。                                                                |          | `ClickHouseIO` オプションです。                                                                                                                                 |
+
+<Note>
+  すべての `ClickHouseIO` パラメータのデフォルト値は、[`ClickHouseIO` Apache Beam Connector](/ja/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters) を参照してください。
+</Note>
+
+<div id="message-format-and-schema-mapping">
+  ## メッセージ形式とスキーマのマッピング
+</div>
+
+Pub/Sub メッセージは、トップレベルのフィールド名が ClickHouse のターゲットテーブルのカラム名と完全に一致する JSON オブジェクトである必要があります。
+
+受信メッセージをターゲットテーブルにマッピングするため、パイプラインは起動時に次の処理を実行します。
+
+1. ClickHouse のターゲットテーブルのスキーマを取得します。
+2. その ClickHouse スキーマから Beam の `Row` スキーマを構築します。
+3. 受信した各 Pub/Sub メッセージについて JSON ペイロードを解析し、ClickHouse スキーマで定義されたフィールドを読み取って行を組み立てます。
+
+<br />
+
+<Warning>
+  JSON フィールド名は、ClickHouse のカラム名と完全に一致している必要があります (大文字と小文字は区別されます) 。メッセージ内のフィールドのうち、ClickHouse のカラムに対応しないものは無視されます。ClickHouse のカラムに対応するフィールドが JSON ペイロード内に存在しない場合、パイプラインはそのカラムに `NULL` を書き込もうとします。これは、そのカラムが [`Nullable`](/ja/reference/data-types/nullable) として宣言されている場合にのみ成功します。解析に失敗したメッセージ、値をカラムの型に変換できないメッセージ、または Nullable でないカラムに `NULL` を書き込もうとするメッセージは、デッドレター 宛先にルーティングされます。
+</Warning>
+
+<div id="type-conversion">
+  ### 型変換
+</div>
+
+JSON 値は、対応する ClickHouse のカラム型に変換されます。
+
+| ClickHouse 型                                                                       | 注記                                                             |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [`Float32`](/ja/reference/data-types/float)                                           | `Float.valueOf` で解析されます。                                       |
+| [`Float64`](/ja/reference/data-types/float)                                           | `Double.valueOf` で解析されます。                                      |
+| [`Date`](/ja/reference/data-types/date)                                               | ISO-8601 形式の日付文字列として解析されます。                                    |
+| [`DateTime`](/ja/reference/data-types/datetime)                                       | ISO-8601 形式の日時文字列 (例: `2026-01-15T12:34:56Z`) として解析されます。       |
+| [`Array(T)`](/ja/reference/data-types/array)                                          | JSON 配列。各要素は要素型 `T` に変換されます。空の配列、または存在しない配列は空配列になります。          |
+| Integer types (`Int8`/`Int16`/`Int32`/`Int64`, `UInt8`/`UInt16`/`UInt32`/`UInt64`) | JSON の数値、またはその文字列表現から解析されます。                                   |
+| [`String`](/ja/reference/data-types/string)                                           | テキストフィールドではそのまま使用されます。テキスト以外の JSON ノードは、JSON 文字列形式にシリアライズされます。 |
+
+<div id="batching-and-windowing">
+  ## バッチ処理とウィンドウ化
+</div>
+
+このパイプラインはストリーミングで動作するため、受信した行は ClickHouse に書き出される前にウィンドウに蓄積されます。ウィンドウ化の戦略は、指定したパラメータに応じて選択されます。
+
+| `windowSeconds` | `batchRowCount` | 動作                                                            |
+| --------------- | --------------- | ------------------------------------------------------------- |
+| 設定済み            | 未設定             | `windowSeconds` に基づく時間ベースの固定ウィンドウ。                            |
+| 未設定             | 設定済み            | 件数トリガー付きのグローバルウィンドウ。`batchRowCount` 行ごとにトリガーされます。             |
+| 両方設定済み          | 両方設定済み          | 複合トリガー付きのグローバルウィンドウ。時間 **または** 行数のいずれかの条件が先に満たされた時点でトリガーされます。 |
+| どちらも未設定         | どちらも未設定         | 既定値を使う複合モード: `30` 秒または `1000` 行のいずれか早い方でトリガーされます。             |
+
+これらの値を調整することで、レイテンシと `INSERT` 効率のバランスを取れます。ウィンドウが小さいほどエンドツーエンドのレイテンシは低くなり、ウィンドウが大きいほど `INSERT` バッチは少なくなり、1 回あたりのサイズは大きくなります。
+
+<div id="dead-letter-handling">
+  ## デッドレター処理
+</div>
+
+JSON のパース、スキーマのマッピング、または型変換に失敗したメッセージは、設定されたデッドレターの宛先にルーティングされます。`clickHouseDeadLetterTable` または `deadLetterTopic` の少なくともいずれか 1 つを指定する必要があります。両方が設定されている場合、失敗したメッセージはその両方に送信されます。
+
+<div id="clickhouse-dead-letter-table">
+  ### ClickHouse デッドレターテーブル
+</div>
+
+`clickHouseDeadLetterTable` が設定されている場合、デッドレターテーブルは次の固定スキーマですでに作成されている必要があります。
+
+| カラム             | 型          | 説明                                      |
+| --------------- | ---------- | --------------------------------------- |
+| `raw_message`   | `String`   | 元の Pub/Sub メッセージのペイロード (UTF-8 テキスト) 。 |
+| `error_message` | `String`   | 行が失敗した理由を示す例外メッセージ。                     |
+| `stack_trace`   | `String`   | 失敗時に取得された Java の完全なスタックトレース。            |
+| `failed_at`     | `DateTime` | 行が失敗した時点の処理時刻のタイムスタンプ。                |
+
+単一ノードデプロイメント向けの最小定義:
+
+```sql
+CREATE TABLE my_table_dead_letter (
+    raw_message   String,
+    error_message String,
+    stack_trace   String,
+    failed_at     DateTime
+) ENGINE = MergeTree()
+ORDER BY failed_at;
+```
+
+<Note>
+  デプロイ環境に合わせて、エンジンと`ORDER BY`句を調整してください。レプリケートテーブルには`ReplicatedMergeTree`を使用し、分散構成では`ON CLUSTER`を追加するほか、必要に応じてパーティション化や有効期限 (TTL) も調整してください。
+</Note>
+
+<div id="pubsub-dead-letter-topic">
+  ### Pub/Sub デッドレタートピック
+</div>
+
+`deadLetterTopic` が設定されている場合、失敗した各メッセージは次の内容でそのトピックに再公開されます。
+
+* **ペイロード**: 元のメッセージのバイト列。
+* **属性** `errorMessage`: 失敗時に記録された例外メッセージ。
+* **属性** `failedAt`: 行の処理が失敗した時点の処理時刻タイムスタンプ。
+
+これにより、原因となっていたスキーマやプロデューサーの問題を解消した後で、失敗したメッセージを簡単に再投入できます。
+
+<div id="running-the-template">
+  ## テンプレートの実行
+</div>
+
+Pub/Sub to ClickHouse テンプレートは、Google Cloud Console から利用できます。
+
+<Note>
+  テンプレートの設定要件と前提条件を十分に理解するため、このドキュメント、特に上記の各セクションを必ず確認してください。
+</Note>
+
+Google Cloud Console にサインインし、Dataflow を検索します。
+
+1. `CREATE JOB FROM TEMPLATE` ボタンをクリックします。
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Dataflow コンソール" />
+
+2. テンプレートのフォームが開いたら、ジョブ名を入力し、使用するリージョンを選択します。
+
+   {/* PLACEHOLDER: Pub/Sub to ClickHouse テンプレートの初期フォーム（ジョブ名 + リージョン）のスクリーンショットを追加 */}
+
+3. `Dataflow Template` 入力欄に `ClickHouse` または `Pub/Sub` と入力し、`Pub/Sub to ClickHouse` テンプレートを選択します。
+
+   {/* PLACEHOLDER: ドロップダウンから "Pub/Sub to ClickHouse" テンプレートを選択するスクリーンショットを追加 */}
+
+4. 選択すると、フォームが展開されます。以下を入力します。
+
+   * `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>` の形式で Pub/Sub の入力サブスクリプション。
+   * ClickHouse のエンドポイント URL — ClickHouse Cloud の場合は `https://<HOST>:8443` を使用します。
+   * ClickHouse のデータベース、ターゲットテーブル、ユーザー名、パスワード。
+   * 少なくとも 1 つの デッドレター 宛先: ClickHouse テーブルまたは Pub/Sub トピック (あるいはその両方) 。
+
+   {/* PLACEHOLDER: 必須フィールドと デッドレター セクションが表示された、展開後の Pub/Sub to ClickHouse テンプレートフォームのスクリーンショットを追加 */}
+
+5. 必要に応じて、[Template パラメータ](#template-parameters) セクションで詳しく説明しているとおり、バッチ処理 (`windowSeconds`、`batchRowCount`) および `ClickHouseIO` のチューニングパラメータをカスタマイズします。
+
+<div id="monitor-the-job">
+  ### ジョブを監視する
+</div>
+
+ジョブのステータスを監視するには、Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com/dataflow/jobs) に移動します。ここでは、進行状況やエラーを含むジョブの詳細を確認できます。
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="実行中の Pub/Sub から ClickHouse へのジョブが表示された Dataflow コンソール" />
+
+このテンプレートは、`PubSubToClickHouse` ネームスペース配下に次のカスタムメトリクスも出力します。これらは Dataflow のジョブページで確認できます。
+
+| Metric                  | 種類    | 説明                                               |
+| ----------------------- | ----- | ------------------------------------------------ |
+| `messages-received`     | カウンター | パース処理ステップで受信した Pub/Sub メッセージの総数。                 |
+| `rows-parsed-ok`        | カウンター | 正常に行へ変換され、メイン出力にルーティングされたメッセージ。                  |
+| `rows-parse-failed`     | カウンター | パースまたはスキーママッピングに失敗し、デッドレター にルーティングされたメッセージ。 |
+| `message-payload-bytes` | 分布    | 受信した Pub/Sub メッセージのペイロードサイズの分布 (バイト単位) 。         |
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### メモリ制限 (合計) 超過エラー (コード 241)
+</div>
+
+このエラーは、大きなバッチのデータを処理している際に、ClickHouse のメモリが不足すると発生します。この問題を解決するには、次の対応を行ってください。
+
+* インスタンスのリソースを増やす: データ処理の負荷に対応できるよう、より多くのメモリを備えた大きなインスタンスに ClickHouseサーバーをアップグレードします。
+* バッチサイズを小さくする: Dataflow ジョブの設定で `batchRowCount` (および/または `maxInsertBlockSize`) を減らし、ClickHouse に送信するデータの chunk を小さくして、バッチごとのメモリ消費を抑えます。
+
+<div id="all-messages-going-to-dlq">
+  ### すべてのメッセージが デッドレター 宛先に送られる
+</div>
+
+最も一般的な原因は次のとおりです。
+
+* JSON フィールド名が ClickHouse のカラム名と完全に一致していない (この照合では大文字と小文字が区別されます) 。
+* JSON の値をカラム型に変換できない (たとえば、`DateTime` カラムに ISO-8601 形式ではない文字列が入っている場合) 。
+* パイプラインの起動後にターゲットテーブルのスキーマが変更された — スキーマは起動時に一度だけ取得されます。スキーマ変更を適用したら、ジョブを再起動してください。
+
+根本原因を特定するには、ClickHouse の デッドレター テーブルの `error_message` および `stack_trace` カラム (または Pub/Sub の デッドレター メッセージの `errorMessage` 属性) を確認してください。
+
+<div id="no-rows-arriving">
+  ### パイプラインは開始するが、ClickHouse に行が届かない
+</div>
+
+* サブスクリプションがメッセージを受信していることを確認してください。Dataflow のジョブページで `messages-received` メトリックを確認します。
+* 時間ベースのモード (`windowSeconds` のみ) では、行がフラッシュされるのはウィンドウ境界のタイミングだけです。フラッシュが発生していることを確認するため、`windowSeconds` を小さくしてください。
+* Dataflow ワーカーと ClickHouse エンドポイント間のネットワーク到達性を確認してください (ファイアウォール、VPC ピアリング、または Private Service Connect) 。
+
+<div id="template-source-code">
+  ## Template のソースコード
+</div>
+
+Template のソースコードは以下で公開されています。
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — Google Cloud Platform のアップストリーム リポジトリ。
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — ClickHouse のフォーク。

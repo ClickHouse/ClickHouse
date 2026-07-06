@@ -543,7 +543,8 @@ public:
         auto bytes_written = eventResult(event);
 
         ProfileEvents::increment(ProfileEvents::AIOWrite);
-        ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
+        if (bytes_written > 0)
+            ProfileEvents::increment(ProfileEvents::AIOWriteBytes, bytes_written);
 
         if (bytes_written != static_cast<decltype(bytes_written)>(block_size * buffer_size_in_blocks))
             throw Exception(ErrorCodes::AIO_WRITE_ERROR,

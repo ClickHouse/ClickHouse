@@ -1,0 +1,461 @@
+---
+title: 'استخدام JOINs في ClickHouse'
+description: 'دليل تمهيدي لاستخدام JOINs في ClickHouse'
+keywords: ['JOINs', 'SQL', 'INNER JOIN', 'OUTER JOIN', 'CROSS JOIN', 'SEMI JOIN', 'ANTI JOIN', 'ANY JOIN', 'ASOF JOIN']
+sidebarTitle: 'استخدام JOINs في ClickHouse'
+slug: /guides/working-with-joins
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يدعم ClickHouse بشكل كامل عمليات JOIN القياسية في SQL، مما يتيح تحليل البيانات بكفاءة.
+في هذا الدليل، ستتعرّف على بعض أنواع JOIN الشائعة المتاحة وكيفية استخدامها بمساعدة مخططات فن واستعلامات مثال على مجموعة بيانات [IMDB](https://en.wikipedia.org/wiki/IMDb) مُطبَّعة من [مستودع مجموعات البيانات العلائقية](https://relational.fit.cvut.cz/dataset/IMDb).
+
+<div id="test-data-and-resources">
+  ## بيانات الاختبار والموارد
+</div>
+
+يمكن العثور على إرشادات إنشاء الجداول وتحميلها [هنا](/ar/integrations/connectors/data-ingestion/etl-tools/dbt/guides).
+كما أن مجموعة البيانات متاحة أيضًا في [Playground](https://sql.clickhouse.com?query_id=AACTS8ZBT3G7SSGN8ZJBJY) إذا كنت لا تريد إنشاء
+الجداول وتحميلها محليًا.
+
+ستستخدم الجداول الأربع التالية من مجموعة البيانات التجريبية:
+
+<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="مخطط IMDB" />
+
+تمثل البيانات في هذه الجداول الأربع أفلامًا يمكن أن تنتمي إلى نوع واحد أو عدة أنواع.
+ويؤدي الممثلون الأدوار في الفيلم.
+
+تمثل الأسهم في المخطط أعلاه [علاقات المفتاح الأجنبي بالمفتاح الأساسي](https://en.wikipedia.org/wiki/Foreign_key). على سبيل المثال، يحتوي العمود `movie_id` في صف من جدول `genres` على القيمة `id` من صف في جدول `movies`.
+
+توجد [علاقة متعدد إلى متعدد](https://en.wikipedia.org/wiki/Many-to-many_\(data_model\)) بين الأفلام والممثلين.
+وتُطبَّع هذه العلاقة متعددة-إلى-متعددة إلى [علاقتين من واحد إلى متعدد](https://en.wikipedia.org/wiki/One-to-many_\(data_model\)) باستخدام جدول `roles`.
+ويحتوي كل صف في جدول `roles` على قيمتي العمود `id` من جدولي `movies` و`actors`.
+
+<div id="join-types-supported-in-clickhouse">
+  ## أنواع JOIN التي يدعمها ClickHouse
+</div>
+
+يدعم ClickHouse أنواع JOIN التالية:
+
+* [INNER JOIN](#inner-join)
+* [OUTER JOIN](#left--right--full-outer-join)
+* [CROSS JOIN](#cross-join)
+* [SEMI JOIN](#left--right-semi-join)
+* [ANTI JOIN](#left--right-anti-join)
+* [ANY JOIN](#left--right--inner-any-join)
+* [ASOF JOIN](#asof-join)
+
+ستكتب في الأقسام التالية استعلامات نموذجية لكل نوع من أنواع JOIN المذكورة أعلاه.
+
+<div id="inner-join">
+  ## INNER JOIN
+</div>
+
+يعيد `INNER JOIN`، لكل زوج من الصفوف المتطابقة بحسب مفاتيح الربط، قيم الأعمدة من الصف في الجدول الأيسر مدمجةً مع قيم الأعمدة من الصف في الجدول الأيمن.
+إذا كان للصف أكثر من تطابق واحد، فستُعاد جميع التطابقات (أي يُنتَج [الجداء الديكارتي](https://en.wikipedia.org/wiki/Cartesian_product) للصفوف ذات مفاتيح الربط المتطابقة).
+
+<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+
+يستخرج هذا الاستعلام الأنواع لكل فيلم من خلال ربط جدول `movies` بجدول `genres`:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+INNER JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─name───────────────────────────────────┬─genre─────┐
+│ Harry Potter and the Half-Blood Prince │ Action    │
+│ Harry Potter and the Half-Blood Prince │ Adventure │
+│ Harry Potter and the Half-Blood Prince │ Family    │
+│ Harry Potter and the Half-Blood Prince │ Fantasy   │
+│ Harry Potter and the Half-Blood Prince │ Thriller  │
+│ DragonBall Z                           │ Action    │
+│ DragonBall Z                           │ Adventure │
+│ DragonBall Z                           │ Comedy    │
+│ DragonBall Z                           │ Fantasy   │
+│ DragonBall Z                           │ Sci-Fi    │
+└────────────────────────────────────────┴───────────┘
+```
+
+<Note>
+  يمكن حذف الكلمة المفتاحية `INNER`.
+</Note>
+
+يمكن توسيع سلوك `INNER JOIN` أو تغييره باستخدام أحد أنواع الربط الأخرى التالية.
+
+<div id="left--right--full-outer-join">
+  ## (LEFT / RIGHT / FULL) OUTER JOIN
+</div>
+
+يعمل `LEFT OUTER JOIN` بطريقة مشابهة لـ `INNER JOIN`؛ لكنه يعيد أيضًا، بالنسبة إلى صفوف الجدول الأيسر غير المتطابقة، [القيم الافتراضية](/ar/reference/statements/create/table#default_values) لأعمدة الجدول الأيمن.
+
+يكون استعلام `RIGHT OUTER JOIN` مشابهًا لذلك، ويعيد أيضًا قيم الصفوف غير المتطابقة من الجدول الأيمن مع القيم الافتراضية لأعمدة الجدول الأيسر.
+
+ويجمع استعلام `FULL OUTER JOIN` بين `LEFT OUTER JOIN` و`RIGHT OUTER JOIN`، ويعيد قيم الصفوف غير المتطابقة من الجدولين الأيسر والأيمن، مع القيم الافتراضية لأعمدة الجدول الأيمن والأيسر، على الترتيب.
+
+<Image img="/images/starter_guides/joins/outer_join.webp" alt="الربط الخارجي" />
+
+<Note>
+  يمكن [تهيئة](/ar/reference/settings/session-settings#join_use_nulls) ClickHouse لإرجاع [NULL](/ar/reference/syntax#null)s بدلًا من القيم الافتراضية (لكن ذلك أقل توصيةً [لأسباب تتعلق بالأداء](/ar/reference/data-types/nullable#storage-features)).
+</Note>
+
+يعثر هذا الاستعلام على جميع الأفلام التي ليس لها نوع، وذلك عبر الاستعلام عن كل الصفوف من جدول `movies` التي لا تحتوي على تطابقات في جدول `genres`، وبالتالي تحصل (وقت الاستعلام) على القيمة الافتراضية 0 للعمود `movie_id`:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT JOIN genres AS g ON m.id = g.movie_id
+WHERE g.movie_id = 0
+ORDER BY
+    m.year DESC,
+    m.name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<Note>
+  يمكن الاستغناء عن الكلمة المفتاحية `OUTER`.
+</Note>
+
+<div id="cross-join">
+  ## CROSS JOIN
+</div>
+
+ينتج `CROSS JOIN` حاصل الجداء الديكارتي الكامل للجدولين من دون مراعاة مفاتيح الربط.
+يُدمَج كل صف من الجدول الأيسر مع كل صف من الجدول الأيمن.
+
+<Image img="/images/starter_guides/joins/cross_join.webp" alt="ربط تقاطعي" />
+
+لذلك، فإن الاستعلام التالي يدمج كل صف من جدول `movies` مع كل صف من جدول `genres`:
+
+```sql
+SELECT
+    m.name,
+    m.id,
+    g.movie_id,
+    g.genre
+FROM movies AS m
+CROSS JOIN genres AS g
+LIMIT 10;
+```
+
+```response
+┌─name─┬─id─┬─movie_id─┬─genre───────┐
+│ #28  │  0 │        1 │ Documentary │
+│ #28  │  0 │        1 │ Short       │
+│ #28  │  0 │        2 │ Comedy      │
+│ #28  │  0 │        2 │ Crime       │
+│ #28  │  0 │        5 │ Western     │
+│ #28  │  0 │        6 │ Comedy      │
+│ #28  │  0 │        6 │ Family      │
+│ #28  │  0 │        8 │ Animation   │
+│ #28  │  0 │        8 │ Comedy      │
+│ #28  │  0 │        8 │ Short       │
+└──────┴────┴──────────┴─────────────┘
+```
+
+مع أن استعلام المثال السابق بمفرده لم يكن ذا معنى كبير، فإنه يمكن توسيعه بإضافة عبارة `WHERE` لربط الصفوف المتطابقة ومحاكاة سلوك `INNER JOIN` بهدف العثور على أنواع كل فيلم:
+
+```sql
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+تحدِّد صياغة بديلة لـ `CROSS JOIN` عدة جداول في عبارة `FROM` مفصولة بفواصل.
+
+يعيد ClickHouse [كتابة](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/Core/Settings.h#L896) `CROSS JOIN` إلى `INNER JOIN` إذا وُجدت تعبيرات ربط في قسم `WHERE` من الاستعلام.
+
+يمكنك التحقق من ذلك في الاستعلام المثال باستخدام [EXPLAIN SYNTAX](/ar/reference/statements/explain#explain-syntax) (الذي يعرض النسخة المُحسَّنة نحويًا التي يُعاد إليها كتابة الاستعلام قبل [تنفيذه](https://youtu.be/hP6G2Nlz_cA)):
+
+```sql
+EXPLAIN SYNTAX
+SELECT
+    m.name AS name,
+    g.genre AS genre
+FROM movies AS m
+CROSS JOIN genres AS g
+WHERE m.id = g.movie_id
+ORDER BY
+    m.year DESC,
+    m.name ASC,
+    g.genre ASC
+LIMIT 10;
+```
+
+```response
+┌─explain─────────────────────────────────────┐
+│ SELECT                                      │
+│     name AS name,                           │
+│     genre AS genre                          │
+│ FROM movies AS m                            │
+│ ALL INNER JOIN genres AS g ON id = movie_id │
+│ WHERE id = movie_id                         │
+│ ORDER BY                                    │
+│     year DESC,                              │
+│     name ASC,                               │
+│     genre ASC                               │
+│ LIMIT 10                                    │
+└─────────────────────────────────────────────┘
+```
+
+تتضمن عبارة `INNER JOIN` في نسخة الاستعلام `CROSS JOIN` المحسَّنة نحويًا الكلمة المفتاحية `ALL`، وقد أُضيفت صراحةً للحفاظ على دلالات الجداء الديكارتي في `CROSS JOIN` حتى عند إعادة كتابته إلى `INNER JOIN`، حيث يمكن [تعطيل](/ar/reference/settings/session-settings#join_default_strictness) الجداء الديكارتي في هذه الحالة.
+
+```sql
+ALL
+```
+
+وبما أنه، كما ذُكر أعلاه، يمكن حذف الكلمة المحجوزة `OUTER` من `RIGHT OUTER JOIN`، كما يمكن إضافة الكلمة المحجوزة الاختيارية `ALL`، لذا يمكنك كتابة `ALL RIGHT JOIN` وسيعمل ذلك دون مشكلة.
+
+<div id="left--right-semi-join">
+  ## ‏(LEFT / RIGHT) SEMI JOIN
+</div>
+
+يعيد استعلام `LEFT SEMI JOIN` قيم الأعمدة لكل صف من الجدول الأيسر له تطابق واحد على الأقل في مفتاح الربط مع الجدول الأيمن.
+ولا يُعاد إلا أول تطابق يتم العثور عليه (إذ يكون الجداء الديكارتي معطّلًا).
+
+ويعمل استعلام `RIGHT SEMI JOIN` بالطريقة نفسها، إذ يعيد القيم لجميع الصفوف من الجدول الأيمن التي لها تطابق واحد على الأقل في الجدول الأيسر، ولكن لا يُعاد إلا أول تطابق يتم العثور عليه.
+
+<Image img="/images/starter_guides/joins/semi_join.webp" alt="ربط شبهي" />
+
+يعثر هذا الاستعلام على جميع الممثلين/الممثلات الذين شاركوا في فيلم خلال عام 2023.
+لاحظ أنه عند استخدام ربط عادي (`INNER`)، سيظهر الممثل/الممثلة نفسه أكثر من مرة إذا كان لديه أكثر من دور واحد في عام 2023:
+
+```sql
+SELECT
+    a.first_name,
+    a.last_name
+FROM actors AS a
+LEFT SEMI JOIN roles AS r ON a.id = r.actor_id
+WHERE toYear(created_at) = '2023'
+ORDER BY id ASC
+LIMIT 10;
+```
+
+```response
+┌─first_name─┬─last_name──────────────┐
+│ Michael    │ 'babeepower' Viera     │
+│ Eloy       │ 'Chincheta'            │
+│ Dieguito   │ 'El Cigala'            │
+│ Antonio    │ 'El de Chipiona'       │
+│ José       │ 'El Francés'           │
+│ Félix      │ 'El Gato'              │
+│ Marcial    │ 'El Jalisco'           │
+│ José       │ 'El Morito'            │
+│ Francisco  │ 'El Niño de la Manola' │
+│ Víctor     │ 'El Payaso'            │
+└────────────┴────────────────────────┘
+```
+
+<div id="left--right-anti-join">
+  ## (LEFT / RIGHT) ANTI JOIN
+</div>
+
+يعيد `LEFT ANTI JOIN` قيم الأعمدة لجميع الصفوف غير المتطابقة من الجدول الأيسر.
+
+وبالمثل، يعيد `RIGHT ANTI JOIN` قيم الأعمدة لجميع الصفوف غير المتطابقة من الجدول الأيمن.
+
+<Image img="/images/starter_guides/joins/anti_join.webp" alt="ANTI JOIN" />
+
+يمكن إعادة صياغة استعلام مثال الربط الخارجي السابق باستخدام anti join للعثور على الأفلام التي لا تملك نوعًا في مجموعة البيانات:
+
+```sql
+SELECT m.name
+FROM movies AS m
+LEFT ANTI JOIN genres AS g ON m.id = g.movie_id
+ORDER BY
+    year DESC,
+    name ASC
+LIMIT 10;
+```
+
+```response
+┌─name──────────────────────────────────────┐
+│ """Pacific War, The"""                    │
+│ """Turin 2006: XX Olympic Winter Games""" │
+│ Arthur, the Movie                         │
+│ Bridge to Terabithia                      │
+│ Mars in Aries                             │
+│ Master of Space and Time                  │
+│ Ninth Life of Louis Drax, The             │
+│ Paradox                                   │
+│ Ratatouille                               │
+│ """American Dad"""                        │
+└───────────────────────────────────────────┘
+```
+
+<div id="left--right--inner-any-join">
+  ## (LEFT / RIGHT / INNER) ANY JOIN
+</div>
+
+يمثل `LEFT ANY JOIN` مزيجًا من `LEFT OUTER JOIN` و`LEFT SEMI JOIN`، ما يعني أن ClickHouse يعيد قيم الأعمدة لكل صف من الجدول الأيسر، إما مقترنةً بقيم أعمدة صف مطابق من الجدول الأيمن، أو بقيم الأعمدة الافتراضية للجدول الأيمن إذا لم يوجد تطابق.
+إذا كان لصف من الجدول الأيسر أكثر من تطابق واحد في الجدول الأيمن، فإن ClickHouse يعيد فقط قيم الأعمدة المقترنة من أول تطابق يعثر عليه (مع تعطيل الجداء الديكارتي).
+
+وبالمثل، فإن `RIGHT ANY JOIN` هو مزيج من `RIGHT OUTER JOIN` و`RIGHT SEMI JOIN`.
+
+أما `INNER ANY JOIN` فهو `INNER JOIN` مع تعطيل الجداء الديكارتي.
+
+<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+
+يوضح المثال التالي `LEFT ANY JOIN` من خلال مثال تجريدي يستخدم جدولين مؤقتين (`left_table` و`right_table`) أُنشئا باستخدام دالة الجدول [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/ar/reference/functions/table-functions/index):
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+LEFT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   1 │   0 │
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+هذا هو الاستعلام نفسه مع استخدام `RIGHT ANY JOIN`:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+RIGHT ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   2 │   2 │
+│   3 │   3 │
+│   3 │   3 │
+│   0 │   4 │
+└─────┴─────┘
+```
+
+هذا هو الاستعلام الذي يستخدم `INNER ANY JOIN`:
+
+```sql
+WITH
+    left_table AS (SELECT * FROM VALUES('c UInt32', 1, 2, 3)),
+    right_table AS (SELECT * FROM VALUES('c UInt32', 2, 2, 3, 3, 4))
+SELECT
+    l.c AS l_c,
+    r.c AS r_c
+FROM left_table AS l
+INNER ANY JOIN right_table AS r ON l.c = r.c;
+```
+
+```response
+┌─l_c─┬─r_c─┐
+│   2 │   2 │
+│   3 │   3 │
+└─────┴─────┘
+```
+
+<div id="asof-join">
+  ## ASOF JOIN
+</div>
+
+يوفّر `ASOF JOIN` إمكانات مطابقة غير دقيقة.
+إذا لم يكن لصف من الجدول الأيسر تطابق تام في الجدول الأيمن، فسيُستخدَم بدلًا منه أقرب صف مطابق من الجدول الأيمن.
+
+ويُعد هذا مفيدًا بشكل خاص في تحليلات السلاسل الزمنية، ويمكن أن يقلّل تعقيد الاستعلام بشكل كبير.
+
+<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+
+يوضح المثال التالي تحليلات سلاسل زمنية لبيانات سوق الأسهم.
+يحتوي جدول `quotes` على أسعار لرموز الأسهم استنادًا إلى أوقات محددة خلال اليوم.
+ويُحدَّث السعر كل 10 ثوانٍ في بيانات المثال.
+أما جدول `trades` فيسرد صفقات الرموز — أي أن حجمًا محددًا من أحد الرموز قد تم شراؤه في وقت محدد:
+
+<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+
+لحساب التكلفة الفعلية لكل صفقة، نحتاج إلى مطابقة الصفقات مع أقرب وقت لسعر العرض الخاص بها.
+
+ويصبح ذلك سهلًا وموجزًا باستخدام `ASOF JOIN`، حيث تُستخدَم عبارة `ON` لتحديد شرط التطابق التام، وتُستخدَم عبارة `AND` لتحديد شرط أقرب مطابقة — فبالنسبة إلى رمز محدد (تطابق تام)، تبحث عن الصف ذي الوقت &quot;الأقرب&quot; من جدول `quotes` عند وقت صفقة ذلك الرمز أو قبله مباشرةً (مطابقة غير دقيقة):
+
+```sql
+SELECT
+    t.symbol,
+    t.volume,
+    t.time AS trade_time,
+    q.time AS closest_quote_time,
+    q.price AS quote_price,
+    t.volume * q.price AS final_price
+FROM trades t
+ASOF LEFT JOIN quotes q ON t.symbol = q.symbol AND t.time >= q.time
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+symbol:             ABC
+volume:             200
+trade_time:         2023-02-22 14:09:05
+closest_quote_time: 2023-02-22 14:09:00
+quote_price:        32.11
+final_price:        6422
+
+Row 2:
+──────
+symbol:             ABC
+volume:             300
+trade_time:         2023-02-22 14:09:28
+closest_quote_time: 2023-02-22 14:09:20
+quote_price:        32.15
+final_price:        9645
+```
+
+<Note>
+  تُعدّ عبارة `ON` في `ASOF JOIN` مطلوبة، وهي تحدد شرط تطابق تام إلى جانب شرط التطابق غير التام في عبارة `AND`.
+</Note>
+
+<div id="summary">
+  ## الملخص
+</div>
+
+يوضح هذا الدليل كيف يدعم ClickHouse جميع أنواع JOIN القياسية في SQL، بالإضافة إلى أنواع JOIN المتخصصة التي تُستخدم في الاستعلامات التحليلية.
+راجِع وثائق عبارة [JOIN](/ar/reference/statements/select/join) لمزيد من التفاصيل حول عمليات JOIN.

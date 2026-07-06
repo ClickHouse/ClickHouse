@@ -1,0 +1,175 @@
+---
+description: '`CHECK TABLE` 문서'
+sidebarTitle: 'CHECK TABLE'
+slug: /sql-reference/statements/check-table
+title: 'CHECK TABLE SQL 문'
+doc_type: 'reference'
+---
+
+ClickHouse에서 `CHECK TABLE` 쿼리는 특정 테이블 또는 해당 파티션에 대한 유효성 검사를 수행하는 데 사용됩니다. 이 쿼리는 체크섬과 기타 내부 데이터 구조를 검증하여 데이터 무결성을 확인합니다.
+
+특히 실제 파일 크기를 서버에 저장된 예상 값과 비교합니다. 파일 크기가 저장된 값과 일치하지 않으면 데이터가 손상된 것을 의미합니다. 예를 들어 쿼리 실행 중 시스템 충돌이 발생하면 이런 문제가 생길 수 있습니다.
+
+<Warning>
+  `CHECK TABLE` 쿼리는 테이블의 모든 데이터를 읽고 일부 리소스를 점유할 수 있으므로, 리소스 사용량이 큰 작업일 수 있습니다.
+  이 쿼리를 실행하기 전에 성능과 리소스 사용에 미칠 수 있는 영향을 충분히 고려하십시오.
+  이 쿼리는 시스템 성능을 향상시키지 않으므로, 수행 내용을 명확히 이해하지 못한 상태에서는 실행하지 마십시오.
+</Warning>
+
+<div id="syntax">
+  ## 구문
+</div>
+
+쿼리의 기본 구문은 다음과 같습니다.
+
+```sql
+CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT format] [SETTINGS check_query_single_value_result = (0|1) [, other_settings]]
+```
+
+* `table_name`: 확인할 테이블 이름을 지정합니다.
+* `partition_expression`: (선택 사항) 테이블의 특정 파티션을 확인하려는 경우 이 표현식으로 해당 파티션을 지정할 수 있습니다.
+* `part_name`: (선택 사항) 테이블의 특정 파트를 확인하려는 경우 문자열 리터럴을 추가해 파트 이름을 지정할 수 있습니다.
+* `FORMAT format`: (선택 사항) 결과의 출력 형식을 지정할 수 있습니다.
+* `SETTINGS`: (선택 사항) 추가 설정을 지정할 수 있습니다.
+  * (선택 사항): [check&#95;query&#95;single&#95;value&#95;result](/ko/reference/settings/session-settings#check_query_single_value_result): 이 설정은 출력이 상세 형태(`0`)인지 요약 형태(`1`)인지를 제어합니다.
+  * 다른 설정도 함께 적용할 수 있습니다. 결과의 순서가 결정적일 필요가 없다면 쿼리 속도를 높이기 위해 max&#95;threads를 1보다 큰 값으로 설정할 수 있습니다.
+
+쿼리 응답은 `check_query_single_value_result` 설정값에 따라 달라집니다.
+`check_query_single_value_result = 1`인 경우 단일 행의 `result` 컬럼만 반환됩니다. 이 행의 값은 무결성 검사를 통과하면 `1`, 데이터가 손상된 경우 `0`입니다.
+
+`check_query_single_value_result = 0`이면 쿼리는 다음 컬럼을 반환합니다.
+
+* `part_path`: 데이터 파트의 경로 또는 파일 이름을 나타냅니다.
+  * `is_passed`: 이 파트에 대한 검사가 성공하면 1, 그렇지 않으면 0을 반환합니다.
+  * `message`: 오류나 성공 메시지 등 검사와 관련된 추가 메시지입니다.
+
+`CHECK TABLE` 쿼리는 다음 테이블 엔진을 지원합니다.
+
+* [Log](/ko/reference/engines/table-engines/log-family/log)
+* [TinyLog](/ko/reference/engines/table-engines/log-family/tinylog)
+* [StripeLog](/ko/reference/engines/table-engines/log-family/stripelog)
+* [MergeTree 엔진 계열](/ko/reference/engines/table-engines/mergetree-family/mergetree)
+
+다른 테이블 엔진을 사용하는 테이블에서 수행하면 `NOT_IMPLEMENTED` 예외가 발생합니다.
+
+`*Log` 계열 엔진은 장애 발생 시 자동 데이터 복구를 제공하지 않습니다. 데이터 손실을 적시에 파악하려면 `CHECK TABLE` 쿼리를 사용하십시오.
+
+<div id="examples">
+  ## 예시
+</div>
+
+기본적으로 `CHECK TABLE` 쿼리는 테이블(table)의 전체 검사 상태를 표시합니다:
+
+```sql title="Query"
+CHECK TABLE test_table;
+```
+
+```text title="Response"
+┌─result─┐
+│      1 │
+└────────┘
+```
+
+각 데이터 파트별 검사 상태를 확인하려면 `check_query_single_value_result` 설정을 사용할 수 있습니다.
+
+또한 테이블의 특정 파티션을 검사하려면 `PARTITION` 키워드를 사용할 수 있습니다.
+
+```sql title="Query"
+CHECK TABLE t0 PARTITION ID '201003'
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text title="Response"
+┌─part_path────┬─is_passed─┬─message─┐
+│ 201003_7_7_0 │         1 │         │
+│ 201003_3_3_0 │         1 │         │
+└──────────────┴───────────┴─────────┘
+```
+
+마찬가지로 `PART` 키워드를 사용하면 테이블의 특정 파트를 확인할 수 있습니다.
+
+```sql title="Query"
+CHECK TABLE t0 PART '201003_7_7_0'
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text title="Response"
+┌─part_path────┬─is_passed─┬─message─┐
+│ 201003_7_7_0 │         1 │         │
+└──────────────┴───────────┴─────────┘
+```
+
+파트가 존재하지 않으면 쿼리에서 오류가 반환됩니다:
+
+```sql title="Query"
+CHECK TABLE t0 PART '201003_111_222_0'
+```
+
+```text title="Response"
+DB::Exception: No such data part '201003_111_222_0' to check in table 'default.t0'. (NO_SUCH_DATA_PART)
+```
+
+<div id="receiving-a-corrupted-result">
+  ### &#39;Corrupted&#39; 결과가 반환되는 경우
+</div>
+
+<Warning>
+  고지 사항: 여기에서 설명하는 절차에는 데이터 디렉터리에서 파일을 직접 수동으로 조작하거나 삭제하는 작업이 포함되며, 실험 또는 개발 환경에서만 사용해야 합니다. 데이터 손실이나 기타 의도하지 않은 문제가 발생할 수 있으므로 프로덕션 서버에서는 **절대** 이 절차를 시도하지 마십시오.
+</Warning>
+
+기존 체크섬 파일을 제거합니다:
+
+```bash
+rm /var/lib/clickhouse-server/data/default/t0/201003_3_3_0/checksums.txt
+```
+
+```sql title="Query"
+CHECK TABLE t0 PARTITION ID '201003'
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text title="Response"
+┌─part_path────┬─is_passed─┬─message──────────────────────────────────┐
+│ 201003_7_7_0 │         1 │                                          │
+│ 201003_3_3_0 │         1 │ Checksums recounted and written to disk. │
+└──────────────┴───────────┴──────────────────────────────────────────┘
+```
+
+`checksums.txt` 파일이 없더라도 복원할 수 있습니다. 특정 파티션에 대해 `CHECK TABLE` 명령을 실행하는 동안 이 파일이 다시 계산되어 재작성되며, 상태는 계속 &#39;is&#95;passed = 1&#39;로 보고됩니다.
+
+`CHECK ALL TABLES` 쿼리를 사용하면 현재 존재하는 모든 `(Replicated)MergeTree` 테이블을 한 번에 확인할 수 있습니다.
+
+```sql
+CHECK ALL TABLES
+FORMAT PrettyCompactMonoBlock
+SETTINGS check_query_single_value_result = 0
+```
+
+```text
+┌─database─┬─table────┬─part_path───┬─is_passed─┬─message─┐
+│ default  │ t2       │ all_1_95_3  │         1 │         │
+│ db1      │ table_01 │ all_39_39_0 │         1 │         │
+│ default  │ t1       │ all_39_39_0 │         1 │         │
+│ db1      │ t1       │ all_39_39_0 │         1 │         │
+│ db1      │ table_01 │ all_1_6_1   │         1 │         │
+│ default  │ t1       │ all_1_6_1   │         1 │         │
+│ db1      │ t1       │ all_1_6_1   │         1 │         │
+│ db1      │ table_01 │ all_7_38_2  │         1 │         │
+│ db1      │ t1       │ all_7_38_2  │         1 │         │
+│ default  │ t1       │ all_7_38_2  │         1 │         │
+└──────────┴──────────┴─────────────┴───────────┴─────────┘
+```
+
+<div id="if-the-data-is-corrupted">
+  ## 데이터가 손상된 경우
+</div>
+
+테이블이 손상된 경우, 손상되지 않은 데이터를 다른 테이블로 복사할 수 있습니다. 방법은 다음과 같습니다.
+
+1. 손상된 테이블과 동일한 구조의 새 테이블을 생성합니다. 이를 위해 `CREATE TABLE <new_table_name> AS <damaged_table_name>` 쿼리를 실행하십시오.
+2. 다음 쿼리가 단일 스레드에서 처리되도록 `max_threads` 값을 1로 설정합니다. 이를 위해 `SET max_threads = 1` 쿼리를 실행하십시오.
+3. `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>` 쿼리를 실행하십시오. 이 요청은 손상된 테이블의 손상되지 않은 데이터를 다른 테이블로 복사합니다. 손상된 부분 이전의 데이터만 복사됩니다.
+4. `max_threads` 값을 초기화하려면 `clickhouse-client`를 다시 시작하십시오.

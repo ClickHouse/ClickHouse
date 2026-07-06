@@ -1,12 +1,13 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinEnum.h>
 #include <Common/CurrentThread.h>
 
 #include <algorithm>
+#include <bit>
 #include <deque>
 #include <functional>
 #include <limits>
 #include <Common/typeid_cast.h>
-#include <Common/logger_useful.h>
 #include <Core/Joins.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
@@ -18,9 +19,10 @@
 #include <Common/safe_cast.h>
 #include <base/defines.h>
 #include <ranges>
-#include <stack>
 #include <unordered_map>
 #include <vector>
+#include <Processors/QueryPlan/Optimizations/dpTable.h>
+#include <Processors/QueryPlan/Optimizations/enumeratorChecker.h>
 
 
 namespace ProfileEvents
@@ -35,6 +37,21 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int EXPERIMENTAL_FEATURE_ERROR;
+}
+
+/// Pack a `BitSet` (boost::dynamic_bitset) of relation ids into a native 32-bit mask.
+/// Used by the DPsub hot path, where the relation count is guaranteed below 32 so every
+/// set bit fits, allowing the per-CCP work to run on native integers instead of allocating
+/// a `dynamic_bitset` for every plan it considers.
+static UInt32 toMask(const BitSet & bits)
+{
+    UInt32 mask = 0;
+    for (auto bit : bits)
+    {
+        chassert(bit < std::numeric_limits<UInt32>::digits);
+        mask |= (static_cast<UInt32>(1) << bit);
+    }
+    return mask;
 }
 
 DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
@@ -161,6 +178,7 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
     for (const auto & [member, _] : column_equivalences.getMemberToClassMap())
     {
         auto member_rel = member.getSourceRelations().getSingleBit();
+
         if (!member_rel || !left.test(*member_rel))
             continue;
 
@@ -311,9 +329,15 @@ public:
 private:
     void buildQueryGraph();
 
+    template <typename DPTable, std::unsigned_integral Tuint>
+    std::shared_ptr<DPJoinEntry> buildPhysicalPlan(const DPTable & dptable, const Tuint & S) const;
+    std::shared_ptr<DPJoinEntry> solveDPsub();
     std::shared_ptr<DPJoinEntry> solveDPsize();
     std::shared_ptr<DPJoinEntry> solveGreedy();
     std::shared_ptr<DPJoinEntry> solveDPhyp();
+
+    template <class Tuint, class TDPTable>
+    friend class EnumeratorCheckerWithCosts;
 
     std::optional<JoinKind> isValidJoinOrder(const BitSet & left_mask, const BitSet & right_mask) const;
     std::vector<JoinActionRef *> getApplicableExpressions(const BitSet & left, const BitSet & right);
@@ -321,7 +345,20 @@ private:
     double computeSelectivity(const JoinActionRef & edge);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges);
     double computeSelectivity(const std::vector<JoinActionRef *> & edges, const BitSet & left, const BitSet & right);
-    size_t getColumnStats(BitSet rels, const String & column_name);
+    std::optional<UInt64> estimateCardinality(
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
+    size_t getColumnStats(const BitSet & rels, const String & column_name);
+
+    /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
+    /// They operate on `UInt32` relation masks and the data precomputed by `initDPsubScratch`,
+    /// so the hot enumeration loop never constructs a `BitSet` (which heap-allocates). They are
+    /// equivalent to the `BitSet` overloads but bypass per-CCP allocations entirely.
+    void initDPsubScratch();
+    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
+    /// reusing an internal scratch buffer that is overwritten on every call.
+    const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
+    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -362,9 +399,43 @@ private:
     std::unordered_map<JoinActionRef, double> expression_selectivity;
     std::unordered_map<BitSet, DPJoinEntryPtr> dp_table;
 
-    /// A hyperedge in the join graph connecting a set of left relations to a set of right relations.
-    /// For simple binary predicates (A.x = B.y), |left| = |right| = 1.
-    /// For complex predicates (A.x = B.y + C.z), left and/or right may span multiple relations.
+    /** Precomputed native-mask view of the query graph for the DPsub hot path. Populated once per
+    * `solveDPsub` run by `initDPsubScratch`. Each `BitSet` is packed into a `UInt` type, the outer-join
+    * restrictions are indexed by relation, and column-equivalence classes are indexed by relation so
+    * `computeSelectivityMask` only visits the classes incident to the left side instead of rescanning
+    * the whole equivalence map. The trailing fields are reusable scratch (no per-CCP allocation)
+    */
+    template <std::unsigned_integral TUInt>
+    struct DPsubMaskData
+    {
+        using EquivClassPtr = EquivalenceClasses<JoinActionRef>::ConstClassPtr;
+
+        std::vector<TUInt> edge_source_mask;   /// per edge: source relations
+        std::vector<TUInt> edge_pin_mask;      /// per edge: relations that must all be present (if pinned)
+        std::vector<char> edge_pinned;         /// per edge: whether a pin applies
+
+        struct Restriction
+        {
+            TUInt required = 0;
+            TUInt forbidden = 0;
+            JoinKind kind = JoinKind::Inner;
+            bool present = false;
+        };
+        std::vector<Restriction> restriction_by_rel; /// indexed by relation id
+
+        std::vector<EquivClassPtr> equiv_classes;        /// distinct equivalence classes
+        std::vector<std::vector<TUInt>> rel_to_classes; /// relation id -> indices into equiv_classes
+
+        std::vector<UInt64> class_visited;        /// generation stamp per equivalence class
+        UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
+        std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
+    };
+    DPsubMaskData<UInt32> dpsub_data;
+
+    /** A hyperedge in the join graph connecting a set of left relations to a set of right relations.
+    * For simple binary predicates (A.x = B.y), |left| = |right| = 1.
+    * For complex predicates (A.x = B.y + C.z), left and/or right may span multiple relations.
+    */
     struct Hyperedge
     {
         BitSet left;
@@ -421,7 +492,7 @@ bool JoinOrderOptimizer::continueEnumeration()
     return true;
 }
 
-size_t JoinOrderOptimizer::getColumnStats(BitSet rels, const String & column_name)
+size_t JoinOrderOptimizer::getColumnStats(const BitSet & rels, const String & column_name)
 {
     const auto & relation_stats = query_graph.relation_stats;
     auto rel_id = rels.getSingleBit();
@@ -526,17 +597,20 @@ double JoinOrderOptimizer::computeSelectivity(
 }
 
 
+/// Single source of truth for join cardinality estimation. For outer joins the result is
+/// floored by the number of rows from the preserved side(s), since those are always emitted
+/// (NULL-padded when there is no match): LEFT keeps all left rows, RIGHT all right rows, FULL both.
 static std::optional<UInt64> estimateJoinCardinality(
-    const std::shared_ptr<DPJoinEntry> & left,
-    const std::shared_ptr<DPJoinEntry> & right,
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
     double selectivity,
-    JoinKind join_kind = JoinKind::Inner)
+    JoinKind join_kind)
 {
-    if (!left->estimated_rows || !right->estimated_rows)
+    if (!left_rows || !right_rows)
         return {};
 
-    double lhs = static_cast<double>(left->estimated_rows.value());
-    double rhs = static_cast<double>(right->estimated_rows.value());
+    double lhs = static_cast<double>(*left_rows);
+    double rhs = static_cast<double>(*right_rows);
 
     double joined_rows = std::max(selectivity * lhs * rhs, 1.0);
 
@@ -557,12 +631,27 @@ static std::optional<UInt64> estimateJoinCardinality(
     return static_cast<UInt64>(joined_rows);
 }
 
-static double computeJoinCost(
+static std::optional<UInt64> estimateJoinCardinality(
     const std::shared_ptr<DPJoinEntry> & left,
     const std::shared_ptr<DPJoinEntry> & right,
-    double selectivity)
+    double selectivity,
+    JoinKind join_kind = JoinKind::Inner)
 {
-    return left->cost + right->cost + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
+    return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
+}
+
+std::optional<UInt64> JoinOrderOptimizer::estimateCardinality(
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const
+{
+    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind);
+}
+
+static double computeJoinCost(const std::shared_ptr<DPJoinEntry> & left,
+                              const std::shared_ptr<DPJoinEntry> & right,
+                              double selectivity)
+{
+    return left->cost + right->cost
+        + selectivity * static_cast<double>(left->estimated_rows.value_or(1)) * static_cast<double>(right->estimated_rows.value_or(1));
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
@@ -576,6 +665,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
         {
+            case JoinOrderAlgorithm::DPSUB:
+                best_plan = solveDPsub();
+                break;
             case JoinOrderAlgorithm::DPSIZE:
                 best_plan = solveDPsize();
                 break;
@@ -599,9 +691,9 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 
     LOG_TRACE(log, "Optimized join order in {:.2f} ms, best plan cost: {}, estimated cardinality: {}",
         static_cast<double>(watch.elapsed()) / 1000.0, best_plan->cost, best_plan->estimated_rows ? toString(*best_plan->estimated_rows) : "unknown");
+
     return best_plan;
 }
-
 
 std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const BitSet & left, const BitSet & right)
 {
@@ -635,6 +727,194 @@ std::vector<JoinActionRef *> JoinOrderOptimizer::getApplicableExpressions(const 
         applicable.push_back(&edge);
     }
     return applicable;
+}
+
+void JoinOrderOptimizer::initDPsubScratch()
+{
+    using EquivClass = EquivalenceClasses<JoinActionRef>::Class;
+
+    const size_t num_relations = query_graph.relation_stats.size();
+    const auto & edges = query_graph.edges;
+
+    /// Edges: precompute the source-relation mask and any pin mask once per edge
+    auto n = edges.size();
+    dpsub_data.edge_source_mask.assign(n, 0);
+    dpsub_data.edge_pin_mask.assign(n, 0);
+    dpsub_data.edge_pinned.assign(n, 0);
+    for (size_t i = 0; i < n; ++i)
+    {
+        const auto & edge = edges[i];
+        if (!edge)
+            continue;
+        dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
+        if (auto pin_it = query_graph.pinned.find(edge); pin_it != query_graph.pinned.end())
+        {
+            dpsub_data.edge_pinned[i] = 1;
+            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
+        }
+    }
+
+    /// Outer-join restrictions: index by the null-supplying relation
+    dpsub_data.restriction_by_rel.assign(num_relations, {});
+    for (const auto & [rel, restriction] : query_graph.join_kinds)
+    {
+        if (rel >= num_relations)
+            continue;
+        auto & native = dpsub_data.restriction_by_rel[rel];
+        native.required = toMask(restriction.required_partners);
+        native.forbidden = toMask(restriction.forbidden_partners);
+        native.kind = restriction.kind;
+        native.present = true;
+    }
+
+    /// Column-equivalence classes: build a per-relation incidence list so selectivity only
+    /// visits the classes touching the left side instead of rescanning the whole member map
+    dpsub_data.equiv_classes.clear();
+    dpsub_data.rel_to_classes.assign(num_relations, {});
+    std::unordered_map<const EquivClass *, UInt32> class_index;
+    for (const auto & [member, class_ptr] : query_graph.column_equivalences.getMemberToClassMap())
+    {
+        if (!class_ptr)
+            continue;
+        auto rel = member.getSourceRelations().getSingleBit();
+        if (!rel || *rel >= num_relations)
+            continue;
+
+        auto [it, inserted] = class_index.try_emplace(class_ptr.get(), static_cast<UInt32>(dpsub_data.equiv_classes.size()));
+        if (inserted)
+            dpsub_data.equiv_classes.push_back(class_ptr);
+        dpsub_data.rel_to_classes[*rel].push_back(it->second);
+    }
+    dpsub_data.class_visited.assign(dpsub_data.equiv_classes.size(), 0);
+    dpsub_data.equiv_generation = 0;
+}
+
+std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const
+{
+    auto check = [&](UInt32 lhs, UInt32 rhs) -> std::optional<JoinKind>
+    {
+        if (std::popcount(lhs) == 1)
+        {
+            const auto & restriction = dpsub_data.restriction_by_rel[std::countr_zero(lhs)];
+            if (restriction.present)
+            {
+                /// If there are any bits set in `restriction.required`
+                /// that are not set in `rhs`, the bitwise AND (&) results in a non-zero value
+                if (restriction.required & ~rhs)
+                    return {};
+                if (restriction.forbidden & rhs)
+                    return {};
+                return restriction.kind;
+            }
+        }
+        return JoinKind::Inner;
+    };
+
+    JoinKind left_join_type = JoinKind::Inner;
+    JoinKind right_join_type = JoinKind::Inner;
+
+    if (auto res = check(left_mask, right_mask))
+        left_join_type = isLeftOrFull(res.value()) ? reverseJoinKind(res.value()) : res.value();
+    else
+        return {};
+
+    if (auto res = check(right_mask, left_mask))
+        right_join_type = isRightOrFull(res.value()) ? reverseJoinKind(res.value()) : res.value();
+    else
+        return {};
+
+    if (left_join_type == JoinKind::Inner)
+        return right_join_type;
+    if (right_join_type == JoinKind::Inner)
+        return left_join_type;
+    if (left_join_type == JoinKind::Full && right_join_type == JoinKind::Full)
+        return JoinKind::Full;
+
+    /// Conflicting outer-join constraints, the order is not possible
+    return {};
+}
+
+const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
+{
+    auto & out = dpsub_data.applicable_scratch;
+    out.clear();
+
+    const UInt32 joined = left_mask | right_mask;
+    const bool two_relations = std::popcount(joined) == 2;
+    auto & edges = query_graph.edges;
+
+    for (size_t i = 0; i < edges.size(); ++i)
+    {
+        auto & edge = edges[i];
+        if (!edge)
+            continue;
+
+        const UInt32 sources = dpsub_data.edge_source_mask[i];
+        if (sources & ~joined) /// edge sources not proper subset of joined relations
+            continue;
+        if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
+            continue;
+
+        if ((sources & left_mask) && (sources & right_mask))
+        {
+            /// Predicate connects the two sides
+            out.push_back(&edge);
+        }
+        else if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+        {
+            /// Single-table or constant predicate attached at the earliest (two-relation) stage
+            out.push_back(&edge);
+        }
+    }
+    return out;
+}
+
+double JoinOrderOptimizer::computeSelectivityMask(
+    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+{
+    double selectivity = computeSelectivity(edges);
+
+    /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
+    /// incident to the left relations. A generation stamp deduplicates classes without allocating
+    const UInt64 generation = ++dpsub_data.equiv_generation;
+
+    for (UInt32 remaining = left_mask; remaining;)
+    {
+        const UInt32 rel = std::countr_zero(remaining);
+        remaining &= remaining - 1;
+
+        for (UInt32 class_idx : dpsub_data.rel_to_classes[rel])
+        {
+            if (dpsub_data.class_visited[class_idx] == generation)
+                continue;
+            dpsub_data.class_visited[class_idx] = generation;
+
+            size_t max_ndv = 0;
+            bool has_left = false;
+            bool has_right = false;
+            for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
+            {
+                auto relation = equiv_member.getSourceRelations().getSingleBit();
+                if (!relation)
+                    continue;
+                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                if (left_mask & relation_bit)
+                {
+                    has_left = true;
+                    max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                }
+                else if (right_mask & relation_bit)
+                {
+                    has_right = true;
+                    max_ndv = std::max(max_ndv, getColumnStats(equiv_member.getSourceRelations(), equiv_member.getColumnName()));
+                }
+            }
+            if (has_left && has_right && max_ndv > 0)
+                selectivity = std::min(selectivity, 1.0 / static_cast<double>(max_ndv));
+        }
+    }
+
+    return selectivity;
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
@@ -774,6 +1054,95 @@ static bool connects(const JoinActionRef * predicate, const BitSet & left, const
 {
     const auto & participating = predicate->getSourceRelations();
     return areIntersecting(participating, left) && areIntersecting(participating, right);
+}
+
+template <typename DPTable, std::unsigned_integral TUInt>
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable & dptable, const TUInt & S) const
+{
+    auto& entry = dptable[S];
+    if (!entry.left && !entry.right)
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+
+    JoinOperator join_operator(
+        entry.kind,
+        JoinStrictness::All,
+        JoinLocality::Unspecified,
+        std::ranges::to<std::vector>(entry.edges | std::views::transform([](const auto * e) { return *e; })));
+
+    auto left = buildPhysicalPlan(dptable, entry.left);
+    auto right = buildPhysicalPlan(dptable, entry.right);
+    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.estimated_rows, std::move(join_operator));
+}
+
+/** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
+* This algorithm constructs optimal join trees by iterating over subsets of the relations in an ascending order
+* based on an integer bitmask (from 1 to 2^n - 2). This ordering ensures that for any relation subset S,
+* the best plans for all its proper sub-plans (subsets S1 ⊂ S) have already been computed, thereby adhering to
+* Bellman's optimality principle.
+* This methodical evaluation of all connected subsets results in the creation of the best plan for each.
+* The final answer is the optimal plan for the complete set of relations.
+* For more detailed information, see "Building Query Compilers":
+* (https://pi3.informatik.uni-mannheim.de/~moer/querycompiler.pdf)
+*/
+std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
+{
+    const size_t n = query_graph.relation_stats.size();
+    using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
+    // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
+    // This budget cap is obtained from empirical testing using different queries and join graphs.
+    static constexpr UInt32 max_nr_ccps = 50'000;
+
+    if (n >= std::numeric_limits<Bitvector>::digits)
+    {
+        LOG_TRACE(log,
+            "Number of relations {} exceeds the DP threshold {}, skipping DP optimization invoking greedy algorithm",
+            n, std::numeric_limits<Bitvector>::digits);
+        return nullptr;
+    }
+
+    struct DPEntry
+    {
+        Bitvector neighbor{0};
+        Bitvector left{0};
+        Bitvector right{0};
+        std::optional<UInt64> estimated_rows = {};
+        std::unordered_map<String, ColumnStats> column_stats = {};
+        double cost{.0};
+        double sel{.0};
+        JoinKind kind{JoinKind::Inner};
+        std::vector<JoinActionRef*> edges; // needed for physical plan generation
+    };
+    using DPTable = DPTable<DPEntry, Bitvector>;
+    using Checker = EnumeratorCheckerWithCosts<DPTable, JoinOrderOptimizer>;
+    using Enumerator = EnumCcpSub<Checker, DPTable, QueryGraph>;
+
+    /// Precompute the native-mask view of the query graph so the acceptor's per-CCP work
+    /// (validity, edge collection, selectivity) runs without allocating a `BitSet` each time
+    /// That is, we don't have to convert Bitvector -> BitSet -> Bitvector for every subset S
+    /// and its subcomponents S1, S2
+    initDPsubScratch();
+
+    Checker checker(n, *this);
+    Enumerator enumerator(n, max_nr_ccps, log);
+    enumerator.enumerate(checker, query_graph);
+
+    const Bitvector full_set = (static_cast<Bitvector>(1) << n) - 1;
+    const auto & dptable = checker.getDPTable();
+
+    /// a. If the join graph is too complex we break early
+    /// b. The full set is assembled only if the join graph is connected. When it is not e.g.
+    /// cross products, or predicates that reference a single relation or a constant and thus
+    /// create no binary edge (`... LEFT JOIN t ON t.x = 5`): DPsub cannot stitch the
+    /// disconnected components, so the full-set entry is missing (or was never given a join)
+    const bool full_built = dptable.isConnected(full_set)
+                            && (dptable[full_set].left != 0 || dptable[full_set].right != 0);
+    if (!full_built)
+    {
+        LOG_TRACE(log, "DPsub: join graph is either too complex or disconnected!");
+        return nullptr;
+    }
+
+    return buildPhysicalPlan(dptable, full_set);
 }
 
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()

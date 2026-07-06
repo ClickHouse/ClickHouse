@@ -1,0 +1,35 @@
+---
+alias: []
+description: 'توثيق تنسيق JSONEachRowWithProgress'
+input_format: false
+keywords: ['JSONEachRowWithProgress']
+output_format: true
+slug: /interfaces/formats/JSONEachRowWithProgress
+title: 'JSONEachRowWithProgress'
+doc_type: 'مرجع'
+---
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✗       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يختلف عن [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/ar/reference/formats/JSON/JSONStringsEachRow) في أن ClickHouse يُخرج أيضًا معلومات التقدّم على شكل قيم JSON.
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+```json
+{"row":{"num":42,"str":"hello","arr":[0,1]}}
+{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
+{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
+{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

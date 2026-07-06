@@ -1,0 +1,630 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs/ec2
+title: '使用 ClickStack 监控 EC2 主机日志'
+sidebarTitle: 'EC2 主机日志'
+description: '使用 ClickStack 监控 EC2 主机日志'
+doc_type: 'guide'
+keywords: ['EC2', 'AWS', '主机日志', 'systemd', 'syslog', 'OTel', 'ClickStack', '系统监控', '云元数据']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **简而言之**
+
+  使用 OpenTelemetry Collector 在 ClickStack 中收集并可视化 EC2 系统日志，同时自动富集 EC2 元数据 (实例 ID、区域、AZ、实例类型) 。包含演示数据集和预置仪表板。
+</Info>
+
+<div id="existing-ec2">
+  ## 与现有 EC2 实例集成
+</div>
+
+本节介绍如何在 EC2 实例上安装 OpenTelemetry Collector，以收集系统日志并将其发送到 ClickStack，同时自动进行 EC2 元数据富集。这种分布式架构可用于生产环境，并且能够扩展到多个实例。
+
+<Info>
+  **在同一台 EC2 实例上运行 ClickStack？**
+
+  如果 ClickStack 与要监控日志的目标运行在同一台 EC2 实例上，可以采用类似于 [通用主机日志指南](/zh/clickstack/integration-examples/host-logs) 中的一体化方案。将 `/var/log` 挂载到 ClickStack 容器中，并在自定义配置中添加 `resourcedetection` 处理器，以自动采集 EC2 元数据。本指南重点介绍更常见、也更适合生产部署的分布式架构。
+</Info>
+
+如果想在配置生产实例之前先测试 EC2 主机日志集成，可以在[&quot;演示数据集&quot;](/zh/clickstack/integration-examples/host-logs/ec2#demo-dataset)部分使用我们预先配置好的环境和示例数据进行测试。
+
+<div id="prerequisites">
+  ##### 前置条件
+</div>
+
+* ClickStack 实例已在运行 (可以是本地部署、云端或本机环境)
+* EC2 实例已在运行 (Ubuntu、Amazon Linux 或其他 Linux 发行版)
+* EC2 实例到 ClickStack 的 OTLP 端点具备网络连通性 (HTTP 使用 4318 端口，gRPC 使用 4317 端口)
+* 可访问 EC2 实例元数据服务 (默认启用)
+
+<Steps>
+  <Step>
+    #### 验证是否可访问 EC2 元数据
+
+    在 EC2 实例上，验证元数据服务是否可访问：
+
+    ```bash
+    # 获取元数据令牌 (IMDSv2)
+    TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+    # 验证实例元数据
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
+    curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
+    ```
+
+    你应该会看到实例 ID、区域和实例类型。如果这些命令执行失败，请确认：
+
+    * 实例元数据服务已启用
+    * IMDSv2 没有被安全组 (Security Group) 或网络 ACL 拦截
+    * 你是在 EC2 实例本机上运行这些命令
+
+    <Note>
+      在实例内部可通过 `http://169.254.169.254` 访问 EC2 元数据。OpenTelemetry 的 `resourcedetection` 处理器会使用此端点，自动为日志补充云环境上下文信息。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 验证 syslog 文件是否存在
+
+    确认您的 EC2 实例正在写入 syslog 文件：
+
+    ```bash
+    # Ubuntu 实例
+    ls -la /var/log/syslog
+
+    # Amazon Linux / RHEL 实例
+    ls -la /var/log/messages
+
+    # 查看最近的日志条目
+    tail -20 /var/log/syslog
+    # 或
+    tail -20 /var/log/messages
+    ```
+  </Step>
+
+  <Step>
+    #### 安装 OpenTelemetry Collector
+
+    在 EC2 实例上安装 OpenTelemetry Collector Contrib 发行版：
+
+    ```bash
+    # 下载最新版本
+    wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
+
+    # 解压并安装
+    tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
+    sudo mv otelcol-contrib /usr/local/bin/
+
+    # 验证安装
+    otelcol-contrib --version
+    ```
+  </Step>
+
+  <Step>
+    #### 创建 collector 配置
+
+    在 `/etc/otelcol-contrib/config.yaml` 处为 OpenTelemetry Collector 创建配置文件：
+
+    ```bash
+    sudo mkdir -p /etc/otelcol-contrib
+    ```
+
+    根据您的 Linux 发行版选择相应的配置：
+
+    <Tabs>
+      <Tab title="现代 Linux（Ubuntu 24.04+）">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+
+      <Tab title="旧版 Linux（Amazon Linux 2、RHEL 和较旧版本的 Ubuntu）">
+        ```yaml
+        sudo tee /etc/otelcol-contrib/config.yaml > /dev/null << 'EOF'
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "ec2-host-logs"
+
+        processors:
+          resourcedetection:
+            detectors: [ec2, system]
+            timeout: 5s
+            override: false
+            ec2:
+              tags:
+                - ^Name
+                - ^Environment
+                - ^Team
+          
+          batch:
+            timeout: 10s
+            send_batch_size: 10000
+
+        exporters:
+          otlphttp:
+            endpoint: "http://YOUR_CLICKSTACK_HOST:4318"
+            headers:
+              authorization: "${env:CLICKSTACK_API_KEY}"
+
+        service:
+          pipelines:
+            logs:
+              receivers: [filelog/syslog]
+              processors: [resourcedetection, batch]
+              exporters: [otlphttp]
+        EOF
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    **在配置中替换以下内容：**
+
+    * `YOUR_CLICKSTACK_HOST`：ClickStack 所在主机的主机名或 IP 地址
+    * 如需进行本地测试，你可以使用 SSH 隧道 (请参阅[故障排查部分](#troubleshooting))
+
+    此配置：
+
+    * 从标准路径读取系统日志文件 (Ubuntu 为 `/var/log/syslog`，Amazon Linux/RHEL 为 `/var/log/messages`)
+    * 解析 syslog 格式，提取结构化字段 (时间戳、主机名、单元/服务、PID、消息)
+    * **使用 `resourcedetection` 处理器自动识别并添加 EC2 元数据**
+    * 如有，还可选择包含 EC2 标签 (Name、Environment、Team)
+    * 通过 OTLP HTTP 向 ClickStack 发送日志
+
+    <Info>
+      **EC2 元数据富集**
+
+      `resourcedetection` 处理器会自动为每条日志添加以下属性：
+
+      * `cloud.provider`: &quot;aws&quot;
+      * `cloud.platform`: &quot;aws&#95;ec2&quot;
+      * `cloud.region`: AWS 区域 (例如：&quot;us-east-1&quot;)
+      * `cloud.availability_zone`: 可用区 (例如：&quot;us-east-1a&quot;)
+      * `cloud.account.id`: AWS 账户 ID
+      * `host.id`: EC2 实例 ID (例如：&quot;i-1234567890abcdef0&quot;)
+      * `host.type`: 实例类型 (例如：&quot;t3.medium&quot;)
+      * `host.name`: 实例的主机名
+    </Info>
+  </Step>
+
+  <Step>
+    #### 设置 ClickStack API 密钥
+
+    将 ClickStack API 密钥导出为环境变量：
+
+    ```bash
+    export CLICKSTACK_API_KEY="your-api-key-here"
+    ```
+
+    为了让它在重启后持续生效，请将其添加到 shell 配置文件中：
+
+    ```bash
+    echo 'export CLICKSTACK_API_KEY="your-api-key-here"' >> ~/.bashrc
+    source ~/.bashrc
+    ```
+  </Step>
+
+  <Step>
+    #### 运行 Collector
+
+    启动 OpenTelemetry Collector：
+
+    ```bash
+    CLICKSTACK_API_KEY="your-api-key-here" /usr/local/bin/otelcol-contrib --config /etc/otelcol-contrib/config.yaml
+    ```
+
+    <Info>
+      **用于生产环境**
+
+      将 collector 配置为以 systemd 服务方式运行，以便在系统启动时自动启动，并在发生故障时自动重启。详情请参阅 [OpenTelemetry Collector 文档](https://opentelemetry.io/docs/collector/deployment/)。
+    </Info>
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    采集器运行后，登录 HyperDX，确认日志已连同 EC2 元数据一起流入：
+
+    1. 进入搜索视图
+    2. 将 source 设置为 `Logs`
+    3. 使用 `source:ec2-host-logs` 进行过滤
+    4. 点击一条日志记录将其展开
+    5. 确认你能在资源属性中看到 EC2 元数据：
+       * `cloud.provider`
+       * `cloud.region`
+       * `host.id` (实例 ID)
+       * `host.type` (实例类型)
+       * `cloud.availability_zone`
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 日志搜索视图" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="显示元数据的 EC2 日志详情" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## 演示数据集
+</div>
+
+对于希望在配置生产实例前先测试 EC2 主机日志集成的用户，我们提供了一个包含模拟 EC2 元数据的演示数据集。
+
+<Steps>
+  <Step>
+    #### 下载示例数据集
+
+    下载示例日志文件：
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    该数据集包括：
+
+    * 系统启动过程
+    * SSH 登录活动 (成功和失败的尝试)
+    * 安全事件 (暴力破解攻击及 fail2ban 的响应)
+    * 计划维护 (cron 作业、anacron)
+    * 服务重启 (rsyslog)
+    * 内核消息和防火墙活动
+    * 正常运行与重要事件交织出现
+  </Step>
+
+  <Step>
+    #### 创建测试 collector 的配置
+
+    创建一个名为 `ec2-host-logs-demo.yaml` 的文件，并添加以下配置：
+
+    ```yaml
+    cat > ec2-host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "ec2-demo"
+
+    processors:
+      # 为演示模拟 EC2 元数据（无需真实 EC2 实例）
+      resource:
+        attributes:
+          - key: service.name
+            value: "ec2-demo"
+            action: insert
+          - key: cloud.provider
+            value: "aws"
+            action: insert
+          - key: cloud.platform
+            value: "aws_ec2"
+            action: insert
+          - key: cloud.region
+            value: "us-east-1"
+            action: insert
+          - key: cloud.availability_zone
+            value: "us-east-1a"
+            action: insert
+          - key: host.id
+            value: "i-0abc123def456789"
+            action: insert
+          - key: host.type
+            value: "t3.medium"
+            action: insert
+          - key: host.name
+            value: "prod-web-01"
+            action: insert
+
+    service:
+      pipelines:
+        logs/ec2-demo:
+          receivers: [filelog/journal]
+          processors:
+            - resource
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+
+    <Note>
+      出于演示目的，我们通过 `resource` 处理器手动添加 EC2 元数据。在生产环境中，如果使用真实的 EC2 实例，请改用 `resourcedetection` 处理器，它会自动查询 EC2 元数据 API。
+    </Note>
+  </Step>
+
+  <Step>
+    #### 使用演示配置运行 ClickStack
+
+    使用演示日志和配置运行 ClickStack：
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/ec2-host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      docker.hyperdx.io/hyperdx/hyperdx-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### 在 HyperDX 中验证日志
+
+    collector 运行后：
+
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建账户)
+    2. 进入搜索视图，并将 source 设置为 `Logs`
+    3. 将时间范围设置为 **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
+    4. 按 `source:ec2-demo` 过滤
+    5. 展开一条日志，在资源属性中查看 EC2 元数据
+
+    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 日志搜索视图" />
+
+    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="包含元数据的 EC2 日志详情" />
+
+    <Info>
+      **时区显示**
+
+      HyperDX 会按你浏览器的本地时区显示时间戳。演示数据覆盖 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**。较大的时间范围可确保无论你位于何处，都能看到演示日志。看到日志后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+    </Info>
+
+    你应会看到包含模拟 EC2 上下文的日志，包括：
+
+    * 实例 ID: `i-0abc123def456789`
+    * 区域: `us-east-1`
+    * 可用区: `us-east-1a`
+    * 实例类型: `t3.medium`
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## 仪表盘和可视化
+</div>
+
+为了帮助你开始使用 ClickStack 监控 EC2 主机日志，我们提供了包含云上下文信息的关键可视化。
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.ec2_host_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
+  </Step>
+
+  <Step>
+    #### 导入预置仪表盘
+
+    1. 打开 HyperDX，进入“仪表盘”部分
+    2. 点击右上角省略号菜单下的 **Import Dashboard**
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+
+    3. 上传 `host-logs-dashboard.json` 文件，然后点击 **Finish Import**
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="完成导入" />
+  </Step>
+
+  <Step>
+    #### 查看仪表盘
+
+    仪表盘创建后，其中的所有可视化都已预先配置好：
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 日志仪表盘" />
+
+    你可以按 EC2 上下文筛选仪表盘中的可视化：
+
+    * `cloud.region:us-east-1` - 显示特定区域的日志
+    * `host.type:t3.medium` - 按实例类型过滤
+    * `host.id:i-0abc123def456` - 显示特定实例的日志
+
+    <Note>
+      对于演示数据集，请将时间范围设置为 **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (请根据你的本地时区进行调整) 。导入的仪表盘默认不会指定时间范围。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="no-metadata">
+  ### 日志中未显示 EC2 元数据
+</div>
+
+**验证是否可以访问 EC2 元数据服务：**
+
+```bash
+# 获取元数据令牌
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+# 测试元数据端点
+curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
+```
+
+如果失败，请确认：
+
+* 实例元数据服务已启用
+* IMDSv2 未被安全组 (Security Group) 拦截
+* 采集器运行在 EC2 实例本机上
+
+**检查采集器日志中是否有元数据相关错误：**
+
+```bash
+# 如果作为 systemd 服务运行
+sudo journalctl -u otelcol-contrib -f | grep -i "ec2\|metadata\|resourcedetection"
+
+# 如果在前台运行，请检查 stdout
+```
+
+<div id="no-logs">
+  ### HyperDX 中未出现日志
+</div>
+
+**确认 syslog 文件存在且正在写入：**
+
+```bash
+ls -la /var/log/syslog /var/log/messages
+tail -f /var/log/syslog
+```
+
+**检查采集器是否能读取日志文件：**
+
+```bash
+cat /var/log/syslog | head -20
+```
+
+**验证与 ClickStack 的网络连通性：**
+
+```bash
+# 测试 OTLP 端点
+curl -v http://YOUR_CLICKSTACK_HOST:4318/v1/logs
+
+# 应收到响应（即使返回错误，也说明端点可达）
+```
+
+**检查采集器日志中是否有报错：**
+
+```bash
+# 如果在前台运行
+# 在标准输出中查找错误信息
+
+# 如果作为 systemd 服务运行
+sudo journalctl -u otelcol-contrib -f | grep -i "error\|failed"
+```
+
+<div id="logs-not-parsing">
+  ### 日志解析有误
+</div>
+
+**请确认 syslog 格式：**
+
+对于 Ubuntu 24.04+：
+
+```bash
+# 应显示 ISO8601 格式：2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+对于 Amazon Linux 2 / Ubuntu 20.04：
+
+```bash
+# 应显示传统格式：Nov 17 14:16:16
+tail -5 /var/log/messages
+```
+
+如果你的格式不一致，请根据所用的发行版，使用[创建采集器配置](#create-config)部分中相应的配置选项卡。
+
+<div id="systemd-issues">
+  ### Collector 无法作为 systemd 服务启动
+</div>
+
+**检查服务状态：**
+
+```bash
+sudo systemctl status otelcol-contrib
+```
+
+**查看详细日志：**
+
+```bash
+sudo journalctl -u otelcol-contrib -n 50
+```
+
+**常见问题：**
+
+* 环境变量中的 API 密钥设置不正确
+* 配置文件存在语法错误
+* 读取日志文件时存在权限问题
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* 为关键系统事件 (服务故障、身份验证失败、磁盘告警) 设置[告警](/zh/clickstack/features/alerts)
+* 按 EC2 元数据属性 (区域、实例类型、实例 ID) 进行过滤，以监控特定资源
+* 将 EC2 主机日志与应用日志关联起来，以便进行更全面的故障排查
+* 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
+
+<div id="going-to-production">
+  ## 生产环境部署
+</div>
+
+本指南将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是进行主机级监控时推荐的生产环境部署方式。若要在大量实例之间统一管理采集器，可考虑使用配置管理工具 (Ansible、Chef、Puppet) ；在 Kubernetes 环境中，则可使用 OpenTelemetry Operator。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
