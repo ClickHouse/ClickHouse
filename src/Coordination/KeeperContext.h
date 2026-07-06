@@ -66,6 +66,11 @@ public:
     DiskPtr getStateFileDisk() const;
     void setStateFileDisk(DiskPtr disk);
 
+    /// Disk for the on-disk node storage. Initialized only if coordination setting
+    /// `use_new_storage` is enabled and `storage_memory_only` is disabled; throws otherwise.
+    DiskPtr getDataDisk() const;
+    void setDataDisk(DiskPtr disk);
+
     const std::unordered_map<std::string, std::string> & getSystemNodesWithData() const;
     const KeeperFeatureFlags & getFeatureFlags() const;
     SnapshotVersion getWriteSnapshotVersion() const;
@@ -127,6 +132,7 @@ private:
     Storage getLogsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getSnapshotsPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
     Storage getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
+    Storage getDataPathFromConfig(const Poco::Util::AbstractConfiguration & config) const;
 
     DiskPtr getDisk(const Storage & storage) const;
 
@@ -151,6 +157,7 @@ private:
     Storage snapshot_storage;
     Storage latest_snapshot_storage;
     Storage state_file_storage;
+    Storage data_storage;
 
     std::vector<std::string> old_log_disk_names;
     std::vector<std::string> old_snapshot_disk_names;

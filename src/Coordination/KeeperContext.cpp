@@ -30,11 +30,14 @@ namespace ErrorCodes
 {
 
 extern const int BAD_ARGUMENTS;
+extern const int LOGICAL_ERROR;
 
 }
 
 namespace CoordinationSetting
 {
+    extern const CoordinationSettingsBool use_new_storage;
+    extern const CoordinationSettingsBool storage_memory_only;
     extern const CoordinationSettingsUInt64 write_snapshot_version;
     extern const CoordinationSettingsMilliseconds ttl_gc_period_ms;
     extern const CoordinationSettingsMilliseconds container_gc_period_ms;
@@ -180,6 +183,22 @@ void KeeperContext::initializeDisks(const Poco::Util::AbstractConfiguration & co
         latest_snapshot_storage = snapshot_storage;
 
     state_file_storage = getStatePathFromConfig(config);
+
+    const auto & coordination_settings = getCoordinationSettings();
+    if (coordination_settings[CoordinationSetting::use_new_storage]
+        && !coordination_settings[CoordinationSetting::storage_memory_only])
+    {
+        data_storage = getDataPathFromConfig(config);
+
+        /// The on-disk node storage is not persistent across restarts: on startup the state is
+        /// recovered from snapshots and logs, and leftover files from a previous run must not
+        /// be picked up.
+        /// (removeRecursiveWithLimit rather than removeRecursive because on plain object storage
+        ///  disks the latter doesn't remove files, only directory contents.)
+        auto data_disk = getDisk(data_storage);
+        for (auto it = data_disk->iterateDirectory(""); it->isValid(); it->next())
+            data_disk->removeRecursiveWithLimit(it->path());
+    }
 }
 
 KeeperContext::Phase KeeperContext::getServerState() const
@@ -290,6 +309,19 @@ void KeeperContext::setStateFileDisk(DiskPtr disk)
     state_file_storage = std::move(disk);
 }
 
+DiskPtr KeeperContext::getDataDisk() const
+{
+    auto disk = getDisk(data_storage);
+    if (!disk)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Keeper data storage disk is not initialized");
+    return disk;
+}
+
+void KeeperContext::setDataDisk(DiskPtr disk)
+{
+    data_storage = std::move(disk);
+}
+
 const std::unordered_map<std::string, std::string> & KeeperContext::getSystemNodesWithData() const
 {
     return system_nodes_with_data;
@@ -392,6 +424,33 @@ KeeperContext::Storage KeeperContext::getSnapshotsPathFromConfig(const Poco::Uti
     if (standalone_keeper)
         return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "snapshots");
     return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/snapshots");
+}
+
+KeeperContext::Storage KeeperContext::getDataPathFromConfig(const Poco::Util::AbstractConfiguration & config) const
+{
+    const auto create_local_disk = [](const auto & path)
+    {
+        if (!fs::exists(path))
+            fs::create_directories(path);
+
+        auto disk = std::make_shared<DiskLocal>("LocalDataDisk", path);
+        disk->startup(false);
+        return disk;
+    };
+
+    /// the most specialized path
+    if (config.has("keeper_server.data_storage_path"))
+        return create_local_disk(config.getString("keeper_server.data_storage_path"));
+
+    if (config.has("keeper_server.data_storage_disk"))
+        return config.getString("keeper_server.data_storage_disk");
+
+    if (config.has("keeper_server.storage_path"))
+        return create_local_disk(std::filesystem::path{config.getString("keeper_server.storage_path")} / "data");
+
+    if (standalone_keeper)
+        return create_local_disk(std::filesystem::path{config.getString("path", KEEPER_DEFAULT_PATH)} / "data");
+    return create_local_disk(std::filesystem::path{config.getString("path", DBMS_DEFAULT_PATH)} / "coordination/data");
 }
 
 KeeperContext::Storage KeeperContext::getStatePathFromConfig(const Poco::Util::AbstractConfiguration & config) const

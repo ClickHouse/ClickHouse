@@ -222,12 +222,15 @@ def _feature_flags_xml(flags):
     )
 
 
-def _coord_settings_xml(overrides_xml=None):
+def _coord_settings_xml(lsmt_backend, overrides_xml=None):
     """Generate XML for coordination settings.
 
     Args:
+        lsmt_backend: If True, enable the on-disk (LSMT) node storage
         overrides_xml: Optional XML fragment or full <coordination_settings> block to merge
     """
+    lsmt = "<use_new_storage>1</use_new_storage>" if lsmt_backend else ""
+
     settings = (
         "<async_replication>1</async_replication>"
         "<compress_logs>false</compress_logs>"
@@ -263,7 +266,7 @@ def _coord_settings_xml(overrides_xml=None):
         "<shutdown_timeout>5000</shutdown_timeout>"
         f"{settings}"
         f"{overrides_content}"
-        "</coordination_settings>"
+        f"{lsmt}</coordination_settings>"
     )
 
 
@@ -303,6 +306,9 @@ def _normalize_backend(backend):
 
 def _build_feature_flags(feature_flags):
     ff = feature_flags
+    # Do not allow use_new_storage under <feature_flags>; it belongs to coordination_settings
+    ff.pop("use_new_storage", None)
+
     ff.setdefault("check_not_exists", "1")
     ff.setdefault("create_if_not_exists", "1")
     ff.setdefault("remove_recursive", "1")
@@ -520,8 +526,9 @@ class ClusterBuilder:
         feature_flags = dict(opts.get("feature_flags", {}))
         _build_feature_flags(feature_flags)
         feature_flags_xml = _feature_flags_xml(feature_flags)
-        # Always build base settings, merge overrides if provided
+        # Always build base settings with backend support, merge overrides if provided
         coord_settings = _coord_settings_xml(
+            backend_norm == "lsmt",
             overrides_xml=opts.get("coord_overrides_xml"),
         )
 
