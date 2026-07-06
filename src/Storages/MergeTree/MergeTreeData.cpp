@@ -10767,8 +10767,10 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     auto system_columns = getPatchPartSystemColumns();
     const auto patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
 
-    /// For v2 patches, additionally read the **physical source columns** of the target table's
-    /// sorting key expression through the mutation pipeline, so they land in every patch row.
+    /// For v2 patches, additionally read the source columns of the target table's sorting
+    /// key expression through the mutation pipeline, so they land in every patch row.
+    /// A source column may be a subcolumn (e.g. `ORDER BY tup.a`) — it is read as such
+    /// from the main table and stored in the patch part as a physical column.
     if (patch_parts_version == MergeTreePatchPartsVersion::V2)
     {
         system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
@@ -10786,7 +10788,8 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
             if (!already_read.insert(name).second)
                 continue;
 
-            system_columns.push_back(NameAndTypePair{name, main_columns.getPhysical(name).type});
+            auto column = main_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+            system_columns.push_back(NameAndTypePair{name, column.type});
         }
     }
 
