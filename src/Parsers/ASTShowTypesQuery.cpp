@@ -6,7 +6,7 @@ namespace DB
 
 ASTPtr ASTShowTypesQuery::clone() const
 {
-    auto res = std::make_shared<ASTShowTypesQuery>(*this);
+    auto res = make_intrusive<ASTShowTypesQuery>(*this);
     res->children.clear();
     cloneOutputOptions(*res);
     return res;

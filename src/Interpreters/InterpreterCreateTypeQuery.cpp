@@ -55,8 +55,7 @@ void validateBaseTypeRecursive(
         if (formal_param_names.contains(name))
             return;
 
-        ASTPtr ast_ptr_ident = std::const_pointer_cast<IAST>(identifier_node->shared_from_this());
-        if (factory_instance.tryGet(ast_ptr_ident))
+        if (factory_instance.tryGet(ast_node))
             return;
 
         throw Exception(ErrorCodes::UNKNOWN_TYPE,
@@ -66,8 +65,9 @@ void validateBaseTypeRecursive(
     else if (const auto * data_type_node = ast_node->as<ASTDataType>())
     {
         const String & type_name_str = data_type_node->name;
+        const auto arguments = data_type_node->getArguments();
 
-        if (!data_type_node->arguments || data_type_node->arguments->children.empty())
+        if (!arguments || arguments->children.empty())
         {
             if (formal_param_names.contains(type_name_str))
                 return;
@@ -75,8 +75,7 @@ void validateBaseTypeRecursive(
             if (UserDefinedTypeFactory::instance().isTypeRegistered(type_name_str, validation_context))
                 return;
 
-            ASTPtr ast_ptr_dt = std::const_pointer_cast<IAST>(data_type_node->shared_from_this());
-            if (factory_instance.tryGet(ast_ptr_dt))
+            if (factory_instance.tryGet(ast_node))
                 return;
 
             throw Exception(ErrorCodes::UNKNOWN_TYPE,
@@ -92,7 +91,7 @@ void validateBaseTypeRecursive(
             {
                 try
                 {
-                    factory_instance.get(type_name_str, data_type_node->arguments);
+                    factory_instance.get(type_name_str, arguments);
                     is_family_known = true;
                 }
                 catch (const Exception & e)
@@ -109,9 +108,9 @@ void validateBaseTypeRecursive(
                                 "Unknown type family '{}' in definition of user-defined type '{}'",
                                 type_name_str, udt_name);
 
-            if (data_type_node->arguments)
+            if (arguments)
             {
-                for (const auto & arg_child : data_type_node->arguments->children)
+                for (const auto & arg_child : arguments->children)
                 {
                     validateBaseTypeRecursive(arg_child, udt_name, formal_param_names, factory_instance, validation_context, known_families);
                 }

@@ -28,7 +28,7 @@ bool ParserDropTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!type_name_p.parse(pos, type_name_ast, expected))
         return false;
 
-    auto query = std::make_shared<ASTDropTypeQuery>();
+    auto query = make_intrusive<ASTDropTypeQuery>();
     query->type_name = type_name_ast->as<ASTIdentifier &>().name();
     query->if_exists = if_exists;
 

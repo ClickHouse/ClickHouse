@@ -15,7 +15,7 @@ String ASTCreateTypeQuery::getID(char delim) const
 
 ASTPtr ASTCreateTypeQuery::clone() const
 {
-    auto res = std::make_shared<ASTCreateTypeQuery>();
+    auto res = make_intrusive<ASTCreateTypeQuery>();
     res->name = name;
     res->if_not_exists = if_not_exists;
     res->or_replace = or_replace;

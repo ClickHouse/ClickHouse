@@ -2,7 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/ASTDropTypeQuery.h>
-#include <Interpreters/Context.h>
+#include <Interpreters/InterpreterFactory.h>
 
 namespace DB
 {
@@ -20,5 +20,7 @@ public:
 private:
     ASTPtr query_ptr;
 };
+
+void registerInterpreterDropTypeQuery(InterpreterFactory & factory);
 
 }

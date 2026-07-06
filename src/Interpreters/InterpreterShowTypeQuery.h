@@ -2,7 +2,6 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/InterpreterFactory.h>
 
 namespace DB

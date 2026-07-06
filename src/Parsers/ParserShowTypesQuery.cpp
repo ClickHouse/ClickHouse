@@ -30,7 +30,7 @@ bool ParserShowTypesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         return false;
     }
 
-    auto query = std::make_shared<ASTShowTypesQuery>();
+    auto query = make_intrusive<ASTShowTypesQuery>();
 
     node = query;
     return true;

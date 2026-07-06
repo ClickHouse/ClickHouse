@@ -82,7 +82,7 @@ bool ParserCreateTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    auto query = std::make_shared<ASTCreateTypeQuery>();
+    auto query = make_intrusive<ASTCreateTypeQuery>();
     query->name = typeid_cast<ASTIdentifier &>(*name).name();
     query->base_type = base_type;
     query->type_parameters = params_ast;

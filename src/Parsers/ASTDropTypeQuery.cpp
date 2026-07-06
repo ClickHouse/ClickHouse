@@ -12,7 +12,7 @@ String ASTDropTypeQuery::getID(char delim) const
 
 ASTPtr ASTDropTypeQuery::clone() const
 {
-    auto res = std::make_shared<ASTDropTypeQuery>(*this);
+    auto res = make_intrusive<ASTDropTypeQuery>(*this);
     return res;
 }
 

@@ -255,7 +255,8 @@ public:
         }
         else if (const auto * data_type_node = ast_node->as<ASTDataType>())
         {
-            if (!data_type_node->name.empty() && (!data_type_node->arguments || data_type_node->arguments->children.empty()))
+            const auto arguments = data_type_node->getArguments();
+            if (!data_type_node->name.empty() && (!arguments || arguments->children.empty()))
             {
                 auto it = substitutions.find(data_type_node->name);
                 if (it != substitutions.end())
@@ -271,18 +272,8 @@ public:
             child = substitute(child, substitutions);
         }
 
-        if (auto * new_data_type_node = new_node->as<ASTDataType>())
-        {
-            if (!new_data_type_node->children.empty())
-            {
-                new_data_type_node->arguments = new_data_type_node->children.at(0);
-            }
-            else if (new_data_type_node->arguments && new_data_type_node->arguments->children.empty())
-            {
-                if (new_data_type_node->children.empty())
-                     new_data_type_node->arguments = nullptr;
-            }
-        }
+        /// For ASTDataType the arguments are stored as the first (and only) child, so
+        /// substituting the children above already keeps getArguments() in sync.
 
         return new_node;
     }

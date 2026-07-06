@@ -309,6 +309,9 @@ StoragePtr UserDefinedTypeFactory::getSystemTable(ContextPtr context_ptr) const
     }
     catch (...)
     {
+        /// The persistence table `udt.user_defined_types` may not exist yet (for example, on a fresh
+        /// server before any user-defined type has been created). In that case there is nothing to
+        /// load, so it is Ok to treat its absence as "no persisted types" and return nullptr.
         return nullptr;
     }
 }
@@ -337,7 +340,7 @@ void UserDefinedTypeFactory::loadTypesFromStorage(ContextPtr context_ptr, Storag
 
         while (executor.pull(block))
         {
-            if (!block || block.rows() == 0)
+            if (block.empty() || block.rows() == 0)
                 continue;
 
             processUDTBlock(block, data_type_parser, expression_list_parser, log);
@@ -375,14 +378,14 @@ void UserDefinedTypeFactory::processUDTBlock(
     {
         try
         {
-            String type_name = name_col->getDataAt(i).toString();
-            String base_ast_str = base_ast_col->getDataAt(i).toString();
+            String type_name = String(name_col->getDataAt(i));
+            String base_ast_str = String(base_ast_col->getDataAt(i));
 
             String params_ast_str = getNullableString(params_ast_col, i);
             String input_expr_str = getNullableString(input_expr_col, i);
             String output_expr_str = getNullableString(output_expr_col, i);
             String default_expr_str = getNullableString(default_expr_col, i);
-            String create_query_str = create_query_col->getDataAt(i).toString();
+            String create_query_str = String(create_query_col->getDataAt(i));
 
             ASTPtr base_type_ast = stringToAst(base_ast_str, data_type_parser);
             if (!base_type_ast)
@@ -422,7 +425,7 @@ String UserDefinedTypeFactory::getNullableString(const ColumnPtr & column, size_
     if (const ColumnNullable * col_nullable = checkAndGetColumn<ColumnNullable>(column.get()))
     {
         if (!col_nullable->isNullAt(index))
-            return col_nullable->getNestedColumn().getDataAt(index).toString();
+            return String(col_nullable->getNestedColumn().getDataAt(index));
     }
     return "";
 }

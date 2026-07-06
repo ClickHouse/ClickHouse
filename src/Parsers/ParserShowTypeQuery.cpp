@@ -32,7 +32,7 @@ bool ParserShowTypeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     if (!type_ident)
         return false;
 
-    auto query = std::make_shared<ASTShowTypeQuery>();
+    auto query = make_intrusive<ASTShowTypeQuery>();
     query->type_name = type_ident->name();
 
     node = query;
