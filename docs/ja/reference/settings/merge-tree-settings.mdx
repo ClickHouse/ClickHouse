@@ -1,0 +1,4294 @@
+---
+description: '`system.merge_tree_settings` にある MergeTree の設定'
+slug: /operations/settings/merge-tree-settings
+title: 'MergeTree テーブル設定'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
+import VersionHistory from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
+
+システムテーブル `system.merge_tree_settings` には、グローバルに設定された MergeTree の設定が表示されます。
+
+MergeTree の設定は、サーバー設定ファイルの `merge_tree` セクションで設定するか、各 `MergeTree` テーブルごとに
+`CREATE TABLE` ステートメントの `SETTINGS` 句で個別に指定できます。
+
+設定 `max_suspicious_broken_parts` をカスタマイズする例:
+
+サーバー設定ファイルで、すべての `MergeTree` テーブルのデフォルトを設定します:
+
+```text
+<merge_tree>
+    <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
+</merge_tree>
+```
+
+特定のテーブルに設定する場合:
+
+```sql
+CREATE TABLE tab
+(
+    `A` Int64
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS max_suspicious_broken_parts = 500;
+```
+
+特定のテーブルの設定は、`ALTER TABLE ... MODIFY SETTING` を使用して変更します。
+
+```sql
+ALTER TABLE tab MODIFY SETTING max_suspicious_broken_parts = 100;
+
+-- グローバルデフォルトにリセット（system.merge_tree_settings の値）
+ALTER TABLE tab RESET SETTING max_suspicious_broken_parts;
+```
+
+<div id="mergetree-settings">
+  ## MergeTree の設定
+</div>
+
+{/* 以下の設定は、次のスクリプトによって自動生成されています 
+  https://github.com/ClickHouse/clickhouse-docs/blob/main/scripts/settings/autogenerate-settings.sh
+  */}
+
+<div id="adaptive_write_buffer_initial_size">
+  ## adaptive_write_buffer_initial_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
+
+適応型書き込みバッファの初期サイズ
+
+<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
+  ## add_implicit_sign_column_constraint_for_collapsing_engine
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+true の場合、CollapsingMergeTree または VersionedCollapsingMergeTree テーブルの `sign` カラムに暗黙的な制約を追加し、有効な値 (`1` と `-1`) のみを許可します。
+
+<div id="add_minmax_index_for_block_number_column">
+  ## add_minmax_index_for_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、永続仮想カラム `_block_number` に対して暗黙的な min-max (スキッピング) 索引が追加されます。
+有効にするには `enable_block_number_column = 1` が必要です。索引が構築されるのは挿入時ではなくマージ時のみです。
+挿入時点では block number はまだ暫定値であるため、定数に対する索引になってしまいます。
+
+<div id="add_minmax_index_for_block_offset_column">
+  ## add_minmax_index_for_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、永続仮想カラム `_block_offset` に対して暗黙的な min-max (スキッピング) 索引が追加されます。
+この設定を有効にするには `enable_block_offset_column = 1` が必要です。索引が作成されるのはマージ時のみで、
+挿入時には作成されません。
+
+<div id="add_minmax_index_for_numeric_columns">
+  ## add_minmax_index_for_numeric_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、テーブル内のすべての数値カラムに min-max (スキッピング) 索引が追加されます。
+
+<div id="add_minmax_index_for_string_columns">
+  ## add_minmax_index_for_string_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、テーブル内のすべての文字列カラムに min-max (スキッピング) 索引が追加されます。
+
+<div id="add_minmax_index_for_temporal_columns">
+  ## add_minmax_index_for_temporal_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、テーブル内のすべての Date、Date32、Time、Time64、DateTime、DateTime64 カラムに min-max (スキッピング) 索引が追加されます
+
+<div id="allow_coalescing_columns_in_partition_or_order_key">
+  ## allow_coalescing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "パーティションキーまたはソートキーで coalescing カラムを使用できるようにする新しい設定。"}]}]} />
+
+有効にすると、CoalescingMergeTree テーブルの coalescing カラムを
+パーティションキーまたはソートキーに使用できます。
+
+<div id="allow_commit_order_projection">
+  ## allow_commit_order_projection
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+`_block_number` と `_block_offset` の仮想カラムを格納するコミット順プロジェクションを有効にし、マージ後も元の挿入順序を保持します。
+この設定を使用するには、`enable_block_number_column` と `enable_block_offset_column` を有効にする必要があります。
+
+<div id="allow_experimental_replacing_merge_with_cleanup">
+  ## allow_experimental_replacing_merge_with_cleanup
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+`is_deleted`
+カラムを持つ ReplacingMergeTree に対して、実験的な CLEANUP マージを許可します。有効にすると、`OPTIMIZE ... FINAL CLEANUP` を使用してパーティション内のすべてのパーツを手動で 1 つのパーツにマージし、削除済みの行を削除できるようになります。
+
+また、設定 `min_age_to_force_merge_seconds`、
+`min_age_to_force_merge_on_partition_only` および
+`enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`
+により、この種のマージをバックグラウンドで自動的に実行できるようにもなります。
+
+<div id="allow_experimental_reverse_key">
+  ## allow_experimental_reverse_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+廃止された設定で、効果はありません。
+
+<div id="allow_floating_point_partition_key">
+  ## allow_floating_point_partition_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+浮動小数点数をパーティションキーとして使用することを許可します。
+
+設定可能な値:
+
+* `0` — 浮動小数点数のパーティションキーは許可されません。
+* `1` — 浮動小数点数のパーティションキーは許可されます。
+
+<div id="allow_nullable_key">
+  ## allow_nullable_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+主キーとして Nullable 型を使用できるようにします。
+
+<div id="allow_part_offset_column_in_projections">
+  ## allow_part_offset_column_in_projections
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "これで、プロジェクションで _part_offset カラムを使用できるようになりました。"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新しい設定。安定化するまで、親パートの offset カラムを含むプロジェクションが作成されるのを防ぎます。"}]}]} />
+
+プロジェクションの SELECT クエリで &#39;&#95;part&#95;offset&#39; カラムの使用を許可します。
+
+<div id="allow_reduce_blocking_parts_task">
+  ## allow_reduce_blocking_parts_task
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "SMT はデフォルトで、古くなったブロッキングパーツを ZooKeeper から削除するようになりました"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+shared merge tree テーブルのブロッキングパーツを削減するバックグラウンドタスク。
+ClickHouse Cloud でのみ利用可能
+
+<div id="allow_remote_fs_zero_copy_replication">
+  ## allow_remote_fs_zero_copy_replication
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+この設定はまだ実運用には適していないため、production環境では使用しないでください。
+
+<div id="allow_summing_columns_in_partition_or_order_key">
+  ## allow_summing_columns_in_partition_or_order_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "パーティションまたはソートキーのカラムの合計を許可する新しい設定"}]}]} />
+
+有効にすると、SummingMergeTree テーブルで合計対象のカラムを
+パーティションキーまたはソートキーに使用できます。
+
+<div id="allow_suspicious_indices">
+  ## allow_suspicious_indices
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+同一の式を持つプライマリ/セカンダリ索引およびソートキーを拒否します
+
+<div id="allow_tuple_element_aggregation">
+  ## allow_tuple_element_aggregation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、Tuple カラム内の各要素が、SummingMergeTree、AggregatingMergeTree、および
+CoalescingMergeTree でのマージ時の集計に
+含まれます。ネストされた Tuple は再帰的に展開されるため、すべての
+リーフ要素が個別に集計されます。この設定は変更できないため、
+テーブル作成時に指定する必要があります。
+
+<div id="allow_vertical_merges_from_compact_to_wide_parts">
+  ## allow_vertical_merges_from_compact_to_wide_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+compact パーツから wide パーツへの垂直マージを許可します。この設定は、すべてのレプリカで同じ値にする必要があります。
+
+<div id="alter_column_secondary_index_mode">
+  ## alter_column_secondary_index_mode
+</div>
+
+<SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "rebuild"},{"label": "依存するセカンダリ索引がある `column` に対する ALTER を許可できるように動作を変更"}]}]} />
+
+セカンダリ索引の対象となっているカラムを変更する `ALTER` コマンドを許可するかどうか、および
+許可する場合にどのような処理を行うかを設定します。デフォルトでは、そのような `ALTER` コマンドは許可され、索引は再構築されます。
+
+設定可能な値:
+
+* `rebuild` (default): `ALTER` コマンドで変更されるカラムの影響を受けるセカンダリ索引を再構築します。
+* `throw`: 例外を送出して、**明示的な**セカンダリ索引の対象となっているカラムに対する `ALTER` をすべて禁止します。暗黙的な索引はこの制限の対象外で、再構築されます。
+* `drop`: 依存するセカンダリ索引を削除します。新しいパーツには索引が作成されないため、再作成するには `MATERIALIZE INDEX` が必要です。
+* `compatibility`: 元の動作に合わせます。`ALTER ... MODIFY COLUMN` では `throw`、`ALTER ... UPDATE/DELETE` では `rebuild` になります。
+* `ignore`: 上級者向けのオプションです。索引を不整合な状態のまま残すため、誤ったクエリ結果を招く可能性があります。
+
+<div id="always_fetch_merged_part">
+  ## always_fetch_merged_part
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+true の場合、このレプリカはパーツのマージを一切行わず、常に他のレプリカからマージ済みパーツをダウンロードします。
+
+設定可能な値:
+
+* true, false
+
+<div id="always_use_copy_instead_of_hardlinks">
+  ## always_use_copy_instead_of_hardlinks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+mutations/replaces/detaches などの際は、
+ハードリンクではなく常にデータをコピーします。
+
+<div id="apply_patches_on_merge">
+  ## apply_patches_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+true の場合、マージ時にパッチパートが適用されます
+
+<div id="assign_part_uuids">
+  ## assign_part_uuids
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+有効にすると、新しい各 パーツ に対して一意の パーツ 識別子が割り当てられます。
+有効にする前に、すべてのレプリカが UUID バージョン 4 をサポートしていることを確認してください。
+
+<div id="async_block_ids_cache_update_wait_ms">
+  ## async_block_ids_cache_update_wait_ms
+</div>
+
+<SettingsInfoBlock type="ミリ秒" default_value="100" />
+
+各 insert の反復処理で async&#95;block&#95;ids&#95;cache の更新を待機する時間
+
+<div id="async_insert">
+  ## async_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+true の場合、INSERT クエリのデータはキューに格納され、後でバックグラウンドでテーブルに書き出されます。
+
+<div id="auto_statistics_types">
+  ## auto_statistics_types
+</div>
+
+<SettingsInfoBlock type="String" default_value="minmax, uniq" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "minmax, uniq"},{"label": "デフォルトで自動統計を有効化"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+適切なすべてのカラムに対して自動的に計算される統計タイプのカンマ区切りリストです。
+サポートされる統計タイプ: basic, tdigest, countmin, minmax, uniq.
+
+<div id="background_task_preferred_step_execution_time_ms">
+  ## background_task_preferred_step_execution_time_ms
+</div>
+
+<SettingsInfoBlock type="ミリ秒" default_value="50" />
+
+マージ または mutation の 1 ステップの実行にかかる目標時間。1 ステップの実行に
+これより長い時間がかかる場合は、この値を超えることがあります
+
+<div id="cache_populated_by_fetch">
+  ## cache_populated_by_fetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<Note>
+  この設定は ClickHouse Cloud でのみ適用されます。
+</Note>
+
+`cache_populated_by_fetch` が無効 (デフォルト) になっている場合、新しいデータパーツは、それらのパーツを必要とするクエリが実行されたときにのみファイルシステムキャッシュに読み込まれます。
+
+有効にすると、`cache_populated_by_fetch` により、そのような動作をトリガーするクエリがなくても、すべてのノードが storage から新しいデータパーツを各自のファイルシステムキャッシュに読み込むようになります。
+
+**関連項目**
+
+* [ignore&#95;cold&#95;parts&#95;seconds](/ja/reference/settings/session-settings#ignore_cold_parts_seconds)
+* [prefer&#95;warmed&#95;unmerged&#95;parts&#95;seconds](/ja/reference/settings/session-settings#prefer_warmed_unmerged_parts_seconds)
+* [cache&#95;warmer&#95;threads](/ja/reference/settings/session-settings#cache_warmer_threads)
+
+<div id="cache_populated_by_fetch_filename_regexp">
+  ## cache_populated_by_fetch_filename_regexp
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+<Note>
+  この設定は ClickHouse Cloud にのみ適用されます。
+</Note>
+
+空でない場合、フェッチ後に cache にプリウォームされるのは、この正規表現に一致するファイルのみです (`cache_populated_by_fetch` が有効な場合) 。
+
+<div id="check_delay_period">
+  ## check_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+廃止された設定で、効果はありません。
+
+<div id="check_sample_column_is_correct">
+  ## check_sample_column_is_correct
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+サンプリングまたはサンプリング式に使用するカラムのデータ型が正しいかどうかを、テーブル作成時にチェックする機能を有効にします。データ型は、符号なし
+[整数型](/ja/reference/data-types/int-uint)のいずれかである必要があります: `UInt8`, `UInt16`,
+`UInt32`, `UInt64`。
+
+設定可能な値:
+
+* `true`  — チェックは有効です。
+* `false` — テーブル作成時のチェックは無効です。
+
+デフォルト値: `true`。
+
+デフォルトでは、ClickHouseサーバーはテーブル作成時に、サンプリングまたはサンプリング式に使用するカラムのデータ型をチェックします。すでに
+不正なサンプリング式を持つテーブルがあり、起動時にサーバーが例外を発生させないようにしたい場合は、
+`check_sample_column_is_correct` を `false` に設定してください。
+
+<div id="clean_deleted_rows">
+  ## clean_deleted_rows
+</div>
+
+<SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
+
+廃止された設定で、効果はありません。
+
+<div id="cleanup_delay_period">
+  ## cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+古いキュー内のログ、ブロックのハッシュ値、およびパーツをクリーンアップする最小の周期です。
+
+<div id="cleanup_delay_period_random_add">
+  ## cleanup_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+cleanup&#95;delay&#95;period に 0 から x 秒までの一様分布の値を加算し、
+テーブル数が非常に多い場合に発生するサンダリングハード問題と、それに続く ZooKeeper への DoS を回避します。
+
+<div id="cleanup_thread_preferred_points_per_iteration">
+  ## cleanup_thread_preferred_points_per_iteration
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="150" />
+
+バックグラウンドクリーンアップの推奨バッチサイズです (point は抽象的な単位ですが、1 point
+はおおよそ 1 つの挿入された block に相当します) 。
+
+<div id="cleanup_threads">
+  ## cleanup_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+廃止された設定で、効果はありません。
+
+<div id="clone_replica_zookeeper_create_get_part_batch_size">
+  ## clone_replica_zookeeper_create_get_part_batch_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "100"},{"label": "新しい設定"}]}]} />
+
+レプリカのクローン時に ZooKeeper の multi-create get-part リクエストで使用するバッチサイズ。
+
+<div id="columns_and_secondary_indices_sizes_lazy_calculation">
+  ## columns_and_secondary_indices_sizes_lazy_calculation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "カラムとセカンダリ索引のサイズを遅延計算するための新しい設定"}]}]} />
+
+テーブルの初期化時ではなく、最初のリクエスト時にカラムとセカンダリ索引のサイズを遅延計算します。
+
+<div id="columns_to_prewarm_mark_cache">
+  ## columns_to_prewarm_mark_cache
+</div>
+
+mark cache をプリウォームする対象のカラム一覧 (有効な場合) 。空の場合は、すべてのカラムを意味します
+
+<div id="compact_parts_max_bytes_to_buffer">
+  ## compact_parts_max_bytes_to_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="134217728" />
+
+ClickHouse Cloud でのみ使用できます。compact パーツ内の
+1 つのストライプに書き込める最大バイト数
+
+<div id="compact_parts_max_granules_to_buffer">
+  ## compact_parts_max_granules_to_buffer
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="128" />
+
+ClickHouse Cloud でのみ利用できます。compact パーツ内の
+1 つのストライプに書き込めるグラニュールの最大数
+
+<div id="compact_parts_merge_max_bytes_to_prefetch_part">
+  ## compact_parts_merge_max_bytes_to_prefetch_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16777216" />
+
+ClickHouse Cloud でのみ利用できます。マージ中に compact パーツ全体を一括でメモリに読み込むための最大サイズです。
+
+<div id="compatibility_allow_sampling_expression_not_in_primary_key">
+  ## compatibility_allow_sampling_expression_not_in_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+主キーに含まれない sampling expression を持つ table の作成を許可します。これは、
+後方互換性のために、不正な table を含む状態で server を一時的に実行できるようにする場合にのみ
+必要です。
+
+<div id="compress_marks">
+  ## compress_marks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+マークは圧縮に対応しており、mark file のサイズを削減し、ネットワーク経由での
+転送を高速化します。
+
+<div id="compress_per_column_in_compact_parts">
+  ## compress_per_column_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+compact パーツの物理レイアウトを制御します。true (デフォルト) の場合、グラニュール内の各カラムが
+新しい圧縮ブロックとして開始されるため、ClickHouse は不要なカラムの
+ディスク読み取りをスキップできます。false の場合、グラニュール内のすべてのカラムが同じ圧縮ブロックに格納されるため、
+圧縮率は向上しますが、読み取り時にはより多くのデータを展開する必要があります。
+これは、常にすべてのカラムを読み取るワークロード (例: プロジェクション) に適しています。
+
+<div id="compress_primary_key">
+  ## compress_primary_key
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+主キーの圧縮をサポートし、主キーファイルのサイズを削減するとともに、
+ネットワーク転送を高速化します。
+
+<div id="concurrent_part_removal_threshold">
+  ## concurrent_part_removal_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+パーツの同時削除 (`max_part_removal_threads`を参照) は、
+非アクティブなデータパーツ数が少なくともこの値に達した場合にのみ有効化されます。
+
+<div id="concurrent_part_removal_threshold_for_remote_disk">
+  ## concurrent_part_removal_threshold_for_remote_disk
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "16"},{"label": "新しい設定。削除対象のいずれかのパーツがリモートディスク上にある場合に、パーツの同時削除パスに入るためのしきい値を引き下げました。各削除では通常 1 回のネットワークラウンドトリップが発生します。従来の値 (100) は旧来の `concurrent_part_removal_threshold` のデフォルト値と一致するため、古い `compatibility` モードでは以前の動作が維持されます。"}]}]} />
+
+`concurrent_part_removal_threshold` と同じですが、削除対象の
+パーツのうち少なくとも 1 つがリモートディスクに保存されている場合に使用されます。デフォルト値が低めに
+設定されているのは、リモートストレージ上での各パーツ削除では通常ネットワーク
+ラウンドトリップが必要になるためです (たとえばオブジェクトストレージでは、パーツごとに 1 回の HTTP `DELETE` が発生します) 。そのため、
+100 パーツでも直列に削除すると、`DROP TABLE` が数十秒間ブロックされることがあります。
+
+<div id="deduplicate_merge_projection_mode">
+  ## deduplicate_merge_projection_mode
+</div>
+
+<SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "throw"},{"label": "不整合な PROJECTION の作成を許可しない"}]}]} />
+
+classic ではない MergeTree、つまり (Replicated, Shared) MergeTree を使用する
+table に対して PROJECTION の作成を許可するかどうかを指定します。`ignore` オプションは
+純粋に互換性のためのものであり、誤った結果を招く可能性があります。許可する場合は、
+PROJECTION の merge 時に何を行うか (drop または rebuild) を指定します。したがって、
+classic MergeTree ではこの setting は無視されます。また、`OPTIMIZE DEDUPLICATE` も
+制御しますが、その効果は MergeTree family のすべてのメンバーに及びます。
+`lightweight_mutation_projection_mode` オプションと同様に、これも part level です。
+
+設定可能な値:
+
+* `ignore`
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="default_compression_codec">
+  ## default_compression_codec
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+テーブル定義で特定のカラムに圧縮codecが定義されていない場合に使用される、デフォルトの圧縮codecを指定します。
+カラムに適用する圧縮codecの選択順序は次のとおりです。
+
+1. テーブル定義でそのカラムに対して定義された圧縮codec
+2. `default_compression_codec` で定義された圧縮codec (この設定)
+3. `compression` 設定で定義されたデフォルトの圧縮codec
+   デフォルト値: 空文字列 (未定義) 。
+
+<div id="detach_not_byte_identical_parts">
+  ## detach_not_byte_identical_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+マージまたはミューテーションの後、あるレプリカ上のデータパーツが他のレプリカ上のデータパーツとバイト単位で一致しない場合に、そのデータパーツをデタッチするかどうかを切り替えます。無効な場合、データパーツは削除されます。こうしたパーツを後で分析したい場合は、この設定を有効にしてください。
+
+この設定は、[データレプリケーション](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) が有効な `MergeTree` テーブルに適用されます。
+
+設定可能な値:
+
+* `0` — パーツは削除されます。
+* `1` — パーツはデタッチされます。
+
+<div id="detach_old_local_parts_when_cloning_replica">
+  ## detach_old_local_parts_when_cloning_replica
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+失われたレプリカを修復する際、古いローカルパーツを削除しません。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+<div id="disable_detach_partition_for_zero_copy_replication">
+  ## disable_detach_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ゼロコピー レプリケーションでの DETACH PARTITION クエリを無効にします。
+
+<div id="disable_fetch_partition_for_zero_copy_replication">
+  ## disable_fetch_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ゼロコピー レプリケーションでの FETCH PARTITION クエリを無効にします。
+
+<div id="disable_freeze_partition_for_zero_copy_replication">
+  ## disable_freeze_partition_for_zero_copy_replication
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ゼロコピー レプリケーションでは、FREEZE PARTITION クエリを無効にします。
+
+<div id="disk">
+  ## ディスク
+</div>
+
+ストレージに使用するディスクの名前です。storage policy の代わりに指定できます。
+
+<div id="distributed_index_analysis_min_indexes_bytes_to_activate">
+  ## distributed_index_analysis_min_indexes_bytes_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1073741824"},{"label": "新しい設定"}]}]} />
+
+分散索引解析を有効にするために必要な、ディスク上の索引 (データスキッピング索引および主キー) の最小サイズ (非圧縮)
+
+<div id="distributed_index_analysis_min_parts_to_activate">
+  ## distributed_index_analysis_min_parts_to_activate
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "10"},{"label": "新しい設定"}]}]} />
+
+分散索引解析が有効になる最小パーツ数
+
+<div id="dynamic_serialization_version">
+  ## dynamic_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "Dynamic のシリアル化バージョンを制御する設定を追加"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "シリアライゼーション/デシリアライゼーションを改善するため、Dynamic のデフォルトのシリアル化バージョンとして v3 を有効化"}]}]} />
+
+Dynamic データ型のシリアル化バージョンです。互換性の維持に必要です。
+
+設定可能な値:
+
+* `v1`
+* `v2`
+* `v3`
+
+<div id="enable_block_number_column">
+  ## enable_block_number_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+各行の `_block_number` カラムの永続化を有効にします。
+
+<div id="enable_block_offset_column">
+  ## enable_block_offset_column
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+マージ時に仮想カラム `_block_offset` を永続的に保存します。
+
+<div id="enable_index_granularity_compression">
+  ## enable_index_granularity_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+可能な場合、索引 granularity の値をメモリ上で圧縮します
+
+<div id="enable_max_bytes_limit_for_min_age_to_force_merge">
+  ## enable_max_bytes_limit_for_min_age_to_force_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "デフォルトで、min_age_to_force_merge_seconds が指定されている場合でもパーツのサイズを制限します"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "25.1"},{"label": "0"},{"label": "min_age_to_force_merge の最大バイト数を制限する新しい設定を追加しました。"}]}]} />
+
+設定 `min_age_to_force_merge_seconds` および
+`min_age_to_force_merge_on_partition_only` に
+設定 `max_bytes_to_merge_at_max_space_in_pool` を
+適用するかどうかを指定します。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+<div id="enable_mixed_granularity_parts">
+  ## enable_mixed_granularity_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+`index_granularity_bytes` 設定による granule サイズ制御への移行を有効または無効にします。バージョン 19.11 より前は、granule サイズを制限する設定は `index_granularity` しかありませんでした。`index_granularity_bytes` 設定により、大きな行 (数十〜数百メガバイト) を持つテーブルからデータを選択する際の ClickHouse のパフォーマンスが向上します。
+大きな行を持つテーブルがある場合は、そのテーブルでこの設定を有効にすると、`SELECT` クエリの効率を向上できます。
+
+<div id="enable_replacing_merge_with_cleanup_for_min_age_to_force_merge">
+  ## enable_replacing_merge_with_cleanup_for_min_age_to_force_merge
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "ReplacingMergeTree に対する自動クリーンアップマージを許可する新しい設定"}]}]} />
+
+パーティションを単一の パーツ にマージする際に、ReplacingMergeTree で CLEANUP マージを使用するかどうかを指定します。
+この設定を有効にするには、`allow_experimental_replacing_merge_with_cleanup`、
+`min_age_to_force_merge_seconds`、および `min_age_to_force_merge_on_partition_only`
+を有効にする必要があります。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+<div id="enable_the_endpoint_id_with_zookeeper_name_prefix">
+  ## enable_the_endpoint_id_with_zookeeper_name_prefix
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+ReplicatedMergeTree テーブルで、ZooKeeper 名のプレフィックス付き Endpoint ID を有効にします。
+
+<div id="enable_vertical_merge_algorithm">
+  ## enable_vertical_merge_algorithm
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+Vertical merge アルゴリズムの使用を有効にします。
+
+<div id="enforce_index_structure_match_on_partition_manipulation">
+  ## enforce_index_structure_match_on_partition_manipulation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+この設定がパーティション操作クエリ (`ATTACH/MOVE/REPLACE PARTITION`) の宛先テーブルで有効になっている場合、ソーステーブルと宛先テーブルの索引およびPROJECTIONは同一である必要があります。そうでない場合、宛先テーブルはソーステーブルの索引およびPROJECTIONをすべて含んでいれば問題ありません。
+
+<div id="escape_index_filenames">
+  ## escape_index_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "索引用に作成されるファイル名内の非 ASCII 文字をエスケープする"}]}]} />
+
+26.1 より前は、セカンダリ索引用に作成されるファイル名内の特殊文字をエスケープしていなかったため、
+索引名に含まれる一部の文字によってパーツが壊れる可能性がありました。これは純粋に互換性のために追加されたものです。名前に非 ASCII 文字を含む索引がある古いパーツを
+読み込む場合を除き、変更しないでください。
+
+<div id="escape_variant_subcolumn_filenames">
+  ## escape_variant_subcolumn_filenames
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Wide パーツ内の Variant 型サブカラム用に作成されるファイル名の特殊文字をエスケープ"}]}]} />
+
+MergeTree テーブルの Wide パーツにある Variant データ型のサブカラム用に作成されるファイル名中の特殊文字をエスケープします。互換性のために必要です。
+
+<div id="exclude_deleted_rows_for_part_size_in_merge">
+  ## exclude_deleted_rows_for_part_size_in_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+有効にすると、マージするパーツを選択する際に、データパーツの推定実サイズ (つまり、`DELETE FROM` によって削除された行を除いたサイズ) が使用されます。この動作がトリガーされるのは、この設定を有効にした後に実行された `DELETE FROM` の影響を受けたデータパーツに限られます。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+**関連項目**
+
+* [load&#95;existing&#95;rows&#95;count&#95;for&#95;old&#95;parts](#load_existing_rows_count_for_old_parts)
+  設定
+
+<div id="exclude_materialize_skip_indexes_on_merge">
+  ## exclude_materialize_skip_indexes_on_merge
+</div>
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": ""},{"label": "新しい設定"}]}]} />
+
+指定したカンマ区切りのスキップ索引のリストを、マージ中に構築および保存しないようにします。これは
+[materialize&#95;skip&#95;indexes&#95;on&#95;merge](#materialize_skip_indexes_on_merge) が false の場合は効果がありません。
+
+除外されたスキップ索引は、明示的な
+[MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index) クエリ、または
+[materialize&#95;skip&#95;indexes&#95;on&#95;insert](/ja/reference/settings/session-settings#materialize_skip_indexes_on_insert)
+セッション設定に応じた INSERT 時には、引き続き構築および保存されます。
+
+例:
+
+```sql
+CREATE TABLE tab
+(
+a UInt64,
+b UInt64,
+INDEX idx_a a TYPE minmax,
+INDEX idx_b b TYPE set(3)
+)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS exclude_materialize_skip_indexes_on_merge = 'idx_a';
+
+INSERT INTO tab SELECT number, number / 50 FROM numbers(100); -- この設定は INSERT には影響しない
+
+-- idx_a はバックグラウンドまたは OPTIMIZE TABLE FINAL による明示的なマージ時の更新から除外される
+
+-- リストを指定することで複数のインデックスを除外できる
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = 'idx_a, idx_b';
+
+-- デフォルト設定。マージ時の更新から除外されるインデックスはない
+ALTER TABLE tab MODIFY SETTING exclude_materialize_skip_indexes_on_merge = '';
+```
+
+<div id="execute_merges_on_single_replica_time_threshold">
+  ## execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+この設定の値が 0 より大きい場合、直ちにマージを開始するのは 1 つのレプリカのみで、他のレプリカはローカルでマージを実行する代わりに、その時間まで結果のダウンロードを待機します。選択されたレプリカがその時間内にマージを完了しなかった場合は、標準の動作にフォールバックします。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="fault_probability_after_part_commit">
+  ## fault_probability_after_part_commit
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+テスト用です。変更しないでください。
+
+<div id="fault_probability_before_part_commit">
+  ## fault_probability_before_part_commit
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+テスト用です。変更しないでください。
+
+<div id="finished_mutations_to_keep">
+  ## finished_mutations_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+完了した mutation に関するレコードを保持する件数。ゼロの場合は、
+すべて保持します。
+
+<div id="force_read_through_cache_for_merges">
+  ## force_read_through_cache_for_merges
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+マージ時にリードスルーのファイルシステムキャッシュを強制します
+
+<div id="fsync_after_insert">
+  ## fsync_after_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+挿入される各パーツに対して fsync を実行します。これにより
+insert のパフォーマンスが大幅に低下するため、wide パーツとの併用は推奨されません。
+
+<div id="fsync_part_directory">
+  ## fsync_part_directory
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+すべてのパーツ操作 (書き込み、リネームなど) の完了後に、パートディレクトリに対して fsync を実行します。
+
+<div id="in_memory_parts_enable_wal">
+  ## in_memory_parts_enable_wal
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+廃止された設定で、効果はありません。
+
+<div id="in_memory_parts_insert_sync">
+  ## in_memory_parts_insert_sync
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+廃止された設定で、効果はありません。
+
+<div id="inactive_parts_to_delay_insert">
+  ## inactive_parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+テーブル内の1つのパーティションにある非アクティブなパーツ数が
+`inactive_parts_to_delay_insert` の値を超えると、`INSERT` は意図的に
+遅延されます。
+
+<Tip>
+  server がパーツを十分な速度でクリーンアップできない場合に有用です。
+</Tip>
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="inactive_parts_to_throw_insert">
+  ## inactive_parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+単一のパーティション内の非アクティブなパーツ数が
+`inactive_parts_to_throw_insert` の値を超えると、`INSERT` は中断され、
+次のエラーになります。
+
+> &quot;非アクティブなパーツが多すぎます (N)。パーツのクリーンアップ処理が
+> 挿入処理に比べて著しく遅くなっています&quot; exception.&quot;
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="index_granularity">
+  ## index_granularity
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8192" />
+
+索引のマーク間にあるデータ行数の最大値。つまり、1 つの主キー値に
+対応する行数です。
+
+<div id="index_granularity_bytes">
+  ## index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+データグラニュールの最大サイズ (バイト単位) 。
+
+グラニュールのサイズを行数のみによって制限するには、`0` に設定します (非推奨) 。
+
+<div id="initialization_retry_period">
+  ## initialization_retry_period
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="60" />
+
+テーブル初期化の再試行間隔 (秒) 。
+
+<div id="kill_delay_period">
+  ## kill_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+廃止された設定で、効果はありません。
+
+<div id="kill_delay_period_random_add">
+  ## kill_delay_period_random_add
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+廃止された設定です。効果はありません。
+
+<div id="kill_threads">
+  ## kill_threads
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="128" />
+
+廃止された設定であり、効果はありません。
+
+<div id="lightweight_mutation_projection_mode">
+  ## lightweight_mutation_projection_mode
+</div>
+
+<SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
+
+デフォルトでは、論理削除 `DELETE` は
+プロジェクションを持つテーブルでは動作しません。これは、プロジェクション内の行が
+`DELETE` 操理の影響を受ける可能性があるためです。そのため、デフォルト値は
+`throw` です。ただし、この
+オプションを使うと動作を変更できます。値を `drop` または `rebuild`
+にすると、プロジェクションがある場合でも削除を実行できます。`drop` を指定すると
+プロジェクションは削除されるため、現在のクエリではその削除処理により
+高速になる可能性がありますが、以降のクエリではプロジェクションがアタッチされていないため
+遅くなる可能性があります。`rebuild` を指定すると
+プロジェクションが再構築されるため、現在のクエリの性能に影響する可能性がありますが、
+以降のクエリは高速化される可能性があります。なお、これらのオプションが
+作用するのはパートレベルだけです。つまり、変更対象にならないパート内の
+プロジェクションは、drop や rebuild
+をトリガーすることなく、そのまま維持されます。
+
+設定可能な値:
+
+* `throw`
+* `drop`
+* `rebuild`
+
+<div id="load_existing_rows_count_for_old_parts">
+  ## load_existing_rows_count_for_old_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+[exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge) とあわせて有効にすると、既存のデータパーツ内の削除済み行数がテーブルの起動時に計算されます。なお、これによりテーブル起動時の読み込みが遅くなる場合があります。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+**関連項目**
+
+* [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](#exclude_deleted_rows_for_part_size_in_merge) 設定
+
+<div id="lock_acquire_timeout_for_background_operations">
+  ## lock_acquire_timeout_for_background_operations
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="120" />
+
+マージ、ミューテーション などのバックグラウンド処理で、table ロックの取得を試みてから失敗と見なされるまでの秒数。
+
+<div id="map_buckets_coefficient">
+  ## map_buckets_coefficient
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "'with_buckets' Map シリアライゼーションでバケット数を計算する際に、`sqrt` および `linear` 戦略で使用する係数を制御する設定を追加"}]}]} />
+
+平均的な map サイズからバケット数を計算する際に、`sqrt` および `linear` [map&#95;buckets&#95;strategy](#map_buckets_strategy) で使用される係数です。
+`sqrt` 戦略の場合: `round(map_buckets_coefficient * sqrt(avg_map_size))`。
+`linear` 戦略の場合: `round(map_buckets_coefficient * avg_map_size)`。
+`map_buckets_strategy` が `constant` の場合は無視されます。
+
+<div id="map_buckets_min_avg_size">
+  ## map_buckets_min_avg_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "`with_buckets` シリアライゼーションの適用に必要な最小の平均 Map サイズ（1行あたりのキー数）を制御する設定を追加"}]}]} />
+
+`with_buckets` シリアライゼーションの適用に必要な最小の平均 Map サイズ (1行あたりのキー数) 。
+平均 Map サイズがこの値を下回る場合は、他のバケット設定に関係なく、単一のバケットが使用されます。
+値を `0` にすると、このしきい値は無効になり、常にバケット化戦略が適用されます。
+この設定は、効果がほとんど見込めない小さな Map に対して、バケット化シリアライゼーションのオーバーヘッドを避けるのに役立ちます。
+
+<div id="map_buckets_strategy">
+  ## map_buckets_strategy
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapBucketsStrategy" default_value="sqrt" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "sqrt"},{"label": "'with_buckets' Map シリアライゼーションでバケット数の選択戦略を制御する設定を追加"}]}]} />
+
+平均の Map サイズに基づいて、`with_buckets` `Map` シリアライゼーションにおけるバケット数の選択戦略を制御します。
+
+設定可能な値:
+
+* constant — 平均の Map サイズに関係なく、常に [max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) をバケット数として使用します。
+* sqrt — バケット数として `round(map_buckets_coefficient * sqrt(avg_map_size))` を使用し、値は `[1, max_buckets_in_map]` の範囲に制限されます。
+* linear — バケット数として `round(map_buckets_coefficient * avg_map_size)` を使用し、値は `[1, max_buckets_in_map]` の範囲に制限されます。
+
+<div id="map_serialization_version">
+  ## map_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "Map のシリアル化バージョンを制御する設定を追加"}]}]} />
+
+`Map` カラムで使用するシリアライゼーション方式を制御します。
+
+設定可能な値:
+
+* basic — `Map` に標準のシリアライゼーションを使用します。
+* with&#95;buckets — シリアライゼーション時にキーをバケットに分割します。バケットを使用すると、Map から個々のキーをより効率的に読み取れます。
+
+`with_buckets` serialization のバケット数は、[max&#95;buckets&#95;in&#95;map](#max_buckets_in_map) と [map&#95;buckets&#95;strategy](#map_buckets_strategy) によって決まります。
+
+<div id="map_serialization_version_for_zero_level_parts">
+  ## map_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeMapSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "basic"},{"label": "ゼロレベルのパーツに対する Map のシリアル化バージョンを制御する設定を追加"}]}]} />
+
+この設定では、insert 時に作成されるゼロレベルのパーツについて、
+`Map` カラムに別のシリアル化バージョンを指定できます。
+insert 時のパフォーマンス低下を避けるため、ゼロレベルのパーツでは `basic` シリアライゼーションを維持しつつ、マージ済みパーツでは `with_buckets` を使用する場合に役立ちます。
+
+<div id="marks_compress_block_size">
+  ## marks_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+mark の圧縮ブロックサイズです。実際に圧縮するブロックのサイズを指定します。
+
+<div id="marks_compression_codec">
+  ## marks_compression_codec
+</div>
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+marks に使用される圧縮コーデックです。marks は十分に小さく、キャッシュされるため、
+デフォルトの圧縮は ZSTD(3) です。
+
+<div id="materialize_projections_on_insert">
+  ## materialize_projections_on_insert
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+有効にすると、INSERT 時に PROJECTION を含む新しいパーツが作成されます。
+それ以外の場合は、明示的な [MATERIALIZE PROJECTION](/ja/reference/statements/alter/projection#materialize-projection)
+または [materialize&#95;projections&#95;on&#95;merge](/ja/reference/settings/merge-tree-settings#materialize_projections_on_merge) を使用したマージ中に作成できます。
+
+<div id="materialize_projections_on_merge">
+  ## materialize_projections_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、マージ時に、すべてのソースパーツで欠落している PROJECTION (たとえば `materialize_projections_on_insert = 0` を指定して
+挿入されたために存在しない場合) が再構築され、マージ後のパーツにその PROJECTION が含まれるようになります。
+
+マージでは引き続き、同じ PROJECTION の集合を持つパーツ同士だけが結合されます。既存のすべてのパーツに PROJECTION をバックフィルするには、
+明示的に [MATERIALIZE PROJECTION](/ja/reference/statements/alter/projection#materialize-projection) を使用してください。PROJECTION は、
+[materialize&#95;projections&#95;on&#95;insert](/ja/reference/settings/merge-tree-settings#materialize_projections_on_insert) を使用した INSERT 時にも作成されます。
+
+<div id="materialize_skip_indexes_on_merge">
+  ## materialize_skip_indexes_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+有効にすると、マージ時に新しいパーツのスキップ索引が作成され、保存されます。
+無効な場合は、明示的な [MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index)
+または [INSERT 時](/ja/reference/settings/session-settings#materialize_skip_indexes_on_insert) に作成・保存できます。
+
+より細かく制御するには、[exclude&#95;materialize&#95;skip&#95;indexes&#95;on&#95;merge](#exclude_materialize_skip_indexes_on_merge) も参照してください。
+
+<div id="materialize_statistics_on_merge">
+  ## materialize_statistics_on_merge
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+有効にすると、マージ時に新しいパーツの統計情報が作成・保存されます。
+無効な場合、統計情報は明示的な [MATERIALIZE STATISTICS](/ja/reference/statements/alter/statistics)
+または [INSERT 時](/ja/reference/settings/session-settings#materialize_statistics_on_insert) に作成・保存できます
+
+<div id="materialize_ttl_recalculate_only">
+  ## materialize_ttl_recalculate_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+MATERIALIZE TTL 実行時にのみ、TTL 情報を再計算します
+
+<div id="max_avg_part_size_for_too_many_parts">
+  ## max_avg_part_size_for_too_many_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+&#39;parts&#95;to&#95;delay&#95;insert&#39; と
+&#39;parts&#95;to&#95;throw&#95;insert&#39; に基づく「パーツが多すぎる」チェックは、平均パーツサイズ (該当する
+パーティション内) が指定されたしきい値を超えない場合にのみ有効になります。平均パーツサイズが
+指定されたしきい値を上回る場合、INSERT は遅延も拒否も
+されません。これにより、パーツが正常により大きなパーツへマージされるのであれば、単一
+サーバー上の単一テーブルに数百テラバイトを保持できます。これは、
+非アクティブなパーツ数や合計パーツ数に対するしきい値には影響しません。
+
+<div id="max_buckets_in_map">
+  ## max_buckets_in_map
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "32"},{"label": "`with_buckets` `Map` シリアライゼーションの最大バケット数を制御する設定を追加"}]}]} />
+
+`Map` シリアライゼーションにおけるバケットの最大数です。`with_buckets` `Map` シリアライゼーションで使用されます。
+実際のバケット数は [map&#95;buckets&#95;strategy](#map_buckets_strategy) によって決まります。
+許容される最大値は 256 です。
+
+<div id="max_bytes_to_merge_at_max_space_in_pool">
+  ## max_bytes_to_merge_at_max_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="161061273600" />
+
+利用可能なリソースが十分にある場合に、複数のパーツを 1 つのパーツにマージするときの合計サイズの上限 (バイト単位) です。これは、自動バックグラウンドマージによって作成されるパーツの最大サイズの目安にほぼ相当します。 (0 はマージを無効にすることを意味します)
+
+設定可能な値:
+
+* 任意の非負整数。
+
+マージスケジューラは、パーティション内のパーツ数と各パーツのサイズを定期的に分析し、プール内に十分な空きリソースがあれば、バックグラウンドマージを開始します。マージは、マージ元パーツの合計サイズが `max_bytes_to_merge_at_max_space_in_pool` を超えるまで実行されます。
+
+[OPTIMIZE FINAL](/ja/reference/statements/optimize) によって開始されたマージでは、`max_bytes_to_merge_at_max_space_in_pool` は無視されます (考慮されるのは空きディスク容量のみです) 。
+
+<div id="max_bytes_to_merge_at_min_space_in_pool">
+  ## max_bytes_to_merge_at_min_space_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1048576" />
+
+バックグラウンドプールで利用可能なリソースが最小限のときに、1 つのパーツへ
+マージできるパーツの合計サイズ (バイト単位) の上限です。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+`max_bytes_to_merge_at_min_space_in_pool` は、利用可能なディスク容量
+(プール内) が不足している場合でもマージできるパーツの合計サイズの
+上限を定義します。これは、小さなパーツの数を減らし、
+`Too many parts` エラーが発生する可能性を下げるために必要です。
+マージでは、マージ対象のパーツの合計サイズの 2 倍のディスク容量が予約されます。
+そのため、ディスクの空き容量が少ない場合、空き容量自体はあるものの、
+進行中の大規模なマージですでにその容量が予約されているため、
+ほかのマージを開始できず、insert のたびに小さなパーツが
+増えていく状況が発生することがあります。
+
+<div id="max_cleanup_delay_period">
+  ## max_cleanup_delay_period
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+古いキュー内のログ、ブロックのハッシュ、およびパーツをクリーンアップする最大周期です。
+
+<div id="max_compress_block_size">
+  ## max_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+table への書き込み用に圧縮する前の、非圧縮 data の block の最大サイズです。
+この設定はグローバル Settings でも指定できます
+([max&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings#max_compress_block_size)
+setting を参照) 。table の作成時に指定した値は、この設定の
+グローバル値を上書きします。
+
+<div id="max_concurrent_queries">
+  ## max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+MergeTree テーブルに関連して同時実行されるクエリの最大数。
+
+クエリは、他の `max_concurrent_queries` 設定によっても引き続き制限されます。
+
+設定可能な値:
+
+* 正の整数。
+* `0` — 制限なし。
+
+デフォルト値: `0` (制限なし) 。
+
+**例**
+
+```xml
+<max_concurrent_queries>50</max_concurrent_queries>
+```
+
+<div id="max_delay_to_insert">
+  ## max_delay_to_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+単一のパーティション内のアクティブなパーツ数が
+[parts&#95;to&#95;delay&#95;insert](#parts_to_delay_insert) の値を超えた場合に、
+`INSERT` の遅延を計算するために使用される、秒単位の値です。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+`INSERT` の遅延 (ミリ秒) は、次の式で計算されます:
+
+```code
+max_k = parts_to_throw_insert - parts_to_delay_insert
+k = 1 + parts_count_in_partition - parts_to_delay_insert
+delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
+```
+
+たとえば、あるパーティションにアクティブなパーツが 299 個あり、parts&#95;to&#95;throw&#95;insert
+= 300、parts&#95;to&#95;delay&#95;insert = 150、max&#95;delay&#95;to&#95;insert = 1 の場合、`INSERT` は
+`pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000`
+ミリ秒遅延されます。
+
+バージョン 23.1 以降、この式は次のように変更されました。
+
+```code
+allowed_parts_over_threshold = parts_to_throw_insert - parts_to_delay_insert
+parts_over_threshold = parts_count_in_partition - parts_to_delay_insert + 1
+delay_milliseconds = max(min_delay_to_insert_ms, (max_delay_to_insert * 1000)
+* parts_over_threshold / allowed_parts_over_threshold)
+```
+
+たとえば、あるパーティションにアクティブなパーツが 224 個あり、parts&#95;to&#95;throw&#95;insert
+= 300、parts&#95;to&#95;delay&#95;insert = 150、max&#95;delay&#95;to&#95;insert = 1、
+min&#95;delay&#95;to&#95;insert&#95;ms = 10 の場合、`INSERT` は `max( 10, 1 * 1000 *
+(224 - 150 + 1) / (300 - 150) ) = 500` ミリ秒だけ遅延されます。
+
+<div id="max_delay_to_mutate_ms">
+  ## max_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+未完了のミューテーションが多数ある場合の、MergeTree テーブルに対するミューテーションの最大遅延 (ミリ秒)
+
+<div id="max_digestion_size_per_segment">
+  ## max_digestion_size_per_segment
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "268435456"},{"label": "廃止された設定"}]}]} />
+
+廃止された設定で、効果はありません。
+
+<div id="max_file_name_length">
+  ## max_file_name_length
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="127" />
+
+ハッシュ化せずにそのまま保持するファイル名の最大長です。
+この設定は、`replace_long_file_name_to_hash` が有効な場合にのみ適用されます。
+この設定の値には、ファイル拡張子の長さは含まれません。そのため、
+ファイルシステムエラーを避けるには、最大ファイル名長 (通常は 255
+バイト) よりも少し余裕を持たせて、それより小さい値に設定することを推奨します。
+
+<div id="max_files_to_modify_in_alter_columns">
+  ## max_files_to_modify_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="75" />
+
+変更 (削除、追加) の対象となるファイル数が
+この設定値を超える場合、ALTER は適用されません。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+デフォルト値: 75
+
+<div id="max_files_to_remove_in_alter_columns">
+  ## max_files_to_remove_in_alter_columns
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+削除するファイル数がこの
+設定値を超える場合、ALTER は適用されません。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="max_merge_delayed_streams_for_parallel_write">
+  ## max_merge_delayed_streams_for_parallel_write
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="40" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "40"},{"label": "新しい設定"}]}]} />
+
+並列にフラッシュできるストリーム (カラム) の最大数です
+(マージにおける max&#95;insert&#95;delayed&#95;streams&#95;for&#95;parallel&#95;write に相当) 。有効なのは
+Vertical マージ のみです。
+
+<div id="max_merge_selecting_sleep_ms">
+  ## max_merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+マージ対象のパーツが選択されなかった場合に、再度マージするパーツの選択を試みるまでの最大待機時間です。設定値を小さくすると、
+大規模なクラスターでは background&#95;schedule&#95;pool での選択タスクが頻繁にトリガーされ、その結果、
+ZooKeeper への大量のリクエストが発生します
+
+<div id="max_number_of_merges_with_ttl_in_pool">
+  ## max_number_of_merges_with_ttl_in_pool
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+プール内の有効期限 (TTL) エントリを含むマージ数が指定値を超えている場合、新たな有効期限 (TTL) 付きマージは割り当てられません。これは、通常のマージ用の空きスレッドを確保し、&quot;パーツが多すぎる&quot;を回避するためです。
+
+<div id="max_number_of_mutations_for_replica">
+  ## max_number_of_mutations_for_replica
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+レプリカごとの part ミューテーション の数を、指定した値に制限します。
+0 は、レプリカごとの ミューテーション 数に制限がないことを意味します (実行は
+引き続き他の設定によって制約される場合があります) 。
+
+<div id="max_part_loading_threads">
+  ## max_part_loading_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+廃止された設定で、何も行いません。
+
+<div id="max_part_removal_threads">
+  ## max_part_removal_threads
+</div>
+
+<SettingsInfoBlock type="MaxThreads" default_value="'auto(14)'" />
+
+廃止された設定で、効果はありません。
+
+<div id="max_partitions_to_read">
+  ## max_partitions_to_read
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="-1" />
+
+1 つのクエリでアクセスできるパーティションの最大数を制限します。
+
+テーブルの作成時に指定した設定値は、
+クエリレベルの設定で上書きできます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+クエリ / セッション / プロファイル レベルで、
+クエリ複雑度の設定 [max&#95;partitions&#95;to&#95;read](/ja/reference/settings/session-settings#max_partitions_to_read)
+を指定することもできます。
+
+<div id="max_parts_in_total">
+  ## max_parts_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+テーブルのすべてのパーティションにあるアクティブなパーツの総数が
+`max_parts_in_total` の値を超えると、`INSERT` は `Too many parts
+(N)` 例外で中断されます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+テーブル内のパーツ数が多いと、ClickHouse クエリのパフォーマンスが低下し、
+ClickHouse の起動時間も長くなります。多くの場合、これは設計の誤り
+(パーティション化戦略の選択ミス、つまりパーティションが小さすぎること)
+が原因です。
+
+<div id="max_parts_to_merge_at_once">
+  ## max_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+一度にマージできるパーツの最大数です (0 の場合は無効) 。この設定は
+OPTIMIZE FINAL クエリには影響しません。
+
+<div id="max_postpone_time_for_failed_mutations_ms">
+  ## max_postpone_time_for_failed_mutations_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+失敗した ミューテーション の最大延期時間です。
+
+<div id="max_postpone_time_for_failed_replicated_fetches_ms">
+  ## max_postpone_time_for_failed_replicated_fetches_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "レプリケーションキュー内のフェッチタスクの延期を有効にする新しい設定を追加しました。"}]}]} />
+
+失敗したレプリケーションフェッチの最大延期時間。
+
+<div id="max_postpone_time_for_failed_replicated_merges_ms">
+  ## max_postpone_time_for_failed_replicated_merges_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "60000"},{"label": "レプリケーションキュー内のマージタスクの延期を有効にする新しい設定を追加しました。"}]}]} />
+
+失敗したレプリケートマージの最大延期時間。
+
+<div id="max_postpone_time_for_failed_replicated_tasks_ms">
+  ## max_postpone_time_for_failed_replicated_tasks_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "300000"},{"label": "レプリケーションキュー内のタスクの延期を有効にする新しい設定を追加しました。"}]}]} />
+
+失敗したレプリケーションタスクの最大延期時間です。タスクが fetch、merge、mutation のいずれでもない場合に、この値が使用されます。
+
+<div id="max_projections">
+  ## max_projections
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+MergeTreeプロジェクションの最大数。
+
+<div id="max_replicated_fetches_network_bandwidth">
+  ## max_replicated_fetches_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+[replicated](/ja/reference/engines/table-engines/mergetree-family/replication)
+フェッチ における、ネットワーク経由のデータ転送速度の上限を
+1 秒あたりのバイト数で制限します。この設定は、サーバーに適用される
+[`max_replicated_fetches_network_bandwidth_for_server`](/ja/reference/settings/merge-tree-settings#max_replicated_fetches_network_bandwidth)
+設定とは異なり、特定のテーブルに適用されます。
+
+サーバーネットワークと特定テーブルのネットワークの両方を制限できますが、
+その場合は、テーブルレベルの設定値をサーバーレベルの設定値より小さくする必要があります。
+そうでない場合、サーバーは
+`max_replicated_fetches_network_bandwidth_for_server` 設定のみを考慮します。
+
+この設定は、厳密に正確に適用されるわけではありません。
+
+設定可能な値:
+
+* 正の整数。
+* `0` — 無制限。
+
+デフォルト値: `0`。
+
+**用途**
+
+データをレプリケートして新しいノードを追加または置き換える際の
+速度スロットリングに使用できます。
+
+<div id="max_replicated_logs_to_keep">
+  ## max_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+非アクティブなレプリカが存在する場合に、ClickHouse Keeper のログに保持できるレコード数を指定します。
+この数を超えると、非アクティブなレプリカは失われたものと見なされます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="max_replicated_merges_in_queue">
+  ## max_replicated_merges_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+ReplicatedMergeTree のキューで、パーツのマージおよびミューテーションのタスクを同時にいくつまで許可するか。
+
+<div id="max_replicated_merges_with_ttl_in_queue">
+  ## max_replicated_merges_with_ttl_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+ReplicatedMergeTree のキュー内で、有効期限 (TTL) 付きパーツのマージタスクを同時にいくつまで許可するか。
+
+<div id="max_replicated_mutations_in_queue">
+  ## max_replicated_mutations_in_queue
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+ReplicatedMergeTree のキューで、mutation 中のパーツに対するタスクを同時に実行できる数。
+
+<div id="max_replicated_sends_network_bandwidth">
+  ## max_replicated_sends_network_bandwidth
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+[replicated](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)
+送信における、ネットワーク経由のデータ交換速度の上限を 1 秒あたりのバイト数で制限します。この設定は、サーバーに適用される
+[`max_replicated_sends_network_bandwidth_for_server`](/ja/reference/settings/merge-tree-settings#max_replicated_sends_network_bandwidth)
+設定とは異なり、特定のテーブルに適用されます。
+
+サーバーのネットワークと特定のテーブルのネットワークの両方を制限できますが、
+その場合、テーブルレベルの設定値は
+サーバーレベルの設定値より小さくする必要があります。
+そうしないと、サーバーは
+`max_replicated_sends_network_bandwidth_for_server` 設定のみを考慮します。
+
+この設定は、厳密にそのとおり適用されるわけではありません。
+
+設定可能な値:
+
+* 正の整数。
+* `0` — 無制限。
+
+**使用方法**
+
+新しいノードの追加または置き換えのためにデータをレプリケートする際、
+速度を抑制するために使用できます。
+
+<div id="max_suspicious_broken_parts">
+  ## max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+1 つのパーティション内の破損したパーツ数が
+`max_suspicious_broken_parts` の値を超えると、自動削除は許可されません。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="max_suspicious_broken_parts_bytes">
+  ## max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+破損したパーツの合計サイズの上限。この値を超えると、自動削除は行われません。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="max_uncompressed_bytes_in_patches">
+  ## max_uncompressed_bytes_in_patches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32212254720" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32212254720"},{"label": "新しい設定"}]}]} />
+
+すべてのパッチパート内のデータの非圧縮サイズの上限 (バイト単位) 。
+すべてのパッチパート内のデータ量がこの値を超えると、論理更新は拒否されます。
+0 - 無制限。
+
+<div id="merge_max_block_size">
+  ## merge_max_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8192" />
+
+マージ対象のパーツからメモリに読み込まれる行数です。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+マージ処理では、パーツから `merge_max_block_size` 行ごとの block で行を読み込み、
+その後、結果をマージして新しいパーツに書き込みます。読み込まれた block は RAM に配置されるため、
+`merge_max_block_size` はマージに必要な RAM 量に影響します。
+そのため、平均行サイズが非常に大きいテーブルでは、マージ時に大量の RAM を消費する可能性があります
+(平均行サイズが 100kb の場合、10 個のパーツをマージすると、
+(100kb * 10 * 8192) = 約 8GB の RAM になります) 。`merge_max_block_size` を小さくすると、
+マージに必要な RAM 量は減らせますが、マージ速度は低下します。
+
+<div id="merge_max_block_size_bytes">
+  ## merge_max_block_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+マージ処理で生成されるブロックのバイト数を指定します。デフォルトでは、
+`index_granularity_bytes` と同じ値です。
+
+<div id="merge_max_bytes_to_prewarm_cache">
+  ## merge_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1073741824"},{"label": "Cloud sync"}]}]} />
+
+ClickHouse Cloud でのみ利用できます。マージ中に cache をプリウォームするパーツ (compact または packed) の最大サイズです。
+
+<div id="merge_max_dynamic_subcolumns_in_compact_part">
+  ## merge_max_dynamic_subcolumns_in_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "auto"},{"label": "データ型で指定されたパラメータに関係なく、マージ後の compact パーツ内の動的サブカラム数を制限する新しい設定を追加"}]}]} />
+
+マージ後の compact データパートで、各カラムに作成できる動的サブカラムの最大数です。
+これにより、データ型で指定された動的パラメータに関係なく、compact パーツ内の動的サブカラム数を制御できます。
+
+たとえば、テーブルに `JSON(max_dynamic_paths=1024)` 型のカラムがあり、設定 `merge_max_dynamic_subcolumns_in_compact_part` が 128 に設定されている場合、
+compact データパートへのマージ後、そのパーツ内の動的パス数は 128 に減少し、動的サブカラムとして書き込まれるのも 128 個のパスのみになります。
+
+<div id="merge_max_dynamic_subcolumns_in_wide_part">
+  ## merge_max_dynamic_subcolumns_in_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "auto"},{"label": "データ型で指定されたパラメータに関係なく、マージ後の wide パーツ内の動的サブカラム数を制限する新しい設定を追加しました"}]}]} />
+
+マージ後の wide データパートで、各カラムに作成できる動的サブカラムの最大数です。
+これにより、データ型で指定された動的パラメータに関係なく、wide データパート内に作成されるファイル数を削減できます。
+
+たとえば、テーブルに `JSON(max_dynamic_paths=1024)` 型のカラムがあり、設定 `merge_max_dynamic_subcolumns_in_wide_part` が 128 に設定されている場合、
+wide データパートへのマージ後は、そのパーツ内の動的パス数が 128 まで減り、動的サブカラムとして書き込まれるパスも 128 個のみになります。
+
+<div id="merge_selecting_sleep_ms">
+  ## merge_selecting_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+マージ対象のパーツが選択されなかった場合に、再度マージするパーツの選択を試みるまでの最小待機時間です。設定値を小さくすると、background&#95;schedule&#95;pool での選択タスクが頻繁にトリガーされるため、大規模なクラスターでは ZooKeeper へのリクエストが大量に発生します
+
+<div id="merge_selecting_sleep_slowdown_factor">
+  ## merge_selecting_sleep_slowdown_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.2" />
+
+マージ選択タスクのスリープ時間は、この係数を用いて調整されます。
+マージするものがない場合はこの係数が乗算され、マージが割り当てられた場合は除算されます。
+
+<div id="merge_selector_algorithm">
+  ## merge_selector_algorithm
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="MergeSelectorAlgorithm" default_value="Simple" />
+
+マージの割り当てに使用するパーツを選択するアルゴリズム
+
+<div id="merge_selector_base">
+  ## merge_selector_base
+</div>
+
+<SettingsInfoBlock type="Float" default_value="5" />
+
+選択されたマージの書き込み増幅に影響します
+(上級者向けの設定です。何をしているのか理解していない場合は変更しないでください) 。
+Simple および StochasticSimple merge selector で有効です
+
+<div id="merge_selector_blurry_base_scale_factor">
+  ## merge_selector_blurry_base_scale_factor
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+パーティション内のパーツ数に応じて、このロジックがいつ有効になるかを制御します。係数が大きいほど、反応はより遅くなります。
+
+<div id="merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once">
+  ## merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+シンプルな merge selector で、マージ対象の選択時に最大上限を引き下げるヒューリスティックを有効にします。
+これにより同時実行されるマージの数が増え、TOO&#95;MANY&#95;PARTS
+エラーの緩和に役立つ可能性がありますが、同時に write amplification も増加します。
+
+<div id="merge_selector_enable_heuristic_to_remove_small_parts_at_right">
+  ## merge_selector_enable_heuristic_to_remove_small_parts_at_right
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+サイズが `sum_size` の指定された比率 (0.01) 未満である場合に、範囲の右側にあるパーツを除外するマージ対象パーツ選択のヒューリスティックを有効にします。
+Simple および StochasticSimple の merge selector で機能します
+
+<div id="merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent">
+  ## merge_selector_heuristic_to_lower_max_parts_to_merge_at_once_exponent
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "5"},{"label": "新しい設定"}]}]} />
+
+低減カーブの構築式で使用する指数の値を制御します。指数を小さくするとマージ幅も小さくなり、その結果、write amplification が増加します。逆も同様です。
+
+<div id="merge_selector_window_size">
+  ## merge_selector_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+一度に確認するパーツ数。
+
+<div id="merge_total_max_bytes_to_prewarm_cache">
+  ## merge_total_max_bytes_to_prewarm_cache
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16106127360" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "16106127360"},{"label": "Cloud sync"}]}]} />
+
+ClickHouse Cloud でのみ利用できます。マージ時に cache をプリウォームするパーツの合計最大サイズです。
+
+<div id="merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds">
+  ## merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2592000" />
+
+廃止された設定であり、効果はありません。
+
+<div id="merge_tree_clear_old_parts_interval_seconds">
+  ## merge_tree_clear_old_parts_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+ClickHouse が古いパーツ、WAL、ミューテーションのクリーンアップを実行する間隔を、秒単位で設定します。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="merge_tree_clear_old_temporary_directories_interval_seconds">
+  ## merge_tree_clear_old_temporary_directories_interval_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="60" />
+
+ClickHouse が古い一時ディレクトリのクリーンアップを実行する間隔を、秒単位で設定します。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="merge_tree_enable_clear_old_broken_detached">
+  ## merge_tree_enable_clear_old_broken_detached
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定であり、効果はありません。
+
+<div id="merge_with_recompression_ttl_timeout">
+  ## merge_with_recompression_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+再圧縮の有効期限 (TTL) を伴うマージを再度実行するまでの最小待機時間 (秒) 。
+
+<div id="merge_with_ttl_timeout">
+  ## merge_with_ttl_timeout
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="14400" />
+
+delete TTL を伴うマージを再度実行するまでの最小待機時間 (秒) 。
+
+<div id="merge_workload">
+  ## merge_workload
+</div>
+
+マージと他のワークロードの間で、リソースの利用と共有を調整するために使用されます。指定した値は、このテーブルのバックグラウンドマージに対する `workload` 設定の値として使用されます。指定しない場合 (空文字列) は、代わりにサーバー設定 `merge_workload` が使用されます。
+
+**関連項目**
+
+* [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="min_absolute_delay_to_close">
+  ## min_absolute_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+クローズしてリクエストの処理を停止し、status check で Ok を返さなくなるまでの最小の絶対遅延時間。
+
+<div id="min_age_to_force_merge_on_partition_only">
+  ## min_age_to_force_merge_on_partition_only
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+`min_age_to_force_merge_seconds` を、部分集合ではなくパーティション全体にのみ適用するかどうか。
+
+デフォルトでは、設定 `max_bytes_to_merge_at_max_space_in_pool` は無視されます (`enable_max_bytes_limit_for_min_age_to_force_merge` を参照) 。
+
+設定可能な値:
+
+* true, false
+
+<div id="min_age_to_force_merge_seconds">
+  ## min_age_to_force_merge_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+範囲内のすべてのパーツの経過時間が
+`min_age_to_force_merge_seconds` の値を超えている場合、パーツをマージします。
+
+デフォルトでは、設定 `max_bytes_to_merge_at_max_space_in_pool` を無視します
+(`enable_max_bytes_limit_for_min_age_to_force_merge` を参照) 。
+
+設定可能な値:
+
+* 正の整数。
+
+<div id="min_bytes_for_compact_part">
+  ## min_bytes_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定で、何の効果もありません。
+
+<div id="min_bytes_for_full_part_storage">
+  ## min_bytes_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+ClickHouse Cloud でのみ利用できます。packed ではなくデータパートに
+full 型ストレージを使用するための最小の非圧縮サイズ (バイト単位)
+
+<div id="min_bytes_for_wide_part">
+  ## min_bytes_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" />
+
+`Wide` フォーマットで保存できる データパート の最小バイト数/最小行数です。これら 2 つの設定は、片方だけ設定することも、両方設定することも、どちらも設定しないこともできます。
+
+<div id="min_bytes_to_prewarm_caches">
+  ## min_bytes_to_prewarm_caches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+新しいパーツの mark cache と primary index cache をプリウォームするための最小サイズ (非圧縮バイト数)
+
+<div id="min_bytes_to_rebalance_partition_over_jbod">
+  ## min_bytes_to_rebalance_partition_over_jbod
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+volume ディスク [JBOD](https://en.wikipedia.org/wiki/Non-RAID_drive_architectures) 全体に新しい大きな
+パーツを分散配置する際に、バランシングを有効にする最小バイト数を設定します。
+
+設定可能な値:
+
+* 正の整数。
+* `0` — バランシングは無効です。
+
+**使用方法**
+
+`min_bytes_to_rebalance_partition_over_jbod` 設定の値は、
+[max&#95;bytes&#95;to&#95;merge&#95;at&#95;max&#95;space&#95;in&#95;pool](/ja/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)
+の値 / 1024 未満にしてはいけません。そうしないと、ClickHouse は例外をスローします。
+
+<div id="min_columns_to_activate_adaptive_write_buffer">
+  ## min_columns_to_activate_adaptive_write_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "500"},{"label": "新しい設定"}]}]} />
+
+アダプティブな書き込みバッファを使用することで、カラム数の多いテーブルのメモリ使用量を削減できます。
+
+設定可能な値:
+
+* 0 - 無制限
+* 1 - 常に有効
+
+<div id="min_compress_block_size">
+  ## min_compress_block_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+次の mark の書き込み時に圧縮を行うために必要な、非圧縮データブロックの最小サイズです。この設定はグローバル設定でも指定できます
+([min&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings#min_compress_block_size)
+設定を参照) 。テーブル作成時に指定した値は、この設定のグローバル値を
+上書きします。
+
+<div id="min_compressed_bytes_to_fsync_after_fetch">
+  ## min_compressed_bytes_to_fsync_after_fetch
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+fetch 後に パーツ に対して fsync を実行するための、圧縮済みバイト数の最小値 (0 は無効)
+
+<div id="min_compressed_bytes_to_fsync_after_merge">
+  ## min_compressed_bytes_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+マージ後のパーツに対して `fsync` を実行するために必要な、圧縮後の最小バイト数 (0 は無効)
+
+<div id="min_delay_to_insert_ms">
+  ## min_delay_to_insert_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+1 つのパーティション内に未マージのパーツが多数ある場合に、MergeTree テーブルへのデータ挿入に適用される最小遅延 (ミリ秒) 。
+
+<div id="min_delay_to_mutate_ms">
+  ## min_delay_to_mutate_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+未完了のミューテーションが多数ある場合の、MergeTree テーブルに対するミューテーションの最小遅延 (ミリ秒)
+
+<div id="min_free_disk_bytes_to_perform_insert">
+  ## min_free_disk_bytes_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+データを insert するために、ディスク領域に最低限必要な空きバイト数です。利用可能な空きバイト数が
+`min_free_disk_bytes_to_perform_insert` 未満の場合、例外がスローされ、
+insert は実行されません。この設定については、次の点に注意してください。
+
+* `keep_free_space_bytes` 設定が考慮されます。
+* `INSERT` 操作によって書き込まれるデータ量は考慮されません。
+* 正の値 (0 以外のバイト数) が指定されている場合にのみチェックされます
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<Note>
+  `min_free_disk_bytes_to_perform_insert` と `min_free_disk_ratio_to_perform_insert`
+  の両方が指定されている場合、ClickHouse は、より多くの空きメモリで
+  insert を実行できるほうの値を採用します。
+</Note>
+
+<div id="min_free_disk_ratio_to_perform_insert">
+  ## min_free_disk_ratio_to_perform_insert
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0" />
+
+`INSERT` を実行するために必要な、空きディスク容量の総ディスク容量に対する最小比率です。0 から 1 までの
+浮動小数点値である必要があります。なお、この設定には次の特徴があります。
+
+* `keep_free_space_bytes` 設定を考慮します。
+* `INSERT` 操作によって書き込まれるデータ量は考慮しません。
+* 正の (ゼロでない) 比率が指定されている場合にのみチェックされます
+
+設定可能な値:
+
+* Float, 0.0 - 1.0
+
+なお、`min_free_disk_ratio_to_perform_insert` と
+`min_free_disk_bytes_to_perform_insert` の両方が指定されている場合、ClickHouse は
+より多くの空きディスク容量を確保したまま insert を実行できる方の値を採用します。
+
+<div id="min_index_granularity_bytes">
+  ## min_index_granularity_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1024" />
+
+データ granule の許容される最小サイズ (バイト単位) 。
+
+誤って
+`index_granularity_bytes`
+が極端に小さいテーブルを作成してしまうことを防ぐための安全策です。
+
+<div id="min_level_for_full_part_storage">
+  ## min_level_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+ClickHouse Cloud でのみ利用できます。packed ではなく data パーツ に full タイプのストレージを使用するための最小 パーツ level。
+
+<div id="min_level_for_wide_part">
+  ## min_level_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt32" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+データパーツを `Compact` ではなく `Wide` フォーマットで作成するために必要な最小のパーツレベル。
+
+<div id="min_marks_to_honor_max_concurrent_queries">
+  ## min_marks_to_honor_max_concurrent_queries
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+[max&#95;concurrent&#95;queries](#max_concurrent_queries)
+設定を適用する際に、クエリが読み取る mark の最小数です。
+
+<Note>
+  クエリは引き続き、他の `max_concurrent_queries` 設定によって制限されます。
+</Note>
+
+設定可能な値:
+
+* 正の整数。
+* `0` — 無効 (どのクエリにも `max_concurrent_queries` の制限は適用されません) 。
+
+**例**
+
+```xml
+<min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
+```
+
+<div id="min_merge_bytes_to_use_direct_io">
+  ## min_merge_bytes_to_use_direct_io
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+ストレージディスクへの direct
+I/O アクセスを使用するために必要な、マージ操作の最小データ量です。データパーツを
+マージする際、ClickHouse はマージ対象となるすべてのデータの総ストレージ容量を計算します。容量が
+`min_merge_bytes_to_use_direct_io` バイトを超える場合、ClickHouse は
+direct I/O インターフェイス (`O_DIRECT` オプション) を使用して、ストレージディスクにデータを読み書きします。
+`min_merge_bytes_to_use_direct_io = 0` の場合、direct I/O は無効になります。
+
+<div id="min_parts_to_merge_at_once">
+  ## min_parts_to_merge_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+マージセレクタが一度に選択してマージできるデータパーツの最小数。
+(エキスパート向けの設定です。動作を理解していない場合は変更しないでください。)
+0 - 無効。Simple および StochasticSimple マージセレクタで有効です。
+
+<div id="min_relative_delay_to_close">
+  ## min_relative_delay_to_close
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+他のレプリカとの遅延がこの最小値に達すると、クローズしてリクエストの処理を停止し、status check で OK を返さなくなります。
+
+<div id="min_relative_delay_to_measure">
+  ## min_relative_delay_to_measure
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+絶対遅延がこの値未満でない場合にのみ、相対レプリカ遅延を計算します。
+
+<div id="min_relative_delay_to_yield_leadership">
+  ## min_relative_delay_to_yield_leadership
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="120" />
+
+廃止された設定で、効果はありません。
+
+<div id="min_replicated_logs_to_keep">
+  ## min_replicated_logs_to_keep
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+廃止されたものであっても、ZooKeeper のログ内の直近のレコードをこの数程度保持します。
+これはテーブルの動作には影響せず、クリーンアップ前の ZooKeeper の
+ログを診断するためにのみ使用されます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="min_rows_for_compact_part">
+  ## min_rows_for_compact_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定で、効果はありません。
+
+<div id="min_rows_for_full_part_storage">
+  ## min_rows_for_full_part_storage
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+ClickHouse Cloud でのみ利用できます。packed ではなく、データパーツに full 形式のストレージを使用するための最小行数
+
+<div id="min_rows_for_wide_part">
+  ## min_rows_for_wide_part
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+`Compact` ではなく `Wide` フォーマットのデータパーツを作成するために必要な最小行数。
+
+<div id="min_rows_to_fsync_after_merge">
+  ## min_rows_to_fsync_after_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+merge 後に パーツ に対して fsync を実行する最小行数 (0 は無効)
+
+<div id="mutation_workload">
+  ## mutation_workload
+</div>
+
+ミューテーションと他のワークロードの間で、リソースの利用と共有をどのように制御するかを調整するために使用します。指定した値は、このテーブルのバックグラウンドミューテーションに対する `workload` 設定の値として使用されます。指定しない場合 (空文字列) は、代わりにサーバー設定 `mutation_workload` が使用されます。
+
+**関連項目**
+
+* [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
+
+<div id="non_replicated_deduplication_window">
+  ## non_replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+重複をチェックするためにハッシュサムを保持する、非レプリケートの
+[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルにおける、
+直近に挿入されたブロック数です。
+
+設定可能な値:
+
+* 任意の正の整数。
+* `0` (重複排除を無効化) 。
+
+レプリケートテーブルと同様の重複排除メカニズムが使用されます (
+[replicated&#95;deduplication&#95;window](#replicated_deduplication_window) 設定を参照) 。
+作成されたパーツのハッシュサムは、ディスク上のローカルファイルに書き込まれます。
+
+<div id="notify_newest_block_number">
+  ## notify_newest_block_number
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+最新の block 番号を SharedJoin または SharedSet に通知します。ClickHouse Cloud でのみ利用できます。
+
+<div id="nullable_serialization_version">
+  ## nullable_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "basic"},{"label": "新しい設定"}]}]} />
+
+`Nullable(T)` カラムに使用するシリアライゼーション方式を制御します。
+
+設定可能な値:
+
+* basic — `Nullable(T)` に標準のシリアライゼーションを使用します。
+
+* allow&#95;sparse — `Nullable(T)` でスパースエンコーディングを使用できるようにします。
+
+<div id="number_of_free_entries_in_pool_to_execute_mutation">
+  ## number_of_free_entries_in_pool_to_execute_mutation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+プール内の空きエントリ数が指定した数未満の場合、
+パーツのミューテーションは実行されません。これは、通常の merges 用の空きスレッドを確保し、
+「パーツが多すぎる」エラーを防ぐためです。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+**使用方法**
+
+`number_of_free_entries_in_pool_to_execute_mutation` 設定の値は、
+[background&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_pool_size) の値
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ja/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) より小さく
+  なければなりません。そうでない場合、ClickHouse は例外をスローします。
+
+<div id="number_of_free_entries_in_pool_to_execute_optimize_entire_partition">
+  ## number_of_free_entries_in_pool_to_execute_optimize_entire_partition
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="25" />
+
+プール内の空きエントリ数が指定値を下回っている場合、バックグラウンドで
+パーティション全体の最適化は実行されません (このタスクは、
+`min_age_to_force_merge_seconds` を設定し、
+`min_age_to_force_merge_on_partition_only` を有効にすると生成されます) 。
+これは、通常のマージ用の空きスレッドを確保し、
+「パーツが多すぎる」を回避するためです。
+
+設定可能な値:
+
+* 正の整数。
+
+`number_of_free_entries_in_pool_to_execute_optimize_entire_partition`
+設定の値は、次の値より小さくなければなりません。
+[background&#95;pool&#95;size](/ja/reference/settings/server-settings/settings#background_pool_size)
+
+* [background&#95;merges&#95;mutations&#95;concurrency&#95;ratio](/ja/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio)。
+  そうでない場合、ClickHouse は例外をスローします。
+
+<div id="number_of_free_entries_in_pool_to_lower_max_size_of_merge">
+  ## number_of_free_entries_in_pool_to_lower_max_size_of_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8" />
+
+プール
+(またはレプリケーションキュー) 内の空きエントリ数が指定した数を下回ると、
+処理するマージの最大サイズ
+(またはキューに入れるマージの最大サイズ) を引き下げ始めます。
+これは、小さなマージを処理できるようにし、長時間実行される
+マージでプールが埋まらないようにするためです。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="number_of_mutations_to_delay">
+  ## number_of_mutations_to_delay
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="500" />
+
+テーブルに少なくとも
+この数の未完了のミューテーションがある場合、テーブルのミューテーションを意図的に遅くします。
+0 に設定すると無効になります
+
+<div id="number_of_mutations_to_throw">
+  ## number_of_mutations_to_throw
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+table に未完了のミューテーションが少なくともこの数ある場合は、&#39;Too many mutations&#39;
+例外をスローします。0 に設定すると無効になります
+
+<div id="number_of_partitions_to_consider_for_merge">
+  ## number_of_partitions_to_consider_for_merge
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+ClickHouse Cloud でのみ利用できます。マージ対象として考慮するパーティションは、上位 N 個までです。パーティションは重み付きでランダムに選択され、その重みは各パーティション内でマージ可能なデータパーツ数です。
+
+<div id="object_serialization_version">
+  ## object_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "v2"},{"label": "JSON シリアル化バージョンを制御する設定を追加"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "v3"},{"label": "高度な共有データのシリアル化を使用するため、JSON でデフォルトのシリアル化バージョンとして v3 を有効化"}]}]} />
+
+JSON データ型のシリアル化バージョンです。互換性のために必要です。
+
+設定可能な値:
+
+* `v1`
+* `v2`
+* `v3`
+
+共有データのシリアル化バージョンを変更できるのは、バージョン `v3` のみです。
+
+<div id="object_shared_data_buckets_for_compact_part">
+  ## object_shared_data_buckets_for_compact_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="8" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "8"},{"label": "compact パーツ内の JSON の 共有データ シリアライゼーションにおける バケット 数を制御する設定を追加"}]}]} />
+
+compact パーツにおける JSON の 共有データ シリアライゼーション用の バケット 数です。`map_with_buckets` および `advanced` の 共有データ シリアライゼーションで機能します。
+許容される最大値は 256 です。
+
+<div id="object_shared_data_buckets_for_wide_part">
+  ## object_shared_data_buckets_for_wide_part
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="32" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "32"},{"label": "wide パーツ内の JSON 共有データ シリアライゼーションにおけるバケット数を制御する設定を追加"}]}]} />
+
+wide パーツにおける JSON 共有データ シリアライゼーションのバケット数です。`map_with_buckets` および `advanced` の 共有データ シリアライゼーションで使用されます。
+許容される最大値は 256 です。
+
+<div id="object_shared_data_serialization_version">
+  ## object_shared_data_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="advanced" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "JSON シリアル化バージョンを制御する設定を追加"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "advanced"},{"label": "デフォルトで advanced の共有データのシリアル化バージョンを有効化"}]}]} />
+
+JSON データ型内の 共有データ のシリアル化バージョンです。
+
+設定可能な値:
+
+* `map` - 共有データ を `Map(String, String)` として保存します
+* `map_with_buckets` - 共有データ を複数の独立した `Map(String, String)` カラムとして保存します。バケットを使用すると、共有データ から個々のパスを読み取る際の効率が向上します。
+* `advanced` - 共有データ から個々のパスを読み取る性能を大幅に向上させるために設計された、共有データ 向けの特別なシリアライゼーションです。
+  このシリアライゼーションでは追加情報を多く保存するため、ディスク上で 共有データ の保存サイズが増加する点に注意してください。
+
+`map_with_buckets` および `advanced` シリアル化のバケット数は、次の設定によって決まります
+[object&#95;shared&#95;data&#95;buckets&#95;for&#95;compact&#95;part](#object_shared_data_buckets_for_compact_part)/[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](#object_shared_data_buckets_for_wide_part)。
+
+<div id="object_shared_data_serialization_version_for_zero_level_parts">
+  ## object_shared_data_serialization_version_for_zero_level_parts
+</div>
+
+<SettingsInfoBlock type="MergeTreeObjectSharedDataSerializationVersion" default_value="map_with_buckets" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "map"},{"label": "ゼロレベルのパーツ向けの JSON シリアル化バージョンを制御する設定を追加"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "map_with_buckets"},{"label": "ゼロレベルのパーツでは、デフォルトで map_with_buckets の共有データのシリアル化バージョンを有効化"}]}]} />
+
+この設定では、insert 時に作成されるゼロレベルのパーツについて、
+JSON 型内の共有データに使用するシリアル化バージョンを指定できます。
+`advanced` の共有データシリアライゼーションをゼロレベルのパーツで使用することは推奨されません。
+挿入時間が大幅に増加する可能性があるためです。
+
+<div id="old_parts_lifetime">
+  ## old_parts_lifetime
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="480" />
+
+サーバーの予期しない再起動時のデータ損失を防ぐために、非アクティブなパーツを保持する時間 (秒) 。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+複数のパーツを新しいパーツにマージすると、ClickHouse は元の
+パーツを非アクティブとしてマークし、`old_parts_lifetime` 秒が経過してから削除します。
+非アクティブなパーツは、現在実行中のクエリで使用されていない場合、つまり
+そのパーツの `refcount` が 1 の場合に削除されます。
+
+新しいパーツに対しては `fsync` が呼び出されないため、しばらくの間、新しいパーツは
+サーバーの RAM (OS cache) にのみ存在します。サーバーが予期せず再起動すると、新しい
+パーツが失われたり破損したりする可能性があります。データを保護するため、非アクティブなパーツは
+すぐには削除されません。
+
+起動時に ClickHouse はパーツの整合性をチェックします。マージされた
+パーツが破損している場合、ClickHouse は非アクティブなパーツをアクティブリストに戻し、
+その後でもう一度マージします。続いて、破損したパーツは名前が変更され (`broken_`
+プレフィックスが追加され) 、`detached` フォルダーに移動されます。マージされたパーツが
+破損していない場合は、元の非アクティブなパーツの名前が変更され (`ignored_`
+プレフィックスが追加され) 、`detached` フォルダーに移動されます。
+
+`dirty_expire_centisecs` のデフォルト値 (Linux カーネルの設定) は 30
+秒です (書き込まれたデータが RAM にのみ保持される最大時間) 。ただし、
+ディスクシステムに高い負荷がかかっている場合、データの書き込みはさらに遅くなることがあります。実験的に、
+`old_parts_lifetime` には 480 秒という値が選ばれており、この間に
+新しいパーツが確実にディスクへ書き込まれるようになっています。
+
+<div id="optimize_row_order">
+  ## optimize_row_order
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+新しく挿入されたテーブルパーツの圧縮効率を高めるために、
+insert 時に行順序を最適化するかどうかを制御します。
+
+効果があるのは通常の MergeTree-engine テーブルのみです。
+特殊な MergeTree engine テーブル (例: CollapsingMergeTree) では効果はありません。
+
+MergeTree テーブルは、 (任意で)
+[compression codecs](/ja/reference/statements/create/table#column_compression_codec)
+を使って圧縮されます。
+LZ4 や ZSTD のような汎用的な圧縮 codec は、データに pattern がある場合に
+最大の圧縮率を実現します。同じ値が長く連続するデータは、通常非常によく圧縮されます。
+
+この設定を有効にすると、ClickHouse は新しく
+挿入されたパーツ内のデータを、新しいテーブルパーツの各カラムにおける
+同一値の連続数が最小になるような行順序で格納しようとします。
+言い換えると、同じ値の連続数が少ないほど、それぞれの連続区間は長くなり、
+圧縮効率が高くなります。
+
+最適な行順序を見つけることは、計算量の観点から現実的ではありません (NP-hard) 。
+そのため、ClickHouse はヒューリスティックを用いて、元の行順序よりも
+圧縮率を改善できる行順序を高速に見つけます。
+
+<details markdown="1">
+  <summary>行順序を見つけるためのヒューリスティック</summary>
+
+  一般に、SQL では行順序が異なっていても同じテーブル (またはテーブルパーツ) と
+  見なされるため、テーブル (またはテーブルパーツ) の行は自由に並べ替えられます。
+
+  ただし、テーブルに主キーが定義されている場合、この行の並べ替えの自由度は
+  制限されます。ClickHouse では、主キー `C1, C2, ..., CN` によって、
+  テーブルの行はカラム `C1`, `C2`, ... `Cn` でソートされることが保証されます
+  ([clustered index](https://en.wikipedia.org/wiki/Database_index#Clustered)) 。
+  その結果、行を並べ替えられるのは行の「等価類」の内部だけになります。
+  つまり、主キーカラムで同じ値を持つ行同士です。
+  直感的には、カーディナリティの高い主キー、たとえば `DateTime64`
+  timestamp カラムを含む主キーは、多数の小さな等価類を生みます。
+  一方、カーディナリティの低い主キーを持つテーブルでは、少数の大きな
+  等価類が作られます。主キーを持たないテーブルは、すべての行にまたがる
+  単一の等価類という極端なケースに相当します。
+
+  等価類の数が少なく、かつ各等価類が大きいほど、
+  行を再シャッフルするときの自由度は高くなります。
+
+  各等価類の中で最適な行順序を見つけるために適用されるヒューリスティックは、
+  D. Lemire, O. Kaser によって提案された
+  [Reordering columns for smaller indexes](https://doi.org/10.1016/j.ins.2011.02.002)
+  に基づくもので、主キーではないカラムのカーディナリティが低い順に
+  各等価類内の行をソートする方法です。
+
+  これは 3 つの手順で行われます:
+
+  1. 主キーカラムの行の値に基づいて、すべての等価類を見つけます。
+  2. 各等価類について、主キーではないカラムのカーディナリティを
+     計算します (通常は推定します) 。
+  3. 各等価類について、主キーではないカラムのカーディナリティが
+     小さい順に行をソートします。
+</details>
+
+有効にすると、新しいデータの行順序を分析して最適化するために、
+insert operation には追加の CPU コストが発生します。
+データの特性に応じて、INSERT は 30〜50%
+長くかかることが想定されます。
+LZ4 または ZSTD の圧縮率は、平均で 20〜40% 改善します。
+
+この設定は、主キーがないテーブル、またはカーディナリティの低い
+主キー、すなわち異なる主キー値がごく少ないテーブルで最も効果を発揮します。
+`DateTime64` 型の timestamp カラムを含むような、カーディナリティの高い
+主キーでは、この設定による効果はあまり期待できません。
+
+<div id="packed_skip_index_max_bytes">
+  ## packed_skip_index_max_bytes
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新しい設定。シリアライズ後のディスク上サイズがこのバイト数以下のスキップ索引サブストリームを、各パーツごとに単一の skp_idx.packed アーカイブにまとめます。これより大きいサブストリームは、個別の skp_idx_<name>.idx2 / .mrk2 レイアウトのままになります。判定は書き込み時にサブストリームごとに行われます。"}]}]} />
+
+しきい値 (シリアライズ後のディスク上のバイト数、つまりサブストリームの圧縮とハッシュ
+チェーン後のサイズ) 未満のスキップ索引サブストリームは、個別の
+`skp_idx_<name>.idx2` / `.mrk2` ファイルとして書き込まれる代わりに、パーツごとに単一の
+`skp_idx.packed` アーカイブにまとめられます。これより大きいサブストリームは、従来の
+ファイル単位のレイアウトのままです。この判定は書き込み時にサブストリームごとに独立して
+行われるため、1 つのパーツ内で、小さい索引 (たとえば `minmax`) はパックされ、
+大きい索引 (たとえばサイズの大きい `bloom_filter`) は個別ファイルのままになることがあります。完全に
+パックを無効にするには 0 に設定します (既定値) 。
+
+各スキップ索引サブストリームは、実際にはデータファイルとマークファイルで構成されており、
+spill の判定が行われるまで、両方ともメモリ内でしきい値までバッファされます。したがって、
+書き込み中のピークメモリは
+`2 * packed_skip_index_max_bytes * (number of substreams that stay
+below the threshold)` に比例します。
+
+全文索引はこの設定ではサポートされておらず、パックされることはありません。
+
+パッキングにより、テーブルに多数のスキップ索引が定義されている場合 (たとえば
+`add_minmax_index_for_numeric_columns` を使う場合) の inode 負荷を軽減できます。
+
+ディスク上のフォーマットは自己記述型であり、リーダーは `skp_idx.packed` を検出して、その中の
+パック済みサブストリームを透過的に処理します。この設定の変更は新しく書き込まれるパーツに
+のみ影響し、既存のパーツは書き込み時のレイアウトをそのまま保持します。
+
+既知の制限: `system.data_skipping_indices.data_uncompressed_bytes` と
+`system.parts.secondary_indices_uncompressed_bytes` は、パック済み
+サブストリームについては圧縮サイズを報告します (アーカイブ索引には非圧縮サイズが格納されないため) 。
+これは監視上の見た目の問題ですが、機能面では 1 つ影響があります:
+`distributed_index_analysis_min_indexes_bytes_to_activate` は
+`data_uncompressed` と比較するため、圧縮効率の高いパック済み索引 (文字列に対する `set` や `bloom_filter` など) は、
+実際の非圧縮サイズであればしきい値を超える場合でも、有効化しきい値を
+超えないことがあります。その場合の fallback は通常のクエリプランであり、誤った結果にはなりません。
+
+<div id="part_minmax_index_columns">
+  ## part_minmax_index_columns
+</div>
+
+<SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "partition_key_only"},{"label": "新しい設定"}]}]} />
+
+パートごとの min-max 索引の対象となるカラムを選択します。各値を指定すると、前の値で対象だったカラムに加えて、追加のカラムグループが有効になります。
+
+設定可能な値:
+
+* `partition_key_only` — パーティションキーのカラムのみを追跡します。
+* `with_block_number_offset` — パーティションキーのカラムに加えて、永続化された仮想カラム `_block_number` と `_block_offset` も対象になります。これらのカラムによるパートレベルの pruning が有効になります。
+
+<div id="part_moves_between_shards_delay_seconds">
+  ## part_moves_between_shards_delay_seconds
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+分片間でパーツを移動する前後の待機時間。
+
+<div id="part_moves_between_shards_enable">
+  ## part_moves_between_shards_enable
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+分片間でパーツを移動するための実験的かつ未完成の機能です。シャーディング式は
+考慮されません。
+
+<div id="parts_to_delay_insert">
+  ## parts_to_delay_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+1 つのパーティション内のアクティブなパーツ数が
+`parts_to_delay_insert` の値を超えると、`INSERT` は意図的に遅延されます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+ClickHouse は `INSERT` の実行を意図的に長引かせ (「sleep」を追加し) 、
+バックグラウンドのマージ処理が、パーツの追加よりも速くマージを進められるようにします。
+
+<div id="parts_to_throw_insert">
+  ## parts_to_throw_insert
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3000" />
+
+単一パーティション内のアクティブなパーツ数が
+`parts_to_throw_insert` の値を超えると、`INSERT` は `Too many
+parts (N). Merges are processing significantly slower than inserts`
+例外で中断されます。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+`SELECT` クエリのパフォーマンスを最大化するには、処理するパーツ数を最小限に抑える必要があります。詳しくは [Merge Tree](/ja/resources/develop-contribute/introduction/architecture#merge-tree) を参照してください。
+
+バージョン 23.6 より前では、この設定の値は 300 でした。これより大きい値を設定すると、`Too many parts`
+エラーが発生する可能性は低くなりますが、その一方で `SELECT` のパフォーマンスが低下するおそれがあります。また、マージに問題がある場合 (たとえばディスク容量不足など) 、元の 300 の設定よりも気付くのが遅くなります。
+
+<div id="prefer_fetch_merged_part_size_threshold">
+  ## prefer_fetch_merged_part_size_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10737418240" />
+
+パーツサイズの合計がこのしきい値を超え、かつレプリケーションログエントリの作成からの経過時間が
+`prefer_fetch_merged_part_time_threshold`を超える場合は、ローカルでマージを行う代わりに、
+レプリカからマージ済みパーツを取得することを優先します。これは、非常に長時間かかる
+マージを高速化するためです。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="prefer_fetch_merged_part_time_threshold">
+  ## prefer_fetch_merged_part_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="3600" />
+
+レプリケーションログ (ClickHouse Keeper または ZooKeeper) の
+エントリ作成からの経過時間がこのしきい値を超え、かつパーツの総サイズが
+`prefer_fetch_merged_part_size_threshold` を上回る場合は、ローカルでマージを実行する代わりに、
+レプリカからマージ済みパーツを取得することを優先します。これは、非常に長時間かかる
+マージを高速化するためです。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="prewarm_mark_cache">
+  ## prewarm_mark_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+true の場合、insert、merge、取得、および
+server の起動時に marks を mark cache に保存することで、mark cache が
+プリウォームされます
+
+<div id="prewarm_primary_key_cache">
+  ## prewarm_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+true の場合、INSERT 時、マージ時、取得時、および
+サーバーの起動時に mark を mark cache に保存することで、主キー
+cache がプリウォームされます
+
+<div id="primary_key_compress_block_size">
+  ## primary_key_compress_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="65536" />
+
+プライマリキーの圧縮ブロックサイズ。圧縮対象ブロックの実際のサイズです。
+
+<div id="primary_key_compression_codec">
+  ## primary_key_compression_codec
+</div>
+
+<SettingsInfoBlock type="String" default_value="ZSTD(3)" />
+
+プライマリに使用される圧縮コーデックです。主キーは十分に小さく、キャッシュされるため、デフォルトの圧縮には ZSTD(3) が使用されます。
+
+<div id="primary_key_lazy_load">
+  ## primary_key_lazy_load
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+主キーを、テーブルの初期化時ではなく最初に使用される時点でメモリに読み込みます。これにより、テーブル数が非常に多い場合のメモリ使用量を削減できます。
+
+<div id="primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns">
+  ## primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9" />
+
+data part 内で主キーを構成するカラムの値が、少なくともこの比率で変化する場合、後続のカラムをメモリに読み込む処理をスキップします。これにより、主キー内の不要なカラムを読み込まずに済み、メモリ使用量を節約できます。
+
+<div id="propagate_types_serialization_versions_to_nested_types">
+  ## propagate_types_serialization_versions_to_nested_types
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "デフォルトでデータ型のシリアル化バージョンをネストされた型にも伝播する"}]}]} />
+
+true の場合、string&#95;serialization&#95;version などのシリアル化バージョンは、Array/Map/Nullable/JSON などのネストされた型の内部にも伝播されます。無効にすると、このシリアル化バージョンが適用されるのは、この型のトップレベルのカラムと Tuple el のみです
+
+<div id="ratio_of_defaults_for_sparse_serialization">
+  ## ratio_of_defaults_for_sparse_serialization
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.9375" />
+
+カラム内の *default* 値の数が、*すべての* 値の数に対して占める最小比率です。
+この値を設定すると、そのカラムはスパース
+シリアライゼーションを使用して保存されます。
+
+カラムがスパースである場合 (ほとんどが 0 の場合) 、ClickHouse はそれを
+スパースフォーマットでエンコードし、計算を自動的に最適化できます。つまり、クエリ時にデータを
+完全に展開する必要がありません。このスパース
+シリアライゼーションを有効にするには、`ratio_of_defaults_for_sparse_serialization`
+設定を 1.0 未満にします。値が 1.0 以上の場合、
+カラムは常に通常の完全なシリアライゼーションで書き込まれます。
+
+設定可能な値:
+
+* スパースシリアライゼーションを有効にするには、`0` から `1` の間の Float
+* スパースシリアライゼーションを使用しない場合は `1.0` (またはそれ以上)
+
+**例**
+
+次のテーブルでは、`s` カラムは 95% の
+行で空文字列になっていることに注目してください。`my_regular_table` ではスパースシリアライゼーションを使用せず、
+`my_sparse_table` では
+`ratio_of_defaults_for_sparse_serialization` を
+0.95 に設定しています:
+
+```sql
+CREATE TABLE my_regular_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO my_regular_table
+SELECT
+number AS id,
+number % 20 = 0 ? toString(number): '' AS s
+FROM
+numbers(10000000);
+
+CREATE TABLE my_sparse_table
+(
+`id` UInt64,
+`s` String
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS ratio_of_defaults_for_sparse_serialization = 0.95;
+
+INSERT INTO my_sparse_table
+SELECT
+number,
+number % 20 = 0 ? toString(number): ''
+FROM
+numbers(10000000);
+```
+
+`my_sparse_table` の `s` カラムが、ディスク上で使用するストレージ容量を抑えられていることに注目してください。
+
+```sql
+SELECT table, name, data_compressed_bytes, data_uncompressed_bytes FROM system.columns
+WHERE table LIKE 'my_%_table';
+```
+
+```response
+┌─table────────────┬─name─┬─data_compressed_bytes─┬─data_uncompressed_bytes─┐
+│ my_regular_table │ id   │              37790741 │                75488328 │
+│ my_regular_table │ s    │               2451377 │                12683106 │
+│ my_sparse_table  │ id   │              37790741 │                75488328 │
+│ my_sparse_table  │ s    │               2283454 │                 9855751 │
+└──────────────────┴──────┴───────────────────────┴─────────────────────────┘
+```
+
+`system.parts_columns` テーブルの `serialization_kind` カラムを見ると、
+そのカラムでスパースエンコーディングが使われているかどうかを確認できます。
+
+```sql
+SELECT column, serialization_kind FROM system.parts_columns
+WHERE table LIKE 'my_sparse_table';
+```
+
+`s` のどの部分がスパースシリアライゼーションで格納されたかを確認できます。
+
+```response
+┌─column─┬─serialization_kind─┐
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Default            │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+│ id     │ Default            │
+│ s      │ Sparse             │
+└────────┴────────────────────┘
+```
+
+<div id="reduce_blocking_parts_sleep_ms">
+  ## reduce_blocking_parts_sleep_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5000"},{"label": "Cloud sync"}]}]} />
+
+ClickHouse Cloud でのみ利用できます。範囲が削除または置換されなかった場合に、
+blocking parts の削減を再度試みるまでの最小待機時間です。設定値を低くすると、
+background&#95;schedule&#95;pool 内の tasks が高頻度でトリガーされ、その結果、大規模なクラスターでは
+zookeeper へのリクエストが大量に発生します
+
+<div id="refresh_parts_interval">
+  ## refresh_parts_interval
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+0 より大きい場合、基盤となるファイルシステムからデータパーツの一覧を更新し、内部的にデータが更新されていないか確認します。
+この設定は、テーブルが読み取り専用ディスク上にある場合にのみ指定できます (つまり、これは読み取り専用のレプリカであり、データは別のレプリカによって書き込まれます) 。
+
+<div id="refresh_statistics_interval">
+  ## refresh_statistics_interval
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "300"},{"label": "統計キャッシュを有効にする"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+統計キャッシュを更新する間隔を秒単位で指定します。0 に設定すると、更新は無効になります。
+
+<div id="remote_fs_execute_merges_on_single_replica_time_threshold">
+  ## remote_fs_execute_merges_on_single_replica_time_threshold
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="10800" />
+
+この設定の値が 0 より大きい場合、共有ストレージ上にマージ済みパーツがあるときは、1 つのレプリカのみが
+ただちにマージを開始します。
+
+<Note>
+  ゼロコピー レプリケーションは本番環境で使用できる状態ではありません。
+  ClickHouse バージョン 22.8 以降では、ゼロコピー レプリケーションは
+  デフォルトで無効になっています。
+
+  この機能を本番環境で使用することは推奨されません。
+</Note>
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="remote_fs_zero_copy_path_compatible_mode">
+  ## remote_fs_zero_copy_path_compatible_mode
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+変換処理中は、zero-copy を互換モードで実行します。
+
+<div id="remote_fs_zero_copy_zookeeper_path">
+  ## remote_fs_zero_copy_zookeeper_path
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="/clickhouse/zero_copy" />
+
+zero-copyのテーブルに依存しない情報用のZooKeeperパス。
+
+<div id="remove_empty_parts">
+  ## remove_empty_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+有効期限 (TTL)、mutation、または折りたたみ
+merge アルゴリズムによって不要になった空のパーツを削除します。
+
+<div id="remove_rolled_back_parts_immediately">
+  ## remove_rolled_back_parts_immediately
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+未完成の実験的機能に関する設定です。
+
+<div id="remove_unused_patch_parts">
+  ## remove_unused_patch_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+すべてのアクティブなパーツに適用済みのパッチパートをバックグラウンドで削除します。
+
+<div id="replace_long_file_name_to_hash">
+  ## replace_long_file_name_to_hash
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+カラムのファイル名が長すぎる場合 (&#39;max&#95;file&#95;name&#95;length&#39;
+バイトを超える場合) 、その名前を SipHash128 に置き換えます
+
+<div id="replicated_can_become_leader">
+  ## replicated_can_become_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+`true` の場合、このノード上のレプリケートテーブルのレプリカは
+リーダーになることを試みます。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+<div id="replicated_deduplication_window">
+  ## replicated_deduplication_window
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "10000"},{"label": "デフォルト値を引き上げ"}]}]} />
+
+ClickHouse Keeper が重複をチェックするために
+ハッシュサムを保存する、直近で挿入されたブロックの数。
+
+設定可能な値:
+
+* 任意の正の整数。
+* 0 (重複排除を無効化)
+
+`Insert` コマンドは 1 つ以上のブロック (パーツ) を作成します。[挿入の重複排除](/ja/reference/engines/table-engines/mergetree-family/replication)
+では、レプリケートテーブルへの書き込み時に、ClickHouse は作成された
+パーツのハッシュサムを ClickHouse Keeper に書き込みます。ハッシュサムが
+保存されるのは、直近の `replicated_deduplication_window` ブロックのみです。最も古い
+ハッシュサムは ClickHouse Keeper から削除されます。
+
+`replicated_deduplication_window` に大きな値を設定すると、比較対象の
+エントリが増えるため、`Inserts` は遅くなります。ハッシュサムは、
+フィールド名と型の構成、および挿入された
+パーツのデータ (バイトストリーム) から計算されます。
+
+<div id="replicated_deduplication_window_for_async_inserts">
+  ## replicated_deduplication_window_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+ClickHouse Keeper が重複を確認するためのハッシュサムを保持する、直近の非同期 INSERT 済みブロック数。
+
+設定可能な値:
+
+* 任意の正の整数。
+* 0 (`async_inserts` の重複排除を無効化)
+
+[Async Insert](/ja/reference/settings/session-settings#async_insert) コマンドは、1 つ以上のブロック (パーツ) に
+キャッシュされます。[挿入の重複排除](/ja/reference/engines/table-engines/mergetree-family/replication)では、
+レプリケートテーブルへの書き込み時に、ClickHouse は各 insert のハッシュサムを
+ClickHouse Keeper に書き込みます。ハッシュサムが保持されるのは、直近の
+`replicated_deduplication_window_for_async_inserts` ブロックのみです。最も古いハッシュサムは
+ClickHouse Keeper から削除されます。
+`replicated_deduplication_window_for_async_inserts` の値が大きいほど、
+比較するエントリ数が増えるため、`Async Inserts` は遅くなります。
+ハッシュサムは、フィールド名と型の構成、および挿入データ
+(バイトストリーム) から計算されます。
+
+<div id="replicated_deduplication_window_seconds">
+  ## replicated_deduplication_window_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3600"},{"label": "デフォルト値を引き下げ"}]}]} />
+
+挿入されたブロックのハッシュサムが
+ClickHouse Keeper から削除されるまでの秒数です。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+[replicated&#95;deduplication&#95;window](#replicated_deduplication_window) と同様に、
+`replicated_deduplication_window_seconds` は、挿入の重複排除のためにブロックのハッシュサムを
+どれくらいの期間保持するかを指定します。
+`replicated_deduplication_window_seconds` より古いハッシュサムは、
+`replicated_deduplication_window` 未満であっても
+ClickHouse Keeper から削除されます。
+
+この時間は実時間ではなく、最新のレコードの時刻を基準に計算されます。
+レコードが 1 件しかない場合は、永久に保存されます。
+
+<div id="replicated_deduplication_window_seconds_for_async_inserts">
+  ## replicated_deduplication_window_seconds_for_async_inserts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="604800" />
+
+非同期 INSERT のハッシュサムが
+ClickHouse Keeper から削除されるまでの秒数です。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+[replicated&#95;deduplication&#95;window&#95;for&#95;async&#95;inserts](#replicated_deduplication_window_for_async_inserts) と同様に、
+`replicated_deduplication_window_seconds_for_async_inserts` は、
+非同期 INSERT の重複排除のためにブロックのハッシュサムを
+どれだけの期間保存するかを指定します。`replicated_deduplication_window_seconds_for_async_inserts` より古い
+ハッシュサムは、
+`replicated_deduplication_window_for_async_inserts` 未満であっても
+ClickHouse Keeper から削除されます。
+
+この時間は、実時間ではなく、最新のレコードの時刻を基準にします。
+レコードが 1 件しかない場合は、永久に保存されます。
+
+<div id="replicated_fetches_http_connection_timeout">
+  ## replicated_fetches_http_connection_timeout
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+廃止された設定であり、効果はありません。
+
+<div id="replicated_fetches_http_receive_timeout">
+  ## replicated_fetches_http_receive_timeout
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+廃止された設定で、効果はありません。
+
+<div id="replicated_fetches_http_send_timeout">
+  ## replicated_fetches_http_send_timeout
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="0" />
+
+廃止された設定で、効果はありません。
+
+<div id="replicated_fetches_min_part_level">
+  ## replicated_fetches_min_part_level
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+他のレプリカから取得するパーツの最小レベルです。このしきい値より低いレベルのパーツは後回しになります
+(レプリケーションキューに保持され、各スケジューリングサイクルで再評価されます。恒久的にスキップされるわけではありません) 。
+1 を指定すると、レベル 0 の (未マージの) パーツの取得を後回しにできるため、大量インジェスト時のレプリケーションのオーバーヘッドを削減できます。
+デフォルト: 0 (レベルに関係なくすべてのパーツを取得) 。
+
+<div id="replicated_fetches_min_part_level_timeout_seconds">
+  ## replicated_fetches_min_part_level_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="300" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "300"},{"label": "新しい設定"}]}]} />
+
+この秒数を超えると、replicated&#95;fetches&#95;min&#95;part&#95;level 未満のパーツでも取得されます。
+タイムアウトを無効にするには 0 を指定します (最小レベル未満のパーツは、マージされるまで無期限に延期されます) 。
+デフォルト: 300 (5 分後に強制的に取得) 。
+
+<div id="replicated_max_mutations_in_one_entry">
+  ## replicated_max_mutations_in_one_entry
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+まとめてマージし、1つのMUTATE&#95;PARTエントリで実行できるmutationコマンドの最大数
+(0 は無制限を意味します)
+
+<div id="replicated_max_parallel_fetches">
+  ## replicated_max_parallel_fetches
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定であり、効果はありません。
+
+<div id="replicated_max_parallel_fetches_for_host">
+  ## replicated_max_parallel_fetches_for_host
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="15" />
+
+廃止された設定です。何も効果はありません。
+
+<div id="replicated_max_parallel_fetches_for_table">
+  ## replicated_max_parallel_fetches_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定であり、何の効果もありません。
+
+<div id="replicated_max_parallel_sends">
+  ## replicated_max_parallel_sends
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定で、現在は効果がありません。
+
+<div id="replicated_max_parallel_sends_for_table">
+  ## replicated_max_parallel_sends_for_table
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+廃止された設定で、効果はありません。
+
+<div id="replicated_max_ratio_of_wrong_parts">
+  ## replicated_max_ratio_of_wrong_parts
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+不正なパーツの数が全パーツ数に占める割合がこの値未満の場合、
+起動を許可します。
+
+設定可能な値:
+
+* Float, 0.0 - 1.0
+
+<div id="search_orphaned_parts_disks">
+  ## search_orphaned_parts_disks
+</div>
+
+<SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "any"},{"label": "新しい設定"}]}]} />
+
+ClickHouse は、ポリシーで定義されていない (ポリシーに含まれていない) ディスク上のデータパーツを見落とさないよう、
+ATTACH または CREATE TABLE のたびに、すべてのディスクで孤立パーツをスキャンします。
+孤立パーツは、たとえばディスクが storage policy から除外された場合のような、
+安全でない可能性のあるストレージ再構成によって発生します。
+この設定では、ディスクの特性に基づいて、検索対象とするディスクの範囲を制限します。
+
+設定可能な値:
+
+* any - 範囲は制限されません。
+* local - 範囲はローカルディスクに制限されます。
+* none - 範囲は空になり、検索は行われません
+
+<div id="serialization_info_version">
+  ## serialization_info_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_types"},{"label": "カスタム文字列シリアライゼーションを可能にする新しいフォーマットに変更"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "basic"},{"label": "新しい設定"}]}]} />
+
+`serialization.json` の書き込み時に使用されるシリアル化情報のバージョンです。
+この設定は、クラスターのアップグレード中に互換性を保つために必要です。
+
+設定可能な値:
+
+* `basic` - 基本フォーマット。
+* `with_types` - 追加の `types_serialization_versions` フィールドを含むフォーマットで、型ごとのシリアル化バージョンを指定できます。
+  これにより、`string_serialization_version` などの設定が有効になります。
+
+ローリングアップグレード中は、これを `basic` に設定して、新しいサーバーが
+古いサーバーと互換性のある
+データパーツを生成するようにします。アップグレード完了後は、
+型ごとのシリアライゼーションバージョンを有効にするため、`WITH_TYPES` に切り替えます。
+
+<div id="share_nested_offsets">
+  ## share_nested_offsets
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "false に設定すると、共通のプレフィックスを持つドット区切りの名前の Array カラムは、従来の Nested の意味論の一部としてオフセットファイルを共有するのではなく、独立したカラムとして扱われます"}]}]} />
+
+有効な場合 (デフォルト) 、共通のプレフィックスを持つドット区切りの名前の Array カラム (例: n.a と n.b) は、
+Nested 構造の一部として扱われます。つまり、ディスク上の 1 つのオフセットファイル (例: n.size0) を共有し、
+INSERT 時にはそれらの配列サイズが等しいことが検証されます。
+無効な場合、各 Array カラムはそれぞれ独立したオフセットファイルを持ち、ドット区切りの名前に特別な
+意味はなくなります。また、同じプレフィックスを持つドット区切りの Array カラムと
+スカラー カラムを共存させることもできます
+(例: n UInt32 と n.a Array(String)) 。この設定はテーブル作成後に変更できません。
+
+<div id="shared_merge_tree_activate_coordinated_merges_tasks">
+  ## shared_merge_tree_activate_coordinated_merges_tasks
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "25.8"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-3","items": [{"label": "25.7"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-4","items": [{"label": "25.6"},{"label": "0"},{"label": "新しい設定"}]}, {"id": "row-5","items": [{"label": "25.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+協調マージタスクの再スケジューリングを有効にします。これは、
+shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0 の場合でも有用です。マージコーディネーターの
+統計情報が蓄積され、コールドスタートの助けになるためです。
+
+<div id="shared_merge_tree_create_per_replica_metadata_nodes">
+  ## shared_merge_tree_create_per_replica_metadata_nodes
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Keeper 内のメタデータ量を削減しました。"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+ZooKeeper で、レプリカごとの /metadata ノードおよび /columns ノードを作成できるようにします。
+ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
+  ## shared_merge_tree_disable_merges_and_mutations_assignment
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+shared merge tree のマージおよびミューテーションの割り当てを停止します。ClickHouse
+Cloud でのみ使用できます
+
+<div id="shared_merge_tree_empty_partition_lifetime">
+  ## shared_merge_tree_empty_partition_lifetime
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="86400" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "86400"},{"label": "新しい設定"}]}]} />
+
+パーツを持たないパーティションが Keeper に保持される秒数。
+
+<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
+  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "デフォルトで有効"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+空のパーティションに対応する Keeper エントリのクリーンアップを有効にします。
+
+<div id="shared_merge_tree_enable_coordinated_merges">
+  ## shared_merge_tree_enable_coordinated_merges
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+協調マージ戦略を有効にします
+
+<div id="shared_merge_tree_enable_keeper_parts_extra_data">
+  ## shared_merge_tree_enable_keeper_parts_extra_data
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+仮想パーツへの属性の書き込みと、Keeper 内でのブロックのコミットを有効にします
+
+<div id="shared_merge_tree_enable_outdated_parts_check">
+  ## shared_merge_tree_enable_outdated_parts_check
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+古いパーツのチェックを有効にします。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_idle_parts_update_seconds">
+  ## shared_merge_tree_idle_parts_update_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="3600" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "3600"},{"label": "Cloud sync"}]}]} />
+
+shared merge tree において、ZooKeeper の
+watch によるトリガーなしでパーツを更新する間隔 (秒) 。ClickHouse Cloud でのみ使用できます
+
+<div id="shared_merge_tree_initial_parts_update_backoff_ms">
+  ## shared_merge_tree_initial_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="50" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "50"},{"label": "新しい設定"}]}]} />
+
+パーツ更新時の初期バックオフ。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
+  ## shared_merge_tree_interserver_http_connection_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "100"},{"label": "新しい設定"}]}]} />
+
+サーバー間 HTTP 接続のタイムアウト。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_interserver_http_timeout_ms">
+  ## shared_merge_tree_interserver_http_timeout_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10000"},{"label": "Cloud sync"}]}]} />
+
+サーバー間の HTTP 通信におけるタイムアウトです。ClickHouse
+Cloud
+でのみ利用できます。
+
+<div id="shared_merge_tree_leader_update_period_random_add_seconds">
+  ## shared_merge_tree_leader_update_period_random_add_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+`shared_merge_tree_leader_update_period` に 0 〜 x 秒の範囲で一様分布する値を加え、
+サンダリングハードの発生を防ぎます。ClickHouse Cloud
+でのみ利用できます
+
+<div id="shared_merge_tree_leader_update_period_seconds">
+  ## shared_merge_tree_leader_update_period_seconds
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="30" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "30"},{"label": "Cloud sync"}]}]} />
+
+パーツ更新におけるリーダーシップを再確認するまでの最大間隔です。ClickHouse Cloudでのみ利用できます
+
+<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
+  ## shared_merge_tree_max_outdated_parts_to_process_at_once
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000"},{"label": "Cloud sync"}]}]} />
+
+リーダーが 1 回の HTTP リクエストで削除対象として確認を試みる古いパーツの最大数です。ClickHouse Cloud でのみ利用できます。
+
+<div id="shared_merge_tree_max_parts_update_backoff_ms">
+  ## shared_merge_tree_max_parts_update_backoff_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "5000"},{"label": "新しい設定"}]}]} />
+
+パーツ更新時の最大バックオフ。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_max_parts_update_leaders_in_total">
+  ## shared_merge_tree_max_parts_update_leaders_in_total
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="6" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "6"},{"label": "Cloud sync"}]}]} />
+
+パーツ更新リーダーの最大数。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_max_parts_update_leaders_per_az">
+  ## shared_merge_tree_max_parts_update_leaders_per_az
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "2"},{"label": "Cloud sync"}]}]} />
+
+パーツ更新リーダーの上限数。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_max_replicas_for_parts_deletion">
+  ## shared_merge_tree_max_replicas_for_parts_deletion
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+パーツ削除 (キラースレッド) に参加するレプリカの最大数。ClickHouse Cloud でのみ
+利用できます
+
+<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
+  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "5"},{"label": "Cloud sync"}]}]} />
+
+競合の可能性がある マージ の割り当てを試行するレプリカの最大数です (マージ の割り当て時に不要な競合を避けるため) 。0 は無効を意味します。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_max_suspicious_broken_parts">
+  ## shared_merge_tree_max_suspicious_broken_parts
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "SMT で許容される破損パーツの最大数。これを超えると、自動デタッチは拒否されます"}]}]} />
+
+SMT で許容される破損パーツの最大数。これを超えると、自動デタッチは拒否されます。
+
+<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
+  ## shared_merge_tree_max_suspicious_broken_parts_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "SMT の破損パーツ全体の最大サイズ。この値を超えると自動 デタッチ を禁止します"}]}]} />
+
+SMT の破損パーツ全体の最大サイズ。この値を超えると自動 デタッチ を禁止します。
+
+<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
+  ## shared_merge_tree_memo_ids_remove_timeout_seconds
+</div>
+
+<SettingsInfoBlock type="Int64" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1800"},{"label": "Cloud sync"}]}]} />
+
+insert の再試行時に誤った actions を防ぐために、insert のメモ化 ID を保持する期間です。
+ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
+  ## shared_merge_tree_merge_coordinator_election_check_period_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "30000"},{"label": "新しい設定"}]}]} />
+
+マージコーディネーター選出スレッドの実行間隔
+
+<div id="shared_merge_tree_merge_coordinator_factor">
+  ## shared_merge_tree_merge_coordinator_factor
+</div>
+
+<SettingsInfoBlock type="Float" default_value="1.1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1.100000023841858"},{"label": "新しい設定"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "1.100000023841858"},{"label": "負荷後のマージコーディネーターのスリープ時間を短縮"}]}]} />
+
+マージコーディネータースレッドの遅延時間を調整する係数
+
+<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
+  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新しい設定"}]}]} />
+
+マージコーディネーターが最新のメタデータを取得するためにZooKeeperと同期する間隔
+
+<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
+  ## shared_merge_tree_merge_coordinator_max_merge_request_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="20" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "20"},{"label": "新しい設定"}]}]} />
+
+マージコーディネーターが一度に MergerMutator に要求できるマージ数
+
+<div id="shared_merge_tree_merge_coordinator_max_period_ms">
+  ## shared_merge_tree_merge_coordinator_max_period_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新しい設定"}]}]} />
+
+マージコーディネータースレッドの実行間隔の最大値
+
+<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
+  ## shared_merge_tree_merge_coordinator_merges_prepare_count
+</div>
+
+<SettingsInfoBlock type="UInt64Auto" default_value="auto" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "auto"},{"label": "設定値を auto にする: レプリカごとの最大マージタスク数 * アクティブなレプリカ数"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "100"},{"label": "新しい設定"}]}]} />
+
+マージコーディネーターが準備し、各ワーカーに分配するマージエントリの数。
+`auto` に設定すると、単一のレプリカで許可されるマージタスクの最大数に、アクティブなレプリカ数を掛けた値になります。
+
+<div id="shared_merge_tree_merge_coordinator_min_period_ms">
+  ## shared_merge_tree_merge_coordinator_min_period_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+マージコーディネータースレッドの実行間隔の最小時間
+
+<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
+  ## shared_merge_tree_merge_worker_fast_timeout_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "100"},{"label": "新しい設定"}]}]} />
+
+マージワーカースレッドが、即時アクションの後に自身の状態を更新する必要がある場合に使用するタイムアウト
+
+<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
+  ## shared_merge_tree_merge_worker_regular_timeout_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "10000"},{"label": "新しい設定"}]}]} />
+
+マージワーカースレッドの実行間隔
+
+<div id="shared_merge_tree_outdated_parts_group_size">
+  ## shared_merge_tree_outdated_parts_group_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "2"},{"label": "新しい設定"}]}]} />
+
+古くなったパーツのクリーンアップ時に、同じランデブーハッシュグループに含まれるレプリカ数。
+ClickHouse Cloud でのみ利用できます。
+
+<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
+  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.5" />
+
+`<candidate
+partitions for mutations only (partitions that cannot be merged)>/<candidate
+partitions for mutations>` の比率がこの設定値を上回る場合、マージ／ミューテーション を選択するタスクで マージ predicate を再読み込みします。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_parts_load_batch_size">
+  ## shared_merge_tree_parts_load_batch_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32" />
+
+一度にスケジュールする fetch パーツのメタデータ取得ジョブ数。ClickHouse Cloud でのみ利用できます。
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+ローカルでマージされたパーツを含む新たなマージを開始せずに、そのパーツを保持しておく時間です。
+これにより、他のレプリカがそのパーツを取得して、このマージを開始するための猶予が生まれます。
+ClickHouse Cloud でのみ利用できます。
+
+<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
+  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1000000"},{"label": "Cloud sync"}]}]} />
+
+ローカルでマージした直後に次のマージの割り当てを延期するための、パーツの最小サイズ (行数) 。ClickHouse Cloud でのみ使用できます。
+
+<div id="shared_merge_tree_range_for_merge_window_size">
+  ## shared_merge_tree_range_for_merge_window_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "10"},{"label": "Cloud sync"}]}]} />
+
+このパートを含む新たなマージを開始せずに、ローカルでマージ済みのパートを保持する時間です。
+これにより、他のレプリカがそのパートを取得して、このマージを開始する猶予が生まれます。
+ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_read_virtual_parts_from_leader">
+  ## shared_merge_tree_read_virtual_parts_from_leader
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+可能な場合は、リーダー から仮想パーツを読み取ります。ClickHouse
+Cloudでのみ利用できます
+
+<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
+  ## shared_merge_tree_replica_set_max_lifetime_seconds
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="1800" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1800"},{"label": "レプリカセットのバックグラウンド更新のデフォルト間隔を30分に延長"}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "300"},{"label": "新しい設定"}]}]} />
+
+レプリカがバックグラウンドでレプリカセットの更新を試みる頻度です。次回の実行は、
+[0, value] 秒の範囲で一様にジッターが加えられます。例外: value = 0 の場合はこの仕様に従いません。
+実装では最小 200 ms が適用されるため、次回の実行には [0, 200] ms の範囲でジッターが加えられます。
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "他のレプリカからパーツデータを取得するための新しい設定"}]}]} />
+
+有効にすると、すべてのレプリカは、プライマリキーやパーティション情報などのパーツのメモリ内データを、すでに保持している他のレプリカから取得しようとします。
+
+<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
+  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "起動時に SMT が S3 ではなくレプリカからパーツデータをダウンロードできるようにする新しい設定"}]}]} />
+
+有効にすると、すべてのレプリカは起動時に、パーツのメモリ内データ (プライマリ
+キー、パーティション情報など) を、すでにそのデータを保持しているほかのレプリカから取得しようと試みます。
+
+<div id="shared_merge_tree_update_replica_flags_delay_ms">
+  ## shared_merge_tree_update_replica_flags_delay_ms
+</div>
+
+<SettingsInfoBlock type="Milliseconds" default_value="30000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "30000"},{"label": "新しい設定"}]}]} />
+
+レプリカがバックグラウンドスケジュールに従って自身のフラグを再読み込みする試行頻度。
+
+<div id="shared_merge_tree_use_metadata_hints_cache">
+  ## shared_merge_tree_use_metadata_hints_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Cloud sync"}]}]} />
+
+他のレプリカ上のメモリ内
+cache から FS cache ヒントを要求するようにします。ClickHouse Cloud
+でのみ利用できます
+
+<div id="shared_merge_tree_use_outdated_parts_compact_format">
+  ## shared_merge_tree_use_outdated_parts_compact_format
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "デフォルトで outdated parts v3 を有効化"}]}, {"id": "row-2","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+古くなったパーツに compact フォーマットを使用します。これにより Keeper への負荷が軽減され、
+古くなったパーツの処理が改善されます。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
+  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "0"},{"label": "Cloud sync"}]}]} />
+
+有効にすると、パーツが多すぎるカウンターはローカルレプリカの状態ではなく、Keeper 内の共有データを参照します。ClickHouse Cloud でのみ利用できます
+
+<div id="shared_merge_tree_use_zookeeper_connection_pool">
+  ## shared_merge_tree_use_zookeeper_connection_pool
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+有効にすると、SharedMergeTree はサーバーレベルのプールされた ZooKeeper セッションのいずれか 1 つを使用します。
+
+<div id="shared_merge_tree_virtual_parts_discovery_batch">
+  ## shared_merge_tree_virtual_parts_discovery_batch
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+1つのバッチにまとめるパーティション検出の件数
+
+<div id="simultaneous_parts_removal_limit">
+  ## simultaneous_parts_removal_limit
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+古くなったパーツ が多数ある場合、クリーンアップスレッドは1回の反復で最大
+`simultaneous_parts_removal_limit` 個のパーツを削除しようとします。
+`simultaneous_parts_removal_limit` を `0` に設定すると、上限なしを意味します。
+
+<div id="sleep_before_commit_local_part_in_replicated_table_ms">
+  ## sleep_before_commit_local_part_in_replicated_table_ms
+</div>
+
+<SettingsInfoBlock type="ミリ秒" default_value="0" />
+
+テスト用です。変更しないでください。
+
+<div id="sleep_before_loading_outdated_parts_ms">
+  ## sleep_before_loading_outdated_parts_ms
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+テスト用です。変更しないでください。
+
+<div id="storage_policy">
+  ## storage_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="default" />
+
+ストレージディスクポリシー名
+
+<div id="string_serialization_version">
+  ## string_serialization_version
+</div>
+
+<SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "with_size_stream"},{"label": "サイズを分離した新しいフォーマットに変更"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "single_stream"},{"label": "新しい設定"}]}]} />
+
+トップレベルの `String` カラムのシリアライゼーションフォーマットを制御します。
+
+この設定は、`serialization_info_version` が &quot;with&#95;types&quot; に設定されている場合にのみ有効です。
+`with_size_stream` に設定すると、トップレベルの `String` カラムは、文字列長を保持する別個の
+`.size` サブカラムにシリアライズされ、インラインでは保持されません。これにより実際の `.size`
+サブカラムを利用できるようになり、圧縮効率が向上する場合があります。
+
+ネストされた `String` 型 (例: `Nullable`、`LowCardinality`、`Array`、`Map` の内部)
+には影響しませんが、`Tuple` 内に現れる場合は例外です。
+
+設定可能な値:
+
+* `single_stream` — サイズをインラインで保持する標準のシリアライゼーションフォーマットを使用します。
+* `with_size_stream` — トップレベルの `String` カラムに対して、独立したサイズストリームを使用します。
+
+<div id="table_disk">
+  ## table_disk
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+これはテーブルディスクです。path/endpoint はデータベースのデータではなく、
+テーブルのデータを指す必要があります。設定できるのは s3&#95;plain/s3&#95;plain&#95;rewritable/web に対してのみです。
+
+<div id="table_readonly">
+  ## table_readonly
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "テーブルを読み取り専用としてマークし、insert と変更を防ぐための新しい設定"}]}]} />
+
+true に設定すると、テーブルは読み取り専用モードになります。データの insert やテーブルの変更を試みると失敗します。
+
+<div id="temporary_directories_lifetime">
+  ## temporary_directories_lifetime
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="86400" />
+
+tmp&#95; ディレクトリを保持する秒数です。この値は下げないでください。
+この設定値が低すぎると、マージやミューテーションが正常に動作しない可能性があります。
+
+<div id="text_index_dictionary_block_frontcoding_compression">
+  ## text_index_dictionary_block_frontcoding_compression
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+テキスト索引の Dictionary ブロックに対するデフォルトの front-coding 圧縮です。
+明示的に指定した `dictionary_block_frontcoding_compression` 索引引数で上書きできます。
+
+<div id="text_index_dictionary_block_size">
+  ## text_index_dictionary_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "512"},{"label": "新しい設定"}]}]} />
+
+テキスト索引のデフォルトのDictionaryブロックサイズ。
+明示的な索引引数 `dictionary_block_size` で上書きできます。
+
+<div id="text_index_posting_list_block_size">
+  ## text_index_posting_list_block_size
+</div>
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "1048576"},{"label": "新しい設定"}]}]} />
+
+テキスト索引のポスティングリストのデフォルトのブロックサイズ (行数) 。
+明示的に指定した索引引数 `posting_list_block_size` で上書きできます。
+
+<div id="text_index_posting_list_codec">
+  ## text_index_posting_list_codec
+</div>
+
+<SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "新しい設定"}]}]} />
+
+テキスト索引のデフォルトの ポスティングリスト codec です。
+明示的に指定した索引引数 `posting_list_codec` で上書きできます。
+
+<div id="try_fetch_recompressed_part_timeout">
+  ## try_fetch_recompressed_part_timeout
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="7200" />
+
+再圧縮を伴うマージを開始するまでのタイムアウト (秒単位) 。この時間のあいだ、ClickHouse は、この再圧縮を伴うマージが割り当てられたレプリカから、再圧縮済みのパーツを fetch しようとします。
+
+多くの場合、再圧縮には時間がかかるため、このタイムアウトが経過するまでは再圧縮を伴うマージを開始せず、この再圧縮を伴うマージが割り当てられたレプリカから再圧縮済みのパーツを fetch しようとします。
+
+設定可能な値:
+
+* 任意の正の整数。
+
+<div id="ttl_only_drop_parts">
+  ## ttl_only_drop_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+各パーツ内のすべての行が `TTL` 設定に従って期限切れになった場合に、MergeTree テーブルでデータパーツ全体を削除するかどうかを制御します。
+
+`ttl_only_drop_parts` が無効な場合 (デフォルト) は、`TTL` 設定に基づいて期限切れになった行のみが削除されます。
+
+`ttl_only_drop_parts` が有効な場合は、各パーツ内のすべての行が `TTL` 設定に従って期限切れになっていると、そのパーツ全体が削除されます。
+
+<div id="use_adaptive_write_buffer_for_dynamic_subcolumns">
+  ## use_adaptive_write_buffer_for_dynamic_subcolumns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+動的サブカラムの書き込み時にアダプティブなライターバッファを使用して、
+メモリ使用量を削減できるようにします
+
+<div id="use_async_block_ids_cache">
+  ## use_async_block_ids_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+`true` の場合、非同期 INSERT の hash sums を cache します。
+
+設定可能な値:
+
+* `true`
+* `false`
+
+複数の非同期 INSERT を含む block では、複数の hash sums が生成されます。
+このうち一部の insert が重複している場合、Keeper は 1 回の RPC で
+重複した hash sum を 1 つしか返さないため、不要な RPC の再試行が発生します。
+この cache は Keeper 内の hash sums path を watch します。Keeper で更新が
+検知されると、cache はできるだけ早く更新されるため、
+メモリ内で重複した insert を filter できるようになります。
+
+<div id="use_compact_variant_discriminators_serialization">
+  ## use_compact_variant_discriminators_serialization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+Variant
+データ型の discriminator のバイナリシリアライゼーションで compact モードを有効にします。
+このモードを使用すると、ほとんどが 1 つの variant である場合や NULL 値 が多い場合に、
+パーツ内で discriminator を保存するために必要なメモリを大幅に削減できます。
+
+<div id="use_const_adaptive_granularity">
+  ## use_const_adaptive_granularity
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+常にパート全体で一定の粒度を使用します。これにより、索引粒度の値をメモリ上で
+圧縮できます。これは、列数の少ないテーブルを扱う非常に大規模な
+ワークロードで役立つ場合があります。
+
+<div id="use_metadata_cache">
+  ## use_metadata_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+廃止された設定で、機能しません。
+
+<div id="use_minimalistic_checksums_in_zookeeper">
+  ## use_minimalistic_checksums_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+通常のもの (数十 KB) ではなく、ZooKeeper 内のパーツのチェックサムに小さいフォーマット (数十バイト) を使用します。有効にする前に、すべてのレプリカが新しいフォーマットに対応していることを確認してください。
+
+<div id="use_minimalistic_part_header_in_zookeeper">
+  ## use_minimalistic_part_header_in_zookeeper
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+ZooKeeper における data parts のヘッダーの保存方式です。有効にすると、ZooKeeper
+に保存されるデータ量が少なくなります。詳細は、[こちら](/ja/reference/settings/server-settings/settings#use_minimalistic_part_header_in_zookeeper)を参照してください。
+
+<div id="use_primary_key_cache">
+  ## use_primary_key_cache
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+すべての索引をメモリに保持する代わりに、プライマリインデックスに cache を使用します。非常に大きなテーブルで有用です。
+
+<div id="vertical_merge_algorithm_min_bytes_to_activate">
+  ## vertical_merge_algorithm_min_bytes_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+Vertical merge アルゴリズムを有効にするために、マージ対象の
+パーツで必要となる最小の (概算) 非圧縮サイズ (バイト単位) 。
+
+<div id="vertical_merge_algorithm_min_columns_to_activate">
+  ## vertical_merge_algorithm_min_columns_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="11" />
+
+Vertical merge アルゴリズムを有効にするために必要な、PK 以外のカラムの最小数。
+
+<div id="vertical_merge_algorithm_min_rows_to_activate">
+  ## vertical_merge_algorithm_min_rows_to_activate
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="131072" />
+
+Vertical merge アルゴリズムを有効にするために必要な、
+マージ対象パーツ内の行数の合計の最小値 (概算) 。
+
+<div id="vertical_merge_optimize_lightweight_delete">
+  ## vertical_merge_optimize_lightweight_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "新しい設定"}]}]} />
+
+true の場合、垂直マージ時の論理削除が最適化されます。
+
+<div id="vertical_merge_optimize_ttl_delete">
+  ## vertical_merge_optimize_ttl_delete
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "1"},{"label": "有効期限 (TTL) によって期限切れになった行を削除する必要があるマージで、Vertical merge アルゴリズムを使用できるようにします"}]}]} />
+
+true の場合、行 TTL による削除は 垂直マージ で最適化されます。horizontal merge を強制する代わりに、
+TTL フィルターが評価されてマージアルゴリズムに渡され、行ソースにスキップフラグが設定されます。
+
+<div id="vertical_merge_remote_filesystem_prefetch">
+  ## vertical_merge_remote_filesystem_prefetch
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+true の場合、merge 中に次の
+カラムについて、リモート filesystem からデータを prefetch します
+
+<div id="wait_for_unique_parts_send_before_shutdown_ms">
+  ## wait_for_unique_parts_send_before_shutdown_ms
+</div>
+
+<SettingsInfoBlock type="ミリ秒" default_value="0" />
+
+シャットダウン前に、テーブルは一意なパーツ
+(現在のレプリカにのみ存在するもの) が他のレプリカにフェッチされるまで、必要な時間だけ待機します (0 は
+無効を意味します) 。
+
+<div id="write_ahead_log_bytes_to_fsync">
+  ## write_ahead_log_bytes_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="104857600" />
+
+廃止された設定であり、何の効果もありません。
+
+<div id="write_ahead_log_interval_ms_to_fsync">
+  ## write_ahead_log_interval_ms_to_fsync
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100" />
+
+廃止された設定です。効果はありません。
+
+<div id="write_ahead_log_max_bytes">
+  ## write_ahead_log_max_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+廃止された設定で、効果はありません。
+
+<div id="write_final_mark">
+  ## write_final_mark
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+廃止された設定で、効果はありません。
+
+<div id="write_marks_for_substreams_in_compact_parts">
+  ## write_marks_for_substreams_in_compact_parts
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "1"},{"label": "compact パーツ内の各サブストリームごとにデフォルトでマークを書き込むようにします"}]}, {"id": "row-2","items": [{"label": "25.5"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+compact パーツでは、カラム単位ではなくサブストリーム単位でマークを書き込むようにします。
+これにより、データパーツから個々のサブカラムを効率的に読み取れるようになります。
+
+たとえば、カラム `t Tuple(a String, b UInt32, c Array(Nullable(UInt32)))` は次のサブストリームにシリアライズされます。
+
+* `t.a` はタプル要素 `a` の String データ
+* `t.b` はタプル要素 `b` の UInt32 データ
+* `t.c.size0` はタプル要素 `c` の配列サイズ
+* `t.c.null` はタプル要素 `c` のネストされた配列要素の NULL マップ
+* `t.c` はタプル要素 `c` のネストされた配列要素の UInt32 データ
+
+この設定を有効にすると、これら 5 つのサブストリームそれぞれに対してマークを書き込みます。つまり、必要に応じて各サブストリームのデータを granule から個別に
+読み取れるようになります。たとえば、サブカラム `t.c` を読み取りたい場合、
+サブストリーム `t.c.size0`、`t.c.null`、`t.c` のデータだけを読み取り、
+サブストリーム `t.a` と `t.b` のデータは読み取りません。この設定が無効な場合は、
+最上位カラム `t` に対してのみマークを書き込むため、一部のサブストリームのデータだけが必要な場合でも、granule から常にカラム全体のカラムデータを読み取ることになります。
+
+<div id="zero_copy_concurrent_part_removal_max_postpone_ratio">
+  ## zero_copy_concurrent_part_removal_max_postpone_ratio
+</div>
+
+<SettingsInfoBlock type="Float" default_value="0.05" />
+
+より小さな独立した範囲を確保するために、削除を延期する最上位レベルのパーツの最大割合です。
+変更しないことを推奨します。
+
+<div id="zero_copy_concurrent_part_removal_max_split_times">
+  ## zero_copy_concurrent_part_removal_max_split_times
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5" />
+
+独立した 古くなったパーツ の範囲を、より小さなサブ範囲に分割する際の
+再帰の最大深度です。変更しないことを推奨します。
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+
+ゼロコピー レプリケーションが有効な場合、マージまたはミューテーションのパーツサイズに応じて、ロックを試行する前にランダムな時間だけ待機します
+
+<div id="zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock">
+  ## zero_copy_merge_mutation_min_parts_size_sleep_no_scale_before_lock
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.3"},{"label": "0"},{"label": "新しい設定"}]}]} />
+
+ゼロコピー レプリケーションが有効な場合、マージまたはミューテーションのロック取得を試みる前に、最大 500ms のランダムな時間だけ待機します。
+
+<div id="zookeeper_session_expiration_check_period">
+  ## zookeeper_session_expiration_check_period
+</div>
+
+<SettingsInfoBlock type="Seconds" default_value="60" />
+
+ZooKeeper セッションの有効期限切れをチェックする間隔 (秒) 。
+
+設定可能な値:
+
+* 任意の正の整数。

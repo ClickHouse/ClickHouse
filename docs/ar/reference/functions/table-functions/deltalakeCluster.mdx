@@ -1,0 +1,59 @@
+---
+description: 'هذا امتداد لدالة الجدول deltaLake.'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'مرجع'
+---
+
+هذا امتداد لدالة الجدول [deltaLake](/ar/reference/functions/table-functions/deltalake).
+
+يتيح معالجة الملفات من جداول [Delta Lake](https://github.com/delta-io/delta) في Amazon S3 بالتوازي عبر عدد من العقد ضمن عنقود محدد. على العقدة البادئة، يُنشئ اتصالًا بجميع العقد في العنقود ويوزّع كل ملف ديناميكيًا. وعلى العقدة العاملة، يطلب من العقدة البادئة المهمة التالية لمعالجتها ثم يعالجها. ويتكرر ذلك حتى تكتمل جميع المهام.
+
+<div id="syntax">
+  ## بناء الجملة
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` هو اسم مستعار لـ `deltaLakeCluster`، وكلاهما خاص بـ S3.
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+* `cluster_name` — اسم العنقود المُستخدَم لبناء مجموعة من العناوين ومعلمات الاتصال بالخوادم البعيدة والمحلية.
+* يتطابق وصف جميع الوسائط الأخرى مع وصف الوسائط في دالة الجدول المكافئة [deltaLake](/ar/reference/functions/table-functions/deltalake).
+* يمكن استخدام المعلَمة الاختيارية `extra_credentials` لتمرير `role_arn` من أجل الوصول المستند إلى الدور في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) للاطلاع على خطوات الإعداد.
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+جدول ذو البنية المحددة لقراءة البيانات من العنقود في جدول Delta Lake المحدد على S3.
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — مسار الملف. النوع: `LowCardinality(String)`.
+* `_file` — اسم الملف. النوع: `LowCardinality(String)`.
+* `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
+* `_etag` — قيمة `etag` للملف. النوع: `LowCardinality(String)`. إذا كانت قيمة `etag` غير معروفة، تكون القيمة `NULL`.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك deltaLake](/ar/reference/engines/table-engines/integrations/deltalake)
+* [دالة الجدول deltaLake](/ar/reference/functions/table-functions/deltalake)

@@ -1,0 +1,184 @@
+---
+sidebarTitle: 'تهيئة LDAP'
+slug: /guides/sre/configuring-ldap
+title: 'تهيئة ClickHouse لاستخدام LDAP للمصادقة وتعيين الأدوار'
+description: 'يوضح كيفية تهيئة ClickHouse لاستخدام LDAP للمصادقة وتعيين الأدوار'
+keywords: ['تهيئة LDAP', 'المصادقة عبر LDAP', 'تعيين الأدوار', 'إدارة المستخدمين', 'دليل SRE']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+يمكن تهيئة ClickHouse لاستخدام LDAP لمصادقة مستخدمي قاعدة البيانات في ClickHouse. يقدّم هذا الدليل مثالًا بسيطًا على دمج ClickHouse مع نظام LDAP للمصادقة عبر دليل متاح للعامة.
+
+<Steps>
+  <Step>
+    ## تهيئة إعدادات اتصال LDAP في ClickHouse
+
+    1. اختبر اتصالك بخادم LDAP العام هذا:
+
+       ```bash
+       $ ldapsearch -x -b dc=example,dc=com -H ldap://ldap.forumsys.com
+       ```
+
+       ستكون الاستجابة على نحوٍ مشابه لما يلي:
+
+       ```response
+       # LDIF موسّع
+       #
+       # LDAPv3
+       # الأساس <dc=example,dc=com> مع النطاق subtree
+       # عامل التصفية: (objectclass=*)
+       # المطلوب: ALL
+       #
+
+       # example.com
+       dn: dc=example,dc=com
+       objectClass: top
+       objectClass: dcObject
+       objectClass: organization
+       o: example.com
+       dc: example
+       ...
+       ```
+
+    2. حرّر ملف `config.xml` وأضف ما يلي لتهيئة LDAP:
+       ```xml
+       <ldap_servers>
+           <test_ldap_server>
+           <host>ldap.forumsys.com</host>
+           <port>389</port>
+           <bind_dn>uid={user_name},dc=example,dc=com</bind_dn>
+           <enable_tls>no</enable_tls>
+           <tls_require_cert>never</tls_require_cert>
+           </test_ldap_server>
+       </ldap_servers>
+       ```
+
+    <Note>
+      الوسوم `<test_ldap_server>` هي تسمية اعتباطية لتمييز خادم LDAP معيّن.
+    </Note>
+
+    هذه هي الإعدادات الأساسية المستخدمة أعلاه:
+
+    | Parameter                | Description                        | Example                             |
+    | ------------------------ | ---------------------------------- | ----------------------------------- |
+    | host                     | اسم المضيف أو عنوان IP لخادم LDAP  | ldap.forumsys.com                   |
+    | port                     | منفذ الدليل لخادم LDAP             | 389                                 |
+    | bind&#95;dn              | مسار القالب للمستخدمين             | `uid={user_name},dc=example,dc=com` |
+    | enable&#95;tls           | ما إذا كان سيتم استخدام LDAP الآمن | no                                  |
+    | tls&#95;require&#95;cert | ما إذا كان الاتصال يتطلب شهادة     | never                               |
+
+    <Note>
+      في هذا المثال، بما أن الخادم العام يستخدم المنفذ 389 ولا يستخدم منفذًا آمنًا، فإننا نعطّل TLS لأغراض الشرح.
+    </Note>
+
+    <Note>
+      راجع [صفحة توثيق LDAP](/ar/concepts/features/security/external-authenticators/ldap) لمزيد من التفاصيل حول إعدادات LDAP.
+    </Note>
+
+    3. أضف القسم `<ldap>` إلى القسم `<user_directories>` لتهيئة تعيين الأدوار للمستخدمين. يحدّد هذا القسم كيفية مصادقة المستخدم والدور الذي سيحصل عليه. في هذا المثال الأساسي، سيحصل أي مستخدم تتم مصادقته عبر LDAP على `scientists_role`، والذي سيُعرَّف في خطوة لاحقة في ClickHouse. يجب أن يبدو القسم مشابهًا لما يلي:
+
+       ```xml
+       <user_directories>
+           <users_xml>
+               <path>users.xml</path>
+           </users_xml>
+           <local_directory>
+               <path>/var/lib/clickhouse/access/</path>
+           </local_directory>
+           <ldap>
+                 <server>test_ldap_server</server>
+                 <roles>
+                    <scientists_role />
+                 </roles>
+                 <role_mapping>
+                    <base_dn>dc=example,dc=com</base_dn>
+                    <search_filter>(&amp;(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))</search_filter>
+                    <attribute>cn</attribute>
+                 </role_mapping>
+           </ldap>
+       </user_directories>
+       ```
+
+       هذه هي الإعدادات الأساسية المستخدمة أعلاه:
+
+       | Parameter         | Description                                                            | Example                                                       |
+       | ----------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------- |
+       | server            | التسمية المعرّفة في قسم ldap&#95;servers السابق                        | test&#95;ldap&#95;server                                      |
+       | roles             | أسماء الأدوار المعرّفة في ClickHouse التي سيُعيَّن المستخدمون إليها    | scientists&#95;role                                           |
+       | base&#95;dn       | المسار الأساسي لبدء البحث عن مجموعات المستخدم                          | dc=example,dc=com                                             |
+       | search&#95;filter | ldap search filter لتحديد المجموعات المطلوب اختيارها لتعيين المستخدمين | `(&(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))` |
+       | attribute         | اسم السمة التي يجب إرجاع القيمة منها                                   | cn                                                            |
+
+    4. أعد تشغيل ClickHouse server لتطبيق الإعدادات.
+  </Step>
+
+  <Step>
+    ## تكوين أدوار قاعدة بيانات ClickHouse وصلاحياتها
+
+    <Note>
+      تفترض الإجراءات الواردة في هذا القسم أن ميزة SQL للتحكم في الوصول وإدارة الحسابات في ClickHouse قد تم تفعيلها. لتفعيلها، راجع [دليل مستخدمي SQL والأدوار](/ar/concepts/features/security/access-rights).
+    </Note>
+
+    1. أنشئ دورًا في ClickHouse بالاسم نفسه المستخدم في قسم تعيين الأدوار في ملف `config.xml`
+       ```sql
+       CREATE ROLE scientists_role;
+       ```
+
+    2. امنح الدور الامتيازات المطلوبة. تمنح التعليمة التالية امتيازات المسؤول لأي مستخدم يمكنه المصادقة عبر LDAP:
+       ```sql
+       GRANT ALL ON *.* TO scientists_role;
+       ```
+  </Step>
+
+  <Step>
+    ## اختبر إعداد LDAP
+
+    1. سجّل الدخول باستخدام عميل ClickHouse
+       ```bash
+       $ clickhouse-client --user einstein --password password
+       ClickHouse client version 22.2.2.1.
+       Connecting to localhost:9000 as user einstein.
+       Connected to ClickHouse server version 22.2.2 revision 54455.
+
+       chnode1 :)
+       ```
+
+    <Note>
+      استخدم الأمر `ldapsearch` في الخطوة 1 لعرض جميع المستخدمين المتاحين في الدليل، وكلمة المرور لجميع المستخدمين هي `password`
+    </Note>
+
+    2. اختبر أن المستخدم تم ربطه بشكل صحيح بالدور `scientists_role` وأن لديه أذونات المسؤول
+
+       ```sql
+       SHOW DATABASES
+       ```
+
+       ```response
+       Query id: 93b785ff-1482-4eda-95b0-b2d68b2c5e0f
+
+       ┌─name───────────────┐
+       │ INFORMATION_SCHEMA │
+       │ db1_mysql          │
+       │ db2                │
+       │ db3                │
+       │ db4_mysql          │
+       │ db5_merge          │
+       │ default            │
+       │ information_schema │
+       │ system             │
+       └────────────────────┘
+
+       9 rows in set. Elapsed: 0.004 sec.
+       ```
+  </Step>
+</Steps>
+
+<div id="summary">
+  ## الملخص
+</div>
+
+استعرضت هذه المقالة أساسيات تهيئة ClickHouse للمصادقة عبر خادم LDAP، وكذلك إسناد دور. كما تتوفر أيضًا خيارات لتهيئة مستخدمين فرديين في ClickHouse بحيث تجري مصادقتهم عبر LDAP من دون تهيئة تعيين الأدوار تلقائيًا. ويمكن أيضًا استخدام وحدة LDAP للاتصال بـ Active Directory.
