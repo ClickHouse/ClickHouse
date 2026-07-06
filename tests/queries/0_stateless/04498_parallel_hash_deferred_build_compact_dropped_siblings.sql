@@ -21,6 +21,12 @@ SET max_threads = 4;
 SET query_plan_join_swap_table = 'false';      -- keep the big table as the build (right) side
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;              -- single-map build path; no distributed read
+-- The peak-memory assertion below must not depend on the storage flavor: on object-storage runs the
+-- default threadpool reader with prefetching adds ~17 MB of query-tracked read buffers on top of the
+-- ~30 MB local-disk peak. Pin the plain remote read path so the buffered-read term stays per-stream.
+SET remote_filesystem_read_method = 'read';
+SET remote_filesystem_read_prefetch = 0;
+SET allow_prefetched_read_pool_for_remote_filesystem = 0;
 
 DROP TABLE IF EXISTS t_compact_build;
 DROP TABLE IF EXISTS t_compact_probe;
@@ -87,13 +93,15 @@ SETTINGS join_algorithm = 'parallel_hash';
 --    blocks stayed out of the sizing.
 -- 2. Its real peak memory respects the byte cap it ran under. Before the fix the row-proportional
 --    charge of the kept per-slot blocks under-counted the pinned source blocks, so the query passed
---    the 32 MB cap while actually peaking at ~61 MiB; with compaction it peaks at ~26 MiB. The 45 MB
---    bound leaves ~20 MB of headroom in both directions.
+--    the 32 MB cap while actually peaking at ~61 MiB; with compaction it peaks at ~26 MiB (~30 MB
+--    query-wide, a few MB more with the pinned remote read path or coverage instrumentation). The
+--    52 MB bound keeps >= 12 MB of margin below the broken ~64 MB level while staying clear of the
+--    fixed peak on every storage/build flavor.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'deferred build engaged',
     countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = count(),
     max(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables']) BETWEEN 1 AND 10000,
-    max(memory_usage) < 45000000
+    max(memory_usage) < 52000000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select'
     AND log_comment = '04498_compact_dropped_siblings';
