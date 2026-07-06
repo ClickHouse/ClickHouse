@@ -428,18 +428,34 @@ if [[ "$EXPORT_S3_STORAGE_POLICIES" == "1" ]]; then
         ln -sf $SRC_PATH/config.d/azure_storage_conf.xml $DEST_SERVER_PATH/config.d/
     fi
 
+    # Randomize the filesystem cache reserve_granularity to get coverage of the reserve-ahead path.
+    reserve_granularity_options=("1Mi" "4Mi" "8Mi")
+    reserve_granularity="${reserve_granularity_options[$((RANDOM % ${#reserve_granularity_options[@]}))]}"
+    echo "Replacing s3_cache reserve_granularity with $reserve_granularity"
+    # Scope the substitution to the <s3_cache> block so it does not touch other caches'
+    # reserve_granularity (e.g. dynamically_resize_filesystem_cache intentionally sets it to 0).
+    reserve_granularity_sed="/<s3_cache>/,/<\/s3_cache>/s|<reserve_granularity>[^<]*</reserve_granularity>|<reserve_granularity>$reserve_granularity</reserve_granularity>|"
+
     if check_clickhouse_version 25.5; then
       ln -sf $SRC_PATH/config.d/storage_conf_02944.xml $DEST_SERVER_PATH/config.d/
     else
       sed "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $SRC_PATH/config.d/storage_conf_02944.xml >$DEST_SERVER_PATH/config.d/storage_conf_02944.xml
     fi
     # storage_conf.xml may carry settings unknown to the previous-release server: strip them by version.
-    # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads in 26.7.
+    # allow_dynamic_cache_resize was added in 25.5; keep_free_space_eviction_threads and
+    # reserve_granularity in 26.7.
     # --remove-destination: an earlier install may have left this path as a symlink to the
     # source; without it cp would follow the link and fail with "same file" under set -e.
     cp --remove-destination $SRC_PATH/config.d/storage_conf.xml $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 25.5 || sed -i "s|<allow_dynamic_cache_resize>1</allow_dynamic_cache_resize>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
     check_clickhouse_version 26.7 || sed -i "s|<keep_free_space_eviction_threads>4</keep_free_space_eviction_threads>||" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    # reserve_granularity was added in 26.7: apply the randomized s3_cache value for new-enough
+    # servers, strip it entirely (unknown setting) for older ones in the upgrade/bugfix checks.
+    if check_clickhouse_version 26.7; then
+        sed -i "$reserve_granularity_sed" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    else
+        sed -i "s|<reserve_granularity>[^<]*</reserve_granularity>||g" $DEST_SERVER_PATH/config.d/storage_conf.xml
+    fi
 
     # Apply `overcommit_eviction_evict_step` randomization only under
     # distributed cache — that is where the overcommit multi-step retry path

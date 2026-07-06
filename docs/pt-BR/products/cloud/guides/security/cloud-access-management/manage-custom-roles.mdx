@@ -1,0 +1,113 @@
+---
+sidebarTitle: 'Gerenciar funções personalizadas'
+slug: /cloud/guides/security/manage-custom-roles
+title: 'Gerenciar funções personalizadas'
+description: 'Esta página descreve como os administradores podem adicionar, modificar e remover funções personalizadas'
+doc_type: 'guide'
+keywords: ['funções personalizadas', 'segurança', 'permissões']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Este guia é destinado a usuários com a Função Admin no ClickHouse Cloud.
+
+Os clientes do ClickHouse Cloud podem selecionar funções de sistema predefinidas ou criar funções personalizadas para atribuir aos usuários. Para mais informações sobre as funções de sistema e as permissões associadas, consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles). Este guia fornece detalhes sobre como gerenciar funções personalizadas.
+
+<div id="create-custom-role">
+  ## Criar funções personalizadas
+</div>
+
+As funções personalizadas podem incluir uma combinação de permissões de organização, serviço e banco de dados. As permissões podem ser aplicadas a todos os serviços e bancos de dados ou a um subconjunto deles.
+
+<Steps>
+  <Step>
+    ### Acesse as configurações da organização e selecione `Users and roles`
+
+    Na página de serviços, selecione o nome da sua organização. No menu pop-up, selecione o item de menu `Users and roles`.
+
+    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Selecione a aba `Roles`
+
+    Selecione a aba `Roles` na parte superior central da tela.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Selecione `Create new role` no canto superior direito
+
+    Selecione o botão `Create new role` no canto superior direito da tela.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Dê um nome à função
+
+    Digite um nome descritivo para a função. Esse será o nome exibido ao atribuir funções a usuários e chaves de API.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Clique em `Allow` e selecione o escopo da permissão
+
+    Clique no botão `Allow` e selecione permissões de organização, serviço e/ou banco de dados. Para ver a descrição de todas as permissões, consulte [Console roles and permissions](/pt-BR/products/cloud/reference/security/console-roles).
+
+    <Tip>
+      Certifique-se de que os usuários que farão login no Console tenham, no mínimo, a permissão Organization &gt; Access organization.
+    </Tip>
+
+    <Info>
+      **Acesso à aba Data Sources**
+
+      Para acessar a aba **Data Sources**, no momento a função exige a permissão `Manage and Delete Selected Services`.
+    </Info>
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Revise sua nova função
+
+    Revise as permissões atribuídas à sua nova função antes de concluir. Clique em `Create role` quando terminar.
+
+    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+  </Step>
+</Steps>
+
+<div id="update-custom-role">
+  ## Atualizar funções personalizadas
+</div>
+
+As funções personalizadas podem ser atualizadas após serem criadas. Os usuários perderão todas as permissões removidas da função e receberão todas as permissões adicionadas.
+
+<Tip>
+  As permissões do usuário são aditivas. Se um usuário tiver permissão para executar uma operação por meio de várias funções, talvez não perca o acesso imediatamente se a permissão for removida de apenas uma função.
+</Tip>
+
+1. Acesse as configurações da organização e selecione `Users and roles`
+2. Selecione a aba `Roles`
+3. Selecione os três pontos ao lado da função que você quer atualizar
+4. Selecione `Edit`
+5. Modifique as permissões
+6. Selecione `Edit role`
+
+<div id="delete-custom-role">
+  ## Excluir funções personalizadas
+</div>
+
+As funções personalizadas podem ser excluídas a qualquer momento.
+
+<Warning>
+  É necessário ter pelo menos um usuário na organização com permissões administrativas. Se a exclusão da função remover as permissões administrativas do último usuário, você não poderá excluí-la. Para resolver isso, atribua a pelo menos um usuário a função de sistema Admin antes de excluir a função personalizada.
+</Warning>
+
+1. Acesse as configurações da organização e selecione `Users and roles`
+2. Selecione a guia `Roles`
+3. Selecione os três pontos ao lado da função que você deseja excluir
+4. Revise os usuários e as chaves de API que perderão acesso quando a função for removida. Ajuste as atribuições conforme necessário.
+5. Selecione `Delete role` para concluir o processo

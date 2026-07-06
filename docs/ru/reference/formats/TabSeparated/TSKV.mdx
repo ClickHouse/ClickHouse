@@ -1,0 +1,133 @@
+---
+alias: []
+description: 'Документация по формату TSKV'
+input_format: true
+keywords: ['TSKV']
+output_format: true
+slug: /interfaces/formats/TSKV
+title: 'TSKV'
+doc_type: 'reference'
+---
+
+| Ввод | Вывод | Алиас |
+| ---- | ----- | ----- |
+| ✔    | ✔     |       |
+
+<div id="description">
+  ## Описание
+</div>
+
+Аналогично формату [`TabSeparated`](/ru/reference/formats/TabSeparated/TabSeparated), но выводит значение в формате `name=value`.
+Имена экранируются так же, как и в формате [`TabSeparated`](/ru/reference/formats/TabSeparated/TabSeparated), при этом символ `=` тоже экранируется.
+
+```text
+SearchPhrase=   count()=8267016
+SearchPhrase=bathroom interior design    count()=2166
+SearchPhrase=clickhouse     count()=1655
+SearchPhrase=2014 spring fashion    count()=1549
+SearchPhrase=freeform photos       count()=1480
+SearchPhrase=angelina jolie    count()=1245
+SearchPhrase=omsk       count()=1112
+SearchPhrase=photos of dog breeds    count()=1091
+SearchPhrase=curtain designs        count()=1064
+SearchPhrase=baku       count()=1000
+```
+
+```sql title="Query"
+SELECT * FROM t_null FORMAT TSKV
+```
+
+```text title="Response"
+x=1    y=\N
+```
+
+<Note>
+  При большом количестве небольших столбцов этот формат неэффективен, и обычно нет смысла его использовать.
+  Тем не менее, по эффективности он не уступает формату [`JSONEachRow`](/ru/reference/formats/JSON/JSONEachRow).
+</Note>
+
+При парсинге поддерживается любой порядок значений в разных столбцах.
+Некоторые значения можно опускать, так как они считаются равными значениям по умолчанию.
+В этом случае в качестве значений по умолчанию используются нули и пустые строки.
+Сложные значения, которые можно было бы указать в таблице, в качестве значений по умолчанию не поддерживаются.
+
+При парсинге также допускается добавление дополнительного поля `tskv` без знака равенства и без значения. Это поле игнорируется.
+
+Во время импорта столбцы с неизвестными именами будут пропущены,
+если для настройки [`input_format_skip_unknown_fields`](/ru/reference/settings/formats#input_format_skip_unknown_fields) установлено значение `1`.
+
+[NULL](/ru/reference/syntax) записывается как `\N`.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="inserting-data">
+  ### Вставка данных
+</div>
+
+Используя следующий файл tskv с именем `football.tskv`:
+
+```tsv
+date=2022-04-30 season=2021     home_team=Sutton United away_team=Bradford City home_team_goals=1       away_team_goals=4
+date=2022-04-30 season=2021     home_team=Swindon Town  away_team=Barrow        home_team_goals=2       away_team_goals=1
+date=2022-04-30 season=2021     home_team=Tranmere Rovers       away_team=Oldham Athletic       home_team_goals=2       away_team_goals=0
+date=2022-05-02 season=2021     home_team=Port Vale     away_team=Newport County        home_team_goals=1       away_team_goals=2
+date=2022-05-02 season=2021     home_team=Salford City  away_team=Mansfield Town        home_team_goals=2       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Barrow        away_team=Northampton Town      home_team_goals=1       away_team_goals=3
+date=2022-05-07 season=2021     home_team=Bradford City away_team=Carlisle United       home_team_goals=2       away_team_goals=0
+date=2022-05-07 season=2021     home_team=Bristol Rovers        away_team=Scunthorpe United     home_team_goals=7       away_team_goals=0
+date=2022-05-07 season=2021     home_team=Exeter City   away_team=Port Vale     home_team_goals=0       away_team_goals=1
+date=2022-05-07 season=2021     home_team=Harrogate Town A.F.C. away_team=Sutton United home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Hartlepool United     away_team=Colchester United     home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Leyton Orient away_team=Tranmere Rovers       home_team_goals=0       away_team_goals=1
+date=2022-05-07 season=2021     home_team=Mansfield Town        away_team=Forest Green Rovers   home_team_goals=2       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Newport County        away_team=Rochdale      home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Oldham Athletic       away_team=Crawley Town  home_team_goals=3       away_team_goals=3
+date=2022-05-07 season=2021     home_team=Stevenage Borough     away_team=Salford City  home_team_goals=4       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Walsall       away_team=Swindon Town  home_team_goals=0       away_team_goals=3
+```
+
+Выполните вставку данных:
+
+```sql
+INSERT INTO football FROM INFILE 'football.tskv' FORMAT TSKV;
+```
+
+<div id="reading-data">
+  ### Чтение данных
+</div>
+
+Прочитайте данные в формате `TSKV`:
+
+```sql
+SELECT *
+FROM football
+FORMAT TSKV
+```
+
+Вывод будет в формате с табуляцией в качестве разделителя и двумя строками заголовка с именами столбцов и типами:
+
+```tsv
+date=2022-04-30 season=2021     home_team=Sutton United away_team=Bradford City home_team_goals=1       away_team_goals=4
+date=2022-04-30 season=2021     home_team=Swindon Town  away_team=Barrow        home_team_goals=2       away_team_goals=1
+date=2022-04-30 season=2021     home_team=Tranmere Rovers       away_team=Oldham Athletic       home_team_goals=2       away_team_goals=0
+date=2022-05-02 season=2021     home_team=Port Vale     away_team=Newport County        home_team_goals=1       away_team_goals=2
+date=2022-05-02 season=2021     home_team=Salford City  away_team=Mansfield Town        home_team_goals=2       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Barrow        away_team=Northampton Town      home_team_goals=1       away_team_goals=3
+date=2022-05-07 season=2021     home_team=Bradford City away_team=Carlisle United       home_team_goals=2       away_team_goals=0
+date=2022-05-07 season=2021     home_team=Bristol Rovers        away_team=Scunthorpe United     home_team_goals=7       away_team_goals=0
+date=2022-05-07 season=2021     home_team=Exeter City   away_team=Port Vale     home_team_goals=0       away_team_goals=1
+date=2022-05-07 season=2021     home_team=Harrogate Town A.F.C. away_team=Sutton United home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Hartlepool United     away_team=Colchester United     home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Leyton Orient away_team=Tranmere Rovers       home_team_goals=0       away_team_goals=1
+date=2022-05-07 season=2021     home_team=Mansfield Town        away_team=Forest Green Rovers   home_team_goals=2       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Newport County        away_team=Rochdale      home_team_goals=0       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Oldham Athletic       away_team=Crawley Town  home_team_goals=3       away_team_goals=3
+date=2022-05-07 season=2021     home_team=Stevenage Borough     away_team=Salford City  home_team_goals=4       away_team_goals=2
+date=2022-05-07 season=2021     home_team=Walsall       away_team=Swindon Town  home_team_goals=0       away_team_goals=3
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

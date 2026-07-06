@@ -1,0 +1,257 @@
+---
+description: 'Guide d’utilisation et de configuration de la fonctionnalité de cache des requêtes dans ClickHouse'
+sidebarTitle: 'Cache des requêtes'
+slug: /operations/query-cache
+title: 'Cache des requêtes'
+doc_type: 'guide'
+---
+
+Le cache des requêtes permet de calculer les requêtes `SELECT` une seule fois, puis de servir les exécutions suivantes de la même requête directement depuis le cache.
+Selon le type de requêtes, cela peut réduire considérablement la latence et la consommation de ressources du serveur ClickHouse.
+
+<div id="background-design-and-limitations">
+  ## Contexte, conception et limites
+</div>
+
+Les caches de requêtes peuvent généralement être considérés comme cohérents ou incohérents sur le plan transactionnel.
+
+* Dans les caches transactionnellement cohérents, la base de données invalide (écarte) les résultats de requête mis en cache si le résultat de la requête `SELECT` change
+  ou est susceptible de changer. Dans ClickHouse, les opérations qui modifient les données incluent les insertions/mises à jour/suppressions dans les tables ou les merges
+  avec collapsing. La mise en cache transactionnellement cohérente est particulièrement adaptée aux bases de données OLTP, par exemple
+  [MySQL](https://dev.mysql.com/doc/refman/5.6/en/query-cache.html) (qui a supprimé le cache de requêtes après la version 8.0) et
+  [Oracle](https://docs.oracle.com/database/121/TGDBA/tune_result_cache.htm).
+* Dans les caches transactionnellement incohérents, de légères imprécisions dans les résultats de requête sont acceptées, en partant du principe que toutes les entrées de cache se voient
+  attribuer une période de validité après laquelle elles expirent (par ex. 1 minute) et que les données sous-jacentes évoluent peu pendant cette période.
+  Cette approche est globalement plus adaptée aux bases de données OLAP. Comme exemple où une mise en cache transactionnellement incohérente est suffisante,
+  prenons un rapport de ventes horaire dans un outil de reporting consulté simultanément par plusieurs utilisateurs. Les données de ventes changent généralement
+  assez lentement pour que la base de données n’ait besoin de calculer le rapport qu’une seule fois (ce que représente la première requête `SELECT`). Les requêtes suivantes peuvent ensuite être
+  renvoyées directement depuis le cache de requêtes. Dans cet exemple, une période de validité raisonnable pourrait être de 30 min.
+
+La mise en cache transactionnellement incohérente est traditionnellement fournie par des outils clients ou des paquets proxy (par ex.
+[chproxy](https://www.chproxy.org/configuration/caching/)) qui interagissent avec la base de données. Par conséquent, la même logique de mise en cache et la même
+configuration sont souvent dupliquées. Avec le cache de requêtes de ClickHouse, la logique de mise en cache est déplacée côté serveur. Cela réduit les efforts de maintenance
+et évite les redondances.
+
+<div id="configuration-settings-and-usage">
+  ## Paramètres de configuration et utilisation
+</div>
+
+<Note>
+  Dans ClickHouse Cloud, vous devez utiliser les [paramètres au niveau de la requête](/fr/concepts/features/configuration/settings/settings-query-level) pour modifier les paramètres du cache de requêtes. La modification des [paramètres au niveau de la configuration](/fr/concepts/features/configuration/server-config/configuration-files) n&#39;est actuellement pas prise en charge.
+</Note>
+
+<Note>
+  [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) n&#39;exécute qu&#39;une seule requête à la fois. Comme la mise en cache des résultats de requête n&#39;a pas de sens dans ce cas, le cache des résultats de requête
+  est désactivé dans clickhouse-local.
+</Note>
+
+Le paramètre [use&#95;query&#95;cache](/fr/reference/settings/session-settings#use_query_cache) permet de contrôler si une requête donnée ou toutes les requêtes de la
+session en cours doivent utiliser le cache de requêtes. Par exemple, la première exécution de la requête
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true;
+```
+
+stockera le résultat de la requête dans le cache de requêtes. Les exécutions suivantes de la même requête (également avec le paramètre `use_query_cache = true`) liront
+le résultat calculé depuis le cache et le renverront immédiatement.
+
+<Note>
+  Le paramètre `use_query_cache` et tous les autres paramètres liés au cache de requêtes ne prennent effet que pour des instructions `SELECT` autonomes. En particulier,
+  les résultats des `SELECT` sur des vues créées par `CREATE VIEW AS SELECT [...] SETTINGS use_query_cache = true` ne sont pas mis en cache, sauf si l’instruction `SELECT`
+  est exécutée avec `SETTINGS use_query_cache = true`.
+</Note>
+
+La manière dont le cache est utilisé peut être configurée plus finement à l’aide des paramètres [enable&#95;writes&#95;to&#95;query&#95;cache](/fr/reference/settings/session-settings#enable_writes_to_query_cache)
+et [enable&#95;reads&#95;from&#95;query&#95;cache](/fr/reference/settings/session-settings#enable_reads_from_query_cache) (tous deux à `true` par défaut). Le premier paramètre
+contrôle si les résultats des requêtes sont stockés dans le cache, tandis que le second détermine si la base de données doit tenter de récupérer les résultats des requêtes
+depuis le cache. Par exemple, la requête suivante n’utilisera le cache que passivement, c’est-à-dire qu’elle tentera d’y lire sans y stocker son
+résultat :
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, enable_writes_to_query_cache = false;
+```
+
+Pour un contrôle maximal, il est généralement recommandé de n’utiliser les paramètres `use_query_cache`, `enable_writes_to_query_cache` et
+`enable_reads_from_query_cache` qu’avec des requêtes spécifiques. Il est également possible d’activer la mise en cache au niveau de l’utilisateur ou du profil (par ex. via `SET
+use_query_cache = true`), mais il faut garder à l’esprit que toutes les requêtes `SELECT` peuvent alors renvoyer des résultats en cache.
+
+Le cache de requêtes peut être vidé à l’aide de l’instruction `SYSTEM CLEAR QUERY CACHE`. Le contenu du cache de requêtes est affiché dans la table système
+[system.query&#95;cache](/fr/reference/system-tables/query_cache). Le nombre de succès et d’échecs du cache de requêtes depuis le démarrage de la base de données est affiché sous forme d’événements
+&quot;QueryCacheHits&quot; et &quot;QueryCacheMisses&quot; dans la table système [system.events](/fr/reference/system-tables/events). Ces deux compteurs ne sont mis à jour que pour les
+requêtes `SELECT` exécutées avec le paramètre `use_query_cache = true` ; les autres requêtes n’affectent pas &quot;QueryCacheMisses&quot;. Le champ `query_cache_usage`
+dans la table système [system.query&#95;log](/fr/reference/system-tables/query_log) indique, pour chaque requête exécutée, si le résultat de la requête a été écrit dans le cache de requêtes ou
+lu depuis celui-ci. Les métriques `QueryCacheEntries` et `QueryCacheBytes` dans la table système
+[system.metrics](/fr/reference/system-tables/metrics) indiquent combien d’entrées / d’octets le cache de requêtes contient actuellement.
+
+Le cache de requêtes existe en un seul exemplaire par processus serveur ClickHouse. Cependant, les résultats en cache ne sont, par défaut, pas partagés entre les utilisateurs. Cela peut être
+modifié (voir ci-dessous), mais ce n’est pas recommandé pour des raisons de sécurité.
+
+Les résultats de requête sont référencés dans le cache de requêtes par l’[Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) de
+la requête. Cela signifie que la mise en cache est insensible à la casse ; par exemple, `SELECT 1` et `select 1` sont traités comme une seule et même requête. Pour
+rendre la correspondance plus naturelle, tous les paramètres au niveau de la requête liés au cache de requêtes et au [formatage de sortie](/fr/reference/settings/formats))
+sont supprimés de l’AST.
+
+Si la requête a été interrompue en raison d’une exception ou annulée par l’utilisateur, aucune entrée n’est écrite dans le cache de requêtes.
+
+La taille du cache de requêtes en octets, le nombre maximal d’entrées de cache et la taille maximale des entrées individuelles (en octets et en
+enregistrements) peuvent être configurés à l’aide de différentes [options de configuration du serveur](/fr/reference/settings/server-settings/settings#query_cache).
+
+```xml
+<query_cache>
+    <max_size_in_bytes>1073741824</max_size_in_bytes>
+    <max_entries>1024</max_entries>
+    <max_entry_size_in_bytes>1048576</max_entry_size_in_bytes>
+    <max_entry_size_in_rows>30000000</max_entry_size_in_rows>
+</query_cache>
+```
+
+Il est également possible de limiter l’utilisation du cache pour chaque utilisateur à l’aide des [profils de paramètres](/fr/concepts/features/configuration/settings/settings-profiles) et des [contraintes
+sur les paramètres](/fr/concepts/features/configuration/settings/constraints-on-settings). Plus précisément, vous pouvez restreindre la quantité maximale de mémoire (en octets) qu’un utilisateur peut
+allouer au cache des requêtes ainsi que le nombre maximal de résultats de requête stockés. Pour cela, définissez d’abord les paramètres
+[query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/fr/reference/settings/session-settings#query_cache_max_size_in_bytes) et
+[query&#95;cache&#95;max&#95;entries](/fr/reference/settings/session-settings#query_cache_max_entries) dans un profil utilisateur dans `users.xml`, puis rendez les deux paramètres
+readonly:
+
+```xml
+<profiles>
+    <default>
+        <!-- The maximum cache size in bytes for user/profile 'default' -->
+        <query_cache_max_size_in_bytes>10000</query_cache_max_size_in_bytes>
+        <!-- The maximum number of SELECT query results stored in the cache for user/profile 'default' -->
+        <query_cache_max_entries>100</query_cache_max_entries>
+        <!-- Make both settings read-only so the user cannot change them -->
+        <constraints>
+            <query_cache_max_size_in_bytes>
+                <readonly/>
+            </query_cache_max_size_in_bytes>
+            <query_cache_max_entries>
+                <readonly/>
+            <query_cache_max_entries>
+        </constraints>
+    </default>
+</profiles>
+```
+
+Pour définir la durée minimale pendant laquelle une requête doit s’exécuter pour que son résultat puisse être mis en cache, vous pouvez utiliser le paramètre
+[query&#95;cache&#95;min&#95;query&#95;duration](/fr/reference/settings/session-settings#query_cache_min_query_duration). Par exemple, le résultat de la requête
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
+```
+
+n&#39;est mis en cache que si la requête s&#39;exécute pendant plus de 5 secondes. Il est également possible de spécifier à quelle fréquence une requête doit s&#39;exécuter pour que son résultat soit
+mis en cache — pour cela, utilisez le paramètre [query&#95;cache&#95;min&#95;query&#95;runs](/fr/reference/settings/session-settings#query_cache_min_query_runs).
+
+Les entrées du cache de requêtes deviennent obsolètes après une certaine période (time-to-live). Par défaut, cette période est de 60 secondes, mais une autre
+valeur peut être spécifiée au niveau de la session, du profil ou de la requête à l&#39;aide du paramètre [query&#95;cache&#95;ttl](/fr/reference/settings/session-settings#query_cache_ttl). Le cache de
+requêtes évince les entrées de manière &quot;paresseuse&quot;, c.-à-d. que lorsqu&#39;une entrée devient obsolète, elle n&#39;est pas immédiatement supprimée du cache. Au lieu de cela, lorsqu&#39;une nouvelle entrée
+doit être insérée dans le cache de requêtes, la base de données vérifie si le cache dispose de suffisamment d&#39;espace libre pour la nouvelle entrée. Si ce n&#39;est pas le
+cas, la base de données essaie de supprimer toutes les entrées obsolètes. Si le cache ne dispose toujours pas d&#39;assez d&#39;espace libre, la nouvelle entrée n&#39;est pas insérée.
+
+Si la requête est exécutée via HTTP, alors ClickHouse définit les en-têtes `Age` et `Expires` avec l&#39;âge (en secondes) et l&#39;horodatage d&#39;expiration de l&#39;entrée
+mise en cache.
+
+Les entrées du cache de requêtes sont compressées par défaut. Cela réduit la consommation globale de mémoire au prix d&#39;écritures plus lentes dans / de lectures plus lentes
+depuis le cache de requêtes. Pour désactiver la compression, utilisez le paramètre [query&#95;cache&#95;compress&#95;entries](/fr/reference/settings/session-settings#query_cache_compress_entries).
+
+Il est parfois utile de conserver en cache plusieurs résultats pour la même requête. Cela peut être réalisé à l&#39;aide du paramètre
+[query&#95;cache&#95;tag](/fr/reference/settings/session-settings#query_cache_tag), qui agit comme une étiquette (ou un espace de noms) pour les entrées du cache de requêtes. Le cache de requêtes
+considère comme différents les résultats de la même requête avec des tags différents.
+
+Exemple de création de trois entrées différentes dans le cache de requêtes pour la même requête :
+
+```sql
+SELECT 1 SETTINGS use_query_cache = true; -- query_cache_tag is implicitly '' (empty string)
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 1';
+SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
+```
+
+Pour supprimer uniquement les entrées portant le tag `tag` du cache de requêtes, vous pouvez utiliser l’instruction `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
+
+<div id="subquery-caching">
+  ## Mise en cache des sous-requêtes
+</div>
+
+Par défaut, `use_query_cache` dans la requête externe n&#39;est pas appliqué aux sous-requêtes. Cela signifie que chaque sous-requête doit activer explicitement la mise en cache :
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = true)
+WHERE number > 500;
+```
+
+Dans cet exemple, seul le résultat de la sous-requête interne est mis en cache. La requête externe ne l’est pas.
+
+Pour activer en une seule fois la mise en cache de toutes les sous-requêtes, utilisez le paramètre `query_cache_for_subqueries` :
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+Pour désactiver explicitement la mise en cache pour une sous-requête spécifique lorsque la propagation globale est activée, définissez `use_query_cache = false` pour cette sous-requête :
+
+```sql
+SELECT *
+FROM (SELECT number FROM system.numbers LIMIT 1000 SETTINGS use_query_cache = false)
+WHERE number > 500
+SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
+```
+
+Les entrées du cache de sous-requête sont visibles dans [system.query&#95;cache](/fr/reference/system-tables/query_cache) avec `is_subquery = 1`. Le paramètre `query_cache_ttl` s&#39;applique également aux entrées du cache de sous-requête et peut être défini pour chaque sous-requête.
+
+ClickHouse lit les données des tables en blocs de [max&#95;block&#95;size](/fr/reference/settings/session-settings#max_block_size) lignes. En raison du filtrage, de l&#39;agrégation,
+etc., les blocs de résultat sont généralement bien plus petits que &#39;max&#95;block&#95;size&#39;, mais dans certains cas, ils peuvent aussi être bien plus grands. Le paramètre
+[query&#95;cache&#95;squash&#95;partial&#95;results](/fr/reference/settings/session-settings#query_cache_squash_partial_results) (activé par défaut) détermine si les blocs de résultat
+sont fusionnés (s&#39;ils sont très petits) ou divisés (s&#39;ils sont volumineux) en blocs de taille &#39;max&#95;block&#95;size&#39; avant leur insertion dans le cache de résultat de la requête.
+Cela réduit les performances d&#39;écriture dans le cache de requêtes, mais améliore le taux de compression des entrées du cache et offre une
+granularité de blocs plus naturelle lorsque les résultats des requêtes sont ensuite servis depuis le cache de requêtes.
+
+Par conséquent, le cache de requêtes stocke pour chaque requête plusieurs
+blocs de résultat partiels. Bien que ce comportement constitue un bon choix par défaut, il peut être désactivé à l&#39;aide du paramètre
+[query&#95;cache&#95;squash&#95;partial&#95;results](/fr/reference/settings/session-settings#query_cache_squash_partial_results).
+
+De plus, les résultats des requêtes contenant des fonctions non déterministes ne sont pas mis en cache par défaut. Ces fonctions incluent
+
+* les fonctions d&#39;accès aux Dictionaries : [`dictGet()`](/fr/reference/functions/regular-functions/ext-dict-functions), etc.
+* les [User-Defined Functions](/fr/reference/statements/create/function) sans la balise `<deterministic>true</deterministic>` dans leur définition
+  XML,
+* les fonctions qui renvoient la date ou l&#39;heure actuelles : [`now()`](/fr/reference/functions/regular-functions/date-time-functions#now),
+  [`today()`](/fr/reference/functions/regular-functions/date-time-functions#today),
+  [`yesterday()`](/fr/reference/functions/regular-functions/date-time-functions#yesterday), etc.,
+* les fonctions dont le résultat dépend de la taille et de l&#39;ordre des chunks internes utilisés pour le traitement des requêtes :
+  [`nowInBlock()`](/fr/reference/functions/regular-functions/date-time-functions#nowInBlock), etc.,
+  [`rowNumberInBlock()`](/fr/reference/functions/regular-functions/other-functions#rowNumberInBlock),
+  [`runningDifference()`](/fr/reference/functions/regular-functions/other-functions#runningDifference),
+  [`blockSize()`](/fr/reference/functions/regular-functions/other-functions#blockSize), etc.,
+* les fonctions qui renvoient des valeurs aléatoires : [`randomString()`](/fr/reference/functions/regular-functions/random-functions#randomString),
+  [`fuzzBits()`](/fr/reference/functions/regular-functions/random-functions#fuzzBits), etc.,
+* les fonctions qui dépendent de l&#39;environnement : [`currentUser()`](/fr/reference/functions/regular-functions/other-functions#currentUser),
+  [`queryID()`](/fr/reference/functions/regular-functions/other-functions#queryID),
+  [`getMacro()`](/fr/reference/functions/regular-functions/other-functions#getMacro), etc.
+
+Pour forcer malgré tout la mise en cache des résultats des requêtes contenant des fonctions non déterministes, utilisez le paramètre
+[query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/fr/reference/settings/session-settings#query_cache_nondeterministic_function_handling).
+
+Les résultats des requêtes qui impliquent des tables système (par ex. [system.processes](/fr/reference/system-tables/processes)&#96; ou
+[information&#95;schema.tables](/fr/reference/system-tables/information_schema)) ne sont pas mis en cache par défaut. Pour forcer malgré tout la mise en cache des résultats des requêtes avec
+des tables système, utilisez le paramètre [query&#95;cache&#95;system&#95;table&#95;handling](/fr/reference/settings/session-settings#query_cache_system_table_handling).
+
+Enfin, les entrées du cache de requêtes ne sont pas partagées entre les utilisateurs pour des raisons de sécurité. Par exemple, l’utilisateur A ne doit pas pouvoir contourner une
+ROW POLICY sur une table en exécutant la même requête qu’un autre utilisateur B, pour lequel aucune telle règle n’existe. Cependant, si nécessaire, les entrées du cache peuvent
+être rendues accessibles à d’autres utilisateurs (c’est-à-dire partagées) en spécifiant le paramètre
+[query&#95;cache&#95;share&#95;between&#95;users](/fr/reference/settings/session-settings#query_cache_share_between_users).
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Présentation du cache de requêtes de ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

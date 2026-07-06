@@ -1,0 +1,68 @@
+---
+description: '지정된 클러스터의 여러 노드를 사용해 Azure Blob Storage의 파일을 병렬로 처리할 수 있습니다.'
+sidebarTitle: 'azureBlobStorageCluster'
+slug: /sql-reference/table-functions/azureBlobStorageCluster
+title: 'azureBlobStorageCluster'
+doc_type: 'reference'
+---
+
+지정된 클러스터의 여러 노드를 사용해 [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs)의 파일을 병렬로 처리할 수 있습니다. initiator 노드에서는 클러스터의 모든 노드에 대한 연결을 생성하고, S3 파일 경로의 별표(*)를 확장한 뒤 각 파일을 동적으로 분배합니다. worker 노드에서는 처리할 다음 작업을 initiator에 요청해 처리합니다. 이 과정은 모든 작업이 완료될 때까지 반복됩니다.
+이 테이블 함수는 [s3Cluster function](/ko/reference/functions/table-functions/s3Cluster)과 유사합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+| 인수                  | 설명                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`      | 원격 및 로컬 server의 주소 집합과 연결 매개변수를 구성하는 데 사용되는 클러스터의 이름입니다.                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `connection_string` | storage&#95;account&#95;url&#96; — connection&#95;string에는 계정 이름과 키가 포함됩니다([connection string 만들기](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)). 또는 여기에서 스토리지 계정 URL을 제공하고, 계정 이름과 계정 키를 별도의 매개변수로 제공할 수도 있습니다(account&#95;name 및 account&#95;key 매개변수 참조). |
+| `container_name`    | Container 이름                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `blobpath`          | 파일 경로입니다. readonly 모드에서는 다음 wildcards를 지원합니다: `*`, `**`, `?`, `{abc,def}` 및 `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다.                                                                                                                                                                                                                                                                                                                                      |
+| `account_name`      | storage&#95;account&#95;url을 사용하는 경우 여기에서 계정 이름을 지정할 수 있습니다                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `account_key`       | storage&#95;account&#95;url을 사용하는 경우 여기에서 계정 키를 지정할 수 있습니다                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `format`            | 파일의 [포맷](/ko/reference/formats/index)입니다.                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `compression`       | 지원되는 값: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다. (`auto`로 설정한 것과 같습니다.)                                                                                                                                                                                                                                                                                                                                                  |
+| `structure`         | 테이블 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.                                                                                                                                                                                                                                                                                                                                                                                        |
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 파일의 데이터를 읽거나 쓰기 위한 지정된 구조의 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+[AzureBlobStorage](/ko/reference/engines/table-engines/integrations/azureBlobStorage) 테이블 엔진과 마찬가지로, 로컬에서 Azure Storage를 개발할 때 Azurite 에뮬레이터를 사용할 수 있습니다. 자세한 내용은 [여기](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage)에서 확인하십시오. 아래에서는 Azurite가 호스트명 `azurite1`에서 사용 가능하다고 가정합니다.
+
+`cluster_simple` 클러스터의 모든 노드를 사용하여 파일 `test_cluster_*.csv`의 개수를 조회합니다:
+
+```sql
+SELECT count(*) FROM azureBlobStorageCluster(
+        'cluster_simple', 'http://azurite1:10000/devstoreaccount1', 'testcontainer', 'test_cluster_count.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
+        'auto', 'key UInt64')
+```
+
+<div id="using-shared-access-signatures-sas-sas-tokens">
+  ## 공유 액세스 서명(SAS) 사용
+</div>
+
+예시는 [azureBlobStorage](/ko/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens)를 참고하십시오.
+
+<div id="related">
+  ## 관련
+</div>
+
+* [AzureBlobStorage 엔진](/ko/reference/engines/table-engines/integrations/azureBlobStorage)
+* [azureBlobStorage 테이블 함수](/ko/reference/functions/table-functions/azureBlobStorage)

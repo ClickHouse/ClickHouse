@@ -1,0 +1,284 @@
+---
+description: 'ClickHouse Cloud의 고급 대시보드'
+keywords: ['모니터링', '관측성', '고급 대시보드', '대시보드', '관측성
+    대시보드']
+sidebarTitle: '고급 대시보드'
+slug: /cloud/manage/monitor/advanced-dashboard
+title: 'ClickHouse Cloud의 고급 대시보드'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+운영 환경에서 데이터베이스 시스템을 모니터링하는 일은 배포 상태를 파악하고 장애를 예방하거나 해결하는 데 매우 중요합니다.
+
+Advanced dashboard는 ClickHouse 시스템과 해당 환경을 깊이 있게 파악할 수 있도록 설계된 경량 도구로, 성능 병목, 시스템 장애, 비효율에 선제적으로 대응하는 데 도움이 됩니다.
+
+Advanced dashboard는 ClickHouse OSS(오픈 소스 소프트웨어)와
+Cloud에서 모두 사용할 수 있습니다. 이 문서에서는
+Cloud에서 Advanced dashboard를 사용하는 방법을 설명합니다.
+
+<div id="accessing-the-advanced-dashboard">
+  ## 고급 대시보드에 액세스하기
+</div>
+
+다음 경로로 이동하면 고급 대시보드에 액세스할 수 있습니다.
+
+* 왼쪽 패널
+  * `Monitoring` → `Advanced dashboard`
+
+<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="고급 대시보드" />
+
+<div id="accessing-the-native-advanced-dashboard">
+  ## 네이티브 고급 대시보드에 액세스하기
+</div>
+
+네이티브 고급 대시보드는 다음 경로로 이동하여 액세스할 수 있습니다.
+
+* 왼쪽 패널
+  * `Monitoring` → `Advanced dashboard`
+  * `You can still access the native advanced dashboard.`를 클릭합니다
+
+그러면 네이티브 고급 대시보드가 새 탭에서 열립니다. 대시보드에 액세스하려면 인증해야 합니다.
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="고급 대시보드" />
+
+각 시각화는 해당 내용을 채우는 SQL 쿼리와 연결되어 있습니다. 펜 아이콘을 클릭하면 이 쿼리를 편집할 수 있습니다.
+
+<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="고급 대시보드" />
+
+<div id="out-of-box-visualizations">
+  ## 기본 제공 시각화
+</div>
+
+Advanced Dashboard의 기본 차트는 ClickHouse 시스템 상태를 실시간으로
+파악할 수 있도록 설계되었습니다. 아래에는 각 차트에 대한 설명이 포함된
+목록이 있습니다. 차트는 쉽게 탐색할 수 있도록 세 가지 범주로 나뉘어 있습니다.
+
+<div id="clickhouse-specific">
+  ### ClickHouse 전용
+</div>
+
+이 메트릭은 ClickHouse 인스턴스의 상태와 성능을 모니터링할 수 있도록 설계되었습니다.
+
+| Metric            | Description                                                 |
+| ----------------- | ----------------------------------------------------------- |
+| 초당 쿼리 수           | 처리되는 쿼리의 속도를 추적합니다                                          |
+| 초당 읽은 행 수         | 쿼리가 읽는 행 수를 나타냅니다                                           |
+| 초당 삽입된 행 수        | 데이터 수집 속도를 측정합니다                                            |
+| 전체 MergeTree 파트 수 | MergeTree 테이블의 활성 파트 수를 보여주며, 배치 처리되지 않은 삽입을 식별하는 데 도움이 됩니다 |
+| 파티션별 최대 파트 수      | 파티션 중 최대 파트 수를 보여줍니다                                        |
+| 실행 중인 쿼리 수        | 현재 실행 중인 쿼리 수를 표시합니다                                        |
+| 초당 읽은 바이트 수       | 쿼리가 읽는 데이터 양을 나타냅니다                                         |
+
+<div id="system-health-specific">
+  ### 시스템 상태 관련
+</div>
+
+기반 시스템을 모니터링하는 일도 ClickHouse 자체를 살펴보는 것만큼 중요합니다.
+
+| Metric                    | Description                           |
+| ------------------------- | ------------------------------------- |
+| IO Wait                   | I/O 대기 시간을 추적합니다                      |
+| CPU Wait                  | CPU 리소스 경합으로 발생하는 지연을 측정합니다           |
+| Read From Disk            | 디스크 또는 블록 디바이스에서 읽은 바이트 수를 추적합니다      |
+| Read From Filesystem      | 페이지 캐시를 포함해 파일 시스템에서 읽은 바이트 수를 추적합니다  |
+| Memory (tracked, bytes)   | ClickHouse가 추적하는 프로세스의 메모리 사용량을 보여줍니다 |
+| Load Average (15 minutes) | 시스템의 현재 15분 평균 부하를 나타냅니다              |
+| OS CPU Usage (Userspace)  | 사용자 공간 코드 실행에 사용된 CPU 사용량입니다          |
+| OS CPU Usage (Kernel)     | 커널 코드 실행에 사용된 CPU 사용량입니다              |
+
+<div id="clickhouse-cloud-specific">
+  ## ClickHouse Cloud 관련
+</div>
+
+ClickHouse Cloud는 객체 스토리지(S3 유형)를 사용해 데이터를 저장합니다. 이
+인터페이스를 모니터링하면 문제를 감지하는 데 도움이 됩니다.
+
+| 메트릭                            | 설명                            |
+| ------------------------------ | ----------------------------- |
+| S3 Read wait                   | S3에 대한 읽기 요청의 지연 시간을 측정합니다    |
+| S3 read errors per second      | 읽기 오류율을 추적합니다                 |
+| Read From S3 (bytes/sec)       | S3 스토리지에서 데이터를 읽는 속도를 추적합니다   |
+| Disk S3 write req/sec          | S3 스토리지에 대한 쓰기 작업 빈도를 모니터링합니다 |
+| Disk S3 read req/sec           | S3 스토리지에 대한 읽기 작업 빈도를 모니터링합니다 |
+| Page cache hit rate            | 페이지 캐시 적중률입니다                 |
+| Filesystem cache hit rate      | 파일 시스템 캐시 적중률입니다              |
+| Filesystem cache size          | 현재 파일 시스템 캐시 크기입니다            |
+| Network send bytes/sec         | 현재 수신 네트워크 트래픽 속도를 추적합니다      |
+| Network receive bytes/sec      | 현재 송신 네트워크 트래픽 속도를 추적합니다      |
+| Concurrent network connections | 현재 동시 네트워크 연결 수를 추적합니다        |
+
+<div id="identifying-issues-with-the-advanced-dashboard">
+  ## 고급 대시보드로 문제 식별하기
+</div>
+
+ClickHouse 서비스 상태를 실시간으로 파악하면 비즈니스에 영향을 주기 전에 문제를 완화하거나 해결하는 데 큰 도움이 됩니다. 아래에는 고급 대시보드에서 확인할 수 있는 몇 가지 문제를 소개합니다.
+
+<div id="unbatched-inserts">
+  ### 배치되지 않은 삽입
+</div>
+
+[Best Practices 문서](/ko/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)에서 설명한 대로, 동기식으로 처리할 수 있다면
+항상 데이터를 ClickHouse에 대량 삽입하는 것이 좋습니다.
+
+적절한 배치 크기로 대량 삽입하면
+수집 중 생성되는 파트 수가 줄어들어, 디스크 쓰기 효율이 높아지고 머지
+작업도 감소합니다.
+
+최적화가 충분하지 않은 삽입을 파악할 때 확인해야 할 핵심 메트릭은 **Inserted Rows/sec**와
+**Max Parts for Partition**입니다.
+
+<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="배치되지 않은 삽입" />
+
+위 예시에서는 13시와 14시 사이에 **Inserted Rows/sec**와 **Max Parts for Partition**에서
+두 번의 급증이 나타납니다. 이는 데이터가 적절한 속도로 수집되고 있음을 의미합니다.
+
+그런 다음 16시 이후에는 **Max Parts for Partition**에서 또 한 번 큰 급증이 보이지만,
+**Inserted Rows/sec**는 매우 낮습니다. 생성되는 데이터 양은 매우 적은데도
+많은 파트가 만들어지고 있으므로, 이는 파트 크기가
+최적이 아님을 나타냅니다.
+
+<div id="resource-intensive-query">
+  ### 리소스 사용량이 많은 쿼리
+</div>
+
+CPU나 메모리처럼 많은 리소스를 소비하는 SQL 쿼리를 실행하는 일은 흔합니다. 하지만 이러한 쿼리를 모니터링하고, 배포의 전반적인 성능에 미치는 영향을 이해하는 것이 중요합니다.
+
+쿼리 처리량에 변화가 없는데도 리소스 소비가 갑자기 늘어난다면, 더 비용이 큰 쿼리가 실행되고 있음을 의미할 수 있습니다. 실행 중인 쿼리 유형에 따라 이는 예상된 동작일 수 있지만, 고급 대시보드에서 이런 변화를 포착해 두는 것이 좋습니다.
+
+아래는 초당 실행되는 쿼리 수에는 큰 변화가 없지만 CPU 사용량이 급증하는 예시입니다.
+
+<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="리소스 사용량이 많은 쿼리" />
+
+<div id="bad-primary-key-design">
+  ### 잘못된 프라이머리 키 설계
+</div>
+
+Advanced dashboard를 사용해 발견할 수 있는 또 다른 문제는 프라이머리 키 설계가 잘못된 경우입니다.
+[&quot;ClickHouse의 프라이머리 인덱스에 대한 실용적인 소개&quot;](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)에서 설명한 것처럼,
+사용 사례에 가장 적합한 프라이머리 키(primary key)를 선택하면
+ClickHouse가 쿼리를 실행하기 위해 읽어야 하는 행 수를 줄일 수 있어
+성능이 크게 향상됩니다.
+
+프라이머리 키의 개선 가능성을 파악할 때 확인할 수 있는 메트릭 중 하나는
+**초당 선택된 행 수**입니다. 선택된 행 수가 갑자기 급증하면
+전체적인 쿼리 처리량이 증가했음을 의미할 수도 있고,
+실행 과정에서 많은 수의 행을 선택하는 쿼리가 있음을 나타낼 수도 있습니다.
+
+<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="리소스를 많이 사용하는 쿼리" />
+
+타임스탬프를 필터로 사용하면 `system.query_log` 테이블에서
+급증이 발생한 시점에 실행된 쿼리를 찾을 수 있습니다.
+
+예를 들어, 특정 날짜의 오전 11시부터 오전 11시 사이에 실행된 모든 쿼리를 보여주는
+쿼리를 실행하면 어떤 쿼리가 너무 많은 행을 읽고 있는지 파악할 수 있습니다:
+
+```sql title="Query"
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM system.query_log
+WHERE has(databases, 'default') AND (event_time >= '2024-12-23 11:20:00') AND (event_time <= '2024-12-23 11:30:00') AND (type = 'QueryFinish')
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response title="Response"
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:22:55
+query_duration_ms: 37407
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:26:50
+query_duration_ms: 7325
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_no_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         150957260
+tables:            ['default.amazon_reviews_no_pk']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:24:10
+query_duration_ms: 3270
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-12-23 11:28:10
+query_duration_ms: 2786
+query:             SELECT
+    toStartOfMonth(review_date) AS month,
+    any(product_title),
+    avg(star_rating) AS avg_stars
+FROM amazon_reviews_pk
+WHERE
+    product_category = 'Home'
+GROUP BY
+    month,
+    product_id
+ORDER BY
+    month DESC,
+    product_id ASC
+LIMIT 20
+read_rows:         6242304
+tables:            ['default.amazon_reviews_pk']
+```
+
+이 예시에서는 동일한 쿼리가 두 개의
+테이블 `amazon_reviews_no_pk`와 `amazon_reviews_pk`를 대상으로 실행되는 것을 확인할 수 있습니다. 이를 통해
+누군가가 `amazon_reviews` 테이블의 프라이머리 키 옵션을 테스트하고 있었음을 알 수 있습니다.

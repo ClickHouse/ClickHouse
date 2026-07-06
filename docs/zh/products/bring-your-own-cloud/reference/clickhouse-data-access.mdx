@@ -1,0 +1,78 @@
+---
+title: 'ClickHouse data access（BYOC）'
+slug: /cloud/reference/byoc/reference/clickhouse_data_access
+sidebarTitle: 'ClickHouse data access'
+keywords: ['BYOC', '自备 Cloud', '数据访问', '员工访问', 'system.query_log', '故障排查访问', '合规']
+description: 'ClickHouse 员工在 BYOC 部署中可访问哪些客户数据'
+doc_type: 'reference'
+---
+
+默认情况下，ClickHouse 员工无权访问您的数据。您的 ClickHouse 数据 (包括所有用户表和查询结果) 始终保留在您的 VPC 内。以下是 ClickHouse 与您的部署发生交互的唯一途径——但这些途径均不会授予对客户表数据的访问权限。
+
+<div id="routine-operations">
+  ## 例行操作
+</div>
+
+ClickHouse Cloud 的控制平面在不读取客户数据的前提下运行你的 BYOC 部署。将数据发送到 VPC 外的组件仅会携带运维元数据：
+
+| Component    | 什么会离开你的 VPC                                            |
+| ------------ | ------------------------------------------------------ |
+| 状态导出器        | 服务状态 (健康状况、status) 会发送到 ClickHouse Cloud 拥有的 `SQS` 队列。 |
+| 计费抓取器        | CPU 和内存指标会发送到 ClickHouse Cloud 拥有的 S3 存储桶。             |
+| AlertManager | 集群健康告警会发送到 ClickHouse Cloud。                           |
+
+查询流量、表内容和 schema 绝不会经过这些通道。日志和指标始终保留在你的 BYOC VPC 内部。
+
+<div id="troubleshooting-access">
+  ## 故障排查访问
+</div>
+
+当 ClickHouse 工程师需要诊断您部署中的问题时，他们会通过内部处理和审批工作流申请即时访问权限。获批的访问权限通过有时限的证书授予，并经由 [Tailscale](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) 路由——绝不会通过公共互联网。
+
+<div id="what-engineers-can-see">
+  ### 工程师可以查看哪些内容
+</div>
+
+在获得批准的故障排查访问权限后，工程师只能读取 ClickHouse 系统表。包括：
+
+* `system.query_log` — 针对您的 service 运行的查询的查询文本和执行元数据
+* `system.tables`、`system.columns` 以及类似的系统表 — schema 和元数据
+* 其他用于诊断的 `system.*` 表 (例如：parts、变更、副本)
+
+<div id="what-engineers-cant-see">
+  ### 工程师无法查看的内容
+</div>
+
+工程师无法读取客户的用户表数据。访问权限仅限于系统表。
+
+<div id="how-access-is-enforced">
+  ### 如何执行访问控制
+</div>
+
+* **需要审批**：每个访问请求都必须经过内部审批系统，并由指定审批人批准。工程师不能自行授予自己访问权限。
+* **有时限的证书**：系统会为每个获批会话生成临时的时效性证书。访问权限会自动失效。
+* **基于证书的身份验证**：对于对 BYOC 实例的所有人工访问，均使用证书替代基于密码的访问方式。
+* **系统表只读**：证书对应的身份权限仅限于读取系统表。
+* **不导出数据**：故障排查会话中的日志和查询结果绝不会回传到 ClickHouse 基础设施。
+
+<div id="auditing">
+  ## 审计
+</div>
+
+您可以查看工程师的活动，且这些活动会由 ClickHouse 进行审计：
+
+* **客户可见**：ClickHouse 工程师在您的实例上执行的每一条查询，都会出现在您自己的 `system.query_log` 中，其中包括查询文本和证书标识。您可以直接在您的 ClickHouse 服务中审计这些内容。
+* **ClickHouse 侧**：ClickHouse 的安全团队会在内部记录并审计所有访问请求、审批以及 Tailscale 连接。
+
+<div id="future-controls">
+  ## 未来控制功能
+</div>
+
+客户控制审批——即每次工程师的访问请求生效前都需由您批准——已纳入路线图。目前，批准通过 ClickHouse 的内部处理流程完成。
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [BYOC 网络安全](/zh/products/bring-your-own-cloud/reference/network-security) — 了解 Tailscale 和网络边界如何工作
+* [BYOC 权限](/zh/products/bring-your-own-cloud/reference/privilege) — BYOC 设置期间创建的 IAM 角色

@@ -1,0 +1,562 @@
+---
+title: Usuarios y roles comunes
+---
+
+<div id="test-admin-privileges">
+  ## Probar los privilegios de administrador
+</div>
+
+Cierre sesión con el usuario `default` y vuelva a iniciarla con el usuario `clickhouse_admin`.
+
+Todo lo siguiente debería realizarse correctamente:
+
+```sql
+SHOW GRANTS FOR clickhouse_admin;
+```
+
+```sql
+CREATE DATABASE db1
+```
+
+```sql
+CREATE TABLE db1.table1 (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+```sql
+INSERT INTO db1.table1 (id, column1) VALUES (1, 'abc');
+```
+
+```sql
+SELECT * FROM db1.table1;
+```
+
+```sql
+DROP TABLE db1.table1;
+```
+
+```sql
+DROP DATABASE db1;
+```
+
+<div id="non-admin-users">
+  ## Usuarios no administradores
+</div>
+
+Los usuarios deben tener los privilegios necesarios, y no todos deben ser administradores. En el resto de este documento se presentan escenarios de ejemplo y los roles necesarios.
+
+<div id="preparation">
+  ### Preparación
+</div>
+
+Cree estas tablas y usuarios que se usarán en los ejemplos.
+
+<div id="creating-a-sample-database-table-and-rows">
+  #### Crear una base de datos, una tabla y filas de ejemplo
+</div>
+
+<Steps>
+  <Step>
+    ##### Crear una base de datos de prueba
+
+    ```sql
+    CREATE DATABASE db1;
+    ```
+  </Step>
+
+  <Step>
+    ##### Crear una tabla
+
+    ```sql
+    CREATE TABLE db1.table1 (
+       id UInt64,
+       column1 String,
+       column2 String
+    )
+    ENGINE MergeTree
+    ORDER BY id;
+    ```
+  </Step>
+
+  <Step>
+    ##### Poblar la tabla con filas de ejemplo
+
+    ```sql
+    INSERT INTO db1.table1
+       (id, column1, column2)
+    VALUES
+       (1, 'A', 'abc'),
+       (2, 'A', 'def'),
+       (3, 'B', 'abc'),
+       (4, 'B', 'def');
+    ```
+  </Step>
+
+  <Step>
+    ##### Verificar la tabla
+
+    ```sql title="Consulta"
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response title="Respuesta"
+    Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### Crear `column_user`
+
+    Cree un usuario estándar que se utilizará para demostrar la restricción de acceso a determinadas columnas:
+
+    ```sql
+    CREATE USER column_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+
+  <Step>
+    ##### Crear `row_user`
+
+    Cree un usuario estándar que se utilizará para demostrar la restricción de acceso a filas con determinados valores:
+
+    ```sql
+    CREATE USER row_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+</Steps>
+
+<div id="creating-roles">
+  #### Creación de roles
+</div>
+
+Con este conjunto de ejemplos:
+
+* se crearán roles con distintos privilegios, como acceso por columnas y filas
+* se otorgarán privilegios a los roles
+* se asignarán usuarios a cada rol
+
+Los roles se utilizan para definir grupos de usuarios con determinados privilegios, en lugar de administrar cada usuario por separado.
+
+<Steps>
+  <Step>
+    ##### Crear un rol para restringir a los usuarios de este rol a que solo puedan ver `column1` en la base de datos `db1` y la tabla `table1`:
+
+    ```sql
+    CREATE ROLE column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Establecer privilegios para permitir ver `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Añadir el usuario `column_user` al rol `column1_users`
+
+    ```sql
+    GRANT column1_users TO column_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### Crear un rol para restringir a los usuarios de este rol a que solo puedan ver determinadas filas; en este caso, solo las filas que contengan `A` en `column1`
+
+    ```sql
+    CREATE ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Añadir `row_user` al rol `A_rows_users`
+
+    ```sql
+    GRANT A_rows_users TO row_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### Crear una política para permitir ver solo las filas en las que `column1` tenga el valor `A`
+
+    ```sql
+    CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Establecer privilegios para la base de datos y la tabla
+
+    ```sql
+    GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Otorgar permisos explícitos para que otros roles sigan teniendo acceso a todas las filas
+
+    ```sql
+    CREATE ROW POLICY allow_other_users_filter 
+    ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
+    ```
+
+    <Note>
+      Al adjuntar una política a una tabla, el sistema aplicará esa política, y solo los usuarios y roles definidos podrán realizar operaciones sobre la tabla; a todos los demás se les denegará cualquier operación. Para evitar que la política restrictiva de filas se aplique a otros usuarios, se debe definir otra política que permita a otros usuarios y roles tener acceso normal u otros tipos de acceso.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="verification">
+  ## Verificación
+</div>
+
+<div id="testing-role-privileges-with-column-restricted-user">
+  ### Comprobación de los privilegios del rol con un usuario restringido por columnas
+</div>
+
+<Steps>
+  <Step>
+    ##### Inicie sesión en el cliente de ClickHouse con el usuario `clickhouse_admin`
+
+    ```bash
+    clickhouse-client --user clickhouse_admin --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Verifique el acceso a la base de datos, la tabla y todas las filas con el usuario administrador.
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: f5e906ea-10c6-45b0-b649-36334902d31d
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### Inicie sesión en el cliente de ClickHouse con el usuario `column_user`
+
+    ```bash
+    clickhouse-client --user column_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Pruebe `SELECT` con todas las columnas
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5576f4eb-7450-435c-a2d6-d6b49b7c4a23
+
+    0 rows in set. Elapsed: 0.006 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+
+    <Note>
+      Se deniega el acceso porque se especificaron todas las columnas y el usuario solo tiene acceso a `id` y `column1`
+    </Note>
+  </Step>
+
+  <Step>
+    ##### Verifique la consulta `SELECT` usando solo las columnas especificadas y permitidas:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: cef9a083-d5ce-42ff-9678-f08dc60d4bb9
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    │  3 │ B       │
+    │  4 │ B       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="testing-role-privileges-with-row-restricted-user">
+  ### Probar los privilegios del rol con un usuario restringido por filas
+</div>
+
+<Steps>
+  <Step>
+    ##### Inicie sesión en el cliente de ClickHouse con `row_user`
+
+    ```bash
+    clickhouse-client --user row_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Ver las filas disponibles
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: a79a113c-1eca-4c3f-be6e-d034f9a220fb
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+
+    <Note>
+      Verifique que solo se devuelvan las dos filas anteriores; deben excluirse las filas con el valor `B` en `column1`.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="modifying-users-and-roles">
+  ## Modificar usuarios y roles
+</div>
+
+A los usuarios se les pueden asignar varios roles para obtener la combinación de privilegios necesaria. Al usar varios roles, el sistema los combinará para determinar los privilegios; en la práctica, los permisos de los roles serán acumulativos.
+
+Por ejemplo, si `role1` permite solo hacer SELECT en `column1` y `role2` permite hacer SELECT en `column1` y `column2`, entonces el usuario tendrá acceso a ambas columnas.
+
+<Steps>
+  <Step>
+    ##### Con la cuenta de administrador, cree un usuario nuevo para restringir tanto por fila como por columna con roles predeterminados
+
+    ```sql
+    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Elimine los privilegios previos del rol `A_rows_users`
+
+    ```sql
+    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Permita que el rol `A_row_users` solo haga SELECT de `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Inicie sesión en el cliente de ClickHouse con `row_and_column_user`
+
+    ```bash
+    clickhouse-client --user row_and_column_user --password password;
+    ```
+  </Step>
+
+  <Step>
+    ##### Pruebe con todas las columnas:
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 8cdf0ff5-e711-4cbe-bd28-3c02e52e8bc4
+
+    0 rows in set. Elapsed: 0.005 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: row_and_column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+  </Step>
+
+  <Step>
+    ##### Pruebe con las columnas permitidas:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5e30b490-507a-49e9-9778-8159799a6ed0
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Resolución de problemas
+</div>
+
+A veces, los privilegios se superponen o se combinan de forma que producen resultados inesperados; los siguientes comandos pueden usarse para acotar el problema con una cuenta de administrador
+
+<div id="listing-the-grants-and-roles-for-a-user">
+  ### Listado de grants y roles de un usuario
+</div>
+
+```sql
+SHOW GRANTS FOR row_and_column_user
+```
+
+```response
+Query id: 6a73a3fe-2659-4aca-95c5-d012c138097b
+
+┌─GRANTS FOR row_and_column_user───────────────────────────┐
+│ GRANT A_rows_users, column1_users TO row_and_column_user │
+└──────────────────────────────────────────────────────────┘
+```
+
+<div id="list-roles-in-clickhouse">
+  ### Mostrar los roles en ClickHouse
+</div>
+
+```sql
+SHOW ROLES
+```
+
+```response
+Query id: 1e21440a-18d9-4e75-8f0e-66ec9b36470a
+
+┌─name────────────┐
+│ A_rows_users    │
+│ column1_users   │
+└─────────────────┘
+```
+
+<div id="display-the-policies">
+  ### Mostrar las políticas
+</div>
+
+```sql
+SHOW ROW POLICIES
+```
+
+```response
+Query id: f2c636e9-f955-4d79-8e80-af40ea227ebc
+
+┌─name───────────────────────────────────┐
+│ A_row_filter ON db1.table1             │
+│ allow_other_users_filter ON db1.table1 │
+└────────────────────────────────────────┘
+```
+
+<div id="view-how-a-policy-was-defined-and-current-privileges">
+  ### Ver cómo se definió una política y cuáles son los privilegios actuales
+</div>
+
+```sql
+SHOW CREATE ROW POLICY A_row_filter ON db1.table1
+```
+
+```response
+Query id: 0d3b5846-95c7-4e62-9cdd-91d82b14b80b
+
+┌─CREATE ROW POLICY A_row_filter ON db1.table1────────────────────────────────────────────────┐
+│ CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="example-commands-to-manage-roles-policies-and-users">
+  ## Comandos de ejemplo para gestionar roles, políticas y usuarios
+</div>
+
+Los siguientes comandos se pueden usar para:
+
+* eliminar privilegios
+* eliminar políticas
+* desvincular usuarios de roles
+* eliminar usuarios y roles
+  <br />
+
+<Tip>
+  Ejecuta estos comandos con un usuario administrador o con el usuario `default`
+</Tip>
+
+<div id="remove-privilege-from-a-role">
+  ### Eliminar un privilegio de un rol
+</div>
+
+```sql
+REVOKE SELECT(column1, id) ON db1.table1 FROM A_rows_users;
+```
+
+<div id="delete-a-policy">
+  ### Eliminar una política
+</div>
+
+```sql
+DROP ROW POLICY A_row_filter ON db1.table1;
+```
+
+<div id="unassign-a-user-from-a-role">
+  ### Quitar un usuario de un rol
+</div>
+
+```sql
+REVOKE A_rows_users FROM row_user;
+```
+
+<div id="delete-a-role">
+  ### Eliminar un rol
+</div>
+
+```sql
+DROP ROLE A_rows_users;
+```
+
+<div id="delete-a-user">
+  ### Eliminar un usuario
+</div>
+
+```sql
+DROP USER row_user;
+```
+
+<div id="summary">
+  ## Resumen
+</div>
+
+En este artículo se explicaron los conceptos básicos para crear usuarios y roles de SQL, y se indicaron los pasos para establecer y modificar los privilegios de usuarios y roles. Para obtener información más detallada sobre cada uno de ellos, consulte nuestras guías de usuario y la documentación de referencia.

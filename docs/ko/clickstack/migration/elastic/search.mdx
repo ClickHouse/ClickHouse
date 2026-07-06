@@ -1,0 +1,73 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/search
+title: 'ClickStack과 Elastic에서 검색하기'
+sidebarTitle: '검색'
+description: 'ClickStack과 Elastic에서 검색하기'
+doc_type: 'guide'
+keywords: ['clickstack', '검색', '로그', '관측성', '전문 검색']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="search-in-clickstack-and-elastic">
+  ## ClickStack와 Elastic에서 검색하기
+</div>
+
+ClickHouse는 SQL 네이티브 엔진으로, 고성능 분석 워크로드를 위해 처음부터 설계되었습니다. 반면 Elasticsearch는 SQL과 유사한 인터페이스를 제공하며, SQL을 내부 Elasticsearch 쿼리 DSL로 변환합니다. 즉, SQL이 핵심 기능으로 직접 지원되는 것은 아니며 [기능 대응 범위](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations)도 제한적입니다.
+
+ClickHouse는 완전한 SQL을 지원할 뿐만 아니라, [&#96;argMax&#96;](/ko/reference/functions/aggregate-functions/argMax), [&#96;histogram&#96;](/ko/reference/functions/aggregate-functions/parametric-functions#histogram), [&#96;quantileTiming&#96;](/ko/reference/functions/aggregate-functions/quantileTiming)과 같은 관측성 중심 함수를 폭넓게 제공하여 구조화된 로그, 메트릭, 트레이스에 대한 쿼리를 단순화합니다.
+
+간단한 로그 및 트레이스 탐색을 위해 ClickStack UI(HyperDX)는 필드-값 쿼리, 범위, 와일드카드 등에 대해 직관적인 텍스트 기반 필터링을 지원하는 [Lucene 스타일 구문](/ko/clickstack/features/search)을 제공합니다. 이는 Elasticsearch의 [Lucene 구문](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) 및 [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql)의 일부 요소와 유사합니다.
+
+<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="검색" size="lg" />
+
+검색 인터페이스는 이러한 익숙한 구문을 지원하면서도, 내부적으로는 이를 효율적인 SQL &#96;WHERE&#96; 절로 변환합니다. 따라서 Kibana 사용자에게 익숙한 사용 경험을 제공하는 동시에, 필요할 때 SQL의 강력한 기능도 활용할 수 있습니다. 이를 통해 ClickHouse의 [문자열 검색 함수](/ko/reference/functions/regular-functions/string-search-functions), [유사도 함수](/ko/reference/functions/regular-functions/string-functions#stringJaccardIndex), [date time 함수](/ko/reference/functions/regular-functions/date-time-functions)를 폭넓게 활용할 수 있습니다.
+
+<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg" />
+
+아래에서는 ClickStack와 Elasticsearch의 Lucene 쿼리 언어를 비교합니다.
+
+<div id="clickstack-vs-elasticsearch-query-string">
+  ## ClickStack 검색 구문 vs Elasticsearch 쿼리 문자열
+</div>
+
+ClickStack와 Elasticsearch는 모두 직관적인 로그 및 트레이스 필터링을 위해 유연한 쿼리 언어를 제공합니다. Elasticsearch의 쿼리 문자열은 해당 DSL 및 인덱싱 엔진과 긴밀하게 통합되어 있는 반면, ClickStack는 내부적으로 ClickHouse SQL로 변환되는 Lucene 스타일 구문을 지원합니다. 아래 표는 일반적인 검색 패턴이 두 시스템에서 어떻게 동작하는지 보여주며, 구문의 유사성과 백엔드 실행 방식의 차이점을 강조합니다.
+
+| **기능**          | **ClickStack 구문**                   | **Elasticsearch 구문**              | **설명**                                                                                                                                                                                                                                |
+| --------------- | ----------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 자유 텍스트 검색       | `error`                             | `error`                           | 모든 인덱싱된 필드에서 일치합니다. ClickStack에서는 다중 필드 SQL `ILIKE`로 다시 작성됩니다.                                                                                                                                                                        |
+| 필드 일치           | `level:error`                       | `level:error`                     | 구문이 동일합니다. ClickStack는 ClickHouse에서 정확한 필드 값과 일치시킵니다.                                                                                                                                                                                 |
+| 구문 검색           | `"disk full"`                       | `"disk full"`                     | 따옴표로 묶인 텍스트는 정확한 문자열 순서와 일치합니다. ClickHouse는 문자열 동등 비교 또는 `ILIKE`를 사용합니다.                                                                                                                                                              |
+| 필드 구문 일치        | `message:"disk full"`               | `message:"disk full"`             | SQL `ILIKE` 또는 정확 일치로 변환됩니다.                                                                                                                                                                                                          |
+| OR 조건           | `error OR warning`                  | `error OR warning`                | 용어의 논리 OR입니다. 두 시스템 모두 이를 네이티브로 지원합니다.                                                                                                                                                                                                |
+| AND 조건          | `error AND db`                      | `error AND db`                    | 둘 다 교집합으로 변환되며, 사용자 구문에는 차이가 없습니다.                                                                                                                                                                                                    |
+| 부정              | `NOT error` or `-error`             | `NOT error` or `-error`           | 동일하게 지원됩니다. ClickStack는 이를 SQL `NOT ILIKE`로 변환합니다.                                                                                                                                                                                    |
+| 그룹화             | `(error OR fail) AND db`            | `(error OR fail) AND db`          | 두 시스템 모두에서 표준 불리언 그룹화입니다.                                                                                                                                                                                                             |
+| 와일드카드           | `error*` or `*fail*`                | `error*`, `*fail*`                | ClickStack는 앞/뒤 와일드카드를 지원합니다. ES는 성능상 이유로 기본적으로 앞부분 와일드카드를 비활성화합니다. 용어 내부의 와일드카드는 지원되지 않습니다. 예: `f*ail.` 와일드카드는 필드 일치와 함께 사용해야 합니다.                                                                                                   |
+| 범위(숫자/날짜)       | `duration:[100 TO 200]`             | `duration:[100 TO 200]`           | ClickStack는 SQL `BETWEEN`을 사용하고, Elasticsearch는 범위 쿼리로 확장합니다. 범위에서 제한 없는 `*`는 지원되지 않습니다. 예: `duration:[100 TO *]`. 필요한 경우 아래의 `Unbounded ranges`를 사용하십시오.                                                                             |
+| 제한 없는 범위(숫자/날짜) | `duration:>10` or `duration:>=10`   | `duration:>10` or `duration:>=10` | ClickStack는 표준 SQL 연산자를 사용합니다                                                                                                                                                                                                         |
+| 포함/제외 경계        | `duration:{100 TO 200}` (exclusive) | 동일                                | `{}`는 배타적 경계를 나타냅니다. 범위에서 `*`는 지원되지 않습니다. 예: `duration:[100 TO *]`                                                                                                                                                                    |
+| 존재 여부 확인        | N/A                                 | `_exists_:user` or `field:*`      | `_exists_`는 지원되지 않습니다. `Map` 컬럼(예: `LogAttributes`)에는 `LogAttributes.log.file.path: *`를 사용하십시오. 루트 컬럼은 반드시 존재하며, 이벤트에 포함되지 않으면 기본값을 가집니다. 기본값 또는 누락된 컬럼을 검색하려면 Elasticsearch와 같은 구문인 ` ServiceName:*` 또는 `ServiceName != ''`를 사용하십시오. |
+| 정규식             | `match` function                    | `name:/joh?n(ath[oa]n)/`          | 현재 Lucene 구문에서는 지원되지 않습니다. SQL과 [`match`](/ko/reference/functions/regular-functions/string-search-functions#match) function 또는 다른 [string search functions](/ko/reference/functions/regular-functions/string-search-functions)을 사용할 수 있습니다. |
+| 퍼지 일치           | `editDistance('quikc', field) = 1`  | `quikc~`                          | 현재 Lucene 구문에서는 지원되지 않습니다. SQL에서 Distance functions를 사용할 수 있습니다. 예: `editDistance('rror', SeverityText) = 1` 또는 [other similarity functions](/ko/reference/functions/regular-functions/string-functions#jaroSimilarity).                 |
+| 근접 검색           | 지원되지 않음                             | `"fox quick"~5`                   | 현재 Lucene 구문에서는 지원되지 않습니다.                                                                                                                                                                                                            |
+| 부스팅             | `quick^2 fox`                       | `quick^2 fox`                     | 현재 ClickStack에서는 지원되지 않습니다.                                                                                                                                                                                                           |
+| 필드 와일드카드        | `service.*:error`                   | `service.*:error`                 | 현재 ClickStack에서는 지원되지 않습니다.                                                                                                                                                                                                           |
+| 이스케이프된 특수 문자    | 예약 문자는 `\`로 이스케이프                   | 동일                                | 예약 기호를 사용할 때 이스케이프가 필요합니다.                                                                                                                                                                                                            |
+
+<div id="empty-value-differences">
+  ## 존재/누락 차이
+</div>
+
+Elasticsearch에서는 이벤트에서 필드를 아예 생략해 실제로 &quot;존재하지 않게&quot; 할 수 있지만, ClickHouse에서는 테이블 스키마(schema)의 모든 컬럼이 반드시 존재해야 합니다. 삽입 이벤트에 필드가 제공되지 않으면 다음과 같이 처리됩니다.
+
+* [`Nullable`](/ko/reference/data-types/nullable) 필드는 `NULL`로 설정됩니다.
+* 널 비허용 필드(기본값)는 기본값으로 채워집니다(대개 빈 문자열, 0 또는 이에 상응하는 값).
+
+ClickStack에서는 [`Nullable`](/ko/reference/data-types/nullable)이 [권장되지 않으므로](/ko/concepts/best-practices/avoidnullablecolumns) 후자의 방식을 사용합니다.
+
+즉, Elasticsearch에서와 같은 의미로 필드가 &quot;존재하는지&quot;를 직접 확인하는 것은 지원되지 않습니다.
+
+대신 비어 있지 않은 값이 있는지 확인하려면 `field:*` 또는 `field != ''`를 사용할 수 있습니다. 따라서 실제로 누락된 필드와 명시적으로 빈 필드를 구분할 수는 없습니다.
+
+실제로 이러한 차이로 인해 관측성 사용 사례에서 문제가 발생하는 경우는 드물지만, 시스템 간에 쿼리를 옮길 때는 이 점을 염두에 두어야 합니다.
