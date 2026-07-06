@@ -31,6 +31,11 @@ opts=(
     # which keeps the original left-deep tree and yields prealloc=0 even with the fix.
     --query_plan_optimize_join_order_limit=64
     --query_plan_optimize_join_order_randomize=0
+    # The test asserts the COLD run preallocates nothing, i.e. that only the
+    # HashTablesStatistics cache can provide a size hint. With column statistics available
+    # the planner derives a trustworthy right-side key NDV and legitimately preallocates on
+    # the cold run too, breaking that premise - so keep column statistics out of the picture.
+    --use_statistics=0
 )
 
 # Use unique table names to avoid colliding with other tests sharing the test database.
@@ -41,7 +46,10 @@ opts=(
 N=1000000
 T1="reordered_t1"; T2="reordered_t2"; T3="reordered_t3"; T4="reordered_t4"
 
-$CLICKHOUSE_CLIENT -q "
+# `materialize_statistics_on_insert=0`: randomized settings can otherwise materialize `uniq`
+# column statistics on these INSERTs (see `--use_statistics=0` in opts above for why the test
+# must not see column statistics).
+$CLICKHOUSE_CLIENT --materialize_statistics_on_insert=0 -q "
   DROP TABLE IF EXISTS $T1;
   DROP TABLE IF EXISTS $T2;
   DROP TABLE IF EXISTS $T3;
