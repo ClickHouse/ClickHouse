@@ -1,0 +1,160 @@
+---
+noindex: true
+title: "ClickHouse Operator 아키텍처"
+sidebarTitle: "아키텍처"
+description: "이 문서에서는 Kubernetes에서 실행되는 ClickHouse 클러스터의 수명 주기를 관리하는 clickhouse-operator의 아키텍처와 내부 작동 방식을 설명합니다"
+---
+
+이 문서에서는 Kubernetes에서 실행되는 ClickHouse 클러스터의 수명 주기를 관리하는 clickhouse-operator의 아키텍처와 내부 작동 방식을 설명합니다.
+
+<div id="operator-overview">
+  ## Operator 개요
+</div>
+
+clickhouse-operator는 등록된 `ClickHouseCluster` 사용자 지정 리소스의 프로비저닝과 리컨실리에이션은 물론, 클러스터의 전체 수명 주기도 관리합니다. 주요 역할은 다음과 같습니다.
+
+* **server 및 Keeper 컴포넌트 배포 및 종료**
+* **클러스터 상태 제어** (실행, 중지 등)
+* **백업 요청 처리**
+* **스케일 인 또는 레플리카 제거 후 PVC** (PersistentVolumeClaims) **정리**
+* **레플리카 추가 또는 제거를 통한** 클러스터 **수평 스케일링**
+
+operator는 `ClickHouseCluster` 사용자 지정 리소스의 변경 사항을 감시하고, CR에 선언된 원하는 상태에 맞도록 실제 클러스터 상태를 리컨실합니다.
+
+<div id="instance-lifecycle">
+  ## 인스턴스 수명 주기
+</div>
+
+ClickHouse 인스턴스는 생성부터 종료까지 미리 정의된 일련의 상태를 거칩니다. 아래 다이어그램은 이러한 상태 전환을 보여줍니다.
+
+<Frame caption="인스턴스 수명 주기">
+  ![인스턴스 수명 주기](/images/instance-lifecycle.png)
+</Frame>
+
+이 수명 주기를 이해하면 클러스터가 예기치 않은 상태에 있는 이유를 진단하거나 스케일링 또는 업그레이드와 같은 작업을 계획하는 데 도움이 됩니다.
+
+<div id="one-clickhousecluster-per-namespace">
+  ## 네임스페이스당 하나의 ClickHouseCluster
+</div>
+
+오퍼레이터는 Kubernetes 네임스페이스마다 `ClickHouseCluster` 사용자 지정 리소스가 정확히 하나만 있다고 가정합니다. 동일한 네임스페이스에 여러 `ClickHouseCluster` 인스턴스를 배포하면, 어떤 리소스가 어떤 클러스터에 속하는지 오퍼레이터가 구분할 수 없기 때문에 리컨실리에이션 충돌이 발생합니다.
+
+`onprem-clickhouse-cluster` Helm 차트는 네임스페이스에서 `ClickHouseCluster`를 하나만 사용할 수 있도록 제한하는 `ResourceQuota`를 생성해 Kubernetes API 서버 수준에서 이를 강제합니다:
+
+```yaml
+apiVersion: v1
+kind: ResourceQuota
+spec:
+  hard:
+    count/clickhouseclusters.clickhouse.com: "1"
+```
+
+이 할당량 설정은 기본적으로 활성화되어 있습니다(helm values에서 `resourceQuota.enabled: true`). 비활성화하지 마십시오. 비활성화하면 Operator가 클러스터를 원하는 상태로 맞출 수 없으므로 클러스터 상태가 저하됩니다.
+
+여러 개의 ClickHouse 클러스터를 실행해야 하는 경우 각 클러스터를 별도의 네임스페이스에 배포하십시오.
+
+<div id="statefulset-architecture-multists">
+  ## StatefulSet 아키텍처 (MultiSTS)
+</div>
+
+오퍼레이터는 **각 레플리카마다 전용 StatefulSet이 하나씩 할당되는** **MultiStatefulSet (MultiSTS)** 모델을 사용합니다(**ClickHouse 서버 파드 1개당 StatefulSet 1개**). 이 설계는 개별 레플리카를 더 세밀하게 제어할 수 있게 해주며, 다른 레플리카에 영향을 주지 않고 특정 레플리카를 제거해야 하는 스케일 인과 같은 작업에서 특히 중요합니다.
+
+<Frame caption="MultiSTS 레이아웃">
+  ![MultiSTS 레이아웃](/images/multists-layout.png)
+</Frame>
+
+MultiSTS는 레플리카를 순번 기반 아이덴티티와 분리하여, 오퍼레이터가 각 레플리카를 독립적으로 관리할 수 있게 합니다.
+
+<div id="replicastatemap">
+  ## ReplicaStateMap
+</div>
+
+MultiSTS 레플리카는 파드의 생성 시점이나 수명 주기를 결정론적으로 파악하는 기준으로 ordinal 인덱스에 의존할 수 없으므로, 오퍼레이터는 CR의 `.status.replicaStateMap` 필드에 저장된 맵에서 각 StatefulSet의 상태를 추적합니다.
+
+ReplicaStateMap의 예시는 다음과 같습니다:
+
+```yaml
+replicaStateMap:
+  c-navy-wl-64-server-5hvvzxe:
+    createdAt: "2023-08-03T13:25:40Z"
+    isBackupPod: true
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-fvnytjb:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+  c-navy-wl-64-server-un85gpo:
+    createdAt: "2023-08-03T13:25:40Z"
+    state: Pending
+    updatedAt: "2023-08-03T13:25:40Z"
+```
+
+<div id="replica-states">
+  ### 레플리카 상태
+</div>
+
+각 레플리카는 다음 상태 중 하나일 수 있습니다:
+
+| 상태                  | 설명                                                                            |
+| ------------------- | ----------------------------------------------------------------------------- |
+| **Pending**         | 레플리카가 맵에 등록되었지만 아직 정상적으로 실행되는 상태에 도달하지 않았습니다. 추가되면 오퍼레이터가 이를 Ready 상태로 전환합니다. |
+| **Ready**           | 레플리카가 실행 중이며 정상 상태입니다.                                                        |
+| **Stopped**         | 레플리카가 의도적으로 중지된 상태입니다.                                                        |
+| **Condemned**       | 레플리카가 scale-in 작업 중 삭제 대상으로 표시되었습니다.                                          |
+| **Dropped**         | 레플리카가 완전히 제거되었습니다.                                                            |
+| **VolumeRestoring** | 레플리카의 영구 볼륨이 백업에서 복원되고 있습니다.                                                  |
+| **VolumeRestored**  | 레플리카의 영구 볼륨 복원이 완료되어 사용할 준비가 되었습니다.                                           |
+
+<div id="backup-pod-designation">
+  ### 백업 파드 지정
+</div>
+
+특정 시점에는 정확히 하나의 레플리카만 **백업 파드**(`isBackupPod: true`)로 지정됩니다. 이 레플리카에서 백업 작업이 실행됩니다. 연산자는 scale-in 중 백업 작업이 중단되지 않도록 백업 레플리카를 폐기 대상으로 지정된 상태로 표시하지 않습니다. 다만 이러한 예외 상황이 실제로 발생하더라도 코드에서 방어적으로 처리합니다.
+
+> **경고:** ReplicaStateMap의 상태 추적은 연산자의 내부 상태 관리를 위한 것일 뿐이며, 외부 구성 요소에서 사용해서는 안 됩니다.
+
+<div id="parallel-vs-rolling-reconciliation">
+  ## 병렬 리컨실리에이션과 롤링 리컨실리에이션 비교
+</div>
+
+연산자는 변경의 성격에 따라 두 가지 리컨실리에이션 전략을 사용합니다:
+
+* **병렬 리컨실리에이션**은 StatefulSet spec에서 변경 사항이 레플리카 수뿐일 때 사용됩니다. 이 경우 기존 파드에 영향을 주는 변경이 없으므로 모든 StatefulSet을 동시에 업데이트할 수 있습니다.
+
+* **롤링 리컨실리에이션**은 그 밖의 모든 spec 변경(구성 업데이트, image 변경, resource 조정 등)에 사용됩니다. 이 경우 보조 업그레이드 루프가 실행되어 StatefulSet을 하나씩 리컨실리에이션하며, 롤아웃 중 클러스터가 허용된 중단 예산을 초과하지 않도록 파드 중단 예산의 `maxUnavailable` 설정을 준수합니다.
+
+<div id="horizontal-scaling">
+  ## 수평 스케일링
+</div>
+
+<div id="scale-out">
+  ### 스케일 아웃
+</div>
+
+MultiSTS 모드에서 스케일 아웃은 간단합니다. ReplicaStateMap에 새 레플리카 이름을 추가하면 오퍼레이터가 해당 StatefulSet을 생성하고 reconcile합니다. 이후 reconcile 루프를 통해 새로 생성된 레플리카가 클러스터의 나머지 레플리카와 동일한 최신 상태로 맞춰집니다.
+
+<div id="scale-in">
+  ### 스케일 인
+</div>
+
+스케일 인은 제거할 레플리카가 여전히 트래픽을 받고 있거나 동기화가 필요한 데이터를 보유하고 있을 수 있으므로 훨씬 더 복잡합니다. 오퍼레이터는 레플리카를 안전하게 제거하기 위해 여러 단계의 절차를 따릅니다.
+
+<div id="condemned-replicas">
+  #### 폐기 대상으로 지정된 레플리카
+</div>
+
+실제 레플리카 수가 원하는 수를 초과하면 초과한 레플리카는 **폐기 대상으로 지정된** 상태로 표시됩니다. 이들의 상태는 ReplicaStateMap에서 Ready에서 Condemned로 변경되며, 이를 통해 연산자는 어떤 레플리카를 안전하게 삭제해야 하는지 파악할 수 있습니다.
+
+<div id="scale-in-flow">
+  #### 스케일 인 흐름
+</div>
+
+스케일 인 프로세스는 다음 단계로 진행됩니다.
+
+1. **토폴로지 키 제거** -- 폐기 대상으로 지정된 레플리카를 `TopologySpreadConstraint`의 편차 계산에서 제거하여 더 이상 파드 스케줄링 결정에 영향을 주지 않도록 합니다.
+2. **모든 StatefulSet이 Ready 상태가 될 때까지 대기** -- StatefulSet 중 하나라도 Ready 상태가 아니면 스케일 인을 보류하고 리컨실리에이션을 다시 큐에 넣습니다.
+3. **[`SYSTEM SYNC REPLICA ... LIGHTWEIGHT`](https://clickhouse.com/docs/sql-reference/statements/system#sync-replica) 실행** -- 제거하기 전에 폐기 대상으로 지정된 레플리카의 모든 데이터가 동기화되도록 보장합니다. 백업 파드에서 실행됩니다.
+4. **폐기 대상으로 지정된 StatefulSet 삭제** -- StatefulSet을 삭제하고 해당 항목을 ReplicaStateMap에서 제거합니다.
+5. **[`SYSTEM DROP REPLICA`](https://clickhouse.com/docs/sql-reference/statements/system#drop-replica) 실행** -- 나머지 Ready 레플리카에서 삭제된 레플리카의 메타데이터를 ClickHouse Keeper에서 제거합니다.
+6. **정리를 위해 PVC에 레이블 지정** -- 삭제된 StatefulSet에 속한 PVC에 `clickhouse.com/delete-pvc` 레이블을 지정합니다. 이를 &quot;PVC leaking&quot;이라고 하며, 이 시점부터는 오퍼레이터의 책임이 끝납니다. 이후 PersistentVolumeClaimCleaner 컴포넌트가 실제 PVC 삭제를 처리합니다.

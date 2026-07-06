@@ -1,0 +1,36 @@
+---
+slug: /cloud/guides/data-sources
+title: 'データソース'
+hide_title: true
+description: 'ClickHouse Cloud ガイドセクションの目次ページ'
+doc_type: 'landing-page'
+keywords: ['クラウドガイド', 'ドキュメント', 'ハウツー', 'クラウドの機能', 'チュートリアル']
+---
+
+<div id="cloud-integrations">
+  ## Cloud インテグレーション
+</div>
+
+このセクションには、追加の設定が必要な外部データソースと ClickHouse Cloud を連携するためのガイドとリファレンスが含まれています。
+
+| ページ                                                                                          | 説明                                       |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| [Cloud IP addresses](/ja/products/cloud/guides/data-sources/cloud-endpoints-api)                | 一部のテーブル関数や接続で必要となるネットワーク情報               |
+| [Accessing S3 data securely](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) | ロールベースアクセスを使用して AWS S3 の外部データソースにアクセスします |
+| [Accessing GCS data securely](/ja/products/cloud/guides/data-sources/secure-gcs)                | HMAC キーを使用して GCS の外部データソースに安全にアクセスします    |
+
+<div id="additional-connections-for-external-data-sources">
+  ## 外部データソース用の追加接続
+</div>
+
+<div id="clickpipes-for-data-ingestion">
+  ### データインジェスト用のClickPipes
+</div>
+
+ClickPipes を使用すると、さまざまなソースからのストリーミングデータを簡単に取り込めます。詳細については、Integrations ドキュメントの [ClickPipes](/ja/integrations/clickpipes/home) を参照してください。
+
+<div id="table-functions-as-external-data-sources">
+  ### 外部データソースとしてのテーブル関数
+</div>
+
+ClickHouse では、外部データソースにアクセスするための各種テーブル関数を利用できます。詳細については、SQL リファレンスの[テーブル関数](/ja/reference/functions/table-functions/index)を参照してください。

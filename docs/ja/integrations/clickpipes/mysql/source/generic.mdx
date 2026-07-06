@@ -1,0 +1,152 @@
+---
+sidebarTitle: 'Generic MySQL'
+description: '任意の MySQL インスタンスを ClickPipes のソースとして設定'
+slug: /integrations/clickpipes/mysql/source/generic
+title: 'Generic MySQL ソース設定ガイド'
+doc_type: 'guide'
+keywords: ['generic mysql', 'clickpipes', 'バイナリログ', 'ssl tls', 'mysql 8.x']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  サポート対象のプロバイダー (サイドバーに記載) を使用している場合は、そのプロバイダー向けのガイドを参照してください。
+</Info>
+
+<div id="enable-binlog-retention">
+  ## バイナリログの保持を有効にする
+</div>
+
+バイナリログには、MySQL サーバーインスタンスで行われたデータ変更に関する情報が記録されており、レプリケーションに必要です。
+
+<div id="binlog-v8-x">
+  ### MySQL 8.x 以降
+</div>
+
+MySQL インスタンスでバイナリログを有効にするには、次の設定がされていることを確認してください。
+
+```sql
+log_bin = ON                        -- デフォルト値
+binlog_format = ROW                 -- デフォルト値
+binlog_row_image = FULL             -- デフォルト値
+binlog_row_metadata = FULL
+binlog_expire_logs_seconds = 86400  -- 1日以上；デフォルトは30日
+```
+
+これらの設定を確認するには、次のSQLコマンドを実行します。
+
+```sql
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'binlog_row_metadata';
+SHOW VARIABLES LIKE 'binlog_expire_logs_seconds';
+```
+
+値が一致しない場合は、以下の SQL コマンドを実行して設定できます。
+
+```sql
+SET PERSIST log_bin = ON;
+SET PERSIST binlog_format = ROW;
+SET PERSIST binlog_row_image = FULL;
+SET PERSIST binlog_row_metadata = FULL;
+SET PERSIST binlog_expire_logs_seconds = 86400;
+```
+
+`log_bin` 設定を変更した場合、その変更を有効にするには MySQL インスタンスを再起動する必要があります。
+
+設定を変更したら、[データベースユーザーの設定](#configure-database-user) に進んでください。
+
+<div id="binlog-v5-x">
+  ### MySQL 5.7
+</div>
+
+MySQL 5.7 インスタンスでバイナリログを有効にするには、以下の設定が構成されていることを確認してください。
+
+```sql
+server_id = 1            -- 1以上であれば何でも可（0以外）
+log_bin = ON
+binlog_format = ROW      -- デフォルト値
+binlog_row_image = FULL  -- デフォルト値
+expire_logs_days = 1     -- 1以上；0を指定するとログが永久に保持される
+```
+
+これらの設定を確認するには、次のSQLコマンドを実行します。
+
+```sql
+SHOW VARIABLES LIKE 'server_id';
+SHOW VARIABLES LIKE 'log_bin';
+SHOW VARIABLES LIKE 'binlog_format';
+SHOW VARIABLES LIKE 'binlog_row_image';
+SHOW VARIABLES LIKE 'expire_logs_days';
+```
+
+値が一致しない場合は、設定ファイル (通常は `/etc/my.cnf` または `/etc/mysql/my.cnf`) で指定できます。
+
+```ini
+[mysqld]
+server_id = 1
+log_bin = ON
+binlog_format = ROW
+binlog_row_image = FULL
+expire_logs_days = 1
+```
+
+変更を反映させるには、MySQL インスタンスを再起動する必要があります。
+
+<Note>
+  MySQL 5.7 以前では、カラムの除外とスキーマの変更はサポートされていません。これらの機能は、[MySQL 8.0.1](https://dev.mysql.com/blog-archive/more-metadata-is-written-into-binary-log/) より前の binlog には含まれないテーブルメタデータに依存しています。
+</Note>
+
+<div id="configure-database-user">
+  ## データベースユーザーを設定する
+</div>
+
+root ユーザーとして MySQL インスタンスに接続し、次のコマンドを実行します。
+
+1. ClickPipes 専用のユーザーを作成します。
+
+   ```sql
+   CREATE USER 'clickpipes_user'@'%' IDENTIFIED BY 'some_secure_password';
+   ```
+
+2. スキーマに対する権限を付与します。次の例は、`clickpipes` データベースに対する権限を示しています。レプリケーションする各データベースおよびホストについて、これらのコマンドを繰り返してください。
+
+   ```sql
+   GRANT SELECT ON `clickpipes`.* TO 'clickpipes_user'@'%';
+   ```
+
+3. ユーザーにレプリケーション権限を付与します。
+
+   ```sql
+   GRANT REPLICATION CLIENT ON *.* TO 'clickpipes_user'@'%';
+   GRANT REPLICATION SLAVE ON *.* TO 'clickpipes_user'@'%';
+   ```
+
+<Note>
+  `clickpipes_user` と `some_secure_password` は、使用するユーザー名とパスワードに置き換えてください。
+</Note>
+
+<div id="ssl-tls-configuration">
+  ## SSL/TLS 設定 (推奨)
+</div>
+
+SSL 証明書により、MySQL データベースへの安全な接続が確保されます。設定内容は証明書の種類によって異なります。
+
+**信頼できる認証局 (DigiCert、Let&#39;s Encrypt など)&#x20;**&#x20;- 追加の設定は不要です。
+
+**内部認証局** - IT チームからルート CA 証明書ファイルを入手してください。新しい MySQL ClickPipe の作成時に、ClickPipes UI でそのファイルをアップロードします。
+
+**セルフホスト MySQL** - MySQL サーバーから CA 証明書をコピーし (通常は `/var/lib/mysql/ca.pem`) 、新しい MySQL ClickPipe の作成時に UI でアップロードします。ホストにはサーバーの IP アドレスを使用してください。
+
+**サーバーにアクセスできないセルフホスト MySQL** - 証明書について IT チームに問い合わせてください。最終手段として、ClickPipes UI の &quot;Skip Certificate Verification&quot; トグルを使用できます (セキュリティ上の理由から推奨されません) 。
+
+SSL/TLS オプションの詳細については、[よくある質問](/ja/integrations/clickpipes/mysql/faq#tls-certificate-validation-error)をご確認ください。
+
+<div id="whats-next">
+  ## 次に行うこと
+</div>
+
+これで、[ClickPipe を作成](/ja/integrations/clickpipes/mysql/index)し、MySQL インスタンスから ClickHouse Cloud へのデータ取り込みを開始できます。
+ClickPipe の作成時に必要になるため、MySQL インスタンスのセットアップ中に使用した接続情報は必ず控えておいてください。

@@ -1,0 +1,34 @@
+---
+description: 'توثيق يصف مُعدِّل APPLY الذي يتيح لك استدعاء دالة ما لكل صف يُرجعه تعبير جدول خارجي ضمن استعلام.'
+sidebarTitle: 'APPLY'
+slug: /sql-reference/statements/select/apply-modifier
+title: 'مُعدِّل APPLY'
+keywords: ['APPLY', 'مُعدِّل']
+doc_type: 'reference'
+---
+
+> يتيح لك استدعاء دالة ما لكل صف يُرجعه تعبير جدول خارجي ضمن استعلام.
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+<div id="example">
+  ## مثال
+</div>
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```

@@ -20,43 +20,40 @@ if (NOT OS_LINUX)
     message (WARNING "jemalloc support on non-Linux is EXPERIMENTAL")
 endif()
 
+# jemalloc runtime config (malloc_conf). Options common to all platforms:
+#   muzzy_decay_ms:0           Release muzzy pages to the OS immediately (we tune via dirty decay only).
+#   dirty_decay_ms:5000        Purge dirty pages 5s after they go idle, off the allocation path.
+#   background_thread:true     Purge on jemalloc's own threads rather than from application allocations,
+#                              keeping RSS bounded without eager (per-free) purging.
+#   lg_extent_max_active_fit:8 Reuse an extent for requests up to 2^8 (256x) smaller; default 6 (64x).
+#                              Lets ClickBench Q35's 256 coalesced 16KB sub-hashtables be split and
+#                              reused instead of faulting via MADV_DONTNEED.
+#                              https://github.com/ClickHouse/ClickHouse/pull/80245
+#                              https://github.com/jemalloc/jemalloc/pull/2842
+#
+# Linux-only:
+#   oversize_threshold:N       Route large allocations (>= N) to jemalloc's dedicated oversize arena,
+#                              isolating big transient buffers (e.g. large hash tables) from the per-CPU
+#                              arenas. 64MiB on Linux: fewer page faults on hashtable-heavy queries and
+#                              ~2x less retained virtual address space; explicit arenas are not affected.
+#                              https://github.com/ClickHouse/ClickHouse/pull/103958
+#                              0 disables the arena (non-Linux still uses 0).
+#   percpu_arena:percpu        Cap arenas at the CPU count. Otherwise each thread keeps its own arena
+#                              (up to 4*CPU) and holds that memory while idle. Needs sched_getcpu, which
+#                              is unavailable on macOS/FreeBSD.
+#   prof:true,prof_active:true,prof_thread_active_init:false
+#                              Compile in and globally arm sampling but leave it off per-thread, so it can
+#                              be switched on at runtime (per-thread or globally). Not enabled on non-Linux.
 if (OS_LINUX)
-    # ThreadPool select job randomly, and there can be some threads that have been
-    # performed some memory-heavy tasks before and will be inactive for some time,
-    # but until it becomes active again, the memory will not be freed since, by
-    # default, each thread has its arena, but there should be no more than
-    # 4*CPU arenas (see opt.nareans description).
-    #
-    # By enabling percpu_arena number of arenas is limited to the number of CPUs, and hence
-    # this problem should go away.
-    #
-    # Profiling tools are enabled by default (prof:true) so it can be enabled during runtime by using config or query setting.
-    # To have a per-thread control over profiling, we rely on `prof_thread_active_init` instead of `prof_active`.
-    # I.e. we enable global jemalloc sampling but disable it for each thread with `prof_thread_active_init`.
-    # This way we can enable it for thread we want or for all threads (by setting `prof_thread_active_init` to true)
-    #
-    # lg_extent_max_active_fit:8 controls how jemalloc reuses memory blocks.
-    # Value 8 means extents can be reused when their size is up to 2^8 (256) times larger than requested.
-    # This enables better hot dirty memory reuse for two-level hashtables with 256 sub-hashtables.
-    # In ClickBench queries (e.g. Q35), these 256 sub-hashtables (16KB each) get reallocated frequently.
-    # Without this setting, when multiple 16KB blocks coalesce into larger blocks (>64*16KB),
-    # they can't be reused for new 16KB requests, causing expensive page faults from MADV_DONTNEED.
-    # Increasing from default 6(64x) to 8(256x) allows these coalesced blocks to be split and reused.
-    # See: https://github.com/ClickHouse/ClickHouse/pull/80245
-    # https://github.com/jemalloc/jemalloc/pull/2842
     set (JEMALLOC_CONFIG_MALLOC_CONF "percpu_arena:percpu,oversize_threshold:67108864,muzzy_decay_ms:0,dirty_decay_ms:5000,prof:true,prof_active:true,prof_thread_active_init:false,background_thread:true,lg_extent_max_active_fit:8")
 else()
-    # For non-Linux systems, percpu_arena and background_thread are assumed to be not supported by jemalloc.
-    # These two settings directly affect arena purging frequency and predictability:
-    # - percpu_arena:percpu restricts the number of created arenas to the number of CPUs
-    # - background_thread:true allows jemalloc to create its own background threads to trigger purging,
-    #   instead of relying on purging triggered by the allocations made by the application
-    #
-    # Without these settings, arena purging becomes less predictable and may not be triggered frequently
-    # enough, allowing the process to accumulate large RSS and causing MEMORY_LIMIT errors.
-    #
-    # To compensate it, dirty_decay_ms is set to zero, enabling immediate purging instead of the lazy one.
-    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:0,lg_extent_max_active_fit:8")
+    # On Darwin, background_thread is unavailable in upstream jemalloc; we enable it via the Darwin config
+    # headers (include_darwin_*/jemalloc/internal/jemalloc_internal_defs.h.in), where the full rationale
+    # lives (it requires switching malloc_mutex_t off os_unfair_lock and the nstime clock off Mach uptime).
+    # On FreeBSD (also handled by this branch) background_thread is supported out of the box. Previously
+    # this branch used dirty_decay_ms:0 (eager per-free purging) to bound RSS, under the wrong assumption
+    # that background_thread was unavailable; see https://github.com/ClickHouse/ClickHouse/issues/108429
+    set (JEMALLOC_CONFIG_MALLOC_CONF "oversize_threshold:0,muzzy_decay_ms:0,dirty_decay_ms:5000,background_thread:true,lg_extent_max_active_fit:8")
 endif()
 # CACHE variable is empty to allow changing defaults without the necessity
 # to purge cache

@@ -1,0 +1,167 @@
+---
+sidebarTitle: 'ClickHouse CLI'
+slug: /cloud/features/cli
+title: 'ClickHouse CLI'
+description: '使用 ClickHouse 命令行客户端管理 ClickHouse Cloud 服务和本地 ClickHouse 实例'
+keywords: ['clickhousectl', 'CLI', 'Cloud 管理', '本地开发']
+doc_type: 'reference'
+---
+
+ClickHouse 命令行客户端 (`clickhousectl`) 是一款统一的命令行工具，用于管理 ClickHouse Cloud 资源，并支持基于 ClickHouse 的本地开发。它还可管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
+
+<div id="installation">
+  ## 安装
+</div>
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+为方便使用，系统还会自动创建一个 `chctl` 别名。
+
+<div id="cloud-management">
+  ## Cloud 管理
+</div>
+
+直接通过命令行在 ClickHouse Cloud 中完成身份验证并管理您的服务。
+
+<div id="authentication">
+  ### 身份验证
+</div>
+
+```bash
+clickhousectl cloud auth
+```
+
+系统会提示你输入 API 密钥 和 secret，并将它们保存到 `.clickhouse/credentials.json` (仅限当前项目，且已加入 git 忽略) 。
+
+你也可以使用环境变量：
+
+```bash
+export CLICKHOUSE_CLOUD_API_KEY=your-key
+export CLICKHOUSE_CLOUD_API_SECRET=your-secret
+```
+
+<div id="services">
+  ### 服务
+</div>
+
+```bash
+# 列出服务
+clickhousectl cloud service list
+
+# 创建服务
+clickhousectl cloud service create --name my-service \
+  --provider aws \
+  --region us-east-1
+
+# 获取服务详情
+clickhousectl cloud service get <service-id>
+
+# 扩缩服务
+clickhousectl cloud service scale <service-id> \
+  --min-replica-memory-gb 24 \
+  --max-replica-memory-gb 48 \
+  --num-replicas 3
+
+# 启动/停止服务
+clickhousectl cloud service start <service-id>
+clickhousectl cloud service stop <service-id>
+
+# 删除服务
+clickhousectl cloud service delete <service-id>
+```
+
+<div id="postgres-services">
+  ### Postgres 服务 (Beta)
+</div>
+
+创建和管理 [ClickHouse Cloud Postgres](/zh/products/managed-postgres/overview) 服务。
+
+```bash
+# 列出 Postgres 服务
+clickhousectl cloud postgres list
+
+# 创建 Postgres 服务
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --region us-east-1 \
+  --size c6gd.xlarge \
+  --pg-version 18
+
+# 获取服务详情
+clickhousectl cloud postgres get <pg-id>
+
+# 更新服务
+clickhousectl cloud postgres update <pg-id> --size c6gd.2xlarge --add-tag env=prod
+
+# 重置密码
+clickhousectl cloud postgres reset-password <pg-id> --generate
+
+# 只读副本与时间点恢复
+clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
+clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
+
+# 删除服务
+clickhousectl cloud postgres delete <pg-id>
+```
+
+<div id="organizations">
+  ### 组织
+</div>
+
+```bash
+clickhousectl cloud org list
+clickhousectl cloud org get <org-id>
+```
+
+<div id="api-keys">
+  ### API 密钥
+</div>
+
+```bash
+clickhousectl cloud key list
+clickhousectl cloud key create --name ci-key --role-id <role-id>
+clickhousectl cloud key delete <key-id>
+```
+
+<div id="members-and-invitations">
+  ### 成员与邀请
+</div>
+
+```bash
+clickhousectl cloud member list
+clickhousectl cloud invitation create --email dev@example.com --role-id <role-id>
+```
+
+<div id="backups">
+  ### 备份
+</div>
+
+```bash
+clickhousectl cloud backup list <service-id>
+clickhousectl cloud backup get <service-id> <backup-id>
+```
+
+<div id="json-output">
+  ### JSON 输出
+</div>
+
+使用 `--json` 标志可让任何云端命令返回 JSON 格式的响应：
+
+```bash
+clickhousectl cloud --json service list
+```
+
+<div id="local-development">
+  ## 本地开发
+</div>
+
+命令行客户端 还可管理本地的 ClickHouse 安装和服务器。要开始进行本地开发，请参阅 [clickhousectl (CLI)](/zh/get-started/setup/self-managed/clickhousectl) 页面。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+* macOS (aarch64、x86&#95;64) 或 Linux (aarch64、x86&#95;64)
+* Cloud 命令需要 [ClickHouse Cloud API 密钥](/zh/products/cloud/features/admin-features/api/openapi)

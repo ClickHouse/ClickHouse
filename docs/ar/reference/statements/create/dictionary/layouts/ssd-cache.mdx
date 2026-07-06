@@ -1,0 +1,51 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/ssd-cache
+title: 'أنواع تخطيط القاموس ssd_cache'
+sidebarTitle: 'ssd_cache'
+description: 'تخزين بيانات القاموس على SSD مع فهرس في الذاكرة: من النوعين ssd_cache وcomplex_key_ssd_cache'
+doc_type: 'مرجع'
+---
+
+<div id="ssd_cache">
+  ## ssd_cache
+</div>
+
+مشابه لـ `cache`، لكنه يخزّن البيانات على SSD والفهرس في RAM. كما يمكن أيضًا تطبيق جميع إعدادات قاموس `cache` المتعلقة بقائمة انتظار التحديث على قواميس `SSD cache`.
+
+يكون مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint).
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SSD_CACHE(BLOCK_SIZE 4096 FILE_SIZE 16777216 READ_BUFFER_SIZE 1048576
+        PATH '/var/lib/clickhouse/user_files/test_dict'))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+        <ssd_cache>
+            <!-- حجم كتلة القراءة الأساسية بالبايت. يُوصى بأن يساوي حجم صفحة SSD. -->
+            <block_size>4096</block_size>
+            <!-- الحجم الأقصى لملف cache بالبايت. -->
+            <file_size>16777216</file_size>
+            <!-- حجم المخزن المؤقت في RAM بالبايت لقراءة العناصر من SSD. -->
+            <read_buffer_size>131072</read_buffer_size>
+            <!-- حجم المخزن المؤقت في RAM بالبايت لتجميع العناصر قبل تفريغها إلى SSD. -->
+            <write_buffer_size>1048576</write_buffer_size>
+            <!-- المسار الذي سيُخزَّن فيه ملف cache. -->
+            <path>/var/lib/clickhouse/user_files/test_dict</path>
+        </ssd_cache>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_ssd_cache">
+  ## complex_key_ssd_cache
+</div>
+
+هذا النوع من التخزين مخصص للاستخدام مع [المفاتيح](/ar/reference/statements/create/dictionary/attributes#composite-key) المركبة. وهو مشابه لـ `ssd_cache`.

@@ -1,0 +1,23 @@
+---
+slug: /guides/developer/overview
+sidebarTitle: '고급 가이드 개요'
+description: '고급 가이드 개요'
+title: '고급 가이드'
+keywords: ['ClickHouse 고급 가이드', '개발자 가이드', '쿼리 최적화', 'materialized views', '중복 제거', '시계열', '쿼리 실행']
+doc_type: 'guide'
+---
+
+이 섹션에는 다음과 같은 고급 가이드가 있습니다:
+
+| 가이드                                                                                                                                              | 설명                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Alternative Query Languages](/ko/concepts/features/configuration/settings/alternative-query-languages)                                             | 지원되는 대체 방언과 그 사용 방법을 안내하는 가이드입니다. 각 방언으로 작성한 쿼리 예시를 제공합니다.                                                                                                                                                        |
+| [Cascading Materialized Views](/ko/concepts/features/materialized-views/cascading-materialized-views)                                               | Materialized View를 생성하고 이를 연쇄적으로 연결하는 방법, 여러 원본 테이블을 하나의 대상 테이블로 결합하는 방법을 안내하는 가이드입니다. 연쇄 materialized view를 사용해 도메인 이름 그룹의 데이터를 월별 및 연도별로 집계하는 예시도 포함되어 있습니다.                                                    |
+| [Debugging memory issues](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)                                                   | ClickHouse 내 메모리 문제를 디버깅하는 방법을 안내하는 가이드입니다.                                                                                                                                                                       |
+| [Deduplicating Inserts on Retries](/ko/concepts/features/operations/insert/deduplicating-inserts-on-retries)                                        | 실패한 삽입을 재시도해야 하는 상황을 처리하는 방법을 안내하는 가이드입니다.                                                                                                                                                                        |
+| [Deduplication strategies](/ko/concepts/features/operations/insert/deduplication)                                                                   | 데이터베이스에서 중복 행을 제거하는 기법인 데이터 중복 제거를 자세히 다루는 가이드입니다. OLTP 시스템의 기본 키 기반 중복 제거와의 차이점, ClickHouse의 중복 제거 방식, 그리고 ClickHouse 쿼리에서 중복 데이터가 발생하는 상황을 처리하는 방법을 설명합니다.                                                      |
+| [Filling gaps in time-series data](/ko/guides/use-cases/real-time-analytics/time-series/time-series-filling-gaps)                                   | 데이터의 빈 구간을 채워 더 완전하고 연속적인 시계열 정보를 구성하는 기법을 포함해, ClickHouse의 시계열 데이터 처리 기능에 대한 통찰을 제공하는 가이드입니다.                                                                                                                    |
+| [Manage Data with TTL (Time-to-live)](/ko/concepts/features/operations/delete/ttl)                                                                  | 시계열 데이터의 빈 구간을 채우기 위해 `WITH FILL` 절을 사용하는 방법을 설명하는 가이드입니다. 0 값으로 빈 구간을 채우는 방법, 빈 구간 채우기의 시작점을 지정하는 방법, 특정 종료 지점까지 빈 구간을 채우는 방법, 누적 계산을 위해 값을 보간하는 방법을 다룹니다.                                                       |
+| [Stored procedures &amp; query parameters](/ko/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements)                          | ClickHouse가 전통적인 저장 프로시저를 지원하지 않는다는 점을 설명하고, 사용자 정의 함수(UDF), 매개변수화된 뷰, materialized view, 외부 오케스트레이션 등 권장되는 대안을 제시하는 가이드입니다. 또한 안전한 매개변수화 쿼리(prepared statements와 유사)를 위한 쿼리 매개변수도 다룹니다.                          |
+| [Understanding query execution with the Analyzer](/ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer) | 분석기 도구를 소개하여 ClickHouse 쿼리 실행 과정을 명확히 이해할 수 있도록 돕는 가이드입니다. 분석기가 쿼리를 일련의 단계로 분해하는 방식을 설명하며, 이를 통해 전체 실행 과정을 시각화하고 문제를 해결하여 성능을 최적화할 수 있습니다.                                                                        |
+| [Using JOINs in ClickHouse](/ko/concepts/features/operations/select/joining-tables)                                                                 | ClickHouse에서 테이블 조인을 쉽게 이해할 수 있도록 설명하는 가이드입니다. 다양한 조인 유형(`INNER`, `LEFT`, `RIGHT` 등)을 다루고, 효율적인 조인을 위한 모범 사례(예: 더 작은 테이블을 오른쪽에 배치)를 살펴보며, 복잡한 데이터 관계에 대한 쿼리를 최적화하는 데 도움이 되도록 ClickHouse 내부 조인 알고리즘에 대한 통찰도 제공합니다. |
