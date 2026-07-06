@@ -1,0 +1,68 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-15
+title: 'Demo days - 2026-05-15'
+sidebarTitle: '2026-05-15'
+description: 'ClickStack demo days for 2026-05-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Alerts from notebooks {#alerts-from-notebooks}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/HIxCMDmdZ8o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Notebooks can now create alerts. The same notebook flow that already builds dashboards on the fly will now also wire up an alert for you, so you can go from "here's an interesting query" to "page me when this fires" without leaving the notebook.
+
+There's one caveat that's worth knowing about. We have a bunch of pre-defined webhooks on the team, but right now the notebook doesn't ask follow-up questions, so it just picks whichever webhook looks most relevant rather than letting you choose. There's already a PR in flight to give notebooks the ability to ask follow-up questions when they're missing context, so that gap should close soon.
+
+## Autocomplete from materialized views {#autocomplete-from-materialized-views}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/iQf5EwktBW4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A while back we added materialized views to back attribute autocomplete in the search bar, which made values pop in instantly instead of being computed on the fly. We're now using those same MVs to power the side filters, which means filters load a lot faster on busy instances.
+
+There's one behaviour change worth flagging. The MV-backed filters return all possible filter values inside the current time range rather than being scoped to your current query. There's a toggle to switch back to search-scoped filters, which run the slower aggregation against your live results. The default `filterValueExpandedKeyLimit` has also been bumped: 20 keys without MVs, 100 keys with them, configurable up to whatever you want (we tested at 1000).
+
+The MV is relatively cheap to maintain, it's running on our staging instance against a lot of data and behaving well. The same MV powers attribute autocomplete and the map column expansion, so you get the speedup in multiple places once it's set up. A discussion came up in the demo about whether the search-scoped vs all-filters toggle should be promoted to a first-class pill switch at the top of the filters panel rather than living in settings, that's something we're looking at for a follow-up.
+
+**Related PRs:** [#2272](https://github.com/hyperdxio/hyperdx/pull/2272) feat: filters are not search aware by default; accelerated by MV
+
+## Table column ordering and per-series formatting {#table-column-ordering-and-per-series-formatting}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/iEn8kzvERE8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A few related table improvements landed together. Group-by columns can now be pinned to the left side of the table instead of always rendering on the right - which is usually what you want for RED-style dashboards where the service name is the thing you scan down. There's a per-table display setting to control this behavior.
+
+Per-series number formats are now supported as well. The old behaviour applied a single number format to the whole table, which meant a Requests column would render as `123ms` if the table happened to have any millisecond-formatted series. Now you can set a format per column or per series, so request counts stay as plain numbers while latency columns format as durations.
+
+On top of that, format inference is now per-series. If you aggregate over the Trace Duration field, that specific series gets inferred as milliseconds, the rest of the table doesn't get dragged into millisecond formatting just because one column happens to be a duration.
+
+**Related PRs:** [#2149](https://github.com/hyperdxio/hyperdx/pull/2149) feat: Allow displaying group-by columns on LHS of table, [#2174](https://github.com/hyperdxio/hyperdx/pull/2174) feat: Add per-series number formats
+
+## Customizable dashboard linking {#customizable-dashboard-linking}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/Stlz02xES40" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Dashboard tables can now link to other dashboards (or search) on row click, with configurable templating for both the destination and the filters that get passed through. In the table tile configuration there's a new "row click action" option. Pick "dashboard", choose the dashboard to link to, then map filters from the current row to filters on the target dashboard. Filter values use Handlebars-style templating, so you can pull any column value from the clicked row into the destination filter or the WHERE clause (in either SQL or Lucene). The example shown in the demo wires up a service list so clicking a row jumps to the service-detail dashboard with `service.name` already filtered.
+
+Instead of picking a specific destination dashboard, you can template the dashboard name itself. So if you have per-service dashboards named something like `${service.name} dashboard`, the link can resolve to whichever one matches the clicked row. There's error handling for the case where the templated dashboard doesn't exist, a notification pops up rather than navigating to a broken page.
+
+Multiple variables are supported, you can pass any combination of columns from the clicked row into either the filter set or the templated dashboard name. Handlebars has dynamic helpers and conditional blocks but most of those are disabled for now in favour of keeping the surface area small and predictable. The import flow also got an update: dashboards that link to other dashboards by ID can now have those references remapped during import to whatever dashboard exists in the destination account.
+
+**Related PRs:** [#2146](https://github.com/hyperdxio/hyperdx/pull/2146) feat: Add filter templating to custom dashboard on-click, [#2148](https://github.com/hyperdxio/hyperdx/pull/2148) feat: Support import/export for dashboard onClicks, [#2156](https://github.com/hyperdxio/hyperdx/pull/2156) feat: Add custom onClick field to external dashboards API, [#2273](https://github.com/hyperdxio/hyperdx/pull/2273) feat: Add dashboard table onClick to MCP schemas and prompts

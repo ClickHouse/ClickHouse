@@ -1,0 +1,109 @@
+---
+sidebarTitle: 'Astrato'
+slug: /integrations/astrato
+keywords: ['ClickHouse', 'Power BI', 'اتصال', 'تكامل', 'UI', 'تطبيقات البيانات', 'تصور البيانات', 'التحليلات المضمنة', 'Astrato']
+description: 'تقدّم Astrato ذكاء الأعمال بالخدمة الذاتية الحقيقي للمؤسسات وشركات البيانات، عبر وضع التحليلات في متناول كل مستخدم وتمكينه من إنشاء لوحات المعلومات والتقارير وتطبيقات البيانات الخاصة به، بما يتيح الإجابة عن الأسئلة المتعلقة بالبيانات دون الحاجة إلى مساعدة قسم تقنية المعلومات. وتُسرّع Astrato التبنّي، وتعجّل اتخاذ القرار، وتوحّد التحليلات، والتحليلات المضمنة، وإدخال البيانات، وتطبيقات البيانات ضمن منصة واحدة. كما تجمع Astrato بين التنفيذ والتحليلات في منصة واحدة، وتوفّر إمكانية الكتابة الراجعة المباشرة، والتفاعل مع نماذج ML، وتسريع تحليلاتك باستخدام الذكاء الاصطناعي — لتتجاوز مجرد لوحات المعلومات، بفضل دعم Pushdown SQL في Astrato.'
+title: 'ربط Astrato بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+تستخدم Astrato ‏Pushdown SQL للاستعلام مباشرةً من ClickHouse Cloud أو من عمليات النشر المحلية. وهذا يعني أنه يمكنك الوصول إلى جميع البيانات التي تحتاج إليها، مدعومًا بالأداء الرائد في المجال الذي يقدّمه ClickHouse.
+
+<div id="connection-data-required">
+  ## بيانات الاتصال المطلوبة
+</div>
+
+عند إعداد اتصال البيانات، ستحتاج إلى معرفة ما يلي:
+
+* اتصال البيانات: اسم المضيف، المنفذ
+
+* بيانات اعتماد قاعدة البيانات: اسم المستخدم، كلمة المرور
+
+<ConnectionDetails />
+
+<div id="creating-the-data-connection-to-clickhouse">
+  ## إنشاء اتصال البيانات بـ ClickHouse
+</div>
+
+* حدِّد **البيانات** من الشريط الجانبي، ثم حدِّد علامة تبويب **اتصال البيانات**
+  (أو انتقل إلى هذا الرابط: https://app.astrato.io/data/sources)
+  ​
+* انقر على زر **اتصال بيانات جديد** في أعلى يمين الشاشة.
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_1_dataconnection.webp" alt="اتصال بيانات Astrato" border />
+
+* حدِّد **ClickHouse**.
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp" alt="اتصال بيانات Astrato بـ ClickHouse" border />
+
+* أكمل الحقول المطلوبة في مربع حوار الاتصال
+
+<Image size="sm" img="/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp" alt="الحقول المطلوبة للاتصال بـ ClickHouse في Astrato" border />
+
+* انقر على **اختبار الاتصال**. إذا نجح الاتصال، فأعطِ اتصال البيانات **اسمًا** ثم انقر على **التالي.**
+
+* عيِّن **وصول المستخدم** لاتصال البيانات، ثم انقر على **اتصال.**
+
+<Image size="md" img="/images/integrations/data-visualization/astrato_3_user_access.webp" alt="وصول المستخدم للاتصال بـ ClickHouse في Astrato" border />
+
+* يتم إنشاء الاتصال، كما يتم إنشاء عرض بيانات.
+
+<Note>
+  إذا تم إنشاء نسخة مكررة، فستتم إضافة طابع زمني إلى اسم مصدر البيانات.
+</Note>
+
+<div id="creating-a-semantic-model--data-view">
+  ## إنشاء نموذج دلالي / عرض بيانات
+</div>
+
+في محرر عرض البيانات، سترى جميع الجداول والمخططات لديك في ClickHouse، فحدّد بعضها للبدء.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp" alt="Astrato الاتصال بـ ClickHouse ووصول المستخدم" border />
+
+الآن بعد أن حدّدت بياناتك، انتقل إلى تعريف **عرض البيانات**. انقر على Define في أعلى يمين صفحة الويب.
+
+هنا يمكنك إجراء joins للبيانات، وكذلك **إنشاء أبعاد ومقاييس خاضعة للحوكمة**، وهو ما يعد مثاليًا لتعزيز الاتساق في منطق الأعمال عبر مختلف الفرق.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp" alt="Astrato الاتصال بـ ClickHouse ووصول المستخدم" border />
+
+**يقترح Astrato joins بذكاء** باستخدام بياناتك الوصفية، بما في ذلك الاستفادة من المفاتيح في ClickHouse. وتسهّل عليك joins المقترحة البدء بالاعتماد على بيانات ClickHouse المحكمة لديك، من دون إعادة اختراع العجلة. كما نعرض لك أيضًا **جودة join** بحيث يتاح لك خيار مراجعة جميع الاقتراحات بالتفصيل في Astrato.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp" alt="Astrato الاتصال بـ ClickHouse ووصول المستخدم" border />
+
+<div id="creating-a-dashboard">
+  ## إنشاء لوحة معلومات
+</div>
+
+في بضع خطوات فقط، يمكنك إنشاء أول مخطط لك في Astrato.
+
+1. افتح لوحة العناصر المرئية
+2. حدِّد عنصرًا مرئيًا (لنبدأ بـ Column Bar Chart)
+3. أضف الأبعاد
+4. أضف المقاييس
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp" alt="اتصال Astrato بـ ClickHouse - وصول المستخدم" border />
+
+<div id="view-generated-sql-supporting-each-visualization">
+  ### عرض SQL المُولَّد الذي يدعم كل تصور
+</div>
+
+تُعد الشفافية والدقة في صميم Astrato. نضمن أن تكون كل استعلامات SQL المُولَّدة مرئية، مما يمنحك تحكمًا كاملًا. تتم كل عمليات المعالجة مباشرةً داخل ClickHouse، للاستفادة من سرعته مع الحفاظ في الوقت نفسه على أمان قوي وحوكمة فعّالة.
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp" alt="Astrato: الاتصال بـ ClickHouse ووصول المستخدم" border />
+
+<div id="example-completed-dashboard">
+  ### مثال على لوحة معلومات مكتملة
+</div>
+
+أصبحت الآن على بُعد خطوات من إنشاء لوحة معلومات كاملة وجذابة أو تطبيق بيانات. للاطلاع على المزيد مما أنشأناه، توجّه إلى معرضنا التجريبي على موقعنا الإلكتروني. https://astrato.io/gallery
+
+<Image size="lg" img="/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp" alt="اتصال Astrato بـ ClickHouse ووصول المستخدم" border />

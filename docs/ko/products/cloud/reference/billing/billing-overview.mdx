@@ -1,0 +1,495 @@
+---
+sidebarTitle: '개요'
+slug: /cloud/manage/billing/overview
+title: '요금'
+description: 'ClickHouse Cloud 요금 개요 페이지'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', '요금', '청구', '클라우드 비용', '컴퓨트 요금']
+---
+
+요금 정보는 [ClickHouse Cloud Pricing](https://clickhouse.com/pricing#pricing-calculator) 페이지를 참조하십시오.
+ClickHouse Cloud는 컴퓨트, 스토리지, [데이터 전송](/ko/products/cloud/reference/billing/network-data-transfer)(인터넷 송신 및 리전 간 전송), 그리고 [ClickPipes](/ko/integrations/clickpipes/home) 사용량을 기준으로 청구됩니다.
+청구 금액에 영향을 미치는 요소와 비용을 관리하는 방법을 알아보려면 계속 읽어보십시오.
+
+<div id="amazon-web-services-aws-example">
+  ## Amazon Web Services (AWS) 예시
+</div>
+
+<Note>
+  * 가격은 AWS us-east-1 기준 요금을 반영합니다.
+  * 해당 데이터 전송 및 ClickPipes 청구 요금은 [여기](/ko/products/cloud/reference/billing/network-data-transfer)에서 확인하세요.
+</Note>
+
+<div id="basic-from-6652-per-month">
+  ### Basic: 월 $66.52부터
+</div>
+
+권장 대상: 엄격한 안정성 보장이 필요하지 않고 데이터 규모가 작은 부서 단위 사용 사례
+
+**Basic 티어 서비스**
+
+* 1 레플리카 x 8 GiB RAM, 2 vCPU
+* 압축 데이터 500 GB
+* 데이터 Backup 500 GB
+* 퍼블릭 인터넷 이그레스 데이터 전송 10 GB
+* 리전 간 데이터 전송 5 GB
+
+이 예시의 가격 세부 내역:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>하루 6시간 활성 상태</th>
+      <th>하루 12시간 활성 상태</th>
+      <th>하루 24시간 활성 상태</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>컴퓨트</td>
+      <td>$39.91</td>
+      <td>$79.83</td>
+      <td>$159.66</td>
+    </tr>
+
+    <tr>
+      <td>스토리지</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+    </tr>
+
+    <tr>
+      <td>퍼블릭 인터넷 이그레스 데이터 전송</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+    </tr>
+
+    <tr>
+      <td>리전 간 데이터 전송</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+    </tr>
+
+    <tr>
+      <td>합계</td>
+      <td>$66.52</td>
+      <td>$106.44</td>
+      <td>$186.27</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (상시 실행, 자동 스케일링): 월 $499.38부터
+</div>
+
+가장 적합한 용도: 더 높은 SLA(레플리카 2개 이상의 서비스), 확장성, 고급 보안이 필요한 워크로드.
+
+**Scale 티어 서비스**
+
+* 워크로드가 거의 100% 시간 동안 활성 상태로 실행됨
+* 비용이 과도하게 증가하지 않도록 자동 스케일링 최대값을 설정 가능
+* 퍼블릭 인터넷 이그레스 데이터 전송 100 GB
+* 리전 간 데이터 전송 10 GB
+
+이 예시의 가격 구성은 다음과 같습니다:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>예시 1</th>
+      <th>예시 2</th>
+      <th>예시 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>컴퓨트</td>
+      <td>레플리카 2개 x 8 GiB RAM, 2 vCPU<br />$436.95</td>
+      <td>레플리카 2개 x 16 GiB RAM, 4 vCPU<br />$873.89</td>
+      <td>레플리카 3개 x 16 GiB RAM, 4 vCPU<br />$1,310.84</td>
+    </tr>
+
+    <tr>
+      <td>스토리지</td>
+      <td>1 TB 데이터 + 백업 1개<br />$50.60</td>
+      <td>2 TB 데이터 + 백업 1개<br />$101.20</td>
+      <td>3 TB 데이터 + 백업 1개<br />$151.80</td>
+    </tr>
+
+    <tr>
+      <td>퍼블릭 인터넷 이그레스 데이터 전송</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>리전 간 데이터 전송</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+    </tr>
+
+    <tr>
+      <td>합계</td>
+      <td>$499.38</td>
+      <td>$986.92</td>
+      <td>$1,474.47</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise: 시작 가격은 달라질 수 있습니다
+</div>
+
+적합한 대상: 엄격한 보안 및 컴플라이언스 요구 사항이 있는 대규모 미션 크리티컬 배포 환경
+
+**Enterprise tier 서비스**
+
+* 워크로드 활성 시간 약 100%
+* 퍼블릭 인터넷 이그레스 데이터 전송 1 TB
+* 리전 간 데이터 전송 500 GB
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>예시 1</th>
+      <th>예시 2</th>
+      <th>예시 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>컴퓨트</td>
+      <td>2 레플리카 x 32 GiB RAM, 8 vCPU<br />$2,285.60</td>
+      <td>2 레플리카 x 64 GiB RAM, 16 vCPU<br />$4,571.19</td>
+      <td>2 x 120 GiB RAM, 30 vCPU<br />$8,570.99</td>
+    </tr>
+
+    <tr>
+      <td>스토리지</td>
+      <td>5 TB + 백업 1개<br />$253.00</td>
+      <td>10 TB + 백업 1개<br />$506.00</td>
+      <td>20 TB + 백업 1개<br />$1,012.00</td>
+    </tr>
+
+    <tr>
+      <td>퍼블릭 인터넷 이그레스 데이터 전송</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+    </tr>
+
+    <tr>
+      <td>리전 간 데이터 전송</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+    </tr>
+
+    <tr>
+      <td>합계</td>
+      <td>$2,669.40</td>
+      <td>$5,207.99</td>
+      <td>$9,713.79</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="faqs">
+  ## 자주 묻는 질문
+</div>
+
+<div id="what-is-chc">
+  ### ClickHouse Credit(CHC)란 무엇입니까?
+</div>
+
+ClickHouse Credit는 고객의 ClickHouse Cloud 사용량에 충당되는 크레딧 단위이며, 1 미국 달러(USD)에 해당하고 ClickHouse가 해당 시점에 게시한 최신 가격표를 기준으로 적용됩니다.
+
+<Note>
+  Stripe를 통해 청구되는 경우 Stripe 인보이스에는 1 CHC가 $0.01 USD로 표시됩니다. 이는 1 CHC = $1 USD인 당사의 표준 SKU에 대해 Stripe가 소수 단위 수량을 청구할 수 없기 때문에, Stripe에서 정확하게 청구할 수 있도록 하기 위한 것입니다.
+</Note>
+
+<div id="find-legacy-pricing">
+  ### 이전 요금 정보는 어디에서 확인할 수 있습니까?
+</div>
+
+이전 요금 정보는 [여기](https://clickhouse.com/pricing?legacy=true)에서 확인할 수 있습니다.
+
+<div id="how-is-compute-metered">
+  ### 컴퓨트는 어떻게 과금되나요?
+</div>
+
+ClickHouse Cloud는 컴퓨트 사용량을 8G RAM 단위로, 분 단위 기준으로 과금합니다.
+컴퓨트 비용은 티어, 리전, 클라우드 서비스 제공업체에 따라 달라집니다.
+
+<div id="how-is-storage-on-disk-calculated">
+  ### 디스크 스토리지는 어떻게 계산됩니까?
+</div>
+
+ClickHouse Cloud는 클라우드 객체 스토리지를 사용하며, 사용량은 ClickHouse 테이블에 저장된 데이터의 압축된 크기를 기준으로 산정됩니다.
+스토리지 비용은 모든 티어에서 동일하며, 리전 및 클라우드 서비스 제공업체에 따라 달라집니다.
+
+<div id="do-backups-count-toward-total-storage">
+  ### 백업은 총 저장소 사용량에 포함됩니까?
+</div>
+
+저장소와 백업은 모두 저장소 비용 산정에 포함되며, 각각 별도로 청구됩니다.
+모든 서비스는 기본적으로 1개의 백업이 설정되며, 하루 동안 보관됩니다.
+추가 백업이 필요한 사용자는 Cloud Console의 설정 탭에서 추가 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups)을 구성할 수 있습니다.
+
+<div id="how-do-i-estimate-compression">
+  ### 압축률은 어떻게 추정하나요?
+</div>
+
+압축률은 데이터셋마다 달라질 수 있습니다.
+얼마나 달라지는지는 기본적으로 데이터 자체가 얼마나 잘 압축되는지(높은 카디널리티 필드와 낮은 카디널리티 필드의 개수),
+그리고 사용자가 스키마를 어떻게 구성하는지(예를 들어 선택적 코덱을 사용하는지 여부)에 따라 결정됩니다.
+일반적인 분석 데이터의 경우 10배 수준일 수 있지만, 이보다 훨씬 낮거나 높을 수도 있습니다.
+자세한 내용은 [최적화 문서](/ko/concepts/features/operations/insert/asyncinserts)를 참고하고, 구체적인 로깅 사용 사례는 이 [Uber 블로그](https://www.uber.com/blog/logging/)를 참고하십시오.
+정확한 값을 확인하는 사실상 유일한 방법은 데이터셋을 ClickHouse에 수집한 뒤, 원본 데이터셋의 크기와 ClickHouse에 저장된 크기를 비교하는 것입니다.
+
+다음 쿼리를 사용할 수 있습니다:
+
+```sql title="Estimating compression"
+SELECT formatReadableSize(total_bytes) 
+FROM system.tables 
+WHERE name = <your table name>
+```
+
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### 자가 관리형 배포를 사용 중인 경우, 클라우드에서 서비스 운영 비용을 추정할 수 있도록 ClickHouse는 어떤 도구를 제공하나요?
+</div>
+
+ClickHouse 쿼리 로그에는 ClickHouse Cloud에서 워크로드를 실행하는 비용을 추정하는 데 활용할 수 있는 [주요 메트릭](/ko/reference/system-tables/query_log)이 기록됩니다.
+자가 관리형에서 ClickHouse Cloud로 마이그레이션하는 방법에 대한 자세한 내용은 [마이그레이션 문서](/ko/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)를 참조하시고, 추가 질문이 있으면 [ClickHouse 지원팀](https://console.clickhouse.cloud/support)에 문의하십시오.
+
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### ClickHouse Cloud에서 사용할 수 있는 청구 옵션은 무엇입니까?
+</div>
+
+ClickHouse Cloud는 다음과 같은 청구 옵션을 지원합니다:
+
+* 셀프서비스 월간 결제(USD, 신용카드 사용)
+* 영업팀을 통한 연간/다년 계약(선불 &quot;ClickHouse Credits&quot; 방식, USD, 추가 결제 옵션 제공)
+* AWS, GCP, Azure 마켓플레이스를 통한 이용(사용량 기반 과금(PAYG) 또는 마켓플레이스를 통해 ClickHouse Cloud와 계약 체결)
+
+<Note>
+  PAYG용 ClickHouse Cloud 크레딧은 $0.01 단위로 인보이스가 발행되므로, 사용량에 따라 ClickHouse 크레딧을 소수 단위로 청구할 수 있습니다. 이는 미리 전체 $1 단위로 구매하는 약정형 ClickHouse 크레딧과 다릅니다.
+</Note>
+
+<div id="can-i-delete-my-credit-card">
+  ### 신용카드를 삭제할 수 있나요?
+</div>
+
+청구 UI에서는 신용카드를 삭제할 수 없지만, 언제든지 업데이트할 수 있습니다. 이렇게 하면 조직에 항상 유효한 결제 수단이 설정되도록 할 수 있습니다. 신용카드를 삭제해야 하는 경우, [ClickHouse 지원팀](https://console.clickhouse.cloud/support)로 문의하십시오.
+
+<div id="where-can-i-see-my-refunds">
+  ### 환불 내역은 어디에서 확인할 수 있나요?
+</div>
+
+ClickHouse Cloud 콘솔에서 Organization &gt; Billing으로 이동하세요. Refunds 섹션은 Invoices와 Credits 아래에 있습니다. 확인하려면 Organization Admin 또는 Billing Admin 권한이 있어야 합니다.
+
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### 환불이 반영되기까지 얼마나 걸리나요?
+</div>
+
+환불은 당사에서 처리되는 즉시 반영됩니다. 신용카드 환불의 경우 은행에 따라 카드 명세서에 반영되기까지 추가로 시간이 걸릴 수 있습니다.
+
+<div id="how-long-is-the-billing-cycle">
+  ### 청구 주기는 얼마나 되나요?
+</div>
+
+청구는 월 단위로 이루어지며, 시작일은 ClickHouse Cloud 조직이 생성된 날짜를 기준으로 합니다.
+
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### 활성화된 PAYG marketplace subscription이 있는 상태에서 약정 계약을 체결하면, 약정 크레딧이 먼저 소진됩니까?
+</div>
+
+예. 사용량은 다음 결제 수단 순서대로 차감됩니다:
+
+* 약정(선불) 크레딧
+* marketplace subscription (PAYG)
+* 신용카드
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### ClickHouse Cloud는 Scale 및 Enterprise 서비스의 비용 관리를 위해 어떤 제어 기능을 제공합니까?
+</div>
+
+* Trial 및 Annual Commit 고객은 사용량이 `50%`, `75%`, `90%`와 같은 특정 임계값에 도달하면 자동으로 이메일 알림을 받습니다. 이를 통해 사용량을 선제적으로 관리할 수 있습니다.
+* ClickHouse Cloud에서는 분석 워크로드의 주요 비용 요인인 컴퓨트에 대해 [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 통해 최대 자동 스케일링 한도를 설정할 수 있습니다.
+* [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 사용하면 메모리 한도를 설정할 수 있으며, 비활성 상태에서의 일시 중지/유휴 상태 전환 동작을 제어하는 옵션도 제공합니다.
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### Basic 서비스의 비용 관리를 위해 ClickHouse Cloud는 어떤 제어 기능을 제공합니까?
+</div>
+
+* [고급 스케일링 제어](/ko/products/cloud/features/autoscaling/overview)를 사용하면 비활성 기간 중 일시 중지/유휴 상태 전환 동작을 제어할 수 있습니다. Basic 서비스에서는 메모리 할당량 조정이 지원되지 않습니다.
+* 기본 설정에서는 일정 시간 동안 활동이 없으면 서비스가 일시 중지됩니다.
+
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### 여러 service가 있는 경우, service별로 인보이스가 발행됩니까, 아니면 통합 인보이스가 발행됩니까?
+</div>
+
+특정 조직의 모든 service에 대해 청구 기간별로 하나의 통합 인보이스가 발행됩니다.
+
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### 체험 기간과 크레딧이 만료되기 전에 신용카드를 추가하고 업그레이드하면 요금이 청구되나요?
+</div>
+
+사용자가 30일 체험 기간이 끝나기 전에 체험에서 유료 플랜으로 전환하더라도 체험 크레딧이 남아 있다면,
+초기 30일 체험 기간 동안에는 남아 있는 체험 크레딧이 계속 먼저 차감되며, 그 이후에 신용카드로 요금이 청구됩니다.
+
+<div id="how-can-i-keep-track-of-my-spending">
+  ### 지출 내역은 어떻게 확인할 수 있습니까?
+</div>
+
+ClickHouse Cloud 콘솔은 서비스별 사용량을 자세히 보여주는 사용량 표시를 제공합니다. 이 내역은 사용량 차원별로 구성되어 있어 각 계량 단위에 따른 비용을 파악하는 데 도움이 됩니다.
+
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### ClickHouse Cloud 서비스 구독의 인보이스는 어떻게 확인합니까?
+</div>
+
+신용카드를 사용하는 직접 구독의 경우:
+
+인보이스를 확인하려면 ClickHouse Cloud UI의 왼쪽 탐색 모음에서 조직을 선택한 다음 Billing으로 이동하십시오. 모든 인보이스는 Invoices 섹션에 표시됩니다.
+
+클라우드 마켓플레이스를 통한 구독의 경우:
+
+모든 마켓플레이스 구독의 청구 및 인보이스 발행은 해당 마켓플레이스에서 처리합니다. 인보이스는 각 클라우드 제공업체의 마켓플레이스에서 직접 확인할 수 있습니다.
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### 사용 내역서의 날짜가 AWS Marketplace 인보이스와 일치하지 않는 이유는 무엇인가요?
+</div>
+
+AWS Marketplace 청구는 역월 기준 청구 주기를 따릅니다.
+예를 들어, 2024-12-01부터 2025-01-01까지의 사용량에 대해서는
+2025년 1월 3일부터 1월 5일 사이에 인보이스가 생성됩니다.
+
+ClickHouse Cloud 사용 내역서는 이와 다른 청구 주기를 따르며, 사용량은
+가입한 날부터 시작해 30일 동안 집계되고 보고됩니다.
+
+이 날짜가 서로 같지 않으면 사용량 날짜와 인보이스 날짜는 다를 수 있습니다. 사용 내역서는 특정 서비스의 일별 사용량을 추적하므로, 비용의 상세 내역을 확인하는 데 활용할 수 있습니다.
+
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### 선불 크레딧 사용에 제한이 있습니까?
+</div>
+
+ClickHouse Cloud 선불 크레딧(ClickHouse에서 직접 구매했거나 클라우드 제공업체의 마켓플레이스를 통해 구매한 경우 모두 해당)은
+계약 기간에 대해서만 사용할 수 있습니다.
+즉, 계약 수락일 또는 그 이후의 시점부터 적용할 수 있으며, 그 이전 기간에는 적용할 수 없습니다.
+선불 크레딧으로 충당되지 않는 초과 사용분은 신용카드 결제 또는 마켓플레이스 월별 청구로 결제해야 합니다.
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### 클라우드 제공업체 마켓플레이스를 통해 청구되든 ClickHouse에 직접 결제하든 ClickHouse Cloud 가격에 차이가 있습니까?
+</div>
+
+클라우드 제공업체 마켓플레이스를 통한 청구와 ClickHouse에 직접 가입하는 경우 간에는 가격 차이가 없습니다.
+어느 경우든 ClickHouse Cloud 사용량은 ClickHouse Cloud 크레딧(CHC) 기준으로 추적되며,
+동일한 방식으로 계량되고 그에 따라 청구됩니다.
+
+<div id="how-is-compute-compute-separation-billed">
+  ### 컴퓨트-컴퓨트 분리는 어떻게 과금되나요?
+</div>
+
+기존 서비스에 추가로 새 서비스를 생성할 때,
+이 새 서비스가 기존 서비스와 동일한 데이터를 공유할지 선택할 수 있습니다.
+공유하도록 설정하면 두 서비스는 [웨어하우스](/ko/products/cloud/features/infrastructure/warehouses)를 구성합니다.
+웨어하우스에는 데이터가 저장되고, 여러 컴퓨트 서비스가 이 데이터에 접근합니다.
+
+데이터는 한 번만 저장되므로 여러 서비스가 접근하더라도 데이터 사본 1개에 대해서만 비용이 청구됩니다.
+컴퓨트 비용은 평소와 동일하게 청구되며, 컴퓨트-컴퓨트 분리 / 웨어하우스에 대한 추가 요금은 없습니다.
+이 배포에서 공유 스토리지를 활용하면 스토리지와 백업 비용을 모두 절감할 수 있습니다.
+
+컴퓨트-컴퓨트 분리는 경우에 따라 상당한 양의 ClickHouse Credits를 절감할 수 있습니다.
+좋은 예시는 다음과 같은 구성입니다.
+
+1. 24시간 연중무휴로 실행되면서 서비스로 데이터를 수집하는 ETL 작업이 있습니다. 이러한 ETL 작업은 많은 메모리를 필요로 하지 않으므로, 예를 들어 32 GiB RAM을 갖춘 소형 인스턴스에서 실행할 수 있습니다.
+
+2. 같은 팀의 데이터 과학자가 애드혹 보고 요구 사항이 있어 많은 메모리(236 GiB)가 필요한 쿼리를 실행해야 한다고 합니다. 다만 고가용성은 필요하지 않으며, 첫 실행이 실패하더라도 기다렸다가 쿼리를 다시 실행할 수 있습니다.
+
+이 예시에서 데이터베이스 관리자라면 다음과 같이 구성할 수 있습니다.
+
+1. 각각 16 GiB인 2개의 레플리카를 갖춘 소형 서비스를 생성합니다. 이렇게 하면 ETL 작업 요구 사항을 충족하면서 고가용성도 제공할 수 있습니다.
+
+2. 데이터 과학자를 위해 동일한 웨어하우스 내에 236 GiB 레플리카 1개만 있는 두 번째 서비스를 생성할 수 있습니다. 이 서비스에 유휴 상태 전환을 활성화하면 데이터 과학자가 사용하지 않을 때는 이 서비스 비용이 청구되지 않습니다.
+
+이 예시의 월별 비용 추정치(**Scale Tier** 기준):
+
+* 상위 서비스, 하루 24시간 활성: 2 레플리카 x 16 GiB, 레플리카당 4 vCPU
+* 하위 서비스: 1 레플리카 x 236 GiB, 레플리카당 59 vCPU
+* 압축 데이터 3 TB + 백업 1개
+* 퍼블릭 인터넷 이그레스 데이터 전송 100 GB
+* 리전 간 데이터 전송 50 GB
+
+<table class="nowrap-header">
+  <thead>
+    <tr>
+      <th />
+
+      <th><span>하위 서비스</span><br /><span>하루 1시간 활성</span></th>
+      <th><span>하위 서비스</span><br /><span>하루 2시간 활성</span></th>
+      <th><span>하위 서비스</span><br /><span>하루 4시간 활성</span></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>컴퓨트</td>
+      <td>$1,142.43</td>
+      <td>$1,410.97</td>
+      <td>$1,948.05</td>
+    </tr>
+
+    <tr>
+      <td>스토리지</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+    </tr>
+
+    <tr>
+      <td>퍼블릭 인터넷 이그레스 데이터 전송</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>리전 간 데이터 전송</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+    </tr>
+
+    <tr>
+      <td>합계</td>
+      <td>$1,307.31</td>
+      <td>$1,575.85</td>
+      <td>$2,112.93</td>
+    </tr>
+  </tbody>
+</table>
+
+웨어하우스가 없다면 데이터 엔지니어가 쿼리에 필요로 하는 만큼의 메모리에 대해 비용을 지불해야 합니다.
+하지만 두 서비스를 하나의 웨어하우스로 묶고 그중 하나에 유휴 상태 전환을 설정하면 비용을 절감할 수 있습니다.
+
+<div id="clickpipes-pricing">
+  ## ClickPipes 요금
+</div>
+
+ClickPipes 청구에 관한 정보는 별도의 [&quot;ClickPipes 청구&quot; 섹션](/ko/products/cloud/reference/billing/clickpipes/index)을 참조하십시오.

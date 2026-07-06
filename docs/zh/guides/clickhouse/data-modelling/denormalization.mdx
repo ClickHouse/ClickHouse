@@ -1,0 +1,420 @@
+---
+slug: /data-modeling/denormalization
+title: '对数据进行反规范化'
+description: '如何使用反规范化来提升查询性能'
+keywords: ['数据反规范化', '反规范化', '查询优化']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+数据反规范化是 ClickHouse 中一种通过使用扁平化表、避免 JOIN，从而尽可能降低查询延迟的技术。
+
+<div id="comparing-normalized-vs-denormalized-schemas">
+  ## 比较规范化与反规范化 schema
+</div>
+
+对数据进行反规范化，是指有意逆转规范化过程，以便针对特定查询模式优化数据库性能。在规范化数据库中，数据会被拆分到多个相关表中，以尽可能减少冗余并确保数据完整性。反规范化则通过合并表、复制数据，以及将计算字段纳入单个表或更少的表中，重新引入冗余——实际上就是把原本在查询时执行的 JOIN 转移到写入时。
+
+这一过程减少了查询时对复杂 JOIN 的需求，并且能够显著提升读取操作速度，因此非常适合读取密集且查询复杂的应用。不过，这也会增加写入操作和维护的复杂度，因为对重复数据的任何修改都必须同步到所有实例中，以保持一致性。
+
+<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="ClickHouse 中的反规范化" />
+
+<br />
+
+一种由 NoSQL 方案推广的常见技术，是在缺少 `JOIN` 支持时对数据进行反规范化，本质上是将所有统计信息或相关行作为列和嵌套对象存储在父行上。例如，在一个博客的示例 schema 中，我们可以将所有 `Comments` 作为对象 `Array` 存储在各自的帖子上。
+
+<div id="when-to-use-denormalization">
+  ## 何时使用反规范化
+</div>
+
+一般来说，我们建议在以下情况下采用反规范化：
+
+* 对于变更不频繁的表，或者能够容忍数据在可用于分析查询前存在一定延迟的场景，可以进行反规范化。也就是说，这类数据可以按批次整体重新加载。
+* 避免对多对多关系进行反规范化。如果单个源行发生变化，可能会导致需要更新大量行。
+* 避免对高基数关系进行反规范化。如果一个表中的每一行在另一张表中都有数千个关联条目，就需要将这些条目表示为 `Array`，其元素可以是基本类型，也可以是元组。通常不建议使用包含超过 1000 个元组的数组。
+* 与其将所有列都反规范化为嵌套对象，不如考虑借助 materialized view 仅反规范化某个统计值 (见下文) 。
+
+并不需要对所有信息都进行反规范化——只需对那些需要频繁访问的关键信息进行反规范化即可。
+
+反规范化工作既可以在 ClickHouse 中完成，也可以在上游系统中完成，例如使用 [Apache Flink](/zh/integrations/connectors/data-ingestion/apache-flink)。
+
+<div id="avoid-denormalization-on-frequently-updated-data">
+  ## 避免对频繁更新的数据进行反规范化
+</div>
+
+对于 ClickHouse 而言，反规范化是优化查询性能的几种手段之一，但需要谨慎使用。如果数据更新频繁，且需要近实时更新，就应避免采用这种方法。它更适用于主表基本只追加写入，或可以按批次定期重新加载的场景，例如每天一次。
+
+这种方法的一个主要难点在于写入性能和数据更新。更具体地说，反规范化实际上是把数据 JOIN 的工作从查询时转移到了摄取时。虽然这能显著提升查询性能，但也会让摄取变得更复杂：只要用于组成某一行的任意源行发生变化，数据管道就需要将该行重新插入 ClickHouse。这意味着，一个源行的变更可能会导致 ClickHouse 中许多行都需要更新。在复杂的 schema 中，如果某些行是通过复杂 JOIN 组合出来的，那么 JOIN 中某个嵌套组成部分的一行发生变化，甚至可能意味着需要更新数百万行。
+
+由于以下两个挑战，要实时做到这一点通常并不现实，而且需要大量工程投入：
+
+1. 当表中的某一行发生变化时，需要触发正确的 JOIN 语句。理想情况下，这不应导致该 JOIN 涉及的所有对象都被更新，而应该只更新受影响的对象。要调整这些 JOIN，使其能够高效过滤到正确的行，并在高吞吐量下实现这一点，通常需要借助外部工具或额外工程实现。
+2. ClickHouse 中的行更新需要谨慎管理，这会带来额外的复杂性。
+
+<br />
+
+因此，更常见的做法是采用批次更新流程，定期重新加载所有反规范化后的对象。
+
+<div id="practical-cases-for-denormalization">
+  ## 反规范化的实际场景
+</div>
+
+下面来看几个实际示例：在哪些情况下反规范化是合理的，哪些情况下则更适合采用其他方法。
+
+假设有一个 `Posts` 表，其中已包含 `AnswerCount` 和 `CommentCount` 等统计信息，也就是说源数据本身就是以这种反规范化的形式提供的。实际上，我们可能反而希望将这些信息规范化，因为这类数据很可能经常发生变化。其中许多列也可以通过其他表获取，例如某篇帖子的评论可以通过 `PostId` 列和 `Comments` 表获得。为了便于举例，假设帖子会通过批次处理重新加载。
+
+这里我们只考虑将其他表反规范化到 `Posts` 上，因为我们将其视为分析中的主表。对于某些查询，反过来做反规范化也同样合适，并且上述考虑因素依然适用。
+
+*对于下面的每个示例，假设都存在一条查询，需要通过 join 同时使用这两个表。*
+
+<div id="posts-and-votes">
+  ### Posts and Votes
+</div>
+
+与帖子相关的 Votes 用单独的表来表示。其优化后的 schema 如下所示，同时还提供了用于加载数据的 insert 命令：
+
+```sql
+CREATE TABLE votes
+(
+        `Id` UInt32,
+        `PostId` Int32,
+        `VoteTypeId` UInt8,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.272 sec. Processed 238.98 million rows, 2.13 GB (9.10 million rows/s., 80.97 MB/s.)
+```
+
+乍看之下，这些似乎都适合作为在 posts 表上进行反规范化的候选项。不过，这种做法也面临一些挑战。
+
+帖子会频繁收到新的投票。虽然随着时间推移，单篇帖子的投票频率可能会下降，但下面的查询显示，3 万篇帖子每小时大约会新增 4 万次投票。
+
+```sql
+SELECT round(avg(c)) AS avg_votes_per_hr, round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+        SELECT
+        toStartOfHour(CreationDate) AS hr,
+        count() AS c,
+        uniq(PostId) AS posts
+        FROM votes
+        GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│               41759 │         33322 │
+└──────────────────┴──────────────────┘
+```
+
+如果可以接受一定延迟，可以通过分批处理来解决这个问题，但这样我们仍然需要处理更新，除非我们定期重新加载所有帖子 (这通常并不理想) 。
+
+更麻烦的是，有些帖子的投票数高得惊人：
+
+```sql
+SELECT PostId, concat('https://stackoverflow.com/questions/', PostId) AS url, count() AS c
+FROM votes
+GROUP BY PostId
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌───PostId─┬─url──────────────────────────────────────────┬─────c─┐
+│ 11227902 │ https://stackoverflow.com/questions/11227902 │ 35123 │
+│   927386 │ https://stackoverflow.com/questions/927386   │ 29090 │
+│ 11227809 │ https://stackoverflow.com/questions/11227809 │ 27475 │
+│   927358 │ https://stackoverflow.com/questions/927358   │ 26409 │
+│  2003515 │ https://stackoverflow.com/questions/2003515  │ 25899 │
+└──────────┴──────────────────────────────────────────────┴───────┘
+```
+
+这里主要想说明的是：对于大多数分析场景而言，每篇帖子的聚合投票统计就已足够——我们没必要将所有投票信息都反规范化。比如，当前的 `Score` 列就是这样一个统计值，即总赞成票减去反对票。理想情况下，我们只需在查询时通过一次简单查找即可获取这些统计信息 (参见[字典](/zh/concepts/features/dictionaries/index)) 。
+
+<div id="users-and-badges">
+  ### Users 和 Badges
+</div>
+
+现在来看一下 `Users` 和 `Badges`：
+
+<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users 和 Badges schema" />
+
+<p />
+
+首先使用以下命令插入数据：
+
+<p />
+
+```sql
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` LowCardinality(String),
+    `CreationDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+    `DisplayName` String,
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `AboutMe` String,
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32,
+    `WebsiteUrl` String,
+    `Location` LowCardinality(String),
+    `AccountId` Int32
+)
+ENGINE = MergeTree
+ORDER BY (Id, CreationDate)
+```
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+INSERT INTO users SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 26.229 sec. Processed 22.48 million rows, 1.36 GB (857.21 thousand rows/s., 51.99 MB/s.)
+```
+
+```sql
+INSERT INTO badges SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 18.126 sec. Processed 51.29 million rows, 797.05 MB (2.83 million rows/s., 43.97 MB/s.)
+```
+
+虽然用户可能会频繁获得徽章，但这类数据不太可能需要比每天更频繁地更新。徽章与用户之间是一个一对多的关系。也许我们可以直接把徽章以元组列表的形式反规范化到用户记录中？虽然这样做可行，但快速检查一下每个用户拥有的徽章数量上限后，就会发现这并不理想：
+
+```sql
+SELECT UserId, count() AS c FROM badges GROUP BY UserId ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌─UserId─┬─────c─┐
+│  22656 │ 19334 │
+│   6309 │ 10516 │
+│ 100297 │  7848 │
+│ 157882 │  7574 │
+│  29407 │  6512 │
+└────────┴───────┘
+```
+
+将 1.9 万条对象反规范化到同一行中，可能并不现实。这种关系最好还是保留为单独的表，或者额外添加统计信息。
+
+> 我们可能希望将 Badges 中的统计信息反规范化到 Users 上，例如 badge 的数量。我们会在对该数据集使用字典并在写入时处理时讨论这样一个示例。
+
+<div id="posts-and-postlinks">
+  ### Posts 和 PostLinks
+</div>
+
+`PostLinks` 用于关联用户认为彼此相关或重复的 `Posts`。以下查询展示了 schema 和加载命令：
+
+```sql
+CREATE TABLE postlinks
+(
+  `Id` UInt64,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `PostId` Int32,
+  `RelatedPostId` Int32,
+  `LinkTypeId` Enum('Linked' = 1, 'Duplicate' = 3)
+)
+ENGINE = MergeTree
+ORDER BY (PostId, RelatedPostId)
+
+INSERT INTO postlinks SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/postlinks.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 4.726 sec. Processed 6.55 million rows, 129.70 MB (1.39 million rows/s., 27.44 MB/s.)
+```
+
+我们可以确认，没有任何帖子包含多到会妨碍反规范化的链接：
+
+```sql
+SELECT PostId, count() AS c
+FROM postlinks
+GROUP BY PostId
+ORDER BY c DESC LIMIT 5
+```
+
+```response
+┌───PostId─┬───c─┐
+│ 22937618 │ 125 │
+│  9549780 │ 120 │
+│  3737139 │ 109 │
+│ 18050071 │ 103 │
+│ 25889234 │  82 │
+└──────────┴─────┘
+```
+
+同样，这些关联也不是发生频率过高的事件：
+
+```sql
+SELECT
+  round(avg(c)) AS avg_votes_per_hr,
+  round(avg(posts)) AS avg_posts_per_hr
+FROM
+(
+  SELECT
+  toStartOfHour(CreationDate) AS hr,
+  count() AS c,
+  uniq(PostId) AS posts
+  FROM postlinks
+  GROUP BY hr
+)
+```
+
+```response
+┌─avg_votes_per_hr─┬─avg_posts_per_hr─┐
+│                54 │                    44     │
+└──────────────────┴──────────────────┘
+```
+
+我们在下文将以此作为反规范化示例。
+
+<div id="simple-statistic-example">
+  ### 简单统计示例
+</div>
+
+在大多数情况下，反规范化只需要在父行上增加一个列或统计值。例如，我们可能只是想用重复帖子数量来丰富 posts，因此只需添加一个列。
+
+```sql
+CREATE TABLE posts_with_duplicate_count
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `DuplicatePosts` UInt16
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+为了填充此表，我们使用 `INSERT INTO SELECT`，将重复统计信息与帖子表进行连接。
+
+```sql
+INSERT INTO posts_with_duplicate_count SELECT
+    posts.*,
+    DuplicatePosts
+FROM posts AS posts
+LEFT JOIN
+(
+    SELECT PostId, countIf(LinkTypeId = 'Duplicate') AS DuplicatePosts
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+<div id="exploiting-complex-types-for-one-to-many-relationships">
+  ### 利用复杂类型处理一对多关系
+</div>
+
+为了进行反规范化，我们通常需要利用复杂类型。如果反规范化的是一对一关系，且列数较少，可以像上文所示那样，直接以原始类型将这些字段添加进去。不过，对于较大的对象，这种方式通常并不理想；而对于一对多关系，则根本不可行。
+
+在对象较复杂或存在一对多关系的情况下，可以使用：
+
+* 命名元组 - 可将相关结构表示为一组列。
+* Array(Tuple) 或 Nested - 由命名元组构成的数组，也称为 Nested，其中每个 entry 表示一个对象。适用于一对多关系。
+
+下面我们以将 `PostLinks` 反规范化到 `Posts` 为例进行说明。
+
+如前文 `PostLinks` schema 所示，每篇帖子都可能包含若干指向其他帖子的链接。作为 Nested 类型，我们可以按如下方式表示这些关联帖子和重复帖子：
+
+```sql
+SET flatten_nested=0
+CREATE TABLE posts_with_links
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+   ... -other columns
+   `LinkedPosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+   `DuplicatePosts` Nested(CreationDate DateTime64(3, 'UTC'), PostId Int32),
+) ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+> 请注意，这里使用了 `flatten_nested=0` 设置。我们建议关闭嵌套数据的扁平化。
+
+我们可以通过带有 `OUTER JOIN` 的 `INSERT INTO SELECT` 查询来完成这一反规范化：
+
+```sql
+INSERT INTO posts_with_links
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts.Id = postlinks.PostId
+```
+
+```response
+0 rows in set. Elapsed: 155.372 sec. Processed 66.37 million rows, 76.33 GB (427.18 thousand rows/s., 491.25 MB/s.)
+峰值内存占用: 6.98 GiB.
+```
+
+> 请注意这里的耗时。我们在大约 2 分钟内就完成了对 6600 万行数据的反规范化。正如稍后会看到的，这项操作可以调度执行。
+
+注意这里使用了 `groupArray` 函数：在执行连接之前，先将 `PostLinks` 按每个 `PostId` 聚合为一个数组。然后再将该数组过滤成两个子列表：`LinkedPosts` 和 `DuplicatePosts`，同时排除外连接产生的所有空结果。
+
+我们可以选择一些行，来查看新的反规范化结构：
+
+```sql
+SELECT LinkedPosts, DuplicatePosts
+FROM posts_with_links
+WHERE (length(LinkedPosts) > 2) AND (length(DuplicatePosts) > 0)
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+LinkedPosts:    [('2017-04-11 11:53:09.583',3404508),('2017-04-11 11:49:07.680',3922739),('2017-04-11 11:48:33.353',33058004)]
+DuplicatePosts: [('2017-04-11 12:18:37.260',3922739),('2017-04-11 12:18:37.260',33058004)]
+```
+
+<div id="orchestrating-and-scheduling-denormalization">
+  ## 反规范化的编排与调度
+</div>
+
+<div id="batch">
+  ### 批处理
+</div>
+
+要利用反规范化，需要有一个能够执行并编排该转换的过程。
+
+上文已展示如何在通过 `INSERT INTO SELECT` 加载数据后，使用 ClickHouse 执行这种转换。这适用于周期性的批处理转换。
+
+如果可以接受周期性的批次加载过程，用户在 ClickHouse 中有多种方式来编排这一过程：
+
+* **[Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view)** - 可刷新 materialized views 可用于按周期调度查询，并将结果发送到目标表。在查询执行时，该视图会确保目标表以原子方式更新。这为调度此类工作提供了一种 ClickHouse 原生方式。
+* **外部工具** - 使用 [dbt](https://www.getdbt.com/) 和 [Airflow](https://airflow.apache.org/) 等工具来周期性调度转换。[dbt 的 ClickHouse 集成](/zh/integrations/connectors/data-ingestion/etl-tools/dbt/index) 可确保该过程以原子方式执行：先创建目标表的新版本，再通过 [EXCHANGE](/zh/reference/statements/exchange) 命令与当前接收查询的版本进行原子交换。
+
+<div id="streaming">
+  ### 流式
+</div>
+
+或者，你也可以选择在 ClickHouse 之外、插入前，借助 [Apache Flink](/zh/integrations/connectors/data-ingestion/apache-flink) 等流式技术来完成此操作。另一种方式是使用增量 [materialized views](/zh/concepts/features/materialized-views/cascading-materialized-views)，在数据插入时完成这一过程。

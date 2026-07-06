@@ -1,0 +1,138 @@
+---
+description: '从远程 HTTP/HTTPS 服务器查询数据，并向其写入数据。此引擎类似于
+  File 表引擎。'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'URL 表引擎'
+doc_type: 'reference'
+---
+
+从远程 HTTP/HTTPS 服务器查询数据，并向其写入数据。此引擎与 [File](/zh/reference/engines/table-engines/special/file) 表引擎类似。
+
+语法：`URL(URL [,Format] [,CompressionMethod])`
+
+* `URL` 参数必须符合统一资源定位符的结构。指定的 URL 必须指向使用 HTTP 或 HTTPS 的服务器。获取服务器响应时，不需要额外的请求头。
+
+* `Format` 必须是 ClickHouse 可在 `SELECT` 查询中使用的格式，并且在需要时也可用于 `INSERT`。有关受支持格式的完整列表，请参阅 [Formats](/zh/reference/formats/index#formats-overview)。
+
+  如果未指定此参数，ClickHouse 会根据 `URL` 参数的后缀自动检测格式。如果 `URL` 参数的后缀与任何受支持的格式都不匹配，则创建表会失败。例如，对于引擎表达式 `URL('http://localhost/test.json')`，将使用 `JSON` 格式。
+
+* `CompressionMethod` 表示是否应压缩 HTTP 请求体。如果启用了压缩，URL 引擎发送的 HTTP 数据包会包含 `Content-Encoding` 请求头，以指示所使用的压缩方法。
+
+要启用压缩，请先确保 `URL` 参数指定的远程 HTTP 端点支持相应的压缩算法。
+
+支持的 `CompressionMethod` 必须是以下之一：
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+如果未指定 `CompressionMethod`，则默认为 `auto`。这意味着 ClickHouse 会根据 `URL` 参数的后缀自动检测压缩方法。如果后缀与上面列出的任一压缩方法匹配，则会应用相应的压缩；否则不会启用压缩。
+
+例如，对于引擎表达式 `URL('http://localhost/test.gzip')`，将使用 `gzip` 压缩方法；而对于 `URL('http://localhost/test.fr')`，则不会启用压缩，因为后缀 `fr` 与上述任何压缩方法都不匹配。
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## 用法
+</div>
+
+`INSERT` 和 `SELECT` 查询会分别转换为 `POST` 和 `GET` 请求。
+要处理 `POST` 请求，远程服务器必须支持
+[分块传输编码](https://en.wikipedia.org/wiki/Chunked_transfer_encoding)。
+
+你可以使用 [max&#95;http&#95;get&#95;redirects](/zh/reference/settings/session-settings#max_http_get_redirects) 设置来限制 HTTP GET 重定向的最大跳转次数。
+
+<div id="example">
+  ## 示例
+</div>
+
+**1.** 在服务器上创建 `url_engine_table` 表：
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** 使用 Python 3 标准工具创建一个简单的 HTTP 服务器，并
+启动它：
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** 获取数据：
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## 实现细节
+</div>
+
+* 读写可并行进行
+* 不支持：
+  * `ALTER` 和 `SELECT...SAMPLE` 操作。
+  * 索引。
+  * 复制。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — `URL` 的路径。类型：`LowCardinality(String)`。
+* `_file` — `URL` 的资源名。类型：`LowCardinality(String)`。
+* `_size` — 资源大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_headers` - HTTP 响应头。类型：`Map(LowCardinality(String), LowCardinality(String))`。
+
+<div id="resolving-relative-urls">
+  ## 解析相对 URL
+</div>
+
+[url&#95;base](/zh/reference/settings/session-settings#url_base) 设置允许在 `URL` 引擎 中使用相对 URL。设置 `url_base` 后，传递给该 引擎 的 URL 会按照 [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) 相对于它进行解析。有关解析规则的完整说明，请参见 [url 表函数文档](/zh/reference/functions/table-functions/url#resolving-relative-urls)。
+
+**示例**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## 存储设置
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/zh/reference/settings/session-settings#engine_url_skip_empty_files) - 允许在读取时跳过空文件。默认禁用。
+* [enable&#95;url&#95;encoding](/zh/reference/settings/session-settings#enable_url_encoding) - 允许对 URI 中的 path 启用/禁用解码和编码。默认启用。
+* [url&#95;base](/zh/reference/settings/session-settings#url_base) - 用于解析传递给引擎的相对 URL 的基础 URL。

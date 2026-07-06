@@ -1,0 +1,309 @@
+---
+slug: /migrations/postgresql/data-modeling-techniques
+title: 'データモデリングの手法'
+description: 'PostgreSQL から ClickHouse への移行ガイド 第3部'
+keywords: ['postgres', 'postgresql']
+show_related_blogs: true
+sidebarTitle: '第3部'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+> これは、PostgreSQL から ClickHouse への移行ガイドの**第3部**です。実践的な例を通じて、PostgreSQL から移行する場合に ClickHouse でどのようにデータをモデリングするかを説明します。
+
+Postgres から移行するユーザーには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。このガイドでは同じ Stack Overflow データセットを使用し、ClickHouse の機能を活用した複数のアプローチを紹介しています。
+
+<div id="primary-ordering-keys-in-clickhouse">
+  ## ClickHouseにおける主キー (並び順キー)
+</div>
+
+OLTPデータベースに慣れたユーザーは、ClickHouseでもそれに相当する概念を探しがちです。ClickHouseが `PRIMARY KEY` 構文をサポートしているのを見ると、元のOLTPデータベースと同じキーでテーブルのスキーマを定義したくなるかもしれません。しかし、これは適切ではありません。
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ### ClickHouseの主キーは何が違うのか？
+</div>
+
+ClickHouseでOLTPの主キーをそのまま使うのが適切でない理由を理解するには、まずClickHouseの索引の基本を理解する必要があります。ここでは比較対象としてPostgresを例に挙げますが、これらの概念は他のOLTPデータベースにも広く当てはまります。
+
+* Postgresの主キーは、定義上、各行で一意です。[B-tree structures](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) を利用することで、このキーによる単一行の効率的なルックアップが可能になります。ClickHouseでも単一の行の値をルックアップしやすく最適化することは可能ですが、分析ワークロードでは通常、多数の行に対して少数のカラムを読み取ることが求められます。多くの場合、filterでは、aggregationの対象となる**行のサブセット**を特定する必要があります。
+* ClickHouseがよく使われるような大規模環境では、メモリ効率とディスク効率が極めて重要です。データは、パーツと呼ばれるchunk単位でClickHouseのテーブルに書き込まれ、これらのパーツをバックグラウンドでmergeするルールが適用されます。ClickHouseでは、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがmergeされると、merge後のパーツのプライマリインデックスもmergeされます。Postgresとは異なり、これらの索引は各行ごとに構築されるわけではありません。代わりに、パーツのプライマリインデックスには、行のグループごとに1つの索引エントリがあります。この手法は**スパースインデックス**と呼ばれます。
+* **スパースインデックス**が成り立つのは、ClickHouseが、指定したキーの順序でパーツ内の行をディスクに格納するためです。スパースプライマリインデックスは、単一行を直接特定するのではなく (B-Treeベースの索引のように) 、クエリに一致する可能性のある行グループをすばやく特定できます (索引エントリに対するbinary searchによって) 。該当する可能性のある行グループが見つかると、それらは並列にClickHouse engineへstreamされ、一致する行が絞り込まれます。この索引設計により、プライマリインデックスを小さく保てるため (main memoryに完全に収まります) 、特にデータ分析で典型的な範囲クエリにおいて、クエリ実行時間を大幅に短縮できます。
+
+詳細については、こちらの[詳細ガイド](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)を参照することをおすすめします。
+
+<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="PostgreSQL B-Tree 索引" />
+
+<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="PostgreSQL スパース索引" />
+
+ClickHouseで選択したキーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を及ぼし、ひいてはクエリ性能にも影響します。大半のカラムの値が連続した順序で書き込まれるような並び順キーを選べば、使用する圧縮アルゴリズム (およびcodec) によって、データをより効率的に圧縮できます。
+
+> テーブル内のすべてのカラムは、そのカラム自体がキーに含まれているかどうかにかかわらず、指定された並び順キーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用した場合、他のすべてのカラムの値の並び順は `CreationDate` カラムの値の並び順に対応します。並び順キーは複数指定することもでき、その場合の並び順は `SELECT` クエリの `ORDER BY` clause と同じ意味になります。
+
+<div id="choosing-an-ordering-key">
+  ### 並び順キーの選択
+</div>
+
+並び順キーを選ぶ際の考慮事項と手順については、Postsテーブルを例にした[こちら](/ja/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)を参照してください。
+
+CDC を使用したリアルタイムレプリケーションでは、考慮すべき追加の制約があります。CDC で並び順キーをカスタマイズする方法については、こちらの[ドキュメント](/ja/integrations/clickpipes/postgres/ordering-keys)を参照してください。
+
+<div id="partitions">
+  ## パーティション
+</div>
+
+Postgresを使ってきた方なら、大規模なデータベースのパフォーマンスと管理性を向上させるために、テーブルをパーティションと呼ばれるより小さく扱いやすい単位に分割する、テーブルのパーティション化という考え方に馴染みがあるでしょう。このパーティション化は、指定したカラムの範囲 (例: 日付) 、定義済みのリスト、またはキーに対するハッシュを使って実現できます。これにより管理者は、日付範囲や地理的な位置などの特定の条件に基づいてデータを整理できます。パーティション化は、パーティションプルーニングやより効率的な索引の利用によってデータアクセスを高速化できるため、クエリのパフォーマンス向上に役立ちます。また、テーブル全体ではなく個々のパーティションに対して操作できるため、バックアップやデータ削除といった保守作業にも有効です。さらに、パーティション化によって負荷を複数のパーティションに分散できるため、PostgreSQLデータベースのスケーラビリティを大幅に向上させることもできます。
+
+ClickHouseでは、パーティション化はテーブルを最初に定義するときに`PARTITION BY`句で指定します。この句には任意のカラムに対するSQL式を含めることができ、その結果によって行がどのパーティションに送られるかが決まります。
+
+<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="PostgreSQLのパーティションからClickHouseのパーティションへ" />
+
+データパーツは、ディスク上で各パーティションに論理的に関連付けられており、個別にクエリできます。以下の例では、`toYear(CreationDate)`式を使って`posts`テーブルを年ごとにパーティション化しています。行がClickHouseに挿入されると、この式が各行に対して評価され、対応するパーティションが存在すればそこに振り分けられます (その年の最初の行であれば、パーティションが作成されます) 。
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+パーティション化の詳細については、[&quot;テーブルパーティション&quot;](/ja/concepts/core-concepts/partitions)を参照してください。
+
+<div id="applications-of-partitions">
+  ### パーティションの用途
+</div>
+
+ClickHouse におけるパーティション化の用途は Postgres と似ていますが、いくつか微妙な違いがあります。具体的には次のとおりです。
+
+* **データ管理** - ClickHouse では、パーティション化はクエリ最適化の手法ではなく、基本的にはデータ管理機能として捉えるべきです。キーに基づいてデータを論理的に分離することで、各パーティションを個別に操作できます。たとえば削除です。これにより、時間に基づいて [ストレージ階層](/ja/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) 間でパーティション、ひいてはそのサブセットを効率的に移動したり、[データを期限切れにする/クラスターから効率的に削除する](/ja/reference/statements/alter/partition) ことができます。以下の例では、2008 年の投稿を削除します。
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **クエリ最適化** - パーティションはクエリ性能の向上に役立つことがありますが、その効果はアクセスパターンに大きく左右されます。クエリが少数のパーティション (理想的には 1 つ) だけを対象とする場合は、性能が向上する可能性があります。通常、これが有効なのは、パーティションキーが主キーに含まれておらず、そのキーでフィルタしている場合に限られます。一方で、多数のパーティションをまたぐ必要があるクエリは、パーティション化しない場合よりも性能が悪化することがあります (パーティション化によってパーツ数が増える可能性があるためです) 。また、パーティションキーがすでに主キーの先頭付近に含まれている場合は、単一パーティションを対象にする利点はさらに薄れ、ほとんど、あるいはまったくなくなります。さらに、各パーティション内の値が一意であれば、パーティション化は [GROUP BY クエリの最適化](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) にも利用できます。ただし一般的には、まず主キーが適切に最適化されていることを確認し、パーティション化をクエリ最適化の手法として検討するのは、アクセスパターンがその日のうちの予測可能な特定の部分集合に集中する例外的なケース、たとえば日単位でパーティション化し、ほとんどのクエリが直近 1 日を対象とするような場合に限るべきです。
+
+<div id="recommendations-for-partitions">
+  ### パーティションに関する推奨事項
+</div>
+
+パーティション化は、データ管理手法の 1 つとして検討してください。特に、時系列データを扱う際にクラスターからデータを期限切れで削除する必要がある場合に有効です。たとえば、最も古いパーティションは[そのまま削除できます](/ja/reference/statements/alter/partition#drop-partitionpart)。
+
+**重要:** パーティション化キーの式が高カーディナリティにならないようにしてください。つまり、100 を超えるパーティションを作成するのは避けるべきです。たとえば、クライアント識別子や名前のようなカーディナリティの高いカラムでデータをパーティション化しないでください。代わりに、クライアント識別子や名前は ORDER BY 式の先頭のカラムにします。
+
+> ClickHouse は内部的に、挿入されたデータに対して[パーツを作成します](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。データがさらに挿入されると、パーツの数は増えていきます。パーツ数が過剰に増えてクエリ性能が低下すること (読み取るファイル数が増えるため) を防ぐため、パーツはバックグラウンドで非同期にマージされます。パーツ数があらかじめ設定された制限を超えると、ClickHouse は INSERT 時に例外をスローし、「パーツが多すぎる」エラーになります。これは通常の運用では発生せず、ClickHouse の設定が不適切であるか、たとえば小さな insert を大量に行うなど、誤った使い方をした場合にのみ起こります。
+
+> パーツはパーティションごとに独立して作成されるため、パーティション数を増やすとパーツ数も増加します。つまり、パーツ数はパーティション数に応じて増えます。そのため、高カーディナリティのパーティション化キーはこのエラーの原因になり得るため、避けるべきです。
+
+<div id="materialized-views-vs-projections">
+  ## materialized view と プロジェクション の比較
+</div>
+
+Postgres では、1 つのテーブルに複数のインデックスを作成できるため、さまざまなアクセスパターンに合わせて最適化できます。この柔軟性により、管理者や開発者は、特定のクエリや運用要件に応じてデータベースのパフォーマンスを調整できます。ClickHouse の プロジェクション という概念は、これに完全に対応するものではありませんが、1 つのテーブルに対して複数の `ORDER BY` 句を指定できます。
+
+ClickHouse の [データモデリングドキュメント](/ja/guides/clickhouse/data-modelling/schema-design) では、ClickHouse で materialized view を使って集計を事前計算し、行を変換し、さまざまなアクセスパターンに合わせてクエリを最適化する方法を説明しています。
+
+このうち後者については、[例](/ja/concepts/features/materialized-views/incremental-materialized-view#lookup-table) として、materialized view が、挿入を受け取る元のテーブルとは異なる並び順キーを持つターゲットテーブルに行を送るケースを紹介しました。
+
+たとえば、次のクエリを考えてみましょう。
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+このクエリでは、`UserId` がソートキーではないため、9,000万行すべてを (とはいえ高速に) スキャンする必要があります。
+以前は、`PostId` のルックアップとして機能する materialized view を使ってこれを解決していました。同じ問題は
+[PROJECTION](/ja/concepts/features/projections/projections) でも解決できます。以下のコマンドは
+`ORDER BY user_id` 用の PROJECTION を追加します。
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+まず、先にPROJECTIONを作成してから、それをマテリアライズする必要があることに注意してください。後者のコマンドを実行すると、データはディスク上に2つの異なる順序で二重に格納されます。以下に示すように、データの作成時にPROJECTIONを定義することもでき、その場合はデータの挿入時に自動的に維持されます。
+
+```sql
+CREATE TABLE comments
+(
+        `Id` UInt32,
+        `PostId` UInt32,
+        `Score` UInt16,
+        `Text` String,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `UserId` Int32,
+        `UserDisplayName` LowCardinality(String),
+        PROJECTION comments_user_id
+        (
+        SELECT *
+        ORDER BY UserId
+        )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+PROJECTIONを`ALTER`で作成した場合、`MATERIALIZE PROJECTION`コマンドを発行すると、作成は非同期で実行されます。`is_done=1`になるまで待ちながら、次のクエリでこの操作の進捗を確認できます。
+
+```sql
+SELECT
+        parts_to_do,
+        is_done,
+        latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+上記のクエリをもう一度実行すると、追加のストレージ使用と引き換えに、パフォーマンスが大幅に向上していることがわかります。
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+`EXPLAIN` コマンドを使うと、このクエリの実行にプロジェクションが使われたことも確認できます：
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### PROJECTIONを使用するタイミング
+</div>
+
+PROJECTIONは、データの挿入に伴って自動的に維持されるため、新規ユーザーにとって魅力的な機能です。
+さらに、クエリは単一のテーブルに送るだけでよく、可能な場合はPROJECTIONが利用されて応答時間の短縮につながります。
+
+<Image img="/images/migrations/postgres-projections.webp" size="md" alt="ClickHouse における PostgreSQL の PROJECTION" />
+
+これは materialized view とは対照的です。materialized view では、フィルターに応じて、
+ユーザーが適切に最適化されたターゲットテーブルを選択するか、クエリを書き換える必要があります。
+そのため、ユーザーアプリケーション側の負担が大きくなり、クライアント側の複雑さも増します。
+
+こうした利点がある一方で、PROJECTIONには[固有の制約](/ja/concepts/features/projections/projections#when-to-use-projections)
+もあるため、それらを理解したうえで、導入は必要な場面に限定すべきです。
+
+次のような場合には、PROJECTIONの使用を推奨します。
+
+* データを完全に並べ替える必要がある場合。理論上、PROJECTION内の式では
+  `GROUP BY,` を使用できますが、集計の維持には materialized view のほうが効果的です。
+  また、クエリオプティマイザは、`SELECT * ORDER BY x` のような単純な並べ替えを使うPROJECTIONを
+  利用しやすい傾向があります。ストレージ使用量を減らすために、この式ではカラムの一部だけを選択できます。
+* ストレージ使用量の増加と、データを 2 回書き込むオーバーヘッドを
+  許容できる場合。挿入速度への影響をテストし、
+  [ストレージオーバーヘッドを評価](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)してください。
+
+<Note>
+  バージョン 25.5 以降、ClickHouse はPROJECTION内の仮想カラム `_part_offset` をサポートしています。
+  これにより、より少ない容量でPROJECTIONを保存できるようになります。
+
+  詳細は [&quot;Projections&quot;](/ja/concepts/features/projections/projections) を参照してください。
+</Note>
+
+<div id="denormalization">
+  ## 非正規化
+</div>
+
+Postgres はリレーショナルデータベースであるため、そのデータモデルは高度に[正規化](https://en.wikipedia.org/wiki/Database_normalization)されており、多くの場合、数百ものテーブルにまたがっています。ClickHouse では、JOIN のパフォーマンスを最適化するために、状況によっては非正規化が有効です。
+
+ClickHouse で Stack Overflow データセットを非正規化するメリットを示したこの[ガイド](/ja/guides/clickhouse/data-modelling/denormalization)も参照してください。
+
+以上で、Postgres から ClickHouse へ移行する方向けの基本ガイドは終了です。ClickHouse の高度な機能についてさらに学ぶには、[ClickHouse でのデータモデリングに関するガイド](/ja/guides/clickhouse/data-modelling/schema-design)を読むことをお勧めします。

@@ -1,0 +1,193 @@
+---
+sidebarTitle: 'Amazon MSK مع Kafka Connector Sink'
+slug: /integrations/kafka/cloud/amazon-msk/
+description: 'موصل Kafka الرسمي من ClickHouse مع Amazon MSK'
+keywords: ['تكامل', 'Kafka', 'Amazon MSK', 'مستقبل', 'موصل']
+title: 'دمج Amazon MSK مع ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/6lKI_WlQ3-s"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+> ملاحظة: السياسة المعروضة في الفيديو واسعة الصلاحيات، وهي مخصّصة للبدء السريع فقط. راجع أدناه إرشادات IAM الخاصة بمبدأ أقل الامتيازات.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+نفترض ما يلي:
+
+* أنك على دراية بـ [ClickHouse Connector Sink](/ar/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)،
+* أنك على دراية بـ Amazon MSK وموصلات MSK. نوصي بالرجوع إلى [دليل البدء](https://docs.aws.amazon.com/msk/latest/developerguide/getting-started.html) لـ Amazon MSK و[دليل MSK Connect](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect.html).
+
+<div id="the-official-kafka-connector-from-clickhouse-with-amazon-msk">
+  ## موصل Kafka الرسمي من ClickHouse مع Amazon MSK
+</div>
+
+<div id="gather-your-connection-details">
+  ### اجمع بيانات الاتصال الخاصة بك
+</div>
+
+<ConnectionDetails />
+
+<div id="steps">
+  ### الخطوات
+</div>
+
+1. تأكد من أنك على دراية بـ [ClickHouse Connector Sink](/ar/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+2. [أنشئ مثيل MSK](https://docs.aws.amazon.com/msk/latest/developerguide/create-cluster.html).
+3. [أنشئ IAM role وعيّنه](https://docs.aws.amazon.com/msk/latest/developerguide/create-client-iam-role.html).
+4. نزّل ملف `jar` من [صفحة Release](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) الخاصة بـ ClickHouse Connect Sink.
+5. ثبّت ملف `jar` الذي نزّلته من [صفحة Custom plugin](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-plugins.html) في وحدة تحكم Amazon MSK.
+6. إذا كان الـ connector يتواصل مع مثيل ClickHouse عام، [فعّل الوصول إلى الإنترنت](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html).
+7. أدخل topic name واسم المضيف لمثيل ClickHouse وpassword في config.
+
+```yml
+connector.class=com.clickhouse.kafka.connect.ClickHouseSinkConnector
+tasks.max=1
+topics=<topic_name>
+ssl=true
+security.protocol=SSL
+hostname=<hostname>
+database=<database_name>
+password=<password>
+ssl.truststore.location=/tmp/kafka.client.truststore.jks
+port=8443
+value.converter.schemas.enable=false
+value.converter=org.apache.kafka.connect.json.JsonConverter
+exactlyOnce=true
+username=default
+schemas.enable=false
+```
+
+<div id="iam-least-privilege">
+  ## أذونات IAM الموصى بها (مبدأ الحد الأدنى من الصلاحيات)
+</div>
+
+استخدم أقل مجموعة من الأذونات المطلوبة لإعدادك. ابدأ بالأساس أدناه، ولا تُضِف الخدمات الاختيارية إلا إذا كنت تستخدمها.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "MSKClusterAccess",
+      "Effect": "Allow",
+      "Action": [
+        "kafka:DescribeCluster",
+        "kafka:GetBootstrapBrokers",
+        "kafka:DescribeClusterV2",
+        "kafka:ListClusters",
+        "kafka:ListClustersV2"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "KafkaAuthorization",
+      "Effect": "Allow",
+      "Action": [
+        "kafka-cluster:Connect",
+        "kafka-cluster:DescribeCluster",
+        "kafka-cluster:DescribeGroup",
+        "kafka-cluster:DescribeTopic",
+        "kafka-cluster:ReadData"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalGlueSchemaRegistry",
+      "Effect": "Allow",
+      "Action": [
+        "glue:GetSchema*",
+        "glue:ListSchemas",
+        "glue:ListSchemaVersions"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OptionalSecretsManager",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:<region>:<account-id>:secret:<your-secret-name>*"
+      ]
+    },
+    {
+      "Sid": "OptionalS3Read",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": "arn:aws:s3:::<your-bucket>/<optional-prefix>/*"
+    }
+  ]
+}
+```
+
+* استخدم قسم Glue فقط إذا كنت تستخدم AWS Glue Schema Registry.
+* استخدم قسم Secrets Manager فقط إذا كنت تجلب بيانات الاعتماد/مخازن الثقة من Secrets Manager. احصر ARN في النطاق المطلوب.
+* استخدم قسم S3 فقط إذا كنت تحمّل الملفات (مثل truststore) من S3. احصر النطاق في bucket/البادئة.
+
+انظر أيضًا: [أفضل ممارسات Kafka – IAM](/ar/integrations/clickpipes/kafka/best-practices#iam).
+
+<div id="performance-tuning">
+  ## تحسين الأداء
+</div>
+
+تتمثل إحدى طرق تحسين الأداء في ضبط حجم الدفعة وعدد السجلات التي تُجلَب من Kafka، وذلك بإضافة ما يلي إلى إعدادات **العامل**:
+
+```yml
+consumer.max.poll.records=[NUMBER OF RECORDS]
+consumer.max.partition.fetch.bytes=[NUMBER OF RECORDS * RECORD SIZE IN BYTES]
+```
+
+ستختلف القيم التي تستخدمها وفقًا للعدد المطلوب من السجلات وحجم كل سجل. على سبيل المثال، القيم الافتراضية هي:
+
+```yml
+consumer.max.poll.records=500
+consumer.max.partition.fetch.bytes=1048576
+```
+
+يمكنك العثور على مزيد من التفاصيل (سواء بشأن التنفيذ أو الاعتبارات الأخرى) في الوثائق الرسمية لكلٍّ من [Kafka](https://kafka.apache.org/documentation/#consumerconfigs) و
+[Amazon MSK](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-workers.html#msk-connect-create-custom-worker-config).
+
+<div id="notes-on-networking-for-msk-connect">
+  ## ملاحظات حول الشبكات الخاصة بـ MSK Connect
+</div>
+
+لكي يتمكن MSK Connect من الاتصال بـ ClickHouse، نوصي بأن تكون مجموعة MSK الخاصة بك ضمن شبكة فرعية خاصة مع NAT gateway خاص متصل بالإنترنت. ترد أدناه إرشادات إعداد ذلك. لاحظ أن الشبكات الفرعية العامة مدعومة، لكنها غير موصى بها بسبب الحاجة إلى تعيين عنوان Elastic IP باستمرار إلى ENI لديك. [توفر AWS مزيدًا من التفاصيل هنا](https://docs.aws.amazon.com/msk/latest/developerguide/msk-connect-internet-access.html)
+
+1. **إنشاء شبكة فرعية خاصة:** أنشئ شبكة فرعية جديدة داخل VPC لديك، وحددها كشبكة فرعية خاصة. يجب ألا يكون لهذه الشبكة الفرعية وصول مباشر إلى الإنترنت.
+2. **إنشاء NAT gateway:** أنشئ NAT gateway في شبكة فرعية عامة ضمن VPC لديك. يتيح NAT gateway للمثيلات الموجودة في شبكتك الفرعية الخاصة الاتصال بالإنترنت أو بخدمات AWS الأخرى، لكنه يمنع الإنترنت من بدء اتصال مع هذه المثيلات.
+3. **تحديث جدول التوجيه:** أضف مسارًا يوجّه حركة المرور المتجهة إلى الإنترنت إلى NAT gateway.
+4. **ضمان إعداد مجموعة الأمان وACLs للشبكة:** اضبط [مجموعة الأمان](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html) و[ACLs للشبكة (Access Control Lists)](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html) للسماح بحركة المرور ذات الصلة.
+   1. من ENI الخاصة بعاملي MSK Connect إلى brokers الخاصة بـ MSK على منفذ TLS (عادةً 9094).
+   2. من ENI الخاصة بعاملي MSK Connect إلى endpoint الخاص بـ ClickHouse: 9440 ‏(native TLS) أو 8443 ‏(HTTPS).
+   3. اسمح بحركة المرور Inbound على broker SG من عامل SG الخاص بـ MSK Connect.
+   4. بالنسبة إلى ClickHouse ذاتي الاستضافة، افتح المنفذ المُعدّ على server لديك (القيمة default هي 8123 لـ HTTP).
+5. **إرفاق مجموعة الأمان بـ MSK:** تأكد من أن مجموعات الأمان هذه مرفقة بمجموعة MSK وعاملي MSK Connect.
+6. **الاتصال بـ ClickHouse Cloud:**
+   1. public endpoint + قائمة سماح IP: يتطلب egress عبر NAT من الشبكات الفرعية الخاصة.
+   2. الاتصال الخاص حيثما كان متاحًا (مثل VPC peering/PrivateLink/VPN). تأكد من تمكين أسماء مضيفات DNS/الدقة الخاصة بـ VPC وأن DNS يمكنه تحليل private endpoint.
+7. **التحقق من الاتصال (قائمة تحقق سريعة):**
+   1. من بيئة connector، قم بتحليل DNS التمهيدي لـ MSK واتصل عبر TLS بمنفذ broker.
+   2. أنشئ TLS connection إلى ClickHouse على المنفذ 9440 (أو 8443 لـ HTTPS).
+   3. إذا كنت تستخدم خدمات AWS ‏(Glue/Secrets Manager)، فاسمح بـ egress إلى تلك endpoints.

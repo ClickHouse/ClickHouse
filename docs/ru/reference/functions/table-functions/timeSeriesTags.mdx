@@ -1,0 +1,29 @@
+---
+description: 'Функция таблицы timeSeriesTags возвращает таблицу тегов, используемую таблицей `db_name.time_series_table`,
+  для которой в качестве движка таблицы используется движок TimeSeries.'
+sidebarTitle: 'timeSeriesTags'
+slug: /sql-reference/table-functions/timeSeriesTags
+title: 'timeSeriesTags'
+doc_type: 'reference'
+---
+
+`timeSeriesTags(db_name.time_series_table)` - Возвращает таблицу [тегов](/ru/reference/engines/table-engines/integrations/time-series#tags-table),
+используемую таблицей `db_name.time_series_table`, для которой в качестве движка таблицы используется [TimeSeries](/ru/reference/engines/table-engines/integrations/time-series):
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS tags_table
+```
+
+Функция также работает, если таблица *tags* — внутренняя:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries TAGS INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+Следующие запросы эквивалентны:
+
+```sql
+SELECT * FROM timeSeriesTags(db_name.time_series_table);
+SELECT * FROM timeSeriesTags('db_name.time_series_table');
+SELECT * FROM timeSeriesTags('db_name', 'time_series_table');
+```

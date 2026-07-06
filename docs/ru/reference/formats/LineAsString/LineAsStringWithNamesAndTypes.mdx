@@ -1,0 +1,49 @@
+---
+alias: []
+description: 'Документация по формату LineAsStringWithNamesAndTypes'
+input_format: false
+keywords: ['LineAsStringWithNamesAndTypes']
+output_format: true
+slug: /interfaces/formats/LineAsStringWithNamesAndTypes
+title: 'LineAsStringWithNamesAndTypes'
+doc_type: 'reference'
+---
+
+| Вход | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✗    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+Формат `LineAsStringWithNames` похож на формат [`LineAsString`](/ru/reference/formats/LineAsString/LineAsString),
+но выводит две строки заголовка: одну с именами столбцов, другую — с типами.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+```sql title="Query"
+CREATE TABLE example (
+    name String,
+    value Int32
+)
+ENGINE = Memory;
+
+INSERT INTO example VALUES ('John', 30), ('Jane', 25), ('Peter', 35);
+
+SELECT * FROM example FORMAT LineAsStringWithNamesAndTypes;
+```
+
+```response title="Response"
+name    value
+String    Int32
+John    30
+Jane    25
+Peter    35
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

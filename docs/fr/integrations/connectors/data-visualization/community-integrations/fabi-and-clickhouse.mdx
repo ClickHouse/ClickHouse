@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Fabi.ai'
+slug: /integrations/fabi.ai
+keywords: ['clickhouse', 'Fabi.ai', 'connecter', 'intégrer', 'notebook', 'UI', 'analyse']
+description: "Fabi.ai est une plateforme collaborative d'analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l'IA et du no-code pour créer des tableaux de bord et des flux de données plus rapidement que jamais"
+title: 'Connecter ClickHouse à Fabi.ai'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> est une plateforme collaborative d’analyse de données tout-en-un. Vous pouvez tirer parti de SQL, Python, de l’IA et du no-code pour créer des dashboards et des workflows de données plus rapidement que jamais. Associée à la puissance et à l’évolutivité de ClickHouse, elle vous permet de créer et de partager en quelques minutes votre premier dashboard très performant sur un vaste jeu de données.
+
+<Image size="md" img="/images/integrations/data-visualization/fabi_01.webp" alt="Plateforme Fabi.ai d’exploration de données et de workflows" border />
+
+<div id="gather-your-connection-details">
+  ## Rassemblez vos informations de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="connect-to-clickhouse">
+  ## Créez votre compte Fabi.ai et connectez ClickHouse
+</div>
+
+Connectez-vous à votre compte Fabi.ai ou créez-en un : https://app.fabi.ai/
+
+1. Lors de la création de votre compte, il vous sera demandé de connecter votre base de données. Si vous avez déjà un compte, cliquez sur le panneau des sources de données à gauche de n’importe quel Smartbook, puis sélectionnez Add Data Source.
+
+   <Image size="lg" img="/images/integrations/data-visualization/fabi_02.webp" alt="Ajouter une source de données" border />
+
+2. Il vous sera ensuite demandé de saisir vos informations de connexion.
+
+   <Image size="md" img="/images/integrations/data-visualization/fabi_03.webp" alt="Formulaire d’identifiants ClickHouse" border />
+
+3. Félicitations ! Vous avez maintenant intégré ClickHouse à Fabi.ai.
+
+<div id="querying-clickhouse">
+  ## Interroger ClickHouse.
+</div>
+
+Une fois Fabi.ai connecté à ClickHouse, accédez à n’importe quel [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) et créez une cellule SQL. Si une seule source de données est connectée à votre instance Fabi.ai, la cellule SQL utilisera automatiquement ClickHouse par défaut ; sinon, vous pouvez sélectionner la source à interroger dans la liste déroulante des sources.
+
+<Image size="lg" img="/images/integrations/data-visualization/fabi_04.webp" alt="Interroger ClickHouse" border />
+
+<div id="additional-resources">
+  ## Ressources supplémentaires
+</div>
+
+Documentation de [Fabi.ai](https://www.fabi.ai) : https://docs.fabi.ai/introduction
+
+Vidéos de prise en main de [Fabi.ai](https://www.fabi.ai) : https://www.youtube.com/playlist?list=PLjxPRVnyBCQXxxByw2CLC0q7c-Aw6t2nl
