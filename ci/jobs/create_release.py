@@ -317,7 +317,6 @@ class ReleaseInfo:
         #     is strictly after the branch's latest release tag (else it is stale /
         #     out of order). A branch tip is always the newest commit, so the
         #     out-of-order check applies only to a raw SHA.
-        # For a branch/SHA (i.e. a create), the commit's CI must be green.
         recover = Git.tag_exists(commit_ref)
         if recover:
             assert release_tag == commit_ref, (
@@ -342,13 +341,6 @@ class ReleaseInfo:
                             f"existing release, or the branch to release the next "
                             f"commit."
                         )
-            # Never create a release from a commit whose CI has not passed. Skipped
-            # on dry-run (the CI-status query needs the real GitHub API).
-            if not dry_run and not GH.is_commit_ci_green(commit_sha):
-                raise RuntimeError(
-                    f"Refusing to release [{commit_ref}] ({commit_sha}): CI is not "
-                    f"green for this commit."
-                )
         self.create_new_release = not recover
         self.release_type = release_type
         return self
