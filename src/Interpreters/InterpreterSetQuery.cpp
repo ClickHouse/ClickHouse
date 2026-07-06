@@ -32,6 +32,7 @@ BlockIO InterpreterSetQuery::execute()
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+    getContext()->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
     session_context->applySettingsChanges(ast.changes);
     session_context->addQueryParameters(NameToNameMap{ast.query_parameters.begin(), ast.query_parameters.end()});
@@ -44,7 +45,10 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
 {
     const auto & ast = query_ptr->as<ASTSetQuery &>();
     if (!ignore_setting_constraints)
+    {
         getContext()->checkSettingsConstraints(ast.changes, SettingSource::QUERY);
+        getContext()->checkSettingsConstraintsForDefaults(ast.default_settings, SettingSource::QUERY);
+    }
     getContext()->applySettingsChanges(ast.changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
 }

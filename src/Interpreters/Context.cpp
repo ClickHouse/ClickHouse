@@ -3418,6 +3418,29 @@ void Context::checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_
     checkMergeTreeSettingsConstraintsWithLock(merge_tree_settings, changes);
 }
 
+void Context::checkSettingsConstraintsForDefaults(const std::vector<String> & names, SettingSource source)
+{
+    if (names.empty())
+        return;
+
+    /// "SET <name> = DEFAULT" resets a setting to its default value. This must be validated against the
+    /// same constraints (readonly mode, const/min/max) as an explicit assignment; otherwise a constrained
+    /// user could bypass them by resetting the setting (e.g. "SET readonly = DEFAULT" to escape readonly mode,
+    /// or "SET <const_setting> = DEFAULT" to override a const/min/max constraint).
+    SettingsChanges default_changes;
+    default_changes.reserve(names.size());
+    for (const auto & name : names)
+    {
+        /// Custom (user-defined) settings cannot carry constraints, so there is nothing to validate for them.
+        if (!Settings::hasBuiltin(name))
+            continue;
+        default_changes.emplace_back(name, Field(settings->getDefaultValueString(name)));
+    }
+
+    if (!default_changes.empty())
+        checkSettingsConstraints(default_changes, source);
+}
+
 void Context::resetSettingsToDefaultValue(const std::vector<String> & names)
 {
     std::lock_guard lock(mutex);

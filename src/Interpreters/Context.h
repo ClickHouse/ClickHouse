@@ -1169,6 +1169,9 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    /// Validates that resetting the given settings to their default values (SET <name> = DEFAULT)
+    /// does not violate settings constraints (readonly mode, const/min/max).
+    void checkSettingsConstraintsForDefaults(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
