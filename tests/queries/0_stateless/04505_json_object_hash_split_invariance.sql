@@ -57,13 +57,16 @@ DROP TABLE t_both;
 
 -- Grace-hash spill on a JSON key whose per-block dynamic/shared split varies must not raise a
 -- FileBucket state-machine assertion, and must not silently drop matches (the hash must be stable
--- across the temp-file round-trip). Spilling is forced by grace_hash_join_initial_buckets = 8
--- (independent of data volume), so a small fixture still exercises the delayed-bucket re-scatter.
--- The self-join cardinality is deterministic: the key is fully determined by number % 50 (the b
--- index (number * 7 + 1) % 50 also depends only on number % 50), so there are 50 distinct keys with
--- 20 rows each => 50 * 20 * 20 = 20000 matched pairs. Asserting the exact count catches a spill that
+-- across the temp-file round-trip). Spilling to disk is forced by grace_hash_join_initial_buckets = 8
+-- (independent of data volume): the right side is scattered by key hash across 8 buckets and buckets
+-- 1..7 are written to temp files and read back, so a small fixture still exercises the full spill
+-- round-trip. The self-join cardinality is deterministic: the key is fully determined by number % 50
+-- (the b index (number * 7 + 1) % 50 also depends only on number % 50), so there are 50 distinct keys
+-- with 5 rows each => 50 * 5 * 5 = 1250 matched pairs. Asserting the exact count catches a spill that
 -- keeps one bucket alive but drops most matches, which a count() > 0 check would not. The
--- non-spilling hash join on the same data must agree.
+-- non-spilling hash join on the same data must agree. joined_block_split_single_row is pinned off:
+-- it forces one output row per block and does not affect the build-side scatter this test exercises,
+-- so leaving it randomized only makes the run slow.
 DROP TABLE IF EXISTS t_spill;
 CREATE TABLE t_spill (id UInt64, k JSON(max_dynamic_paths = 1)) ENGINE = MergeTree ORDER BY id
     SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1,
@@ -72,11 +75,11 @@ CREATE TABLE t_spill (id UInt64, k JSON(max_dynamic_paths = 1)) ENGINE = MergeTr
              object_shared_data_serialization_version_for_zero_level_parts = 'advanced';
 INSERT INTO t_spill SELECT number,
     concat('{"a', toString(number % 50), '":1, "b', toString((number * 7 + 1) % 50), '":2}')::JSON(max_dynamic_paths = 1)
-FROM numbers(1000);
+FROM numbers(250);
 
 SELECT 'spill_join_grace', count()
 FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
-SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, max_joined_block_size_rows = 1;
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0;
 
 SELECT 'spill_join_hash', count()
 FROM t_spill AS a INNER JOIN t_spill AS b ON a.k = b.k
@@ -137,16 +140,19 @@ DROP TABLE d_both;
 -- Grace-hash spill on a `Dynamic` key whose typed/shared split varies must not drop matches (the hash
 -- must be stable across the temp-file round-trip) and must not raise a FileBucket state-machine
 -- assertion. `s_typed` stores every key as a typed `Int64`; `s_shared` puts a String first so every
--- `Int64` lands in the shared variant. Merged into one table, each key value 0..49 appears 20 times
--- (10 typed + 10 shared), so the self-join is deterministic: 50 * 20 * 20 = 20000 matched pairs. The
--- non-spilling hash join on the same data must agree.
+-- `Int64` lands in the shared variant. Merged into one table, each key value 0..24 appears 8 times
+-- (4 typed + 4 shared), so the self-join is deterministic: 25 * 8 * 8 = 1600 matched pairs. Disk
+-- spilling is forced by grace_hash_join_initial_buckets = 8 regardless of data volume, so this small
+-- fixture still exercises the full spill round-trip; joined_block_split_single_row is pinned off (see
+-- the JSON spill above). This is the case the pre-fix hash gets wrong: the typed and shared copies of
+-- the same value scatter into different buckets, so the spilled build side drops most matches.
 DROP TABLE IF EXISTS s_typed;
 DROP TABLE IF EXISTS s_shared;
 DROP TABLE IF EXISTS d_spill;
 CREATE TABLE s_typed (n UInt64, k Dynamic(max_types = 1)) ENGINE = Memory;
-INSERT INTO s_typed SELECT number, (number % 50)::Int64 FROM numbers(500);
+INSERT INTO s_typed SELECT number, (number % 25)::Int64 FROM numbers(100);
 CREATE TABLE s_shared (n UInt64, k Dynamic(max_types = 1)) ENGINE = Memory;
-INSERT INTO s_shared SELECT number, if(number = 0, 'fill'::Dynamic(max_types = 1), ((number - 1) % 50)::Int64::Dynamic(max_types = 1)) FROM numbers(501);
+INSERT INTO s_shared SELECT number, if(number = 0, 'fill'::Dynamic(max_types = 1), ((number - 1) % 25)::Int64::Dynamic(max_types = 1)) FROM numbers(101);
 CREATE TABLE d_spill (n UInt64, k Dynamic(max_types = 1)) ENGINE = MergeTree ORDER BY n
     SETTINGS min_bytes_for_wide_part = 1, min_rows_for_wide_part = 1;
 INSERT INTO d_spill SELECT n, k FROM s_typed;
@@ -154,7 +160,7 @@ INSERT INTO d_spill SELECT n + 1000, k FROM s_shared WHERE dynamicType(k) = 'Int
 
 SELECT 'dyn_spill_grace', count()
 FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
-SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, max_joined_block_size_rows = 1;
+SETTINGS join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 8, max_block_size = 11, joined_block_split_single_row = 0;
 
 SELECT 'dyn_spill_hash', count()
 FROM d_spill AS a INNER JOIN d_spill AS b ON a.k = b.k
