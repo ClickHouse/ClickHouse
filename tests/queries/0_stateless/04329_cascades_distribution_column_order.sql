@@ -21,12 +21,16 @@ SET param__internal_cascades_cost_config = '{"work_weight":1,"network_weight":0.
 DROP TABLE IF EXISTS t_dist_left;
 DROP TABLE IF EXISTS t_dist_right;
 
-CREATE TABLE t_dist_left (a UInt64, b UInt64, x UInt64) ENGINE = MergeTree() ORDER BY (a, b);
-CREATE TABLE t_dist_right (a UInt64, b UInt64, y UInt64) ENGINE = MergeTree() ORDER BY (a, b);
+CREATE TABLE t_dist_left (a UInt64, b UInt64, x UInt64) ENGINE = MergeTree() ORDER BY (a, b)
+  SETTINGS auto_statistics_types = '';
+CREATE TABLE t_dist_right (a UInt64, b UInt64, y UInt64) ENGINE = MergeTree() ORDER BY (a, b)
+  SETTINGS auto_statistics_types = '';
 
--- High-NDV group keys so that shuffle aggregation wins for the subquery.
-INSERT INTO t_dist_left SELECT number % 1000, intDiv(number, 1000) % 100, number FROM numbers(100000);
-INSERT INTO t_dist_right SELECT number % 1000, intDiv(number, 1000) % 100, number * 3 FROM numbers(1000000);
+-- The statistics hints claim big tables with high-NDV group keys so that shuffle aggregation
+-- wins for the subquery; the physical tables stay small to keep the test fast in debug builds.
+SET param__internal_join_table_stat_hints = '{"t_dist_left": {"cardinality": 100000, "avg_row_bytes": 24, "distinct_keys": {"a": 1000, "b": 100}}, "t_dist_right": {"cardinality": 1000000, "avg_row_bytes": 24, "distinct_keys": {"a": 1000, "b": 100}}}';
+INSERT INTO t_dist_left SELECT number % 100, intDiv(number, 100) % 20, number FROM numbers(5000);
+INSERT INTO t_dist_right SELECT number % 100, intDiv(number, 100) % 20, number * 3 FROM numbers(20000);
 
 SELECT '-- 1. Join on (a, b) with subquery grouped by (b, a): all rows must match';
 SELECT count(), sum(l.x + sq.s)
