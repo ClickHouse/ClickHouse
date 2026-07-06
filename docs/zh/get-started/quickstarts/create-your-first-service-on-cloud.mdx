@@ -10,7 +10,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
 {/* 自动生成开始 */}
 
-<a href="/zh/get-started/quickstarts/home"><Badge size="lg" color="gray" icon="arrow-left">所有快速入门</Badge></a>
+<a href="/zh/get-started/quickstarts/home" onClick={(e) => { e.preventDefault(); window.location.href = (window.location.pathname.startsWith('/docs') ? '/docs' : '') + '/zh/get-started/quickstarts/home'; }}><Badge size="lg" color="gray" icon="arrow-left">所有快速入门</Badge></a>
 
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">实时分析</Badge>
@@ -164,5 +164,5 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <ClickHouseAcademyCTA />
 
 <div className="mt-8">
-  <a href="/zh/get-started/quickstarts/home"><Badge size="lg" color="gray" icon="arrow-left">所有快速入门</Badge></a>
+  <a href="/zh/get-started/quickstarts/home" onClick={(e) => { e.preventDefault(); window.location.href = (window.location.pathname.startsWith('/docs') ? '/docs' : '') + '/zh/get-started/quickstarts/home'; }}><Badge size="lg" color="gray" icon="arrow-left">所有快速入门</Badge></a>
 </div>
