@@ -2,7 +2,7 @@
 -- Check that with these settings the plan contains a join
 SELECT explain FROM (
     EXPLAIN keep_logical_steps=1, description=0 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3)
-    SETTINGS enable_join_runtime_filters = 0
+    SETTINGS enable_join_runtime_filters = 0, query_plan_optimize_join_order_randomize = 0
 ) WHERE explain ILIKE '%join%';
   JoinLogical
 SELECT number IN (SELECT * FROM numbers(2)) FROM numbers(3) ORDER BY number;
@@ -16,7 +16,7 @@ SELECT number IN (SELECT number FROM numbers(2)) FROM numbers(3) ORDER BY number
 SELECT * FROM numbers(3) WHERE number IN (SELECT number FROM numbers(2)) ORDER BY number;
 0
 1
-SELECT number IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT number IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT number IN (SELECT number IN (SELECT * FROM numbers(1)) FROM numbers(2)) FROM numbers(3) ORDER BY number;
 1
 1
@@ -32,7 +32,7 @@ SELECT number NOT IN (SELECT * FROM numbers(2)) FROM numbers(3) ORDER BY number;
 1
 SELECT * FROM numbers(3) WHERE number NOT IN (SELECT number FROM numbers(2)) ORDER BY number;
 2
-SELECT number NOT IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT}
+SELECT number NOT IN (SELECT number, number FROM numbers(2)) FROM numbers(3); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT number NOT IN (SELECT number IN (SELECT * FROM numbers(1)) FROM numbers(2)) FROM numbers(3) ORDER BY number;
 0
 0
@@ -53,7 +53,8 @@ EXPLAIN keep_logical_steps=1, description=0
 SELECT *
 FROM numbers(8)
 WHERE number IN (select number from numbers(5))
-SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_optimize_join_order_randomize = 0,
+query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
 Expression
   JoinLogical
     Expression
@@ -68,7 +69,8 @@ WITH
 SELECT *
 FROM numbers(8)
 WHERE number IN t
-SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
+SETTINGS enable_join_runtime_filters = 0, query_plan_merge_filter_into_join_condition = 0, query_plan_merge_filters = 0, query_plan_optimize_join_order_randomize = 0,
+query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False; ANY JOIN not converted to SEMI, leaving a separate Filter step above JoinLogical
 Expression
   JoinLogical
     Expression
@@ -107,7 +109,7 @@ ORDER BY number;
 1
 2
 3
--- Mismatching number of elements 
+-- Mismatching number of elements
 SELECT *
 FROM numbers(8)
 WHERE (number+1, number+2, number+3) IN (select number, number+1 from numbers(5)); -- {serverError NUMBER_OF_COLUMNS_DOESNT_MATCH,BAD_ARGUMENTS, ILLEGAL_TYPE_OF_ARGUMENT}

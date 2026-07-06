@@ -1,0 +1,18 @@
+---
+description: 'Guias de referência para conectar o ClickHouse a catálogos de lago de dados, incluindo AWS Glue, Unity, REST, Lakekeeper, Nessie e OneLake.'
+slug: /use-cases/data-lake/reference
+title: 'Guias de catálogos'
+keywords: ['lago de dados', 'lakehouse', 'catálogo', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'landing-page'
+---
+
+O ClickHouse se integra a diversos catálogos de lago de dados por meio do mecanismo de banco de dados [`DataLakeCatalog`](/pt-BR/reference/engines/database-engines/datalake). Os guias a seguir mostram como conectar o ClickHouse a cada catálogo compatível, incluindo exemplos de configuração, autenticação e consultas.
+
+| Catálogo                                                                     | Descrição                                                                                           |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [AWS Glue](/pt-BR/guides/use-cases/data-warehousing/glue-catalog)                  | Consulte tabelas Iceberg registradas no AWS Glue Data Catalog com dados armazenados no S3.          |
+| [Databricks Unity Catalog](/pt-BR/guides/use-cases/data-warehousing/unity-catalog) | Conecte-se ao Databricks Unity Catalog para tabelas Delta Lake e Iceberg.                           |
+| [Iceberg REST Catalog](/pt-BR/guides/use-cases/data-warehousing/rest-catalog)      | Use qualquer catálogo que implemente a especificação REST do Iceberg, como o Tabular.               |
+| [Lakekeeper](/pt-BR/guides/use-cases/data-warehousing/lakekeeper-catalog)          | Conecte-se ao Lakekeeper Catalog para tabelas Iceberg.                                              |
+| [Project Nessie](/pt-BR/guides/use-cases/data-warehousing/nessie-catalog)          | Consulte tabelas Iceberg usando o Nessie Catalog com controle de versão de dados semelhante ao Git. |
+| [Microsoft OneLake](/pt-BR/guides/use-cases/data-warehousing/onelake-catalog)      | Consulte tabelas Iceberg no Microsoft Fabric OneLake.                                               |

@@ -1,0 +1,155 @@
+---
+title: 'AWS IAM 사용자 및 S3 버킷 생성 방법'
+description: 'AWS IAM 사용자 및 S3 버킷 생성 방법입니다.'
+keywords: ['AWS', 'IAM', 'S3 버킷']
+slug: /integrations/s3/creating-iam-user-and-s3-bucket
+sidebarTitle: 'AWS IAM 사용자 및 S3 버킷 생성 방법'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 가이드에서는 AWS에서 IAM 사용자와 S3 버킷을 설정하는 방법을 설명합니다.
+> 이는 S3에 백업을 저장하거나 ClickHouse가
+> S3에 데이터를 저장하도록 구성하기 전에 필요한 선행 단계입니다.
+
+<div id="create-an-aws-iam-user">
+  ## AWS IAM 사용자 만들기
+</div>
+
+이 절차에서는 로그인 사용자가 아니라 서비스 계정용 사용자를 생성합니다.
+
+1. AWS IAM Management Console에 로그인합니다.
+
+2. `Users` 탭에서 `Create user`를 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-1.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+3. 사용자 이름을 입력합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-2.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+4. `다음`을 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-3.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+5. `다음`을 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-4.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+6. `Create user`를 선택합니다.
+
+이제 사용자가 생성되었습니다.
+새로 생성한 사용자를 클릭합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-5.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+7. `Create access key`를 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-6.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+8. `Application running outside AWS`를 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-7.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+9. `Create access key`를 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-8.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+10. 나중에 사용할 수 있도록 액세스 키와 시크릿 키를 .csv 파일로 다운로드합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-9.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+<div id="create-an-s3-bucket">
+  ## S3 버킷 생성
+</div>
+
+1. S3 버킷 섹션에서 **버킷 생성**을 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-10.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+2. 버킷 이름을 입력하고, 다른 옵션은 기본값으로 둡니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-11.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+<Note>
+  버킷 이름은 조직 내에서만이 아니라 AWS 전체에서 고유해야 하며, 그렇지 않으면 오류가 발생합니다.
+</Note>
+
+3. `Block all Public Access`는 활성화된 상태로 유지하십시오. 퍼블릭 액세스는 필요하지 않습니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-12.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+4. 페이지 하단에서 **버킷 생성**을 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-13.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+5. 링크를 선택하고 ARN을 복사한 다음, 버킷의 액세스 정책을 구성할 때 사용할 수 있도록 저장합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-14.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+6. 버킷이 생성되면 S3 버킷 목록에서 새 S3 버킷을 찾아 버킷 이름을 선택합니다. 그러면 아래와 같은 페이지로 이동합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-15.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+7. `Create folder`를 선택합니다.
+
+8. ClickHouse S3 디스크 또는 Backup 대상으로 사용할 폴더 이름을 입력한 다음, 페이지 하단에서 `Create folder`를 선택합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-16.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+9. 이제 버킷 목록에 해당 폴더가 표시됩니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-17.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+10. 새 폴더의 체크박스를 선택하고 `Copy URL`을 클릭합니다. 다음 섹션의 ClickHouse 스토리지 구성에서 사용할 수 있도록 URL을 저장합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-18.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+11. **Permissions** 탭을 선택하고 **Bucket Policy** 섹션에서 **Edit** 버튼을 클릭합니다.
+
+<Image size="lg" img="/images/_snippets/s3/2025/s3-19.webp" alt="AWS IAM Management Console - 새 사용자 추가" />
+
+12. 버킷 정책을 추가합니다. 아래는 예시입니다.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Id": "Policy123456",
+    "Statement": [
+        {
+            "Sid": "abc123",
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::782985192762:user/docs-s3-user"
+            },
+            "Action": "s3:*",
+            "Resource": [
+                "arn:aws:s3:::ch-docs-s3-bucket",
+                "arn:aws:s3:::ch-docs-s3-bucket/*"
+            ]
+        }
+    ]
+}
+```
+
+<Note>
+  위 정책을 사용하면 버킷에 대해 모든 작업을 수행할 수 있습니다
+</Note>
+
+| 매개변수      | 설명                   | 예시 값                                                                                     |
+| --------- | -------------------- | ---------------------------------------------------------------------------------------- |
+| Version   | 정책 언어 버전으로, 그대로 두십시오 | 2012-10-17                                                                               |
+| Sid       | 사용자 정의 정책 ID         | abc123                                                                                   |
+| Effect    | 사용자 요청을 허용할지 거부할지 여부 | Allow                                                                                    |
+| Principal | 허용할 계정 또는 사용자        | arn:aws:iam::782985192762:user/docs-s3-user                                              |
+| Action    | 버킷에서 허용되는 작업         | s3:*                                                                                     |
+| Resource  | 버킷 내에서 작업이 허용되는 리소스  | &quot;arn:aws:s3:::ch-docs-s3-bucket&quot;, &quot;arn:aws:s3:::ch-docs-s3-bucket/*&quot; |
+
+<Note>
+  사용할 권한은 보안 팀과 협의하여 결정해야 하며, 여기 제시된 내용은 시작점으로 활용하십시오.
+  정책 및 설정에 대한 자세한 내용은 AWS 문서를 참조하십시오:
+  https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+</Note>
+
+13. 정책 구성을 저장합니다

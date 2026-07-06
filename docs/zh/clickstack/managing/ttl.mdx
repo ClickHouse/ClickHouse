@@ -1,0 +1,90 @@
+---
+slug: /use-cases/observability/clickstack/ttl
+title: '管理生存时间 (TTL)'
+sidebarTitle: '管理生存时间 (TTL)'
+description: '使用 ClickStack 管理生存时间 (TTL)'
+doc_type: 'guide'
+keywords: ['ClickStack', '生存时间 (TTL)', '数据保留', '生命周期', '存储管理']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
+
+<div id="ttl-clickstack">
+  ## ClickStack 中的 TTL
+</div>
+
+生存时间 (TTL) 是 ClickStack 中一项至关重要的功能，可用于高效的数据保留和管理，尤其是在系统持续生成海量数据的情况下。TTL 允许较旧的数据自动过期并删除，从而确保存储得到最佳利用，并在无需人工干预的情况下维持性能。这项能力对于保持数据库精简、降低存储成本，以及通过聚焦最相关、最新的数据来确保查询持续快速高效至关重要。此外，它还能通过系统化管理数据生命周期，帮助满足数据保留策略方面的合规要求，从而提升整个可观测性解决方案的可持续性和可扩展性。
+
+**默认情况下，ClickStack 会保留 3 天的数据。要修改此设置，请参阅[“修改生存时间 (TTL)”](#modifying-ttl)。**
+
+在 ClickHouse 中，TTL 在表级别控制。例如，下面显示的是日志的默认 schema；当 collector 创建该表时，`${TABLES_TTL}` 会被替换为已配置的数据保留期 (若未更改则为 3 天)：
+
+<OtelLogsSchema />
+
+ClickHouse 中的分区允许根据某个列或 SQL 表达式，在磁盘上对数据进行逻辑划分。通过这种逻辑划分，可以独立操作每个分区，例如在其根据 TTL 策略到期后将其删除。
+
+如上例所示，分区是在表初始定义时通过 `PARTITION BY` 子句指定的。该子句可包含基于任意列的 SQL 表达式，其结果决定某一行会被写入哪个分区。这会使数据在逻辑上与磁盘上的各个分区相关联 (通过共同的文件夹名称前缀)，从而可以单独查询这些分区。对于上面的示例，默认的 `otel_logs` schema 使用表达式 `toDate(Timestamp)` 按天分区。当行被插入到 ClickHouse 时，系统会针对每一行计算该表达式，并将其路由到对应的分区 (如果该分区存在；如果该行是某一天的第一行，则会创建该分区)。有关分区及其其他用途的更多详细信息，请参阅[“表分区”](/zh/concepts/core-concepts/partitions)。
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="分区" size="lg" />
+
+表的 schema 还包含 `TTL toDateTime(Timestamp) + ${TABLES_TTL}` 以及设置 `ttl_only_drop_parts = 1`。前一个子句可确保数据在超过已配置的生存时间 (TTL) 后被删除 (默认 3 天)。设置 `ttl_only_drop_parts = 1` 会强制仅在整个数据分区片段中的数据都已过期时才删除该数据分区片段 (而不是尝试部分删除行) 。由于分区可确保不同日期的数据永远不会被“merged”，因此可以高效地删除数据。
+
+<Warning>
+  **`ttl_only_drop_parts`**
+
+  我们建议始终使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts)。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。删除整个 part，而不是对生存时间 (TTL) 过期的行做部分清理 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型的 mutations 来实现) ，可以将 `merge_with_ttl_timeout` 设置得更短，并降低对系统性能的影响。如果数据按执行生存时间 (TTL) 过期处理时所用的相同单位进行分区，例如按天分区，那么 parts 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
+</Warning>
+
+默认情况下，生存时间 (TTL) 已过期的数据会在 ClickHouse [合并数据分区片段](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 时被移除。当 ClickHouse 检测到数据已过期时，它会执行一次计划外合并。
+
+<Info>
+  **生存时间 (TTL) 调度**
+
+  如上所述，生存时间 (TTL) 不会立即生效，而是按计划执行。MergeTree 表设置 `merge_with_ttl_timeout` 用于设置再次执行带删除生存时间 (TTL) 的合并前的最小延迟秒数。默认值为 14400 秒 (4 小时) 。但这只是最小延迟；生存时间 (TTL) 合并实际触发前，可能还需要更长时间。如果该值过低，系统会执行大量计划外合并，可能消耗大量资源。可以使用命令 `ALTER TABLE my_table MATERIALIZE TTL` 强制触发一次生存时间 (TTL) 过期处理。
+</Info>
+
+<div id="modifying-ttl">
+  ## 修改生存时间 (TTL)
+</div>
+
+要修改生存时间 (TTL)，可以采用以下任一方式：
+
+1. **修改表的 schema (推荐)&#x20;**。这需要连接到 ClickHouse 实例，例如使用 [clickhouse-client](/zh/concepts/features/interfaces/cli) 或 [Cloud SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console)。例如，可以使用以下 DDL 修改 `otel_logs` 表的生存时间 (TTL)：
+
+```sql
+ALTER TABLE default.otel_logs
+MODIFY TTL TimestampTime + toIntervalDay(7);
+```
+
+2. **修改 OTel collector**。ClickStack OpenTelemetry collector 会在 ClickHouse 中自动创建不存在的表。这是通过 ClickHouse exporter 实现的；该组件提供了一个 `ttl` 参数，用于控制默认的生存时间 (TTL) 表达式，例如
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+<div id="column-level-ttl">
+  ### 列级生存时间 (TTL)
+</div>
+
+上述示例是在表级别让数据过期。你也可以在列级别让数据过期。随着数据逐渐变旧，可以删除那些在调查中的作用不足以抵消其保留成本的列。例如，我们建议保留 `Body` 列，以防后续新增了尚未在写入时提取的动态元数据，例如新的 Kubernetes 标签。经过一段时间 (例如 1 个月) 后，可能就会明显看出，这些额外元数据并没有实际用处——因此继续保留 `Body` 列的价值也就有限了。
+
+下面我们展示如何在 30 天后删除 `Body` 列。
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+ ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  指定列级生存时间 (TTL) 需要用户自行定义 schema，无法在 OTel collector 中指定。
+</Note>

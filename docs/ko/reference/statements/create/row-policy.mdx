@@ -1,0 +1,103 @@
+---
+description: 'ROW POLICY 문서'
+sidebarTitle: 'ROW POLICY'
+slug: /sql-reference/statements/create/row-policy
+title: 'CREATE ROW POLICY'
+doc_type: '참고'
+---
+
+[행 정책](/ko/concepts/features/security/access-rights#row-policy-management), 즉 사용자가 테이블에서 읽을 수 있는 행을 결정하는 데 사용되는 필터를 생성합니다.
+
+<Tip>
+  행 정책은 읽기 전용 권한이 있는 사용자에게만 유효합니다. 사용자가 테이블을 수정하거나 테이블 간에 파티션을 복사할 수 있으면 행 정책의 제한이 무력화됩니다.
+</Tip>
+
+구문:
+
+```sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name1 [ON CLUSTER cluster_name1] ON [db1.]table1|db1.*
+        [, policy_name2 [ON CLUSTER cluster_name2] ON [db2.]table2|db2.* ...]
+    [IN access_storage_type]
+    [FOR SELECT] USING condition
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+```
+
+<div id="using-clause">
+  ## USING 절
+</div>
+
+행을 필터링할 조건을 지정할 수 있습니다. 특정 행에 대해 이 조건의 계산 결과가 0이 아니면 사용자는 해당 행을 볼 수 있습니다.
+
+<div id="to-clause">
+  ## TO 절
+</div>
+
+`TO` 섹션에서는 이 정책을 적용할 사용자 및 역할 목록을 지정할 수 있습니다. 예를 들어 `CREATE ROW POLICY ... TO accountant, john@localhost`와 같습니다.
+
+키워드 `ALL`은 현재 사용자를 포함한 모든 ClickHouse 사용자를 의미합니다. 키워드 `ALL EXCEPT`는 전체 사용자 목록에서 일부 사용자를 제외할 수 있도록 하며, 예를 들어 `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`와 같습니다.
+
+<div id="as-clause">
+  ## AS 절
+</div>
+
+동일한 사용자에게 동일한 테이블에 대해 한 번에 둘 이상의 정책을 활성화할 수 있습니다. 따라서 여러 정책의 조건을 결합할 방법이 필요합니다.
+
+기본적으로 정책은 불리언 `OR` 연산자를 사용해 결합됩니다. 예를 들어, 다음과 같은 정책이 있습니다.
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
+```
+
+사용자 `peter`가 `b=1` 또는 `c=2`인 행을 볼 수 있게 합니다.
+
+`AS` 절은 정책을 다른 정책과 어떤 방식으로 결합할지 지정합니다. 정책은 허용형일 수도 있고 제한형일 수도 있습니다. 기본적으로 정책은 허용형이며, 이 경우 불리언 `OR` 연산자를 사용해 결합됩니다.
+
+대안으로 정책을 제한형으로 정의할 수도 있습니다. 제한형 정책은 불리언 `AND` 연산자를 사용해 결합됩니다.
+
+다음은 일반식입니다:
+
+```text
+row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
+                 (all of the restrictive policies's conditions are non-zero)
+```
+
+예를 들어, 다음과 같은 정책이 있습니다:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.table1 USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+사용자 `peter`가 `b=1` AND `c=2`를 모두 만족하는 행만 볼 수 있도록 설정합니다.
+
+데이터베이스 정책은 테이블 정책과 결합됩니다.
+
+예를 들어, 다음과 같은 정책이 있습니다:
+
+```sql
+CREATE ROW POLICY pol1 ON mydb.* USING b=1 TO mira, peter
+CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
+```
+
+사용자 `peter`는 `b=1` AND `c=2`를 모두 만족할 때만 table1의 행을 볼 수 있으며,
+mydb의 다른 모든 테이블에는 해당 사용자에게 `b=1` 정책만 적용됩니다.
+
+<div id="on-cluster-clause">
+  ## ON CLUSTER 절
+</div>
+
+클러스터 전체에서 행 정책을 생성할 수 있습니다. [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
+
+`CREATE ROW POLICY filter2 ON mydb.mytable USING a<1000 AND b=5 TO ALL EXCEPT mira`
+
+`CREATE ROW POLICY filter3 ON mydb.mytable USING 1 TO admin`
+
+`CREATE ROW POLICY filter4 ON mydb.* USING 1 TO admin`
