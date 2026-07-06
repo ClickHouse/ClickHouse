@@ -410,7 +410,6 @@ struct QueryPlanSettings
             {"compact", query_plan_options.compact},
             {"pretty", query_plan_options.pretty},
             {"estimates", query_plan_options.estimates},
-
     };
 
     std::unordered_map<std::string, std::reference_wrapper<Int64>> integer_settings;
