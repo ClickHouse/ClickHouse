@@ -5093,6 +5093,32 @@ void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, c
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
 
+    /// `RECOMPRESS COLUMN` is parsed straight into a `MutationCommand` and never goes through the
+    /// `AlterCommands` validation, so validate the target here. It must be a physical (stored)
+    /// column: an unknown name has no data at all, and an `ALIAS` / `EPHEMERAL` column has no
+    /// on-disk stream to recompress. Without this check the mutation would silently do nothing on
+    /// wide/full parts (the column is simply absent) or rewrite every physical column of a
+    /// compact/non-full part.
+    {
+        auto columns_metadata = getInMemoryMetadataPtr(getContext(), false);
+        const auto & columns = columns_metadata->getColumns();
+        for (const auto & command : commands)
+        {
+            if (command.type != MutationCommand::RECOMPRESS_COLUMN)
+                continue;
+
+            if (!columns.has(command.column_name))
+                throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                    "Cannot RECOMPRESS COLUMN `{}`: there is no such column in table {}.",
+                    command.column_name, getStorageID().getNameForLogs());
+
+            if (!columns.hasPhysical(command.column_name))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot RECOMPRESS COLUMN `{}`: it is an ALIAS or EPHEMERAL column and has no stored data to recompress.",
+                    command.column_name);
+        }
+    }
+
     /// Reject mutations that bypass UK dedup: DELETE/UPDATE rewrite rows;
     /// MATERIALIZE COLUMN / CLEAR COLUMN (the latter serialized as
     /// `DROP_COLUMN` with `clear=true`) rewrite stored bytes.
