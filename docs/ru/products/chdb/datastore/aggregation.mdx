@@ -1,0 +1,485 @@
+---
+title: 'Функции агрегации DataStore'
+sidebarTitle: 'Агрегация'
+slug: /chdb/datastore/aggregation
+description: 'Агрегатные функции, оконные функции и пространство имен F в DataStore'
+keywords: ['chdb', 'datastore', 'агрегация', 'окно', 'groupby', 'sum', 'mean', 'avg']
+doc_type: 'reference'
+---
+
+DataStore предоставляет полноценную поддержку агрегатных и оконных функций, опираясь на мощные возможности SQL-агрегации в ClickHouse.
+
+<div id="basic">
+  ## Базовые агрегации
+</div>
+
+<div id="builtin">
+  ### Встроенные методы
+</div>
+
+| Метод       | Эквивалент SQL    | Описание                              |
+| ----------- | ----------------- | ------------------------------------- |
+| `sum()`     | `SUM()`           | Сумма значений                        |
+| `mean()`    | `AVG()`           | Среднее арифметическое                |
+| `count()`   | `COUNT()`         | Количество значений, отличных от NULL |
+| `min()`     | `MIN()`           | Минимальное значение                  |
+| `max()`     | `MAX()`           | Максимальное значение                 |
+| `median()`  | `MEDIAN()`        | Медиана                               |
+| `std()`     | `stddevPop()`     | Стандартное отклонение                |
+| `var()`     | `varPop()`        | Дисперсия                             |
+| `nunique()` | `COUNT(DISTINCT)` | Количество уникальных значений        |
+
+**Примеры:**
+
+```python
+from pathlib import Path
+Path("sales.csv").write_text("""\
+region,product,category,amount,quantity,price,date,order_id
+East,Widget,Electronics,5200,10,120,2024-01-15,1001
+West,Gadget,Electronics,800,5,160,2024-02-20,1002
+East,Gizmo,Home,6500,3,100,2024-03-10,1003
+North,Widget,Electronics,4500,6,150,2024-06-18,1004
+West,Gadget,Electronics,2000,8,250,2024-09-14,1005
+""")
+
+from chdb import datastore as pd
+
+ds = pd.read_csv("sales.csv")
+
+# Агрегация по одному столбцу
+total = ds['amount'].sum()
+average = ds['amount'].mean()
+count = ds['amount'].count()
+
+# Все агрегации
+print(ds['amount'].sum())    # Сумма
+print(ds['amount'].mean())   # Среднее
+print(ds['amount'].std())    # Стандартное отклонение
+print(ds['amount'].median()) # Медиана
+print(ds['amount'].nunique()) # Количество уникальных значений
+```
+
+***
+
+<div id="groupby">
+  ## Агрегации GroupBy
+</div>
+
+<div id="single-agg">
+  ### Одна агрегация
+</div>
+
+```python
+# Группировка и агрегация
+result = ds.groupby('category')['amount'].sum()
+result = ds.groupby('region')['sales'].mean()
+```
+
+<div id="multi-agg">
+  ### Несколько агрегаций
+</div>
+
+```python
+# Синтаксис словаря
+result = ds.groupby('category').agg({
+    'amount': 'sum',
+    'quantity': 'mean',
+    'order_id': 'count'
+})
+
+# Список агрегаций для каждого столбца
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'max'],
+    'quantity': ['sum', 'count']
+})
+```
+
+<div id="named-agg">
+  ### Именованные агрегации
+</div>
+
+```python
+# Именованная агрегация (в стиле pandas)
+result = ds.groupby('region').agg(
+    total_amount=('amount', 'sum'),
+    avg_quantity=('quantity', 'mean'),
+    order_count=('order_id', 'count'),
+    max_price=('price', 'max')
+)
+```
+
+<div id="multi-groupby">
+  ### Несколько ключей GroupBy
+</div>
+
+```python
+# Группировка по нескольким столбцам
+result = ds.groupby(['region', 'category']).agg({
+    'amount': 'sum',
+    'quantity': 'sum'
+})
+```
+
+***
+
+<div id="statistical">
+  ## Статистические агрегации
+</div>
+
+| Метод         | Эквивалент SQL | Описание                    |
+| ------------- | -------------- | --------------------------- |
+| `quantile(q)` | `quantile(q)`  | q-й квантиль (0–1)          |
+| `skew()`      | `skewPop()`    | Коэффициент асимметрии      |
+| `kurt()`      | `kurtPop()`    | Коэффициент эксцесса        |
+| `corr()`      | `corr()`       | Корреляция                  |
+| `cov()`       | `covar()`      | Ковариация                  |
+| `sem()`       | -              | Стандартная ошибка среднего |
+
+**Примеры:**
+
+```python
+# Квантили
+q50 = ds['amount'].quantile(0.5)  # Медиана
+q95 = ds['amount'].quantile(0.95) # 95-й процентиль
+
+# Несколько квантилей
+quantiles = ds['amount'].quantile([0.25, 0.5, 0.75])
+
+# Корреляция между столбцами
+correlation = ds[['sales', 'marketing_spend']].corr()
+```
+
+***
+
+<div id="conditional">
+  ## Условные агрегации
+</div>
+
+Специфичные для ClickHouse функции условной агрегации.
+
+| Function         | ClickHouse  | Description           |
+| ---------------- | ----------- | --------------------- |
+| `sum_if(cond)`   | `sumIf()`   | Сумма по условию      |
+| `count_if(cond)` | `countIf()` | Количество по условию |
+| `avg_if(cond)`   | `avgIf()`   | Среднее по условию    |
+| `min_if(cond)`   | `minIf()`   | Минимум по условию    |
+| `max_if(cond)`   | `maxIf()`   | Максимум по условию   |
+
+**Примеры:**
+
+```python
+from chdb.datastore import F, Field
+
+# Сумма только заказов с высокой стоимостью
+high_value_sum = F.sum_if(Field('amount'), Field('amount') > 1000)
+
+# Подсчёт активных пользователей
+active_count = F.count_if(Field('status') == 'active')
+
+# В контексте groupby
+result = ds.groupby('region').agg({
+    'total': ('amount', 'sum'),
+    'high_value': ('amount', F.sum_if(Field('amount') > 1000)),
+})
+```
+
+***
+
+<div id="collection">
+  ## Агрегации для сбора значений
+</div>
+
+Функции ClickHouse для сбора значений.
+
+| Function             | ClickHouse         | Description                           |
+| -------------------- | ------------------ | ------------------------------------- |
+| `group_array()`      | `groupArray()`     | Собирает в массив                     |
+| `group_uniq_array()` | `groupUniqArray()` | Собирает уникальные значения в массив |
+| `group_concat(sep)`  | `groupConcat()`    | Объединяет строки                     |
+| `top_k(n)`           | `topK(n)`          | K наиболее частых значений            |
+| `any()`              | `any()`            | Любое значение                        |
+| `any_last()`         | `anyLast()`        | Последнее значение                    |
+| `first_value()`      | `first_value()`    | Первое значение по порядку            |
+| `last_value()`       | `last_value()`     | Последнее значение по порядку         |
+
+**Примеры:**
+
+```python
+from chdb.datastore import F, Field
+
+# Собрать все теги по категориям
+result = ds.groupby('category').agg({
+    'all_tags': ('tag', F.group_array()),
+    'unique_tags': ('tag', F.group_uniq_array())
+})
+
+# Получить топ-5 продуктов по региону
+result = ds.groupby('region').agg({
+    'top_products': ('product_id', F.top_k(5))
+})
+```
+
+***
+
+<div id="window">
+  ## Оконные функции
+</div>
+
+<div id="ranking">
+  ### Функции ранжирования
+</div>
+
+| Функция          | SQL              | Описание                   |
+| ---------------- | ---------------- | -------------------------- |
+| `row_number()`   | `ROW_NUMBER()`   | Порядковый номер строки    |
+| `rank()`         | `RANK()`         | Ранг с пропусками          |
+| `dense_rank()`   | `DENSE_RANK()`   | Ранг без пропусков         |
+| `ntile(n)`       | `NTILE(n)`       | Разделение на n групп      |
+| `percent_rank()` | `PERCENT_RANK()` | Процентильный ранг (0-1)   |
+| `cume_dist()`    | `CUME_DIST()`    | Кумулятивное распределение |
+
+**Примеры:**
+
+```python
+from chdb.datastore import F, Field
+
+# Добавить номер строки
+ds['row_num'] = F.row_number().over(order_by='date')
+
+# Ранг внутри групп
+ds['rank'] = F.rank().over(
+    partition_by='category',
+    order_by='sales'
+)
+
+# Плотный ранг (без пропусков)
+ds['dense_rank'] = F.dense_rank().over(
+    partition_by='region',
+    order_by=('revenue', 'desc')
+)
+
+# Разделить на квартили
+ds['quartile'] = F.ntile(4).over(order_by='score')
+```
+
+<div id="value-functions">
+  ### Функции значений
+</div>
+
+| Функция         | SQL                 | Описание                      |
+| --------------- | ------------------- | ----------------------------- |
+| `lag(n)`        | `LAG(col, n)`       | Значение из предыдущей строки |
+| `lead(n)`       | `LEAD(col, n)`      | Значение из следующей строки  |
+| `first_value()` | `FIRST_VALUE()`     | Первое значение в окне        |
+| `last_value()`  | `LAST_VALUE()`      | Последнее значение в окне     |
+| `nth_value(n)`  | `NTH_VALUE(col, n)` | N-е значение в окне           |
+
+**Примеры:**
+
+```python
+# Предыдущее и следующее значение
+ds['prev_price'] = F.lag('price', 1).over(order_by='date')
+ds['next_price'] = F.lead('price', 1).over(order_by='date')
+
+# Первое и последнее в партиции
+ds['first_order'] = F.first_value('amount').over(
+    partition_by='customer_id',
+    order_by='date'
+)
+```
+
+<div id="cumulative">
+  ### Накопительные функции
+</div>
+
+| Метод           | Описание                                                 |
+| --------------- | -------------------------------------------------------- |
+| `cumsum()`      | Накопительная сумма                                      |
+| `cummax()`      | Накопительный максимум                                   |
+| `cummin()`      | Накопительный минимум                                    |
+| `cumprod()`     | Накопительное произведение                               |
+| `diff(n)`       | Разность со значением n строк назад                      |
+| `pct_change(n)` | Процентное изменение относительно значения n строк назад |
+
+**Примеры:**
+
+```python
+# Накопительные вычисления
+ds['running_total'] = ds['amount'].cumsum()
+ds['running_max'] = ds['amount'].cummax()
+
+# С группировкой
+ds['group_cumsum'] = ds.groupby('category')['amount'].cumsum()
+
+# Период к периоду
+ds['daily_diff'] = ds['sales'].diff(1)
+ds['pct_change'] = ds['sales'].pct_change(1)
+```
+
+<div id="rolling">
+  ### Скользящие окна
+</div>
+
+```python
+# Скользящие оконные агрегации
+ds['rolling_avg'] = ds['price'].rolling(window=7).mean()
+ds['rolling_sum'] = ds['amount'].rolling(window=30).sum()
+ds['rolling_std'] = ds['value'].rolling(window=10).std()
+
+# Расширяющиеся окна
+ds['expanding_max'] = ds['price'].expanding().max()
+ds['expanding_sum'] = ds['amount'].expanding().sum()
+```
+
+***
+
+<div id="f-namespace">
+  ## Пространство имен F
+</div>
+
+Пространство имен `F` предоставляет доступ к функциям ClickHouse.
+
+<div id="f-import">
+  ### Импорт
+</div>
+
+```python
+from chdb.datastore import F, Field
+```
+
+<div id="f-usage">
+  ### Использование функций из F
+</div>
+
+```python
+# Агрегации
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+
+# Статистические
+F.quantile(Field('value'), 0.95)
+F.stddev_pop(Field('score'))
+F.corr(Field('x'), Field('y'))
+
+# Условные
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('is_active'))
+
+# Строковые
+F.length(Field('name'))
+F.upper(Field('text'))
+
+# Дата/Время
+F.to_year(Field('date'))
+F.date_diff('day', Field('start'), Field('end'))
+
+# Массивы
+F.array_sum(Field('values'))
+F.array_avg(Field('scores'))
+
+# Математические
+F.abs(Field('delta'))
+F.round(Field('price'), 2)
+F.floor(Field('value'))
+F.ceil(Field('value'))
+```
+
+<div id="f-window">
+  ### F с оконными функциями
+</div>
+
+```python
+# Определить рамку окна
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)  # Текущая строка и 7 предшествующих
+)
+
+ds['rolling_avg'] = F.avg(Field('price')).over(window)
+```
+
+***
+
+<div id="patterns">
+  ## Типичные приёмы агрегирования
+</div>
+
+<div id="top-n">
+  ### Топ-N в каждой группе
+</div>
+
+```python
+# Топ-3 продукта в каждой категории по объёму продаж
+result = (ds
+    .assign(rank=F.row_number().over(
+        partition_by='category',
+        order_by=('sales', 'desc')
+    ))
+    .filter(ds['rank'] <= 3)
+)
+```
+
+<div id="running-total">
+  ### Нарастающий итог
+</div>
+
+```python
+# Нарастающий итог продаж
+ds['running_total'] = F.sum('amount').over(
+    order_by='date',
+    rows_between=(None, 0)  # Все строки до текущей включительно
+)
+```
+
+<div id="moving-avg">
+  ### Скользящее среднее
+</div>
+
+```python
+# 7-дневное скользящее среднее
+ds['ma_7'] = F.avg('price').over(
+    order_by='date',
+    rows_between=(-6, 0)
+)
+```
+
+<div id="yoy">
+  ### Сравнение по годам
+</div>
+
+```python
+# Сравнение год к году
+ds['prev_year_sales'] = F.lag('sales', 12).over(
+    partition_by='product_id',
+    order_by='month'
+)
+ds['yoy_growth'] = (ds['sales'] - ds['prev_year_sales']) / ds['prev_year_sales']
+```
+
+<div id="percentile">
+  ### Процентильное ранжирование
+</div>
+
+```python
+# Ранжировать клиентов по общим расходам
+ds['spend_percentile'] = F.percent_rank().over(order_by='total_spend')
+```
+
+***
+
+<div id="summary">
+  ## Сводка по методам агрегации
+</div>
+
+| Категория          | Методы                                                        |
+| ------------------ | ------------------------------------------------------------- |
+| **Базовые**        | `sum`, `mean`, `count`, `min`, `max`, `median`                |
+| **Статистические** | `std`, `var`, `quantile`, `skew`, `kurt`, `corr`, `cov`       |
+| **Условные**       | `sum_if`, `count_if`, `avg_if`, `min_if`, `max_if`            |
+| **Коллекции**      | `group_array`, `group_uniq_array`, `group_concat`, `top_k`    |
+| **Ранжирование**   | `row_number`, `rank`, `dense_rank`, `ntile`, `percent_rank`   |
+| **Значения**       | `lag`, `lead`, `first_value`, `last_value`, `nth_value`       |
+| **Накопительные**  | `cumsum`, `cummax`, `cummin`, `cumprod`, `diff`, `pct_change` |
+| **Скользящие**     | `rolling().mean/sum/std/...`, `expanding().mean/sum/...`      |

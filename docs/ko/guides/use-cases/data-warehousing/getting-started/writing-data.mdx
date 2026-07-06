@@ -1,0 +1,257 @@
+---
+title: '오픈 테이블 포맷에 데이터 쓰기'
+sidebarTitle: '데이터 레이크에 쓰기'
+slug: /use-cases/data-lake/getting-started/writing-data
+toc_max_heading_level: 3
+description: '장기 저장 및 다운스트림 활용을 위해 ClickHouse의 데이터를 객체 스토리지의 Iceberg 테이블에 다시 씁니다.'
+keywords: ['데이터 레이크', 'lakehouse', '쓰기', 'iceberg', 'reverse ETL', 'INSERT INTO', 'IcebergS3']
+doc_type: 'guide'
+---
+
+이전 가이드에서는 오픈 테이블 포맷을 직접 쿼리하고, 빠른 분석을 위해 데이터를 MergeTree에 적재했습니다. 많은 아키텍처에서는 데이터가 반대 방향으로도 이동해야 합니다. 즉, ClickHouse에서 다시 오픈 테이블 포맷으로 데이터를 내보내야 합니다. 이를 위한 대표적인 시나리오는 두 가지입니다.
+
+* **장기 스토리지로 오프로드** - 데이터는 실시간 분석 계층으로 ClickHouse에 유입되어 대시보드와 운영 보고를 지원합니다. 데이터가 실시간 윈도우를 지나 오래되면, 상호운용 가능한 포맷으로 내구성 있게, 그리고 비용 효율적으로 보관할 수 있도록 객체 스토리지의 Iceberg에 기록할 수 있습니다.
+* **Reverse ETL** - ClickHouse 내부에서 수행한 변환, 집계, 보강을 통해 다운스트림 도구와 다른 팀에서 활용해야 하는 파생 데이터셋이 생성됩니다. 이러한 결과를 Iceberg 테이블에 기록하면 더 넓은 데이터 생태계 전반에서 활용할 수 있습니다.
+
+두 경우 모두 `INSERT INTO SELECT`를 사용하면 ClickHouse 테이블의 데이터를 객체 스토리지에 저장된 Iceberg 테이블로 이동할 수 있습니다.
+
+<Note>
+  오픈 테이블 포맷에 대한 쓰기는 현재 **Iceberg 테이블만** 지원합니다. Delta Lake 테이블에 대한 부분 지원은 현재 개발 중입니다. 테이블은 catalog에서 관리되면 안 됩니다.
+</Note>
+
+<div id="prepare-source">
+  ## 소스 데이터셋 준비
+</div>
+
+이 가이드에서는 [UK Price Paid](/ko/get-started/sample-datasets/uk-price-paid) 데이터셋을 사용합니다. 이 데이터셋은 잉글랜드와 웨일스의 모든 주거용 부동산 거래를 기록한 공개 데이터입니다.
+
+<div id="create-source-table">
+  ### MergeTree 테이블 생성 및 데이터 삽입
+</div>
+
+```sql
+CREATE DATABASE uk;
+
+CREATE TABLE uk.uk_price_paid
+(
+    price UInt32,
+    date Date,
+    postcode1 LowCardinality(String),
+    postcode2 LowCardinality(String),
+    type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+    is_new UInt8,
+    duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+    addr1 String,
+    addr2 String,
+    street LowCardinality(String),
+    locality LowCardinality(String),
+    town LowCardinality(String),
+    district LowCardinality(String),
+    county LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY (postcode1, postcode2, addr1, addr2);
+```
+
+공개 CSV 소스에서 데이터를 직접 테이블에 적재하세요:
+
+```sql
+INSERT INTO uk.uk_price_paid
+SELECT
+    toUInt32(price_string) AS price,
+    parseDateTimeBestEffortUS(time) AS date,
+    splitByChar(' ', postcode)[1] AS postcode1,
+    splitByChar(' ', postcode)[2] AS postcode2,
+    transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+    b = 'Y' AS is_new,
+    transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+    addr1,
+    addr2,
+    street,
+    locality,
+    town,
+    district,
+    county
+FROM url(
+    'http://prod1.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+    'CSV',
+    'uuid_string String,
+    price_string String,
+    time String,
+    postcode String,
+    a String,
+    b String,
+    c String,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String,
+    d String,
+    e String'
+) SETTINGS max_http_get_redirects=10;
+```
+
+```response
+30906560 rows in set. Elapsed: 59.852 sec. Processed 30.91 million rows, 5.41 GB (516.39 thousand rows/s., 90.40 MB/s.)
+Peak memory usage: 485.15 MiB.
+```
+
+<div id="write-iceberg">
+  ## Iceberg 테이블에 데이터 쓰기
+</div>
+
+<div id="create-iceberg-table">
+  ### Iceberg 테이블 생성
+</div>
+
+Iceberg에 데이터를 쓰려면 [`IcebergS3` 테이블 엔진](/ko/reference/engines/table-engines/integrations/iceberg)을 사용해 테이블을 생성하십시오.
+
+스키마는 MergeTree 소스보다 더 단순하게 구성해야 합니다. ClickHouse는 Iceberg와 기반이 되는 Parquet 파일보다 더 풍부한 타입 시스템을 지원하므로 `Enum`, `LowCardinality`, `UInt8` 같은 타입은 Iceberg에서 지원되지 않으며, 호환되는 타입으로 매핑해야 합니다.
+
+```sql
+CREATE TABLE uk.uk_iceberg
+(
+    price UInt32,
+    date Date,
+    postcode1 String,
+    postcode2 String,
+    type UInt32,
+    is_new UInt32,
+    duration UInt32,
+    addr1 String,
+    addr2 String,
+    street String,
+    locality String,
+    town String,
+    district String,
+    county String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_price_paid/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-subset">
+  ### 데이터 일부 삽입
+</div>
+
+`INSERT INTO SELECT`를 사용하여 MergeTree 테이블의 데이터를 Iceberg 테이블에 삽입합니다. 이 예시에서는 London의 트랜잭션만 삽입합니다:
+
+```sql
+SET allow_experimental_insert_into_iceberg = 1;
+
+INSERT INTO uk.uk_iceberg SELECT *
+FROM uk.uk_price_paid
+WHERE town = 'LONDON'
+```
+
+```response
+2346741 rows in set. Elapsed: 1.419 sec. Processed 30.91 million rows, 153.43 MB (21.78 million rows/s., 108.15 MB/s.)
+Peak memory usage: 371.60 MiB.
+```
+
+<div id="query-iceberg">
+  ### Iceberg 테이블 쿼리
+</div>
+
+이제 데이터는 객체 스토리지에 Iceberg 형식으로 저장되며, ClickHouse 또는 Iceberg를 읽을 수 있는 다른 도구에서 쿼리할 수 있습니다:
+
+```sql
+SELECT
+    locality,
+    count()
+FROM uk.uk_iceberg
+WHERE locality != ''
+GROUP BY locality
+ORDER BY count() DESC
+LIMIT 10
+```
+
+```response
+┌─locality────┬─count()─┐
+│ LONDON      │  896796 │
+│ WALTHAMSTOW │    8610 │
+│ LEYTON      │    3525 │
+│ CHINGFORD   │    3133 │
+│ HORNSEY     │    2794 │
+│ STREATHAM   │    2760 │
+│ WOOD GREEN  │    2443 │
+│ ACTON       │    2155 │
+│ LEYTONSTONE │    2102 │
+│ EAST HAM    │    2085 │
+└─────────────┴─────────┘
+
+10 rows in set. Elapsed: 0.329 sec. Processed 457.86 thousand rows, 2.62 MB (1.39 million rows/s., 7.95 MB/s.)
+Peak memory usage: 12.19 MiB.
+```
+
+<div id="write-aggregates">
+  ## 집계 결과 쓰기
+</div>
+
+Iceberg 테이블은 원시 행만 저장하는 데 그치지 않습니다. 집계와 변환의 출력, 즉 ClickHouse 내부에서 수행되는 ETL 프로세스의 결과도 저장할 수 있습니다. 이는 사전 계산된 요약을 lakehouse에 게시해 후속 활용에 사용할 때 유용합니다.
+
+<div id="create-aggregate-table">
+  ### 집계용 Iceberg 테이블 만들기
+</div>
+
+```sql
+CREATE TABLE uk.uk_avg_town
+(
+    price Float64,
+    town String
+)
+ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg_uk_avg_town/', '<aws_access_key>', '<aws_secret_key>', '<session_token>')
+```
+
+<div id="insert-aggregates">
+  ### 집계된 데이터 삽입
+</div>
+
+지역별 평균 부동산 가격을 계산하고 결과를 Iceberg에 직접 기록합니다:
+
+```sql
+INSERT INTO uk.uk_avg_town SELECT
+    avg(price) AS price,
+    town
+FROM uk.uk_price_paid
+GROUP BY town
+```
+
+```response
+1173 rows in set. Elapsed: 0.480 sec. Processed 30.91 million rows, 185.44 MB (64.34 million rows/s., 386.05 MB/s.)
+Peak memory usage: 4.18 MiB.
+```
+
+<div id="query-aggregates">
+  ### 집계된 테이블 쿼리
+</div>
+
+이제 다른 도구나 다른 ClickHouse 인스턴스에서도 이렇게 미리 계산된 데이터셋을 읽을 수 있습니다:
+
+```sql
+SELECT
+    town,
+    price
+FROM uk.uk_avg_town
+ORDER BY price DESC
+LIMIT 10
+```
+
+```response
+┌─town───────────────┬──────────────price─┐
+│ GATWICK            │ 28232811.583333332 │
+│ THORNHILL          │             985000 │
+│ VIRGINIA WATER     │  984633.2938574939 │
+│ CHALFONT ST GILES  │  863347.7280187573 │
+│ COBHAM             │    775251.47313278 │
+│ PURFLEET-ON-THAMES │           772651.8 │
+│ BEACONSFIELD       │  746052.9327405858 │
+│ ESHER              │  686708.4969745865 │
+│ KESTON             │  654541.1774842045 │
+│ GERRARDS CROSS     │  639109.4084023251 │
+└────────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.210 sec.
+```

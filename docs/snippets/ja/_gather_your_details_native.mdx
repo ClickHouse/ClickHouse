@@ -1,0 +1,22 @@
+---
+title: Native の接続情報を確認する
+---
+
+ClickHouse にネイティブ TCP で接続するには、次の情報が必要です。
+
+| Parameters                | 説明                                                       |
+| ------------------------- | -------------------------------------------------------- |
+| `HOST` and `PORT`         | 通常、TLS を使用する場合のポートは 9440、TLS を使用しない場合は 9000 です。          |
+| `DATABASE NAME`           | 初期状態では `default` という名前のデータベースがあります。接続先のデータベース名を使用してください。 |
+| `USERNAME` and `PASSWORD` | 初期状態のユーザー名は `default` です。用途に応じたユーザー名を使用してください。           |
+
+ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソールで確認できます。
+接続先のサービスを選択し、**Connect** をクリックします。
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud サービスの接続ボタン" border />
+
+**Native** を選択すると、接続情報が `clickhouse-client` コマンドの例として表示されます。
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud Native TCP 接続の詳細" border />
+
+セルフマネージド ClickHouse を使用している場合、接続情報は ClickHouse 管理者が設定します。

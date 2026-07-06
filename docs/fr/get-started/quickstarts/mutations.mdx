@@ -1,0 +1,111 @@
+---
+slug: /guides/developer/mutations
+sidebarTitle: 'Mettre à jour et supprimer des données'
+keywords: ['UPDATE', 'DELETE', 'mutations']
+title: 'Mettre à jour et supprimer des données ClickHouse'
+description: 'Décrit comment effectuer des opérations de mise à jour et de suppression dans ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+Bien que ClickHouse soit conçu pour des charges de travail analytiques à fort volume, il est possible, dans certains cas, de modifier ou de
+supprimer des données existantes. Ces opérations sont appelées « mutations » et s’exécutent à l’aide de la commande `ALTER TABLE`.
+
+<Tip>
+  Si vous devez effectuer des mises à jour fréquentes, envisagez d’utiliser la [déduplication](/fr/concepts/features/operations/insert/deduplication) dans ClickHouse, qui permet de mettre à jour
+  et/ou de supprimer des lignes sans générer de mutation. Vous pouvez également utiliser les [lightweight updates](/fr/reference/statements/update)
+  ou les [suppression légère](/fr/concepts/features/operations/delete/lightweight-delete)
+</Tip>
+
+<div id="updating-data">
+  ## Mise à jour des données
+</div>
+
+Utilisez la commande `ALTER TABLE...UPDATE` pour mettre à jour des lignes d’une table :
+
+```sql
+ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_expr>
+```
+
+`<expression>` est la nouvelle valeur de la colonne pour laquelle `<filter_expr>` est satisfait.  `<expression>` doit être du même type de données que la colonne ou pouvoir être convertie dans ce même type à l’aide de l’opérateur `CAST`.  `<filter_expr>` doit renvoyer une valeur `UInt8` (zéro ou non nulle) pour chaque ligne de données.  Plusieurs instructions `UPDATE <column>` peuvent être combinées dans une seule commande `ALTER TABLE`, séparées par des virgules.
+
+**Exemples**:
+
+1. Une mutation comme celle-ci permet de mettre à jour `visitor_ids` en les remplaçant par de nouveaux identifiants à l’aide d’une recherche dans un dictionnaire:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE visitor_id = getDict('visitors', 'new_visitor_id', visitor_id)
+   WHERE visit_date < '2022-01-01'
+   ```
+
+2. Modifier plusieurs valeurs dans une seule commande peut être plus efficace que d’exécuter plusieurs commandes:
+
+   ```sql
+   ALTER TABLE website.clicks
+   UPDATE url = substring(url, position(url, '://') + 3), visitor_id = new_visit_id
+   WHERE visit_date < '2022-01-01'
+   ```
+
+3. Les mutations peuvent être exécutées `ON CLUSTER` pour les tables shardées:
+
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster
+   UPDATE click_count = click_count / 2
+   WHERE visitor_id ILIKE '%robot%'
+   ```
+
+<Note>
+  Il n&#39;est pas possible de mettre à jour les colonnes qui font partie de la clé primaire ou de la clé de tri.
+</Note>
+
+<div id="deleting-data">
+  ## Suppression de données
+</div>
+
+Utilisez la commande `ALTER TABLE` pour supprimer des lignes :
+
+```sql
+ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
+```
+
+Le `<filter_expr>` doit renvoyer une valeur UInt8 pour chaque ligne.
+
+**Exemples**
+
+1. Supprimez tous les enregistrements dont une colonne figure dans un tableau de valeurs :
+   ```sql
+   ALTER TABLE website.clicks DELETE WHERE visitor_id in (253, 1002, 4277)
+   ```
+
+2. Que modifie cette requête ?
+   ```sql
+   ALTER TABLE clicks ON CLUSTER main_cluster DELETE WHERE visit_date < '2022-01-02 15:00:00' AND page_id = '573'
+   ```
+
+<Note>
+  Pour supprimer toutes les données d&#39;une table, il est plus efficace d&#39;utiliser la commande `TRUNCATE TABLE [<database].]<table>`. Cette commande peut également être exécutée avec `ON CLUSTER`.
+</Note>
+
+Consultez la page de documentation de [l’instruction `DELETE`](/fr/reference/statements/delete) pour plus de détails.
+
+<div id="lightweight-deletes">
+  ## Suppressions légères
+</div>
+
+Une autre option pour supprimer des lignes consiste à utiliser la commande `DELETE FROM`, appelée **suppression légère**. Les lignes supprimées sont immédiatement marquées comme telles et seront automatiquement exclues de toutes les requêtes suivantes ; vous n’avez donc pas besoin d’attendre la fusion des parts ni d’utiliser le mot-clé `FINAL`. Le nettoyage des données s’effectue de manière asynchrone en arrière-plan.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [WHERE expr]
+```
+
+Par exemple, la requête suivante supprime toutes les lignes de la table `hits` dont la colonne `Title` contient le texte `hello` :
+
+```sql
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+Quelques remarques sur les suppressions légères :
+
+* Cette fonctionnalité est disponible uniquement pour la famille de moteurs de table `MergeTree`.
+* Les suppressions légères sont synchrones par défaut et attendent que toutes les répliques aient traité la suppression. Ce comportement est contrôlé par le [`paramètre lightweight_deletes_sync`](/fr/reference/settings/session-settings#lightweight_deletes_sync).

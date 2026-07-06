@@ -1,0 +1,192 @@
+---
+slug: /migrations/postgresql/dataset
+title: 'ترحيل البيانات'
+description: 'مثال لمجموعة بيانات للترحيل من PostgreSQL إلى ClickHouse'
+keywords: ['Postgres']
+show_related_blogs: true
+sidebarTitle: 'الجزء 1'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> هذا هو **الجزء 1** من دليل للترحيل من PostgreSQL إلى ClickHouse. ومن خلال مثال عملي، يوضّح كيفية تنفيذ الترحيل بكفاءة باستخدام نهج النسخ المتماثل في الزمن الحقيقي (CDC). وتنطبق أيضًا كثير من المفاهيم التي يتناولها على عمليات نقل البيانات المجمّعة يدويًا من PostgreSQL إلى ClickHouse.
+
+<div id="dataset">
+  ## مجموعة البيانات
+</div>
+
+ولعرض مجموعة بيانات تجريبية تُظهر عملية ترحيل نموذجية من Postgres إلى ClickHouse، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). وهي تتضمن كل `post` و`vote` و`user` و`comment` و`badge` على Stack Overflow من عام 2008 حتى أبريل 2024. ويظهر أدناه مخطط PostgreSQL لهذه البيانات:
+
+<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="مخطط Stack Overflow في PostgreSQL" />
+
+*أوامر DDL اللازمة لإنشاء الجداول في PostgreSQL متاحة [هنا](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
+
+هذا المخطط، وإن لم يكن بالضرورة الأمثل، يوظّف عددًا من ميزات PostgreSQL الشائعة، بما في ذلك المفاتيح الأساسية والمفاتيح الخارجية والتقسيم والفهارس.
+
+سنرحّل كل مفهوم من هذه المفاهيم إلى ما يقابله في ClickHouse.
+
+أما المستخدمون الذين يرغبون في ملء مجموعة البيانات هذه في مثيل PostgreSQL لاختبار خطوات الترحيل، فقد أتحنا البيانات للتنزيل بتنسيق `pg_dump` إلى جانب DDL، كما ترد أدناه أوامر تحميل البيانات اللاحقة:
+
+```bash
+# users
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/users.sql.gz
+gzip -d users.sql.gz
+psql < users.sql
+
+# posts
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posts.sql.gz
+gzip -d posts.sql.gz
+psql < posts.sql
+
+# posthistory
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/posthistory.sql.gz
+gzip -d posthistory.sql.gz
+psql < posthistory.sql
+
+# comments
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/comments.sql.gz
+gzip -d comments.sql.gz
+psql < comments.sql
+
+# votes
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/votes.sql.gz
+gzip -d votes.sql.gz
+psql < votes.sql
+
+# badges
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/badges.sql.gz
+gzip -d badges.sql.gz
+psql < badges.sql
+
+# postlinks
+wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/pdump/2024/postlinks.sql.gz
+gzip -d postlinks.sql.gz
+psql < postlinks.sql
+```
+
+على الرغم من أن مجموعة البيانات هذه صغيرة بالنسبة إلى ClickHouse، فإنها تُعد كبيرة بالنسبة إلى Postgres. وما ورد أعلاه يمثل مجموعة فرعية تغطي الأشهر الثلاثة الأولى من عام 2024.
+
+> رغم أن نتائج الأمثلة لدينا تستخدم مجموعة البيانات الكاملة لإظهار فروق الأداء بين Postgres وClickHouse، فإن جميع الخطوات الموثقة أدناه متطابقة وظيفيًا عند استخدام المجموعة الفرعية الأصغر. ويمكن للمستخدمين الذين يرغبون في تحميل مجموعة البيانات الكاملة إلى Postgres الرجوع إلى [هذا الرابط](https://pastila.nl/?00d47a08/1c5224c0b61beb480539f15ac375619d#XNj5vX3a7ZjkdiX7In8wqA==). ونظرًا إلى قيود المفاتيح الخارجية التي يفرضها المخطط أعلاه، فإن مجموعة البيانات الكاملة في PostgreSQL لا تتضمن إلا الصفوف التي تستوفي التكامل المرجعي. ويمكن، عند الحاجة، تحميل [إصدار Parquet](/ar/get-started/sample-datasets/stackoverflow) — الذي لا يفرض مثل هذه القيود — مباشرةً إلى ClickHouse بسهولة.
+
+<div id="migrating-data">
+  ## ترحيل البيانات
+</div>
+
+<div id="real-time-replication-or-cdc">
+  ### النسخ المتماثل في الزمن الحقيقي (CDC)
+</div>
+
+ارجع إلى هذا [الدليل](/ar/integrations/clickpipes/postgres/index) لإعداد ClickPipes for PostgreSQL. يغطي الدليل العديد من الأنواع المختلفة من مثيلات Postgres المصدرية.
+
+عند استخدام نهج CDC عبر ClickPipes أو PeerDB، تُنسخ جداول قاعدة بيانات PostgreSQL تلقائيًا إلى ClickHouse.
+
+وللتعامل مع عمليات التحديث والحذف بزمن شبه حقيقي، يعيّن ClickPipes جداول Postgres إلى ClickHouse باستخدام محرك [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree)، المصمم خصيصًا للتعامل مع التحديثات وعمليات الحذف في ClickHouse. يمكنك العثور على مزيد من المعلومات حول كيفية نسخ البيانات إلى ClickHouse باستخدام ClickPipes [هنا](/ar/integrations/clickpipes/postgres/deduplication#how-does-data-get-replicated). ومن المهم ملاحظة أن النسخ المتماثل باستخدام CDC يُنشئ صفوفًا مكررة في ClickHouse عند نسخ عمليات التحديث أو الحذف. [اطلع على الأساليب](/ar/integrations/clickpipes/postgres/deduplication#deduplicate-using-final-keyword) التي تستخدم المعدِّل [FINAL](/ar/reference/statements/select/from#final-modifier) للتعامل مع ذلك في ClickHouse.
+
+لنلقِ نظرة على كيفية إنشاء الجدول `users` في ClickHouse باستخدام ClickPipes.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+بعد اكتمال الإعداد، يبدأ ClickPipes بترحيل جميع البيانات من PostgreSQL إلى ClickHouse. واستنادًا إلى الشبكة وحجم بيئات النشر، يُفترض ألا يستغرق ذلك أكثر من بضع دقائق فقط بالنسبة إلى مجموعة بيانات Stack Overflow.
+
+<div id="initial-bulk-load-with-periodic-updates">
+  ### تحميل مجمّع يدوي مع تحديثات دورية
+</div>
+
+باستخدام نهج يدوي، يمكن تنفيذ التحميل المجمّع الأولي لمجموعة البيانات عبر:
+
+* **دوال الجداول** - استخدام [دالة جدول Postgres](/ar/reference/functions/table-functions/postgresql) في ClickHouse لإجراء `SELECT` للبيانات من Postgres ثم `INSERT` لها في جدول ClickHouse. وهذا مناسب لعمليات التحميل المجمّع حتى مجموعات بيانات بحجم عدة مئات من الجيجابايت.
+* **عمليات التصدير** - التصدير إلى تنسيقات وسيطة مثل CSV أو ملف برنامج نصي SQL. ويمكن بعد ذلك تحميل هذه الملفات إلى ClickHouse إما من جهة العميل عبر عبارة `INSERT FROM INFILE` أو باستخدام تخزين الكائنات والدوال المرتبطة به، مثل s3 وgcs.
+
+عند تحميل البيانات يدويًا من PostgreSQL، تحتاج أولًا إلى إنشاء الجداول في ClickHouse. ارجع إلى [وثائق نمذجة البيانات](/ar/guides/clickhouse/data-modelling/schema-design#establish-initial-schema)، والتي تستخدم أيضًا مجموعة بيانات Stack Overflow لتحسين مخطط الجدول في ClickHouse.
+
+قد تختلف أنواع البيانات بين PostgreSQL وClickHouse. ولتحديد الأنواع المكافئة لكل عمود من أعمدة الجدول، يمكننا استخدام الأمر `DESCRIBE` مع [دالة جدول Postgres](/ar/reference/functions/table-functions/postgresql). يصف الأمر التالي الجدول `posts` في PostgreSQL؛ عدّله وفقًا لبيئتك:
+
+```sql title="Query"
+DESCRIBE TABLE postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+SETTINGS describe_compact_output = 1
+```
+
+للحصول على نظرة عامة على type mapping بين PostgreSQL وClickHouse، راجع [وثائق الملحق](/ar/get-started/migrate/postgres/appendix#data-type-mappings).
+
+خطوات تحسين types لهذا المخطط هي نفسها تمامًا كما لو كانت البيانات قد حُمِّلت من Sources أخرى، مثل Parquet على S3. ويؤدي تطبيق العملية الموضَّحة في هذا [الدليل البديل باستخدام Parquet](/ar/guides/clickhouse/data-modelling/schema-design) إلى المخطط التالي:
+
+```sql title="Query"
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+يمكننا تعبئة هذا باستخدام ‎`INSERT INTO SELECT`‎ بسيط، عبر قراءة البيانات من PostgresSQL وإدراجها في ClickHouse:
+
+```sql title="Query"
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>:<port>', 'postgres', 'posts', '<username>', '<password>')
+```
+
+```response
+0 rows in set. Elapsed: 146.471 sec. Processed 59.82 million rows, 83.82 GB (408.40 thousand rows/s., 572.25 MB/s.)
+```
+
+يمكن بدوره جدولة التحميلات التزايدية. إذا كان جدول Postgres لا يستقبل سوى عمليات insert وكانت هناك قيمة `id` متزايدة أو `timestamp`، فيمكنك استخدام نهج table function المذكور أعلاه لتحميل الزيادات، أي يمكن تطبيق عبارة `WHERE` على `SELECT`. ويمكن أيضًا استخدام هذا النهج لدعم التحديثات إذا كان من المضمون أنها ستحدّث العمود نفسه. أما دعم عمليات الحذف فسيتطلب إعادة تحميل كاملة، وقد يصعب تحقيق ذلك كلما ازداد حجم الجدول.
+
+نستعرض تحميلًا أوليًا وتحميلًا تزايديًا باستخدام `CreationDate` (نفترض أن هذا الحقل يُحدَّث عند تحديث الصفوف)..
+
+```sql
+-- initial load
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password')
+
+INSERT INTO stackoverflow.posts SELECT * FROM postgresql('<host>', 'postgres', 'posts', 'postgres', '<password') WHERE CreationDate > ( SELECT (max(CreationDate) FROM stackoverflow.posts)
+```
+
+> سيدفع ClickHouse عبارات `WHERE` البسيطة مثل `=`, `!=`, `>`,`>=`, `<`, `<=`, وIN إلى خادم PostgreSQL. وبذلك يمكن جعل التحميلات التزايدية أكثر كفاءة من خلال التأكد من وجود فهرس على الأعمدة المستخدمة لتحديد مجموعة التغييرات.
+
+> تتمثل إحدى الطرق الممكنة لاكتشاف عمليات UPDATE عند استخدام النسخ المتماثل للاستعلامات في استخدام [`XMIN` system column](https://www.postgresql.org/docs/9.1/ddl-system-columns.html) (معرّفات المعاملات) كعلامة مائية — إذ يشير التغيّر في هذا العمود إلى حدوث تغيير، وبالتالي يمكن تطبيقه على جدول الوجهة. يجب على المستخدمين الذين يعتمدون هذا الأسلوب الانتباه إلى أن قيم `XMIN` قد تلتف، وأن المقارنات تتطلب فحصًا كاملًا للجدول، مما يجعل تتبّع التغييرات أكثر تعقيدًا.
+
+[انقر هنا للجزء 2](/ar/get-started/migrate/postgres/migration-guide/migration-guide-part2)

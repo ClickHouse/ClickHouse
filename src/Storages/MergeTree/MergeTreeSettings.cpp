@@ -15,6 +15,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
 #include <Common/Exception.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
 #include <Common/logger_useful.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -2372,25 +2373,12 @@ void MergeTreeSettingsImpl::loadFromQuery(ASTStorage & storage_def, ContextPtr c
             DiskPtr disk;
 
             auto changes = storage_def.settings->changes;
-            for (auto & [name, value] : changes)
+            MergeTreeSettings::resolveDiskSetting(changes, context, is_loading_from_existing_metadata);
+
+            for (const auto & [name, value] : changes)
             {
-                CustomType custom;
                 if (name == "disk")
                 {
-                    ASTPtr value_as_custom_ast = nullptr;
-                    if (value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
-                        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
-
-                    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
-                    {
-                        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
-                        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
-                        value = disk_name;
-                    }
-                    else
-                    {
-                        DiskFromAST::ensureDiskIsNotCustom(value.safeGet<String>(), context);
-                    }
                     disk = context->getDisk(value.safeGet<String>());
 
                     if (has("storage_policy"))
@@ -2702,14 +2690,59 @@ SettingsChanges MergeTreeSettings::changes() const
     return impl->changes();
 }
 
-void MergeTreeSettings::applyChanges(const SettingsChanges & changes)
+void MergeTreeSettings::applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChanges(changes);
+    auto resolved_changes = changes;
+    resolveDiskSetting(resolved_changes, context, is_loading_from_existing_metadata);
+    impl->applyChanges(resolved_changes);
 }
 
-void MergeTreeSettings::applyChange(const SettingChange & change)
+void MergeTreeSettings::applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
 {
-    impl->applyChange(change);
+    auto resolved_change = change;
+    resolveDiskSetting(resolved_change, context, is_loading_from_existing_metadata);
+    impl->applyChange(resolved_change);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    for (auto & change : changes)
+        resolveDiskSetting(change, context, is_loading_from_existing_metadata);
+}
+
+void MergeTreeSettings::resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata)
+{
+    if (change.name != "disk")
+        return;
+
+    CustomType custom;
+    ASTPtr value_as_custom_ast = nullptr;
+    if (change.value.tryGet<CustomType>(custom) && 0 == strcmp(custom.getTypeName(), "AST"))
+        value_as_custom_ast = dynamic_cast<const FieldFromASTImpl &>(custom.getImpl()).ast;
+
+    if (value_as_custom_ast && isDiskFunction(value_as_custom_ast))
+    {
+        auto disk_name = DiskFromAST::createCustomDisk(value_as_custom_ast, context, is_loading_from_existing_metadata);
+        LOG_DEBUG(getLogger("MergeTreeSettings"), "Created custom disk {}", disk_name);
+        change.value = disk_name;
+    }
+    else if (!is_loading_from_existing_metadata)
+    {
+        DiskFromAST::ensureDiskIsNotCustom(change.value.safeGet<String>(), context);
+    }
+}
+
+bool MergeTreeSettings::isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes)
+{
+    const Field * new_value = new_changes.tryGet("disk");
+    if (!new_value)
+        return false;
+
+    const Field * old_value = old_changes.tryGet("disk");
+    if (!old_value)
+        return true;
+
+    return applyVisitor(FieldVisitorToString(), *old_value) != applyVisitor(FieldVisitorToString(), *new_value);
 }
 
 void MergeTreeSettings::applyCompatibilitySetting(const String & compatibility_value)

@@ -11,6 +11,7 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/Macros.h>
 #include <Common/PoolId.h>
 #include <Common/SipHash.h>
@@ -44,6 +45,8 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 
+#include <Storages/MaterializedView/RefreshSet.h>
+#include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -148,11 +151,17 @@ namespace Setting
     extern const SettingsBool restore_replace_external_engines_to_null;
     extern const SettingsBool restore_replace_external_table_functions_to_null;
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
+    extern const SettingsBool stop_refreshable_materialized_views_on_startup;
 }
 
 namespace ServerSetting
 {
     extern const ServerSettingsBool ignore_empty_sql_security_in_create_view_query;
+}
+
+namespace FailPoints
+{
+    extern const char create_or_replace_before_rename[];
 }
 
 namespace ErrorCodes
@@ -2337,10 +2346,16 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     /// Before actually creating/replacing the table, check if it will lead to cyclic dependencies.
     checkTableCanBeAddedWithNoCyclicDependencies(create, query_ptr, create_context);
 
-    auto make_drop_context = [&]() -> ContextMutablePtr
+    auto make_drop_context = [&](bool bypass_size_guard) -> ContextMutablePtr
     {
         ContextMutablePtr drop_context = Context::createCopy(current_context);
         drop_context->setQueryContext(std::const_pointer_cast<Context>(current_context));
+        /// Bypass = "the size guard was already enforced upstream; do not re-check or consume `force_drop_table` twice".
+        if (bypass_size_guard)
+        {
+            drop_context->setSetting("max_table_size_to_drop", Field(UInt64{0}));
+            drop_context->setSetting("max_partition_size_to_drop", Field(UInt64{0}));
+        }
         return drop_context;
     };
 
@@ -2359,6 +2374,27 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
 
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(table_to_replace_name);
+    }
+
+    /// A non-APPEND refreshable materialized view exclusively owns its target table. The replacement is
+    /// built while the view being replaced still owns it, so reject only when a different view owns it.
+    /// Gate this like the constructor-side guard, which only applies to non-APPEND refreshable views.
+    if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append)
+    {
+        auto target_table_id = create.getTargetTableID(ViewTarget::To);
+        if (!target_table_id.empty())
+        {
+            if (target_table_id.database_name.empty())
+                target_table_id.database_name = create.getDatabase();
+            if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(target_table_id))
+            {
+                auto owner_view_id = task->getInfo().view_id;
+                if (owner_view_id != StorageID{create.getDatabase(), table_to_replace_name})
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Table {} is already a target of another refreshable materialized view: {}",
+                        target_table_id.getFullTableName(), owner_view_id.getFullTableName());
+            }
+        }
     }
 
     {
@@ -2441,16 +2477,34 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             ast_rename->exchange = true;
         }
 
+        FailPointInjection::pauseFailPoint(FailPoints::create_or_replace_before_rename);
+
+        /// The size check runs once inside the rename's `DDLGuard`s via `setPreSwapCheck`.
+        /// If it throws, no rename happens and the catch block below drops the temp.
         InterpreterRenameQuery interpreter_rename{ast_rename, current_context};
+        interpreter_rename.setPreSwapCheck(
+            [&current_context](const StorageID & to_drop_id)
+            {
+                if (auto to_drop = DatabaseCatalog::instance().tryGetTable(to_drop_id, current_context))
+                    to_drop->checkTableSizeBelowDropLimit(current_context);
+            });
         interpreter_rename.execute();
         renamed = true;
 
         if (!interpreter_rename.renamedInsteadOfExchange())
         {
-            /// Target table was replaced with new one, drop old table
-            auto drop_context = make_drop_context();
+            /// `pre_swap_check` already gated this; bypass to avoid double-consuming
+            /// the `force_drop_table` flag inside `Context::checkCanBeDropped`.
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// The replacement view's refresher was created paused so it could not touch the target
+        /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
+        /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
+        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+                task->start();
 
         create.setTable(table_to_replace_name);
 
@@ -2458,10 +2512,11 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
     }
     catch (...)
     {
-        /// Drop temporary table if it was successfully created, but was not renamed to target name
+        /// Drop the temp table we just created if it was not renamed to the target name.
+        /// Bypassing the size guard is safe here: the temp name is unique to this call.
         if (created && !renamed)
         {
-            auto drop_context = make_drop_context();
+            auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             try
             {
                 InterpreterDropQuery(ast_drop, drop_context).execute();
@@ -2916,12 +2971,25 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
                 if (!disk->existsDirectory(part_path))
                     continue;
 
-                /// Try to remove txn_version.txt file
-                String txn_file = fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME;
-                if (disk->existsFile(txn_file))
+                /// Remove the committed metadata file (`txn_version.txt`) and any leftover
+                /// temporary file (`txn_version.txt.tmp`). A `.tmp` file can legitimately linger
+                /// on a part (for example, hardlinked onto a mutated part from its source during
+                /// a merge/mutation race on object storage). If it is left behind here, the part
+                /// is later misread as a rolled-back transaction (see
+                /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
+                /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
+                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
+                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
+                /// committed part) rather than the dangerous tmp-only state described above.
+                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
+                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
                 {
-                    disk->removeFile(txn_file);
-                    total_removed++;
+                    String txn_file = fs::path(part_path) / file_name;
+                    if (disk->existsFile(txn_file))
+                    {
+                        disk->removeFile(txn_file);
+                        total_removed++;
+                    }
                 }
             }
         }

@@ -1,0 +1,66 @@
+---
+title: 'FAQ de BYOC na AWS'
+slug: /cloud/reference/byoc/faq/aws
+sidebarTitle: 'FAQ (AWS)'
+keywords: ['BYOC', 'nuvem', 'traga sua própria nuvem', 'AWS']
+description: 'Implante o ClickHouse na sua própria infraestrutura de nuvem'
+doc_type: 'referência'
+---
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="compute">
+  ### Computação
+</div>
+
+<AccordionGroup>
+  <Accordion title="Posso criar vários serviços neste mesmo cluster do EKS?">
+    Sim. A infraestrutura precisa ser provisionada apenas uma vez para cada combinação de conta e região da AWS.
+  </Accordion>
+
+  <Accordion title="Quais regiões têm suporte para BYOC?">
+    O BYOC oferece suporte ao mesmo conjunto de [regiões](/pt-BR/products/cloud/reference/supported-regions#aws-regions) do ClickHouse Cloud.
+  </Accordion>
+
+  <Accordion title="Haverá alguma sobrecarga de recursos? Quais recursos são necessários para executar serviços além das instâncias do ClickHouse?">
+    Além das instâncias do ClickHouse (ClickHouse servers e ClickHouse Keeper), executamos serviços como `clickhouse-operator`, `aws-cluster-autoscaler`, Istio etc., além da nossa stack de monitoramento.
+
+    Atualmente, temos três nós m5.xlarge (um para cada AZ) em um grupo de nós dedicado para executar essas workloads.
+  </Accordion>
+</AccordionGroup>
+
+<div id="network-and-security">
+  ### Rede e segurança
+</div>
+
+<AccordionGroup>
+  <Accordion title="Podemos revogar as permissões configuradas durante a instalação após a conclusão da configuração?">
+    No momento, isso não é possível.
+  </Accordion>
+
+  <Accordion title="Vocês consideraram futuros controles de segurança para que engenheiros da ClickHouse possam acessar a infraestrutura do cliente para solução de problemas?">
+    Sim. Está em nosso roadmap implementar um mecanismo controlado pelo cliente, no qual os clientes possam aprovar o acesso dos engenheiros ao cluster. No momento, os engenheiros precisam passar pelo nosso processo interno de escalonamento para obter acesso just-in-time ao cluster. Isso é registrado em log e auditado pela nossa equipe de segurança.
+  </Accordion>
+
+  <Accordion title="Qual é o tamanho do intervalo de IP da VPC criada?">
+    Por padrão, usamos `10.0.0.0/16` para a VPC BYOC. Recomendamos reservar pelo menos /22 para uma possível expansão futura,
+    mas, se você preferir limitar o tamanho, é possível usar /23 caso seja provável que você fique limitado
+    a 30 pods de servidor.
+  </Accordion>
+
+  <Accordion title="Posso decidir a frequência da manutenção?">
+    Entre em contato com o suporte para agendar janelas de manutenção. Considere uma frequência mínima de atualização semanal.
+  </Accordion>
+</AccordionGroup>
+
+<div id="uptime-slas">
+  ### SLAs de uptime
+</div>
+
+<AccordionGroup>
+  <Accordion title="A ClickHouse oferece um SLA de uptime para BYOC?">
+    Não. Como o plano de dados é hospedado no ambiente de nuvem do cliente, a disponibilidade do serviço depende de recursos que não estão sob o controle da ClickHouse. Portanto, a ClickHouse não oferece um SLA formal de uptime para implantações BYOC. Se você tiver outras dúvidas, entre em contato com support@clickhouse.com.
+  </Accordion>
+</AccordionGroup>
