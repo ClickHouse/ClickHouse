@@ -29,19 +29,32 @@ extern "C" int LLVMFuzzerInitialize(int *, char ***)
     return 0;
 }
 
-/// Build a small ColumnVariant with 2 variants (UInt64 and String) in a given local order.
+/// Build a small ColumnVariant with 2 variants (String and UInt64) using a given local order.
+/// The global type set is fixed: global 0 = String, global 1 = UInt64 (sorted alphabetically: String < UInt64).
 /// local_to_global: mapping from local discriminator index to global discriminator index.
 /// Inserts a few rows so there is real data to copy from.
 static MutableColumnPtr buildSourceVariantColumn(const DiscriminatorVec & local_to_global)
 {
-    /// Two variants: global 0 = String, global 1 = UInt64 (sorted alphabetically: String < UInt64)
+    /// Build the nested columns in *local* order so the requested (possibly non-identity) local↔global
+    /// mapping is preserved. Passing non-empty variants together with an explicit mapping to the
+    /// empty-columns create() overload would reorder variants into global order and install the identity
+    /// mapping, which silently defeats the intent of exercising a reversed local order.
     MutableColumns nested;
-    nested.push_back(ColumnString::create());
-    nested.push_back(ColumnVector<UInt64>::create());
+    nested.reserve(local_to_global.size());
+    for (const auto global_discr : local_to_global)
+    {
+        if (global_discr == 0)
+            nested.push_back(ColumnString::create()); /// global 0 = String
+        else
+            nested.push_back(ColumnVector<UInt64>::create()); /// global 1 = UInt64
+    }
 
-    auto col = ColumnVariant::create(std::move(nested), local_to_global);
+    /// Pass an empty local_discriminators column so this create() overload keeps the mapping as given
+    /// (variants stay in local order) instead of normalizing it to identity.
+    auto col = ColumnVariant::create(ColumnVariant::ColumnDiscriminators::create(), std::move(nested), local_to_global);
 
-    /// Insert rows via Field-based API which handles local↔global mapping automatically.
+    /// Insert rows via the Field-based API, which routes each value to its variant and records the
+    /// matching local discriminator, so the local↔global mapping is honoured automatically.
     col->insert(Field(String("hello")));
     col->insert(Field(UInt64(42)));
     col->insertDefault(); /// NULL
