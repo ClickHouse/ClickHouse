@@ -74,11 +74,16 @@ FRAME_RE = re.compile(
 # Regex that matches the sanitizer error header, e.g.:
 #   ==12345==ERROR: AddressSanitizer: heap-buffer-overflow on address …
 #   ==12345==ERROR: AddressSanitizer: heap-buffer-overflow
-# Also matches lines like "READ of size 8" that follow immediately.
 SANITIZER_HEADER_RE = re.compile(
     r"==\d+==ERROR:\s+\S+:\s+(.+?)(?:\s+on\s+address|\s*$)",
     re.IGNORECASE,
 )
+
+# The access direction (READ / WRITE) is reported on the line that follows the
+# sanitizer header, e.g. "WRITE of size 8 at 0x… thread T0". When classifying we
+# therefore also look at a few lines after the header so that rules such as
+# `heap-buffer-overflow.*WRITE` can match.
+SANITIZER_CONTEXT_LINES = 3
 
 # Basename used for per-invocation sanitizer log files inside a temporary directory.
 ASAN_LOG_BASENAME = "asan_triage.log"
@@ -114,13 +119,26 @@ class CrashGroup:
 # ---------------------------------------------------------------------------
 
 def _classify_from_sanitizer_text(text: str) -> Tuple[str, str]:
-    """Return (severity, crash_type) by scanning sanitizer output lines."""
-    for line in text.splitlines():
+    """Return (severity, crash_type) by scanning sanitizer output lines.
+
+    The error kind (e.g. ``heap-buffer-overflow``) is on the header line, but the
+    access direction (``READ``/``WRITE``) is on the following line. We therefore
+    match the rules against the header plus the next few lines so that write
+    overflows are classified as CRITICAL rather than falling back to the generic
+    read/unspecified severity.
+    """
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
         header_match = SANITIZER_HEADER_RE.search(line)
         if header_match:
             description = header_match.group(1).strip()
+            # Join the header with the immediately following lines so that access
+            # direction keywords (READ/WRITE) are visible to the rules.
+            context = " ".join(
+                [description] + lines[index + 1 : index + 1 + SANITIZER_CONTEXT_LINES]
+            )
             for pattern, severity, canonical in SANITIZER_RULES:
-                if re.search(pattern, description, re.IGNORECASE):
+                if re.search(pattern, context, re.IGNORECASE):
                     return severity, canonical
             # Matched the header but no specific rule — default to MEDIUM.
             return "MEDIUM", description
@@ -357,7 +375,7 @@ def generate_report(groups: List[CrashGroup], crashes_dir: Path) -> str:
         lines.append(f"- **Example file:** `{group.members[0].name}`")
         if len(group.members) > 1:
             lines.append(
-                f"- **Other files:** "
+                "- **Other files:** "
                 + ", ".join(f"`{p.name}`" for p in group.members[1:])
             )
         lines.append("")
