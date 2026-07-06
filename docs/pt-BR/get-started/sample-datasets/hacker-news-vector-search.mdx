@@ -1,0 +1,360 @@
+---
+description: 'Conjunto de dados com mais de 28 milhões de postagens do Hacker News e seus embeddings vetoriais'
+sidebarTitle: 'Conjunto de dados para busca vetorial do Hacker News'
+slug: /getting-started/example-datasets/hackernews-vector-search-dataset
+title: 'Conjunto de dados para busca vetorial do Hacker News'
+keywords: ['busca semântica', 'similaridade vetorial', 'vizinhos mais próximos aproximados', 'embeddings']
+doc_type: 'guide'
+---
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+O [conjunto de dados Hacker News](https://news.ycombinator.com/) contém 28,74 milhões de
+postagens e seus embeddings vetoriais. Os embeddings foram gerados com o modelo [SentenceTransformers](https://sbert.net/) [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2). A dimensão de cada vetor de embedding é `384`.
+
+Este conjunto de dados pode ser usado para explorar os aspectos de projeto, dimensionamento e desempenho de uma aplicação real de busca vetorial em grande escala,
+construída sobre dados textuais gerados por usuários.
+
+<div id="dataset-details">
+  ## Detalhes do conjunto de dados
+</div>
+
+O conjunto de dados completo com embeddings vetoriais é disponibilizado pela ClickHouse como um único arquivo `Parquet` em um [bucket do S3](https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet)
+
+Recomendamos que os usuários façam primeiro uma análise de dimensionamento para estimar os requisitos de armazenamento e memória desse conjunto de dados, consultando a [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
+
+<div id="steps">
+  ## Etapas
+</div>
+
+<Steps>
+  <Step>
+    ### Criar tabela
+
+    Crie a tabela `hackernews` para armazenar as postagens, seus embeddings e os atributos associados:
+
+    ```sql
+    CREATE TABLE hackernews
+    (
+        `id` Int32,
+        `doc_id` Int32,
+        `text` String,
+        `vector` Array(Float32),
+        `node_info` Tuple(
+            start Nullable(UInt64),
+            end Nullable(UInt64)),
+        `metadata` String,
+        `type` Enum8('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `title` String,
+        `post_score` Int32,
+        `dead` UInt8,
+        `deleted` UInt8,
+        `length` UInt32
+    )
+    ENGINE = MergeTree
+    ORDER BY id;
+    ```
+
+    O `id` é apenas um número inteiro sequencial. Os atributos adicionais podem ser usados em predicados para compreender
+    a busca por similaridade vetorial combinada com pós-filtragem/pré-filtragem, conforme explicado na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes)
+  </Step>
+
+  <Step>
+    ### Carregar dados
+
+    Para carregar os dados a partir do arquivo `Parquet`, execute a seguinte instrução SQL:
+
+    ```sql
+    INSERT INTO hackernews SELECT * FROM s3('https://clickhouse-datasets.s3.amazonaws.com/hackernews-miniLM/hackernews_part_1_of_1.parquet');
+    ```
+
+    A inserção de 28,74 milhões de linhas na tabela levará alguns minutos.
+  </Step>
+
+  <Step>
+    ### Criar um índice de similaridade vetorial
+
+    Execute o SQL abaixo para definir e criar um índice de similaridade vetorial na coluna `vector` da tabela `hackernews`:
+
+    ```sql
+    ALTER TABLE hackernews ADD INDEX vector_index vector TYPE vector_similarity('hnsw', 'cosineDistance', 384, 'bf16', 64, 512);
+
+    ALTER TABLE hackernews MATERIALIZE INDEX vector_index SETTINGS mutations_sync = 2;
+    ```
+
+    Os parâmetros e as considerações de desempenho para a criação do índice e a busca são descritos na [documentação](/pt-BR/reference/engines/table-engines/mergetree-family/annindexes).
+    A instrução acima usa os valores 64 e 512, respectivamente, para os hiperparâmetros HNSW `M` e `ef_construction`.
+    Você precisa selecionar cuidadosamente os valores ideais para esses parâmetros, avaliando o tempo de criação do índice e a qualidade dos resultados de busca
+    correspondentes aos valores selecionados.
+
+    A criação e o salvamento do índice podem levar alguns minutos ou até uma hora para o conjunto de dados completo de 28,74 milhões, dependendo do número de núcleos de CPU disponíveis e da largura de banda do armazenamento.
+  </Step>
+
+  <Step>
+    ### Faça uma busca ANN
+
+    Depois que o índice de similaridade vetorial for criado, as consultas de busca vetorial usarão automaticamente o índice:
+
+    ```sql title="Query"
+    SELECT id, title, text
+    FROM hackernews
+    ORDER BY cosineDistance( vector, <search vector>)
+    LIMIT 10
+
+    ```
+
+    O primeiro carregamento do índice vetorial na memória pode levar alguns segundos/minutos.
+  </Step>
+
+  <Step>
+    ### Gerar embeddings para consulta de busca
+
+    [Sentence Transformers](https://www.sbert.net/) oferecem modelos de embedding locais e fáceis de usar para capturar o significado semântico de frases e parágrafos.
+
+    O conjunto de dados do HackerNews contém embeddings vetoriais gerados pelo modelo
+    [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
+
+    Um exemplo de script Python é fornecido abaixo para demonstrar como gerar
+    vetores de embedding programaticamente usando o pacote Python `sentence_transformers`. O vetor de embedding de busca
+    é então passado como argumento para a função [`cosineDistance()`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistance) na consulta &#96;SELECT&#96;.
+
+    ```python
+    from sentence_transformers import SentenceTransformer
+    import sys
+
+    import clickhouse_connect
+
+    print("Initializing...")
+
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+    chclient = clickhouse_connect.get_client() # ClickHouse credentials here
+
+    while True:
+        # Recebe a consulta de busca do usuário
+        print("Enter a search query :")
+        input_query = sys.stdin.readline();
+        texts = [input_query]
+
+        # Executa o modelo e obtém o vetor de busca
+        print("Generating the embedding for ", input_query);
+        embeddings = model.encode(texts)
+
+        print("Consultando o ClickHouse...")
+        params = {'v1':list(embeddings[0]), 'v2':20}
+        result = chclient.query("SELECT id, title, text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+        print("Results :")
+        for row in result.result_rows:
+            print(row[0], row[2][:100])
+            print("---------")
+    ```
+
+    Um exemplo da execução do script Python acima e os resultados da busca por similaridade são exibidos abaixo
+    (apenas 100 caracteres de cada um dos 20 posts principais são exibidos):
+
+    ```text
+    Inicializando...
+
+    Digite uma consulta de pesquisa :
+    Are OLAP cubes useful
+
+    Gerando o embedding para  "Are OLAP cubes useful"
+
+    Consultando o ClickHouse...
+
+    Resultados :
+
+    27742647 smartmic:
+    slt2021: OLAP Cube is not dead, as long as you use some form of:<p>1. GROUP BY multiple fi
+    ---------
+    27744260 georgewfraser:A data mart is a logical organization of data to help humans understand the schema. Wh
+    ---------
+    27761434 mwexler:&quot;We model data according to rigorous frameworks like Kimball or Inmon because we must r
+    ---------
+    28401230 chotmat:
+    erosenbe0: OLAP database is just a copy, replica, or archive of data with a schema designe
+    ---------
+    22198879 Merick:+1 for Apache Kylin, it&#x27;s a great project and awesome open source community. If anyone i
+    ---------
+    27741776 crazydoggers:I always felt the value of an OLAP cube was uncovering questions you may not know to as
+    ---------
+    22189480 shadowsun7:
+    _Codemonkeyism: After maintaining an OLAP cube system for some years, I&#x27;m not that
+    ---------
+    27742029 smartmic:
+    gengstrand: My first exposure to OLAP was on a team developing a front end to Essbase that
+    ---------
+    22364133 irfansharif:
+    simo7: I&#x27;m wondering how this technology could work for OLAP cubes.<p>An OLAP cube
+    ---------
+    23292746 scoresmoke:When I was developing my pet project for Web analytics (<a href="https:&#x2F;&#x2F;github
+    ---------
+    22198891 js8:It seems that the article makes a categorical error, arguing that OLAP cubes were replaced by co
+    ---------
+    28421602 chotmat:
+    7thaccount: Is there any advantage to OLAP cube over plain SQL (large historical database r
+    ---------
+    22195444 shadowsun7:
+    lkcubing: Thanks for sharing. Interesting write up.<p>While this article accurately capt
+    ---------
+    22198040 lkcubing:Thanks for sharing. Interesting write up.<p>While this article accurately captures the issu
+    ---------
+    3973185 stefanu:
+    sgt: Interesting idea. Ofcourse, OLAP isn't just about the underlying cubes and dimensions,
+    ---------
+    22190903 shadowsun7:
+    js8: It seems that the article makes a categorical error, arguing that OLAP cubes were r
+    ---------
+    28422241 sradman:OLAP Cubes have been disrupted by Column Stores. Unless you are interested in the history of
+    ---------
+    28421480 chotmat:
+    sradman: OLAP Cubes have been disrupted by Column Stores. Unless you are interested in the
+    ---------
+    27742515 BadInformatics:
+    quantified: OP posts with inverted condition: “OLAP != OLAP Cube” is the actual titl
+    ---------
+    28422935 chotmat:
+    rstuart4133: I remember hearing about OLAP cubes donkey&#x27;s years ago (probably not far
+    ---------
+    ```
+
+    ## Aplicativo de demonstração de sumarização
+
+    O exemplo acima mostrou a busca semântica e a recuperação de documentos usando o ClickHouse.
+
+    A seguir, é apresentada uma aplicação de exemplo de IA generativa simples, mas com alto potencial.
+
+    O aplicativo executa as seguintes etapas:
+
+    1. Aceita um *topic* fornecido pelo usuário
+    2. Gera um vetor de embedding para o *tema* usando o `SentenceTransformers` com o modelo `all-MiniLM-L6-v2`
+    3. Recupera posts/comentários altamente relevantes usando busca por similaridade vetorial na tabela `hackernews`
+    4. Usa `LangChain` e a Chat API `gpt-3.5-turbo` da OpenAI para **resumir** o conteúdo recuperado na etapa #3.
+       Os posts/comentários recuperados na etapa #3 são usados como *contexto* para a Chat API e constituem o principal elo da IA generativa.
+
+    Um exemplo da execução do aplicativo de sumarização é listado abaixo, seguido pelo código
+    do aplicativo de sumarização. Para executar o aplicativo, é necessário definir uma API key da OpenAI na variável
+    de ambiente `OPENAI_API_KEY`. A API key da OpenAI pode ser obtida após o cadastro em https://platform.openai.com.
+
+    Este aplicativo demonstra um caso de uso de Generative AI aplicável a vários domínios empresariais, como:
+    análise de sentimento de clientes, automação do suporte técnico, mineração de conversas de usuários, documentos jurídicos, prontuários médicos,
+    transcrições de reuniões, demonstrações financeiras etc.
+
+    ```shell
+    $ python3 summarize.py
+
+    Enter a search topic :
+    ClickHouse performance experiences
+
+    Generating the embedding for ---->  ClickHouse performance experiences
+
+    Querying ClickHouse to retrieve relevant articles...
+
+    Initializing chatgpt-3.5-turbo model...
+
+    Summarizing search results retrieved from ClickHouse...
+
+    Summary from chatgpt-3.5:
+    The discussion focuses on comparing ClickHouse with various databases like TimescaleDB, Apache Spark,
+    AWS Redshift, and QuestDB, highlighting ClickHouse's cost-efficient high performance and suitability
+    for analytical applications. Users praise ClickHouse for its simplicity, speed, and resource efficiency
+    in handling large-scale analytics workloads, although some challenges like DMLs and difficulty in backups
+    are mentioned. ClickHouse is recognized for its real-time aggregate computation capabilities and solid
+    engineering, with comparisons made to other databases like Druid and MemSQL. Overall, ClickHouse is seen
+    as a powerful tool for real-time data processing, analytics, and handling large volumes of data
+    efficiently, gaining popularity for its impressive performance and cost-effectiveness.
+    ```
+
+    Código do aplicativo acima:
+
+    ```python
+    print("Initializing...")
+
+    import sys
+    import json
+    import time
+    from sentence_transformers import SentenceTransformer
+
+    import clickhouse_connect
+
+    from langchain.docstore.document import Document
+    from langchain.text_splitter import CharacterTextSplitter
+    from langchain.chat_models import ChatOpenAI
+    from langchain.prompts import PromptTemplate
+    from langchain.chains.summarize import load_summarize_chain
+    import textwrap
+    import tiktoken
+
+    def num_tokens_from_string(string: str, encoding_name: str) -> int:
+        encoding = tiktoken.encoding_for_model(encoding_name)
+        num_tokens = len(encoding.encode(string))
+        return num_tokens
+
+    model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+
+    chclient = clickhouse_connect.get_client(compress=False) # ClickHouse credentials here
+
+    while True:
+        # Recebe a consulta de busca do usuário
+        print("Enter a search topic :")
+        input_query = sys.stdin.readline();
+        texts = [input_query]
+
+        # Executa o modelo e obtém o vetor de busca ou de referência
+        print("Generating the embedding for ----> ", input_query);
+        embeddings = model.encode(texts)
+
+        print("Querying ClickHouse...")
+        params = {'v1':list(embeddings[0]), 'v2':100}
+        result = chclient.query("SELECT id,title,text FROM hackernews ORDER BY cosineDistance(vector, %(v1)s) LIMIT %(v2)s", parameters=params)
+
+        # Apenas concatena todos os resultados da busca
+        doc_results = ""
+        for row in result.result_rows:
+            doc_results = doc_results + "\n" + row[2]
+
+        print("Initializing chatgpt-3.5-turbo model")
+        model_name = "gpt-3.5-turbo"
+
+        text_splitter = CharacterTextSplitter.from_tiktoken_encoder(
+            model_name=model_name
+        )
+
+        texts = text_splitter.split_text(doc_results)
+
+        docs = [Document(page_content=t) for t in texts]
+
+        llm = ChatOpenAI(temperature=0, model_name=model_name)
+
+        prompt_template = """
+    Write a concise summary of the following in not more than 10 sentences:
+
+    {text}
+
+    CONSCISE SUMMARY :
+    """
+
+        prompt = PromptTemplate(template=prompt_template, input_variables=["text"])
+
+        num_tokens = num_tokens_from_string(doc_results, model_name)
+
+        gpt_35_turbo_max_tokens = 4096
+        verbose = False
+
+        print("Summarizing search results retrieved from ClickHouse...")
+
+        if num_tokens <= gpt_35_turbo_max_tokens:
+            chain = load_summarize_chain(llm, chain_type="stuff", prompt=prompt, verbose=verbose)
+        else:
+            chain = load_summarize_chain(llm, chain_type="map_reduce", map_prompt=prompt, combine_prompt=prompt, verbose=verbose)
+
+        summary = chain.run(docs)
+
+        print(f"Summary from chatgpt-3.5: {summary}")
+    ```
+  </Step>
+</Steps>

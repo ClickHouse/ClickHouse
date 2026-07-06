@@ -129,7 +129,10 @@ class JobStages(metaclass=MetaClasses.WithIter):
 
 def _load_darwin_skip_tests():
     skip_file = Path(__file__).resolve().parent.parent / "defs" / "darwin.skip"
-    return tuple(line for line in skip_file.read_text().splitlines() if line.strip())
+    return tuple(
+        line
+        for line in skip_file.read_text().splitlines()
+        if line.strip() and not line.lstrip().startswith("#"))
 
 
 def parse_args():

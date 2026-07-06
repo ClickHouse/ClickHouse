@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'Fuente de diccionario de YTsaurus'
+sidebarTitle: 'YTsaurus'
+description: 'Configurar YTsaurus como fuente de diccionario en ClickHouse.'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  Esta es una característica experimental que puede cambiar de forma no retrocompatible en versiones futuras.
+  Habilite el uso del origen de diccionario de YTsaurus
+  mediante el ajuste [`allow_experimental_ytsaurus_dictionary_source`](/es/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source).
+</Info>
+
+Ejemplo de ajustes:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="Archivo de configuración">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Campos de ajuste:
+
+| Ajuste            | Descripción                           |
+| ----------------- | ------------------------------------- |
+| `http_proxy_urls` | URL del proxy HTTP de YTsaurus.       |
+| `cypress_path`    | Ruta de Cypress a la tabla de origen. |
+| `oauth_token`     | Token de OAuth.                       |

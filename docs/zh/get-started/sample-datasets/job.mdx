@@ -1,0 +1,130 @@
+---
+description: 'Join Order Benchmark (JOB) 数据集和查询。'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['示例数据集', 'job', 'join order benchmark', '基准测试', '性能测试', '查询优化器', 'JOIN 顺序']
+---
+
+Join Order Benchmark (JOB) 通过对一个真实世界的高相关性数据集 (IMDb 的一个快照) 运行 113 个分析查询，来考验查询优化器。自推出以来，JOB 基准测试已成为评估关系型数据库查询优化器性能的事实标准，其中包括基数估计和 JOIN 顺序优化。与假设数据均匀分布且彼此独立的合成基准测试不同，JOB 使用带有数据倾斜和相关性的真实数据，因此对 JOIN 顺序和基数估计而言是一个颇具挑战性的测试。
+
+该数据集包含 21 个表，共约 7400 万行；在 ClickHouse 中压缩后约占 1.15 GiB。
+
+这 113 个查询被分为 33 个家族 (`1`–`33`) 。同一家族中的查询 (`a`、`b`、`c`、...) 具有相同的 JOIN 图，但选择谓词不同。
+
+**参考资料**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis 等，VLDB 2015)
+* [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) 代码仓库
+
+<div id="creating-tables">
+  ## 创建表
+</div>
+
+JOB 数据集是 IMDb 的一个快照，包含 21 张表。表定义可在 ClickHouse 软件源中的 [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) 中查看。
+
+每张表都使用 [`MergeTree`](/zh/engines/table-engines/mergetree-family/mergetree) 引擎，并按主键列 `id` 排序，这与原始 PostgreSQL schema 保持一致，即每张表都声明了 `id integer NOT NULL PRIMARY KEY`。PostgreSQL 中可为空的列会映射为 `Nullable(...)` 类型。
+
+创建这些表：
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## 加载数据
+</div>
+
+数据来自 JOB 使用的原始 IMDb 快照，按每个表一个 CSV 文件 (`aka_name.csv`、`title.csv` 等) 的形式分发。
+这些 CSV 使用带有 `ESCAPE '\'` 的 PostgreSQL `COPY` 语义：反斜杠仅在带引号的字段内用于转义引号字符；在引号外，反斜杠则是字面字符。
+ClickHouse 需要 RFC 4180 格式的 CSV (引号成对重复，不使用反斜杠转义) ，因此必须先对这些文件重新编码。
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) 用于执行该重新编码。
+它从 stdin 读取原始 CSV，并将标准 CSV 写入 stdout，将字段中嵌入的引号重复一遍，同时保留未加引号的空字段 (ClickHouse 会将其映射为 `Nullable` 列中的 `NULL`) 。
+
+要根据原始 CSV 构建这些表：
+
+* 创建这些表 (见上文) 。
+* 按照 Join Order Benchmark 仓库中的说明，将 IMDb 数据集下载为 `imdb.tgz` 文件。
+* 转换并导入数据：
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+这些表填充完数据后，可将其导出为 Parquet，以便后续更快地重新导入，例如：
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+各表的详细大小：
+
+| Table                  | 大小 (行数)        | 大小 (在 ClickHouse 中压缩后)  |
+| ---------------------- | -------------- | ----------------------- |
+| aka&#95;name           | 901,343        | 31.86 MiB               |
+| aka&#95;title          | 361,472        | 14.32 MiB               |
+| cast&#95;info          | 36,244,344     | 296.25 MiB              |
+| char&#95;name          | 3,140,339      | 107.95 MiB              |
+| comp&#95;cast&#95;type | 4              | 132.00 B                |
+| company&#95;name       | 234,997        | 8.38 MiB                |
+| company&#95;type       | 4              | 162.00 B                |
+| complete&#95;cast      | 135,086        | 748.80 KiB              |
+| info&#95;type          | 113            | 1.25 KiB                |
+| keyword                | 134,170        | 1.88 MiB                |
+| kind&#95;type          | 7              | 177.00 B                |
+| link&#95;type          | 18             | 284.00 B                |
+| movie&#95;companies    | 2,609,129      | 21.20 MiB               |
+| movie&#95;info         | 14,835,720     | 300.46 MiB              |
+| movie&#95;info&#95;idx | 1,380,035      | 8.01 MiB                |
+| movie&#95;keyword      | 4,523,930      | 21.06 MiB               |
+| movie&#95;link         | 29,997         | 178.21 KiB              |
+| name                   | 4,167,491      | 131.16 MiB              |
+| person&#95;info        | 2,963,664      | 154.12 MiB              |
+| role&#95;type          | 12             | 246.00 B                |
+| title                  | 2,528,312      | 78.04 MiB               |
+| **总计**                 | **74,190,187** | **1.15 GiB**            |
+
+(ClickHouse 中的压缩后大小取自 `system.tables.total_bytes`，并基于上述表定义。)
+
+<div id="queries">
+  ## 查询
+</div>
+
+这 113 个 JOB 查询可在 ClickHouse 软件源的[此处](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)找到。
+运行这些查询所用的设置位于 [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json) 中。
+有关已知问题以及针对特定查询的说明，请参阅 [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md)。
+
+这些查询会按名称引用表，因此请针对 `job` database 运行它们 (例如，使用 `clickhouse client --database job`) 。
+
+示例查询 (`1a`) ：
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

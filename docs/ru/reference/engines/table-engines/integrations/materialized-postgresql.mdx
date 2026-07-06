@@ -1,0 +1,86 @@
+---
+description: 'Создаёт таблицу ClickHouse с начальным дампом данных из таблицы PostgreSQL
+  и запускает процесс репликации.'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/table-engines/integrations/materialized-postgresql
+title: 'Движок таблицы MaterializedPostgreSQL'
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  Пользователям ClickHouse Cloud рекомендуется использовать [ClickPipes](/ru/integrations/clickpipes/home) для репликации PostgreSQL в ClickHouse. ClickPipes изначально поддерживает высокопроизводительный CDC (фиксация изменений данных) для PostgreSQL.
+</Note>
+
+Создает таблицу ClickHouse с начальным дампом данных из таблицы PostgreSQL и запускает процесс репликации, то есть выполняет фоновую задачу, применяющую новые изменения по мере их появления в таблице PostgreSQL в удаленной базе данных PostgreSQL.
+
+<Note>
+  Этот движок таблицы является экспериментальным. Чтобы использовать его, установите `allow_experimental_materialized_postgresql_table` в значение 1 в файлах конфигурации или с помощью команды `SET`:
+
+  ```sql
+  SET allow_experimental_materialized_postgresql_table=1
+  ```
+</Note>
+
+Если требуется реплицировать несколько таблиц, настоятельно рекомендуется использовать движок базы данных [MaterializedPostgreSQL](/ru/reference/engines/database-engines/materialized-postgresql) вместо движка таблицы и параметр `materialized_postgresql_tables_list`, который задает таблицы для репликации (также появится возможность добавить `schema` базы данных). Это значительно эффективнее с точки зрения нагрузки на CPU, количества соединений и числа слотов репликации в удаленной базе данных PostgreSQL.
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_table', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+```
+
+**Параметры движка**
+
+* `host:port` — адрес сервера PostgreSQL.
+* `database` — имя удалённой базы данных.
+* `table` — имя удалённой таблицы.
+* `user` — пользователь PostgreSQL.
+* `password` — пароль пользователя.
+
+<div id="requirements">
+  ## Требования
+</div>
+
+1. Параметр [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) должен иметь значение `logical`, а параметр `max_replication_slots` — значение не менее `2` в конфигурационном файле PostgreSQL.
+
+2. Таблица с движком `MaterializedPostgreSQL` должна иметь первичный ключ — тот же, что и индекс `replica identity` (по умолчанию это первичный ключ) таблицы PostgreSQL (см. [подробнее об индексе `replica identity`](/ru/reference/engines/database-engines/materialized-postgresql#requirements)).
+
+3. Допускается только база данных [Atomic](https://en.wikipedia.org/wiki/Atomicity_\(database_systems\)).
+
+4. Движок таблицы `MaterializedPostgreSQL` работает только с PostgreSQL версии &gt;= 11, поскольку для его реализации требуется функция PostgreSQL [pg&#95;replication&#95;slot&#95;advance](https://pgpedia.info/p/pg_replication_slot_advance.html).
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_version` — Счётчик транзакций. Тип: [UInt64](/ru/reference/data-types/int-uint).
+
+* `_sign` — Метка удаления. Тип: [Int8](/ru/reference/data-types/int-uint). Возможные значения:
+  * `1` — строка не удалена,
+  * `-1` — строка удалена.
+
+Эти столбцы не нужно указывать при создании таблицы. Они всегда доступны в запросе `SELECT`.
+Столбец `_version` соответствует позиции `LSN` в `WAL`, поэтому его можно использовать, чтобы проверить, насколько актуальна репликация.
+
+```sql
+CREATE TABLE postgresql_db.postgresql_replica (key UInt64, value UInt64)
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgresql_replica', 'postgres_user', 'postgres_password')
+PRIMARY KEY key;
+
+SELECT key, value, _version FROM postgresql_db.postgresql_replica;
+```
+
+<Note>
+  Репликация значений [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html) не поддерживается. Вместо них будет использоваться значение по умолчанию для соответствующего типа данных.
+</Note>
