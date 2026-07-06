@@ -5,14 +5,13 @@ Expression ((Project names + Projection))
       Aggregating
         Expression (Before GROUP BY)
           JoinLogical (Broadcast HashJoin )
-            Expression ((Change column names to column identifiers + (Project names + Projection)))
-              JoinLogical (Shuffle HashJoin )
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.oj_l)
-                Expression (Change column names to column identifiers)
-                  ShuffleExchange
-                    ReadFromMergeTree (ParallelRead default.oj_r)
+            JoinLogical (Shuffle HashJoin )
+              Expression (Change column names to column identifiers)
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.oj_l)
+              Expression (Change column names to column identifiers)
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.oj_r)
             Expression (Change column names to column identifiers)
               ReadFromMergeTree (ReplicatedRead default.oj_s)
 -- results match the non-distributed baseline
