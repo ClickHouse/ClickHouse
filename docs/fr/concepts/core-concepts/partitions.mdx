@@ -1,0 +1,351 @@
+---
+slug: /partitions
+title: 'Partitions de table'
+description: 'Que sont les partitions de table dans ClickHouse ?'
+keywords: ['partitions', 'partition by']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
+
+<div id="what-are-table-partitions-in-clickhouse">
+  ## Que sont les partitions de table dans ClickHouse ?
+</div>
+
+<br />
+
+Les partitions regroupent les [parties de données](/fr/concepts/core-concepts/parts) d’une table de la [famille de moteurs MergeTree](/fr/reference/engines/table-engines/mergetree-family/index) en unités logiques structurées. Il s’agit d’une manière d’organiser les données qui a un sens sur le plan conceptuel et repose sur des critères précis, comme des intervalles de temps, des catégories ou d’autres attributs clés. Ces unités logiques facilitent la gestion, l’interrogation et l’optimisation des données.
+
+<div id="partition-by">
+  ### PARTITION BY
+</div>
+
+Le partitionnement peut être activé lorsqu’une table est définie initialement via la [clause PARTITION BY](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Cette clause peut contenir une expression SQL portant sur n’importe quelles colonnes, dont le résultat détermine à quelle partition une ligne appartient.
+
+Pour illustrer cela, nous [complétons](https://sql.clickhouse.com/?query=U0hPVyBDUkVBVEUgVEFCTEUgdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQ\&run_query=true\&tab=results) la table d’exemple [Que sont les parties de table](/fr/concepts/core-concepts/parts) en ajoutant une clause `PARTITION BY toStartOfMonth(date)`, qui organise les parties de table de la table en fonction des mois de vente des biens immobiliers :
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+ORDER BY (town, street)
+PARTITION BY toStartOfMonth(date);
+```
+
+Vous pouvez [interroger cette table](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB1ay51a19wcmljZV9wYWlkX3NpbXBsZV9wYXJ0aXRpb25lZA\&run_query=true\&tab=results) dans notre ClickHouse SQL Playground.
+
+<div id="structure-on-disk">
+  ### Structure sur disque
+</div>
+
+Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer une seule partie de données contenant toutes les lignes insérées (au [minimum](/fr/reference/settings/session-settings#max_insert_block_size)), comme décrit [ici](/fr/concepts/core-concepts/parts), ClickHouse crée une nouvelle partie de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
+
+<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="TRAITEMENT DE L’INSERTION" />
+
+<br />
+
+Le serveur ClickHouse commence par répartir les 4 lignes de l’exemple d’insert illustré dans le diagramme ci-dessus en fonction de leur valeur de clé de partition `toStartOfMonth(date)`.
+Ensuite, pour chaque partition identifiée, les lignes sont traitées [comme d’habitude](/fr/concepts/core-concepts/parts) en suivant plusieurs étapes séquentielles (① Tri, ② Découpage en colonnes, ③ Compression, ④ Écriture sur disque).
+
+Notez que lorsque le partitionnement est activé, ClickHouse crée automatiquement des [index MinMax](https://github.com/ClickHouse/ClickHouse/blob/dacc8ebb0dac5bbfce5a7541e7fc70f26f7d5065/src/Storages/MergeTree/IMergeTreeDataPart.h#L341) pour chaque partie de données. Il s’agit simplement de fichiers, un pour chaque colonne de la table utilisée dans l’expression de clé de partition, qui contiennent les valeurs minimale et maximale de cette colonne dans la partie de données.
+
+<div id="per-partition-merges">
+  ### Fusions par partition
+</div>
+
+Lorsque le partitionnement est activé, ClickHouse ne [fusionne](/fr/concepts/core-concepts/merges) les parties de données qu&#39;au sein d&#39;une même partition, jamais entre partitions. Nous le schématisons pour notre table d&#39;exemple ci-dessus :
+
+<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="FUSIONS DE PARTIES" />
+
+<br />
+
+Comme le montre le schéma ci-dessus, les parties appartenant à des partitions différentes ne sont jamais fusionnées. Si vous choisissez une clé de partition à cardinalité élevée, les parties réparties sur des milliers de partitions ne pourront jamais être candidates à une fusion, ce qui finit par dépasser les limites préconfigurées et provoquer la redoutable erreur `Too many parts`. La solution est simple : choisissez une clé de partition pertinente avec une [cardinalité inférieure à 1000..10000](https://github.com/ClickHouse/ClickHouse/blob/ffc5b2c56160b53cf9e5b16cfb73ba1d956f7ce4/src/Storages/MergeTree/MergeTreeDataWriter.cpp#L121).
+
+<div id="monitoring-partitions">
+  ## Surveillance des partitions
+</div>
+
+Vous pouvez [interroger](https://sql.clickhouse.com/?query=U0VMRUNUIERJU1RJTkNUIF9wYXJ0aXRpb25fdmFsdWUgQVMgcGFydGl0aW9uCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKT1JERVIgQlkgcGFydGl0aW9uIEFTQw\&run_query=true\&tab=results) la liste de toutes les partitions uniques existantes de notre table d’exemple à l’aide de la [colonne virtuelle](/fr/reference/engines/table-engines/index#table_engines-virtual_columns) `_partition_value` :
+
+<RunnableCode>
+  ```sql
+  SELECT DISTINCT _partition_value AS partition
+  FROM uk.uk_price_paid_simple_partitioned
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+Autrement, ClickHouse suit toutes les parts et partitions de toutes les tables dans la table système [system.parts](/fr/reference/system-tables/parts), et la requête suivante [renvoie](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBwYXJ0aXRpb24sCiAgICBjb3VudCgpIEFTIHBhcnRzLAogICAgc3VtKHJvd3MpIEFTIHJvd3MKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgID0gJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJykgQU5EIGFjdGl2ZQpHUk9VUCBCWSBwYXJ0aXRpb24KT1JERVIgQlkgcGFydGl0aW9uIEFTQzs\&run_query=true\&tab=results) pour notre table d’exemple ci-dessus la liste de toutes les partitions, ainsi que le nombre actuel de parts actives et le total des lignes dans ces parts pour chaque partition :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      partition,
+      count() AS parts,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple_partitioned') AND active
+  GROUP BY partition
+  ORDER BY partition ASC;
+  ```
+</RunnableCode>
+
+<div id="what-are-table-partitions-used-for">
+  ## À quoi servent les partitions de table ?
+</div>
+
+<div id="data-management">
+  ### Gestion des données
+</div>
+
+Dans ClickHouse, le partitionnement est avant tout une fonctionnalité de gestion des données. En organisant logiquement les données à l’aide d’une expression de partition, chaque partition peut être gérée indépendamment. Par exemple, le schéma de partitionnement de la table d’exemple ci-dessus permet de ne conserver dans la table principale que les données des 12 derniers mois, en supprimant automatiquement les données plus anciennes à l’aide d’une [règle TTL](/fr/concepts/features/operations/delete/ttl) (voir la dernière ligne ajoutée de l’instruction DDL) :
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH DELETE;
+```
+
+Comme la table est partitionnée par `toStartOfMonth(date)`, des partitions entières (des ensembles de [parties de table](/fr/concepts/core-concepts/parts)) qui remplissent la condition TTL seront supprimées, ce qui rend l’opération de nettoyage plus efficace, [sans qu’il soit nécessaire de réécrire les parties](/fr/reference/statements/alter/index#mutations).
+
+De même, au lieu de supprimer les anciennes données, celles-ci peuvent être déplacées automatiquement et efficacement vers un [niveau de stockage](/fr/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) plus économique :
+
+```sql
+CREATE TABLE uk.uk_price_paid_simple_partitioned
+(
+    date Date,
+    town LowCardinality(String),
+    street LowCardinality(String),
+    price UInt32
+)
+ENGINE = MergeTree
+PARTITION BY toStartOfMonth(date)
+ORDER BY (town, street)
+TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
+```
+
+<div id="query-optimization">
+  ### Optimisation des requêtes
+</div>
+
+Les partitions peuvent améliorer les performances des requêtes, mais cela dépend fortement des schémas d’accès. Si les requêtes ne ciblent qu’un petit nombre de partitions (idéalement une seule), les performances peuvent s’en trouver améliorées. En pratique, cela n’est utile que si la clé de partitionnement ne fait pas partie de la clé primaire et que vous filtrez dessus, comme dans l’exemple de requête ci-dessous.
+
+<RunnableCode>
+  ```sql
+  SELECT MAX(price) AS highest_price
+  FROM uk.uk_price_paid_simple_partitioned
+  WHERE date >= '2020-12-01'
+    AND date <= '2020-12-31'
+    AND town = 'LONDON';
+  ```
+</RunnableCode>
+
+Cette requête s’exécute sur notre table d’exemple ci-dessus et [calcule](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) le prix le plus élevé de tous les biens vendus à Londres en décembre 2020, en filtrant à la fois sur une colonne (`date`) utilisée dans la clé de partitionnement de la table et sur une colonne (`town`) utilisée dans la clé primaire de la table (`date` ne faisant pas partie de la clé primaire).
+
+ClickHouse traite cette requête en appliquant une série de techniques d’exclusion pour éviter d’évaluer des données non pertinentes :
+
+<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="PART MERGES 2" />
+
+<br />
+
+① **élagage des partitions** : les [index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) servent à ignorer des partitions entières (ensembles de parts) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé de partitionnement de la table.
+
+② **élagage des granules** : pour les data parts restantes après l’étape ①, leur [index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) sert à ignorer toutes les [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocs de rows) qui, logiquement, ne peuvent pas correspondre au filter de la requête sur les colonnes utilisées dans la clé primaire de la table.
+
+Nous pouvons observer ces étapes d’exclusion des données en [inspectant](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) le plan d’exécution physique de notre requête d’exemple ci-dessus via une clause [EXPLAIN](/fr/reference/statements/explain) :
+
+```sql style="fontSize:13px"
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE date >= '2020-12-01'
+  AND date <= '2020-12-31'
+  AND town = 'LONDON';
+```
+
+```response
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                    │
+ 2. │   Aggregating                                                                                                │
+ 3. │     Expression (Before GROUP BY)                                                                             │
+ 4. │       Expression                                                                                             │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned)                                              │
+ 6. │         Indexes:                                                                                             │
+ 7. │           MinMax                                                                                             │
+ 8. │             Keys:                                                                                            │
+ 9. │               date                                                                                           │
+10. │             Condition: and((date in (-Inf, 18627]), (date in [18597, +Inf)))                                 │
+11. │             Parts: 1/436                                                                                     │
+12. │             Granules: 11/3257                                                                                │
+13. │           Partition                                                                                          │
+14. │             Keys:                                                                                            │
+15. │               toStartOfMonth(date)                                                                           │
+16. │             Condition: and((toStartOfMonth(date) in (-Inf, 18597]), (toStartOfMonth(date) in [18597, +Inf))) │
+17. │             Parts: 1/1                                                                                       │
+18. │             Granules: 11/11                                                                                  │
+19. │           PrimaryKey                                                                                         │
+20. │             Keys:                                                                                            │
+21. │               town                                                                                           │
+22. │             Condition: (town in ['LONDON', 'LONDON'])                                                        │
+23. │             Parts: 1/1                                                                                       │
+24. │             Granules: 1/11                                                                                   │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+La sortie ci-dessus montre :
+
+① Élagage des partitions : les lignes 7 à 18 de la sortie EXPLAIN ci-dessus montrent que ClickHouse utilise d’abord l’[index MinMax](/fr/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) du champ `date` pour identifier 11 des 3257 [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existantes (blocs de lignes) stockées dans 1 des 436 parties de données actives existantes, qui contiennent des lignes correspondant au filtre `date` de la requête.
+
+② Élagage des granules : les lignes 19 à 24 de la sortie EXPLAIN ci-dessus indiquent que ClickHouse utilise ensuite l’[index primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) (créé sur le champ `town`) de la partie de données identifiée à l’étape ① pour réduire encore le nombre de granules (qui contiennent des lignes susceptibles de correspondre aussi au filtre `town` de la requête) de 11 à 1. Cela se reflète également dans la sortie de clickhouse-client que nous avons affichée plus haut pour la requête exécutée :
+
+```response
+... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+Peak memory usage: 2.73 MiB.
+```
+
+Cela signifie que ClickHouse a analysé et traité 1 granule (bloc de [8192](/fr/reference/settings/merge-tree-settings#index_granularity) lignes) en 6 millisecondes pour calculer le résultat de la requête.
+
+<div id="partitioning-is-primarily-a-data-management-feature">
+  ### Le partitionnement est avant tout une fonctionnalité de gestion des données
+</div>
+
+Gardez à l&#39;esprit qu&#39;interroger l&#39;ensemble des partitions est généralement plus lent que d&#39;exécuter la même requête sur une table non partitionnée.
+
+Avec le partitionnement, les données sont généralement réparties sur un plus grand nombre de parties de données, ce qui amène souvent ClickHouse à analyser et traiter un volume de données plus important.
+
+Nous pouvons le démontrer en exécutant la même requête sur la table d&#39;[exemple Que sont les parties de table](/fr/concepts/core-concepts/parts) (sans partitionnement activé) et sur notre table d&#39;exemple actuelle ci-dessus (avec le partitionnement activé). Les deux tables [contiennent](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIHN1bShyb3dzKSBBUyByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCBJTiBbJ3VrX3ByaWNlX3BhaWRfc2ltcGxlJywgJ3VrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkJ10pIEFORCBhY3RpdmUKR1JPVVAgQlkgdGFibGU7\&run_query=true\&tab=results) les mêmes données et le même nombre de lignes :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      sum(rows) AS rows
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+  ```
+</RunnableCode>
+
+Cependant, la table avec partitionnement activé [a](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICB0YWJsZSwKICAgIGNvdW50KCkgQVMgcGFydHMKRlJPTSBzeXN0ZW0ucGFydHMKV0hFUkUgKGRhdGFiYXNlID0gJ3VrJykgQU5EIChgdGFibGVgIElOIFsndWtfcHJpY2VfcGFpZF9zaW1wbGUnLCAndWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQnXSkgQU5EIGFjdGl2ZQpHUk9VUCBCWSB0YWJsZTs\&run_query=true\&tab=results) davantage de [parties de données](/fr/concepts/core-concepts/parts) actives, car, comme indiqué plus haut, ClickHouse ne [fusionne](/fr/concepts/core-concepts/parts) les parties de données qu&#39;au sein d&#39;une même partition, et non entre les partitions :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      table,
+      count() AS parts
+  FROM system.parts
+  WHERE (database = 'uk') AND (table IN ['uk_price_paid_simple', 'uk_price_paid_simple_partitioned']) AND active
+  GROUP BY table;
+
+  ```
+</RunnableCode>
+
+Comme montré plus haut, la table partitionnée `uk_price_paid_simple_partitioned` comporte plus de 600 partitions, et donc 600 306 parties de données actives. En revanche, pour notre table non partitionnée `uk_price_paid_simple`, toutes les [parties de données](/fr/concepts/core-concepts/parts) initiales ont pu être fusionnées en une seule partie active grâce aux fusions en arrière-plan.
+
+Lorsque nous [examinons](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) le plan physique d&#39;exécution de la requête avec une clause [EXPLAIN](/fr/reference/statements/explain) pour notre requête d&#39;exemple ci-dessus, sans le filtre de partition, sur la table partitionnée, nous pouvons voir aux lignes 19 et 20 de la sortie ci-dessous que ClickHouse a identifié 671 des 3257 [granules](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existantes (blocs de lignes), réparties sur 431 des 436 parties de données actives existantes, comme pouvant potentiellement contenir des lignes correspondant au filtre de la requête, et qui seront donc analysées et traitées par le moteur de requête :
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                       │
+ 2. │   Aggregating                                                   │
+ 3. │     Expression (Before GROUP BY)                                │
+ 4. │       Expression                                                │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple_partitioned) │
+ 6. │         Indexes:                                                │
+ 7. │           MinMax                                                │
+ 8. │             Condition: true                                     │
+ 9. │             Parts: 436/436                                      │
+10. │             Granules: 3257/3257                                 │
+11. │           Partition                                             │
+12. │             Condition: true                                     │
+13. │             Parts: 436/436                                      │
+14. │             Granules: 3257/3257                                 │
+15. │           PrimaryKey                                            │
+16. │             Keys:                                               │
+17. │               town                                              │
+18. │             Condition: (town in ['LONDON', 'LONDON'])           │
+19. │             Parts: 431/436                                      │
+20. │             Granules: 671/3257                                  │
+    └─────────────────────────────────────────────────────────────────┘
+```
+
+Le plan d’exécution physique de la requête pour cette même requête d’exemple exécutée sur la table sans partitions [montre](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGUKV0hFUkUgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results), aux lignes 11 et 12 des résultats ci-dessous, que ClickHouse a identifié 241 des 3083 blocs de lignes existants dans l’unique partie de données active de la table, susceptibles de contenir des lignes correspondant au filtre de la requête :
+
+```sql
+EXPLAIN indexes = 1
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 1/1                                │
+12. │             Granules: 241/3083                        │
+    └───────────────────────────────────────────────────────┘
+```
+
+Lors de [l’exécution](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) de la requête sur la version partitionnée de la table, ClickHouse analyse et traite 671 blocs de lignes (~5,5 millions de lignes) en 90 millisecondes :
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple_partitioned
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 594.30 million
+└───────────────┘
+
+1 row in set. Elapsed: 0.090 sec. Processed 5.48 million rows, 27.95 MB (60.66 million rows/s., 309.51 MB/s.)
+Peak memory usage: 163.44 MiB.
+```
+
+En revanche, pour [l’exécution](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlCldIRVJFIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) de la requête sur la table non partitionnée, ClickHouse analyse et traite 241 blocs (~ 2 millions de lignes) en 12 millisecondes :
+
+```sql
+SELECT MAX(price) AS highest_price
+FROM uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```response
+┌─highest_price─┐
+│     594300000 │ -- 594.30 million
+└───────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 1.97 million rows, 9.87 MB (162.23 million rows/s., 811.17 MB/s.)
+Peak memory usage: 62.02 MiB.
+```

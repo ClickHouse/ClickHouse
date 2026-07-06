@@ -1,0 +1,105 @@
+---
+sidebarTitle: 'HIPAA 开通指南'
+slug: /cloud/security/compliance/hipaa-onboarding
+title: 'HIPAA 开通指南'
+description: '了解如何开通符合 HIPAA 合规要求的服务'
+doc_type: 'guide'
+keywords: ['hipaa', '合规', '医疗保健', '安全', '数据保护']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+ClickHouse 提供符合 1996 年《健康保险可携性与责任法案》(HIPAA)《安全规则》要求的服务。客户在签署商业伙伴协议 (BAA) 并将服务部署到合规区域后，即可在这些服务中处理受保护健康信息 (PHI)。
+
+有关 ClickHouse 合规项目以及第三方审计报告获取情况的更多信息，请参阅我们的[合规概览](/zh/products/cloud/reference/security/compliance-overview)和 [Trust Center](https://trust.clickhouse.com)。此外，客户还应查看我们的[安全功能](/zh/products/cloud/features/security)页面，以便为其工作负载选择并实施适当的安全控制措施。
+
+本页介绍如何在 ClickHouse Cloud 中启用 HIPAA 合规服务的部署。
+
+<div id="enable-hipaa-compliant-services">
+  ## 启用并部署 HIPAA 合规服务
+</div>
+
+<Steps>
+  <Step>
+    ### 开通 Enterprise 服务
+
+    1. 在控制台左下角选择你的组织名称。
+    2. 点击 **计费**。
+    3. 在左上角查看你的 **套餐**。
+    4. 如果你的 **套餐** 是 **Enterprise**，请前往下一部分。否则，点击 **更改套餐**。
+    5. 选择 **切换到 Enterprise**。
+  </Step>
+
+  <Step>
+    ### 为你的组织启用 HIPAA
+
+    1. 在控制台左下角选择你的组织名称。
+    2. 点击 **组织详情**。
+    3. 打开 **启用 HIPAA** 开关。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="请求启用 HIPAA" background="black" />
+
+    <br />
+
+    4. 按照屏幕上的说明提交请求，以完成 BAA。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="提交 BAA 请求" background="black" />
+
+    <br />
+
+    5. BAA 完成后，系统将为该组织启用 HIPAA。
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA 已启用" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### 将服务部署到 HIPAA 合规区域
+
+    1. 在控制台主页左上角选择 **新建服务**
+    2. 将 **区域类型** 更改为 **HIPAA 合规**
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="部署到 HIPAA 区域" background="black" />
+
+    <br />
+
+    3. 输入服务名称并填写其余信息
+
+    有关 HIPAA 合规云提供商和服务的完整列表，请参阅我们的[支持的 Cloud 区域](/zh/products/cloud/reference/supported-regions)页面。
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## 迁移现有服务
+</div>
+
+强烈建议客户在需要时将服务部署到合规环境中。将服务从标准区域迁移到 HIPAA 合规区域的过程需要从备份恢复，并且可能需要一定的停机时间。
+
+如果需要从标准区域迁移到 HIPAA 合规区域，请按照以下步骤执行自助迁移：
+
+1. 选择要迁移的服务。
+2. 点击左侧的 **备份**。
+3. 点击要恢复的备份左侧的三个点。
+4. 选择 **区域类型**，将备份恢复到 HIPAA 合规区域。
+5. 恢复完成后，运行几个查询，验证 schema 和记录数是否符合预期。
+6. 删除旧服务。
+
+<Info>
+  **限制**
+
+  服务必须保留在同一个云提供商和地理区域内。此流程会将服务迁移到同一云提供商和区域中的合规环境。
+</Info>

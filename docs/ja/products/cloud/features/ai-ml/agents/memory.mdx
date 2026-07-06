@@ -1,0 +1,91 @@
+---
+sidebarTitle: 'Memory'
+slug: /cloud/features/ai-ml/agents/memory
+title: 'Memory'
+description: 'ClickHouse Agents の Memory とパーソナライズ'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'memory', 'personalization']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+エージェントが会話をまたいで参照できる、ユーザーごとの保存領域です。複数のエントリで構成されており、それぞれが秘密鍵・バリューの組になっています。たとえば、希望する
+日付フォーマット、普段クエリするデータベース、回答をどれくらい簡潔にしてほしいかといった情報です。エージェントは、必要に応じてこれらをコンテキストに取り込みます。
+
+<div id="how-it-works">
+  ## Memory の仕組み
+</div>
+
+小さな Memory エージェントが、メインの会話と並行して動作します。直近のメッセージを読み取り、何を記憶しておくべきかを判断し、ユーザーごとの保存領域にエントリを書き込みます。
+次の会話では、それらのエントリを文脈として参照できるため、同じことを繰り返し伝える必要がありません。
+
+その結果、会話に一貫性が生まれます。たとえば、SQL の出力は小文字がよいことや、会計年度が 3 月に終わることを一度エージェントに伝えておけば、その後の会話でもそれが反映されます。
+
+<div id="manage-your-memories">
+  ## Memory を管理する
+</div>
+
+左側のナビゲーションにある **Memories** (脳の) アイコンから Memory パネルを開きます。このパネルには保存されている Memory が一覧表示され、エントリの作成、編集、削除、絞り込みを行えます。
+
+<Image img="/images/cloud/agent-builder/memory/memories.webp" alt="左側のナビゲーションで脳のアイコンが強調表示され、フィルター入力欄、Add ボタン、Use memory チェックボックス、編集および削除の操作が付いた Memory エントリ、Admin Settings ボタンが表示されている Memories パネル" size="sm" />
+
+Memory はユーザーごとに非公開です。他のユーザーのエージェントがあなたのエントリを見ることはなく、あなたのエージェントがそのユーザーのエントリを見ることもありません。
+
+<div id="create-memory">
+  ### Memory を作成する
+</div>
+
+パネル上部の **+** ボタンをクリックして **Create Memory** ダイアログを開きます。**秘密鍵** (使用できるのは小文字とアンダースコアのみ) と **値** を入力し、**Create** をクリックします。
+
+<Image img="/images/cloud/agent-builder/memory/create.webp" alt="Create Memory の + ボタンが強調表示された Memory パネル" size="sm" />
+
+<div id="filter-memories">
+  ### Memory を絞り込む
+</div>
+
+パネル上部の **Memory を絞り込む** 入力欄を使うと、キーでエントリを検索できます。
+
+<Image img="/images/cloud/agent-builder/memory/filter.webp" alt="「Memory を絞り込む」入力欄が強調表示され、「demo」と入力された Memory パネル" size="sm" />
+
+<div id="edit-memory">
+  ### Memory を編集する
+</div>
+
+Memory の鉛筆アイコンをクリックして、**Edit Memory**ダイアログを開きます。秘密鍵または値を変更し、**Save**をクリックします。
+
+<Image img="/images/cloud/agent-builder/memory/edit.webp" alt="Edit Memory の鉛筆アイコンが強調表示されたMemoryエントリ" size="sm" />
+
+<div id="delete-memory">
+  ### メモリを削除する
+</div>
+
+削除するには、メモリのごみ箱アイコンをクリックします。
+
+<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="削除用のごみ箱アイコンが強調表示された Memory エントリ" size="sm" />
+
+<div id="toggle-memory">
+  ## Memory の切り替え
+</div>
+
+Memory パネル上部にある **Use memory** チェックボックスで、Memory のオン/オフを切り替えます。保存したくない機密性の高いトピックや、パーソナライズが不要な単発の会話では、無効にしてください。
+
+Memory がオフのとき、エージェントは Memory ストアの読み取りも書き込みも行いません。
+
+<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="上部の Use memory チェックボックスが強調表示された Memory パネル" size="sm" />
+
+<div id="memory-best-practices">
+  ## Memory のベストプラクティス
+</div>
+
+Memory が役立つのは、次のような場合です。
+
+* 繰り返し使うルール: 好みの日付フォーマット、業務上の定義、命名パターン。
+* プロジェクトのコンテキスト: 普段どのサービスやデータベースをクエリするか、どのダッシュボードを重視しているか。
+* コミュニケーションスタイル: 簡潔な応答を好むか詳しい応答を好むか、コード中心か文章中心か。
+
+Memory はデータベースとして使うことを意図したものではありません。たとえば、大量の参考資料を保存しておく場所ではありません。
+そうした用途には、代わりに [スキル](/ja/products/cloud/features/ai-ml/agents/builder/skills) を使うか、その内容をエージェントの指示に組み込むべきです。
+また、過去のチャットから情報を取り出すためのものでもありません。その役割は会話履歴自体が担います。

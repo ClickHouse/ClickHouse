@@ -1,0 +1,59 @@
+---
+description: 'このエンジンは、Amazon S3 上の既存の Apache Hudi
+  テーブルに対する読み取り専用のインテグレーションを提供します。'
+sidebarTitle: 'Hudi'
+slug: /engines/table-engines/integrations/hudi
+title: 'Hudi テーブルエンジン'
+doc_type: 'reference'
+---
+
+このエンジンは、Amazon S3 上の既存の Apache [Hudi](https://hudi.apache.org/) テーブルに対する読み取り専用のインテグレーションを提供します。
+
+<div id="create-table">
+  ## テーブルの作成
+</div>
+
+HudiテーブルはあらかじめS3上に存在している必要があります。このコマンドでは、新しいテーブルを作成するためのDDLパラメータは指定できません。
+
+```sql
+CREATE TABLE hudi_table
+    ENGINE = Hudi(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+```
+
+**エンジンパラメータ**
+
+* `url` — 既存の Hudi テーブルへのパスを含むバケット URL。
+* `aws_access_key_id`, `aws_secret_access_key` - [AWS](https://aws.amazon.com/) アカウントユーザーの長期認証情報です。これらを使用してリクエストを認証できます。このパラメータは任意です。認証情報が指定されていない場合は、設定ファイルのものが使用されます。
+* `extra_credentials` - 任意。ClickHouse Cloud でロールベースアクセス用の `role_arn` を渡すために使用します。設定手順については、[Secure S3](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を参照してください。
+
+エンジンパラメータは、[名前付きコレクション](/ja/concepts/features/configuration/server-config/named-collections) を使用して指定できます。
+
+**例**
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+```
+
+名前付きコレクション の使用:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <hudi_conf>
+            <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </hudi_conf>
+    </named_collections>
+</clickhouse>
+```
+
+```sql
+CREATE TABLE hudi_table ENGINE=Hudi(hudi_conf, filename = 'test_table')
+```
+
+<div id="see-also">
+  ## 関連項目
+</div>
+
+* [Hudi テーブル関数](/ja/reference/functions/table-functions/hudi)

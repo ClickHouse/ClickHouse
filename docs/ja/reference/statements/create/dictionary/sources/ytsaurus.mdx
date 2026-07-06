@@ -1,0 +1,57 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/ytsaurus
+title: 'YTsaurus Dictionary ソース'
+sidebarTitle: 'YTsaurus'
+description: 'ClickHouseでYTsaurusをDictionary ソースとして設定します。'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  これは実験的な機能であり、今後のリリースで後方互換性のない変更が加えられる可能性があります。
+  設定 [`allow_experimental_ytsaurus_dictionary_source`](/ja/reference/settings/session-settings#allow_experimental_ytsaurus_dictionary_source) を使用して、
+  YTsaurus の Dictionary ソースの使用を有効にしてください。
+</Info>
+
+設定例:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    SOURCE(YTSAURUS(
+        http_proxy_urls 'http://localhost:8000'
+        cypress_path '//tmp/test'
+        oauth_token 'password'
+    ))
+    ```
+  </Tab>
+
+  <Tab title="設定ファイル">
+    ```xml
+    <source>
+        <ytsaurus>
+            <http_proxy_urls>http://localhost:8000</http_proxy_urls>
+            <cypress_path>//tmp/test</cypress_path>
+            <oauth_token>password</oauth_token>
+            <check_table_schema>1</check_table_schema>
+        </ytsaurus>
+    </source>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+設定項目:
+
+| 設定                | 説明                         |
+| ----------------- | -------------------------- |
+| `http_proxy_urls` | YTsaurus の HTTP プロキシの URL。 |
+| `cypress_path`    | テーブルソースへの Cypress パス。      |
+| `oauth_token`     | OAuth トークン。                |

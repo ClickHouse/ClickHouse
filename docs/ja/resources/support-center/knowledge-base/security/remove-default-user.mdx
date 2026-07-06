@@ -1,0 +1,101 @@
+---
+date: 2025-01-16
+title: "`default` ユーザーを削除するには？"
+description: "ClickHouse Server の実行時に `default` ユーザーを削除する方法を説明します。"
+tags: ['サーバー管理']
+words: ['`default` ユーザーの削除', 'ClickHouse Server']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="removing-the-default-user">
+  ## `default` ユーザーの削除
+</div>
+
+<Note>
+  このガイドは ClickHouse Cloud には適用されません。
+</Note>
+
+このガイドでは、ClickHouse Server から `default` ユーザーを削除する方法を説明します。
+
+これを行うには、次の内容を含む YAML ファイル (ここでは `remove_default_user.yaml` とします) を作成します
+
+```yaml
+users:
+  default:
+    "@remove": remove
+```
+
+このファイルの場所は、ClickHouse のインストール方法によって異なります。
+
+<div id="running-the-executable-directly">
+  ## 実行可能ファイルを直接実行する
+</div>
+
+ClickHouse を直接 (`clickhouse server` で) 実行する場合は、ファイルを `config.d` ディレクトリに配置する必要があります。
+
+ClickHouse Server を起動する場合:
+
+```
+clickhouse server
+```
+
+ログに次のような行が表示されます:
+
+```
+{} <Debug> ConfigProcessor: Merging configuration file 'config.d/remove_default_user.yaml'.
+```
+
+そのため、`clickhouse client` では接続できなくなります:
+
+```
+ClickHouse client version 24.11.1.2557 (official build).
+Connecting to localhost:9000 as user default.
+Password for user (default):
+Connecting to localhost:9000 as user default.
+Code: 516. DB::Exception: Received from localhost:9000. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+```
+
+<div id="docker-or-installed">
+  ## Docker またはローカルにインストールしている場合
+</div>
+
+ClickHouse を Docker で実行している場合、またはマシンにインストールしている場合は、そのファイルを代わりに `/etc/clickhouse-server/users.d` ディレクトリに配置する必要があります。
+
+したがって、Docker で実行している場合は、先ほど作成した `config.d` ディレクトリを `/etc/clickhouse-server/users.d` にマウントできます。
+
+```bash
+docker run \
+  -v ./config.d:/etc/clickhouse-server/users.d \
+  -p 8123:8123 -p9000:9000 \
+  clickhouse/clickhouse-server:24.12
+```
+
+```
+Merging configuration file '/etc/clickhouse-server/config.d/docker_related_config.xml'.
+Logging trace to /var/log/clickhouse-server/clickhouse-server.log
+Logging errors to /var/log/clickhouse-server/clickhouse-server.err.log
+```
+
+その後、サーバーログを検索して、取り込まれていることを確認できます。
+
+```bash
+docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Command}}"
+```
+
+```text
+CONTAINER ID   IMAGE                                NAMES               COMMAND
+383e8ed89431   clickhouse/clickhouse-server:24.12   trusting_rosalind   "/entrypoint.sh"
+```
+
+```
+docker exec -it trusting_rosalind grep "users\.d" /var/log/clickhouse-server/clickhouse-server.log
+```
+
+次の行が表示されるはずです:
+
+```text
+{} <Debug> ConfigProcessor: Merging configuration file '/etc/clickhouse-server/users.d/remove_default_user.yaml'.
+```

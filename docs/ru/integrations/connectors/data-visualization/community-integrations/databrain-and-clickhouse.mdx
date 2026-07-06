@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'Databrain'
+slug: /integrations/databrain
+keywords: ['clickhouse', 'Databrain', 'подключение', 'интеграция', 'интерфейс', 'аналитика', 'встраиваемая', 'панель мониторинга', 'визуализация']
+description: 'Databrain — платформа встраиваемой аналитики, которая легко интегрируется с ClickHouse и позволяет создавать панели мониторинга для клиентов, метрики и визуализации данных.'
+title: 'Подключение Databrain к ClickHouse'
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Databrain](https://usedatabrain.com) — это платформа встроенной аналитики, которая позволяет создавать интерактивные панели мониторинга, метрики и визуализации данных и делиться ими с вашими клиентами. Databrain подключается к ClickHouse через интерфейс HTTPS, поэтому визуализировать и анализировать данные ClickHouse можно в современном и удобном интерфейсе.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="Интерфейс панели мониторинга Databrain с визуализацией данных ClickHouse" border />
+
+<br />
+
+В этом руководстве описано, как подключить Databrain к вашему экземпляру ClickHouse.
+
+<div id="pre-requisites">
+  ## Предварительные требования
+</div>
+
+* База данных ClickHouse, размещённая либо в вашей инфраструктуре, либо в [ClickHouse Cloud](https://clickhouse.com/).
+* Учётная запись [Databrain](https://app.usedatabrain.com/users/sign-up).
+* Рабочее пространство Databrain для подключения источника данных.
+
+<div id="steps-to-connect-databrain-to-clickhouse">
+  ## Как подключить Databrain к ClickHouse
+</div>
+
+<div id="1-gather-your-connection-details">
+  ### 1. Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2-allow-databrain-ip-addresses">
+  ### 2. Разрешите IP-адреса Databrain (если требуется)
+</div>
+
+Если для вашего экземпляра ClickHouse включена фильтрация IP-адресов, вам нужно будет добавить IP-адреса Databrain в список разрешённых.
+
+Для пользователей ClickHouse Cloud:
+
+1. Перейдите к своему сервису в консоли ClickHouse Cloud
+2. Откройте **Настройки** → **Безопасность**
+3. Добавьте IP-адреса Databrain в список разрешённых
+
+<Tip>
+  Актуальный список IP-адресов, которые нужно добавить в список разрешённых, см. в [документации Databrain по добавлению IP-адресов в белый список](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip).
+</Tip>
+
+<div id="3-add-clickhouse-as-a-data-source">
+  ### 3. Добавьте ClickHouse как источник данных в Databrain
+</div>
+
+1. Войдите в учетную запись Databrain и перейдите в рабочее пространство, в котором хотите добавить источник данных.
+
+2. В меню навигации выберите **Data Sources**.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Меню источников данных Databrain" border />
+
+3. Нажмите **Add a Data Source** или **Connect Data Source**.
+
+4. Выберите **ClickHouse** из списка доступных коннекторов.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Выбор коннектора в Databrain с вариантом ClickHouse" border />
+
+5. Заполните сведения о подключении:
+   * **Destination Name**: Укажите понятное имя для этого подключения (например, &quot;Production ClickHouse&quot; или &quot;Analytics DB&quot;)
+   * **Host**: Укажите URL хоста ClickHouse (например, `https://your-instance.region.aws.clickhouse.cloud`)
+   * **Port**: Введите `8443` (порт HTTPS по умолчанию для ClickHouse)
+   * **Username**: Введите имя пользователя ClickHouse
+   * **Password**: Введите пароль ClickHouse
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Форма подключения ClickHouse в Databrain с полями конфигурации" border />
+
+6. Нажмите **Test Connection**, чтобы убедиться, что Databrain может подключиться к вашему экземпляру ClickHouse.
+
+7. После успешной проверки подключения нажмите **Save** или **Connect**, чтобы добавить источник данных.
+
+<div id="4-configure-user-permissions">
+  ### 4. Настройте разрешения пользователя
+</div>
+
+Убедитесь, что у пользователя ClickHouse, с которым вы подключаетесь, есть необходимые разрешения:
+
+```sql
+-- Предоставить разрешения на чтение информации о схеме
+GRANT SELECT ON information_schema.* TO your_databrain_user;
+
+-- Предоставить доступ на чтение к вашей базе данных и таблицам
+GRANT SELECT ON your_database.* TO your_databrain_user;
+```
+
+Замените `your_databrain_user` и `your_database` на свои реальные имя пользователя и имя базы данных.
+
+<div id="using-databrain-with-clickhouse">
+  ## Работа с Databrain и ClickHouse
+</div>
+
+<div id="explore-your-data">
+  ### Изучение данных
+</div>
+
+1. После подключения перейдите в рабочее пространство в Databrain.
+
+2. В обозревателе данных отобразится список таблиц ClickHouse.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="Обозреватель данных Databrain со списком таблиц ClickHouse" border />
+
+3. Нажмите на таблицу, чтобы изучить её схему и просмотреть данные.
+
+<div id="create-metrics-and-visualizations">
+  ### Создание метрик и визуализаций
+</div>
+
+1. Нажмите **Create Metric**, чтобы начать создавать визуализации на основе данных ClickHouse.
+
+2. Выберите источник данных ClickHouse и таблицу, которую хотите визуализировать.
+
+3. Используйте интуитивно понятный интерфейс Databrain, чтобы:
+   * Выбрать размерности и показатели
+   * Применить фильтры и агрегации
+   * Выбрать типы визуализации (столбчатые, линейные, круговые диаграммы, таблицы и т. д.)
+   * Добавить пользовательские SQL-запросы для расширенного анализа
+
+4. Сохраните метрику, чтобы использовать её на разных панелях мониторинга.
+
+<div id="build-dashboards">
+  ### Создание панелей мониторинга
+</div>
+
+1. Нажмите **Create Dashboard**, чтобы создать панель мониторинга.
+
+2. Добавьте метрики на панель мониторинга, перетаскивая сохранённые метрики.
+
+3. Настройте структуру и внешний вид панели мониторинга.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="Панель мониторинга Databrain с несколькими визуализациями ClickHouse" border />
+
+4. Поделитесь панелью мониторинга с командой или встроите её в своё приложение.
+
+<div id="advanced-features">
+  ### Расширенные возможности
+</div>
+
+Databrain предлагает несколько расширенных возможностей при работе с ClickHouse:
+
+* **Пользовательская SQL-консоль**: Пишите и выполняйте пользовательские SQL-запросы напрямую к базе данных ClickHouse
+* **Мультиарендность и выделенная архитектура**: Подключайте базу данных ClickHouse как для выделенной, так и для мультиарендной архитектуры
+* **Планирование отчетов**: Настраивайте автоматические отчеты и отправляйте их заинтересованным лицам по электронной почте
+* **Инсайты на базе ИИ**: Используйте ИИ для создания сводок и получения инсайтов из данных
+* **Встраиваемая аналитика**: Встраивайте панели мониторинга и метрики напрямую в свои приложения
+* **Семантический слой**: Создавайте переиспользуемые модели данных и бизнес-логику
+
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
+
+<div id="connection-fails">
+  ### Не удается подключиться
+</div>
+
+Если вам не удается подключиться к ClickHouse:
+
+1. **Проверьте учетные данные**: еще раз проверьте имя пользователя, пароль и URL хоста
+2. **Проверьте порт**: убедитесь, что используете порт `8443` для HTTPS (или `8123` для HTTP, если не используете SSL)
+3. **Белый список IP-адресов**: убедитесь, что IP-адреса Databrain добавлены в белый список в настройках межсетевого экрана/безопасности ClickHouse
+4. **SSL/TLS**: убедитесь, что SSL/TLS правильно настроен, если вы используете HTTPS
+5. **Разрешения пользователя**: убедитесь, что у пользователя есть разрешения SELECT для `information_schema` и ваших целевых баз данных
+
+<div id="slow-query-performance">
+  ### Низкая производительность запросов
+</div>
+
+Если запросы выполняются медленно:
+
+1. **Оптимизируйте запросы**: эффективно используйте фильтры и агрегации
+2. **Создавайте materialized view**: для часто используемых агрегаций рассмотрите создание materialized view в ClickHouse
+3. **Используйте подходящие типы данных**: убедитесь, что в схеме ClickHouse используются оптимальные типы данных
+4. **Оптимизация индексов**: используйте первичные ключи и индексы пропуска ClickHouse
+
+<div id="learn-more">
+  ## Узнайте больше
+</div>
+
+Чтобы узнать больше о возможностях Databrain и о том, как создавать мощную аналитику:
+
+* [Документация Databrain](https://docs.usedatabrain.com/)
+* [Руководство по интеграции ClickHouse](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
+* [Создание панелей мониторинга](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
+* [Создание метрик](https://docs.usedatabrain.com/guides/metrics/create-metrics)

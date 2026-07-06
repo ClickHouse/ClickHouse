@@ -1,0 +1,300 @@
+---
+slug: /use-cases/data-lake/nessie-catalog
+sidebarTitle: 'Nessie Catalog'
+title: 'Nessie Catalog'
+description: 'このガイドでは、ClickHouse と Nessie Catalog を使用して
+ データにクエリを実行する手順を説明します。'
+keywords: ['Nessie', 'REST', 'トランザクション対応', 'データレイク', 'Iceberg', 'Git-like']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  Nessie Catalog とのインテグレーションは、Iceberg テーブルでのみ利用できます。
+  このインテグレーションは、AWS S3 とその他のクラウドストレージプロバイダーの両方をサポートしています。
+</Note>
+
+ClickHouse は、複数のカタログ (Unity、Glue、REST、Polaris など) とのインテグレーションをサポートしています。このガイドでは、ClickHouse と [Nessie](https://projectnessie.org/) Catalog を使用してデータをクエリする手順を説明します。
+
+Nessie は、データレイク向けのオープンソースのトランザクション対応カタログで、次の機能を提供します。
+
+* **Git に着想を得た** ブランチとコミットによるデータのバージョン管理
+* **複数テーブルにまたがるトランザクション** と可視性の保証
+* Iceberg REST カタログ仕様への **REST API** 準拠
+* Hive、Spark、Dremio、Trino などをサポートする **オープンなデータレイク** アプローチ
+* Docker または Kubernetes への **本番環境対応の** デプロイ
+
+<Note>
+  この機能は実験的機能のため、次を使用して有効にする必要があります。
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## ローカル開発環境のセットアップ
+</div>
+
+ローカルでの開発やテストには、コンテナー化された Nessie 環境を利用できます。この方法は、学習、プロトタイピング、開発環境に最適です。
+
+<div id="local-prerequisites">
+  ### 前提条件
+</div>
+
+1. **Docker and Docker Compose**: Docker がインストールされ、起動していることを確認してください
+2. **サンプルセットアップ**: 公式の Nessie 用 docker-compose セットアップを使用できます
+
+<div id="setting-up-local-nessie-catalog">
+  ### ローカル Nessie Catalog のセットアップ
+</div>
+
+Nessie、インメモリのバージョンストア、オブジェクトストレージ用の MinIO を含む完全な環境を提供する公式の [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/) を使用できます。
+
+**ステップ 1:** 例を実行するための新しいフォルダーを作成し、続いて以下の内容で `docker-compose.yml` ファイルを作成します。
+
+```yaml
+version: '3.8'
+
+services:
+  nessie:
+    image: ghcr.io/projectnessie/nessie:latest
+    ports:
+      - "19120:19120"
+    environment:
+      - nessie.version.store.type=IN_MEMORY
+      - nessie.catalog.default-warehouse=warehouse
+      - nessie.catalog.warehouses.warehouse.location=s3://my-bucket/
+      - nessie.catalog.service.s3.default-options.endpoint=http://minio:9000/
+      - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
+      - nessie.catalog.service.s3.default-options.path-style-access=true
+      - nessie.catalog.service.s3.default-options.auth-type=STATIC
+      - nessie.catalog.secrets.access-key.name=admin
+      - nessie.catalog.secrets.access-key.secret=password
+      - nessie.catalog.service.s3.default-options.region=us-east-1
+      - nessie.server.authentication.enabled=false
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - iceberg_net
+
+  minio:
+    image: quay.io/minio/minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_REGION=us-east-1
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 10;
+      mc alias set myminio http://localhost:9000 admin password;
+      mc mb myminio/my-bucket --ignore-existing;
+      tail -f /dev/null"
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:head
+    container_name: nessie-clickhouse
+    user: '0:0'  # ルート権限を確保する
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # データセットフォルダをマウントする
+    networks:
+      - iceberg_net
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=
+    depends_on:
+      nessie:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+volumes:
+  clickhouse_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+**ステップ 2:** サービスを起動するには、次のコマンドを実行します。
+
+```bash
+docker compose up -d
+```
+
+**ステップ 3:** すべてのサービスの準備が完了するまで待ちます。ログを確認できます。
+
+```bash
+docker-compose logs -f
+```
+
+<Note>
+  Nessie のセットアップではインメモリのバージョンストアを使用するため、最初にサンプルデータを Iceberg テーブルに読み込んでおく必要があります。ClickHouse 経由でそれらにクエリを実行する前に、環境内でテーブルが作成され、データが投入されていることを確認してください。
+</Note>
+
+<div id="connecting-to-local-nessie-catalog">
+  ### ローカルの Nessie Catalog に接続する
+</div>
+
+ClickHouse コンテナに接続します:
+
+```bash
+docker exec -it nessie-clickhouse clickhouse-client
+```
+
+次に、Nessie Catalog へのデータベース接続を作成します。
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE demo
+ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
+SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
+```
+
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## ClickHouseでNessie Catalogのテーブルをクエリする
+</div>
+
+接続の準備ができたので、Nessie Catalog 経由でクエリを実行できます。例:
+
+```sql
+USE demo;
+
+SHOW TABLES;
+```
+
+セットアップにサンプルデータ (タクシーのデータセットなど) が含まれている場合は、以下のようなテーブルが表示されます。
+
+```response
+┌─name──────────┐
+│ default.taxis │
+└───────────────┘
+```
+
+<Note>
+  テーブルが1つも表示されない場合、通常は次のいずれかが原因です。
+
+  1. 環境でまだサンプルテーブルが作成されていない
+  2. Nessie Catalog サービスの初期化がまだ完了していない
+  3. サンプルデータの読み込み処理がまだ完了していない
+
+  カタログの動作状況は、Nessie のログで確認できます。
+
+  ```bash
+  docker-compose logs nessie
+  ```
+</Note>
+
+テーブルをクエリするには (利用可能な場合) :
+
+```sql
+SELECT count(*) FROM `default.taxis`;
+```
+
+```response
+┌─count()─┐
+│ 2171187 │
+└─────────┘
+```
+
+<Info>
+  **バッククォートは必須です**
+
+  ClickHouse は複数のネームスペースをサポートしていないため、バッククォートが必要です。
+</Info>
+
+テーブルの DDL を確認するには:
+
+```sql
+SHOW CREATE TABLE `default.taxis`;
+```
+
+```response
+┌─statement─────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE demo.`default.taxis`                                                             │
+│ (                                                                                             │
+│     `VendorID` Nullable(Int64),                                                               │
+│     `tpep_pickup_datetime` Nullable(DateTime64(6)),                                           │
+│     `tpep_dropoff_datetime` Nullable(DateTime64(6)),                                          │
+│     `passenger_count` Nullable(Float64),                                                      │
+│     `trip_distance` Nullable(Float64),                                                        │
+│     `RatecodeID` Nullable(Float64),                                                           │
+│     `store_and_fwd_flag` Nullable(String),                                                    │
+│     `PULocationID` Nullable(Int64),                                                           │
+│     `DOLocationID` Nullable(Int64),                                                           │
+│     `payment_type` Nullable(Int64),                                                           │
+│     `fare_amount` Nullable(Float64),                                                          │
+│     `extra` Nullable(Float64),                                                                │
+│     `mta_tax` Nullable(Float64),                                                              │
+│     `tip_amount` Nullable(Float64),                                                           │
+│     `tolls_amount` Nullable(Float64),                                                         │
+│     `improvement_surcharge` Nullable(Float64),                                                │
+│     `total_amount` Nullable(Float64),                                                         │
+│     `congestion_surcharge` Nullable(Float64),                                                 │
+│     `airport_fee` Nullable(Float64)                                                           │
+│ )                                                                                             │
+│ ENGINE = Iceberg('http://localhost:9002/my-bucket/default/taxis/', 'admin', '[HIDDEN]')      │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## お使いのデータレイクからClickHouseにデータを読み込む
+</div>
+
+Nessie CatalogからClickHouseにデータを読み込む必要がある場合は、まずClickHouseのローカルテーブルを作成します。
+
+```sql
+CREATE TABLE taxis
+(
+    `VendorID` Int64,
+    `tpep_pickup_datetime` DateTime64(6),
+    `tpep_dropoff_datetime` DateTime64(6),
+    `passenger_count` Float64,
+    `trip_distance` Float64,
+    `RatecodeID` Float64,
+    `store_and_fwd_flag` String,
+    `PULocationID` Int64,
+    `DOLocationID` Int64,
+    `payment_type` Int64,
+    `fare_amount` Float64,
+    `extra` Float64,
+    `mta_tax` Float64,
+    `tip_amount` Float64,
+    `tolls_amount` Float64,
+    `improvement_surcharge` Float64,
+    `total_amount` Float64,
+    `congestion_surcharge` Float64,
+    `airport_fee` Float64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(tpep_pickup_datetime)
+ORDER BY (VendorID, tpep_pickup_datetime, PULocationID, DOLocationID);
+```
+
+次に、`INSERT INTO SELECT` を使用して、Nessieカタログのテーブルからデータを読み込みます:
+
+```sql
+INSERT INTO taxis 
+SELECT * FROM demo.`default.taxis`;
+```

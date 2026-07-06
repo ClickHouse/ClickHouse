@@ -1,0 +1,167 @@
+---
+title: 在 ClickHouse Cloud 中实现原子插入与多表一致性
+description: 如何在不使用多语句事务的情况下，借助暂存表和分区级操作，在 ClickHouse Cloud 中以原子方式加载数据，并保持多个表的一致性。
+date: 2026-06-01
+tags: ['数据摄取', '最佳实践']
+keywords: ['原子插入', '暂存表', 'MOVE PARTITION', 'ATTACH PARTITION', 'REPLACE PARTITION', '多表一致性']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## 问题
+</div>
+
+ClickHouse Cloud 不支持传统 RDBMS 意义上的多语句事务。
+这会带来两个常见挑战：
+
+1. 批量加载时的单表原子性：一种常见做法是先插入临时 partial key，再将记录复制到实际 key，并删除临时记录。这种方法性能较差——尤其是删除这一步，可能会占用总操作时间的 90% 以上。
+2. 多表一致性：当某个管道成功加载表 A、却在表 B 上失败时，表 A 已经提交，无法回滚。对这两张表进行跨表查询的分析人员会看到不同步的数据。
+
+<div id="background">
+  ## 背景
+</div>
+
+ClickHouse 保证单次插入、单个分区级别的原子性：如果 `INSERT` 成功，该块中的所有行都会可见；如果失败，则一行都不会可见。不过，对于跨多个插入操作或多个表的数据，系统没有内置的原子提交机制。
+
+当源表和目标表共享相同的存储策略时，分区操作命令 ([`MOVE PARTITION TO TABLE`](/zh/reference/statements/alter/partition#move-partition-to-table)、[`REPLACE PARTITION`](/zh/reference/statements/alter/partition#replace-partition)、[`ATTACH PARTITION FROM`](/zh/reference/statements/alter/partition#attach-partition-from)) 是在元数据层面执行的。
+
+这意味着无论数据量多大，它们的执行几乎都是瞬时的，因此非常适合作为原子交换模式的基础构件。
+
+<div id="recommended-solution">
+  ## 推荐方案
+</div>
+
+与其直接向生产表插入数据，并在失败时再尝试清理，不如使用专用的暂存表作为落地区。数据验证完成后，使用分区级操作以原子方式将数据迁移到生产表中。
+
+<div id="step-by-step">
+  ## 单表原子性的分步操作
+</div>
+
+<Steps>
+  <Step>
+    ### 创建暂存表
+
+    使用与生产表相同的 schema、分区键、`ORDER BY` 和存储策略。
+
+    ```sql
+    CREATE TABLE my_table_staging AS my_table_prod;
+    ```
+  </Step>
+
+  <Step>
+    ### 将数据插入暂存表
+
+    将插入操作执行在暂存表上，而不是生产表上。
+
+    ```sql
+    INSERT INTO my_table_staging SELECT ... FROM source;
+    ```
+  </Step>
+
+  <Step>
+    ### 如果插入失败，则清空后重试
+
+    清空暂存表，然后重新执行加载。生产表中的数据不会受到影响。
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+
+  <Step>
+    ### 如果插入成功，则将分区移到生产表
+
+    要将数据移入生产表并将其从暂存表中移除，请使用 `MOVE PARTITION`。
+
+    ```sql
+    ALTER TABLE my_table_staging MOVE PARTITION <partition_expr> TO TABLE my_table_prod;
+    ```
+
+    或者，使用 `ATTACH PARTITION` 将数据复制到生产表中的现有分区。
+
+    ```sql
+    ALTER TABLE my_table_prod ATTACH PARTITION tuple() FROM my_table_staging;
+    ```
+
+    这两种操作都属于相同存储策略下的元数据级变更，几乎会瞬间完成。
+  </Step>
+
+  <Step>
+    ### 清理暂存表
+
+    在所有分区都已移走后，清空暂存表，以便它在下一次加载时保持为空。
+
+    ```sql
+    TRUNCATE TABLE my_table_staging;
+    ```
+  </Step>
+</Steps>
+
+<div id="multi-table-consistency">
+  ## 多表一致性
+</div>
+
+同样的模式也适用于这类管道：只有在两个或更多表都完成加载后，它们才能对分析师可见。将每个表的数据分别加载到各自的暂存表中并完成校验，然后统一执行分区移动。由于每次移动几乎都是瞬时完成的元数据操作，表之间不一致的时间窗口就会从完整加载所需的耗时，缩短到交换分区所需的时间。
+
+<div id="requirements-and-constraints">
+  ## 要求和限制
+</div>
+
+对于 `MOVE PARTITION TO TABLE`、`REPLACE PARTITION` 和 `ATTACH PARTITION FROM`，源表和目标表必须满足以下条件：
+
+* 具有相同的列结构
+* 具有相同的分区键、`ORDER BY` 键和主键
+* 具有相同的存储策略
+* 目标表必须包含源表中的所有索引和投影
+
+<div id="example">
+  ## 示例
+</div>
+
+您可以通过 [fiddle](https://fiddle.clickhouse.com/7ef9ed84-ac14-4f2c-9ca5-d5913089769a) 以交互方式运行下面的示例：
+
+```sql
+CREATE TABLE prod
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+CREATE TABLE staging
+(
+  uid Int16,
+  name String,
+  age Int16
+)
+ENGINE=MergeTree
+ORDER BY ();
+
+-- 初始数据
+INSERT INTO prod VALUES (123, 'John', 33);
+INSERT INTO prod VALUES (456, 'Ksenia', 48);
+-- 加载数据
+INSERT INTO staging VALUES (8811, 'Alice', 50);
+INSERT INTO staging VALUES (8812, 'Bob', 23);
+
+-- 验证导入
+SELECT 'Staging count:', COUNT() FROM staging;
+-- 移动分区
+ALTER TABLE staging MOVE PARTITION tuple() TO TABLE prod; -- 原子操作
+
+-- 检查数据
+SELECT 'Prod count:', COUNT() FROM prod;
+SELECT * FROM prod;
+```
+
+<div id="references">
+  ## 参考
+</div>
+
+* [**管理分区和 parts**](/zh/reference/statements/alter/partition)
+* 有关此策略的更多信息，请参阅博文 [**为大规模 ClickHouse 数据加载提速 - 第 3 部分：让大规模数据加载更具弹性**](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
