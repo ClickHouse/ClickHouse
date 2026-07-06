@@ -83,7 +83,7 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
                         <li key={index} className={index > 0 ? 'mt-2' : 'mt-0'}>
                             <a href={link.href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(link.href); }} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
                                 <span className="truncate min-w-0">{link.label}</span>
-                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`shrink-0${link.external ? ' ch-external-arrow' : ''}`}>
                                     <path d="M5 12h14M12 5l7 7-7 7"/>
                                 </svg>
                             </a>
@@ -112,12 +112,58 @@ export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, desc
     return <a className={fullClassName} href={href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
 };
 
+export const QuickstartPill = ({ children }) => {
+    const path = '/ja/get-started/quickstarts/create-your-first-service-on-cloud';
+    const withBase = (p) => (typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '') + p;
+    return (
+        <a
+            className="inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm text-gray-700 dark:text-zinc-200 bg-gray-950/[0.03] dark:bg-white/[0.04] border border-gray-950/15 dark:border-white/15 hover:border-gray-950/40 dark:hover:border-white/35 transition-colors no-underline"
+            href={path}
+            onClick={(e) => { e.preventDefault(); window.location.href = withBase(path); }}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0 text-gray-500 dark:text-zinc-300"><path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path></svg>
+            <span>{children}</span>
+        </a>
+    );
+};
+
+export const AskAILink = ({ children }) => {
+    const openKapa = () => {
+        if (window.Kapa && typeof window.Kapa.open === 'function') {
+            window.Kapa.open({ mode: 'ai' });
+            return;
+        }
+        let attempts = 0;
+        const iv = setInterval(() => {
+            attempts++;
+            if (window.Kapa && typeof window.Kapa.open === 'function') {
+                clearInterval(iv);
+                window.Kapa.open({ mode: 'ai' });
+            } else if (attempts > 60) {
+                clearInterval(iv);
+            }
+        }, 50);
+    };
+    return (
+        <button
+            type="button"
+            id="home-assistant-entry"
+            onClick={openKapa}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors bg-transparent border-0 p-0 cursor-pointer"
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none"></path><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"></polygon></g></svg>
+            {children}
+        </button>
+    );
+};
+
 export const HighlightedClickHouse = () => {
-    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    // The brush images are inlined as data URIs so the highlight paints with
+    // the heading instead of popping in after two extra network requests.
     return (
         <span className="relative inline-block px-8 py-3 -ml-4">
-            <img src={`${assetBase}/images/highlight-lightmode.webp`} className="block dark:hidden absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
-            <img src={`${assetBase}/images/highlight-darkmode.webp`} className="hidden dark:block absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <img src="data:image/webp;base64,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" className="block dark:hidden absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <img src="data:image/webp;base64,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" className="hidden dark:block absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
             <span className="relative z-10 text-white dark:text-[#1c1c1c]">ClickHouse</span>
         </span>
     );
@@ -134,17 +180,17 @@ export const McpLink = () => {
         <a
             href="#mcp-setup"
             onClick={handleClick}
-            className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
+            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
         >
             <span
                 aria-hidden="true"
-                className="shrink-0 w-[13px] h-[13px] bg-current ch-mcp-icon"
+                className="shrink-0 w-[15px] h-[15px] bg-current ch-mcp-icon"
                 style={{
                     WebkitMaskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
                     maskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
                 }}
             />
-            Set up docs MCP server
+            MCPサーバー
         </a>
     );
 };
@@ -161,19 +207,19 @@ export const McpSetup = () => {
     return (
         <Tabs>
             <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
-                <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
+                <p className="mb-2 text-[#9ca3af] text-[13px]">ターミナルで実行:</p>
                 <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}</CodeBlock>
             </Tab>
             <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
-                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>claude_desktop_config.json</code>:</p>
+                <p className="mb-2 text-[#9ca3af] text-[13px]"><code>claude_desktop_config.json</code> に追加:</p>
                 <CodeBlock language="json">{jsonConfig}</CodeBlock>
             </Tab>
             <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
-                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>.cursor/mcp.json</code>:</p>
+                <p className="mb-2 text-[#9ca3af] text-[13px]"><code>.cursor/mcp.json</code> に追加:</p>
                 <CodeBlock language="json">{jsonConfig}</CodeBlock>
             </Tab>
             <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
-                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+                <p className="mb-2 text-[#9ca3af] text-[13px]"><code>~/.codeium/windsurf/mcp_config.json</code> に追加:</p>
                 <CodeBlock language="json">{jsonConfig}</CodeBlock>
             </Tab>
         </Tabs>
@@ -213,12 +259,16 @@ export const PageWrapper = ({ children }) => {
 <PageWrapper>
   <div className="relative">
     <div className="absolute -top-14 left-0 right-0 opacity-80">
-      <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="装飾用の背景画像" />
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV84MjcpIj4KPHJlY3Qgb3BhY2l0eT0iMC4wMSIgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjMxXzgyNykiLz4KPC9nPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzIzMV84MjciIHgxPSI1NzYiIHkxPSIwIiB4Mj0iNTc2IiB5Mj0iMzg4IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiM3MzczNzMiLz4KPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRDlEOUQ5IiBzdG9wLW9wYWNpdHk9IjAiLz4KPC9saW5lYXJHcmFkaWVudD4KPGNsaXBQYXRoIGlkPSJjbGlwMF8yMzFfODI3Ij4KPHJlY3Qgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo=" className="block dark:hidden pointer-events-none w-full h-auto" alt="装飾用の背景画像" />
 
-      <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="装飾用の背景画像" />
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="装飾用の背景画像" />
     </div>
 
     <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
+      <div className="flex justify-center mb-8">
+            <QuickstartPill>クイックスタート: <span className="font-medium text-[#2563eb] dark:text-[#FCFF74]">Cloud をはじめる</span></QuickstartPill>
+        </div>
+
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
         <HighlightedClickHouse /> で構築を始める
       </h1>
@@ -227,42 +277,16 @@ export const PageWrapper = ({ children }) => {
         最速のデータプラットフォーム向けドキュメント
       </div>
 
-      <div className="flex items-center justify-center gap-3 mx-auto mt-8">
-        <button type="button" id="home-search-entry" className="flex pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-3 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] justify-between truncate gap-2 min-w-[43px] w-[320px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-white/10 ring-0 dark:ring-0 rounded" aria-label="検索を開く">
-          <div className="flex items-center gap-2 min-w-[42px]"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">検索...</div></div>
-          <span className="flex-none text-xs font-semibold">⌘K</span>
-        </button>
+      <div className="flex items-center justify-center mx-auto mt-8 px-4">
+            <button type="button" id="home-search-entry" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="検索を開く">
+                <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">検索...</div></div>
+            </button>
+        </div>
 
-        <button type="button" className="flex-none hidden lg:flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded" id="home-assistant-entry" aria-label="Ask AI を開く" onClick={() => {
-                              if (window.Kapa && typeof window.Kapa.open === 'function') {
-                                  window.Kapa.open({ mode: 'ai' });
-                                  return;
-                              }
-                              let attempts = 0;
-                              const iv = setInterval(() => {
-                                  attempts++;
-                                  if (window.Kapa && typeof window.Kapa.open === 'function') {
-                                      clearInterval(iv);
-                                      window.Kapa.open({ mode: 'ai' });
-                                  } else if (attempts > 60) {
-                                      clearInterval(iv);
-                                  }
-                              }, 50);
-                          }}><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" className="size-4 shrink-0 text-gray-700 hover:text-gray-800 dark:text-[#fdff75]"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none" /><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></g></svg><span className="text-sm text-gray-500 dark:text-white/50 whitespace-nowrap">Ask AI</span></button>
-      </div>
-
-      <div className="flex items-center justify-center gap-2 my-6 text-xs">
+      <div className="flex items-center justify-center gap-6 my-6">
         <McpLink />
 
-        <span className="text-gray-300 dark:text-zinc-600">|</span>
-
-        <a className="inline-flex items-center gap-1.5 text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors font-normal no-underline" href="/ja/get-started/quickstarts/create-your-first-service-on-cloud" onClick={(e) => { e.preventDefault(); window.location.href = (window.location.pathname.startsWith('/docs') ? '/docs' : '') + '/get-started/quickstarts/create-your-first-service-on-cloud'; }}>
-          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0">
-            <path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z" />
-          </svg>
-
-          クイックスタートを見る
-        </a>
+        <AskAILink>Ask AI</AskAILink>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">
@@ -329,11 +353,11 @@ export const PageWrapper = ({ children }) => {
         </svg>
     }
           links={[
-        { label: "chDB", href: "/ja/products/chdb" },
         { label: "ClickHouse Cloud", href: "/ja/products/cloud/getting-started/cloud-get-started" },
         { label: "ClickStack", href: "/ja/clickstack" },
-        { label: "Langfuse", href: "https://langfuse.com/docs" },
         { label: "Managed Postgres", href: "/ja/products/managed-postgres/overview" },
+        { label: "Langfuse", href: "https://langfuse.com/docs", external: true },
+        { label: "chDB", href: "/ja/products/chdb" },
         { label: "Kubernetes operator", href: "/ja/products/kubernetes-operator/overview" },
     ]}
         />
