@@ -1,0 +1,45 @@
+---
+title: ClickHouse에서 "Too many parts" 오류 해결하기
+description: 삽입 속도를 최적화하고 MergeTree 설정을 조정하며 파티션을 효과적으로 관리해 ClickHouse의 "Too many parts" 오류를 해결하는 방법을 알아봅니다.
+date: 2023-03-20
+tags: ['오류 및 예외']
+keywords: ['Too many parts']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception: Too many parts (오류: 252). 머지 속도가 삽입보다 현저히 느립니다
+</div>
+
+MergeTree 테이블에서 `parts_to_throw_insert` 설정 한도에 도달했습니다.
+
+다음과 같이 지정한 테이블의 활성 파트 수를 모니터링할 수 있습니다:
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+ClickHouse에 삽입할 때 가장 중요한 요구 사항은 다음과 같습니다. 초당 너무 많은 `INSERT` SQL 문을 보내면 안 됩니다. 이상적으로는 1초에 한 번, 또는 몇 초에 한 번 삽입하는 것이 좋습니다.
+
+즉, 초당 100K행을 삽입할 수는 있지만, 이는 하나의 큰 벌크 `INSERT` SQL 문으로만 가능합니다. 초당 수백~수천 개의 `INSERT` SQL 문을 *MergeTree 테이블로 보내면 항상 일부 오류가 발생하며, 몇몇 설정을 조정한다고 해서 이를 바꿀 수는 없습니다.
+
+외부에서 많은 삽입을 하나의 큰 벌크 삽입 SQL 문으로 합칠 수 없다면, *MergeTree 테이블 앞에 Buffer 테이블을 만들어야 합니다.
+
+1. 각 삽입은 `/var/lib/clickhouse/.../table_name/` 에 폴더 하나를 생성합니다. 그 폴더 안에는 각 컬럼마다 파일 2개가 있습니다. 하나는 데이터(압축됨)용이고, 다른 하나는 인덱스용입니다. 데이터는 이 파일들 안에서 프라이머리 키 기준으로 물리적으로 정렬됩니다. 이러한 폴더를 &#39;**parts**&#39;라고 합니다.
+
+2. ClickHouse는 이러한 작은 파트들을 백그라운드에서 더 큰 파트로 머지합니다. 그리고 몇 가지 규칙에 따라 머지할 파트를 선택합니다. 두 개(또는 그 이상)의 파트를 머지하면 더 큰 파트 하나가 생성되고, 기존 파트는 제거 대기 큐에 들어갑니다. 나열한 설정은 이러한 파트 머지 규칙을 세밀하게 조정하는 데 사용됩니다. 머지 프로세스의 목표는 각 파티션마다 큰 파트 하나를 남기는 것입니다(또는 너무 커서 더 이상 머지할 가치가 없는 경우 파티션당 몇 개의 큰 파트만 남깁니다). [comment](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726)도 확인하십시오.
+
+3. 새 파트를 너무 빠르게 생성하면(예를 들어 작은 삽입을 많이 수행하는 경우) ClickHouse가 이를 충분한 속도로 머지하지 못할 수 있습니다(즉, 새 파트가 ClickHouse의 머지 속도보다 더 빠르게 생성되는 경우). 그러면 &#39;Merges are processing significantly slower than inserts&#39; 예외가 발생합니다. 한도를 늘려볼 수는 있지만, 그러면 파일/디렉터리 수가 지나치게 많아져 파일 시스템 문제(예: inode 제한)가 발생할 수 있습니다.
+
+4. 한 번에 많은 파티션에 삽입하면, 삽입의 영향을 받는 파티션 수만큼 문제가 배가됩니다.
+
+5. 나열된 설정 중 하나 또는 max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth를 사용해 ClickHouse의 동작을 조정해 볼 수 있습니다. 하지만 더 나은 해결책은 데이터를 권장되는 속도로 삽입하는 것입니다. 권장 속도는 다음과 같습니다. **1~~2초마다 한 번 삽입하고, 각 삽입에는 10K~~500K행의 데이터가 포함되어야 합니다**.
+
+6. 따라서 &quot;Merges are processing significantly slower than inserts&quot;를 해결하는 올바른 방법은 초당 삽입 횟수와 각 삽입의 행 수를 조정하는 것입니다. 데이터가 행 단위로 들어오는 경우 batch insert를 사용해 작은 삽입을 더 큰 삽입 하나로 합치십시오. 한 번에 삽입할 데이터가 너무 많다면 큰 삽입의 속도를 제한하십시오. 그 의미를 정말로 잘 이해하고 있지 않다면 ClickHouse internals를 변경하지 마십시오.
+
+7. 데이터가 초당 500K행보다 더 빠르게 들어온다면, 대부분의 경우 설정을 조정하는 것보다 해당 트래픽을 처리할 서버를 cluster에 더 추가해야 합니다.
+
+8. 백그라운드 머지 속도는 일반적으로 스토리지 속도, 사용 중인 압축 설정, MergeTree 옵션(머지 알고리즘 - 일반 머지/집계/합산/축약 등), 그리고 사용 중인 sorting key에 따라 달라집니다.

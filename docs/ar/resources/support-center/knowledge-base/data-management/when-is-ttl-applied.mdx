@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: "متى تُطبَّق قواعد TTL، وهل يمكننا التحكّم في ذلك؟"
+description: "تُطبَّق قواعد TTL في ClickHouse في نهاية الأمر، ويمكنك التحكّم في توقيت تنفيذها باستخدام الإعداد `merge_with_ttl_timeout`. تعرّف على كيفية فرض تطبيق TTL وإدارة الخيوط العاملة في الخلفية لتنفيذها."
+tags: ['مفاهيم البيانات الأساسية']
+keywords: ['TTL']
+---
+
+<div id="ttl-rules-and-control">
+  ## قواعد TTL والتحكم
+</div>
+
+سيُطبَّق TTL ***في نهاية الأمر***. ماذا يعني ذلك؟ يحدّد إعداد الجدول [`merge_with_ttl_timeout`](/ar/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) في `MergeTree` الحد الأدنى للتأخير بالثواني قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا ليس سوى الحد الأدنى للتأخير، وقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية الدمج الخاصة بـ delete TTL.
+
+يمكنك عرض جميع إعدادات TTL الحالية لديك (مثل `merge_with_ttl_timeout`) باستخدام هذا الاستعلام:
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+تبدو الاستجابة كما يلي:
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ How many tasks of merging parts with TTL are allowed simultaneously in ReplicatedMergeTree queue.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ When there is more than specified number of merges with TTL entries in pool, do not assign new merge with TTL. This is to leave free threads for regular merges and avoid "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Minimal time in seconds, when merge with delete TTL can be repeated.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Minimal time in seconds, when merge with recompression TTL can be repeated.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Only drop altogether the expired parts and not partially prune them.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Only recalculate ttl info when MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+يمكنك استخدام `SHOW CREATE TABLE` للتحقق مما إذا كان جدولك يحتوي على قواعد TTL، وما إذا كانت أيّ من `SETTINGS` الخاصة بالجدول قد عدّلت قيم الإعدادات المذكورة أعلاه:
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## فرض تطبيق قاعدة TTL
+</div>
+
+ليس هذا الحل الأكثر أناقة، ولكن يمكنك استدعاء `MATERIALIZE TTL` صراحةً، مما يفرض تطبيق جميع قواعد TTL على الجدول فعليًا:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## خيوط المعالجة الخلفية التي تؤثر في TTL
+</div>
+
+قد لا تُطبَّق قواعد TTL لديك بسبب عدم توفر عدد كافٍ من خيوط المعالجة العاملة في المجمّع الخلفي. على سبيل المثال، إذا كنت تُدرج البيانات بكثافة، فقد يُستغل المجمّع الخلفي بالكامل في عمليات الدمج العادية. ومع ذلك، يمكنك زيادة حجم المجمّع الخلفي.
+
+يمكنك التحقق من الحجم الحالي للمجمّع الخلفي باستخدام هذا الاستعلام:
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+يكون الرد على النحو التالي:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+راجع التوثيق لمعرفة كيفية تعديل [إعداد `background_pool_size`](/ar/reference/settings/server-settings/settings#background_pool_size)، وهو مُهيّأ على النحو التالي:
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+يمكنك الاطلاع على نشاط `background pool` الحالي باستخدام هذا الاستعلام:
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```

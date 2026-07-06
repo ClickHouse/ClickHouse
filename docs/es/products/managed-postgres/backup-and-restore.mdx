@@ -1,0 +1,53 @@
+---
+slug: /cloud/managed-postgres/backup-and-restore
+sidebarTitle: 'Copias de seguridad y restauración'
+title: 'Copias de seguridad y restauración'
+description: 'Conozca las estrategias de copia de seguridad y la recuperación a un momento dado para ClickHouse Managed Postgres'
+keywords: ['copia de seguridad', 'restauración', 'recuperación a un punto en el tiempo', 'pitr', 'recuperación ante desastres', 'copia de seguridad de Postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.backup-and-restore-beta" />
+
+Managed Postgres garantiza la seguridad y disponibilidad de sus datos mediante copias de seguridad automatizadas y la recuperación a un punto en el tiempo. Puede consultar el historial de copias de seguridad e iniciar restauraciones desde la vista **Backups** de su instancia.
+
+<Image img="/images/managed-postgres/backup-and-restore.webp" alt="Vista de Backups que muestra el historial de copias de seguridad y las opciones de recuperación a un punto en el tiempo" size="lg" border />
+
+<div id="backups">
+  ## Backups
+</div>
+
+<div id="backup-frequency">
+  ### Frecuencia de las copias de seguridad
+</div>
+
+Managed Postgres realiza copias de seguridad completas diarias de tu base de datos. Además de las copias de seguridad completas, los archivos Write-Ahead Log (WAL) se archivan cada 60 segundos o cuando se acumulan 16 MB de datos WAL, lo que ocurra primero. Esta combinación de copias de seguridad completas y archivado continuo de WAL permite la recuperación a un punto en el tiempo hasta cualquier momento dentro de la ventana de retención.
+
+<div id="retention-period">
+  ### Período de retención
+</div>
+
+Las copias de seguridad se conservan durante 7 días, lo que ofrece una ventana suficiente para la recuperación en caso de pérdida o corrupción de datos. Si necesita un período de retención de copias de seguridad más largo, póngase en contacto con [soporte](https://clickhouse.com/support/program).
+
+<div id="storage-and-durability">
+  ### Almacenamiento y durabilidad
+</div>
+
+Las copias de seguridad se replican en varios servidores mediante codificación de borrado, lo que garantiza que sigan siendo accesibles incluso si algunos servidores de almacenamiento dejan de estar disponibles. El almacenamiento de las copias de seguridad está aislado por bucket: cada instancia de Managed Postgres tiene su propio bucket de almacenamiento dedicado, y las credenciales están limitadas para permitir el acceso únicamente a las copias de seguridad de esa instancia.
+
+<div id="point-in-time-recovery">
+  ## Recuperación a un punto en el tiempo
+</div>
+
+La recuperación a un punto en el tiempo te permite restaurar tu base de datos a cualquier momento específico dentro de la ventana de retención de copias de seguridad. Esto resulta útil para recuperarte de la eliminación accidental de datos, la corrupción u otros problemas en los que necesites volver a un estado correcto conocido.
+
+Para realizar una recuperación a un punto en el tiempo:
+
+1. Ve a la vista **Backups** de tu instancia de Managed Postgres.
+2. En la sección **Point in time recovery**, selecciona la fecha y hora de destino (en UTC) a la que quieres restaurar.
+3. Haz clic en **Restore to point in time**.
+
+La operación de restauración crea una nueva instancia de Managed Postgres con el estado de tu base de datos tal como estaba en el momento seleccionado. Tu instancia original permanece sin cambios, lo que te permite verificar los datos restaurados antes de decidir qué instancia conservar.

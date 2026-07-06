@@ -1,0 +1,93 @@
+---
+alias: []
+description: 'Documentação do formato MySQLDump'
+input_format: true
+keywords: ['MySQLDump']
+output_format: false
+slug: /interfaces/formats/MySQLDump
+title: 'MySQLDump'
+doc_type: 'reference'
+---
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✔       | ✗     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+O ClickHouse oferece suporte à leitura de [dumps](https://dev.mysql.com/doc/refman/8.0/en/mysqldump.html) do MySQL.
+
+Ele lê todos os dados das consultas `INSERT` referentes a uma única tabela no dump.
+Se houver mais de uma tabela, por padrão, ele lê os dados da primeira.
+
+<Note>
+  Este formato oferece suporte à inferência de esquema: se o dump contiver uma consulta `CREATE` para a tabela especificada, a estrutura será inferida a partir dela; caso contrário, o esquema será inferido com base nos dados das consultas `INSERT`.
+</Note>
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Considere o seguinte arquivo de dump SQL:
+
+```sql title="dump.sql"
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test` (
+  `x` int DEFAULT NULL,
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test` VALUES (1,NULL),(2,NULL),(3,NULL),(3,NULL),(4,NULL),(5,NULL),(6,7);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test 3` (
+  `y` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test 3` VALUES (1);
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `test2` (
+  `x` int DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+INSERT INTO `test2` VALUES (1),(2),(3);
+```
+
+Podemos executar as consultas a seguir:
+
+```sql title="Query"
+DESCRIBE TABLE file(dump.sql, MySQLDump) 
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─name─┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ x    │ Nullable(Int32) │              │                    │         │                  │                │
+└──────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SELECT *
+FROM file(dump.sql, MySQLDump)
+SETTINGS input_format_mysql_dump_table_name = 'test2'
+```
+
+```response title="Response"
+┌─x─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+Você pode especificar o nome da tabela de onde os dados serão lidos usando a configuração [`input_format_mysql_dump_table_name`](/pt-BR/reference/settings/formats#input_format_mysql_dump_table_name).
+Se a configuração `input_format_mysql_dump_map_columns` estiver definida como `1` e o dump contiver uma consulta `CREATE` para a tabela especificada ou nomes de colunas na consulta `INSERT`, as colunas dos dados de entrada serão mapeadas para as colunas da tabela pelo nome.
+Colunas com nomes desconhecidos serão ignoradas se a configuração [`input_format_skip_unknown_fields`](/pt-BR/reference/settings/formats#input_format_skip_unknown_fields) estiver definida como `1`.

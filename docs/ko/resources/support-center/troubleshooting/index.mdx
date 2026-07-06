@@ -1,0 +1,183 @@
+---
+slug: /troubleshooting
+sidebarTitle: '문제 해결'
+doc_type: 'guide'
+keywords: [
+  'ClickHouse 문제 해결',
+  'ClickHouse 오류',
+  '데이터베이스 문제 해결',
+  'ClickHouse 연결 문제',
+  '메모리 한도 초과',
+  'ClickHouse 성능 문제',
+  '데이터베이스 오류 메시지',
+  'ClickHouse 구성 문제',
+  '연결 거부 오류',
+  'ClickHouse 디버깅',
+  '데이터베이스 연결 문제',
+  '문제 해결 가이드'
+]
+title: '자주 발생하는 문제 해결'
+description: '느린 쿼리, 메모리 오류, 연결 문제, 구성 문제 등 ClickHouse에서 자주 발생하는 문제의 해결 방법을 확인할 수 있습니다.'
+---
+
+ClickHouse 사용 중 문제가 발생했습니까? 여기에서 자주 발생하는 문제의 해결 방법을 확인할 수 있습니다.
+
+<div id="performance-and-errors">
+  ## 성능 및 오류
+</div>
+
+쿼리 실행이 느리거나, 시간 초과가 발생하거나, &quot;Memory limit exceeded&quot;, &quot;Connection refused&quot;와 같은 특정 오류 메시지가 표시되는 경우입니다.
+
+<Accordion title="성능 및 오류 해결 방법 보기">
+  ### 쿼리 성능
+
+  * [가장 많은 리소스를 사용하는 쿼리 찾기](/ko/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+  * [쿼리 최적화 종합 가이드](/ko/guides/clickhouse/performance-and-monitoring/query-optimization)
+  * [JOIN 작업 최적화](/ko/concepts/best-practices/minimize-optimize-joins)
+  * [병목 지점을 찾기 위한 진단 쿼리 실행](/ko/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+
+  <br />
+
+  ### 데이터 삽입 성능
+
+  * [데이터 삽입 속도 높이기](/ko/concepts/features/operations/insert/bulkinserts)
+  * [비동기 삽입 설정](/ko/concepts/features/operations/insert/asyncinserts)
+
+  <br />
+
+  ### 고급 분석 도구
+
+  {/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+
+  * [현재 실행 중인 프로세스 확인](/ko/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+  * [시스템 성능 모니터링](/ko/reference/system-tables/processes)
+
+  <br />
+
+  ### 오류 메시지
+
+  * **&quot;Memory limit exceeded&quot;** → [메모리 한도 오류 디버깅](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * **&quot;Connection refused&quot;** → [연결 문제 해결](#connections-and-authentication)
+  * **&quot;Login failures&quot;** → [사용자, 역할 및 권한 설정](/ko/concepts/features/security/access-rights)
+  * **&quot;SSL certificate errors&quot;** → [인증서 문제 해결](/ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * **&quot;Table/database errors&quot;** → [데이터베이스 생성 가이드](/ko/reference/statements/create/database) | [테이블 UUID 문제](/ko/reference/engines/database-engines/atomic)
+  * **&quot;Network timeouts&quot;** → [네트워크 문제 해결](/ko/concepts/features/interfaces/http)
+  * **Other issues** → [cluster 전체의 오류 추적](/ko/reference/system-tables/errors)
+</Accordion>
+
+<div id="memory-and-resources">
+  ## 메모리 및 리소스
+</div>
+
+메모리 사용량이 높거나, 메모리 부족으로 충돌이 발생하거나, ClickHouse 배포 규모 산정에 도움이 필요한 경우
+
+<Accordion title="메모리 해결 방법 보기">
+  ### 메모리 디버깅 및 모니터링:
+
+  * [메모리를 사용하는 항목 식별](/ko/concepts/features/performance/troubleshoot/debugging-memory-issues)
+  * [현재 메모리 사용량 확인](/ko/reference/system-tables/processes)
+  * [메모리 할당 프로파일링](/ko/concepts/features/performance/allocation-profiling)
+  * [메모리 사용 패턴 분석](/ko/reference/system-tables/query_log)
+
+  <br />
+
+  ### 메모리 구성:
+
+  * [메모리 제한 설정](/ko/concepts/features/configuration/settings/memory-overcommit)
+  * [서버 메모리 설정](/ko/reference/settings/server-settings/settings)
+  * [세션 메모리 설정](/ko/reference/settings/session-settings)
+
+  <br />
+
+  ### 스케일링 및 크기 산정:
+
+  * [서비스 규모를 적절히 조정](/ko/guides/oss/best-practices/tips)
+  * [자동 스케일링 설정](/ko/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+<div id="connections-and-authentication">
+  ## 연결 및 인증
+</div>
+
+ClickHouse에 연결할 수 없거나 인증에 실패하는 경우, SSL 인증서 오류가 발생하는 경우, 또는 클라이언트 설정에 문제가 있는 경우입니다.
+
+<Accordion title="연결 문제 해결 방법 보기">
+  ### 기본 연결 문제
+
+  * [HTTP 인터페이스 문제 해결](/ko/concepts/features/interfaces/http)
+  * [SSL 인증서 문제 해결](/ko/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+  * [사용자 인증 설정](/ko/concepts/features/security/access-rights)
+
+  <br />
+
+  ### 클라이언트 인터페이스
+
+  * [네이티브 ClickHouse 클라이언트](/ko/concepts/features/interfaces/native-clients-interfaces-index)
+  * [MySQL 인터페이스 문제](/ko/concepts/features/interfaces/mysql)
+  * [PostgreSQL 인터페이스 문제](/ko/concepts/features/interfaces/postgresql)
+  * [gRPC 인터페이스 구성](/ko/concepts/features/interfaces/grpc)
+  * [SSH 인터페이스 설정](/ko/concepts/features/interfaces/ssh)
+
+  <br />
+
+  ### 네트워크 및 데이터
+
+  * [네트워크 보안 설정](/ko/reference/settings/server-settings/settings)
+  * [데이터 포맷 파싱 문제](/ko/reference/formats/index)
+</Accordion>
+
+<div id="setup-and-configuration">
+  ## 설치 및 구성
+</div>
+
+초기 설치, 서버 구성, 데이터베이스 생성, 데이터 수집 문제 또는 복제 설정.
+
+<Accordion title="설치 및 구성 해결 방법 보기">
+  ### 초기 설정
+
+  * [서버 설정 구성하기](/ko/reference/settings/server-settings/settings)
+  * [보안 및 접근 제어 설정하기](/ko/concepts/features/security/access-rights)
+  * [하드웨어를 올바르게 구성하기](/ko/guides/oss/best-practices/tips)
+
+  <br />
+
+  ### 데이터베이스 관리
+
+  * [데이터베이스 생성 및 관리](/ko/reference/statements/create/database)
+  * [적절한 테이블 엔진 선택하기](/ko/reference/engines/table-engines/index)
+
+  {/* - [Modify schemas safely](/reference/statements/alter/index) */}
+
+  <br />
+
+  ### 데이터 작업
+
+  * [대량 데이터 삽입 최적화](/ko/concepts/features/operations/insert/bulkinserts)
+  * [데이터 포맷 문제 해결](/ko/reference/formats/index)
+  * [스트리밍 데이터 파이프라인 설정하기](/ko/concepts/features/operations/insert/asyncinserts)
+  * [S3 통합 성능 개선](/ko/integrations/connectors/data-ingestion/AWS/performance)
+
+  <br />
+
+  ### 고급 구성
+
+  * [데이터 복제 설정하기](/ko/reference/engines/table-engines/mergetree-family/replication)
+  * [분산 테이블 구성하기](/ko/reference/engines/table-engines/special/distributed)
+
+  {/* - [ClickHouse Keeper setup](/guides/oss/deployment-and-scaling/keeper/index) */}
+
+  * [백업 및 복구 설정하기](/ko/concepts/features/backup-restore/overview)
+  * [모니터링 설정하기](/ko/reference/system-tables/overview)
+</Accordion>
+
+<div id="still-need-help">
+  ## 도움이 더 필요하신가요?
+</div>
+
+해결책을 찾지 못한 경우:
+
+1. **AI에 질문** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>AI에 질문</button>하여 즉시 답변을 확인하세요.
+2. **시스템 테이블(system tables) 확인** - [개요](/ko/reference/system-tables/overview)
+3. **서버 로그 검토** - ClickHouse 서버 로그에서 오류 메시지를 확인하세요
+4. **커뮤니티에 문의** - [커뮤니티 Slack 참여](https://clickhouse.com/slack), [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions)
+5. **전문 지원 받기** - [ClickHouse Cloud 지원](https://clickhouse.com/support)

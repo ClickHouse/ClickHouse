@@ -1,0 +1,110 @@
+---
+slug: /sql-reference/table-functions/generate_series
+sidebarTitle: 'generate_series'
+title: 'generate_series (generateSeries)'
+description: 'Retorna uma tabela com uma única coluna `generate_series` (UInt64) que contém inteiros de start até stop, inclusive.'
+doc_type: 'reference'
+---
+
+Alias: `generateSeries`
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+Retorna uma tabela com uma única coluna &#39;generate&#95;series&#39; (`UInt64`) que contém inteiros de start a stop, inclusive:
+
+```sql
+generate_series(START, STOP)
+```
+
+Retorna uma tabela com a única coluna &#39;generate&#95;series&#39; (`UInt64`), que contém inteiros de start até stop, inclusive, com espaçamento entre os valores definido por `STEP`:
+
+```sql
+generate_series(START, STOP, STEP)
+```
+
+`STEP` pode ser negativo; nesse caso, a série é gerada em ordem decrescente, de `START` até `STOP`. Se `STEP` for negativo e `START < STOP`, o resultado será vazio.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+As consultas a seguir retornam tabelas com o mesmo conteúdo, mas nomes de colunas diferentes:
+
+```sql
+SELECT * FROM numbers(10, 5);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     11 │
+│     12 │
+│     13 │
+│     14 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 14);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              11 │
+│              12 │
+│              13 │
+│              14 │
+└─────────────────┘
+```
+
+E as consultas a seguir retornam tabelas com o mesmo conteúdo, mas com nomes de colunas diferentes (embora a segunda opção seja mais eficiente):
+
+```sql
+SELECT * FROM numbers(10, 11) WHERE number % 3 == (10 % 3);
+```
+
+```response
+┌─number─┐
+│     10 │
+│     13 │
+│     16 │
+│     19 │
+└────────┘
+```
+
+```sql
+SELECT * FROM generate_series(10, 20, 3);
+```
+
+```response
+┌─generate_series─┐
+│              10 │
+│              13 │
+│              16 │
+│              19 │
+└─────────────────┘
+```
+
+Gere uma sequência decrescente:
+
+```sql
+SELECT * FROM generate_series(9, 0, -1);
+```
+
+```response
+┌─generate_series─┐
+│               9 │
+│               8 │
+│               7 │
+│               6 │
+│               5 │
+│               4 │
+│               3 │
+│               2 │
+│               1 │
+│               0 │
+└─────────────────┘
+```

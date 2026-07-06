@@ -1,0 +1,79 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/chainlit
+sidebarTitle: 'Chainlitを統合する'
+title: 'ChainlitとClickHouse MCPサーバーでAIエージェントを構築する方法'
+description: 'Chainlitを使用して、ClickHouse MCPサーバーと連携するLLMベースのチャットアプリを構築する方法を学びます'
+keywords: ['ClickHouse', 'MCP', 'Chainlit']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+このガイドでは、Chainlitの強力なチャットインターフェイスフレームワークと
+ClickHouse Model Context Protocol (MCP) Serverを組み合わせて、対話型のデータ
+アプリケーションを構築する方法を紹介します。Chainlitを使えば、AI
+アプリケーション向けの対話型インターフェイスを最小限のコードで構築でき、
+ClickHouse MCPサーバーを使えば、ClickHouseの高性能な列指向データベースと
+シームレスにインテグレーションできます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* Anthropic の API key が必要です
+* [`uv`](https://docs.astral.sh/uv/getting-started/installation/) がインストールされている必要があります
+
+<div id="basic-chainlit-app">
+  ## 基本的なChainlitアプリ
+</div>
+
+以下を実行すると、基本的なチャットアプリの例を確認できます。
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_basic.py -w -h
+```
+
+次に `http://localhost:8000` にアクセスします
+
+<div id="adding-clickhouse-mcp-server">
+  ## ClickHouse MCPサーバー の追加
+</div>
+
+ClickHouse MCPサーバー を追加すると、さらに活用の幅が広がります。
+`uv` コマンドを
+使えるようにするには、`.chainlit/config.toml` ファイルを更新する必要があります。
+
+```toml
+[features.mcp.stdio]
+    enabled = true
+    # MCPのstdioサーバーには、許可リストに登録された実行可能ファイルのみ使用できます。
+    # 実行可能ファイルのベース名のみ指定してください（例："/usr/bin/npx"ではなく"npx"）。
+    # 現時点ではこの行をコメントアウトしないでください。実行可能ファイル名の解析に必要です。
+    allowed_executables = [ "npx", "uvx", "uv" ]
+```
+
+<Info>
+  **config.toml**
+
+  完全な `config.toml` ファイルは、[examples リポジトリ](https://github.com/ClickHouse/examples/blob/main/ai/mcp/chainlit/.chainlit/config.toml) にあります
+</Info>
+
+MCPサーバーを Chainlit で動作させるための補助コードがあるため、代わりに次のコマンドで Chainlit を起動します。
+
+```sh
+uv run --with anthropic --with chainlit chainlit run chat_mcp.py -w -h
+```
+
+MCPサーバーを追加するには、チャットインターフェイスのプラグアイコンをクリックし、次に
+ClickHouse SQL Playground に接続して使用するため、以下のコマンドを追加します:
+
+```sh
+CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com CLICKHOUSE_USER=demo CLICKHOUSE_PASSWORD= CLICKHOUSE_SECURE=true uv run --with mcp-clickhouse --python 3.13 mcp-clickhouse
+```
+
+独自の ClickHouse インスタンスを使用する場合は、環境変数の値を
+調整できます。
+
+その後、次のような質問ができます。
+
+* クエリできるテーブルについて教えて
+* ニューヨークのタクシーについて、何か興味深いことはありますか？

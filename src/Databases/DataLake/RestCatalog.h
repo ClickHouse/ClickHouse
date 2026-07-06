@@ -164,6 +164,8 @@ protected:
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
+
+    void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -186,6 +188,7 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
+        const std::string & bearer_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -198,11 +201,15 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    String getBearerToken() const;
+
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
 
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
+    /// Set from `onelake_bearer_token`.
+    String bearer_token;
 };
 
 class BigLakeCatalog : public RestCatalog

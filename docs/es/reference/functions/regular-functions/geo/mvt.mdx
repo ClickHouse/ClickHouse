@@ -1,0 +1,346 @@
+---
+description: 'Documentación sobre cómo codificar Mapbox Vector Tiles'
+sidebarTitle: 'Mapbox Vector Tiles'
+slug: /sql-reference/functions/geo/mvt
+title: 'Funciones para codificar Mapbox Vector Tiles'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Descripción general
+</div>
+
+[Mapbox Vector Tiles](https://github.com/mapbox/vector-tile-spec) (MVT) son teselas codificadas en protobuf que los
+clientes de mapas web, como MapLibre y Mapbox GL, renderizan de forma nativa. ClickHouse puede construir estas teselas
+íntegramente en SQL con un par de funciones que cooperan entre sí:
+
+* `MVTEncodeGeom` — una función escalar que proyecta una geometría en el espacio de píxeles local de una tesela de mapa Slippy y
+  la recorta a los límites de la tesela.
+* `MVTEncode` — una función de agregación que recopila las geometrías proyectadas de un grupo en los bytes binarios de una
+  tesela de una sola capa.
+
+Dos funciones auxiliares, `MVTBoundingBox` y `MVTBoundingBoxMercator`, devuelven el cuadro delimitador de una tesela para que las filas puedan
+restringirse a ella en la cláusula `WHERE` usando un índice.
+
+Se admiten geometrías de puntos, líneas y polígonos, incluido el tipo `Geometry` y los tipos geo concretos (`Point`,
+`LineString`, `MultiLineString`, `Ring`, `Polygon`, `MultiPolygon`).
+
+Los bytes resultantes forman una tesela completa que puede devolverse directamente a través de la interfaz HTTP con `FORMAT RawBLOB`.
+
+Estas funciones siguen el mismo flujo de trabajo que PostGIS y también están disponibles con sus nombres de PostGIS como alias: `ST_AsMVTGeom`
+para `MVTEncodeGeom` y `ST_AsMVT` para `MVTEncode`.
+
+<div id="mvtencodegeom">
+  ## MVTEncodeGeom
+</div>
+
+Proyecta una geometría dada en coordenadas geográficas (longitud/latitud) al espacio de píxeles local de la tesela del
+mapa Slippy identificada por `zoom`, `tile_x` y `tile_y`, la recorta a la tesela, la ajusta a la cuadrícula de píxeles enteros
+y devuelve la geometría en el espacio de la tesela.
+
+La proyección es Web Mercator sobre todo el rango de coordenadas `UInt32`. Las coordenadas devueltas tienen su origen en la
+esquina superior izquierda de la tesela, con el eje y apuntando hacia abajo, que es la convención de coordenadas del formato Mapbox Vector
+Tile, por lo que el resultado puede pasarse directamente a `MVTEncode`. Las coordenadas se redondean a píxeles enteros, así que agrupar por
+`MVTEncodeGeom` agrupa en un único clúster las geometrías que caen en la misma cuadrícula.
+
+Cuando `clip` está habilitado (de forma predeterminada), la geometría se recorta a la tesela expandida en `búfer` píxeles (el rango
+`[-buffer, extent + buffer]` en cada eje); la geometría que queda completamente fuera pasa a ser `NULL`. Esto es análogo a
+PostGIS `ST_AsMVTGeom`.
+
+El tipo de geometría de salida depende de la entrada: un `Point` devuelve un `Point`; un `LineString` o `MultiLineString` devuelve un
+`MultiLineString`; un `Ring`, `Polygon` o `MultiPolygon` devuelve un `MultiPolygon` (el recorte puede dividir una geometría en
+varias partes).
+
+**Sintaxis**
+
+```sql
+MVTEncodeGeom(geometry, zoom, tile_x, tile_y[, extent[, buffer[, clip]]])
+```
+
+**Argumentos**
+
+* `geometry` — Geometría en grados de longitud/latitud. La longitud se limita a `[-180, 180]` y la latitud al rango de Web Mercator `[-85.05112878, 85.05112878]`. [`Point`](/es/reference/data-types/geo) / [`LineString`](/es/reference/data-types/geo) / [`MultiLineString`](/es/reference/data-types/geo) / [`Ring`](/es/reference/data-types/geo) / [`Polygon`](/es/reference/data-types/geo) / [`MultiPolygon`](/es/reference/data-types/geo) / [`Geometry`](/es/reference/data-types/geo).
+* `zoom` — Nivel de zoom de mapa Slippy, en el rango `[0, 32]`. [`UInt8`](/es/reference/data-types/int-uint).
+* `tile_x` — Índice de la columna de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).
+* `tile_y` — Índice de la fila de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).
+* `extent` — Extensión opcional de la tesela en píxeles por lado, en el rango `[1, 2147483647]`. El valor predeterminado es `4096`, que corresponde al valor predeterminado de Mapbox Vector Tile. [`UInt32`](/es/reference/data-types/int-uint).
+* `buffer` — Búfer de recorte opcional en píxeles, en el rango `[0, 2147483647]`. El valor predeterminado es `1`. [`UInt32`](/es/reference/data-types/int-uint).
+* `clip` — Indicador opcional; cuando es distinto de cero (el valor predeterminado), la geometría se recorta al área de la tesela más el búfer. [`UInt8`](/es/reference/data-types/int-uint).
+
+**Valor devuelto**
+
+Devuelve la geometría en el espacio de la tesela, o `NULL` si se recorta por completo. [`Geometry`](/es/reference/data-types/geo).
+
+**Ejemplo**
+
+```sql
+SELECT MVTEncodeGeom((13.37, 52.52)::Point, 10, 550, 335) AS pixel
+```
+
+```text
+┌─pixel──────┐
+│ (124,3384) │
+└────────────┘
+```
+
+<div id="mvtencode">
+  ## MVTEncode
+</div>
+
+Codifica un grupo de entidades en una capa binaria de Mapbox Vector Tile. Esta es la contraparte de agregación de la función escalar
+`MVTEncodeGeom`. Cada fila de entrada se convierte en una entidad; se admiten geometrías de punto, línea y polígono.
+
+El argumento `geometry` es una `Geometry` de coordenadas en el espacio de la tesela, normalmente producida por `MVTEncodeGeom`. Las filas cuya
+geometría es `NULL` (por ejemplo, recortadas por `MVTEncodeGeom`) se omiten. El argumento opcional `properties` es una named tuple cuyos nombres de elemento se convierten en las claves de los atributos de la entidad y cuyos tipos de elemento determinan los tipos
+de valor de la tesela vectorial.
+
+El resultado son los bytes sin procesar de una tesela de una sola capa. Un grupo vacío produce una tesela vacía. Este es el análogo de
+PostGIS `ST_AsMVT`.
+
+**Sintaxis**
+
+```sql
+MVTEncode(layer_name[, extent[, feature_id_name[, stringify_unsupported]]])(geometry[, properties])
+```
+
+**Parámetros**
+
+* `layer_name` — Nombre de la capa del mosaico vectorial. [`String`](/es/reference/data-types/string).
+* `extent` — Extensión del mosaico en píxeles por lado, dentro del intervalo `[1, 2147483647]`. El valor predeterminado es `4096`. [`UInt32`](/es/reference/data-types/int-uint).
+* `feature_id_name` — Nombre opcional de un elemento entero sin signo de la tupla `properties` que se emitirá como el `id` de la `entidad` de MVT (un `UInt64`) en lugar de como una etiqueta. Los enteros con signo se rechazan. Si el `id` es `NULL`, se omite para esa entidad. Los parámetros son posicionales, por lo que debe proporcionarse `extent` para poder usarlo. [`String`](/es/reference/data-types/string).
+* `stringify_unsupported` — Indicador opcional (`0`/`1`, valor predeterminado `0`); cuando es `1`, los tipos de propiedad no admitidos directamente (por ejemplo, enteros grandes, `UUID`, `Decimal`) se codifican como su `string_value` de texto en lugar de generar un error. [`UInt8`](/es/reference/data-types/int-uint).
+
+**Argumentos**
+
+* `geometry` — Geometría en el espacio del mosaico, por ejemplo, de `MVTEncodeGeom`. [`Geometry`](/es/reference/data-types/geo).
+* `properties` — Tupla nombrada opcional con atributos de la entidad. Los nombres de los elementos pasan a ser claves de atributo. [`Tuple`](/es/reference/data-types/tuple).
+
+**Valor devuelto**
+
+Devuelve el contenido binario de un mosaico vectorial Mapbox de una sola capa. [`String`](/es/reference/data-types/string).
+
+<div id="property-types">
+  ### Tipos de propiedades
+</div>
+
+Cada elemento de propiedad se codifica como la variante `Value` de Mapbox Vector Tile que corresponde a su tipo de ClickHouse:
+
+| Tipo de ClickHouse                                             | Tipo de valor de tesela vectorial |
+| -------------------------------------------------------------- | --------------------------------- |
+| `String` / `FixedString`                                       | `string_value`                    |
+| `Float32` / `BFloat16`                                         | `float_value`                     |
+| `Float64`                                                      | `double_value`                    |
+| `Bool`                                                         | `bool_value`                      |
+| `Int8` / `Int16` / `Int32` / `Int64` / `Date32`                | `sint_value`                      |
+| `UInt8` / `UInt16` / `UInt32` / `UInt64` / `Date` / `DateTime` | `uint_value`                      |
+
+Los tipos pueden ir envueltos en `Nullable` y/o `LowCardinality`. Un valor `NULL` omite ese atributo para la entidad, ya que el
+formato de tesela vectorial no admite valores nulos. Cualquier otro tipo de propiedad genera una excepción, a menos que `stringify_unsupported` esté activado, en
+cuyo caso se codifica como su `string_value` textual.
+
+Los valores de propiedad idénticos se internan en el grupo compartido de valores de la capa, por lo que un valor que aparece en muchas entidades se
+almacena una sola vez.
+
+<div id="naming-the-properties-tuple">
+  ### Nombrar la tupla de propiedades
+</div>
+
+La tupla de propiedades debe tener nombres de elementos explícitos. Los alias de columna dentro de `tuple(...)` **no** se propagan a los nombres de los elementos de la tupla,
+así que nombre los elementos mediante una conversión de tipo:
+
+```sql
+tuple(count(), any(id))::Tuple(cluster_count UInt64, id String)
+```
+
+<div id="clustering">
+  ### Agrupación en clústeres
+</div>
+
+La agrupación en clústeres se expresa en SQL, no en la función. Como `MVTEncodeGeom` redondea a píxeles enteros, agrupar por la
+geometría de píxel fusiona las geometrías coincidentes; realiza la agregación del grupo en una subconsulta y luego pasa una fila por clúster a
+`MVTEncode`:
+
+```sql
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64)) AS tile
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, 10, 550, 335) AS geom, count() AS cluster_count
+    FROM points
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1;
+```
+
+Agrupar por un valor `Geometry` requiere `allow_suspicious_types_in_group_by = 1`, porque el tipo `Geometry`
+basado en `Variant` está restringido de forma predeterminada para `GROUP BY`. Omita el `GROUP BY` interno (y `count()`) para generar una entidad por cada fila de entrada
+en lugar de entidades agrupadas.
+
+<div id="mvtboundingbox">
+  ## MVTBoundingBox
+</div>
+
+Devuelve el cuadro delimitador geográfico de la tesela de mapa Slippy identificada por `zoom`, `tile_x` y `tile_y` como una tupla
+`(min_lon, min_lat, max_lon, max_lat)` en grados.
+
+Úselo para restringir las filas a una tesela mientras filtra directamente por las columnas `longitude`/`latitude`, de modo que se pueda usar una clave primaria o un
+índice en esas columnas, en lugar de volver a calcular la proyección Web Mercator para cada fila. El `margin` opcional
+amplía el cuadro delimitador en todos los lados en esa fracción del tamaño de la tesela; establézcalo en `buffer / extent` para cubrir el búfer de recorte de
+`MVTEncodeGeom`.
+
+**Sintaxis**
+
+```sql
+MVTBoundingBox(zoom, tile_x, tile_y[, margin])
+```
+
+**Argumentos**
+
+* `zoom` — Nivel de zoom del mapa Slippy, en el rango `[0, 32]`. [`UInt8`](/es/reference/data-types/int-uint).
+* `tile_x` — Índice de la columna de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).
+* `tile_y` — Índice de la fila de la tesela, en el rango `[0, 2^zoom - 1]`. [`UInt32`](/es/reference/data-types/int-uint).
+* `margin` — Fracción opcional del tamaño de la tesela para ampliar el cuadro delimitador en cada lado. El valor predeterminado es `0`. [`Float64`](/es/reference/data-types/float).
+
+**Valor devuelto**
+
+Devuelve el cuadro delimitador de la tesela como una tupla `(min_lon, min_lat, max_lon, max_lat)` en grados. [`Tuple(Float64, Float64, Float64, Float64)`](/es/reference/data-types/tuple).
+
+**Ejemplo**
+
+```sql
+SELECT MVTBoundingBox(0, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────────────────────────┐
+│ (-180,-85.05112877980659,180,85.05112877980659)  │
+└──────────────────────────────────────────────────┘
+```
+
+<div id="mvtboundingboxmercator">
+  ## MVTBoundingBoxMercator
+</div>
+
+La versión en Web Mercator de `MVTBoundingBox`. Devuelve el
+cuadro delimitador de la tesela en el espacio completo de coordenadas Web Mercator `UInt32` que `MVTEncodeGeom` usa internamente, como una tupla
+`(min_x, min_y, max_x, max_y)`. El eje y crece hacia abajo (norte en la parte superior). Está pensada para tablas que materializan
+columnas de coordenadas Mercator y crean índices sobre ellas en lugar de `longitude`/`latitude`.
+
+**Sintaxis**
+
+```sql
+MVTBoundingBoxMercator(zoom, tile_x, tile_y[, margin])
+```
+
+**Argumentos**
+
+Igual que [`MVTBoundingBox`](#mvtboundingbox).
+
+**Valor devuelto**
+
+Devuelve el cuadro delimitador de la tesela como una tupla `(min_x, min_y, max_x, max_y)` en coordenadas Web Mercator. [`Tuple(Float64, Float64, Float64, Float64)`](/es/reference/data-types/tuple).
+
+**Ejemplo**
+
+```sql
+SELECT MVTBoundingBoxMercator(1, 0, 0) AS bbox
+```
+
+```text
+┌─bbox────────────────────────┐
+│ (0,0,2147483648,2147483648)  │
+└──────────────────────────────┘
+```
+
+<div id="restricting-rows-to-a-tile">
+  ## Restringir las filas a una tesela
+</div>
+
+Una tesela solo debe contener la geometría que le corresponde. Lo mejor es expresarlo como dos pasos complementarios: un predicado de cuadro delimitador de bajo costo
+que usa el índice en la cláusula `WHERE` (rendimiento) y el recorte de `MVTEncodeGeom` (corrección).
+El recorte descarta la geometría que queda fuera de la tesela, por lo que incluso un predicado de cuadro delimitador poco preciso no puede hacer que se cuele geometría de fuera de la tesela en
+el resultado.
+
+```sql
+WITH
+    1 AS buffer,
+    4096 AS extent,
+    MVTBoundingBox({z:UInt8}, {x:UInt32}, {y:UInt32}, buffer / extent) AS bounding_box   -- margin matches the clip buffer
+SELECT MVTEncode('points')(geom, tuple(cluster_count)::Tuple(cluster_count UInt64))
+FROM
+(
+    SELECT MVTEncodeGeom((lon, lat)::Point, {z:UInt8}, {x:UInt32}, {y:UInt32}) AS geom, count() AS cluster_count
+    FROM points
+    WHERE lon BETWEEN bounding_box.1 AND bounding_box.3 AND lat BETWEEN bounding_box.2 AND bounding_box.4   -- index-using prefilter
+    GROUP BY geom
+)
+SETTINGS allow_suspicious_types_in_group_by = 1
+```
+
+El predicado de cuadro delimitador es solo un prefiltro aproximado; el límite exacto de la tesela lo impone el recorte de
+`MVTEncodeGeom`. Pase `clip => false` (el séptimo argumento) a `MVTEncodeGeom` para desactivar el recorte y basarse únicamente en el
+predicado `WHERE`.
+
+<div id="serving-tiles-over-http">
+  ## Servir teselas por HTTP
+</div>
+
+ClickHouse no expone un endpoint de teselas de forma predeterminada: la interfaz HTTP solo acepta consultas en `/`. El operador añade una URL limpia
+`/tile/{z}/{x}/{y}` con un [handler de consulta predefinida](/es/concepts/features/interfaces/http) en la
+configuración del servidor. El `url` del handler usa la forma `regex:` para capturar los segmentos de la ruta, asociarlos a los
+parámetros de la consulta y devolver los bytes con `FORMAT RawBLOB`.
+
+En el caso más simple, la tabla tiene una columna `Geometry` y el handler sirve una entidad por fila: `MVTEncodeGeom`
+proyecta cada geometría en la tesela solicitada y la recorta, por lo que las filas que quedan fuera de la tesela se descartan automáticamente:
+
+```xml
+<http_handlers>
+    <rule>
+        <methods>GET</methods>
+        <url><![CDATA[regex:/tile/(?P<z>\d+)/(?P<x>\d+)/(?P<y>\d+)]]></url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>
+                SELECT MVTEncode('shapes')(
+                    MVTEncodeGeom(geom, {z:UInt8}, {x:UInt32}, {y:UInt32}),
+                    tuple(id, name)::Tuple(id UInt32, name String))
+                FROM shapes
+                FORMAT RawBLOB
+            </query>
+            <content_type>application/vnd.mapbox-vector-tile</content_type>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers>
+```
+
+Aquí, `shapes` es una tabla con una columna `geom Geometry` (cualquier combinación de puntos, líneas y polígonos). Un `GET /tile/10/550/335`
+devuelve la tesela codificada.
+
+En el caso de datos de puntos, esto funciona igual de bien con columnas `longitude`/`latitude` simples, construyendo el punto en línea con
+`MVTEncodeGeom((lon, lat)::Point, …)`. Para agrupar entidades coincidentes, o para añadir un prefiltro de cuadro delimitador que use un índice
+en tablas grandes, amplía la consulta interna como se muestra en [Agrupación](#clustering) y
+[Restringir las filas a una tesela](#restricting-rows-to-a-tile).
+
+<div id="limitations">
+  ## Limitaciones
+</div>
+
+* La proyección Web Mercator restringe la latitud a `±85.05112878°` y no admite entradas que crucen el antimeridiano.
+
+* **El recorte de polígonos no garantiza una salida MVT válida.** El recorte corrige la orientación y el cierre de los anillos, pero no las autointersecciones. Por tanto, un anillo autointersectante (&quot;bow-tie&quot;) no se corrige: según cómo se cruce con la tesela, se emite sin cambios (y sigue siendo inválido) o se descarta como `NULL`. Por ejemplo, un bow-tie que queda completamente dentro de la tesela se descarta, mientras que las mismas cuatro esquinas trazadas como un anillo simple se conservan:
+
+```sql
+-- self-intersecting ring -> dropped (NULL)
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 50.0), (50.0, 40.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 1
+-- simple ring, same four corners -> kept
+SELECT MVTEncodeGeom([[(40.0, 40.0), (50.0, 40.0), (50.0, 50.0), (40.0, 50.0), (40.0, 40.0)]]::Polygon, 2, 2, 1) IS NULL;  -- 0
+```
+
+* **Geometry se recorta antes de redondearse a la cuadrícula de píxeles enteros.** PostGIS primero ajusta la geometría a la cuadrícula de píxeles enteros y después la recorta; `MVTEncodeGeom` primero recorta (sobre las coordenadas proyectadas de coma flotante) y después redondea. Cerca del borde de una tesela, esto puede hacer que se descarte una coordenada que, de otro modo, habría acabado redondeándose al píxel del borde. Por ejemplo, con `buffer = 0`, un punto situado justo al este del borde de la tesela se recorta, aunque se redondee al píxel del borde `4096` que un enfoque que redondeara primero conservaría:
+
+```sql
+-- floating-point x ~= 4096.23 is just past the east edge (extent = 4096) -> clipped
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0) IS NULL;          -- 1
+-- the same point projected without clipping rounds onto the edge pixel:
+SELECT MVTEncodeGeom((90.005, 30.0)::Point, 2, 2, 1, 4096, 0, false);           -- (4096,2664)
+```

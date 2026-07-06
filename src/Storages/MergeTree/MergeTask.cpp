@@ -455,6 +455,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
             continue;
 
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot be recomputed. Skip them so the merge does not try to aggregate them and wedge.
+        if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+            continue;
+
         auto index_columns = index.expression->getRequiredColumns();
 
         /// Calculate indexes that depend only on one column on vertical
@@ -901,6 +906,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 if (!exclude_index_names.contains(index.name))
                 {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold no
+                    /// data and cannot be recomputed. Skip them so the merge does not wedge trying to
+                    /// aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
                     if (index.type == "text")
                         global_ctx->text_indexes_to_merge.push_back(index);
                     else
@@ -1002,12 +1013,24 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
+    /// `_block_number`/`_block_offset` are per-row columns of the top-level part.
+    /// A projection is a separate sub-part with its own schema; it stores these columns
+    /// only when its own definition references them (then they are already in the
+    /// projection's storage columns). Do not auto-inject them into a projection sub-part,
+    /// otherwise the merged projection part would carry a column the projection metadata
+    /// and insert-produced projection parts do not have.
+    if (global_ctx->parent_part)
+        return false;
+
     return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
         && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
 {
+    if (global_ctx->parent_part)
+        return false;
+
     return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column]
         && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
 }

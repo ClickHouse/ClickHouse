@@ -1,0 +1,116 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/slackbot
+sidebarTitle: 'Integrar SlackBot'
+title: 'Cómo crear un agente de SlackBot con ClickHouse MCP server.'
+description: 'Aprende a crear un agente de SlackBot que puede interactuar con ClickHouse MCP server.'
+keywords: ['ClickHouse', 'MCP', 'Slack', 'SlackBot', 'PydanticAI']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+En esta guía, aprenderás a crear un agente de [SlackBot](https://slack.com/intl/en-gb/help/articles/202026038-An-introduction-to-Slackbot).
+Este bot te permite hacer preguntas sobre tus datos de ClickHouse directamente desde Slack usando lenguaje natural. Utiliza
+[ClickHouse MCP server](https://github.com/ClickHouse/mcp-clickhouse) y [PydanticAI](https://ai.pydantic.dev/mcp/client/#__tabbed_1_1).
+
+<Info>
+  **Proyecto de ejemplo**
+
+  El código de este ejemplo se puede encontrar en el [repositorio de ejemplos](https://github.com/ClickHouse/examples/blob/main/ai/mcp/slackbot/README.md).
+</Info>
+
+<div id="prerequisites">
+  ## Prerrequisitos
+</div>
+
+* Necesitarás tener [`uv`](https://docs.astral.sh/uv/getting-started/installation/) instalado
+* Necesitarás acceso a un espacio de trabajo de Slack
+* Necesitarás una clave de API de Anthropic o una clave de API de otro proveedor de LLM
+
+<Steps>
+  <Step>
+    ## Crear una aplicación de Slack
+
+    1. Ve a [slack.com/apps](https://slack.com/apps) y haz clic en `Create New App`.
+    2. Elige la opción `From scratch` y asígnale un nombre a tu aplicación.
+    3. Selecciona tu espacio de trabajo de Slack.
+  </Step>
+
+  <Step>
+    ## Instala la aplicación en tu espacio de trabajo
+
+    A continuación, tendrás que añadir a tu espacio de trabajo la aplicación que creaste en el paso anterior.
+    Puedes seguir las instrucciones de [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
+    en la documentación de Slack.
+  </Step>
+
+  <Step>
+    ## Configura los ajustes de la aplicación de Slack
+
+    * Ve a `App Home`
+      * En `Show Tabs` → `Messages Tab`: habilita `Allow users to send Slash commands and messages from the messages tab`
+      * Ve a `Socket Mode`
+        * Habilita `Socket Mode`
+        * Anota el `Socket Mode Handler` para la variable de entorno `SLACK_APP_TOKEN`
+      * Ve a `OAuth & Permissions`
+        * Añade los siguientes `Bot Token Scopes`:
+          * `app_mentions:read`
+          * `assistant:write`
+          * `chat:write`
+          * `im:history`
+          * `im:read`
+          * `im:write`
+          * `channels:history`
+        * Instala la aplicación en tu espacio de trabajo y anota el `Bot User OAuth Token` para la variable de entorno `SLACK_BOT_TOKEN`.
+      * Ve a `Event Subscriptions`
+        * Habilita `Events`
+        * En `Subscribe to bot events`, añade:
+          * `app_mention`
+          * `assistant_thread_started`
+          * `message:im`
+        * Save Changes
+  </Step>
+
+  <Step>
+    ## Añade variables de entorno (`.env`)
+
+    Crea un archivo `.env` en la raíz del proyecto con las siguientes variables de entorno,
+    que permitirán que tu aplicación se conecte al [Playground de SQL de ClickHouse](https://sql.clickhouse.com/).
+
+    ```env
+    SLACK_BOT_TOKEN=your-slack-bot-token
+    SLACK_APP_TOKEN=your-slack-app-level-token
+    ANTHROPIC_API_KEY=your-anthropic-api-key
+    CLICKHOUSE_HOST=sql-clickhouse.clickhouse.com
+    CLICKHOUSE_PORT=8443
+    CLICKHOUSE_USER=demo
+    CLICKHOUSE_PASSWORD=
+    CLICKHOUSE_SECURE=true
+    ```
+
+    Puedes adaptar las variables de ClickHouse para usar tu propio servidor de ClickHouse
+    o una instancia de Cloud, si lo prefieres.
+  </Step>
+
+  <Step>
+    ## Uso del bot
+
+    1. **Inicia el bot:**
+
+       ```sh
+       uv run main.py
+       ```
+    2. **En Slack:**
+       * Menciona al bot en un canal: `@yourbot Who are the top contributors to the ClickHouse git repo?`
+       * Responde en el hilo mencionándolo: `@yourbot how many contributions did these users make last week?`
+       * Envía un mensaje directo al bot: `Show me all tables in the demo database.`
+
+    El bot responderá en el hilo, usando como contexto todos los mensajes anteriores del hilo
+    cuando corresponda.
+
+    **Contexto del hilo:**
+    Al responder en un hilo, el bot carga todos los mensajes anteriores (excepto el actual) y los incluye como contexto para la IA.
+
+    **Uso de herramientas:**
+    El bot usa únicamente las herramientas disponibles a través de MCP (por ejemplo, descubrimiento de esquemas y ejecución de SQL) y siempre mostrará el SQL utilizado y un resumen de cómo encontró la respuesta.
+  </Step>
+</Steps>

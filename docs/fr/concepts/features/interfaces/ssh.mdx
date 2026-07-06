@@ -1,0 +1,123 @@
+---
+description: "Documentation de l’interface SSH de ClickHouse"
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'Interface SSH'
+slug: /interfaces/ssh
+title: 'Interface SSH avec PTY'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<div id="preface">
+  ## Préface
+</div>
+
+Le serveur ClickHouse permet de s’y connecter directement via le protocole SSH. N’importe quel client peut être utilisé.
+
+Après avoir créé un [utilisateur de base de données identifié par une clé SSH](/fr/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) :
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+Vous pouvez utiliser cette clé pour vous connecter à un serveur ClickHouse. Cela ouvrira un pseudoterminal (PTY) avec une session interactive dans clickhouse-client.
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+L’exécution de commandes via SSH (en mode non interactif) est également prise en charge :
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+<div id="server-configuration">
+  ## Configuration du serveur
+</div>
+
+Pour activer la prise en charge du serveur SSH, vous devez décommenter ou ajouter la section suivante dans votre `config.xml` :
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+La clé d’hôte fait partie intégrante du protocole SSH. La partie publique de cette clé est stockée dans le fichier `~/.ssh/known_hosts` côté client et est généralement nécessaire pour empêcher les attaques de type man-in-the-middle. Lors de la première connexion au serveur, vous verrez le message ci-dessous :
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+Cela signifie en fait : &quot;Voulez-vous mémoriser la clé publique de cet hôte et poursuivre la connexion ?&quot;.
+
+Vous pouvez indiquer à votre client SSH de ne pas vérifier l’identité de l’hôte en passant une option :
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+<div id="configuring-embedded-client">
+  ## Configuration du client intégré
+</div>
+
+Vous pouvez transmettre des options à un client intégré, comme avec le `clickhouse-client` classique, mais avec quelques limitations.
+Puisqu&#39;il s&#39;agit d&#39;un protocole SSH, la seule façon de transmettre des paramètres à l&#39;hôte cible est d&#39;utiliser des variables d&#39;environnement.
+
+Par exemple, vous pouvez définir `format` de cette manière :
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+Vous pouvez ainsi modifier n’importe quel paramètre défini au niveau de l’utilisateur et, en plus, transmettre la plupart des options habituelles de `clickhouse-client` (à l’exception de celles qui n’ont pas de sens dans cette configuration.)
+
+Important :
+
+Si l’option `query` et la commande SSH sont toutes deux transmises, cette dernière est ajoutée à la liste des requêtes à exécuter :
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

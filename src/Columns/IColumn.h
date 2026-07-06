@@ -33,7 +33,7 @@ class ColumnReplicated;
 class IDataType;
 class Block;
 class ReadBuffer;
-struct ColumnsInfo;
+struct StoredBlock;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -85,7 +85,7 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<const StoredBlock *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
@@ -739,9 +739,18 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
+    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
+    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
+    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    virtual void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -1021,9 +1030,15 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+    /// Fills column values from encoded join row refs
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value

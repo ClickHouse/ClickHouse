@@ -1,0 +1,63 @@
+---
+sidebarTitle: 'Hashboard'
+slug: /integrations/hashboard
+keywords: ['ClickHouse', 'Hashboard', '接続', 'インテグレーション', 'UI', '分析']
+description: 'Hashboard は堅牢な分析プラットフォームで、ClickHouse と簡単に連携してリアルタイムのデータ分析を行えます。'
+title: 'ClickHouse を Hashboard に接続する'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_native.mdx';
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Hashboard](https://hashboard.com) は、組織内の誰もがメトリクスを追跡し、実用的なインサイトを見つけられるインタラクティブなデータ探索ツールです。Hashboard は ClickHouse データベースに対してリアルタイムに SQL クエリを実行できるため、特にセルフサービス型のアドホックなデータ探索に適しています。
+
+<Image size="md" img="/images/integrations/data-visualization/hashboard_01.webp" alt="インタラクティブなクエリビルダーと可視化を表示する Hashboard のデータエクスプローラー インターフェイス" border />
+
+<br />
+
+このガイドでは、Hashboard を ClickHouse インスタンスに接続する手順を説明します。この情報は、Hashboard の [ClickHouse 連携ドキュメント](https://docs.hashboard.com/docs/database-connections/clickhouse) にも掲載されています。
+
+<div id="pre-requisites">
+  ## 前提条件
+</div>
+
+* 自社のインフラストラクチャまたは [ClickHouse Cloud](https://clickhouse.com/) でホストされている ClickHouse データベース。
+* [Hashboard のアカウント](https://hashboard.com/getAccess) とプロジェクト。
+
+<div id="steps-to-connect-hashboard-to-clickhouse">
+  ## Hashboard を ClickHouse に接続する手順
+</div>
+
+<div id="1-gather-your-connection-details">
+  ### 1. 接続情報を用意する
+</div>
+
+<ConnectionDetails />
+
+<div id="2-add-a-new-database-connection-in-hashboard">
+  ### 2. Hashboard で新しいデータベース接続を追加する
+</div>
+
+1. [Hashboard プロジェクト](https://hashboard.com/app)にアクセスします。
+2. サイドナビゲーションバーの歯車アイコンをクリックして、Settings ページを開きます。
+3. `+ New Database Connection` をクリックします。
+4. モーダルで「ClickHouse」を選択します。
+5. 先ほど収集した情報を使って、**Connection Name**、**Host**、**Port**、**Username**、**Password**、**Database** の各フィールドに入力します。
+6. 「Test」をクリックして、接続が正しく設定されていることを確認します。
+7. 「Add」をクリックします
+
+これで ClickHouse データベースが Hashboard に接続され、[Data Models](https://docs.hashboard.com/docs/data-modeling/add-data-model)、[Explorations](https://docs.hashboard.com/docs/visualizing-data/explorations)、[Metrics](https://docs.hashboard.com/docs/metrics)、[Dashboards](https://docs.hashboard.com/docs/dashboards) の作成に進めます。これらの機能の詳細については、該当する Hashboard のドキュメントを参照してください。
+
+<div id="learn-more">
+  ## さらに詳しく
+</div>
+
+より高度な機能やトラブルシューティングについては、[Hashboard のドキュメント](https://docs.hashboard.com/)を参照してください。
