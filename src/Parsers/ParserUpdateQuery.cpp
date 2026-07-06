@@ -37,9 +37,11 @@ bool ParserUpdateQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (s_on.ignore(pos, expected))
     {
         String cluster_str;
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        bool use_default_cluster = false;
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
         query->cluster = cluster_str;
+        query->use_default_cluster = use_default_cluster;
     }
 
     if (!s_set.ignore(pos, expected))

@@ -288,6 +288,7 @@ namespace Setting
     extern const SettingsBool azure_allow_parallel_part_upload;
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
+    extern const SettingsString default_cluster;
     extern const SettingsBool enable_filesystem_cache;
     extern const SettingsBool enable_filesystem_cache_log;
     extern const SettingsBool enable_filesystem_cache_on_write_operations;
@@ -8252,17 +8253,26 @@ void Context::disableOffsetParallelReplicas()
     offset_parallel_replicas_enabled = false;
 }
 
-ClusterPtr Context::getClusterForParallelReplicas() const
+String Context::getClusterNameForParallelReplicas() const
 {
     const auto & settings_ref = getSettingsRef();
+    String cluster_name = settings_ref[Setting::cluster_for_parallel_replicas];
+    if (cluster_name.empty())
+        cluster_name = settings_ref[Setting::default_cluster];
+    return cluster_name;
+}
+
+ClusterPtr Context::getClusterForParallelReplicas() const
+{
     /// check cluster for parallel replicas
-    if (settings_ref[Setting::cluster_for_parallel_replicas].value.empty())
+    const String cluster_name = getClusterNameForParallelReplicas();
+    if (cluster_name.empty())
         throw Exception(
             ErrorCodes::CLUSTER_DOESNT_EXIST,
             "Reading in parallel from replicas is enabled but cluster to execute query is not provided. Please set "
-            "'cluster_for_parallel_replicas' setting");
+            "'cluster_for_parallel_replicas' or 'default_cluster' setting");
 
-    return getCluster(settings_ref[Setting::cluster_for_parallel_replicas]);
+    return getCluster(cluster_name);
 }
 
 void Context::setPreparedSetsCache(const PreparedSetsCachePtr & cache)

@@ -16,6 +16,7 @@ bool ParserDropResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     ParserIdentifier resource_name_p;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_exists = false;
 
     ASTPtr resource_name;
@@ -34,13 +35,14 @@ bool ParserDropResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
     auto drop_resource_query = make_intrusive<ASTDropResourceQuery>();
     drop_resource_query->if_exists = if_exists;
     drop_resource_query->cluster = std::move(cluster_str);
+    drop_resource_query->use_default_cluster = use_default_cluster;
 
     node = drop_resource_query;
 

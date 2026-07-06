@@ -8,7 +8,7 @@ SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree=1;
 SET parallel_replicas_only_with_analyzer = 0;  -- necessary for CI run with disabled analyzer
 
-SET cluster_for_parallel_replicas='';
+SET cluster_for_parallel_replicas='', default_cluster='';
 SELECT count() FROM test_parallel_replicas_settings WHERE NOT ignore(*); -- { serverError CLUSTER_DOESNT_EXIST }
 
 SET cluster_for_parallel_replicas='parallel_replicas';

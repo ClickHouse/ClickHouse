@@ -36,7 +36,6 @@ namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
-    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
 }
 
@@ -244,7 +243,7 @@ StoragePtr TableFunctionObjectStorage<Definition, Configuration, is_data_lake>::
     StoragePtr storage;
     const auto & query_settings = context->getSettingsRef();
 
-    const auto parallel_replicas_cluster_name = query_settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto parallel_replicas_cluster_name = context->getClusterNameForParallelReplicas();
     /// Only use parallel replicas if the Cluster variant of this table function exists
     /// (e.g. `s3Cluster` for `s3`). Table functions without a Cluster variant (e.g. `paimonLocal`)
     /// cannot distribute work via task iterators, so distributing would just read all data on every replica.

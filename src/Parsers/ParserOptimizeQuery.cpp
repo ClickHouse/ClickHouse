@@ -47,6 +47,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     bool deduplicate = false;
     bool cleanup = false;
     String cluster_str;
+    bool use_default_cluster = false;
 
     if (!s_optimize_table.ignore(pos, expected))
         return false;
@@ -61,7 +62,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
             return false;
     }
 
-    if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+    if (ParserKeyword{Keyword::ON}.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
         return false;
 
     if (s_partition.ignore(pos, expected))
@@ -102,6 +103,7 @@ bool ParserOptimizeQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     node = query;
 
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
     if ((query->partition = partition))
         query->children.push_back(partition);
     if ((query->parts_list = parts_list))

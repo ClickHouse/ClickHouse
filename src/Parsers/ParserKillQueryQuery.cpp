@@ -12,6 +12,7 @@ namespace DB
 bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     String cluster_str;
+    bool use_default_cluster = false;
     auto query = make_intrusive<ASTKillQueryQuery>();
 
     ParserKeyword p_kill{Keyword::KILL};
@@ -40,7 +41,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
     else
         return false;
 
-    if (p_on.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+    if (p_on.ignore(pos, expected) && !ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
         return false;
 
     if (!p_where.ignore(pos, expected) || !p_where_expression.parse(pos, query->where_expression, expected))
@@ -54,6 +55,7 @@ bool ParserKillQueryQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expect
         query->test = true;
 
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
     query->children.emplace_back(query->where_expression);
     node = std::move(query);
     return true;

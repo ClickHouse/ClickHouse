@@ -41,6 +41,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     ASTPtr database;
     ASTPtr database_and_tables;
     String cluster_str;
+    bool use_default_cluster = false;
     ASTPtr like;
     bool if_exists = false;
     bool if_empty = false;
@@ -137,7 +138,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
     /// common for tables / dictionaries / databases
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -176,6 +177,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected, cons
         query->like = like->as<ASTLiteral &>().value.safeGet<String>();
 
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (database_and_tables && database_and_tables->as<ASTExpressionList &>().children.size() == 1)
         node = query->getRewrittenASTsOfSingleTable(query)[0];

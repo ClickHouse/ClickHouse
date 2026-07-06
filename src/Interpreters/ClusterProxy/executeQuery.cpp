@@ -643,7 +643,7 @@ static std::pair<ClusterPtr, size_t> prepareClusterForParallelReplicas(const Log
 /// liveness is unknown - in that case all replicas are considered usable, which preserves the previous behaviour.
 static std::vector<bool> getActiveReplicasForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster)
 {
-    const String cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+    const String cluster_name = context->getClusterNameForParallelReplicas();
 
     ReplicasInfo replicas_info;
 #if CLICKHOUSE_CLOUD

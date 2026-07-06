@@ -1215,12 +1215,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         String cluster_str;
+        bool use_default_cluster = false;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
                 return false;
         }
         query->cluster = cluster_str;
+        query->use_default_cluster = use_default_cluster;
     }
     else
     {
@@ -1228,12 +1230,14 @@ bool ParserAlterQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         String cluster_str;
+        bool use_default_cluster = false;
         if (ParserKeyword(Keyword::ON).ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
                 return false;
         }
         query->cluster = cluster_str;
+        query->use_default_cluster = use_default_cluster;
     }
 
     ParserAlterCommandList p_command_list(alter_object_type);

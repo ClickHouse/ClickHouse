@@ -36,11 +36,12 @@ namespace ErrorCodes
     /// Query rewritten form + form while executing on cluster: SYSTEM <ACTION> ON CLUSTER cluster table
     /// Need to support both
     String cluster;
+    bool use_default_cluster = false;
     bool parsed_on_cluster = false;
 
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected, &use_default_cluster))
             return false;
         parsed_on_cluster = true;
     }
@@ -77,10 +78,11 @@ namespace ErrorCodes
         return false;
 
     if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected, &use_default_cluster))
             return false;
 
     res->cluster = cluster;
+    res->use_default_cluster = use_default_cluster;
 
     if (!children_already_added)
     {
@@ -107,11 +109,12 @@ enum class SystemQueryTargetType : uint8_t
     /// Need to support both
 
     String cluster;
+    bool use_default_cluster = false;
     bool parsed_on_cluster = false;
 
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected, &use_default_cluster))
             return false;
         parsed_on_cluster = true;
     }
@@ -137,11 +140,12 @@ enum class SystemQueryTargetType : uint8_t
 
     if (!parsed_on_cluster && ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected, &use_default_cluster))
             return false;
     }
 
     res->cluster = cluster;
+    res->use_default_cluster = use_default_cluster;
 
     switch (target_type)
     {
@@ -169,12 +173,14 @@ enum class SystemQueryTargetType : uint8_t
                                     Expected & expected)
 {
     String cluster_str;
+    bool use_default_cluster = false;
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
     res->cluster = cluster_str;
+    res->use_default_cluster = use_default_cluster;
 
     return true;
 }

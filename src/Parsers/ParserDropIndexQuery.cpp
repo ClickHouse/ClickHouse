@@ -20,6 +20,7 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
     ParserIdentifier index_name_p;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_exists = false;
 
     if (!s_drop.ignore(pos, expected))
@@ -44,10 +45,11 @@ bool ParserDropIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected
     /// [ON cluster_name]
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
 
         query->cluster = std::move(cluster_str);
+        query->use_default_cluster = use_default_cluster;
     }
 
     if (query->index_name)

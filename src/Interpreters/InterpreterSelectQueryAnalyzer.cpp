@@ -60,7 +60,6 @@ extern const SettingsUInt64 automatic_parallel_replicas_mode;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
-extern const SettingsString cluster_for_parallel_replicas;
 }
 
 namespace
@@ -175,7 +174,7 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
         LOG_TRACE(logger, "Setting 'parallel_replicas_local_plan' is disabled. Skipping building query plan with parallel replicas.");
         return QueryPlanPtr{};
     }
-    if (ctx->getSettingsRef()[Setting::cluster_for_parallel_replicas].value.empty())
+    if (ctx->getClusterNameForParallelReplicas().empty())
     {
         LOG_DEBUG(logger, "Cluster for parallel replicas is not set, can't build plan with parallel replicas");
         return QueryPlanPtr{};

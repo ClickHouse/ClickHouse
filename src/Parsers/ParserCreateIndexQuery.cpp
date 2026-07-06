@@ -103,6 +103,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     ASTPtr index_decl;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_not_exists = false;
     bool unique = false;
 
@@ -131,7 +132,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     /// [ON cluster_name]
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -150,6 +151,7 @@ bool ParserCreateIndexQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expect
     query->if_not_exists = if_not_exists;
     query->unique = unique;
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (query->database)
         query->children.push_back(query->database);

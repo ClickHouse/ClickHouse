@@ -32,7 +32,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
-    extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsParallelReplicasMode parallel_replicas_mode;
     extern const SettingsString url_base;
 }
@@ -180,7 +179,7 @@ StoragePtr TableFunctionURL::getStorage(
 {
     const auto & settings = context->getSettingsRef();
     const auto is_secondary_query = context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
-    const auto parallel_replicas_cluster_name = settings[Setting::cluster_for_parallel_replicas].toString();
+    const auto parallel_replicas_cluster_name = context->getClusterNameForParallelReplicas();
 
     /// Listable `*` / `**` path wildcards are expanded by listing HTTP index pages through
     /// `StorageObjectStorage` (the branch below). `StorageURLCluster` still uses

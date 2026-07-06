@@ -21,6 +21,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr database;
     ASTPtr table;
     String cluster_str;
+    bool use_default_cluster = false;
     /// We can specify the table's uuid for exact undrop.
     /// because the same name of a table can be created and deleted multiple times,
     /// and can generate multiple different uuids.
@@ -46,7 +47,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     }
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
     auto query = make_intrusive<ASTUndropQuery>();
@@ -63,6 +64,7 @@ bool parseUndropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     query->children.push_back(table);
 
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     return true;
 }

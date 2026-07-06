@@ -15,6 +15,14 @@ For example, the following query creates the `all_hits` `Distributed` table on e
 CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER cluster (p Date, i Int32) ENGINE = Distributed(cluster, default, hits)
 ```
 
+The cluster name can be omitted. In that case, the value of the [`default_cluster`](/operations/settings/settings#default_cluster) setting is used:
+
+```sql
+CREATE TABLE IF NOT EXISTS all_hits ON CLUSTER (p Date, i Int32) ENGINE = MergeTree ORDER BY tuple()
+```
+
+This is convenient when there is always only a single cluster: set `default_cluster` once and write `ON CLUSTER` without repeating the cluster name.
+
 In order to run these queries correctly, each host must have the same cluster definition (to simplify syncing configs, you can use substitutions from ZooKeeper). They must also connect to the ZooKeeper servers.
 
 The local version of the query will eventually be executed on each host in the cluster, even if some hosts are currently not available.

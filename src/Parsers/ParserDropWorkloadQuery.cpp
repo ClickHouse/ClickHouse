@@ -16,6 +16,7 @@ bool ParserDropWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
     ParserIdentifier workload_name_p;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_exists = false;
 
     ASTPtr workload_name;
@@ -34,13 +35,14 @@ bool ParserDropWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expec
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
     auto drop_workload_query = make_intrusive<ASTDropWorkloadQuery>();
     drop_workload_query->if_exists = if_exists;
     drop_workload_query->cluster = std::move(cluster_str);
+    drop_workload_query->use_default_cluster = use_default_cluster;
 
     node = drop_workload_query;
 

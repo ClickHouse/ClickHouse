@@ -98,6 +98,7 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ASTPtr workload_parent;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool or_replace = false;
     bool if_not_exists = false;
 
@@ -118,7 +119,7 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -146,6 +147,7 @@ bool ParserCreateWorkloadQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_workload_query->or_replace = or_replace;
     create_workload_query->if_not_exists = if_not_exists;
     create_workload_query->cluster = std::move(cluster_str);
+    create_workload_query->use_default_cluster = use_default_cluster;
     create_workload_query->changes = std::move(changes);
 
 

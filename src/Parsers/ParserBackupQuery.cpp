@@ -333,11 +333,11 @@ namespace
         return true;
     }
 
-    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster, bool & use_default_cluster)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            return ParserKeyword(Keyword::ON).ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+            return ParserKeyword(Keyword::ON).ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected, &use_default_cluster);
         });
     }
 }
@@ -364,7 +364,8 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         return false;
 
     String cluster;
-    parseOnCluster(pos, expected, cluster);
+    bool use_default_cluster = false;
+    parseOnCluster(pos, expected, cluster, use_default_cluster);
 
     if (!ParserKeyword((kind == Kind::BACKUP) ? Keyword::TO : Keyword::FROM).ignore(pos, expected))
         return false;
@@ -385,6 +386,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->kind = kind;
     query->elements = std::move(elements);
     query->cluster = std::move(cluster);
+    query->use_default_cluster = use_default_cluster;
 
     if (backup_name)
         query->set(query->backup_name, backup_name);

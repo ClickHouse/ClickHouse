@@ -24,6 +24,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_exists = false;
 
     ASTPtr collection_name;
@@ -44,7 +45,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -88,6 +89,7 @@ bool ParserAlterNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & nod
     query->collection_name = getIdentifierName(collection_name);
     query->if_exists = if_exists;
     query->cluster = std::move(cluster_str);
+    query->use_default_cluster = use_default_cluster;
     query->changes = changes;
     query->overridability = std::move(overridability);
     query->delete_keys = delete_keys;

@@ -27,6 +27,7 @@
 
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -141,6 +142,7 @@ namespace Setting
     extern const SettingsBool async_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsBool deduplicate_blocks_in_dependent_materialized_views;
+    extern const SettingsString default_cluster;
     extern const SettingsDialect dialect;
     extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool enable_global_with_statement;
@@ -1480,6 +1482,15 @@ static BlockIO executeQueryImpl(
             /// to allow settings to take effect.
             InterpreterSetQuery::applySettingsFromQuery(out_ast, context);
             validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
+
+            /// Fill in the cluster name from the `default_cluster` setting for queries that were written
+            /// as `ON CLUSTER` without an explicit cluster name. This is done here, before the query is
+            /// dispatched, so that the rest of the pipeline sees a regular `ON CLUSTER <cluster>` query.
+            if (auto * query_with_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(out_ast.get());
+                query_with_on_cluster && query_with_on_cluster->use_default_cluster && query_with_on_cluster->cluster.empty())
+            {
+                query_with_on_cluster->cluster = settings[Setting::default_cluster];
+            }
 
             if (settings[Setting::enforce_strict_identifier_format])
             {

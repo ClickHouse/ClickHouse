@@ -16,6 +16,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
     ParserIdentifier name_p;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_exists = false;
 
     ASTPtr collection_name;
@@ -34,7 +35,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -43,6 +44,7 @@ bool ParserDropNamedCollectionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node
     tryGetIdentifierNameInto(collection_name, query->collection_name);
     query->if_exists = if_exists;
     query->cluster = std::move(cluster_str);
+    query->use_default_cluster = use_default_cluster;
 
     node = query;
     return true;

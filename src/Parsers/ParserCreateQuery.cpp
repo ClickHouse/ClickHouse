@@ -782,6 +782,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ASTPtr from_path;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool attach = false;
     bool replace = false;
     bool or_replace = false;
@@ -841,7 +842,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -857,6 +858,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         query->attach = attach;
         query->if_not_exists = if_not_exists;
         query->cluster = cluster_str;
+        query->use_default_cluster = use_default_cluster;
 
         query->database = table_id->getDatabase();
         query->table = table_id->getTable();
@@ -1025,6 +1027,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     query->has_uuid_clause = table_id->has_uuid;
     query->has_inner_uuid_clause = to_inner_uuid != nullptr;
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (query->database)
         query->children.push_back(query->database);
@@ -1144,6 +1147,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ASTPtr select;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool attach = false;
     bool is_watermark_strictly_ascending = false;
     bool is_watermark_ascending = false;
@@ -1175,7 +1179,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -1284,6 +1288,7 @@ bool ParserCreateWindowViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (query->database)
         query->children.push_back(query->database);
@@ -1462,6 +1467,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     UUID uuid = UUIDHelpers::Nil;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool attach = false;
     bool if_not_exists = false;
 
@@ -1495,7 +1501,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -1515,6 +1521,7 @@ bool ParserCreateDatabaseQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->has_uuid = uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = has_uuid_clause;
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
     query->database = database;
 
     if (database)
@@ -1569,6 +1576,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ASTPtr refresh_strategy;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool attach = false;
     bool if_not_exists = false;
     bool is_ordinary_view = false;
@@ -1617,7 +1625,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -1774,6 +1782,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->has_uuid = table_id->uuid != UUIDHelpers::Nil;
     query->has_uuid_clause = table_id->has_uuid;
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (query->database)
         query->children.push_back(query->database);
@@ -1860,6 +1869,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     ParserToken s_comma(TokenType::Comma);
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool if_not_exists = false;
 
     ASTPtr collection_name;
@@ -1879,7 +1889,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -1910,6 +1920,7 @@ bool ParserCreateNamedCollectionQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
     query->if_not_exists = if_not_exists;
     query->changes = changes;
     query->cluster = std::move(cluster_str);
+    query->use_default_cluster = use_default_cluster;
     query->overridability = overridability;
 
     node = query;
@@ -1941,6 +1952,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr attributes;
     ASTPtr dictionary;
     String cluster_str;
+    bool use_default_cluster = false;
 
     bool attach = false;
 
@@ -1970,7 +1982,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -2018,6 +2030,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
 
     if (comment)
         query->set(query->comment, comment);

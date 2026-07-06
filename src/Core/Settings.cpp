@@ -7573,6 +7573,15 @@ Cluster for a shard in which current server is located
 
 Cloud default value: `default`.
 )", 0) \
+    DECLARE(String, default_cluster, "default", R"(
+The name of the cluster to use by default.
+
+It is used in two cases:
+- when a query is written with an `ON CLUSTER` clause but without a cluster name (`... ON CLUSTER ...`), the value of this setting is used as the cluster name;
+- as a fallback for `cluster_for_parallel_replicas` when the latter is not set.
+
+This simplifies maintenance when there is always only a single cluster.
+)", 0) \
     DECLARE(Bool, parallel_replicas_allow_in_with_subquery, true, R"(
 If true, subquery for IN will be executed on every follower replica.
 )", 0) \

@@ -39,9 +39,10 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         String cluster_str;
+        bool use_default_cluster = false;
         if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
         {
-            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+            if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
                 return false;
         }
         ASTRenameQuery::Elements rename_elements;
@@ -53,6 +54,7 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         auto query = make_intrusive<ASTRenameQuery>(std::move(rename_elements));
         query->database = true;
         query->cluster = cluster_str;
+        query->use_default_cluster = use_default_cluster;
         node = query;
         return true;
     }
@@ -93,14 +95,16 @@ bool ParserRenameQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     String cluster_str;
+    bool use_default_cluster = false;
     if (ParserKeyword{Keyword::ON}.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
     auto query = make_intrusive<ASTRenameQuery>(std::move(elements));
     query->cluster = cluster_str;
+    query->use_default_cluster = use_default_cluster;
     query->exchange = exchange;
     query->dictionary = dictionary;
     node = query;

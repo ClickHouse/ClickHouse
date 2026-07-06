@@ -116,6 +116,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ASTPtr resource_name;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool or_replace = false;
     bool if_not_exists = false;
 
@@ -136,7 +137,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -153,6 +154,7 @@ bool ParserCreateResourceQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     create_resource_query->or_replace = or_replace;
     create_resource_query->if_not_exists = if_not_exists;
     create_resource_query->cluster = std::move(cluster_str);
+    create_resource_query->use_default_cluster = use_default_cluster;
 
     create_resource_query->unit = operations.empty() ? CostUnit::IOByte : operations.front().unit();
     create_resource_query->operations = std::move(operations);

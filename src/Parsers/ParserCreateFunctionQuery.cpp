@@ -35,6 +35,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
     ASTPtr function_name;
 
     String cluster_str;
+    bool use_default_cluster = false;
     bool or_replace = false;
     bool if_not_exists = false;
     bool is_attach = false;
@@ -60,7 +61,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
 
     if (s_on.ignore(pos, expected))
     {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
+        if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected, &use_default_cluster))
             return false;
     }
 
@@ -168,6 +169,7 @@ bool ParserCreateFunctionQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Exp
             create_function_query->if_not_exists = if_not_exists;
             create_function_query->is_attach = is_attach;
             create_function_query->cluster = std::move(cluster_str);
+            create_function_query->use_default_cluster = use_default_cluster;
             create_function_query->engine_name = std::move(engine_name);
             create_function_query->engine_arguments = std::move(engine_arguments);
             create_function_query->source_code = std::move(source_code);

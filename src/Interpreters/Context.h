@@ -1873,6 +1873,10 @@ public:
 
     ClusterPtr getClusterForParallelReplicas() const;
 
+    /// The name of the cluster used for parallel replicas: `cluster_for_parallel_replicas` if it is set,
+    /// otherwise the `default_cluster` setting. May be empty if neither is set.
+    String getClusterNameForParallelReplicas() const;
+
     void setPreparedSetsCache(const PreparedSetsCachePtr & cache);
     PreparedSetsCachePtr getPreparedSetsCache() const;
 
