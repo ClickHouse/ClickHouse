@@ -324,3 +324,28 @@ TEST(PForBlockDecode, RejectsImpossibleExceptionHeader)
     const std::vector<uint8_t> hb_over = {4, 1, 29};  // hb > typeBits(32) - b(4): patch shifts out of range
     EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_over.data(), 1, PFor::Delta::none, &out, hb_over.data() + hb_over.size()), 0u);
 }
+
+/// The bounded varint reader must reject overlong (> 64-bit) encodings, not silently wrap them.
+TEST(PForVarint, RejectsOverlong)
+{
+    auto parse = [](const std::vector<uint8_t> & bytes, uint64_t & v)
+    { return PFor::detail::getVarintChecked(bytes.data(), bytes.data() + bytes.size(), v); };
+
+    uint64_t v = 12345;
+    /// 10th byte carries bit 63 only; payload 2 would set bit 64 and wrap to 0 (would report a bogus count).
+    const std::vector<uint8_t> overlong = {0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 0x02};
+    EXPECT_EQ(parse(overlong, v), nullptr);
+    /// 10th byte with a continuation bit (an 11th byte) is likewise illegal for a 64-bit value.
+    const std::vector<uint8_t> too_long = {0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80,0x80, 0x81};
+    EXPECT_EQ(parse(too_long, v), nullptr);
+
+    /// The maximal legal 64-bit varint (10th byte == 1) decodes to UINT64_MAX.
+    const std::vector<uint8_t> max64 = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF, 0x01};
+    EXPECT_EQ(parse(max64, v), max64.data() + max64.size());
+    EXPECT_EQ(v, std::numeric_limits<uint64_t>::max());
+
+    /// A short varint still parses normally.
+    const std::vector<uint8_t> small = {0x05};
+    EXPECT_EQ(parse(small, v), small.data() + small.size());
+    EXPECT_EQ(v, 5u);
+}

@@ -47,6 +47,9 @@ inline ALWAYS_INLINE const uint8_t * getVarintChecked(const uint8_t * p, const u
         if (p >= end || shift >= 64)
             return nullptr;
         const uint8_t b = *p++;
+        // 10th byte (shift == 63) holds only bit 63: payload must be 0 or 1 with no continuation, else the value exceeds 64 bits.
+        if (shift == 63 && b > 1)
+            return nullptr;
         v |= static_cast<uint64_t>(b & 0x7Fu) << shift;
         if (!(b & 0x80u))
             return p;
