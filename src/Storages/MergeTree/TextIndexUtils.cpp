@@ -525,6 +525,7 @@ bool MergeTextIndexesTask::executeStep()
                 TextIndexPositionCodec::decode(
                     *pos_data_buffer, position_entries,
                     TextIndexPositionCodec::parseEncoding(params.positions_codec),
+                    token_info.position_cardinality,
                     position_decode_scratch);
 
                 /// Adjust doc_ids if merging parts with offset remapping.

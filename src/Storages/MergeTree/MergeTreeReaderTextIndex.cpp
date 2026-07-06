@@ -874,18 +874,22 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
             const auto & all_token_infos = granule->getAnalyzer().getAllTokenInfos();
 
             std::vector<UInt64> position_offsets;
+            std::vector<UInt64> position_cardinalities;
             position_offsets.reserve(search_query->phrase_tokens.size());
+            position_cardinalities.reserve(search_query->phrase_tokens.size());
             for (const auto & token : search_query->phrase_tokens)
             {
                 auto it = all_token_infos.find(token);
                 if (it == all_token_infos.end() || !(it->second->header & PostingsSerialization::Flags::HasPositions))
                 {
                     position_offsets.clear();
+                    position_cardinalities.clear();
                     break;
                 }
 
                 const auto & token_info = *it->second;
                 position_offsets.emplace_back(token_info.position_offset);
+                position_cardinalities.emplace_back(token_info.position_cardinality);
             }
 
             PaddedPODArray<UInt32> matching;
@@ -899,11 +903,11 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 auto * data_buffer = positions_stream->getDataBuffer();
                 {
                     ProfileEventTimeIncrement<Microseconds> decode_watch(ProfileEvents::TextIndexPositionsDecodeMicroseconds);
-                    for (auto position_offset : position_offsets)
+                    for (size_t i = 0; i < position_offsets.size(); ++i)
                     {
-                        positions_stream->seekToMark({position_offset, 0});
+                        positions_stream->seekToMark({position_offsets[i], 0});
                         auto & positions = position_lists.emplace_back();
-                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_payload_scratch);
+                        TextIndexPositionCodec::decode(*data_buffer, positions, positions_codec, position_cardinalities[i], position_payload_scratch);
                     }
                 }
 

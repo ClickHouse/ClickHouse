@@ -52,14 +52,16 @@ public:
     static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out, Encoding encoding);
 
     /// Reads into a memory-tracked array of RoaringishEntry values (the merge path).
-    static void decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, DecodeScratch & scratch);
+    /// `position_cardinality` is the entry count recorded in the index header; the stored
+    /// count must match it, so a corrupt stream is rejected before any allocation.
+    static void decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, DecodeScratch & scratch);
 
     /// Reads into struct-of-arrays form (the query/phrase-search path). For Pfor this
     /// decodes the three columnar lanes straight into pl.doc/group/bitmap with no temp
     /// lane buffers and no SoA<->AoS interleave (just the compressed payload is staged in
     /// `payload_scratch`, reused across calls). For Raw it de-interleaves the stored
-    /// entries into the three arrays.
-    static void decode(ReadBuffer & in, PositionList & pl, Encoding encoding, PaddedPODArray<char> & payload_scratch);
+    /// entries into the three arrays. See the other overload for `position_cardinality`.
+    static void decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, PaddedPODArray<char> & payload_scratch);
 };
 
 }

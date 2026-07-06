@@ -50,12 +50,22 @@ void encodeRaw(std::span<const RoaringishEntry> entries, WriteBuffer & out)
         }
 }
 
-void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries)
+/// The stored entry count must equal the cardinality recorded in the index header; a mismatch is
+/// corruption, and checking it before any resize(count) rejects a bogus on-disk count up front.
+void checkPositionCount(UInt64 count, UInt64 expected_count)
+{
+    if (count != expected_count)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: stored entry count {} does not match index cardinality {}", count, expected_count);
+}
+
+void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
     UInt64 count = 0;
     readVarUInt(count, in);
+    checkPositionCount(count, expected_count);
     if (count == 0)
         return;
 
@@ -67,12 +77,13 @@ void decodeRaw(ReadBuffer & in, PODArray<RoaringishEntry> & entries)
             transformEntryEndianness(e);
 }
 
-void decodeRawSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & scratch)
+void decodeRawSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, PaddedPODArray<char> & scratch)
 {
     static_assert(sizeof(RoaringishEntry) == 12);
 
     UInt64 count = 0;
     readVarUInt(count, in);
+    checkPositionCount(count, expected_count);
     if (count == 0)
         return;
 
@@ -136,16 +147,21 @@ const uint8_t * decodePforLane(const uint8_t * p, const uint8_t * end, UInt64 co
     return p + consumed;
 }
 
-void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexPositionCodec::DecodeScratch & scratch)
+void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 expected_count, TextIndexPositionCodec::DecodeScratch & scratch)
 {
     UInt64 count = 0;
     readVarUInt(count, in);
+    checkPositionCount(count, expected_count);
 
     if (count == 0)
         return;
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, in);
+    /// Bound the payload against the (now-validated) count before allocating, so a corrupt length can't force an arbitrary resize.
+    if (payload_bytes > 3 * PFor::maxCompressedBytes<UInt32>(count))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (pfor): payload size {} exceeds the maximum for {} entries", payload_bytes, count);
 
     /// Reused buffers; PaddedPODArray::resize skips value-init and keeps trailing SIMD padding.
     scratch.payload.resize(payload_bytes);
@@ -171,15 +187,20 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, TextIndexP
         entries[i] = RoaringishEntry{scratch.doc[i], scratch.group[i], scratch.bitmap[i]};
 }
 
-void decodePforSoA(ReadBuffer & in, PositionList & pl, PaddedPODArray<char> & payload)
+void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, PaddedPODArray<char> & payload)
 {
     UInt64 count = 0;
     readVarUInt(count, in);
+    checkPositionCount(count, expected_count);
     if (count == 0)
         return;
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, in);
+    /// Bound the payload against the (now-validated) count before allocating, so a corrupt length can't force an arbitrary resize.
+    if (payload_bytes > 3 * PFor::maxCompressedBytes<UInt32>(count))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions (pfor): payload size {} exceeds the maximum for {} entries", payload_bytes, count);
 
     payload.resize(payload_bytes);
     if (payload_bytes > 0)
@@ -218,20 +239,20 @@ void TextIndexPositionCodec::encode(std::span<const RoaringishEntry> entries, Wr
         encodeRaw(entries, out);
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, DecodeScratch & scratch)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PODArray<RoaringishEntry> & entries, Encoding encoding, UInt64 position_cardinality, DecodeScratch & scratch)
 {
     if (encoding == Encoding::Pfor)
-        decodePfor(in, entries, scratch);
+        decodePfor(in, entries, position_cardinality, scratch);
     else
-        decodeRaw(in, entries);
+        decodeRaw(in, entries, position_cardinality);
 }
 
-void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding encoding, PaddedPODArray<char> & payload_scratch)
+void TextIndexPositionCodec::decode(ReadBuffer & in, PositionList & pl, Encoding encoding, UInt64 position_cardinality, PaddedPODArray<char> & payload_scratch)
 {
     if (encoding == Encoding::Pfor)
-        decodePforSoA(in, pl, payload_scratch);
+        decodePforSoA(in, pl, position_cardinality, payload_scratch);
     else
-        decodeRawSoA(in, pl, payload_scratch);
+        decodeRawSoA(in, pl, position_cardinality, payload_scratch);
 }
 
 }
