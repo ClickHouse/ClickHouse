@@ -1,7 +1,7 @@
 Map is not supported
-fixed-width type of size
-fixed-width type of size
-fixed-width type of size
+64
+64
+51
 nested Nullable inside Array/Tuple
 nested Nullable inside Array/Tuple
 LowCardinality is not supported

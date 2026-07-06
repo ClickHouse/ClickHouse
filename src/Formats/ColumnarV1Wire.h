@@ -25,6 +25,10 @@
 ///   COL_FIXED8/16/32/64 (1-4) — fixed-width scalars, one memcpy per column
 ///   COL_COMPLEX (5) — Array(T) or Tuple(T…), recursive layout
 ///   COL_VARIANT (6) — Variant(…), discriminated union with per-row offsets
+///   COL_FIXEDN  (7) — fixed-width scalars of any other width (UUID, IPv6,
+///                     Int128/UInt128, Decimal128/256) and FixedString(N);
+///                     element width N recovered on read as data_size/num_rows
+///                     (no offsets array needed since every row is N bytes)
 ///
 /// Modifier bits (OR'd onto the base type):
 ///   COL_IS_NULLABLE (0x20) — null map at null_offset: u8[num_rows], 1=null 0=non-null
@@ -66,11 +70,12 @@
 /// only once the first block is serialized. Not supported: Map, LowCardinality,
 /// Nullable(Array/Variant) (no wire slot for a top-level null map on COL_COMPLEX/
 /// COL_VARIANT; Nullable(Tuple(...)) is supported instead, via a top-level null
-/// map on COL_COMPLEX), Nullable/Variant nested inside Array/Tuple, and any
-/// fixed-width type whose size isn't exactly 1/2/4/8 bytes (so UUID, IPv6,
-/// Int128/UInt128, Decimal128/256, and FixedString of any length are all
-/// rejected). Any type kind this format has no encoding for at all (Dynamic,
-/// JSON/Object, AggregateFunction(...), ...) is also rejected.
+/// map on COL_COMPLEX), and Nullable/Variant nested inside Array/Tuple. Any
+/// fixed-width type is supported at any width (COL_FIXED8/16/32/64 for 1/2/4/8
+/// bytes, COL_FIXEDN for everything else — UUID, IPv6, Int128/UInt128,
+/// Decimal128/256), and so is FixedString(N) of any length (also COL_FIXEDN).
+/// Any type kind this format has no encoding for at all (Dynamic, JSON/Object,
+/// AggregateFunction(...), ...) is also rejected.
 
 #include <cstring>
 #include <span>
@@ -114,6 +119,8 @@ constexpr uint32_t COL_FIXED32      = 3;
 constexpr uint32_t COL_FIXED64      = 4;
 constexpr uint32_t COL_COMPLEX      = 5;  // Array(T) / Tuple(T...) — recursive format
 constexpr uint32_t COL_VARIANT      = 6;  // Variant(...) — discriminated union
+constexpr uint32_t COL_FIXEDN       = 7;  // fixed-width of any other size, or FixedString(N);
+                                           // element width recovered as data_size/num_rows
 // Modifier flags (OR'd onto base type; base types 0–6, so bits 5-7 are free for flags).
 constexpr uint32_t COL_IS_NULLABLE  = 0x20u; // Nullable(T); null_offset carries u8[row_count] null map
 constexpr uint32_t COL_IS_CONST     = 0x80u;
@@ -193,17 +200,11 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
         return;
     if (type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
     {
-        // buildColDescriptor only has top-level wire tags for widths 1/2/4/8
-        // (COL_FIXED8/16/32/64); anything else — not just >8 bytes, but also e.g.
-        // FixedString(3) or Decimal32(3)-adjacent odd widths — throws "unsupported
-        // fixed-width element size" only once the first block is actually serialized.
-        size_t size = type->getSizeOfValueInMemory();
-        if (size != 1 && size != 2 && size != 4 && size != 8)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "COLUMNAR_V1/ColumnBinary: fixed-width type of size {} bytes is not supported; "
-                "only 1/2/4/8-byte fixed-width types are supported (e.g. UUID, IPv6, "
-                "Int128/UInt128, Decimal128/256, and FixedString of any length are not): {}",
-                size, type->getName());
+        // Any fixed width is representable: COL_FIXED8/16/32/64 for exactly 1/2/4/8
+        // bytes, COL_FIXEDN (buildColDescriptor) for everything else (UUID, IPv6,
+        // Int128/UInt128, Decimal128/256, FixedString(N) of any length). Nested
+        // (is_nested) elements never needed a tag at all — writeComplexData/decode
+        // already move raw bytes sized from the DataType itself.
         return;
     }
     // Explicit deny-by-default: every type this wire format actually knows how to encode
@@ -494,10 +495,10 @@ inline uint64_t buildColDescriptor(
     else if (wire_elem_size == 2) base_type = COL_FIXED16 | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 4) base_type = COL_FIXED32 | (is_nullable ? COL_IS_NULLABLE : 0u);
     else if (wire_elem_size == 8) base_type = COL_FIXED64 | (is_nullable ? COL_IS_NULLABLE : 0u);
-    else
-        throw Exception(ErrorCodes::INCORRECT_DATA,
-            "COLUMNAR_V1: unsupported fixed-width element size {} bytes; supported: 1, 2, 4, 8",
-            wire_elem_size);
+    // Any other width (UUID, IPv6, Int128/UInt128, Decimal128/256, FixedString(N) of
+    // any length): no dedicated tag per width, element size is recovered on read as
+    // data_size/num_rows (set below), so no offsets array is needed either.
+    else base_type = COL_FIXEDN | (is_nullable ? COL_IS_NULLABLE : 0u);
 
     desc.type = base_type | (is_const ? COL_IS_CONST : 0u);
     if (is_nullable)
@@ -903,6 +904,31 @@ inline MutableColumnPtr readColumnFromDesc(
         inner->insertManyDefaults(rows_to_dec);
         std::memcpy(const_cast<char *>(inner->getRawData().data()),
                     buf.data() + desc.data_offset, rows_to_dec * 8);
+        col = maybe_nullable(std::move(inner));
+    }
+    else if (raw_type == COL_FIXEDN)
+    {
+        // Element width isn't tag-selected (unlike COL_FIXED8/16/32/64): recover it as
+        // data_size/rows_to_dec, the only place it's recorded on the wire. data_offset/
+        // data_size were already bounds-checked against buf.size() above.
+        uint64_t elem_size = 0;
+        if (rows_to_dec != 0)
+        {
+            if (desc.data_size % rows_to_dec != 0)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_FIXEDN data_size {} not a multiple of row count {}",
+                    desc.data_size, rows_to_dec);
+            elem_size = desc.data_size / rows_to_dec;
+            if (base_type->getSizeOfValueInMemory() != elem_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_FIXEDN type width mismatch: declared type has {} bytes, wire has {}",
+                    base_type->getSizeOfValueInMemory(), elem_size);
+        }
+        auto inner = base_type->createColumn();
+        inner->insertManyDefaults(rows_to_dec);
+        if (desc.data_size != 0)
+            std::memcpy(const_cast<char *>(inner->getRawData().data()),
+                        buf.data() + desc.data_offset, desc.data_size);
         col = maybe_nullable(std::move(inner));
     }
     else if (raw_type == COL_COMPLEX)
