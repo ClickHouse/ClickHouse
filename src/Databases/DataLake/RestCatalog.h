@@ -9,6 +9,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
+#include <mutex>
 #include <Poco/JSON/Object.h>
 
 namespace DB
@@ -132,6 +133,12 @@ protected:
     mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
+
+    /// The underlying Poco HTTP session is not thread-safe. DatabaseDataLake reuses one
+    /// catalog instance across queries, so concurrent queries can issue HTTP requests on
+    /// the shared session at once. Serialize all request-issuing methods under this mutex
+    /// (mirrors HiveCatalog::client_mutex).
+    mutable std::mutex client_mutex;
 
     DB::ReadWriteBufferFromHTTPPtr createReadBuffer(
         const std::string & endpoint,

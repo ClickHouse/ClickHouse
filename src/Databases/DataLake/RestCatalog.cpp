@@ -584,6 +584,8 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
     const Poco::URI::QueryParameters & params,
     const DB::HTTPHeaderEntries & headers) const
 {
+    std::lock_guard lock(client_mutex);
+
     const auto & context = getContext();
 
     /// enable_url_encoding=false to allow use tables with encoded sequences in names like 'foo%2Fbar'
@@ -1114,6 +1116,8 @@ bool RestCatalog::getTableMetadataImpl(
 
 void RestCatalog::sendRequest(const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
 {
+    std::lock_guard lock(client_mutex);
+
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
         request_body->stringify(oss);

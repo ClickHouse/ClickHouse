@@ -9,6 +9,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
 #include <filesystem>
+#include <mutex>
 #include <Poco/JSON/Object.h>
 #include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 
@@ -59,6 +60,12 @@ private:
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
     Poco::Net::HTTPBasicCredentials credentials{};
+
+    /// The underlying Poco HTTP session is not thread-safe. DatabaseDataLake reuses one
+    /// catalog instance across queries, so concurrent queries can issue HTTP requests on
+    /// the shared session at once. Serialize the request-issuing methods under this mutex
+    /// (mirrors HiveCatalog::client_mutex).
+    mutable std::mutex client_mutex;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 

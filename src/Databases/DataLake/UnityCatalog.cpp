@@ -54,12 +54,14 @@ static UnityCatalogFullSchemaName parseFullSchemaName(const std::string & full_n
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params) const
 {
+    std::lock_guard lock(client_mutex);
     const auto & context = getContext();
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, params, {auth_header});
 }
 
 std::pair<Poco::Dynamic::Var, std::string> UnityCatalog::postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const
 {
+    std::lock_guard lock(client_mutex);
     const auto & context = getContext();
     return makeHTTPRequestAndReadJSON(base_url / route, context, credentials, {}, {auth_header}, Poco::Net::HTTPRequest::HTTP_POST, out_stream_callaback);
 }
