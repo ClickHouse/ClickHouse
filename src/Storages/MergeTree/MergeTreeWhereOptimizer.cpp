@@ -696,7 +696,7 @@ static bool isFunctionDeterministic(const RPNBuilderFunctionTreeNode & function_
     if (auto function_base = function_node.getFunctionBase())
         return function_base->isDeterministic();
 
-    /// AST-based tree does not carry a resolved function, look it up by name.
+    /// For an AST-based tree there is no resolved function, so look it up by name
     auto function_resolver = FunctionFactory::instance().tryGet(function_node.getFunctionName(), context);
     return function_resolver && function_resolver->isDeterministic();
 }
@@ -707,8 +707,7 @@ bool MergeTreeWhereOptimizer::isExpressionOverSortingKey(const RPNBuilderTreeNod
     {
         auto function_node = node.toFunctionNode();
 
-        /// A non-deterministic function (e.g. `rand`) is not a function of the sorting key:
-        /// its result can differ between row versions of one dedup group.
+        /// non-deterministic functions can give different results for row versions of the same key
         if (!isFunctionDeterministic(function_node, context))
             return false;
 

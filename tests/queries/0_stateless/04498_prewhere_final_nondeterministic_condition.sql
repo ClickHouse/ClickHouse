@@ -1,5 +1,5 @@
--- Non-deterministic conditions must not be moved to PREWHERE under FINAL: they could filter
--- row versions of one dedup group differently and change which row survives the merge.
+-- Conditions with non-deterministic functions like rand must stay in WHERE under FINAL,
+-- otherwise row versions of the same key get filtered differently and a stale row can win the merge
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 SET optimize_move_to_prewhere = 1;
