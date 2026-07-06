@@ -5,6 +5,8 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/IDataType.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -32,11 +34,17 @@
 #include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
+
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
+#include <Processors/QueryPlan/ShuffleExchangeStep.h>
+#include <Processors/QueryPlan/GatherExchangeStep.h>
 
 #include <algorithm>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -74,19 +82,49 @@ namespace QueryPlanOptimizations
 const size_t MAX_ROWS = std::numeric_limits<size_t>::max();
 static String dumpStatsForLogs(const RelationStats & stats);
 
-static size_t functionDoesNotChangeNumberOfValues(std::string_view function_name, size_t num_args)
+/// Functions whose output value is taken directly from their first argument, so the output's
+/// distinct values are bounded by that argument's. These are all deterministic.
+static bool isValuePassThroughFunction(std::string_view function_name)
 {
-    if (function_name == "materialize" || function_name == "_CAST" || function_name == "CAST" || function_name == "toNullable")
-        return 1;
-    if (function_name == "firstNonDefault")
-        return num_args;
-    return 0;
+    return function_name == "materialize" || function_name == "_CAST"
+        || function_name == "CAST" || function_name == "toNullable";
 }
 
-static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+/// How a node relates its output NDV to the NDV of its first child's source column.
+struct ValueHop
 {
-    NameSet output_names;
+    bool propagates = false;  /// output inherits the source NDV of children[0]
+    UInt64 ndv_delta = 0;     /// extra distinct values the hop can introduce over the source
+};
 
+/// A node propagates a source column's NDV when it just relabels (ALIAS) or applies a value-
+/// preserving transform to its first argument. `ndv_delta` is how much the output NDV can exceed it.
+static ValueHop describeValueHop(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
+        return {.propagates = true};
+
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
+        return {};
+
+    /// A deterministic single-argument function has at most as many distinct values as its argument
+    /// (e.g. `toYear(date)`); the whitelisted functions pass their first argument's value through.
+    const bool propagates = isValuePassThroughFunction(node.function_base->getName())
+        || (node.children.size() == 1 && node.function_base->isDeterministic());
+    if (!propagates)
+        return {};
+
+    /// NDV counts only non-null values. A hop turning a Nullable first argument into a non-Nullable
+    /// result (e.g. `isNull`, or `CAST` dropping nullability) maps NULL to one extra counted value.
+    const bool collapses_null = isNullableOrLowCardinalityNullable(node.children[0]->result_type)
+        && !isNullableOrLowCardinalityNullable(node.result_type);
+    return {.propagates = true, .ndv_delta = collapses_null ? 1u : 0u};
+}
+
+/// For each output column that traces back to `input_name`, return how much to add to the source
+/// NDV to bound the output NDV.
+static std::unordered_map<String, UInt64> backTrackColumnsInDag(const String & input_name, const ActionsDAG & actions)
+{
     std::unordered_set<const ActionsDAG::Node *> input_nodes;
     for (const auto * node : actions.getInputs())
     {
@@ -94,65 +132,75 @@ static NameSet backTrackColumnsInDag(const String & input_name, const ActionsDAG
             input_nodes.insert(node);
     }
 
-    std::unordered_set<const ActionsDAG::Node *> visited_nodes;
+    /// Offset from a node down to a source input, or nullopt if it does not trace back to one.
+    /// Memoized so every node, including shared intermediates, is resolved once regardless of order.
+    std::unordered_map<const ActionsDAG::Node *, std::optional<UInt64>> offset_to_input;
+
+    /// Iterative post-order DFS (explicit stack to avoid deep recursion on long expression chains).
+    /// Each entry is a node paired with whether its source child has already been pushed.
     for (const auto * out_node : actions.getOutputs())
     {
-
-        std::stack<const ActionsDAG::Node *> nodes_to_process;
-        nodes_to_process.push(out_node);
-
+        std::stack<std::pair<const ActionsDAG::Node *, bool>> nodes_to_process;
+        nodes_to_process.push({out_node, false});
         while (!nodes_to_process.empty())
         {
-            const auto * node = nodes_to_process.top();
-            nodes_to_process.pop();
+            auto [node, child_pushed] = nodes_to_process.top();
 
-            auto [_, inserted] = visited_nodes.insert(node);
-            if (!inserted)
+            if (offset_to_input.contains(node))
             {
-                /// Node was already visited, check if it was an input or if it was already remapped to and input
-                if (input_nodes.contains(node))
-                    output_names.insert(out_node->result_name);
-                break;
+                nodes_to_process.pop();
+                continue;
             }
-
             if (input_nodes.contains(node))
             {
-                /// We reached an input node so add the current output node name to list of remapped
-                output_names.insert(out_node->result_name);
-                /// Also add this output node to the list of inputs to handle more aliases pointing to it
-                input_nodes.insert(out_node);
-                break;
+                offset_to_input[node] = 0;
+                nodes_to_process.pop();
+                continue;
             }
 
-            if (node->type == ActionsDAG::ActionType::ALIAS && node->children.size() == 1)
+            ValueHop hop = describeValueHop(*node);
+            if (hop.propagates && !child_pushed)
             {
-                nodes_to_process.push(node->children[0]);
+                nodes_to_process.top().second = true;
+                nodes_to_process.push({node->children[0], false});
+                continue;
             }
-            else if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base)
+
+            std::optional<UInt64> result;
+            if (hop.propagates)
             {
-                auto number_of_args = functionDoesNotChangeNumberOfValues(node->function_base->getName(), node->children.size());
-                for (const auto * child : node->children)
-                {
-                    if (number_of_args == 0)
-                        break;
-                    number_of_args -= 1;
-                    nodes_to_process.push(child);
-                }
+                if (auto source_offset = offset_to_input[node->children[0]])
+                    result = *source_offset + hop.ndv_delta;
             }
+            offset_to_input[node] = result;
+            nodes_to_process.pop();
         }
     }
-    return output_names;
+
+    std::unordered_map<String, UInt64> output_offsets;
+    for (const auto * out_node : actions.getOutputs())
+    {
+        if (auto offset = offset_to_input[out_node])
+            output_offsets[out_node->result_name] = *offset;
+    }
+    return output_offsets;
 }
 
 /// If we have stats for column names for storage we need to find corresponding internal column names
-static void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
+void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions)
 {
     std::unordered_map<String, ColumnStats> original = std::move(mapped);
     mapped = {};
     for (const auto & [name, value] : original)
     {
-        for (const auto & remapped : backTrackColumnsInDag(name, actions))
-            mapped[remapped] = value;
+        for (const auto & [remapped, ndv_offset] : backTrackColumnsInDag(name, actions))
+        {
+            ColumnStats stats = value;
+            /// Add the offset, guarding against overflow when the source NDV is near the maximum.
+            if (stats.num_distinct_values <= std::numeric_limits<UInt64>::max() - ndv_offset)
+                stats.num_distinct_values += ndv_offset;
+            mapped[remapped] = stats;
+        }
     }
 }
 
@@ -294,7 +342,8 @@ static RelationStats estimateAggregatingStepStats(const AggregatingStep & aggreg
     return aggregation_stats;
 }
 
-static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr)
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter = nullptr);
+RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::Node * filter)
 {
     IQueryPlanStep * step = node.step.get();
     if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(step))
@@ -354,6 +403,9 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
 
         return RelationStats{.estimated_rows = analyzed_result->selected_rows, .table_name = table_display_name};
     }
+
+    if (typeid_cast<const ReadFromObjectStorageStep *>(step))
+        return RelationStats{};
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))
     {
@@ -420,10 +472,15 @@ static RelationStats estimateReadRowsCount(QueryPlan::Node & node, const Actions
         }
         return stats;
     }
+
 #if CLICKHOUSE_CLOUD
     if (dynamic_cast<LogicalExchangeStep *>(step))
         return estimateReadRowsCount(*node.children.front(), filter);
 #endif
+
+    if (const auto * transform = dynamic_cast<const ITransformingStep *>(step);
+        transform && transform->getTransformTraits().preserves_number_of_rows)
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     return {};
 }
@@ -507,6 +564,8 @@ bool convertLogicalJoinToPhysical(
     const QueryPlanOptimizationSettings & optimization_settings)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
+    /// Distributed plan keeps logical joins steps. They are converted to physical steps afterwards, when plan fragment is executed by a worker.
+    keep_logical |= optimization_settings.make_distributed_plan;
     if (keep_logical)
         return false;
     if (!typeid_cast<JoinStepLogical *>(node.step.get()))
@@ -733,8 +792,6 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
     size_t rhs_count = addChildQueryGraph(query_graph, rhs_plan, nodes, rhs_label, allow_right_subgraph ? static_cast<int>(join_steps_limit - lhs_count) : 0);
 
     size_t total_inputs = query_graph.inputs.size();
-    if (join_kind == JoinKind::Cross || join_kind == JoinKind::Comma)
-        query_graph.join_kinds[0] = QueryGraph::OuterJoinRestriction{BitSet{}, BitSet{}, JoinKind::Cross};
 
     chassert(lhs_count && rhs_count && lhs_count + rhs_count == total_inputs && query_graph.relation_stats.size() == total_inputs);
 
@@ -880,7 +937,7 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
             {
                 if (!graph_edge)
                     continue;
-                auto edge_sources = graph_edge.getSourceRelations();
+                const auto & edge_sources = graph_edge.getSourceRelations();
                 if (edge_sources.test(tainted_rel) && !edge_sources.test(null_rel))
                     query_graph.pinned[graph_edge].set(null_rel);
             }

@@ -1,0 +1,176 @@
+---
+description: 'دليل لتكوين حصص استخدام الموارد وإدارتها في ClickHouse'
+sidebarTitle: 'الحصص'
+slug: /operations/quotas
+title: 'الحصص'
+doc_type: 'guide'
+---
+
+<Info>
+  **الحصص في ClickHouse Cloud**
+
+  الحصص مدعومة في ClickHouse Cloud، لكن يجب إنشاؤها باستخدام [بناء جملة DDL](/ar/reference/statements/create/quota). أمّا نهج التكوين عبر XML الموثَّق أدناه فهو **غير مدعوم**.
+</Info>
+
+تتيح لك الحصص تقييد استخدام الموارد خلال فترة زمنية أو تتبّع استهلاك الموارد.
+تُعدّ الحصص في إعدادات المستخدم، والتي تكون عادةً في الملف &#39;users.xml&#39;.
+
+يتضمن النظام أيضًا ميزة لتقييد تعقيد استعلام واحد. راجع قسم [قيود على تعقيد الاستعلام](/ar/concepts/features/configuration/settings/query-complexity).
+
+وعلى خلاف قيود تعقيد الاستعلام، فإن الحصص:
+
+* تفرض قيودًا على مجموعة من الاستعلامات التي يمكن تشغيلها خلال فترة زمنية، بدلًا من تقييد استعلام واحد.
+* تحتسب الموارد المستهلكة على جميع الخوادم البعيدة ضمن معالجة الاستعلامات الموزعة.
+
+لنلقِ نظرة على القسم في ملف &#39;users.xml&#39; الذي يعرّف الحصص.
+
+```xml
+<!-- Quotas -->
+<quotas>
+    <!-- Quota name. -->
+    <default>
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+        <interval>
+            <!-- Length of the interval. -->
+            <duration>3600</duration>
+
+            <!-- Unlimited. Just collect data for the specified time interval. -->
+            <queries>0</queries>
+            <query_selects>0</query_selects>
+            <query_inserts>0</query_inserts>
+            <errors>0</errors>
+            <result_rows>0</result_rows>
+            <read_rows>0</read_rows>
+            <execution_time>0</execution_time>
+        </interval>
+    </default>
+```
+
+بشكل افتراضي، تتتبّع الحصة استهلاك الموارد كل ساعة، من دون تقييد الاستخدام.
+ويُسجَّل استهلاك الموارد المحسوب لكل فترة زمنية في سجل الخادم بعد كل طلب.
+
+```xml
+<statbox>
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
+    <interval>
+        <!-- Length of the interval. -->
+        <duration>3600</duration>
+
+        <queries>1000</queries>
+        <query_selects>100</query_selects>
+        <query_inserts>100</query_inserts>
+        <written_bytes>5000000</written_bytes>
+        <errors>100</errors>
+        <result_rows>1000000000</result_rows>
+        <read_rows>100000000000</read_rows>
+        <execution_time>900</execution_time>
+        <failed_sequential_authentications>5</failed_sequential_authentications>
+    </interval>
+
+    <interval>
+        <duration>86400</duration>
+
+        <queries>10000</queries>
+        <query_selects>10000</query_selects>
+        <query_inserts>10000</query_inserts>
+        <errors>1000</errors>
+        <result_rows>5000000000</result_rows>
+        <result_bytes>160000000000</result_bytes>
+        <read_rows>500000000000</read_rows>
+        <result_bytes>16000000000000</result_bytes>
+        <execution_time>7200</execution_time>
+    </interval>
+</statbox>
+```
+
+بالنسبة إلى الحصة &#39;statbox&#39;، تُحدَّد القيود لكل ساعة ولكل 24 ساعة (86,400 ثانية). ويُحتسب الفاصل الزمني ابتداءً من نقطة زمنية ثابتة يحددها التنفيذ. وبعبارة أخرى، ليس من الضروري أن تبدأ فترة الـ24 ساعة عند منتصف الليل.
+
+عند انتهاء الفاصل الزمني، تُصفَّر جميع القيم المجمَّعة. وبالنسبة إلى الساعة التالية، يبدأ احتساب الحصة من جديد.
+
+فيما يلي المقادير التي يمكن تقييدها:
+
+`queries` – العدد الإجمالي للاستعلامات.
+
+`query_selects` – العدد الإجمالي لطلبات SELECT.
+
+`query_inserts` – العدد الإجمالي لطلبات insert.
+
+`errors` – عدد الاستعلامات التي أطلقت استثناءً.
+
+`result_rows` – العدد الإجمالي للصفوف المُعادة كنتيجة.
+
+`result_bytes` - الحجم الإجمالي للصفوف المُعادة كنتيجة.
+
+`read_rows` – العدد الإجمالي لصفوف المصدر المقروءة من الجداول لتشغيل الاستعلام على جميع الخوادم البعيدة.
+
+`read_bytes` - الحجم الإجمالي المقروء من الجداول لتشغيل الاستعلام على جميع الخوادم البعيدة.
+
+`written_bytes` - الحجم الإجمالي لعملية الكتابة.
+
+`execution_time` – إجمالي زمن تنفيذ الاستعلام، بالثواني (زمن الساعة الفعلي).
+
+`failed_sequential_authentications` - العدد الإجمالي لأخطاء المصادقة المتسلسلة.
+
+`queries_per_normalized_hash` – الحد الأقصى لعدد مرات تنفيذ أي استعلام مُطبَّع واحد. الاستعلامات المُطبَّعة هي استعلامات استُبدلت فيها القيم الحرفية بعناصر نائبة، لذا يُعَدّ `SELECT 1` و`SELECT 2` الاستعلام المُطبَّع نفسه. ويُتتبَّع هذا الحد بشكل مستقل لكل نمط استعلام مُطبَّع مميّز.
+
+إذا تم تجاوز الحد خلال فترة زمنية واحدة على الأقل، يُطرَح استثناء يتضمن نصًا يوضّح أي قيد تم تجاوزه، ولأي فترة زمنية، ومتى تبدأ الفترة الجديدة (أي متى يمكن إرسال الاستعلامات مرة أخرى).
+
+يمكن أن تستخدم الحصص ميزة &quot;quota key&quot; للإبلاغ عن الموارد لعدة مفاتيح بشكل مستقل. وفيما يلي مثال على ذلك:
+
+```xml
+<!-- For the global reports designer. -->
+<web_global>
+    <!-- keyed – The quota_key "key" is passed in the query parameter,
+            and the quota is tracked separately for each key value.
+        For example, you can pass a username as the key,
+            so the quota will be counted separately for each username.
+        Using keys makes sense only if quota_key is transmitted by the program, not by a user.
+
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
+        (But keep in mind that users can change the IPv6 address fairly easily.)
+
+        Instead of <keyed_by_ip /> you can use <keyed_by_forwarded_ip />, so the address
+        from the X-Forwarded-For header is used as the quota key.
+
+        For both <keyed_by_ip /> and <keyed_by_forwarded_ip /> you can additionally specify
+        <ipv4_prefix_bits> and <ipv6_prefix_bits> to group clients by subnet instead of by a
+        single address: the IP address is masked to the given prefix length before being used
+        as the quota key. For example, <ipv4_prefix_bits>24</ipv4_prefix_bits> shares one bucket
+        across a /24 IPv4 subnet, and <ipv6_prefix_bits>64</ipv6_prefix_bits> across a /64 IPv6
+        subnet. These elements can only be used together with <keyed_by_ip /> or
+        <keyed_by_forwarded_ip />.
+    -->
+    <keyed />
+```
+
+يمكنك أيضًا تعيين `quotas` استنادًا إلى تجزئة الاستعلام المُطبَّع، بحيث يكون لكل نمط استعلام مميّز حيّز حصة مستقل خاص به. في تكوين XML، يُكتب ذلك على النحو `<keyed_by_normalized_query_hash />`:
+
+```xml
+<my_quota>
+    <keyed_by_normalized_query_hash />
+    <interval>
+        <duration>3600</duration>
+        <queries>100</queries>
+    </interval>
+</my_quota>
+```
+
+يمكن التعبير عن الأمر نفسه باستخدام بناء جملة DDL:
+
+```sql
+CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
+```
+
+في هذا المثال، يمكن للمستخدم تنفيذ ما يصل إلى 100 مرة من كل استعلام مُطبَّع مميّز في الساعة. يشترك `SELECT number FROM numbers(1)` و`SELECT number FROM numbers(2)` في نفس حاوية الاحتساب (لأن لهما نفس الصيغة المعيارية)، لكن `SELECT number, number FROM numbers(1)` يستخدم حاوية احتساب منفصلة.
+
+تُسنَد الحصة إلى المستخدمين في قسم &#39;users&#39; من ملف config. راجع قسم &quot;أذونات الوصول&quot;.
+
+في معالجة الاستعلامات الموزعة، تُخزَّن القيم المتراكمة على الخادم الذي يرسل الطلب. لذلك، إذا انتقل المستخدم إلى خادم آخر، فستبدأ الحصة هناك &quot;من جديد&quot;.
+
+عند إعادة تشغيل الخادم، تُصفَّر الحصص.&quot;
+
+<div id="related-content">
+  ## محتوى مرتبط
+</div>
+
+* مدونة: [بناء تطبيقات أحادية الصفحة باستخدام ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

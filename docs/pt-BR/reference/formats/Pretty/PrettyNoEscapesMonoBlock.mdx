@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Documentação do formato PrettyNoEscapesMonoBlock'
+input_format: false
+keywords: ['PrettyNoEscapesMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyNoEscapesMonoBlock
+title: 'PrettyNoEscapesMonoBlock'
+doc_type: 'referência'
+---
+
+import PrettyFormatSettings from '/snippets/pt-BR/common-pretty-format-settings.mdx';
+
+| Entrada | Saída | Alias |
+| ------- | ----- | ----- |
+| ✗       | ✔     |       |
+
+<div id="description">
+  ## Descrição
+</div>
+
+Difere do formato [`PrettyNoEscapes`](/pt-BR/reference/formats/Pretty/PrettyNoEscapes) porque até `10,000` linhas são mantidas em buffer
+e depois exibidas como uma única tabela, e não em blocos.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>
+
+<PrettyFormatSettings />

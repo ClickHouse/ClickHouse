@@ -68,7 +68,7 @@ std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & obje
     return all_paths;
 }
 
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows)
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
@@ -105,9 +105,9 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
     return hash.get64() % num_buckets;
 }
 
-std::vector<ColumnPtr> splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets)
+Columns splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets)
 {
-    std::vector<ColumnPtr> shared_data_buckets(num_buckets);
+    Columns shared_data_buckets(num_buckets);
     std::vector<ColumnString *> shared_data_paths_buckets(num_buckets);
     std::vector<ColumnString *> shared_data_values_buckets(num_buckets);
     std::vector<ColumnArray::Offsets *> shared_data_offsets_buckets(num_buckets);
@@ -137,7 +137,7 @@ std::vector<ColumnPtr> splitSharedDataPathsToBuckets(const IColumn & shared_data
     return shared_data_buckets;
 }
 
-void collectSharedDataFromBuckets(const std::vector<ColumnPtr> & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix)
+void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn & shared_data_column, const String * paths_prefix)
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     std::vector<const ColumnString *> shared_data_paths_buckets(shared_data_buckets.size());

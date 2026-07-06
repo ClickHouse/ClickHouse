@@ -1,7 +1,6 @@
 #pragma once
 
 #include <memory>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
@@ -13,8 +12,6 @@
 
 namespace DB
 {
-
-struct SelectQueryInfo;
 
 /**
  * The default `HashJoin` is not thread-safe for inserting the right table's rows; thus, it is done on a single thread.
@@ -103,11 +100,21 @@ public:
 
     void onBuildPhaseFinish() override;
 
+    void setEnableLazyColumnsIndexing(bool value) override
+    {
+        std::ranges::for_each(hash_joins, [value](auto & hash_join) { hash_join->data->setEnableLazyColumnsIndexing(value); });
+    }
+
     struct InternalHashJoin
     {
         std::mutex mutex;
         std::unique_ptr<HashJoin> data;
         bool space_was_preallocated = false;
+
+        /// Snapshot of the total rows and bytes held by the hash join. This is updated during
+        /// `addBlockToJoin` and is used to track the whole join state without locking.
+        std::atomic<size_t> total_rows{0};
+        std::atomic<size_t> total_bytes{0};
     };
 
     friend class NotJoinedHash;
@@ -129,7 +136,4 @@ private:
     ScatteredBlocks dispatchBlock(const Strings & key_columns_names, Block && from_block);
 };
 
-// The following two methods are deprecated and hopefully will be removed in the future.
-IQueryTreeNode::HashState preCalculateCacheKey(const QueryTreeNodePtr & right_table_expression, const SelectQueryInfo & select_query_info);
-UInt64 calculateCacheKey(std::shared_ptr<TableJoin> & table_join, IQueryTreeNode::HashState hash);
 }

@@ -1,0 +1,139 @@
+---
+slug: /use-cases/observability/clickstack/deployment/all-in-one
+title: '一体化部署'
+description: '通过 All In One 部署 ClickStack 开源版 - ClickHouse 可观测性栈'
+doc_type: 'guide'
+keywords: ['ClickStack 开源版 ', '可观测性', '一体化部署', '部署']
+---
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+这个一体化 Docker 镜像集成了 ClickStack 开源版的所有组件：
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector** (通过端口 `4317` 和 `4318` 暴露 OTLP)
+* **MongoDB** (用于持久化应用状态)
+
+该选项包含身份验证，支持在不同会话和用户之间持久保存仪表盘、告警和已保存的搜索。
+
+<div id="suitable-for">
+  ### 适用于
+</div>
+
+* 演示
+* 全栈本地测试
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 使用 Docker 部署
+
+    以下命令将启动 OpenTelemetry collector (监听 4317 和 4318 端口) 以及 HyperDX UI (监听 8080 端口) 。
+
+    ```shell
+    docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Info>
+      **镜像名称更新**
+
+      ClickStack 镜像现已发布为 `clickhouse/clickstack-*` (此前为 `docker.hyperdx.io/hyperdx/*`) 。
+    </Info>
+  </Step>
+
+  <Step>
+    ### 前往 HyperDX UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 进入 HyperDX UI。
+
+    创建用户，并提供符合要求的用户名和密码。
+
+    点击 `Create` 后，系统会为集成的 ClickHouse 实例创建数据源。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    有关使用其他 ClickHouse 实例的示例，请参阅 [“Using ClickHouse Cloud”](#using-clickhouse-cloud)。
+  </Step>
+
+  <Step>
+    ### 摄取数据
+
+    要摄取数据，请参阅 [“Ingesting data”](/zh/clickstack/ingesting-data/index)。
+  </Step>
+</Steps>
+
+<div id="persisting-data-and-settings">
+  ## 持久化数据和设置
+</div>
+
+为了在容器重启后仍能保留数据和设置，你可以修改上面的 docker 命令，将路径 `/data/db`、`/var/lib/clickhouse` 和 `/var/log/clickhouse-server` 挂载出来。例如：
+
+```shell
+# 确保目录存在
+mkdir -p .volumes/db .volumes/ch_data .volumes/ch_logs
+# 修改命令以挂载路径
+docker run \
+  -p 8080:8080 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -v "$(pwd)/.volumes/db:/data/db" \
+  -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+  -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="deploying-to-production">
+  ## 部署到生产环境
+</div>
+
+由于以下原因，此选项不应部署到生产环境：
+
+* **非持久化存储：** 所有数据都存储在 Docker 原生的 overlay 文件系统中。这种设置无法支持大规模场景下的性能需求，而且如果容器被移除或重启，数据都会丢失——除非用户[挂载所需的文件路径](#persisting-data-and-settings)。
+* **缺乏组件隔离：** 所有组件都运行在单个 Docker 容器中。这会导致无法独立进行扩缩容和监控，并且任何 `cgroup` 限制都会全局应用到所有进程。因此，各组件可能会争用 CPU 和内存。
+
+<div id="customizing-ports-deploy">
+  ## 自定义端口
+</div>
+
+如果需要自定义 HyperDX Local 使用的应用程序 (8080) 或 API (8000) 端口，你需要修改 `docker run` 命令，转发相应端口并设置一些环境变量。
+
+自定义 OpenTelemetry 端口时，只需修改端口转发参数即可。例如，将 `-p 4318:4318` 替换为 `-p 4999:4318`，即可将 OpenTelemetry HTTP 端口改为 4999。
+
+```shell
+docker run -p 8080:8080 -p 4317:4317 -p 4999:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="using-clickhouse-cloud">
+  ## 使用 ClickHouse Cloud
+</div>
+
+此发行版可与 ClickHouse Cloud 搭配使用。虽然本地 ClickHouse 实例仍会被部署 (但会被忽略) ，但可通过设置环境变量 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD`，将 OTel collector 配置为使用 ClickHouse Cloud 实例。
+
+例如：
+
+```shell
+export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+`CLICKHOUSE_ENDPOINT` 应为 ClickHouse Cloud 的 HTTPS 端点，并包含端口 `8443`，例如 `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+连接到 HyperDX UI 后，前往 [`Team Settings`](http://localhost:8080/team)，创建到你的 ClickHouse Cloud 服务的连接，然后添加所需的 source。
+
+<div id="configuring-collector">
+  ## 配置 OpenTelemetry collector
+</div>
+
+如有需要，可修改 OTel collector 的配置。请参阅[“修改配置”](/zh/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)。
+
+<JSONSupport />

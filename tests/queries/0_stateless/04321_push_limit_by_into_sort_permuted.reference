@@ -1,0 +1,32 @@
+-- { echo }
+
+-- Permuted LIMIT BY pushed into the sort: ORDER BY (key, val) covers the LIMIT BY keys (val, key) in a
+-- different order. The optimizer installs the per-stream LIMIT BY hint with the permuted columns, and at
+-- runtime (several sorted streams) the per-stream LimitBySortedStreamTransform pre-cap runs before the merge.
+DROP TABLE IF EXISTS test_push_permuted;
+CREATE TABLE test_push_permuted (key UInt32, val UInt32) ENGINE = MergeTree ORDER BY tuple();
+SYSTEM STOP MERGES test_push_permuted;
+INSERT INTO test_push_permuted SELECT number % 20, number % 7 FROM numbers(1000);
+INSERT INTO test_push_permuted SELECT number % 20, number % 7 FROM numbers(1000);
+INSERT INTO test_push_permuted SELECT number % 20, number % 7 FROM numbers(1000);
+SELECT DISTINCT trim(BOTH ' ' FROM explain) FROM (EXPLAIN actions = 1 SELECT key, val FROM test_push_permuted ORDER BY key, val LIMIT 1 BY val, key) WHERE explain LIKE '%Per-stream LIMIT BY%';
+Per-stream LIMIT BY columns: __table1.val, __table1.key
+Per-stream LIMIT BY length 1
+SELECT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT key, val FROM test_push_permuted ORDER BY key, val LIMIT 1 BY val, key) WHERE explain ILIKE '%LimitBySorted%' OR explain ILIKE '%MergingSorted%';
+LimitBySortedStreamTransform
+MergingSortedTransform 3 → 1
+LimitBySortedStreamTransform × 3
+SELECT (SELECT groupArray((key, val)) FROM (SELECT key, val FROM test_push_permuted ORDER BY key, val LIMIT 1 BY val, key SETTINGS query_plan_push_limit_by_into_sort = 0)) = (SELECT groupArray((key, val)) FROM (SELECT key, val FROM test_push_permuted ORDER BY key, val LIMIT 1 BY val, key SETTINGS query_plan_push_limit_by_into_sort = 1));
+1
+DROP TABLE test_push_permuted;
+-- Partial cover (ORDER BY key while LIMIT BY key, val) installs no per-stream pre-cap.
+DROP TABLE IF EXISTS test_push_partial;
+CREATE TABLE test_push_partial (key UInt32, val UInt32) ENGINE = MergeTree ORDER BY tuple();
+SYSTEM STOP MERGES test_push_partial;
+INSERT INTO test_push_partial SELECT number % 20, number % 7 FROM numbers(1000);
+INSERT INTO test_push_partial SELECT number % 20, number % 7 FROM numbers(1000);
+SELECT count() FROM (EXPLAIN actions = 1 SELECT key, val FROM test_push_partial ORDER BY key LIMIT 1 BY key, val) WHERE explain LIKE '%Per-stream LIMIT BY%';
+0
+SELECT trim(BOTH ' ' FROM explain) FROM (EXPLAIN PIPELINE SELECT key, val FROM test_push_partial ORDER BY key LIMIT 1 BY key, val) WHERE explain ILIKE '%LimitBySorted%' OR explain ILIKE '%MergingSorted%';
+MergingSortedTransform 2 → 1
+DROP TABLE test_push_partial;

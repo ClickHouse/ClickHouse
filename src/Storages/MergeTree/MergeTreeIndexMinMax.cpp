@@ -34,7 +34,7 @@ MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const String & index_na
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const String & index_name_,
     const Block & index_sample_block_,
-    std::vector<Range> && hyperrectangle_)
+    Ranges && hyperrectangle_)
     : index_name(index_name_)
     , index_sample_block(index_sample_block_)
     , hyperrectangle(std::move(hyperrectangle_))
@@ -245,15 +245,18 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexMinMax::createIndexAggregator() const
 MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    ActionsDAGWithInversionPushDown filter_dag(predicate, context);
+    ActionsDAGWithInversionPushDown filter_dag(predicate, context, /* boolean_context */ true);
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix) const
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
 {
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
-    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx"))
+    if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
 }
@@ -463,12 +466,12 @@ void MergeTreeIndexBulkGranulesMinMax::getTopKMarks(int direction,
 }
 
 MergeTreeIndexPtr minmaxIndexCreator(
-    const IndexDescription & index)
+    StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
-    return std::make_shared<MergeTreeIndexMinMax>(index);
+    return std::make_shared<MergeTreeIndexMinMax>(std::move(metadata_snapshot), index);
 }
 
-void minmaxIndexValidator(const IndexDescription & index, bool attach)
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     if (attach)
         return;

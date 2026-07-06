@@ -1,0 +1,493 @@
+#include <Formats/PNGSerializer.h>
+
+#include <cstring>
+#include <algorithm>
+#include <optional>
+
+#include <Columns/ColumnNullable.h>
+#include <DataTypes/IDataType.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <Common/Exception.h>
+#include <Common/PODArray.h>
+#include <Common/assert_cast.h>
+#include <Common/NaNUtils.h>
+#include <Common/StringUtils.h>
+#include <base/arithmeticOverflow.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int LOGICAL_ERROR;
+    extern const int TOO_MANY_ROWS;
+}
+
+namespace
+{
+    /// How to interpret a value column when converting it to an 8-bit pixel component.
+    /// Determined once from the column type, so the per-row path does not re-dispatch on the data type.
+    enum class ValueKind : uint8_t
+    {
+        UInt,   /// Integer clamped to [0, 255].
+        Int,    /// Integer clamped to [0, 255].
+        Float,  /// Clamped to [0, 1] and scaled to [0, 255].
+        Bool,   /// 0 or 255.
+    };
+
+    /// Convert a single value of a column to an 8-bit pixel component, using the kind precomputed from its type.
+    UInt8 extractByte(const IColumn & column, size_t row_num, ValueKind kind, bool nullable)
+    {
+        const IColumn * data_column = &column;
+        if (nullable)
+        {
+            const auto & nullable_column = assert_cast<const ColumnNullable &>(column);
+            if (nullable_column.isNullAt(row_num))
+                return 0;
+            data_column = &nullable_column.getNestedColumn();
+        }
+
+        switch (kind)
+        {
+            case ValueKind::UInt:
+                return static_cast<UInt8>(std::min<UInt64>(data_column->getUInt(row_num), 255));
+            case ValueKind::Int:
+                return static_cast<UInt8>(std::clamp<Int64>(data_column->getInt(row_num), 0, 255));
+            case ValueKind::Float:
+            {
+                Float64 value = data_column->getFloat64(row_num);
+                if (!isFinite(value))
+                    return 0;
+                value = std::clamp(value, 0.0, 1.0);
+                return static_cast<UInt8>(std::lround(value * 255.0));
+            }
+            case ValueKind::Bool:
+                return data_column->getBool(row_num) ? 255 : 0;
+        }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected value kind for PNG pixel component");
+    }
+
+    /// Strip a `LowCardinality` wrapper, if present.
+    const IDataType * removeLowCardinalityType(const IDataType * type)
+    {
+        if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(type))
+            return low_cardinality->getDictionaryType().get();
+        return type;
+    }
+
+    /// Strip `LowCardinality` and `Nullable` wrappers, returning the innermost value type.
+    const IDataType * unwrapType(const IDataType * type)
+    {
+        type = removeLowCardinalityType(type);
+        if (type->isNullable())
+            return typeid_cast<const DataTypeNullable &>(*type).getNestedType().get();
+        return type;
+    }
+
+    /// Whether the materialized column for this type is a `ColumnNullable` (after `LowCardinality` is removed).
+    bool isNullableType(const IDataType & type)
+    {
+        return removeLowCardinalityType(&type)->isNullable();
+    }
+
+    bool isAllowedPixelType(const IDataType & type)
+    {
+        WhichDataType which(*unwrapType(&type));
+        return which.isNativeInteger() || which.isNativeFloat();
+    }
+
+    bool isAllowedBoolType(const IDataType & type)
+    {
+        return unwrapType(&type)->getName() == "Bool";
+    }
+
+    bool isAllowedCoordinateType(const IDataType & type)
+    {
+        return WhichDataType(*unwrapType(&type)).isNativeInteger();
+    }
+
+    /// Classify a value column type into a `ValueKind`. The type must have already been validated.
+    ValueKind classifyValueKind(const IDataType & type)
+    {
+        WhichDataType which(*unwrapType(&type));
+        if (which.isNativeUInt())
+            return ValueKind::UInt;
+        if (which.isNativeInt())
+            return ValueKind::Int;
+        if (which.isNativeFloat())
+            return ValueKind::Float;
+        return ValueKind::Bool;
+    }
+
+    /// Identify a column by its lower-cased name.
+    String lowerName(const String & name)
+    {
+        String result;
+        result.reserve(name.size());
+        for (char c : name)
+            result.push_back(toLowerIfAlphaASCII(c));
+        return result;
+    }
+}
+
+class PNGSerializer::Impl
+{
+public:
+    Impl(const Block & header, const FormatSettings & format_settings);
+
+    void setColumns(const ColumnPtr * columns, size_t num_columns);
+    void writeRow(size_t row_num);
+    void reset();
+
+    size_t getWidth() const { return width; }
+    size_t getHeight() const { return height; }
+    size_t getChannels() const { return channels; }
+    const UInt8 * getPixels() const { return pixels.data(); }
+
+private:
+    enum class Mode : uint8_t
+    {
+        RGB,
+        RGBA,
+        Grayscale,
+        Binary,
+    };
+
+    size_t width = 0;
+    size_t height = 0;
+    Mode mode = Mode::RGB;
+    size_t channels = 0;
+
+    /// Column indices in the input header. nullopt if absent.
+    std::optional<size_t> x_idx;
+    std::optional<size_t> y_idx;
+    std::optional<size_t> r_idx;
+    std::optional<size_t> g_idx;
+    std::optional<size_t> b_idx;
+    std::optional<size_t> a_idx;
+    std::optional<size_t> v_idx;
+
+    bool explicit_coords = false;
+    bool x_nullable = false;
+    bool y_nullable = false;
+    /// Current pixel position in implicit (scanline) coordinate mode, advanced incrementally per row.
+    size_t implicit_x = 0;
+    size_t implicit_y = 0;
+
+    /// How to extract one pixel component, precomputed once from the column types so that
+    /// the per-row path does not re-dispatch on the data type. One entry per output channel,
+    /// in the order the channels are written (R, G, B[, A] or the single grayscale/binary value).
+    struct ChannelExtractor
+    {
+        size_t column_index = 0;
+        ValueKind kind = ValueKind::UInt;
+        bool nullable = false;
+    };
+    std::vector<ChannelExtractor> channel_extractors;
+
+    /// The image buffer can be large (its size is controlled by user settings), so it uses a
+    /// `PODArray` backed by the ClickHouse allocator. This way its memory is accounted by the
+    /// memory tracker and respects the per-query memory limits.
+    PaddedPODArray<UInt8> pixels;
+    std::vector<ColumnPtr> src_columns;
+
+    void writePixel(size_t x, size_t y, const UInt8 * components);
+};
+
+PNGSerializer::Impl::Impl(const Block & header, const FormatSettings & format_settings)
+    : width(format_settings.image.width)
+    , height(format_settings.image.height)
+{
+    if (width == 0 || height == 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Image width and height must be greater than zero (got {}x{})", width, height);
+
+    /// libpng rejects an image whose width or height exceeds its per-dimension user limit
+    /// (`PNG_USER_WIDTH_MAX`/`PNG_USER_HEIGHT_MAX`, 1000000 by default) at `png_set_IHDR`. That check fires
+    /// inside libpng's C frames, so it would surface only as a generic encoding failure. Reject oversized
+    /// dimensions here instead, before allocating the buffer, with a clear message naming the settings.
+    static constexpr size_t MAX_IMAGE_DIMENSION = 1000000;
+    if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Image width and height must not exceed {} (got {}x{}). "
+            "Reduce 'output_format_image_width'/'output_format_image_height'.",
+            MAX_IMAGE_DIMENSION, width, height);
+
+    const size_t num_cols = header.columns();
+    if (num_cols == 0)
+        throw Exception(ErrorCodes::INCORRECT_NUMBER_OF_COLUMNS,
+            "PNG format requires at least one column");
+
+    for (size_t i = 0; i < num_cols; ++i)
+    {
+        const auto & col = header.getByPosition(i);
+        const String key = lowerName(col.name);
+
+        auto assign_unique = [&](std::optional<size_t> & target, const char * role)
+        {
+            if (target.has_value())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Duplicate column for the role '{}' in PNG format input", role);
+            target = i;
+        };
+
+        if (key == "x")
+            assign_unique(x_idx, "x");
+        else if (key == "y")
+            assign_unique(y_idx, "y");
+        else if (key == "r")
+            assign_unique(r_idx, "r");
+        else if (key == "g")
+            assign_unique(g_idx, "g");
+        else if (key == "b")
+            assign_unique(b_idx, "b");
+        else if (key == "a")
+            assign_unique(a_idx, "a");
+        else if (key == "v")
+            assign_unique(v_idx, "v");
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column '{}' is not recognized by the PNG format. "
+                "Expected one of: x, y, r, g, b, a, v (case-insensitive)", col.name);
+    }
+
+    const bool has_x = x_idx.has_value();
+    const bool has_y = y_idx.has_value();
+    if (has_x != has_y)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PNG format requires either both 'x' and 'y' columns for explicit coordinates, or neither");
+    explicit_coords = has_x && has_y;
+
+    const bool has_rgb = r_idx.has_value() && g_idx.has_value() && b_idx.has_value();
+    const bool has_rgba = has_rgb && a_idx.has_value();
+    const bool has_v = v_idx.has_value();
+    const bool has_any_rgb = r_idx.has_value() || g_idx.has_value() || b_idx.has_value() || a_idx.has_value();
+
+    if (has_v && has_any_rgb)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "PNG format does not allow mixing the 'v' column with 'r', 'g', 'b', or 'a' columns");
+
+    if (has_v)
+    {
+        const auto & v_type = *header.getByPosition(*v_idx).type;
+        if (isAllowedBoolType(v_type))
+            mode = Mode::Binary;
+        else if (isAllowedPixelType(v_type))
+            mode = Mode::Grayscale;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column 'v' must have a numeric or Bool type, got '{}'", v_type.getName());
+        channels = 1;
+    }
+    else if (has_rgba)
+    {
+        mode = Mode::RGBA;
+        channels = 4;
+    }
+    else if (has_rgb)
+    {
+        mode = Mode::RGB;
+        channels = 3;
+    }
+    else
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot determine PNG color mode: expected 'r', 'g', 'b' (RGB), "
+            "'r', 'g', 'b', 'a' (RGBA), or 'v' (grayscale/binary)");
+    }
+
+    /// Validate types of pixel and coordinate columns.
+    auto check_pixel_type = [&](size_t idx, const char * role)
+    {
+        const auto & type = *header.getByPosition(idx).type;
+        if (!isAllowedPixelType(type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Column '{}' must have a numeric type, got '{}'", role, type.getName());
+    };
+
+    if (mode == Mode::RGB || mode == Mode::RGBA)
+    {
+        check_pixel_type(*r_idx, "r");
+        check_pixel_type(*g_idx, "g");
+        check_pixel_type(*b_idx, "b");
+    }
+    if (mode == Mode::RGBA)
+        check_pixel_type(*a_idx, "a");
+
+    if (explicit_coords)
+    {
+        const auto & x_type = *header.getByPosition(*x_idx).type;
+        const auto & y_type = *header.getByPosition(*y_idx).type;
+        if (!isAllowedCoordinateType(x_type) || !isAllowedCoordinateType(y_type))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Columns 'x' and 'y' must have an integer type, got '{}' and '{}'",
+                x_type.getName(), y_type.getName());
+        x_nullable = isNullableType(x_type);
+        y_nullable = isNullableType(y_type);
+    }
+
+    /// Precompute the per-channel extraction plan once, in the order the channels are written.
+    /// `Bool` is backed by `UInt8`, so the kind must be forced for binary mode rather than inferred from the type.
+    auto add_channel = [&](size_t idx, ValueKind kind)
+    {
+        const auto & type = *header.getByPosition(idx).type;
+        channel_extractors.push_back({idx, kind, isNullableType(type)});
+    };
+
+    if (mode == Mode::RGB || mode == Mode::RGBA)
+    {
+        add_channel(*r_idx, classifyValueKind(*header.getByPosition(*r_idx).type));
+        add_channel(*g_idx, classifyValueKind(*header.getByPosition(*g_idx).type));
+        add_channel(*b_idx, classifyValueKind(*header.getByPosition(*b_idx).type));
+    }
+    if (mode == Mode::RGBA)
+        add_channel(*a_idx, classifyValueKind(*header.getByPosition(*a_idx).type));
+    if (mode == Mode::Grayscale)
+        add_channel(*v_idx, classifyValueKind(*header.getByPosition(*v_idx).type));
+    if (mode == Mode::Binary)
+        add_channel(*v_idx, ValueKind::Bool);
+
+    /// Allocate the image buffer. For RGBA this leaves the image transparent;
+    /// for RGB / grayscale / binary this leaves it black.
+    size_t total_bytes = 0;
+    if (common::mulOverflow(width, height, total_bytes) || common::mulOverflow(total_bytes, channels, total_bytes))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Image dimensions {}x{} with {} channel(s) overflow the maximum buffer size",
+            width, height, channels);
+    pixels.resize_fill(total_bytes, 0);
+}
+
+void PNGSerializer::Impl::setColumns(const ColumnPtr * columns, size_t num_columns)
+{
+    /// Materialize the columns so that the per-row reading path works uniformly. This unwraps
+    /// `Const`, `Sparse`, `LowCardinality`, etc., into plain columns; in particular a
+    /// `LowCardinality(Nullable(...))` becomes a `ColumnNullable`, matching the precomputed `nullable` flags.
+    src_columns.clear();
+    src_columns.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+        src_columns.push_back(columns[i]->convertToFullIfNeeded());
+}
+
+void PNGSerializer::Impl::writePixel(size_t x, size_t y, const UInt8 * components)
+{
+    UInt8 * ptr = pixels.data() + (y * width + x) * channels;
+    std::memcpy(ptr, components, channels);
+}
+
+void PNGSerializer::Impl::writeRow(size_t row_num)
+{
+    UInt8 components[4] = {0, 0, 0, 255};
+
+    for (size_t channel = 0; channel < channel_extractors.size(); ++channel)
+    {
+        const auto & extractor = channel_extractors[channel];
+        components[channel] = extractByte(*src_columns[extractor.column_index], row_num, extractor.kind, extractor.nullable);
+    }
+
+    if (explicit_coords)
+    {
+        const IColumn * x_col = src_columns[*x_idx].get();
+        const IColumn * y_col = src_columns[*y_idx].get();
+
+        if (x_nullable)
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*x_col);
+            if (nullable.isNullAt(row_num))
+                return;
+            x_col = &nullable.getNestedColumn();
+        }
+        if (y_nullable)
+        {
+            const auto & nullable = assert_cast<const ColumnNullable &>(*y_col);
+            if (nullable.isNullAt(row_num))
+                return;
+            y_col = &nullable.getNestedColumn();
+        }
+
+        const Int64 x_val = x_col->getInt(row_num);
+        const Int64 y_val = y_col->getInt(row_num);
+
+        /// Out-of-range coordinates are silently ignored.
+        if (x_val < 0 || y_val < 0)
+            return;
+        const auto ux = static_cast<UInt64>(x_val);
+        const auto uy = static_cast<UInt64>(y_val);
+        if (ux >= width || uy >= height)
+            return;
+
+        writePixel(ux, uy, components);
+    }
+    else
+    {
+        /// The image is filled in scanline order; advance x and y incrementally.
+        if (implicit_y >= height)
+            throw Exception(ErrorCodes::TOO_MANY_ROWS,
+                "The result has more rows than the {}x{} PNG image can hold ({} pixels). "
+                "Use explicit 'x' and 'y' coordinate columns, or increase "
+                "'output_format_image_width'/'output_format_image_height'.",
+                width, height, width * height);
+
+        writePixel(implicit_x, implicit_y, components);
+
+        if (++implicit_x == width)
+        {
+            implicit_x = 0;
+            ++implicit_y;
+        }
+    }
+}
+
+void PNGSerializer::Impl::reset()
+{
+    std::fill(pixels.begin(), pixels.end(), UInt8(0));
+    src_columns.clear();
+    implicit_x = 0;
+    implicit_y = 0;
+}
+
+PNGSerializer::PNGSerializer(const Block & header, const FormatSettings & settings)
+    : impl(std::make_unique<Impl>(header, settings))
+{
+}
+
+PNGSerializer::~PNGSerializer() = default;
+
+void PNGSerializer::setColumns(const ColumnPtr * columns, size_t num_columns)
+{
+    impl->setColumns(columns, num_columns);
+}
+
+void PNGSerializer::writeRow(size_t row_num)
+{
+    impl->writeRow(row_num);
+}
+
+void PNGSerializer::reset()
+{
+    (*impl).reset();
+}
+
+size_t PNGSerializer::getWidth() const
+{
+    return impl->getWidth();
+}
+
+size_t PNGSerializer::getHeight() const
+{
+    return impl->getHeight();
+}
+
+size_t PNGSerializer::getChannels() const
+{
+    return impl->getChannels();
+}
+
+const UInt8 * PNGSerializer::getPixels() const
+{
+    return impl->getPixels();
+}
+
+}

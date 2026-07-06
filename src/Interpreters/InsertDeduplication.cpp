@@ -1063,7 +1063,9 @@ DeduplicationInfo::Ptr DeduplicationInfo::mergeSelf(const Ptr & right) const
 
     chassert(disabled == right->disabled);
     chassert(is_async_insert == right->is_async_insert);
-    chassert(this->visited_views == right->visited_views);
+    /// When dedup is disabled, parallel-insert squashing may legitimately merge chunks
+    /// from different views writing to the same target, so their visited_views can differ.
+    chassert(disabled || this->visited_views == right->visited_views);
 
     if (!disabled && is_async_insert && visited_views.size() > 1)
         throw Exception(

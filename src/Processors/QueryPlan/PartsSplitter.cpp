@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/PartsSplitter.h>
+#include <base/sort.h>
 
 #include <Core/Field.h>
 #include <Common/logger_useful.h>
@@ -668,12 +669,12 @@ SplitPartsRangesResult splitPartsRangesImpl(RangesInDataParts ranges_in_data_par
     auto && non_intersecting_ranges_in_data_parts = std::move(non_intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
     auto && intersecting_ranges_in_data_parts = std::move(intersecting_ranges_in_data_parts_builder.getCurrentRangesInDataParts());
 
-    std::stable_sort(
+    ::stableSort(
         non_intersecting_ranges_in_data_parts.begin(),
         non_intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
 
-    std::stable_sort(
+    ::stableSort(
         intersecting_ranges_in_data_parts.begin(),
         intersecting_ranges_in_data_parts.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -852,7 +853,7 @@ SplitPartsByRanges splitIntersectingPartsRangesIntoLayers(
                 i ? ::toString(borders[i - 1]) : "-inf", i < borders.size() ? ::toString(borders[i]) : "+inf");
         }
 
-        std::stable_sort(
+        ::stableSort(
             layer.begin(),
             layer.end(),
             [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });
@@ -1092,7 +1093,7 @@ static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataPart
     }
 
     auto result_final_ranges = result.getCurrentRangesInDataParts();
-    std::stable_sort(
+    ::stableSort(
         result_final_ranges.begin(),
         result_final_ranges.end(),
         [](const auto & lhs, const auto & rhs) { return lhs.part_index_in_query < rhs.part_index_in_query; });

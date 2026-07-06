@@ -7,6 +7,7 @@
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromS3.h>
+#include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -144,6 +145,21 @@ size_t CachedOnDiskReadBufferFromFile::getFileSize()
     if (!object_size.has_value())
         throw Exception(ErrorCodes::UNKNOWN_FILE_SIZE, "Cannot get file size for object {}", info.source_file_path);
     return object_size.value();
+}
+
+std::optional<Field> CachedOnDiskReadBufferFromFile::getMetadata(const String & name) const
+{
+    if (state && state->buf)
+    {
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(state->buf.get()))
+            return provider->getMetadata(name);
+    }
+    if (info.remote_file_reader)
+    {
+        if (auto * provider = dynamic_cast<IReadBufferMetadataProvider *>(info.remote_file_reader.get()))
+            return provider->getMetadata(name);
+    }
+    return std::nullopt;
 }
 
 void CachedOnDiskReadBufferFromFile::appendFilesystemCacheLog(
@@ -899,10 +915,14 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
             ProfileEvents::increment(ProfileEvents::CachedReadBufferPredownloadedBytes, size);
 
             std::string failure_reason;
+            /// Bytes left to read from the download offset (read_until_position is exclusive).
+            const size_t reserve_hint = info.read_until_position - file_segment.getCurrentWriteOffset();
             bool continue_predownload = file_segment.reserve(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-                failure_reason);
+                failure_reason,
+                /* reserve_stat */nullptr,
+                reserve_hint);
 
             if (continue_predownload)
             {
@@ -956,11 +976,11 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
 
                 state.read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
-                LOG_TRACE(
+                LOG_DEBUG(
                     log,
-                    "Predownload failed because of space limit. "
+                    "Predownload failed because of space limit ({}). "
                     "Will read from remote filesystem starting from offset: {}",
-                    offset);
+                    failure_reason, offset);
 
                 return false;
             }
@@ -1348,10 +1368,14 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 fmt::format("Offset: {}, size: {}, file segment range: {}, impl offset: {}", offset, size, file_segment.range().toString(), state.buf->getPosition()));
 
             std::string failure_reason;
+            /// Bytes left to read from the download offset (read_until_position is exclusive).
+            const size_t reserve_hint = info.read_until_position - offset;
             bool success = file_segment.reserve(
                 size,
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
-                failure_reason);
+                failure_reason,
+                /* reserve_stat */nullptr,
+                reserve_hint);
 
             if (success)
             {
@@ -1378,7 +1402,7 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                     LOG_TRACE(log, "Bypassing cache because writeCache method failed");
             }
             else
-                LOG_TRACE(log, "No space left in cache to reserve {} bytes, reason: {}, "
+                LOG_DEBUG(log, "No space left in cache to reserve {} bytes, reason: {}, "
                           "will continue without cache download", size, failure_reason);
 
             if (!success)

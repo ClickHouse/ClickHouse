@@ -1,0 +1,72 @@
+---
+title: 通过 AWS PrivateLink 将 MSK 暴露给 ClickPipes
+description: 通过 MSK multi-VPC connectivity 将私有 MSK 暴露给 ClickPipes 的配置步骤。
+date: 2025-4-15
+tags: ['安全与身份验证', '管理 Cloud']
+keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## 概述
+</div>
+
+本指南将指导你完成 **MSK multi-VPC** 的设置，以便与 [ClickPipes 反向专用终结点](/zh/integrations/clickpipes/aws-privatelink#msk-multi-vpc) 配合使用。
+
+<div id="requirements">
+  ## 要求
+</div>
+
+您的 MSK 集群所在的 VPC 必须位于我们的某个 ClickPipes 区域。支持的区域列表请参见 [ClickPipes 区域](/zh/integrations/clickpipes/aws-privatelink#aws-privatelink-regions)。
+
+<div id="enabling-multi-vpc-connectivity">
+  ## 启用多 VPC 连接
+</div>
+
+1. 进入 MSK 集群。
+   * 在 Amazon MSK Console 左侧导航栏中选择“Clusters”。
+   * 选择要配置多 VPC 连接的目标 MSK 集群。
+2. 启用 MSK multi-VPC connectivity
+   * 在 **Connectivity** 选项卡中，找到 **Multi-VPC connectivity** 部分。
+   * 点击 **Edit**。
+   * 启用 **Turn-on MSK multi-VPC connectivity** 选项。
+   * 按照说明完成操作。
+3. 将 ClickPipes 账户主体添加到集群策略中
+   * 进入 **Configuration** 选项卡。
+   * 在 **Cluster policy** 部分点击 **Edit**。
+   * 在 **IAM policy** 中加入 `arn:aws:iam::072088201116:root`。示例如下：
+     ```json
+     {
+         "Version": "2012-10-17",
+         "Statement": [
+             {
+                 "Effect": "Allow",
+                 "Principal": {
+                     "AWS": [
+                         "arn:aws:iam::072088201116:root"
+                     ]
+                 },
+                 "Action": [
+                     "kafka:CreateVpcConnection",
+                     "kafka:GetBootstrapBrokers",
+                     "kafka:DescribeCluster",
+                     "kafka:DescribeClusterV2"
+                 ]
+             }
+         ]
+     }
+     ```
+
+<Tip>
+  集群 IAM 策略允许 ClickPipes 从 ClickPipes 侧向您的 MSK 集群发起连接。
+  如果您想为 MSK 集群配置 IAM 身份验证，请参阅 [IAM 身份验证文档](/zh/integrations/clickpipes/kafka/best-practices#iam)。
+</Tip>
+
+<div id="creating-reverse-private-endpoint">
+  ## 创建反向专用终结点
+</div>
+
+请按照 [ClickPipes 文档](/zh/integrations/clickpipes/aws-privatelink#creating-clickpipe)中的步骤创建反向专用终结点。

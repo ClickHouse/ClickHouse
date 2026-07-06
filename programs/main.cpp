@@ -36,6 +36,7 @@ int mainEntryClickHouseFstDumpTree(int argc, char ** argv);
 int mainEntryClickHouseGitImport(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseObfuscator(int argc, char ** argv);
+int mainEntryClickHouseOomCanary(int argc, char ** argv);
 int mainEntryClickHouseSU(int argc, char ** argv);
 int mainEntryClickHouseDockerInit(int argc, char ** argv);
 int mainEntryClickHouseServer(int argc, char ** argv);
@@ -142,6 +143,7 @@ std::pair<std::string_view, MainFunc> clickhouse_applications[] =
     {"compressor", mainEntryClickHouseCompressor},
     {"format", mainEntryClickHouseFormat},
     {"obfuscator", mainEntryClickHouseObfuscator},
+    {"oom-canary", mainEntryClickHouseOomCanary},
     {"git-import", mainEntryClickHouseGitImport},
     {"static-files-disk-uploader", mainEntryClickHouseStaticFilesDiskUploader},
     {"su", mainEntryClickHouseSU},
