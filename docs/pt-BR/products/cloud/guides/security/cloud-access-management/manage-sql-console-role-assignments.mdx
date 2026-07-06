@@ -1,0 +1,84 @@
+---
+slug: /cloud/guides/sql-console/manage-sql-console-role-assignments
+sidebarTitle: 'Gerenciar atribuições de função do console SQL'
+title: 'Configuração das atribuições de função do console SQL'
+description: 'Guia que mostra como gerenciar as atribuições de função do console SQL'
+doc_type: 'guide'
+keywords: ['console SQL', 'atribuições de função', 'gerenciamento de acesso', 'permissões', 'segurança']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<Warning>
+  Esta configuração está obsoleta e foi substituída por uma nova configuração na tela de criação de função em organizações que migraram para funções personalizadas. Para mais informações, consulte [Manage cloud users](/pt-BR/products/cloud/guides/security/cloud-access-management/manage-cloud-users).
+</Warning>
+
+> Este guia mostra como configurar as atribuições de função do console SQL, que
+> determinam as permissões de acesso em todo o console e os recursos aos quais um usuário pode
+> acessar no Console do Cloud.
+
+<Steps>
+  <Step>
+    ### Acesse as configurações do serviço
+
+    Na página de serviços, clique no menu no canto superior direito do serviço para o qual você deseja ajustar as configurações de acesso do console SQL.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/1_service_settings.webp" size="lg" />
+
+    Selecione `settings` no menu pop-up.
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/2_service_settings.webp" size="lg" />
+  </Step>
+
+  <Step>
+    ### Ajuste o acesso ao console SQL
+
+    Na seção &quot;Segurança&quot;, localize a área &quot;Acesso ao console SQL&quot;:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/3_service_settings.webp" size="md" />
+  </Step>
+
+  <Step>
+    ### Atualize as configurações de Service Admin
+
+    Selecione o menu suspenso de Service Admin para alterar as configurações de controle de acesso das funções Service Admin:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/4_service_settings.webp" size="md" />
+
+    Você pode escolher entre as seguintes funções:
+
+    | Função            |
+    | ----------------- |
+    | `Sem acesso`      |
+    | `Somente leitura` |
+    | `Acesso total`    |
+  </Step>
+
+  <Step>
+    ### Atualize as configurações de Service Read Only
+
+    Selecione o menu suspenso de Service Read Only para alterar as configurações de controle de acesso das funções Service Read Only:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/5_service_settings.webp" size="md" />
+
+    Você pode escolher entre as seguintes funções:
+
+    | Função            |
+    | ----------------- |
+    | `Sem acesso`      |
+    | `Somente leitura` |
+    | `Acesso total`    |
+  </Step>
+
+  <Step>
+    ### Revise os usuários com acesso
+
+    Para ver uma visão geral dos usuários do serviço, selecione a contagem de usuários:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/6_service_settings.webp" size="md" />
+
+    Uma guia será aberta à direita da página, mostrando o número total de usuários e suas funções:
+
+    <Image img="/images/cloud/guides/sql_console/service_level_access/7_service_settings.webp" size="md" />
+  </Step>
+</Steps>

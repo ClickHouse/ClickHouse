@@ -1,0 +1,349 @@
+---
+sidebarTitle: 'Configuration du plugin'
+slug: /integrations/grafana/config
+description: 'Options de configuration du plugin de source de données ClickHouse dans Grafana'
+title: 'Configurer la source de données ClickHouse dans Grafana'
+doc_type: 'guide'
+keywords: ['configuration du plugin Grafana', 'paramètres de la source de données', 'paramètres de connexion', "configuration de l'authentification", 'options du plugin']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Le moyen le plus simple de modifier une configuration consiste à passer par l’UI de Grafana, sur la page de configuration du plugin, mais les sources de données peuvent aussi être [provisionnées avec un fichier YAML](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources).
+
+Cette page présente la liste des options de configuration disponibles dans le plugin ClickHouse, ainsi que des extraits de configuration pour ceux qui provisionnent une source de données avec YAML.
+
+Pour un aperçu rapide de toutes les options, consultez la liste complète des options de configuration [ici](#all-yaml-options).
+
+<div id="common-settings">
+  ## Paramètres communs
+</div>
+
+Exemple d’écran de configuration :
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Exemple de configuration native sécurisée" border />
+
+Exemple de configuration YAML pour les paramètres communs :
+
+```yaml
+jsonData:
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
+
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
+
+  username: default # the username used for authentication.
+
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
+
+secureJsonData:
+  password: secureExamplePassword # the password used for authentication.
+
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
+```
+
+Notez qu’une propriété `version` est ajoutée lorsque la configuration est enregistrée via l’UI. Cela indique la version du plugin utilisée lors de l’enregistrement de la configuration.
+
+<div id="http-protocol">
+  ### Protocole HTTP
+</div>
+
+Des paramètres supplémentaires s’afficheront si vous choisissez de vous connecter via le protocole HTTP.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Options de configuration HTTP supplémentaires" border />
+
+<div id="http-path">
+  #### Chemin HTTP
+</div>
+
+Si votre serveur HTTP est exposé sous un chemin d’URL différent, vous pouvez l’indiquer ici.
+
+```yaml
+jsonData:
+  # excludes first slash
+  path: additional/path/example
+```
+
+<div id="custom-http-headers">
+  #### En-têtes HTTP personnalisés
+</div>
+
+Vous pouvez ajouter des en-têtes personnalisés aux requêtes envoyées à votre serveur.
+
+Les en-têtes peuvent être en texte brut ou sécurisés.
+Toutes les clés d’en-tête sont stockées en texte brut, tandis que les valeurs des en-têtes sécurisés sont enregistrées dans la config sécurisée (comme le champ `password`).
+
+<Warning>
+  **Valeurs sécurisées sur HTTP**
+
+  Bien que les valeurs des en-têtes sécurisés soient stockées de manière sécurisée dans la config, elles seront tout de même envoyées sur HTTP si la connexion sécurisée est désactivée.
+</Warning>
+
+Exemple de YAML pour les en-têtes en texte brut et sécurisés :
+
+```yaml
+jsonData:
+  httpHeaders:
+  - name: X-Example-Plain-Header
+    value: plain text value
+    secure: false
+  - name: X-Example-Secure-Header
+    # "value" is excluded
+    secure: true
+secureJsonData:
+  secureHttpHeaders.X-Example-Secure-Header: secure header value
+```
+
+<div id="additional-settings">
+  ## Paramètres supplémentaires
+</div>
+
+Ces paramètres supplémentaires sont facultatifs.
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Exemple de paramètres supplémentaires" border />
+
+Exemple YAML :
+
+```yaml
+jsonData:
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
+
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
+```
+
+<div id="opentelemetry">
+  ### OpenTelemetry
+</div>
+
+OpenTelemetry (OTel) est étroitement intégré au plugin.
+Les données OpenTelemetry peuvent être exportées vers ClickHouse avec notre [plugin exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+Pour une utilisation optimale, il est recommandé de configurer OTel à la fois pour les [logs](#logs) et les [traces](#traces).
+
+Il est également nécessaire de configurer ces paramètres par défaut pour activer les [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links), une fonctionnalité qui permet de mettre en place de puissants workflows d’observabilité.
+
+<div id="logs">
+  ### Logs
+</div>
+
+Pour accélérer la [création de requêtes pour les logs](/fr/integrations/connectors/data-visualization/grafana/query-builder#logs), vous pouvez définir une base de données/table par défaut, ainsi que les colonnes de la requête de logs. Cela précharge le query builder avec une requête de logs exécutable, ce qui accélère la navigation dans la page Explore pour l’observabilité.
+
+Si vous utilisez OpenTelemetry, vous devez activer le commutateur &quot;**Use OTel**&quot; et définir la **table de logs par défaut** sur `otel_logs`.
+Cela remplacera automatiquement les colonnes par défaut afin d’utiliser la version du schéma OTel sélectionnée.
+
+Bien qu’OpenTelemetry ne soit pas requis pour les logs, l’utilisation d’un jeu de données unique pour les logs et les traces permet de rendre le workflow d’observabilité plus fluide grâce aux [liens de données](/fr/integrations/connectors/data-visualization/grafana/query-builder#data-links).
+
+Exemple d’écran de configuration des logs :
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Configuration des logs" border />
+
+Exemple de YAML de configuration des logs :
+
+```yaml
+jsonData:
+  logs:
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
+```
+
+<div id="traces">
+  ### Traces
+</div>
+
+Pour accélérer la [création de requêtes pour les traces](/fr/integrations/connectors/data-visualization/grafana/query-builder#traces), vous pouvez définir une base de données/table par défaut, ainsi que les colonnes de la requête de trace. Le query builder sera alors préchargé avec une requête de recherche de traces exécutable, ce qui accélère la navigation dans la page Explore.
+
+Si vous utilisez OpenTelemetry, vous devez activer l’option &quot;**Use OTel**&quot; et définir la **table de traces par défaut** sur `otel_traces`.
+Cela remplacera automatiquement les colonnes par défaut pour utiliser la version du schéma OTel sélectionnée.
+Même si OpenTelemetry n’est pas obligatoire, cette fonctionnalité fonctionne mieux lorsque vous utilisez son schéma pour les traces.
+
+Exemple d’écran de configuration des traces :
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Configuration des traces" border />
+
+Exemple de configuration YAML pour les traces :
+
+```yaml
+jsonData:
+  traces:
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
+```
+
+<div id="column-aliases">
+  ### Alias de colonnes
+</div>
+
+L&#39;utilisation d&#39;alias de colonnes est un moyen pratique d&#39;interroger vos données sous différents noms et types.
+Avec les alias, vous pouvez prendre un schéma imbriqué et l&#39;aplatir pour faciliter sa sélection dans Grafana.
+
+Les alias peuvent vous être utiles si :
+
+* Vous connaissez votre schéma et la plupart de ses propriétés et types imbriqués
+* Vous stockez vos données dans des types Map
+* Vous stockez du JSON sous forme de chaînes de caractères
+* Vous appliquez souvent des fonctions pour transformer les colonnes que vous sélectionnez
+
+<div id="table-defined-alias-columns">
+  #### Colonnes ALIAS définies au niveau de la table
+</div>
+
+ClickHouse prend en charge nativement les alias de colonnes et fonctionne avec Grafana sans configuration supplémentaire.
+Les colonnes ALIAS peuvent être définies directement dans la table.
+
+```sql
+CREATE TABLE alias_example (
+  TimestampNanos DateTime(9),
+  TimestampDate ALIAS toDate(TimestampNanos)
+)
+```
+
+Dans l’exemple ci-dessus, nous créons un alias appelé `TimestampDate` qui convertit le timestamp en nanosecondes en type `Date`.
+Ces données ne sont pas stockées sur le disque comme la première colonne ; elles sont calculées au moment de la requête.
+Les alias définis dans la table ne sont pas renvoyés avec `SELECT *`, mais cela peut être configuré dans les paramètres du serveur.
+
+Pour plus d’informations, consultez la documentation du type de colonne [ALIAS](/fr/reference/statements/create/table#alias).
+
+<div id="column-alias-tables">
+  #### Tables d’alias de colonnes
+</div>
+
+Par défaut, Grafana propose des suggestions de colonnes à partir de la réponse de `DESC table`.
+Dans certains cas, vous pouvez vouloir remplacer complètement les colonnes que Grafana voit.
+Cela permet de masquer votre schéma dans Grafana lors de la sélection des colonnes, ce qui peut améliorer l’expérience utilisateur selon la complexité de votre table.
+
+L’avantage par rapport aux alias définis au niveau de la table est que vous pouvez les mettre à jour facilement sans avoir à modifier votre table. Dans certains schémas, cela peut représenter des milliers d’entrées, ce qui risque d’encombrer la définition de la table sous-jacente. Cela permet également de masquer les colonnes que vous voulez que l’utilisateur ignore.
+
+Grafana exige que la table d’alias ait la structure de colonnes suivante :
+
+```sql
+CREATE TABLE aliases (
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
+)
+```
+
+Voici comment reproduire le comportement de la colonne `ALIAS` à l’aide de la table alias :
+
+```sql
+CREATE TABLE example_table (
+  TimestampNanos DateTime(9)
+);
+
+CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
+
+INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
+```
+
+Nous pouvons ensuite configurer cette table pour l’utiliser dans Grafana. Notez que le nom peut être quelconque, ou même défini dans une base de données distincte :
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Exemple de configuration d’une table d’alias" border />
+
+Grafana verra alors les résultats de la table d’alias au lieu de ceux de `DESC example_table` :
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Exemple de sélection d’une table d’alias" border />
+
+Les deux types d’alias peuvent être utilisés pour effectuer des conversions de types complexes ou extraire des champs JSON.
+
+<div id="all-yaml-options">
+  ## Toutes les options YAML
+</div>
+
+Voici toutes les options de configuration YAML proposées par le plugin.
+Certains champs comportent des valeurs d&#39;exemple, tandis que d&#39;autres indiquent simplement le type du champ.
+
+Consultez la [documentation Grafana](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources) pour plus d&#39;informations sur le provisionnement des sources de données avec YAML.
+
+```yaml
+datasources:
+  - name: Example ClickHouse
+    uid: clickhouse-example
+    type: grafana-clickhouse-datasource
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      tlsSkipVerify: <boolean>
+      tlsAuth: <boolean>
+      tlsAuthWithCACert: <boolean>
+      defaultDatabase: default
+      defaultTable: <string>
+      dialTimeout: 10
+      queryTimeout: 60
+      validateSql: false
+      httpHeaders:
+      - name: X-Example-Plain-Header
+        value: plain text value
+        secure: false
+      - name: X-Example-Secure-Header
+        secure: true
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: false
+        otelVersion: latest
+        timeColumn: <string>
+        levelColumn: <string>
+        messageColumn: <string>
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: false
+        otelVersion: latest
+        traceIdColumn: <string>
+        spanIdColumn: <string>
+        operationNameColumn: <string>
+        parentSpanIdColumn: <string>
+        serviceNameColumn: <string>
+        durationTimeColumn: <string>
+        durationUnitColumn: <time unit>
+        startTimeColumn: <string>
+        tagsColumn: <string>
+        serviceTagsColumn: <string>
+    secureJsonData:
+      tlsCACert:     <string>
+      tlsClientCert: <string>
+      tlsClientKey:  <string>
+      secureHttpHeaders.X-Example-Secure-Header: secure header value
+```

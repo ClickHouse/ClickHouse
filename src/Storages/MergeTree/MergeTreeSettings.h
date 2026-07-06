@@ -7,6 +7,7 @@
 #include <Core/SettingsTierType.h>
 #include <base/types.h>
 #include <Common/SettingsChanges.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Columns/IColumn_fwd.h>
 
 namespace boost
@@ -84,11 +85,13 @@ struct MergeTreeSettings
     void set(std::string_view name, const Field & value);
 
     SettingsChanges changes() const;
-    void applyChanges(const SettingsChanges & changes);
-    void applyChange(const SettingChange & change);
-    std::vector<std::string_view> getAllRegisteredNames() const;
+    void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
+    VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     std::vector<std::string_view> getAllAliasNames() const;
     std::string_view getDescription(std::string_view name) const;
+    std::string_view getTypeName(std::string_view name) const;
+    String getDefaultValueString(std::string_view name) const;
     SettingsTierType getTier(std::string_view name) const;
     void applyCompatibilitySetting(const String & compatibility_value);
 
@@ -112,6 +115,10 @@ struct MergeTreeSettings
     static bool isReadonlySetting(const String & name);
     static void checkCanSet(std::string_view name, const Field & value);
     static bool isPartFormatSetting(const String & name);
+
+    static bool isDiskSettingChanged(const SettingsChanges & old_changes, const SettingsChanges & new_changes);
+    static void resolveDiskSetting(SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
+    static void resolveDiskSetting(SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
 
     /// Cloud only
     static bool isSMTReadonlySetting(const String & name);

@@ -1,0 +1,13 @@
+---
+description: 'Documentation de l’instruction EXISTS'
+sidebarTitle: 'EXISTS'
+slug: /sql-reference/statements/exists
+title: 'Instruction EXISTS'
+doc_type: 'reference'
+---
+
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+Renvoie une unique colonne de type `UInt8`, contenant la valeur `0` si la table ou la base de données n’existe pas, ou `1` si la table existe dans la base de données spécifiée.

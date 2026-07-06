@@ -1,0 +1,201 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/langchain
+sidebarTitle: '集成 LangChain'
+title: '如何使用 ClickHouse MCP 服务器构建 LangChain/LangGraph AI 代理。'
+description: '了解如何使用 ClickHouse MCP 服务器构建一个能够与 ClickHouse SQL Playground 交互的 LangChain/LangGraph AI 代理。'
+keywords: ['ClickHouse', 'MCP', 'LangChain', 'LangGraph']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将了解如何构建一个 [LangChain/LangGraph](https://github.com/langchain-ai/langgraph) AI 代理，
+使其能够通过 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 与 [ClickHouse 的 SQL Playground](https://sql.clickhouse.com/) 交互。
+
+<Info>
+  **示例笔记本**
+
+  你可以在 [examples 代码库](https://github.com/ClickHouse/examples/blob/main/ai/mcp/langchain/langchain.ipynb) 中找到此示例的 notebook。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你的系统中需要已安装 Python。
+* 你的系统中需要已安装 `pip`。
+* 你需要一个 Anthropic API 密钥，或其他 LLM 提供商的 API 密钥
+
+你可以在 Python REPL 中或通过脚本执行以下步骤。
+
+<Steps>
+  <Step>
+    ## 安装库
+
+    运行以下命令，安装所需的库：
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q langchain-mcp-adapters langgraph "langchain[anthropic]"
+    ```
+  </Step>
+
+  <Step>
+    ## 配置凭据
+
+    接下来，您需要提供 Anthropic API 密钥：
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **使用其他 LLM 提供商**
+
+      如果你没有 Anthropic API 密钥，但想使用其他 LLM 提供商，
+      可以在 [Langchain Providers 文档](https://python.langchain.com/docs/integrations/providers/) 中找到配置凭据的说明。
+    </Info>
+  </Step>
+
+  <Step>
+    ## 初始化 MCP 服务器
+
+    现在配置 ClickHouse MCP 服务器，使其指向 ClickHouse SQL Playground：
+
+    ```python
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
+    server_params = StdioServerParameters(
+        command="uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+    ```
+  </Step>
+
+  <Step>
+    ## 配置 stream handler
+
+    使用 Langchain 和 ClickHouse MCP 服务器时，查询结果通常会
+    以流式数据的形式返回，而不是一次性返回单个响应。对于大型数据集或
+    处理起来可能需要一些时间的复杂分析查询，配置
+    stream handler 非常重要。如果没有妥善处理，这类流式输出
+    在应用程序中可能会难以使用。
+
+    为流式输出配置 handler，以便更容易处理：
+
+    ```python
+    class UltraCleanStreamHandler:
+        def __init__(self):
+            self.buffer = ""
+            self.in_text_generation = False
+            self.last_was_tool = False
+            
+        def handle_chunk(self, chunk):
+            event = chunk.get("event", "")
+            
+            if event == "on_chat_model_stream":
+                data = chunk.get("data", {})
+                chunk_data = data.get("chunk", {})
+                
+                # 仅处理实际文本内容，跳过工具调用流
+                if hasattr(chunk_data, 'content'):
+                    content = chunk_data.content
+                    if isinstance(content, str) and not content.startswith('{"'):
+                        # 如有需要，在工具调用完成后添加空格
+                        if self.last_was_tool:
+                            print(" ", end="", flush=True)
+                            self.last_was_tool = False
+                        print(content, end="", flush=True)
+                        self.in_text_generation = True
+                    elif isinstance(content, list):
+                        for item in content:
+                            if (isinstance(item, dict) and 
+                                item.get('type') == 'text' and 
+                                'partial_json' not in str(item)):
+                                text = item.get('text', '')
+                                if text and not text.startswith('{"'):
+                                    # 如有需要，在工具调用完成后添加空格
+                                    if self.last_was_tool:
+                                        print(" ", end="", flush=True)
+                                        self.last_was_tool = False
+                                    print(text, end="", flush=True)
+                                    self.in_text_generation = True
+                                    
+            elif event == "on_tool_start":
+                if self.in_text_generation:
+                    print(f"\n🔧 {chunk.get('name', 'tool')}", end="", flush=True)
+                    self.in_text_generation = False
+                    
+            elif event == "on_tool_end":
+                print(" ✅", end="", flush=True)
+                self.last_was_tool = True
+    ```
+  </Step>
+
+  <Step>
+    ## 调用 agent
+
+    最后，调用你的 agent，并问它是谁向 ClickHouse 提交了最多的代码：
+
+    ```python
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await load_mcp_tools(session)
+            agent = create_react_agent("anthropic:claude-sonnet-4-0", tools)
+            
+            handler = UltraCleanStreamHandler()        
+            async for chunk in agent.astream_events(
+                {"messages": [{"role": "user", "content": "Who's committed the most code to ClickHouse?"}]}, 
+                version="v1"
+            ):
+                handler.handle_chunk(chunk)
+                
+            print("\n")
+    ```
+
+    你应该会看到如下所示的类似响应：
+
+    ```response title="Response"
+    我将通过探索可用的数据库和表来查找 git 提交数据，帮助您找出向 ClickHouse 提交代码最多的人。
+    🔧 list_databases ✅ 我可以看到有一个 `git` 数据库，其中可能包含 git 提交信息。让我来探索该数据库中的表：
+    🔧 list_tables ✅ 很好！我可以看到 git 数据库中的 `clickhouse_commits` 表包含 ClickHouse 的提交数据，共有 80,644 条提交记录。该表包含每次提交的相关信息，包括作者、新增/删除行数、修改文件等。让我查询该表，根据不同指标找出提交代码最多的人。
+    🔧 run_select_query ✅ 让我也单独查看新增行数，以了解谁贡献了最多的新代码：
+    🔧 run_select_query ✅ 根据 ClickHouse 的 git 提交数据，**Alexey Milovidov** 在多项指标上向 ClickHouse 提交的代码量均居首位：
+
+    ## 关键统计数据：
+
+    1. **总变更行数最多**：Alexey Milovidov，共 **1,696,929 行**（新增 853,049 行 + 删除 843,880 行）
+    2. **新增行数最多**：Alexey Milovidov，共新增 **853,049 行**
+    3. **提交次数最多**：Alexey Milovidov，共 **15,375 次提交**
+    4. **修改文件数最多**：Alexey Milovidov，共修改 **73,529 个文件**
+
+    ## 按新增行数排列的主要贡献者：
+
+    1. **Alexey Milovidov**：新增 853,049 行（15,375 次提交）
+    2. **s-kat**：新增 541,609 行（50 次提交）
+    3. **Nikolai Kochetov**：新增 219,020 行（4,218 次提交）
+    4. **alesapin**：新增 193,566 行（4,783 次提交）
+    5. **Vitaly Baranov**：新增 168,807 行（1,152 次提交）
+
+    Alexey Milovidov 无疑是 ClickHouse 贡献最为突出的开发者，这并不令人意外——他是该项目的原始创始人和首席开发者之一。无论是代码总量还是提交次数，他的贡献都远超其他人：近 16,000 次提交，超过 850,000 行代码并入项目。
+    ```
+  </Step>
+</Steps>

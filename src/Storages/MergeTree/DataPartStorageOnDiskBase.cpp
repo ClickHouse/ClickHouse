@@ -5,6 +5,7 @@
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/TemporaryFileOnDisk.h>
+#include <IO/Expect404ResponseScope.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
 #include <IO/PackedFilesWriter.h>
@@ -208,6 +209,10 @@ bool DataPartStorageOnDiskBase::looksLikeBrokenDetachedPartHasTheSameContent(con
 void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
 {
     part_dir = path;
+    /// Unlike rename/changeRootPath, this can repoint the storage at an unrelated directory whose
+    /// archive has a different index, so the cached reader must be dropped. The reset is safe for
+    /// concurrent readers because the reader is shared-owned: a reader still using it keeps it
+    /// alive until done.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
         skip_indices_packed_probed = false;
@@ -522,9 +527,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     if (save_metadata_callback)
         save_metadata_callback(disk);
 
+    /// Also remove any leftover `txn_version.txt.tmp`: leaving it without the main file makes the
+    /// cloned/frozen part load as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`)
+    /// and get discarded as `Outdated`. Remove the temporary file before the main file so the cleanup
+    /// is fail-closed: a failure between the two removals leaves a valid `txn_version.txt` rather than
+    /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -532,6 +543,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     else
     {
         disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -578,9 +590,15 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     if (save_metadata_callback)
         save_metadata_callback(dst_disk);
 
+    /// Also remove any leftover `txn_version.txt.tmp`: leaving it without the main file makes the
+    /// cloned/frozen part load as a rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`)
+    /// and get discarded as `Outdated`. Remove the temporary file before the main file so the cleanup
+    /// is fail-closed: a failure between the two removals leaves a valid `txn_version.txt` rather than
+    /// the dangerous tmp-only state.
     if (params.external_transaction)
     {
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -588,6 +606,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     else
     {
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / "delete-on-destroy.txt");
+        dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
         dst_disk->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             dst_disk->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
@@ -693,13 +712,16 @@ void DataPartStorageOnDiskBase::rename(
     part_dir = new_part_dir;
     root_path = new_root_path;
 
-    /// The cached skp_idx.packed reader (if any) was constructed with the old absolute path and
-    /// would keep reading from there even after the directory move. Drop it so the next access
-    /// reloads from the new location.
+    /// A successfully-loaded reader stays valid: its archive index is path-independent and reads
+    /// resolve the archive's current location through readFile, so keep it (dropping it could also
+    /// race a concurrent query holding it). But a cached *miss* may be stale: a probe that ran while
+    /// this rename was in progress could have built packed_path from the old location and found no
+    /// file. Clear that stale miss (only when there is no reader) so the next access re-probes the
+    /// new path.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
     }
 }
 
@@ -931,6 +953,9 @@ void DataPartStorageOnDiskBase::clearDirectory(
         request.emplace_back(fs::path(dir) / "default_compression_codec.txt", true);
         request.emplace_back(fs::path(dir) / "delete-on-destroy.txt", true);
         request.emplace_back(fs::path(dir) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, true);
+        /// A leftover `txn_version.txt.tmp` would otherwise be missed here and leave the directory
+        /// non-empty, forcing the slow recursive-removal fallback below.
+        request.emplace_back(fs::path(dir) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME, true);
         request.emplace_back(fs::path(dir) / "metadata_version.txt", true);
         request.emplace_back(fs::path(dir) / IMergeTreeDataPart::COLUMNS_SUBSTREAMS_FILE_NAME, true);
 
@@ -983,10 +1008,12 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
     root_path = to_root.substr(0, dst_size) + root_path.substr(prefix_size);
 
+    /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
+    /// miss so the next access re-probes the new path.
     {
         std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
+        if (!skip_indices_packed_reader)
+            skip_indices_packed_probed = false;
     }
 }
 
@@ -1025,28 +1052,110 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
-const PackedFilesReader * DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
+{
+    /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
+    /// or probe skp_idx.packed.
+    if (!looksLikePackedSkipIndexFile(name))
+        return nullptr;
+    auto reader = getSkipIndicesPackedReader();
+    return (reader && reader->exists(name)) ? reader : nullptr;
+}
+
+bool DataPartStorageOnDiskBase::existsFile(const std::string & name) const
+{
+    if (getArchiveReaderForFile(name))
+        return true;
+    return existsFileImpl(name);
+}
+
+size_t DataPartStorageOnDiskBase::getFileSize(const std::string & file_name) const
+{
+    if (auto reader = getArchiveReaderForFile(file_name))
+        return reader->getFileSize(file_name);
+    return getFileSizeImpl(file_name);
+}
+
+void DataPartStorageOnDiskBase::prepareRead(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint,
+    ReadPipeline & pipeline) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+    {
+        /// Members of skp_idx.packed skip the disk's normal pipeline (filesystem cache, async
+        /// prefetch) and read through PackedFilesReader::readFile, which opens the archive via the
+        /// underlying disk and wraps the result with ReadBufferFromFileView at the right offset.
+        /// The archive's current location is captured here, so the reader holds no path of its own.
+        auto disk = volume->getDisk();
+        String archive_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
+        ReadPipeline::BufferCreator creator =
+            [reader, disk, archive_path, name, read_hint](const StoredObject &, const ReadSettings & s, bool, bool)
+            {
+                return reader->readFile(disk, archive_path, name, s, read_hint);
+            };
+        pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
+        return;
+    }
+    prepareReadImpl(name, settings, read_hint, pipeline);
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExists(
+    const std::string & name,
+    const ReadSettings & settings,
+    std::optional<size_t> read_hint) const
+{
+    if (auto reader = getArchiveReaderForFile(name))
+        return reader->readFile(
+            volume->getDisk(),
+            fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
+            name, settings, read_hint);
+    return readFileIfExistsImpl(name, settings, read_hint);
+}
+
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
     if (skip_indices_packed_probed)
-        return skip_indices_packed_reader.get();
+        return skip_indices_packed_reader;
 
     auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
 
     const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
     auto disk = volume->getDisk();
     if (disk->existsFile(packed_path))
-        skip_indices_packed_reader = std::make_unique<PackedFilesReader>(disk, packed_path, ReadSettings{});
+    {
+        /// On shared storage another replica may delete or relocate skp_idx.packed between the
+        /// existence check above and the open below, so the open fails with a "no such key" error.
+        /// Expect404ResponseScope keeps that 404 from being logged or counted as a DiskS3NoSuchKeyError
+        /// (which fails stress tests); catching alone is not enough. If the archive is still present
+        /// it is a genuine read error -> rethrow. Otherwise it was removed or moved: do NOT cache a
+        /// miss (return without setting probed), so the next access re-probes against the current
+        /// path -- after a rename the archive lives at the new path and must not be lost. A part that
+        /// genuinely has no archive is cached as a miss via the existsFile-false branch above, so this
+        /// does not loop.
+        Expect404ResponseScope scope;
+        try
+        {
+            skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
+        }
+        catch (const Exception &)
+        {
+            if (disk->existsFile(packed_path))
+                throw;
+            return nullptr;
+        }
+    }
 
     skip_indices_packed_probed = true;
-    return skip_indices_packed_reader.get();
+    return skip_indices_packed_reader;
 }
 
 void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
-    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
-    skip_indices_packed_reader = std::make_unique<PackedFilesReader>(volume->getDisk(), packed_path, index);
+    skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index);
     skip_indices_packed_probed = true;
 }
 
@@ -1058,7 +1167,7 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
     /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
     /// load if it hasn't been read yet.
-    const auto * source_archive = source_disk->getSkipIndicesPackedReader();
+    auto source_archive = source_disk->getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
@@ -1067,13 +1176,29 @@ void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartS
 
 bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
-    const auto * reader = getSkipIndicesPackedReader();
+    auto reader = getSkipIndicesPackedReader();
     return reader != nullptr && reader->exists(name);
 }
 
 bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
 {
     return getSkipIndicesPackedReader() != nullptr;
+}
+
+void DataPartStorageOnDiskBase::copyArchiveEntryTo(
+    const PackedFilesReader & source_archive,
+    const String & file_name,
+    PackedFilesWriter & target,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings) const
+{
+    /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
+    /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
+    const auto file_size = source_archive.getFileSize(file_name);
+    auto src = readFile(file_name, read_settings, file_size);
+    auto dst = target.writeFile(file_name, write_settings);
+    copyData(*src, *dst);
+    dst->finalize();
 }
 
 void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
@@ -1085,25 +1210,14 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     if (file_names.empty())
         return;
 
-    const auto * source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
-    /// Route reads through readFile (a virtual on the storage), not source_archive->readFile.
-    /// Equivalent on full storage today (the existing looksLikePackedSkipIndexFile overlay ends
-    /// up calling the same archive reader), but storage subclasses where skp_idx.packed isn't a
-    /// flat disk file need this entry point so the virtual readFile can compose the read
-    /// correctly. Keeps the helper subclass-friendly without adding behavioural risk here.
     for (const auto & file_name : file_names)
     {
-        if (!source_archive->exists(file_name))
-            continue;
-
-        const auto file_size = source_archive->getFileSize(file_name);
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = target.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        if (source_archive->exists(file_name))
+            copyArchiveEntryTo(*source_archive, file_name, target, read_settings, write_settings);
     }
 }
 
@@ -1115,7 +1229,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     MergeTreeDataPartChecksums & checksums,
     bool sync) const
 {
-    const auto * source_archive = getSkipIndicesPackedReader();
+    auto source_archive = getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
@@ -1137,13 +1251,7 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
             continue;
 
         any_kept = true;
-        const auto file_size = source_archive->getFileSize(file_name);
-        /// See copyPackedSkipIndicesFilesInto: go through the storage's readFile so subclasses
-        /// that need to compose the read (e.g. archive-in-archive) get a chance to intervene.
-        auto src = readFile(file_name, read_settings, file_size);
-        auto dst = writer.writeFile(file_name, write_settings);
-        copyData(*src, *dst);
-        dst->finalize();
+        copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
     }
 
     if (!any_kept)

@@ -981,6 +981,26 @@ ColumnPtr recursiveRemoveSparse(const ColumnPtr & column)
     return column->convertToFullColumnIfSparse();
 }
 
+bool recursiveHasSparse(const ColumnPtr & column)
+{
+    if (!column)
+        return false;
+
+    if (const auto * column_replicated = typeid_cast<const ColumnReplicated *>(column.get()))
+        return recursiveHasSparse(column_replicated->getNestedColumn());
+
+    if (const auto * column_tuple = typeid_cast<const ColumnTuple *>(column.get()))
+    {
+        for (const auto & element : column_tuple->getColumns())
+            if (recursiveHasSparse(element))
+                return true;
+
+        return false;
+    }
+
+    return column->isSparse();
+}
+
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column)
 {
     if (!column)

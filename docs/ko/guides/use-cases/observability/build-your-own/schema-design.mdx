@@ -1,0 +1,1999 @@
+---
+title: 관측성을 위한 스키마 설계
+description: '관측성을 위한 스키마 설계'
+keywords: ['관측성', '로그', '트레이스', '메트릭', 'OpenTelemetry', 'Grafana', 'OTel']
+slug: /use-cases/observability/schema-design
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+다음과 같은 이유로 로그와 트레이스에는 항상 자체 스키마를 생성하는 것을 권장합니다:
+
+* **프라이머리 키(primary key) 선택** - 기본 스키마는 특정 액세스 패턴에 최적화된 `ORDER BY`를 사용합니다. 대부분의 경우 실제 액세스 패턴은 여기에 맞지 않습니다.
+* **구조 추출** - 기존 컬럼(예: `Body` 컬럼)에서 새 컬럼을 추출해야 할 수 있습니다. 이는 materialized 컬럼(더 복잡한 경우에는 materialized view)을 사용해 수행할 수 있습니다. 이를 위해서는 스키마 변경이 필요합니다.
+* **맵 최적화** - 기본 스키마는 속성을 저장하기 위해 맵(Map) 타입을 사용합니다. 이러한 컬럼을 사용하면 임의의 메타데이터를 저장할 수 있습니다. 이는 중요한 기능입니다. 이벤트 메타데이터는 사전에 정의되지 않는 경우가 많아 ClickHouse와 같은 강타입 데이터베이스에는 다른 방식으로 저장하기 어렵기 때문입니다. 다만 맵 키와 해당 값에 대한 액세스는 일반 컬럼에 대한 액세스만큼 효율적이지 않습니다. 이를 해결하기 위해 스키마를 수정하여 가장 자주 액세스하는 맵 키를 최상위 컬럼으로 올립니다. 자세한 내용은 [&quot;SQL로 구조 추출&quot;](#extracting-structure-with-sql)을 참조하십시오. 이를 위해서는 스키마 변경이 필요합니다.
+* **맵 키 액세스 단순화** - 맵의 키에 액세스하려면 더 장황한 구문이 필요합니다. 이는 Aliases로 완화할 수 있습니다. 쿼리를 단순화하는 방법은 [&quot;Aliases 사용&quot;](#using-aliases)을 참조하십시오.
+* **보조 인덱스** - 기본 스키마는 맵에 대한 액세스 속도를 높이고 텍스트 쿼리를 가속하기 위해 보조 인덱스를 사용합니다. 일반적으로 이러한 인덱스는 꼭 필요하지 않으며 추가 디스크 공간을 차지합니다. 사용할 수는 있지만 실제로 필요한지 반드시 테스트해야 합니다. [&quot;보조 / 데이터 스키핑 인덱스&quot;](#secondarydata-skipping-indices)를 참조하십시오.
+* **코덱 사용** - 예상 데이터 특성을 잘 이해하고, 압축 개선 효과에 대한 근거가 있다면 컬럼별 코덱을 사용자 지정할 수 있습니다.
+
+*위 각 사용 사례는 아래에서 자세히 설명합니다.*
+
+**중요:** 최적의 압축률과 쿼리 성능을 얻기 위해 스키마를 확장하고 수정하는 것이 권장되지만, 가능하면 핵심 컬럼의 이름은 OTel 스키마 명명 규칙을 따르십시오. ClickHouse Grafana plugin은 쿼리 작성을 돕기 위해 일부 기본 OTel 컬럼(예: Timestamp, SeverityText)이 존재한다고 가정합니다. 로그와 트레이스에 필요한 컬럼은 각각 여기 [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) 및 [여기](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure)에 문서화되어 있습니다. plugin 구성에서 기본값을 재정의하여 이러한 컬럼 이름을 변경할 수 있습니다.
+
+<Tip>
+  **ClickStack는 최적화된 기본 스키마를 기본 제공으로 제공합니다**
+
+  **ClickStack는 로그, 트레이스, 메트릭을 위한 즉시 사용 가능한 스키마를 제공합니다.** 이 스키마에는 최신 ClickHouse 기능(전문 검색 및 맵 키 검색을 위한 text index, 직접 읽기 필터링을 위한 materialized 컬럼 및 ALIAS 배열, 블록 번호 기반 행 조회)이 반영되어 있으며, 로깅 및 트레이스 workload에 대해 기본 상태에서도 우수한 성능을 제공하도록 벤치마크되었습니다. 자체 설계를 위한 기준점으로 활용하십시오.
+
+  * 표준 DDL: [ClickStack에서 사용하는 테이블 및 스키마](/ko/clickstack/ingesting-data/schemas).
+  * 최적화 레시피: [ClickStack 성능 튜닝](/ko/clickstack/managing/performance-tuning). 해당 페이지의 많은 권장 사항(materialized 컬럼, 스킵 인덱스, 프라이머리 키 선택, 프로젝션, materialized view)은 자체 구축 환경에도 직접 적용됩니다.
+</Tip>
+
+<div id="extracting-structure-with-sql">
+  ## SQL로 구조 추출하기
+</div>
+
+구조화된 로그와 비정형 로그를 수집할 때 모두, 다음 기능이 필요한 경우가 많습니다.
+
+* **문자열 blob에서 컬럼 추출**. 이렇게 추출한 컬럼에 쿼리하면 쿼리 시점에 문자열 연산을 사용하는 것보다 더 빠릅니다.
+* **맵에서 키 추출**. 기본 스키마는 임의의 속성을 Map 타입의 컬럼에 저장합니다. 이 타입은 스키마를 미리 고정하지 않아도 되는 특성을 제공하므로, 로그와 트레이스를 정의할 때 속성 컬럼을 사전에 정의할 필요가 없다는 장점이 있습니다. 특히 Kubernetes에서 로그를 수집하면서 나중에 검색할 수 있도록 파드 레이블을 유지하려는 경우에는, 이를 사전에 정의하는 것이 사실상 불가능한 경우가 많습니다. 맵 키와 해당 값을 조회하는 작업은 일반적인 ClickHouse 컬럼에 쿼리하는 것보다 더 느립니다. 따라서 맵의 키를 루트 테이블 컬럼으로 추출하는 것이 바람직한 경우가 많습니다.
+
+다음 쿼리를 살펴보겠습니다.
+
+구조화된 로그를 사용해 어떤 URL 경로가 가장 많은 POST 요청을 받는지 집계하려고 한다고 가정하겠습니다. JSON blob은 `Body` 컬럼에 `String`으로 저장됩니다. 또한 사용자가 collector에서 json&#95;parser를 활성화한 경우 `LogAttributes` 컬럼에 `Map(String, String)`으로도 저장될 수 있습니다.
+
+```sql
+SELECT LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+LogAttributes: {'status':'200','log.file.name':'access-structured.log','request_protocol':'HTTP/1.1','run_time':'0','time_local':'2019-01-22 00:26:14.000','size':'30577','user_agent':'Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)','referer':'-','remote_user':'-','request_type':'GET','request_path':'/filter/27|13 ,27|  5 ,p53','remote_addr':'54.36.149.41'}
+```
+
+`LogAttributes`를 사용할 수 있다고 가정하면, 사이트에서 어떤 URL 경로가 가장 많은 POST 요청을 받는지 집계하는 쿼리는 다음과 같습니다:
+
+```sql
+SELECT path(LogAttributes['request_path']) AS path, count() AS c
+FROM otel_logs
+WHERE ((LogAttributes['request_type']) = 'POST')
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.735 sec. Processed 10.36 million rows, 4.65 GB (14.10 million rows/s., 6.32 GB/s.)
+Peak memory usage: 153.71 MiB.
+```
+
+여기서는 맵 구문을 사용합니다. 예를 들어 `LogAttributes['request_path']`와 같이 작성하며, URL에서 쿼리 매개변수를 제거하려면 [`path` 함수](/ko/reference/functions/regular-functions/url-functions#path)를 사용합니다.
+
+사용자가 collector에서 JSON 파싱을 활성화하지 않은 경우 `LogAttributes`는 비어 있으므로, String `Body`에서 컬럼을 추출하려면 [JSON 함수](/ko/reference/functions/regular-functions/json-functions)를 사용해야 합니다.
+
+<Info>
+  **파싱은 ClickHouse에서 수행하는 것을 권장합니다**
+
+  일반적으로 구조화된 로그의 JSON 파싱은 ClickHouse에서 수행하는 것을 권장합니다. ClickHouse가 가장 빠른 JSON 파싱 구현을 제공한다고 확신합니다. 다만 로그를 다른 소스로 전송해야 하거나, 이 로직을 SQL에 두고 싶지 않을 수도 있다는 점도 알고 있습니다.
+</Info>
+
+```sql
+SELECT path(JSONExtractString(Body, 'request_path')) AS path, count() AS c
+FROM otel_logs
+WHERE JSONExtractString(Body, 'request_type') = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.668 sec. Processed 10.37 million rows, 5.13 GB (15.52 million rows/s., 7.68 GB/s.)
+Peak memory usage: 172.30 MiB.
+```
+
+이제 비정형 로그에도 같은 방식을 적용해 보겠습니다:
+
+```sql
+SELECT Body, LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           151.233.185.144 - - [22/Jan/2019:19:08:54 +0330] "GET /image/105/brand HTTP/1.1" 200 2653 "https://www.zanbil.ir/filter/b43,p56" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36" "-"
+LogAttributes: {'log.file.name':'access-unstructured.log'}
+```
+
+비정형 로그에 대해 비슷한 쿼리를 작성하려면 `extractAllGroupsVertical` 함수를 통해 정규식을 사용해야 합니다.
+
+```sql
+SELECT
+        path((groups[1])[2]) AS path,
+        count() AS c
+FROM
+(
+        SELECT extractAllGroupsVertical(Body, '(\\w+)\\s([^\\s]+)\\sHTTP/\\d\\.\\d') AS groups
+        FROM otel_logs
+        WHERE ((groups[1])[1]) = 'POST'
+)
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 1.953 sec. Processed 10.37 million rows, 3.59 GB (5.31 million rows/s., 1.84 GB/s.)
+```
+
+비정형 로그를 파싱하기 위한 쿼리는 복잡도와 비용이 더 커지므로(성능 차이에 유의하십시오), 가능하면 항상 구조화된 로그를 사용하는 것을 권장합니다.
+
+<Info>
+  **딕셔너리 사용을 고려하십시오**
+
+  위 쿼리는 정규식 딕셔너리를 활용하도록 최적화할 수 있습니다. 자세한 내용은 [Dictionaries 사용하기](#using-dictionaries)를 참조하십시오.
+</Info>
+
+이 두 가지 사용 사례 모두 위 쿼리 로직을 삽입 시점으로 옮기면 ClickHouse에서 해결할 수 있습니다. 아래에서는 여러 접근 방식을 살펴보고, 각각이 어떤 상황에 적합한지 설명합니다.
+
+<Info>
+  **처리는 OTel collector와 ClickHouse 중 어디에서 해야 합니까?**
+
+  [여기](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching)에 설명된 대로 OTel collector의 processor와 연산자를 사용해 처리할 수도 있습니다. 대부분의 경우 ClickHouse는 collector의 processor보다 리소스를 훨씬 적게 사용하며 더 빠릅니다. 모든 이벤트 처리를 SQL에서 수행할 때의 가장 큰 단점은 솔루션이 ClickHouse에 종속된다는 점입니다. 예를 들어, 처리된 로그를 OTel collector에서 S3와 같은 다른 대상으로 보내고자 할 수 있습니다.
+</Info>
+
+<div id="materialized-columns">
+  ### materialized 컬럼
+</div>
+
+materialized 컬럼은 다른 컬럼에서 구조를 추출하는 가장 간단한 방법입니다. 이러한 컬럼의 값은 항상 삽입 시점에 계산되며 INSERT 쿼리에서 지정할 수 없습니다.
+
+<Info>
+  **오버헤드**
+
+  materialized 컬럼은 삽입 시점에 값이 디스크의 새 컬럼으로 추출되므로 추가 저장소 오버헤드가 발생합니다.
+</Info>
+
+materialized 컬럼은 모든 ClickHouse 표현식을 지원하며, [문자열 처리](/ko/reference/functions/regular-functions/string-functions)([정규식 및 검색](/ko/reference/functions/regular-functions/string-search-functions) 포함)와 [URL](/ko/reference/functions/regular-functions/url-functions), [유형 변환](/ko/reference/functions/regular-functions/type-conversion-functions), [JSON에서 값 추출](/ko/reference/functions/regular-functions/json-functions), [수학 연산](/ko/reference/functions/regular-functions/math-functions)에 사용할 수 있는 다양한 분석 함수를 활용할 수 있습니다.
+
+기본적인 처리에는 materialized 컬럼을 권장합니다. 특히 맵에서 값을 추출해 최상위 컬럼으로 올리고 유형 변환을 수행할 때 유용합니다. 아주 단순한 스키마에서 사용하거나 materialized view와 함께 사용할 때 특히 효과적입니다. 다음은 collector가 JSON을 `LogAttributes` 컬럼으로 추출한 로그의 스키마 예시입니다:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+String `Body`에서 JSON 함수를 사용해 값을 추출할 때 해당하는 스키마(schema)는 [여기](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==)에서 확인할 수 있습니다.
+
+세 개의 materialized 컬럼은 요청 페이지, 요청 유형, 그리고 리퍼러의 도메인을 추출합니다. 이 컬럼들은 맵 키에 접근해 해당 값에 함수를 적용합니다. 그 결과 이어지는 쿼리는 훨씬 더 빨라집니다:
+
+```sql
+SELECT RequestPage AS path, count() AS c
+FROM otel_logs
+WHERE RequestType = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
+Peak memory usage: 3.16 MiB.
+```
+
+<Note>
+  기본적으로 materialized 컬럼은 `SELECT *` 결과에 포함되지 않습니다. 이는 `SELECT *`의 결과를 항상 INSERT를 사용해 다시 테이블에 삽입할 수 있다는 불변 조건을 유지하기 위한 것입니다. 이 동작은 `asterisk_include_materialized_columns=1`을 설정하면 비활성화할 수 있으며, Grafana에서도 활성화할 수 있습니다(데이터 소스 구성의 `Additional Settings -> Custom Settings` 참조).
+</Note>
+
+<div id="materialized-views">
+  ## materialized views
+</div>
+
+[materialized views](/ko/concepts/features/materialized-views/index)는 로그와 트레이스에 SQL 필터링과 변환을 적용하는 더 강력한 수단을 제공합니다.
+
+Materialized Views를 사용하면 계산 비용을 쿼리 시점에서 삽입 시점으로 옮길 수 있습니다. ClickHouse materialized view는 테이블에 데이터 블록이 삽입될 때 해당 블록에 대해 쿼리를 실행하는 트리거일 뿐입니다. 이 쿼리의 결과는 두 번째 &quot;대상&quot; 테이블에 삽입됩니다.
+
+<Image img="/images/use-cases/observability/observability-10.webp" alt="materialized view" size="md" />
+
+<Info>
+  **실시간 업데이트**
+
+  ClickHouse의 materialized views는 기반이 되는 테이블로 데이터가 유입되면 실시간으로 업데이트되며, 지속적으로 갱신되는 인덱스처럼 동작합니다. 반면 다른 데이터베이스의 materialized views는 일반적으로 갱신이 필요한 정적 쿼리 스냅샷입니다(ClickHouse의 갱신 가능 구체화 뷰와 유사함).
+</Info>
+
+materialized view에 연결된 쿼리는 이론적으로는 집계를 포함해 어떤 쿼리든 될 수 있지만, [조인에는 제한 사항이 있습니다](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins). 로그와 트레이스에 필요한 변환 및 필터링 작업에는 사실상 모든 `SELECT` statement를 사용할 수 있다고 보면 됩니다.
+
+쿼리는 테이블에 삽입되는 행(소스 테이블)에 대해 실행되는 트리거일 뿐이며, 그 결과는 새 테이블(대상 테이블)로 전달된다는 점을 기억해야 합니다.
+
+데이터가 두 번 저장되지 않도록(소스 테이블과 대상 테이블 모두에) 원래 스키마를 유지한 채 소스 테이블의 테이블 엔진을 [Null table engine](/ko/reference/engines/table-engines/special/null)으로 변경할 수 있습니다. OTel collector는 계속 이 테이블로 데이터를 전송합니다. 예를 들어 로그의 경우 `otel_logs` 테이블은 다음과 같이 됩니다:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+) ENGINE = Null
+```
+
+Null table engine은 강력한 최적화 기능입니다. `/dev/null`이라고 생각하면 이해하기 쉽습니다. 이 테이블은 데이터를 전혀 저장하지 않지만, attached 상태인 materialized view는 데이터가 폐기되기 전에 삽입된 행에 대해 계속 실행됩니다.
+
+다음 쿼리를 살펴보겠습니다. 이 쿼리는 행을 유지하려는 포맷으로 변환하고, `LogAttributes`에서 모든 컬럼을 추출하며(이는 collector가 `json_parser` 연산자를 사용해 설정했다고 가정합니다), `SeverityText`와 `SeverityNumber`를 설정합니다(몇 가지 단순한 조건과 [이 컬럼들](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)의 정의를 기반으로 합니다). 여기서는 실제로 값이 채워질 것으로 예상되는 컬럼만 선택하고, `TraceId`, `SpanId`, `TraceFlags` 같은 컬럼은 제외합니다.
+
+```sql
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddr,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddr:     54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.027 sec.
+```
+
+위에서 `Body` 컬럼도 추출합니다. 이는 나중에 SQL로 추출되지 않는 추가 속성이 생길 경우를 대비한 것입니다. 이 컬럼은 ClickHouse에서 압축 효율이 높고 거의 조회되지 않으므로 쿼리 성능에 영향을 미치지 않습니다. 마지막으로, cast를 사용하여 Timestamp를 DateTime으로 변환합니다(공간 절약을 위해 [&quot;Optimizing Types&quot;](#optimizing-types) 참조).
+
+<Info>
+  **조건식**
+
+  위에서는 `SeverityText`와 `SeverityNumber`를 추출하기 위해 [조건식](/ko/reference/functions/regular-functions/conditional-functions)을 사용했습니다. 조건식은 복잡한 조건을 구성하고 맵에서 값이 설정되어 있는지 확인할 때 매우 유용합니다. 여기서는 단순하게 `LogAttributes`에 모든 키가 존재한다고 가정합니다. 이 기능에 익숙해지기를 권장합니다. [NULL 값](/ko/reference/functions/regular-functions/functions-for-nulls)을 처리하는 함수와 함께 로그 파싱에서 특히 큰 도움이 됩니다!
+</Info>
+
+이 결과를 저장할 테이블이 필요합니다. 아래의 대상 테이블(target table)은 위의 쿼리에 대응합니다:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+여기서 선택한 타입은 [&quot;타입 최적화&quot;](#optimizing-types)에서 설명하는 최적화를 기반으로 합니다.
+
+<Note>
+  스키마가 크게 바뀐 점에 주목하십시오. 실제 환경에서는 보존해야 할 Trace 컬럼이 있을 가능성이 높고, `ResourceAttributes` 컬럼도 마찬가지입니다(이 컬럼에는 보통 Kubernetes 메타데이터가 포함됩니다). Grafana는 Trace 컬럼을 활용해 로그와 트레이스 사이를 연결하는 기능을 제공할 수 있습니다. 자세한 내용은 [&quot;Grafana 사용&quot;](/ko/guides/use-cases/observability/build-your-own/grafana)를 참조하십시오.
+</Note>
+
+아래에서는 `otel_logs` 테이블에 대해 위의 SELECT를 실행하고 그 결과를 `otel_logs_v2`로 전달하는 materialized view `otel_logs_mv`를 생성합니다.
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+위 내용은 아래와 같이 시각화됩니다:
+
+<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+
+이제 [&quot;Exporting to ClickHouse&quot;](/ko/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)에서 사용한 collector 구성을 다시 시작하면 데이터가 원하는 포맷으로 `otel_logs_v2`에 표시됩니다. typed JSON extract 함수를 사용한다는 점에 유의하십시오.
+
+```sql
+SELECT *
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddress:  54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.010 sec.
+```
+
+아래에는 JSON 함수를 사용해 `Body` 컬럼에서 컬럼을 추출하는 동등한 materialized view가 나와 있습니다:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT  Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        JSONExtractUInt(Body, 'status') AS Status,
+        JSONExtractString(Body, 'request_protocol') AS RequestProtocol,
+        JSONExtractUInt(Body, 'run_time') AS RunTime,
+        JSONExtractUInt(Body, 'size') AS Size,
+        JSONExtractString(Body, 'user_agent') AS UserAgent,
+        JSONExtractString(Body, 'referer') AS Referer,
+        JSONExtractString(Body, 'remote_user') AS RemoteUser,
+        JSONExtractString(Body, 'request_type') AS RequestType,
+        JSONExtractString(Body, 'request_path') AS RequestPath,
+        JSONExtractString(Body, 'remote_addr') AS remote_addr,
+        domain(JSONExtractString(Body, 'referer')) AS RefererDomain,
+        path(JSONExtractString(Body, 'request_path')) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+<div id="beware-types">
+  ### 타입에 주의하세요
+</div>
+
+위의 materialized view는 암시적 형변환에 의존합니다. 특히 `LogAttributes` 맵을 사용할 때 그렇습니다. ClickHouse는 추출된 값을 대상 테이블의 타입으로 자동 형변환하는 경우가 많아 필요한 구문을 줄여 줍니다. 그러나 동일한 스키마(schema)를 사용하는 대상 테이블에 대해 뷰의 `SELECT` SQL 문을 [`INSERT INTO`](/ko/reference/statements/insert-into) SQL 문과 함께 사용해 항상 테스트하는 것을 권장합니다. 이렇게 하면 타입이 올바르게 처리되는지 확인할 수 있습니다. 특히 다음 경우에 유의하십시오.
+
+* 맵에 키가 없으면 빈 문자열이 반환됩니다. 숫자값의 경우 이를 적절한 값으로 매핑해야 합니다. 이는 [조건식](/ko/reference/functions/regular-functions/conditional-functions) 예: `if(LogAttributes['status'] = ", 200, LogAttributes['status'])` 또는 기본값을 허용할 수 있다면 [형변환 함수](/ko/reference/functions/regular-functions/type-conversion-functions) 예: `toUInt8OrDefault(LogAttributes['status'] )`로 처리할 수 있습니다.
+* 일부 타입은 항상 형변환되지 않습니다. 예를 들어 숫자의 문자열 표현은 enum 값으로 형변환되지 않습니다.
+* JSON 추출 함수는 값을 찾지 못하면 해당 타입의 기본값을 반환합니다. 이 값이 적절한지 확인하십시오!
+
+<Info>
+  **Nullable 사용 피하기**
+
+  관측성 데이터에는 ClickHouse에서 [Nullable](/ko/reference/data-types/nullable) 사용을 피하십시오. logs 및 traces에서는 빈 값과 null을 구분해야 할 필요가 거의 없습니다. 이 기능은 추가 저장소 오버헤드를 유발하며 쿼리 성능에도 부정적인 영향을 줍니다. 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)를 참조하십시오.
+</Info>
+
+<div id="choosing-a-primary-ordering-key">
+  ## 프라이머리(정렬) 키 선택하기
+</div>
+
+원하는 컬럼을 추출했다면, 이제 정렬/프라이머리 키 최적화를 시작할 수 있습니다.
+
+정렬 키를 선택할 때 도움이 되는 몇 가지 간단한 규칙이 있습니다. 아래 기준들은 때때로 서로 충돌할 수 있으므로, 제시된 순서대로 검토하십시오. 이 과정을 통해 여러 후보 키를 도출할 수 있으며, 보통 4~5개면 충분합니다.
+
+1. 자주 사용하는 필터와 액세스 패턴에 맞는 컬럼을 선택하십시오. 관측성 조사 작업을 보통 특정 컬럼(예: 파드 이름)으로 필터링하는 것부터 시작한다면, 이 컬럼은 `WHERE` 절에서 자주 사용됩니다. 사용 빈도가 낮은 컬럼보다 이러한 컬럼을 키에 포함하는 것을 우선하십시오.
+2. 필터링 시 전체 행의 큰 비율을 제외할 수 있는 컬럼을 우선하십시오. 그러면 읽어야 하는 데이터 양을 줄일 수 있습니다. 서비스 이름과 상태 코드는 좋은 후보인 경우가 많습니다. 다만 상태 코드의 경우에는 대부분의 행을 제외하는 값으로 필터링할 때만 그렇습니다. 예를 들어 200번대 상태 코드로 필터링하면 대부분의 시스템에서 대다수 행이 일치하지만, 500 오류로 필터링하면 보통 작은 부분집합만 일치합니다.
+3. 테이블의 다른 컬럼과 높은 상관성을 가질 가능성이 큰 컬럼을 우선하십시오. 그러면 이러한 값들도 서로 인접하게 저장되어 압축이 개선됩니다.
+4. 정렬 키에 포함된 컬럼에 대한 `GROUP BY` 및 `ORDER BY` 연산은 메모리를 더 효율적으로 사용할 수 있습니다.
+
+<br />
+
+정렬 키에 사용할 컬럼 부분집합을 정한 뒤에는, 이를 특정한 순서로 선언해야 합니다. 이 순서는 쿼리에서 후행 키 컬럼에 대한 필터링 효율과 테이블 데이터 파일의 압축률에 모두 큰 영향을 줄 수 있습니다. 일반적으로는 **카디널리티가 낮은 것부터 높은 것 순으로 키를 정렬하는 것이 가장 좋습니다**. 다만 정렬 키에서 뒤쪽에 오는 컬럼에 대한 필터링은 튜플 앞쪽에 오는 컬럼보다 효율이 떨어진다는 점도 함께 고려해야 합니다. 이러한 특성 사이에서 균형을 잡고 액세스 패턴을 고려하십시오. 무엇보다도 다양한 변형을 테스트하십시오. 정렬 키와 최적화 방법을 더 자세히 이해하려면 [이 문서](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참고하십시오.
+
+<Info>
+  **구조를 먼저 정하십시오**
+
+  로그를 구조화한 뒤에 정렬 키를 결정할 것을 권장합니다. 정렬 키에 속성 맵의 키나 JSON 추출 표현식을 사용하지 마십시오. 정렬 키는 테이블의 루트 컬럼으로 두십시오.
+</Info>
+
+<div id="using-maps">
+  ## 맵 사용하기
+</div>
+
+앞선 예시에서는 `Map(String, String)` 컬럼의 값에 접근하기 위해 맵 구문 `map['key']`을 사용하는 방법을 보여주었습니다. 중첩된 키에 접근할 때도 맵 표기법을 사용할 수 있으며, 이와 함께 이러한 컬럼을 필터링하거나 선택하기 위한 ClickHouse의 특화된 [맵 함수](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys)도 제공됩니다.
+
+예를 들어, 다음 쿼리는 [`mapKeys` 함수](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys)와 이어서 [`groupArrayDistinctArray` 함수](/ko/reference/functions/aggregate-functions/combinators)(combinator)를 사용해 `LogAttributes` 컬럼에서 사용할 수 있는 모든 고유 키를 식별합니다.
+
+```sql
+SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
+FROM otel_logs
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+groupArrayDistinctArray(mapKeys(LogAttributes)): ['remote_user','run_time','request_type','log.file.name','referer','request_path','status','user_agent','remote_addr','time_local','size','request_protocol']
+
+1 row in set. Elapsed: 1.139 sec. Processed 5.63 million rows, 2.53 GB (4.94 million rows/s., 2.22 GB/s.)
+Peak memory usage: 71.90 MiB.
+```
+
+<Info>
+  **점 사용 금지**
+
+  맵 컬럼 이름에는 점을 사용하지 않는 것이 좋으며, 이 사용 방식은 향후 더 이상 지원되지 않을 수 있습니다. 대신 `_`를 사용하십시오.
+</Info>
+
+<div id="using-aliases">
+  ## 별칭 사용
+</div>
+
+맵(Map) 타입에 대한 쿼리는 일반 컬럼에 대한 쿼리보다 느립니다. [&quot;쿼리 가속화&quot;](#accelerating-queries)를 참조하십시오. 또한 구문이 더 복잡해지고 작성도 번거로울 수 있습니다. 이 문제를 해결하기 위해 별칭 컬럼 사용을 권장합니다.
+
+ALIAS 컬럼은 쿼리 시점에 계산되며 테이블에 저장되지 않습니다. 따라서 이 타입의 컬럼에는 값을 INSERT할 수 없습니다. 별칭을 사용하면 맵 키를 참조하고 구문을 단순화할 수 있으며, 맵 항목을 일반 컬럼처럼 자연스럽게 노출할 수 있습니다. 다음 예시를 살펴보십시오:
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
+        `RemoteAddr` IPv4 ALIAS LogAttributes['remote_addr']
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+```
+
+여기에는 여러 개의 materialized 컬럼과 맵 `LogAttributes`에 접근하는 `ALIAS` 컬럼 `RemoteAddr`가 있습니다. 이제 이 컬럼을 통해 `LogAttributes['remote_addr']` 값을 조회할 수 있으므로 쿼리를 더 단순하게 작성할 수 있습니다. 즉,
+
+```sql
+SELECT RemoteAddr
+FROM default.otel_logs
+LIMIT 5
+```
+
+```response
+┌─RemoteAddr────┐
+│ 54.36.149.41  │
+│ 31.56.96.51   │
+│ 31.56.96.51   │
+│ 40.77.167.129 │
+│ 91.99.72.15   │
+└───────────────┘
+
+5 rows in set. Elapsed: 0.011 sec.
+```
+
+또한 `ALTER TABLE` 명령으로 `ALIAS`를 손쉽게 추가할 수 있습니다. 예를 들어, 이러한 컬럼은 즉시 사용할 수 있습니다.
+
+```sql
+ALTER TABLE default.otel_logs
+        (ADD COLUMN `Size` String ALIAS LogAttributes['size'])
+
+SELECT Size
+FROM default.otel_logs_v3
+LIMIT 5
+```
+
+```response
+┌─Size──┐
+│ 30577 │
+│ 5667  │
+│ 5379  │
+│ 1696  │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.014 sec.
+```
+
+<Info>
+  **기본적으로 별칭는 제외됩니다**
+
+  기본적으로 `SELECT *`는 ALIAS 컬럼을 제외합니다. 이 동작은 `asterisk_include_alias_columns=1`로 설정하면 비활성화할 수 있습니다.
+</Info>
+
+<div id="optimizing-types">
+  ## 타입 최적화
+</div>
+
+타입 최적화에 관한 [일반적인 ClickHouse 모범 사례](/ko/guides/clickhouse/data-modelling/schema-design#optimizing-types)는 ClickHouse 사용 사례에도 그대로 적용됩니다.
+
+<div id="using-codecs">
+  ## 코덱 사용
+</div>
+
+데이터 유형 최적화 외에도, ClickHouse 관측성 스키마의 압축을 최적화할 때는 [코덱에 대한 일반적인 모범 사례](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)를 따를 수 있습니다.
+
+일반적으로 `ZSTD` 코덱은 로깅 및 트레이스 데이터셋에 매우 적합합니다. 기본값 1에서 압축 값을 높이면 압축률이 개선될 수 있습니다. 다만 값이 높을수록 데이터 삽입 시 CPU 오버헤드가 커지므로, 반드시 테스트해야 합니다. 일반적으로는 이 값을 높여도 큰 이점은 없습니다.
+
+또한 타임스탬프는 압축 측면에서는 델타 인코딩의 이점을 얻을 수 있지만, 이 컬럼을 프라이머리/정렬 키로 사용하면 느린 쿼리 성능을 유발할 수 있는 것으로 확인되었습니다. 따라서 압축률과 쿼리 성능 간의 절충점을 평가할 것을 권장합니다.
+
+<div id="using-dictionaries">
+  ## 딕셔너리 사용
+</div>
+
+[딕셔너리](/ko/reference/statements/create/dictionary)은 ClickHouse의 [핵심 기능](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)으로, 다양한 내부 및 외부 [소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)의 데이터를 인메모리 [키-값](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 형태로 표현하며, 초저지연 조회 쿼리에 최적화되어 있습니다.
+
+<Image img="/images/use-cases/observability/observability-12.webp" alt="관측성과 딕셔너리" size="md" />
+
+이 기능은 다양한 시나리오에서 유용합니다. 예를 들어 수집 성능 저하 없이 수집된 데이터를 실시간으로 보강할 수 있고, 전반적인 쿼리 성능도 향상할 수 있으며, 특히 JOIN에서 큰 이점을 얻을 수 있습니다.
+관측성 사용 사례에서는 조인이 필요한 경우는 드물지만, 딕셔너리는 여전히 보강 용도로 유용하며 삽입 시점과 쿼리 시점 모두에서 활용할 수 있습니다. 아래에서 두 경우의 예시를 제공합니다.
+
+<Info>
+  **조인 가속화**
+
+  딕셔너리를 사용해 조인을 가속화하려는 경우, 자세한 내용은 [여기](/ko/concepts/features/dictionaries/index)에서 확인할 수 있습니다.
+</Info>
+
+<div id="insert-time-vs-query-time">
+  ### 삽입 시점 vs 쿼리 시점
+</div>
+
+딕셔너리는 데이터셋을 쿼리 시점 또는 삽입 시점에 보강하는 데 사용할 수 있습니다. 각 접근 방식에는 저마다 장단점이 있습니다. 요약하면 다음과 같습니다.
+
+* **삽입 시점** - 일반적으로 보강 값이 변경되지 않고, 딕셔너리를 채우는 데 사용할 수 있는 외부 소스에 해당 값이 있는 경우에 적합합니다. 이 경우 삽입 시점에 행을 보강하면 쿼리 시점에 딕셔너리를 조회할 필요가 없습니다. 다만 보강된 값이 컬럼으로 저장되므로 삽입 성능이 저하될 수 있고, 추가 저장소 오버헤드도 발생합니다.
+* **쿼리 시점** - 딕셔너리의 값이 자주 변경된다면 쿼리 시점 조회가 더 적합한 경우가 많습니다. 이렇게 하면 매핑된 값이 바뀌더라도 컬럼을 업데이트하거나 데이터를 재작성할 필요가 없습니다. 이러한 유연성에는 쿼리 시점 조회 비용이 따른다는 대가가 있습니다. 이 비용은 일반적으로 많은 행에 대해 조회가 필요할 때 눈에 띄며, 예를 들어 filter 절에서 딕셔너리 조회를 사용하는 경우가 그렇습니다. 결과 보강, 즉 `SELECT`에서의 경우에는 이 오버헤드가 대체로 크지 않습니다.
+
+먼저 딕셔너리의 기본 개념을 익혀 두는 것이 좋습니다. 딕셔너리는 전용 [함수](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetAll)를 사용해 값을 가져올 수 있는 인메모리 조회 테이블을 제공합니다.
+
+간단한 보강 예시는 [여기](/ko/concepts/features/dictionaries/index)의 딕셔너리 가이드를 참조하십시오. 아래에서는 일반적인 관측성 보강 작업에 집중합니다.
+
+<div id="using-ip-dictionaries">
+  ### IP 딕셔너리 사용하기
+</div>
+
+IP 주소를 사용해 로그와 트레이스에 위도 및 경도 값을 추가하는 지리 정보 보강은 관측성에서 흔한 요구 사항입니다. 이는 `ip_trie` 구조화된 딕셔너리를 사용해 구현할 수 있습니다.
+
+[DB-IP.com](https://db-ip.com/)에서 [CC BY 4.0 라이선스](https://creativecommons.org/licenses/by/4.0/) 약관에 따라 제공하는 공개 [DB-IP city-level dataset](https://github.com/sapics/ip-location-db#db-ip-database-update-monthly)을 사용합니다.
+
+[README](https://github.com/sapics/ip-location-db#csv-format)를 보면 데이터가 다음과 같은 구조로 되어 있음을 확인할 수 있습니다:
+
+```csv
+| ip_range_start | ip_range_end | country_code | state1 | state2 | city | postcode | latitude | longitude | timezone |
+```
+
+이 구조를 바탕으로 [url()](/ko/reference/functions/table-functions/url) 테이블 함수를 사용해 데이터를 간단히 살펴보겠습니다:
+
+```sql
+SELECT *
+FROM url('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV', '\n           \tip_range_start IPv4, \n       \tip_range_end IPv4, \n         \tcountry_code Nullable(String), \n     \tstate1 Nullable(String), \n           \tstate2 Nullable(String), \n           \tcity Nullable(String), \n     \tpostcode Nullable(String), \n         \tlatitude Float64, \n          \tlongitude Float64, \n         \ttimezone Nullable(String)\n   \t')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+ip_range_start: 1.0.0.0
+ip_range_end:   1.0.0.255
+country_code:   AU
+state1:         Queensland
+state2:         ᴺᵁᴸᴸ
+city:           South Brisbane
+postcode:       ᴺᵁᴸᴸ
+latitude:       -27.4767
+longitude:      153.017
+timezone:       ᴺᵁᴸᴸ
+```
+
+작업을 간소화하기 위해 [`URL()`](/ko/reference/engines/table-engines/special/url) 테이블 엔진을 사용해 필드 이름이 있는 ClickHouse 테이블 객체를 만들고 전체 행 수를 확인하겠습니다:
+
+```sql
+CREATE TABLE geoip_url(
+        ip_range_start IPv4,
+        ip_range_end IPv4,
+        country_code Nullable(String),
+        state1 Nullable(String),
+        state2 Nullable(String),
+        city Nullable(String),
+        postcode Nullable(String),
+        latitude Float64,
+        longitude Float64,
+        timezone Nullable(String)
+) ENGINE=URL('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV')
+
+select count() from geoip_url;
+```
+
+```response
+┌─count()─┐
+│ 3261621 │ -- 326만
+└─────────┘
+```
+
+`ip_trie` 딕셔너리에서는 IP 주소 범위를 CIDR 표기법으로 나타내야 하므로, `ip_range_start`와 `ip_range_end`를 변환해야 합니다.
+
+각 범위의 CIDR은 다음 쿼리로 간단히 계산할 수 있습니다:
+
+```sql
+WITH
+        bitXor(ip_range_start, ip_range_end) AS xor,
+        if(xor != 0, ceil(log2(xor)), 0) AS unmatched,
+        32 - unmatched AS cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) AS cidr_address
+SELECT
+        ip_range_start,
+        ip_range_end,
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) AS cidr    
+FROM
+        geoip_url
+LIMIT 4;
+```
+
+```response
+┌─ip_range_start─┬─ip_range_end─┬─cidr───────┐
+│ 1.0.0.0        │ 1.0.0.255    │ 1.0.0.0/24 │
+│ 1.0.1.0        │ 1.0.3.255    │ 1.0.0.0/22 │
+│ 1.0.4.0        │ 1.0.7.255    │ 1.0.4.0/22 │
+│ 1.0.8.0        │ 1.0.15.255   │ 1.0.8.0/21 │
+└────────────────┴──────────────┴────────────┘
+
+4 rows in set. Elapsed: 0.259 sec.
+```
+
+<Note>
+  위 쿼리에는 많은 내용이 포함되어 있습니다. 자세히 알고 싶다면 이 훌륭한 [설명](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation)을 읽어보십시오. 그렇지 않다면, 위 쿼리가 IP 범위의 CIDR을 계산한다고 이해하시면 됩니다.
+</Note>
+
+여기서는 IP 범위, 국가 코드, 좌표만 있으면 되므로 새 테이블을 만들고 Geo IP 데이터를 삽입하겠습니다:
+
+```sql
+CREATE TABLE geoip
+(
+        `cidr` String,
+        `latitude` Float64,
+        `longitude` Float64,
+        `country_code` String
+)
+ENGINE = MergeTree
+ORDER BY cidr
+
+INSERT INTO geoip
+WITH
+        bitXor(ip_range_start, ip_range_end) as xor,
+        if(xor != 0, ceil(log2(xor)), 0) as unmatched,
+        32 - unmatched as cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) as cidr_address
+SELECT
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) as cidr,
+        latitude,
+        longitude,
+        country_code    
+FROM geoip_url
+```
+
+ClickHouse에서 저지연 IP lookup을 수행하기 위해, Geo IP 데이터의 키 -&gt; 속성 매핑을 메모리에 저장하는 딕셔너리를 활용합니다. ClickHouse는 네트워크 프리픽스(CIDR 블록)를 좌표와 국가 코드에 매핑할 수 있는 `ip_trie` [딕셔너리 구조](/ko/reference/statements/create/dictionary/layouts/ip-trie)를 제공합니다. 다음 쿼리는 이 레이아웃을 사용하고 위 테이블을 소스로 하는 딕셔너리를 지정합니다.
+
+```sql
+CREATE DICTIONARY ip_trie (
+   cidr String,
+   latitude Float64,
+   longitude Float64,
+   country_code String
+)
+primary key cidr
+source(clickhouse(table 'geoip'))
+layout(ip_trie)
+lifetime(3600);
+```
+
+딕셔너리에서 행을 선택하여 이 데이터셋을 조회에 활용할 수 있는지 확인할 수 있습니다:
+
+```sql
+SELECT * FROM ip_trie LIMIT 3
+```
+
+```response
+┌─cidr───────┬─latitude─┬─longitude─┬─country_code─┐
+│ 1.0.0.0/22 │  26.0998 │   119.297 │ CN           │
+│ 1.0.0.0/24 │ -27.4767 │   153.017 │ AU           │
+│ 1.0.4.0/22 │ -38.0267 │   145.301 │ AU           │
+└────────────┴──────────┴───────────┴──────────────┘
+
+3 rows in set. Elapsed: 4.662 sec.
+```
+
+<Info>
+  **주기적 갱신**
+
+  ClickHouse의 딕셔너리는 기반이 되는 테이블 데이터와 위에서 사용한 lifetime 절에 따라 주기적으로 갱신됩니다. DB-IP 데이터셋의 최신 변경 사항이 Geo IP 딕셔너리에 반영되도록 하려면, geoip&#95;url 원격 테이블의 데이터를 변환 적용 후 `geoip` 테이블에 다시 삽입하면 됩니다.
+</Info>
+
+이제 Geo IP 데이터가 `ip_trie` 딕셔너리(편의상 이름도 `ip_trie`입니다)에 로드되었으므로, 이를 IP 지리 위치 확인에 사용할 수 있습니다. 이는 다음과 같이 [`dictGet()` 함수](/ko/reference/functions/regular-functions/ext-dict-functions)를 사용해 수행할 수 있습니다:
+
+```sql
+SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
+```
+
+```response
+┌─ip_details──────────────┐
+│ ('PT',38.7944,-9.34284) │
+└─────────────────────────┘
+
+1 행 in set. Elapsed: 0.003 sec.
+```
+
+여기서 조회 속도를 확인하십시오. 이를 통해 로그를 보강할 수 있습니다. 이 경우 **쿼리 시점에 보강을 수행합니다**.
+
+원래 로그 데이터셋으로 돌아가면, 위 내용을 사용해 로그를 국가별로 집계할 수 있습니다. 다음은 앞서 만든 materialized view의 결과 스키마를 사용한다고 가정하며, 여기에는 추출된 `RemoteAddress` 컬럼이 포함되어 있습니다.
+
+```sql
+SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
+        formatReadableQuantity(count()) AS num_requests
+FROM default.otel_logs_v2
+WHERE country != ''
+GROUP BY country
+ORDER BY count() DESC
+LIMIT 5
+```
+
+```response
+┌─country─┬─num_requests────┐
+│ IR      │ 7.36 million    │
+│ US      │ 1.67 million    │
+│ AE      │ 526.74 thousand │
+│ DE      │ 159.35 thousand │
+│ FR      │ 109.82 thousand │
+└─────────┴─────────────────┘
+
+5 rows in set. Elapsed: 0.140 sec. Processed 20.73 million rows, 82.92 MB (147.79 million rows/s., 591.16 MB/s.)
+Peak memory usage: 1.16 MiB.
+```
+
+IP와 지리적 위치 간의 매핑은 변경될 수 있으므로, 사용자는 동일한 주소의 현재 지리적 위치가 아니라 요청이 발생했을 당시 어느 위치에서 온 요청인지 알고 싶어하는 경우가 많습니다. 이런 이유로 여기서는 인덱싱 시점 보강을 사용하는 편이 더 적합합니다. 이는 아래와 같이 materialized 컬럼을 사용하거나 materialized view의 select 절에서 수행할 수 있습니다:
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        `Country` String MATERIALIZED dictGet('ip_trie', 'country_code', tuple(RemoteAddress)),
+        `Latitude` Float32 MATERIALIZED dictGet('ip_trie', 'latitude', tuple(RemoteAddress)),
+        `Longitude` Float32 MATERIALIZED dictGet('ip_trie', 'longitude', tuple(RemoteAddress))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Info>
+  **주기적으로 업데이트**
+
+  사용자는 새 데이터를 반영해 IP 보강용 딕셔너리가 주기적으로 업데이트되기를 원할 수 있습니다. 이는 딕셔너리의 `LIFETIME` 절을 사용해 구현할 수 있으며, 이렇게 하면 기반 테이블에서 딕셔너리를 주기적으로 다시 로드하게 됩니다. 기반 테이블을 업데이트하는 방법은 [&quot;갱신 가능 구체화 뷰&quot;](/ko/concepts/features/materialized-views/refreshable-materialized-view)를 참조하십시오.
+</Info>
+
+위의 국가 및 좌표 정보는 국가별 그룹화와 필터링을 넘어서는 시각화 기능을 제공합니다. 참고할 만한 예시는 [&quot;Geo 데이터 시각화&quot;](/ko/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data)를 참조하십시오.
+
+<div id="using-regex-dictionaries-user-agent-parsing">
+  ### 정규식 딕셔너리 사용(user agent 파싱)
+</div>
+
+[user agent 문자열](https://en.wikipedia.org/wiki/User_agent) 파싱은 정규식을 사용하는 대표적인 문제이며, 로그 및 trace 기반 데이터셋에서 흔히 필요한 작업입니다. ClickHouse는 정규 표현식 트리 딕셔너리를 사용하여 user agent를 효율적으로 파싱할 수 있습니다.
+
+정규식 트리 딕셔너리는 ClickHouse 오픈소스에서 정규식 트리가 포함된 YAML 파일의 경로를 제공하는 YAMLRegExpTree 딕셔너리 소스 유형으로 정의합니다. 자체 정규식 딕셔너리를 제공하려는 경우, 필요한 구조에 대한 자세한 내용은 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)에서 확인할 수 있습니다. 아래에서는 [uap-core](https://github.com/ua-parser/uap-core)를 사용한 user-agent 파싱에 초점을 맞추고, 지원되는 CSV 형식에 맞게 딕셔너리를 로드합니다. 이 방식은 OSS와 ClickHouse Cloud 모두에서 호환됩니다.
+
+<Note>
+  아래 예시에서는 user-agent 파싱을 위해 2024년 06월 기준 최신 uap-core 정규식 스냅샷을 사용합니다. 최신 파일은 수시로 업데이트되며 [여기](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)에서 확인할 수 있습니다. 아래에서 사용하는 CSV file에 로드하려면 [여기](/ko/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)의 단계를 따르십시오.
+</Note>
+
+다음 Memory 테이블을 생성하십시오. 이 테이블에는 디바이스, 브라우저, 운영 체제를 파싱하기 위한 정규식이 저장됩니다.
+
+```sql
+CREATE TABLE regexp_os
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_browser
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_device
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+```
+
+이 테이블은 `url` 테이블 함수를 사용해 다음과 같이 공개적으로 호스팅된 CSV 파일에서 데이터를 채울 수 있습니다:
+
+```sql
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+```
+
+메모리 테이블이 채워졌으므로 이제 정규식 딕셔너리를 로드할 수 있습니다. 키 값은 컬럼으로 지정해야 하며, 이 컬럼들이 user agent에서 추출할 수 있는 속성이 됩니다.
+
+```sql
+CREATE DICTIONARY regexp_os_dict
+(
+        regexp String,
+        os_replacement String default 'Other',
+        os_v1_replacement String default '0',
+        os_v2_replacement String default '0',
+        os_v3_replacement String default '0',
+        os_v4_replacement String default '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
+
+CREATE DICTIONARY regexp_device_dict
+(
+        regexp String,
+        device_replacement String default 'Other',
+        brand_replacement String,
+        model_replacement String
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_device'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+CREATE DICTIONARY regexp_browser_dict
+(
+        regexp String,
+        family_replacement String default 'Other',
+        v1_replacement String default '0',
+        v2_replacement String default '0'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_browser'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```
+
+이 딕셔너리들을 로드하면 user-agent 예시를 사용해 새 딕셔너리 추출 기능을 테스트할 수 있습니다:
+
+```sql
+WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
+SELECT
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), user_agent) AS device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), user_agent) AS browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), user_agent) AS os
+```
+
+```response
+┌─device────────────────┬─browser───────────────┬─os─────────────────────────┐
+│ ('Mac','Apple','Mac') │ ('Firefox','127','0') │ ('Mac OS X','10','15','0') │
+└───────────────────────┴───────────────────────┴────────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+user agent 관련 규칙은 거의 변경되지 않으며, 딕셔너리도 새로운 브라우저, 운영 체제, 기기가 등장할 때만 업데이트하면 되므로, 이 추출은 삽입 시점에 수행하는 것이 적절합니다.
+
+이 작업은 구체화된 컬럼(materialized column) 또는 materialized view를 사용하여 수행할 수 있습니다. 아래에서는 앞서 사용한 materialized view를 수정합니다:
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2
+AS SELECT
+        Body,
+        CAST(Timestamp, 'DateTime') AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(CAST(Status, 'UInt64') > 500, 'CRITICAL', CAST(Status, 'UInt64') > 400, 'ERROR', CAST(Status, 'UInt64') > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(CAST(Status, 'UInt64') > 500, 20, CAST(Status, 'UInt64') > 400, 17, CAST(Status, 'UInt64') > 300, 13, 9) AS SeverityNumber,
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), UserAgent) AS Device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), UserAgent) AS Browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), UserAgent) AS Os
+FROM otel_logs
+```
+
+이를 위해서는 대상 테이블 `otel_logs_v2`의 스키마를 수정해야 합니다:
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+ `Body` String,
+ `Timestamp` DateTime,
+ `ServiceName` LowCardinality(String),
+ `Status` UInt8,
+ `RequestProtocol` LowCardinality(String),
+ `RunTime` UInt32,
+ `Size` UInt32,
+ `UserAgent` String,
+ `Referer` String,
+ `RemoteUser` String,
+ `RequestType` LowCardinality(String),
+ `RequestPath` String,
+ `remote_addr` IPv4,
+ `RefererDomain` String,
+ `RequestPage` String,
+ `SeverityText` LowCardinality(String),
+ `SeverityNumber` UInt8,
+ `Device` Tuple(device_replacement LowCardinality(String), brand_replacement LowCardinality(String), model_replacement LowCardinality(String)),
+ `Browser` Tuple(family_replacement LowCardinality(String), v1_replacement LowCardinality(String), v2_replacement LowCardinality(String)),
+ `Os` Tuple(os_replacement LowCardinality(String), os_v1_replacement LowCardinality(String), os_v2_replacement LowCardinality(String), os_v3_replacement LowCardinality(String))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp, Status)
+```
+
+앞서 설명한 단계에 따라 collector를 다시 시작하고 구조화된 로그를 수집한 후, 새로 추출한 Device, Browser, Os 컬럼을 쿼리할 수 있습니다.
+
+```sql
+SELECT Device, Browser, Os
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Device:  ('Spider','Spider','Desktop')
+Browser: ('AhrefsBot','6','1')
+Os:     ('Other','0','0','0')
+```
+
+<Info>
+  **복잡한 구조를 위한 튜플**
+
+  이러한 user agent 컬럼에는 튜플을 사용한다는 점에 유의하십시오. 튜플은 계층 구조를 미리 알고 있는 복잡한 구조에 권장됩니다. 서브컬럼은 서로 다른 타입을 허용하면서도 일반 컬럼과 동일한 성능을 제공합니다(`Map` 키와는 달리).
+</Info>
+
+<div id="further-reading">
+  ### 추가 자료
+</div>
+
+더 많은 예시와 딕셔너리에 대한 자세한 내용은 다음 문서를 참고하십시오:
+
+* [고급 딕셔너리 주제](/ko/concepts/features/dictionaries/index#advanced-dictionary-topics)
+* [&quot;딕셔너리를 사용해 쿼리 가속화하기&quot;](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [딕셔너리](/ko/reference/statements/create/dictionary)
+
+<div id="accelerating-queries">
+  ## 쿼리 성능 가속화
+</div>
+
+ClickHouse는 쿼리 성능을 높이기 위한 여러 기법을 지원합니다. 아래 기법은 가장 일반적인 액세스 패턴에 맞게 최적화하고 압축 효율을 극대화할 수 있도록 적절한 기본 키/순서 지정 키를 선택한 다음에 고려해야 합니다. 일반적으로 이 방법이 가장 적은 노력으로 가장 큰 성능 향상을 가져옵니다.
+
+<div id="using-materialized-views-incremental-for-aggregations">
+  ### 집계를 위해 materialized view(증분) 사용
+</div>
+
+이전 섹션에서는 데이터 변환과 필터링에 materialized view를 사용하는 방법을 살펴보았습니다. 하지만 materialized view는 삽입 시점에 집계를 미리 계산해 그 결과를 저장하는 데에도 사용할 수 있습니다. 또한 이후의 삽입 결과를 반영해 이 결과를 갱신할 수 있으므로, 사실상 집계를 삽입 시점에 미리 계산할 수 있습니다.
+
+여기서 핵심은 결과가 원본 데이터보다 더 작은 형태로 표현되는 경우가 많다는 점입니다(집계의 경우에는 부분 스케치). 여기에 대상 테이블에서 결과를 읽는 더 단순한 쿼리를 결합하면, 동일한 계산을 원본 데이터에서 직접 수행하는 것보다 쿼리 시간이 더 빨라집니다.
+
+다음 쿼리를 살펴보십시오. 여기서는 구조화된 로그를 사용해 시간당 총 트래픽을 계산합니다:
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour,
+        sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.666 sec. Processed 10.37 million rows, 4.73 GB (15.56 million rows/s., 7.10 GB/s.)
+Peak memory usage: 1.40 MiB.
+```
+
+이는 사용자가 Grafana에서 자주 그리는 선 차트라고 볼 수 있습니다. 이 쿼리는 확실히 매우 빠릅니다. 데이터셋이 1,000만 행에 불과하고 ClickHouse 자체도 매우 빠르기 때문입니다. 하지만 이를 수십억, 수조 행 규모로 확장하더라도, 가능하면 이 쿼리 성능을 그대로 유지하는 것이 바람직합니다.
+
+<Note>
+  앞서 `LogAttributes` 맵에서 size 키를 추출하는 materialized view로 생성한 `otel_logs_v2` 테이블을 사용했다면 이 쿼리는 10배 더 빨라졌을 것입니다. 여기서는 설명을 위해 원시 데이터를 사용할 뿐이며, 이것이 일반적인 쿼리라면 앞서의 뷰를 사용하는 것을 권장합니다.
+</Note>
+
+materialized view를 사용해 삽입 시점에 이를 계산하려면, 결과를 받아 저장할 테이블이 필요합니다. 이 테이블은 시간당 1개의 행만 유지해야 합니다. 기존 시간대에 대한 업데이트가 들어오면 다른 컬럼은 해당 시간대의 기존 행에 머지되어야 합니다. 이렇게 증분 상태를 머지하려면 다른 컬럼에는 부분 상태를 저장해야 합니다.
+
+이를 위해서는 ClickHouse의 특별한 엔진 유형인 SummingMergeTree가 필요합니다. 이 엔진은 동일한 정렬 키를 가진 모든 행을 숫자 컬럼 값이 합산된 하나의 행으로 대체합니다. 다음 테이블은 동일한 날짜를 가진 모든 행을 머지하고, 숫자 컬럼은 모두 합산합니다.
+
+```sql
+CREATE TABLE bytes_per_hour
+(
+  `Hour` DateTime,
+  `TotalBytes` UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY Hour
+```
+
+materialized view를 설명하기 위해 `bytes_per_hour` 테이블이 비어 있고 아직 데이터가 전혀 수신되지 않았다고 가정하겠습니다. 이 materialized view는 `otel_logs`에 삽입된 데이터에 대해 위의 `SELECT`를 수행하며(이 작업은 구성된 크기의 block 단위로 수행됩니다), 그 결과를 `bytes_per_hour`로 보냅니다. 구문은 아래와 같습니다:
+
+```sql
+CREATE MATERIALIZED VIEW bytes_per_hour_mv TO bytes_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+       sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+```
+
+여기서 `TO` 절은 중요하며, 결과가 어디로 전송되는지, 즉 `bytes_per_hour`로 전송된다는 것을 나타냅니다.
+
+OTel collector를 다시 시작하고 logs를 다시 보내면 `bytes_per_hour` 테이블이 위 쿼리 결과로 점진적으로 채워집니다. 완료되면 `bytes_per_hour`의 크기를 확인할 수 있으며, 시간당 1개의 행이 있어야 합니다:
+
+```sql
+SELECT count()
+FROM bytes_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│     113 │
+└─────────┘
+
+1 row in set. Elapsed: 0.039 sec.
+```
+
+여기서는 쿼리 결과를 저장하여 행 수를 10m(`otel_logs`)에서 113개로 효과적으로 줄였습니다. 핵심은 새 logs가 `otel_logs` 테이블에 삽입되면 해당 시간에 대한 새 값이 `bytes_per_hour`로 전송되고, 그곳에서 백그라운드에서 비동기적으로 자동 머지된다는 점입니다. 즉, 시간당 하나의 행만 유지하므로 `bytes_per_hour`는 항상 작고 최신 상태를 유지합니다.
+
+행 머지는 비동기적으로 수행되므로 사용자가 쿼리할 때는 시간당 둘 이상의 행이 있을 수 있습니다. 쿼리 시점에 아직 머지되지 않은 행까지 모두 머지되도록 보장하는 방법은 두 가지입니다.
+
+* 테이블 이름에 [`FINAL` 수정자](/ko/reference/statements/select/from#final-modifier)를 사용합니다(위의 count 쿼리에서 사용한 방법입니다).
+* 최종 테이블에서 사용하는 정렬 키, 즉 Timestamp를 기준으로 집계하고 메트릭을 합산합니다.
+
+일반적으로 두 번째 방법이 더 효율적이고 유연합니다(테이블을 다른 용도로도 사용할 수 있음). 하지만 일부 쿼리에서는 첫 번째 방법이 더 단순할 수 있습니다. 아래에서는 두 방법을 모두 보여줍니다.
+
+```sql
+SELECT
+        Hour,
+        sum(TotalBytes) AS TotalBytes
+FROM bytes_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.008 sec.
+```
+
+```sql
+SELECT
+        Hour,
+        TotalBytes
+FROM bytes_per_hour
+FINAL
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+이로써 쿼리 실행 시간이 0.6초에서 0.008초로 단축되었습니다. 무려 75배 이상 빨라진 것입니다!
+
+<Note>
+  더 큰 데이터셋에서 더 복잡한 쿼리를 실행하면 이러한 절감 효과는 훨씬 더 커질 수 있습니다. 예시는 [here](https://github.com/ClickHouse/clickpy)에서 확인하십시오.
+</Note>
+
+<div id="a-more-complex-example">
+  #### 더 복잡한 예시
+</div>
+
+위 예시에서는 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree)를 사용해 시간당 단순 카운트를 집계합니다. 단순 합계 이상의 통계를 계산하려면 다른 대상 테이블 엔진이 필요합니다. 바로 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree)입니다.
+
+하루별 고유 IP 주소 수(또는 고유 사용자 수)를 계산하려고 한다고 가정하겠습니다. 이를 위한 쿼리는 다음과 같습니다.
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour, uniq(LogAttributes['remote_addr']) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │     4763    │
+│ 2019-01-22 00:00:00 │     536     │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.667 sec. Processed 10.37 million rows, 4.73 GB (15.53 million rows/s., 7.09 GB/s.)
+```
+
+증분 업데이트를 위해 카디널리티 카운트를 저장하려면 AggregatingMergeTree가 필요합니다.
+
+```sql
+CREATE TABLE unique_visitors_per_hour
+(
+  `Hour` DateTime,
+  `UniqueUsers` AggregateFunction(uniq, IPv4)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Hour
+```
+
+집계 상태가 저장된다는 점을 ClickHouse가 인식하도록 `UniqueUsers` 컬럼을 [`AggregateFunction`](/ko/reference/data-types/aggregatefunction) 타입으로 정의하고, 부분 상태(uniq)의 함수 소스와 소스 컬럼의 타입(IPv4)을 지정합니다. SummingMergeTree와 마찬가지로 동일한 `ORDER BY` 키 값을 가진 행은 머지됩니다(위 예시에서는 Hour).
+
+해당 materialized view는 앞서의 쿼리를 사용합니다:
+
+```sql
+CREATE MATERIALIZED VIEW unique_visitors_per_hour_mv TO unique_visitors_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+        uniqState(LogAttributes['remote_addr']::IPv4) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+집계 함수 끝에 접미사 `State`를 붙인 점에 유의하십시오. 이렇게 하면 최종 결과 대신 함수의 집계 상태가 반환됩니다. 여기에는 이 부분 상태를 다른 상태와 머지하는 데 필요한 추가 정보가 포함됩니다.
+
+collector를 다시 시작해 데이터를 다시 로드한 후에는 `unique_visitors_per_hour` 테이블에서 113개의 행을 확인할 수 있습니다.
+
+```sql
+SELECT count()
+FROM unique_visitors_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│   113   │
+└─────────┘
+
+1 행 in set. Elapsed: 0.009 sec.
+```
+
+최종 쿼리에서는 함수에 Merge 접미사를 사용해야 합니다(컬럼에 부분 집계 상태가 저장되므로):
+
+```sql
+SELECT Hour, uniqMerge(UniqueUsers) AS UniqueUsers
+FROM unique_visitors_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │      4763   │
+│ 2019-01-22 00:00:00 │      536    │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.027 sec.
+```
+
+여기서는 `FINAL` 대신 `GROUP BY`를 사용한다는 점에 유의하십시오.
+
+<div id="using-materialized-views-incremental--for-fast-lookups">
+  ### 빠른 조회를 위한 Materialized views (incremental)  사용
+</div>
+
+ClickHouse 정렬 키를 선택할 때는 필터링 절과 집계 절에서 자주 사용되는 컬럼과 함께 액세스 패턴도 고려해야 합니다. 하지만 관측성 사용 사례에서는 액세스 패턴이 더 다양하므로, 이를 하나의 컬럼 집합만으로 포괄하기 어려워 제약이 될 수 있습니다. 이는 기본 OTel 스키마에 포함된 예시를 보면 가장 잘 이해할 수 있습니다. 트레이스의 기본 스키마를 살펴보겠습니다:
+
+```sql
+CREATE TABLE otel_traces
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `ParentSpanId` String CODEC(ZSTD(1)),
+        `TraceState` String CODEC(ZSTD(1)),
+        `SpanName` LowCardinality(String) CODEC(ZSTD(1)),
+        `SpanKind` LowCardinality(String) CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `SpanAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Duration` Int64 CODEC(ZSTD(1)),
+        `StatusCode` LowCardinality(String) CODEC(ZSTD(1)),
+        `StatusMessage` String CODEC(ZSTD(1)),
+        `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+        `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+        `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+        `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+        `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+        `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+```
+
+이 스키마는 `ServiceName`, `SpanName`, `Timestamp`로 필터링하는 데 최적화되어 있습니다. 트레이싱에서는 특정 `TraceId`로 lookup을 수행하고 해당 trace에 속한 스팬을 가져올 수 있어야 합니다. 이는 순서 지정 키에 포함되어 있지만 끝부분에 위치하므로 [필터링 효율이 높지 않으며](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently), 단일 trace를 조회할 때도 상당한 양의 데이터를 스캔해야 할 가능성이 큽니다.
+
+이 챌린지를 해결하기 위해 OTel collector는 materialized view와 관련 테이블도 함께 설치합니다. 테이블과 뷰는 아래와 같습니다:
+
+```sql
+CREATE TABLE otel_traces_trace_id_ts
+(
+        `TraceId` String CODEC(ZSTD(1)),
+        `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `End` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (TraceId, toUnixTimestamp(Start))
+
+CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+(
+        `TraceId` String,
+        `Start` DateTime64(9),
+        `End` DateTime64(9)
+)
+AS SELECT
+        TraceId,
+        min(Timestamp) AS Start,
+        max(Timestamp) AS End
+FROM otel_traces
+WHERE TraceId != ''
+GROUP BY TraceId
+```
+
+이 뷰는 `otel_traces_trace_id_ts` 테이블에 각 트레이스의 최소 및 최대 타임스탬프가 저장되도록 합니다. 이 테이블은 `TraceId` 기준으로 정렬되어 있으므로 이러한 타임스탬프를 효율적으로 조회할 수 있습니다. 이렇게 얻은 타임스탬프 범위는 다시 기본 `otel_traces` 테이블을 쿼리할 때 사용할 수 있습니다. 좀 더 구체적으로 말하면, Grafana는 id로 트레이스를 조회할 때 다음 쿼리를 사용합니다.
+
+```sql
+WITH 'ae9226c78d1d360601e6383928e4d22d' AS trace_id,
+        (
+        SELECT min(Start)
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_start,
+        (
+        SELECT max(End) + 1
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_end
+SELECT
+        TraceId AS traceID,
+        SpanId AS spanID,
+        ParentSpanId AS parentSpanID,
+        ServiceName AS serviceName,
+        SpanName AS operationName,
+        Timestamp AS startTime,
+        Duration * 0.000001 AS duration,
+        arrayMap(key -> map('key', key, 'value', SpanAttributes[key]), mapKeys(SpanAttributes)) AS tags,
+        arrayMap(key -> map('key', key, 'value', ResourceAttributes[key]), mapKeys(ResourceAttributes)) AS serviceTags
+FROM otel_traces
+WHERE (traceID = trace_id) AND (startTime >= trace_start) AND (startTime <= trace_end)
+LIMIT 1000
+```
+
+여기서 CTE는 트레이스 ID `ae9226c78d1d360601e6383928e4d22d`의 최소 및 최대 타임스탬프를 구한 뒤, 이를 사용해 관련 스팬이 있는 주 `otel_traces`를 필터링합니다.
+
+이와 같은 접근 방식은 유사한 액세스 패턴에도 적용할 수 있습니다. 비슷한 예시는 데이터 모델링의 [여기](/ko/concepts/features/materialized-views/incremental-materialized-view#lookup-table)에서 살펴봅니다.
+
+<div id="using-projections">
+  ### 프로젝션 사용하기
+</div>
+
+ClickHouse 프로젝션을 사용하면 하나의 테이블에 여러 `ORDER BY` 절을 지정할 수 있습니다.
+
+이전 섹션에서는 ClickHouse에서 materialized view를 사용해 집계를 사전 계산하고, 행을 변환하며, 다양한 액세스 패턴에 맞게 관측성 쿼리를 최적화하는 방법을 살펴보았습니다.
+
+앞서 본 예시에서는 materialized view가, 삽입을 받는 원본 테이블과는 다른 정렬 키를 가진 대상 테이블로 행을 보내 트레이스 ID 조회를 최적화했습니다.
+
+프로젝션도 같은 문제를 해결하는 데 사용할 수 있으며, 프라이머리 키에 포함되지 않은 컬럼에 대한 쿼리도 최적화할 수 있습니다.
+
+이론적으로는 이 기능을 사용해 하나의 테이블에 여러 정렬 키를 제공할 수 있지만, 분명한 단점이 하나 있습니다. 바로 데이터 중복입니다. 구체적으로는 데이터가 기본 프라이머리 키 순서로 한 번 기록되고, 각 프로젝션에 지정된 순서로도 추가로 기록되어야 합니다. 이로 인해 삽입 속도가 느려지고 디스크 공간도 더 많이 사용하게 됩니다.
+
+<Info>
+  **프로젝션과 materialized view 비교**
+
+  프로젝션은 materialized view와 비슷한 기능을 많이 제공하지만, 대개는 후자가 더 적합하므로 제한적으로 사용하는 것이 좋습니다. 어떤 단점이 있는지, 그리고 언제 적절한지 이해해야 합니다. 예를 들어 프로젝션을 사용해 집계를 사전 계산할 수는 있지만, 이 용도에는 Materialized views를 사용할 것을 권장합니다.
+</Info>
+
+<Image img="/images/use-cases/observability/observability-13.webp" alt="관측성과 프로젝션" size="md" />
+
+다음 쿼리를 살펴보겠습니다. 이 쿼리는 `otel_logs_v2` 테이블에서 500 오류 코드를 기준으로 필터링합니다. 사용자가 오류 코드로 필터링하려는 경우가 많기 때문에, 이는 로깅에서 흔한 액세스 패턴일 가능성이 높습니다:
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
+Peak memory usage: 56.54 MiB.
+```
+
+<Info>
+  **성능 측정을 위해 Null 사용**
+
+  여기서는 `FORMAT Null`을 사용하므로 결과를 출력하지 않습니다. 이렇게 하면 모든 결과를 읽지만 반환하지 않으므로, LIMIT 때문에 쿼리가 조기에 종료되는 것을 방지할 수 있습니다. 이는 전체 1,000만 행을 스캔하는 데 걸리는 시간을 보여주기 위한 것입니다.
+</Info>
+
+위 쿼리는 선택한 정렬 키(ordering key) `(ServiceName, Timestamp)`에서는 선형 스캔이 필요합니다. 위 쿼리의 성능을 높이기 위해 정렬 키 끝에 `Status`를 추가할 수도 있지만, 프로젝션을 추가할 수도 있습니다.
+
+```sql
+ALTER TABLE otel_logs_v2 (
+  ADD PROJECTION status
+  (
+     SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent ORDER BY Status
+  )
+)
+
+ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
+```
+
+먼저 프로젝션을 생성한 다음 구체화해야 합니다. 후자의 명령을 실행하면 데이터가 디스크에 서로 다른 두 가지 정렬 순서로 두 번 저장됩니다. 아래와 같이 데이터를 생성할 때 프로젝션을 함께 정의할 수도 있으며, 이후 데이터가 삽입될 때 자동으로 유지 관리됩니다.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        PROJECTION status
+        (
+           SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+           ORDER BY Status
+        )
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+중요한 점은, 프로젝션이 `ALTER`를 통해 생성된 경우 `MATERIALIZE PROJECTION` 명령을 실행하면 생성이 비동기적으로 진행된다는 것입니다. 다음 쿼리로 이 작업의 진행 상태를 확인하고, `is_done=1`이 될 때까지 기다리십시오.
+
+```sql
+SELECT parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+│           0 │     1   │                    │
+└─────────────┴─────────┴────────────────────┘
+
+1 행 조회됨. 경과 시간: 0.008 sec.
+```
+
+위 쿼리를 다시 실행하면, 추가 저장 공간을 사용하는 대가로 성능이 크게 향상된 것을 확인할 수 있습니다(측정 방법은 [&quot;테이블 크기 및 압축 측정&quot;](#measuring-table-size--compression)을 참조하십시오).
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+0 rows in set. Elapsed: 0.031 sec. Processed 51.42 thousand rows, 22.85 MB (1.65 million rows/s., 734.63 MB/s.)
+Peak memory usage: 27.85 MiB.
+```
+
+위 예시에서는 앞선 쿼리에서 사용한 컬럼을 프로젝션에 지정합니다. 즉, 지정한 컬럼만 프로젝션의 일부로 디스크에 저장되며 Status를 기준으로 정렬됩니다. 반대로 여기서 `SELECT *`를 사용하면 모든 컬럼이 저장됩니다. 이렇게 하면 더 많은 쿼리(임의의 컬럼 부분집합을 사용하는 경우)가 프로젝션의 이점을 활용할 수 있지만, 그만큼 추가 저장 공간이 필요합니다. 디스크 공간과 압축을 측정하는 방법은 [&quot;테이블 크기 및 압축 측정&quot;](#measuring-table-size--compression)을 참조하십시오.
+
+<div id="secondarydata-skipping-indices">
+  ### 보조/데이터 스킵 인덱스
+</div>
+
+ClickHouse에서 프라이머리 키를 아무리 잘 조정하더라도 일부 쿼리는 결국 전체 테이블 스캔이 필요합니다. 이는 materialized view(그리고 일부 쿼리에서는 프로젝션)를 사용해 어느 정도 완화할 수 있지만, 추가 유지 관리가 필요하며 이를 제대로 활용하려면 사용자가 이러한 기능이 있다는 사실을 알고 있어야 합니다. 기존 관계형 데이터베이스에서는 이를 보조 인덱스로 해결하지만, 이런 방식은 ClickHouse와 같은 컬럼 지향 데이터베이스에서는 효과적이지 않습니다. 대신 ClickHouse는 &quot;Skip&quot; 인덱스를 사용하며, 이를 통해 일치하는 값이 없는 대규모 데이터 청크를 건너뛸 수 있어 쿼리 성능을 크게 개선할 수 있습니다.
+
+기본 OTel 스키마는 맵 조회 성능을 높이기 위해 보조 인덱스를 사용합니다. 하지만 일반적으로 이는 효과가 크지 않다고 판단하며, 사용자 정의 스키마에 이를 그대로 복사하는 것은 권장하지 않습니다. 다만 스킵 인덱스는 여전히 유용할 수 있습니다.
+
+적용을 시도하기 전에 [보조 인덱스 가이드](/ko/concepts/features/performance/skip-indexes/skipping-indexes)를 읽고 이해해야 합니다.
+
+**일반적으로 프라이머리 키와 대상 비프라이머리 컬럼/표현식 사이에 강한 상관관계가 있고, 조회 대상이 드물게 나타나는 값, 즉 많은 그래뉼에 걸쳐 나타나지 않는 값일 때 효과적입니다.**
+
+<div id="text-index-for-full-text-search">
+  ### 전문 검색을 위한 텍스트 인덱스
+</div>
+
+ClickHouse는 전문 검색을 위한 특수한 [텍스트 인덱스](/ko/reference/engines/table-engines/mergetree-family/textindexes)를 제공합니다.
+이 인덱스는 토큰화된 텍스트 데이터에 대해 역색인(inverted index)을 구축하여, 토큰 기반 검색 쿼리를 빠르게 실행할 수 있도록 합니다.
+
+텍스트 인덱스는 ClickHouse 버전 26.2부터 사용할 수 있습니다.
+
+이 인덱스는 MergeTree 테이블에서 다음 컬럼 타입에 정의할 수 있습니다: [String](/ko/reference/data-types/string), [FixedString](/ko/reference/data-types/fixedstring), [Array(String)](/ko/reference/data-types/array), [Array(FixedString)](/ko/reference/data-types/array), 그리고 [Map](/ko/reference/data-types/map) 컬럼([mapKeys](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys) 및 [mapValues](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues) 맵 함수를 통해)입니다.
+
+텍스트 인덱스를 정의할 때는 `tokenizer` 인수가 필요합니다. 필요에 따라 토큰화 전에 입력 문자열을 변환하는 전처리기 함수를 지정할 수도 있습니다.
+
+인덱스 검색에 권장되는 함수는 `hasAnyTokens`와 `hasAllTokens`입니다.
+텍스트 인덱스가 있으면 일부 기존 문자열 검색 함수도 자동으로 최적화됩니다.
+자세한 내용과 지원되는 함수는 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes#using-a-text-index) 및 [여기](/ko/reference/engines/table-engines/mergetree-family/textindexes#functions-example-hasanytokens-hasalltokens)를 참조하십시오.
+
+아래 예시에서는 구조화된 로그 데이터셋을 사용합니다.
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+`hasAnyTokens`는 text index 없이도 사용할 수 있지만, 이 경우 Body 컬럼을 전체 스캔하므로 쿼리 성능이 느려집니다:
+
+```sql
+SELECT count()
+FROM otel_logs
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ff0b866c-6df7-47be-9e36-795ef3888169
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.584 sec. Processed 19.95 million rows, 3.08 GB (34.15 million rows/s., 5.27 GB/s.)
+```
+
+<div id="adding-a-text-index">
+  #### 텍스트 인덱스 추가
+</div>
+
+Body 컬럼의 텍스트 인덱스는 테이블을 생성할 때 추가할 수 있습니다:
+
+```sql
+CREATE TABLE otel_logs_index_body
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+         INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+또는 나중에 `ALTER TABLE`을 사용해 추가할 수 있습니다:
+
+```sql
+ALTER TABLE otel_logs ADD INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000;
+ALTER TABLE otel_logs MATERIALIZE INDEX idx_body;
+```
+
+같은 SELECT 쿼리를 다시 실행하면 텍스트 인덱스를 사용해 조회합니다.
+액세스하는 데이터 양이 기가바이트에서 메가바이트로 줄어들고 성능은 약 45배 향상됩니다.
+
+```sql
+SELECT count()
+FROM otel_logs_index_body
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 20.41 million rows, 20.41 MB (1.59 billion rows/s., 1.59 GB/s.)
+Peak memory usage: 15.23 MiB.
+```
+
+<div id="using-a-preprocessor">
+  #### 전처리기 사용
+</div>
+
+이 데이터셋에서 Body 컬럼에는 여러 key-value 쌍(예: `msg`, `id`, `ctx`, `attr` 등)을 포함하는 JSON 형식의 문자열이 들어 있습니다.
+
+`msg` field만 검색한다고 가정합니다.
+전체 JSON 문자열에 인덱스를 생성하는 대신, 토큰화 전에 `msg` 값만 추출하도록 전처리기를 정의할 수 있습니다.
+
+예시:
+
+```sql
+ INDEX idx_text Body TYPE text(tokenizer = splitByNonAlpha,
+                               preprocessor = JSONExtract(Body, 'msg', 'String'))
+```
+
+이 예시에서 전처리기는 다음과 같은 효과가 있습니다:
+
+* 토큰화 및 인덱싱되는 텍스트 양을 줄입니다.
+* 인덱스 크기를 줄입니다.
+* 거짓 양성(false positive) 발생 가능성을 낮춥니다.
+* 쿼리 성능을 향상시킵니다.
+
+```sql
+SELECT count()
+FROM otel_logs_text_body_preprocessed
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: f6a5cd9c-665f-4e4f-82f2-d6a4408a68a8
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 13.54 million rows, 13.54 MB (2.45 billion rows/s., 2.45 GB/s.)
+Peak memory usage: 1.95 MiB.
+```
+
+전처리되지 않은 인덱스와 비교하면 성능이 약 2배 향상됩니다.
+
+전처리기를 사용하면 인덱스 크기도 기가바이트에서 수백 킬로바이트로 줄어들어, 원래 크기의 약 0.01% 수준이 됩니다.
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(data_compressed_bytes) AS compressed_size,
+    formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+FROM system.data_skipping_indices
+WHERE startsWith(`table`, 'otel_logs')
+```
+
+```response
+Query id: 730e4b77-e697-40b3-a24d-67219ec42075
+
+   ┌─table───────────────────────────────────┬─compressed_size─┬─uncompressed_size─┐
+1. │ otel_logs_text_index_body_preprocessed  │ 423.98 KiB      │ 424.29 KiB        │
+2. │ otel_logs_text_index_body               │ 2.76 GiB        │ 2.78 GiB          │
+   └─────────────────────────────────────────┴─────────────────┴───────────────────┘
+```
+
+**텍스트 검색용 기타 인덱스
+
+보조 스키핑 인덱스에 관한 자세한 내용은 [여기](/ko/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-functions)에서 확인할 수 있습니다.
+
+<details markdown="1">
+  <summary>텍스트 검색을 위한 블룸 필터</summary>
+
+  <Note>
+    `ngrambf_v1` 및 `tokenbf_v1` 인덱스는 전문 검색용으로는 더 이상 권장되지 않습니다.
+  </Note>
+
+  n-그램 및 토큰 기반 블룸 필터 인덱스인 [`ngrambf_v1`](/ko/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types)과 [`tokenbf_v1`](/ko/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types)은 `LIKE`, `IN`, hasToken 연산자를 사용하는 String 컬럼 검색을 가속화하는 데 활용할 수 있습니다. 특히 토큰 기반 인덱스는 영숫자가 아닌 문자를 구분자로 사용하여 토큰을 생성합니다. 따라서 쿼리 시점에는 토큰(또는 완전한 단어) 단위로만 매칭이 가능합니다. 더 세밀한 매칭이 필요한 경우 [N-gram 블룸 필터](/ko/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types)를 사용할 수 있습니다. 이 방식은 문자열을 지정된 크기의 n-그램으로 분할하므로, 단어 내 부분 문자열 매칭도 가능합니다.
+
+  생성되어 매칭될 토큰을 확인하려면 `tokens` 함수를 사용하면 됩니다:
+
+  ```sql
+  SELECT tokens('https://www.zanbil.ir/m/filter/b113')
+  ```
+
+  ```response
+  ┌─tokens────────────────────────────────────────────┐
+  │ ['https','www','zanbil','ir','m','filter','b113'] │
+  └───────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  `ngram` 함수도 유사한 기능을 제공하며, 두 번째 매개변수로 `ngram` 크기를 지정할 수 있습니다:
+
+  ```sql
+  SELECT ngrams('https://www.zanbil.ir/m/filter/b113', 3)
+  ```
+
+  ```response
+  ┌─ngrams('https://www.zanbil.ir/m/filter/b113', 3)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ['htt','ttp','tps','ps:','s:/','://','//w','/ww','www','ww.','w.z','.za','zan','anb','nbi','bil','il.','l.i','.ir','ir/','r/m','/m/','m/f','/fi','fil','ilt','lte','ter','er/','r/b','/b1','b11','113'] │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  이 예시에서는 구조화된 로그 데이터셋을 사용합니다. `Referer` 컬럼에 `ultra`가 포함된 로그 수를 집계하는 경우를 가정합니다.
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │  114514 │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 908.49 MB (58.57 million rows/s., 5.13 GB/s.)
+  ```
+
+  여기서는 ngram 크기를 3으로 설정하여 매칭해야 합니다. 따라서 `ngrambf_v1` 인덱스를 생성합니다.
+
+  ```sql
+  CREATE TABLE otel_logs_bloom
+  (
+          `Body` String,
+          `Timestamp` DateTime,
+          `ServiceName` LowCardinality(String),
+          `Status` UInt16,
+          `RequestProtocol` LowCardinality(String),
+          `RunTime` UInt32,
+          `Size` UInt32,
+          `UserAgent` String,
+          `Referer` String,
+          `RemoteUser` String,
+          `RequestType` LowCardinality(String),
+          `RequestPath` String,
+          `RemoteAddress` IPv4,
+          `RefererDomain` String,
+          `RequestPage` String,
+          `SeverityText` LowCardinality(String),
+          `SeverityNumber` UInt8,
+          INDEX idx_span_attr_value Referer TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  ORDER BY (Timestamp)
+  ```
+
+  여기서 인덱스 `ngrambf_v1(3, 10000, 3, 7)`은 네 개의 매개변수를 받습니다. 마지막 매개변수(값 7)는 seed를 나타내며, 나머지는 ngram 크기(3), 값 `m`(필터 크기), 해시 함수 수 `k`(7)를 각각 나타냅니다. `k`와 `m`은 튜닝이 필요하며, 고유한 ngram/token의 수와 필터가 참 음성(true negative)을 반환할 확률, 즉 granule 내에 해당 값이 존재하지 않음을 확인하는 확률에 따라 결정됩니다. 이 값들을 산출하는 데 도움이 되는 [함수들](/ko/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter)을 활용하시기 바랍니다.
+
+  올바르게 조정하면 상당한 속도 향상을 기대할 수 있습니다:
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │   182   │
+  └─────────┘
+
+  1 row in set. Elapsed: 0.077 sec. Processed 4.22 million rows, 375.29 MB (54.81 million rows/s., 4.87 GB/s.)
+  Peak memory usage: 129.60 KiB.
+  ```
+
+  <Info>
+    **예시일 뿐입니다**
+
+    위 내용은 설명을 위한 예시일 뿐입니다. 텍스트 검색을 토큰 기반 블룸 필터로 최적화하려고 하기보다는, 로그를 삽입할 때 구조(structure)를 추출하는 방식을 권장합니다. 다만 스택 트레이스나 기타 큰 문자열처럼 구조가 덜 일정한 데이터의 경우에는 텍스트 검색이 유용할 수 있습니다.
+  </Info>
+
+  블룸 필터 사용 시 일반적인 지침은 다음과 같습니다:
+
+  블룸 필터의 목적은 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)을 필터링하여 컬럼의 모든 값을 로드하고 선형 스캔을 수행하는 과정을 생략하는 것입니다. `indexes=1` 매개변수를 사용한 `EXPLAIN` 절을 통해 건너뛴 그래뉼 수를 확인할 수 있습니다. 아래에서 원본 테이블 `otel_logs_v2`와 ngram 블룸 필터가 적용된 테이블 `otel_logs_bloom`에 대한 응답을 살펴보십시오.
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_v2)                     │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │
+  │               Condition: true                                      │
+  │               Parts: 9/9                                           │
+  │               Granules: 1278/1278                                  │
+  └────────────────────────────────────────────────────────────────────┘
+
+  10 rows in set. Elapsed: 0.016 sec.
+  ```
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_bloom)                  │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │ 
+  │               Condition: true                                      │
+  │               Parts: 8/8                                           │
+  │               Granules: 1276/1276                                  │
+  │               Skip                                                 │
+  │               Name: idx_span_attr_value                            │
+  │               Description: ngrambf_v1 GRANULARITY 1                │
+  │               Parts: 8/8                                           │
+  │               Granules: 517/1276                                   │
+  └────────────────────────────────────────────────────────────────────┘
+  ```
+
+  블룸 필터는 일반적으로 컬럼 자체보다 크기가 작을 때만 성능이 향상됩니다. 크기가 더 크다면 성능 개선 효과는 거의 기대하기 어렵습니다. 다음 쿼리를 사용하여 필터와 컬럼의 크기를 비교하십시오:
+
+  ```sql
+  SELECT
+          name,
+          formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+          formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+          round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE (`table` = 'otel_logs_bloom') AND (name = 'Referer')
+  GROUP BY name
+  ORDER BY sum(data_compressed_bytes) DESC
+  ```
+
+  ```response
+  ┌─name────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  │ Referer │ 56.16 MiB       │ 789.21 MiB        │ 14.05 │
+  └─────────┴─────────────────┴───────────────────┴───────┘
+
+  1 행 in set. Elapsed: 0.018 sec.
+  ```
+
+  ```sql
+  SELECT
+          `table`,
+          formatReadableSize(data_compressed_bytes) AS compressed_size,
+          formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+  FROM system.data_skipping_indices
+  WHERE `table` = 'otel_logs_bloom'
+  ```
+
+  ```response
+  ┌─table───────────┬─compressed_size─┬─uncompressed_size─┐
+  │ otel_logs_bloom │ 12.03 MiB       │ 12.17 MiB         │
+  └─────────────────┴─────────────────┴───────────────────┘
+
+  1 row in set. Elapsed: 0.004 sec.
+  ```
+
+  위의 예시에서 보조 블룸 필터 인덱스의 크기는 12MB로, 컬럼 자체의 압축된 크기인 56MB에 비해 약 5배 작다는 것을 확인할 수 있습니다.
+
+  블룸 필터는 상당한 튜닝이 필요할 수 있습니다. 최적의 설정을 파악하는 데 유용한 [이 문서](/ko/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter)의 내용을 참고하시기 바랍니다. 또한 블룸 필터는 삽입 및 머지 시점에 상당한 오버헤드가 발생할 수 있습니다. 프로덕션 환경에 블룸 필터를 추가하기 전에 삽입 성능에 미치는 영향을 반드시 평가하십시오.
+</details>
+
+<div id="extracting-from-maps">
+  ### 맵에서 추출하기
+</div>
+
+맵(Map) 타입은 OTel 스키마에서 널리 사용됩니다. 이 타입에서는 값과 키의 유형이 동일해야 하며, Kubernetes 레이블과 같은 메타데이터를 저장하기에는 충분합니다. 맵(Map) 타입의 하위 키를 쿼리할 때는 상위 컬럼 전체가 로드된다는 점에 유의하십시오. 맵에 키가 많으면, 해당 키가 별도 컬럼으로 존재하는 경우보다 디스크에서 더 많은 데이터를 읽어야 하므로 쿼리 성능에 상당한 불이익이 발생할 수 있습니다.
+
+특정 키를 자주 쿼리한다면 루트에 전용 컬럼으로 분리하는 것을 고려하십시오. 이는 일반적으로 공통적인 액세스 패턴에 대응해 배포 후 수행하는 작업이며, 프로덕션 환경에 배포하기 전에는 예측하기 어려울 수 있습니다. 배포 후 스키마를 수정하는 방법은 [&quot;스키마 변경 관리&quot;](/ko/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes)를 참조하십시오.
+
+<div id="measuring-table-size--compression">
+  ## 테이블 크기 및 압축 측정
+</div>
+
+ClickHouse가 관측성에 사용되는 주된 이유 중 하나는 압축입니다.
+
+압축은 스토리지 비용을 크게 줄일 뿐만 아니라, 디스크에 저장되는 데이터가 적을수록 I/O가 줄어들어 쿼리와 삽입도 더 빨라집니다. I/O 감소에 따른 이점은 CPU 기준으로 보더라도 어떤 압축 알고리즘의 오버헤드보다 훨씬 큽니다. 따라서 ClickHouse 쿼리를 빠르게 만들려면 우선 데이터 압축을 개선하는 데 집중해야 합니다.
+
+압축 측정 방법에 대한 자세한 내용은 [여기](/ko/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)에서 확인할 수 있습니다.

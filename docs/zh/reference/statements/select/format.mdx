@@ -1,0 +1,23 @@
+---
+description: 'FORMAT 子句文档'
+sidebarTitle: 'FORMAT'
+slug: /sql-reference/statements/select/format
+title: 'FORMAT 子句'
+doc_type: 'reference'
+---
+
+ClickHouse 支持多种[序列化格式](/zh/reference/formats/index)，可用于查询结果等多种场景。为 `SELECT` 输出选择格式有多种方式，其中一种是在查询末尾指定 `FORMAT format`，以特定格式返回结果数据。
+
+特定格式可用于提高使用便利性、与其他系统集成，或提升性能。
+
+<div id="default-format">
+  ## 默认格式
+</div>
+
+如果省略 `FORMAT` 子句，则会使用默认格式；该格式取决于设置以及访问 ClickHouse server 时所使用的接口。对于 [HTTP 接口](/zh/concepts/features/interfaces/http) 和处于批次模式的 [命令行客户端](/zh/concepts/features/interfaces/client)，默认格式为 `TabSeparated`。对于处于交互模式的命令行客户端，默认格式为 `PrettyCompact` (它会生成紧凑且便于人阅读的表) 。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+使用命令行客户端时，数据始终会以内部高效格式 (`Native`) 通过网络传输。客户端会自行解析查询中的 `FORMAT` 子句，并自行格式化数据 (从而减轻网络和服务器的额外负担) 。

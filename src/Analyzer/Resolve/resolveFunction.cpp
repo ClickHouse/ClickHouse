@@ -1142,8 +1142,18 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 "Correlated subqueries are not supported as IN function arguments yet, but found in expression: {}",
                 node->formatASTForErrorMessage());
 
-        /// Edge case when the first argument of IN is scalar subquery.
+        /// Table expressions are only allowed as the second (right) argument of IN.
+        /// A table on the left side is not a value expression, so reject it with a clear
+        /// error instead of failing later when getResultType is called on the table node.
         auto first_argument_type = in_first_argument->getNodeType();
+        if (first_argument_type == QueryTreeNodeType::TABLE || first_argument_type == QueryTreeNodeType::TABLE_FUNCTION)
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "The first argument of function '{}' is a table expression '{}', but it must be a value expression. In scope {}",
+                function_name,
+                in_first_argument->formatASTForErrorMessage(),
+                scope.scope_node->formatASTForErrorMessage());
+
+        /// Edge case when the first argument of IN is scalar subquery.
         if (first_argument_type == QueryTreeNodeType::QUERY || first_argument_type == QueryTreeNodeType::UNION)
         {
             IdentifierResolveScope & subquery_scope = createIdentifierResolveScope(in_first_argument, &scope /*parent_scope*/);
@@ -1615,7 +1625,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         if (!AggregateFunctionFactory::instance().isAggregateFunctionName(function_name))
         {
-            std::vector<std::string> possible_function_names;
+            VectorWithMemoryTracking<std::string> possible_function_names;
 
             auto function_names = UserDefinedExecutableFunctionFactory::instance().getRegisteredNames(scope.context); /// NOLINT(readability-static-accessed-through-instance)
             possible_function_names.insert(possible_function_names.end(), function_names.begin(), function_names.end());

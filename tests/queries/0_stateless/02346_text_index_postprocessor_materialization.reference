@@ -1,0 +1,102 @@
+1. Index-build path and row-scan path agree when postprocessor drops tokens.
+0
+1
+1
+1
+1
+2. String tokenizer + non-commutative postprocessor: row-scan matches index.
+1
+1
+1
+0
+1
+0
+3. Partially materialized index.
+1
+1
+1
+1
+1
+1
+0
+4. Partially materialized index + postprocessor: haystack is postprocessed on row-scan too.
+2
+2
+0
+5. Partially materialized index + non-trivial postprocessor: haystack postprocessed on row-scan.
+2
+2
+0
+6. startsWith / endsWith stay correct across mixed indexed and non-indexed parts.
+2
+2
+2
+2
+7. Array tokenizer + postprocessor: rewrite path matches index for mixed parts.
+2
+2
+2
+8. Array column + non-array tokenizer: each element is tokenized before the postprocessor.
+1
+1
+1
+1
+1
+1
+1
+1
+0
+0
+9. Array column + non-array tokenizer: unmaterialized (row-scan) and indexed parts agree.
+2
+2
+2
+0
+10. ngrams tokenizer + postprocessor: postprocessed tokens are not re-tokenized.
+el	1
+he	1
+ll	1
+or	1
+rl	1
+wo	1
+1
+1
+0
+11. sparseGrams + non-injective postprocessor: sparse-gram compaction runs after postprocessing.
+1
+1
+2
+2
+12. hasToken / hasAnyTokens / hasAllTokens results are independent of query_plan_direct_read_from_text_index.
+2
+2
+1
+1
+0
+0
+3
+3
+1
+1
+1
+1
+0
+0
+1
+1
+1
+1
+0
+0
+13. Array tokenizer + postprocessor: empty elements are dropped before postprocessing (row-scan agrees).
+0
+2
+14. Array(FixedString) + array tokenizer + postprocessor: fallback normalizes elements to String.
+2
+2
+0
+15. Lazy apply mode + postprocessor dropping the needle: empty-token query fills zeros, not a short column.
+1
+1
+1
+1

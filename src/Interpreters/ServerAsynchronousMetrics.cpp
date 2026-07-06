@@ -19,6 +19,7 @@
 #include <Common/HistogramMetrics.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TCPSocketMemInfo.h>
+#include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
 
@@ -218,10 +219,8 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     /// Experimental ReaderExecutor read-path efficiency KPI: modeled cost (ms) per MiB of
     /// requested bytes, as a ratio of two ProfileEvents' deltas over the interval (idle -> 0).
     {
-        const UInt64 cost_us = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds].load(std::memory_order_relaxed));
-        const UInt64 req_bytes = static_cast<UInt64>(
-            ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes].load(std::memory_order_relaxed));
+        const UInt64 cost_us = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorModeledCostMicroseconds]);
+        const UInt64 req_bytes = static_cast<UInt64>(ProfileEvents::global_counters[ProfileEvents::ReaderExecutorRequestedBytes]);
         if (!first_run)
         {
             const UInt64 d_cost = cost_us - prev_reader_executor_cost_us;
@@ -248,6 +247,25 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
 
     new_values["Uptime"] = { getContext()->getUptimeSeconds(),
         "The server uptime in seconds. It includes the time spent for server initialization before accepting connections." };
+
+#if defined(OS_LINUX)
+    try
+    {
+        const auto udf_processes_sample = UDFProcessRegistry::instance().sample();
+        new_values["ExecutableUserDefinedFunctionMemoryResidentBytes"] = { udf_processes_sample.memory_resident_bytes,
+            "Sum of the resident set size (VmRSS) over all live processes of executable and executable_pool user-defined"
+            " functions and their descendant processes, in bytes. Idle executable_pool workers are included."
+            " Shared pages are counted once per process, so the sum is an upper bound that can exceed the unique"
+            " physical memory footprint of the UDF processes." };
+        new_values["ExecutableUserDefinedFunctionProcesses"] = { udf_processes_sample.process_count,
+            "Number of live processes spawned for executable and executable_pool user-defined functions,"
+            " including their descendant processes." };
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+#endif
 
     if (const auto stats = getHashTablesCacheStatistics())
     {
@@ -350,7 +368,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -536,7 +554,7 @@ void ServerAsynchronousMetrics::updateImpl(TimePoint update_time, TimePoint curr
     }
 
     {
-        const auto user_info = getContext()->getProcessList().getUserInfo(true);
+        const auto user_info = getContext()->getProcessList().getUserInfo(false);
         size_t queries_memory_usage = 0;
         size_t queries_peak_memory_usage = 0;
         for (const auto & [user, info] : user_info)
@@ -591,7 +609,7 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
     DetachedPartsStats current_values{};
     MutationStats current_mutation_stats{};
 
-    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & db : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (db.second->isExternal())
             continue;

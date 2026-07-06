@@ -1,0 +1,138 @@
+---
+sidebarTitle: 'Connect Streamkap to ClickHouse'
+keywords: ['clickhouse', 'Streamkap', 'CDC', 'connect', 'integrate', 'etl', 'data integration', 'change data capture']
+slug: /integrations/sttreamkap
+description: 'Stream data into ClickHouse using Airbyte data pipelines'
+
+title: 'Connect Streamkap to ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_ingestion'
+  - website: 'https://www.streamkap.com/'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import PartnerBadge from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge/>
+
+<a href="https://www.streamkap.com/" target="_blank">Streamkap</a> is a real-time data integration platform that specializes in streaming Change Data Capture (CDC) and stream processing. It is built on a high-throughput, scalable stack using Apache Kafka, Apache Flink, and Debezium, offered as a fully managed service in SaaS or BYOC (Bring your own Cloud) deployments. 
+
+Streamkap allows you to stream every insert, update, and delete from source databases like PostgreSQL, MySQL, SQL Server, MongoDB, and <a href="https://streamkap.com/connectors" target="_blank">more</a> directly into ClickHouse with millisecond latency. 
+
+This makes it ideal for powering real-time analytical dashboards, operational analytics, and feeding live data to machine learning models.
+
+## Key Features {#key-features}
+
+- **Real-time Streaming CDC:** Streamkap captures changes directly from your database's logs, ensuring data in ClickHouse is a real-time replica of the source.
+Simplified Stream Processing: Transform, enrich, route, format, create embeddings from data in real-time before landing in ClickHouse. Powered by Flink with none of the complexity
+
+- **Fully Managed and Scalable:** It provides a production-ready, zero-maintenance pipeline, eliminating the need to manage your own Kafka, Flink, Debezium, or schema registry infrastructure. The platform is designed for high throughput and can scale linearly to handle billions of events.
+
+- **Automated Schema Evolution:** Streamkap automatically detects schema changes in the source database and propagates them to ClickHouse. It can handle adding new columns or changing column types without manual intervention.
+
+- **Optimized for ClickHouse:** The integration is built to work efficiently with ClickHouse's features. By default, it uses the ReplacingMergeTree engine to seamlessly handle updates and deletes from the source system.
+
+- **Resilient Delivery:** The platform offers an at-least-once delivery guarantee, ensuring data consistency between your source and ClickHouse. For upsert operations, it performs deduplication based on the primary key.
+
+## Getting Started {#started}
+
+This guide provides a high-level overview of setting up a Streamkap pipeline to load data into ClickHouse.
+
+### Prerequisites {#prerequisites}
+
+- A <a href="https://app.streamkap.com/account/sign-up" target="_blank">Streamkap account</a>.
+- Your ClickHouse cluster connection details: Hostname, Port, Username, and Password.
+- A source database (e.g., PostgreSQL, SQL Server) configured to allow CDC. You can find detailed setup guides in the Streamkap documentation.
+
+### Step 1: Configure the Source in Streamkap {#configure-clickhouse-source}
+1. Log into your Streamkap account.
+2. In the sidebar, navigate to **Connectors** and select the **Sources** tab.
+3. Click **+ Add** and select your source database type (e.g., SQL Server RDS).
+4. Fill in the connection details, including the endpoint, port, database name, and user credentials.
+5. Save the connector.
+
+### Step 2: Configure the ClickHouse Destination {#configure-clickhouse-dest}
+1. In the **Connectors** section, select the **Destinations** tab.
+2. Click **+ Add** and choose **ClickHouse** from the list.
+3. Enter the connection details for your ClickHouse service:
+   - **Hostname:** The host of your ClickHouse instance (e.g., `abc123.us-west-2.aws.clickhouse.cloud`)
+   - **Port:** The secure HTTPS port, typically `8443`
+   - **Username and Password:** The credentials for your ClickHouse user
+   - **Database:** The target database name in ClickHouse
+4. Save the destination.
+
+### Step 3: Create and Run the Pipeline {#run-pipeline}
+1. Navigate to **Pipelines** in the sidebar and click **+ Create**.
+2. Select the Source and Destination you just configured.
+3. Choose the schemas and tables you wish to stream.
+4. Give your pipeline a name and click **Save**.
+
+Once created, the pipeline will become active. Streamkap will first take a snapshot of the existing data and then begin streaming any new changes as they occur.
+
+### Step 4: Verify the Data in ClickHouse {#verify-data-clickhoouse}
+
+Connect to your ClickHouse cluster and run a query to see the data arriving in the target table.
+
+```sql
+SELECT * FROM your_table_name LIMIT 10;
+```
+
+## How it Works with ClickHouse {#how-it-works-with-clickhouse}
+
+Streamkap's integration is designed to efficiently manage CDC data within ClickHouse.
+
+### Table Engine and Data Handling {#table-engine-data-handling}
+By default, Streamkap uses an upsert ingestion mode. When it creates a table in ClickHouse, it uses the ReplacingMergeTree engine. This engine is ideal for handling CDC events:
+
+- The source table's primary key is used as the ORDER BY key in the ReplacingMergeTree table definition.
+
+- **Updates** in the source are written as new rows in ClickHouse. During its background merge process, ReplacingMergeTree collapses these rows, keeping only the latest version based on the ordering key.
+
+- **Deletes** are handled by a metadata flag feeding the ReplacingMergeTree ```is_deleted``` parameter. Rows deleted at the source aren't removed immediately but are marked as deleted.
+  - Optionally deleted records can be kept in ClickHouse for analytics purposes
+
+### Metadata Columns {#metadata-columns}
+Streamkap adds several metadata columns to each table to manage the state of the data:
+
+| Column Name              | Description                                                               |
+|--------------------------|---------------------------------------------------------------------------|
+| `_STREAMKAP_SOURCE_TS_MS` | Timestamp (in milliseconds) of the event in the source database.          |
+| `_STREAMKAP_TS_MS`        | Timestamp (in milliseconds) when Streamkap processed the event.           |
+| `__DELETED`               | A boolean flag (`true`/`false`) indicating if the row was deleted at the source. |
+| `_STREAMKAP_OFFSET`       | Offset value from Streamkap's internal logs, useful for ordering and debugging. |
+
+### Querying the Latest Data {#query-latest-data}
+
+Because ReplacingMergeTree processes updates and deletes in the background, a simple SELECT * query might show historical or deleted rows before a merge is complete. To get the most current state of your data, you must filter out the deleted records and select only the latest version of each row.
+
+You can do this using the FINAL modifier, which is convenient but can impact query performance:
+
+```sql
+-- Using FINAL to get the correct current state
+SELECT * FROM your_table_name FINAL WHERE __DELETED = 'false';
+SELECT * FROM your_table_name FINAL LIMIT 10;
+SELECT * FROM your_table_name FINAL WHERE <filter by keys in ORDER BY clause>;
+SELECT count(*) FROM your_table_name FINAL;
+```
+
+For better performance on 
+large tables, especially if you don’t need to read all the columns and for one-off analytical queries, you can use the argMax function to manually select the latest record for each primary key:
+
+```sql
+SELECT key,
+       argMax(col1, version) AS col1,
+       argMax(col2, version) AS col2
+FROM t
+WHERE <your predicates>
+GROUP BY key;
+```
+
+For production use cases and concurrent recurrent end user queries, Materialized Views can be used to model the data to better fit the downstream access patterns.
+
+## Further Reading {#further-reading}
+- <a href="https://streamkap.com/" target="_blank">Streamkap Website</a>
+- <a href="https://docs.streamkap.com/clickhouse" target="_blank">Streamkap Documentation for ClickHouse</a>
+- <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">Blog: Streaming with Change Data Capture to ClickHouse</a>
+- <a href="https://streamkap.com/blog/streaming-with-change-data-capture-to-clickhouse" target="_blank">ClickHouse Documentation: ReplacingMergeTree</a>
