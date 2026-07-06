@@ -18,8 +18,7 @@ struct MergeTreeDataPartChecksums;
 /// Used to exclude those files from hardlinking so `recompressColumnStreams` can write fresh copies.
 NameSet getColumnDataStreamFileNames(
     const IMergeTreeDataPart & part,
-    const NameAndTypePair & column,
-    const MergeTreeSettings & storage_settings);
+    const NameAndTypePair & column);
 
 /// Re-compress all data streams of a single wide-part column with the column's current codec
 /// WITHOUT deserializing the values.

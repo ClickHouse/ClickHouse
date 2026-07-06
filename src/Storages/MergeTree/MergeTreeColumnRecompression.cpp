@@ -250,10 +250,8 @@ MergeTreeDataPartChecksum rewriteMarksFile(
 void forEachColumnStream(
     const IMergeTreeDataPart & part,
     const NameAndTypePair & column,
-    const MergeTreeSettings & storage_settings,
     const std::function<void(const String & stream_name, const ISerialization::SubstreamPath & substream_path)> & callback)
 {
-    const IDataPartStorage & storage = part.getDataPartStorage();
     auto serialization = part.getSerialization(column.name);
     std::unordered_set<String> processed_streams;
 
@@ -262,14 +260,22 @@ void forEachColumnStream(
         if (ISerialization::isEphemeralSubcolumn(substream_path, substream_path.size()))
             return;
 
-        auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(storage_settings));
-        String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, storage_settings, &storage);
+        /// Resolve the stream's on-disk name against the part's recorded files (its checksums) rather
+        /// than recomputing it from the table's *current* `replace_long_file_name_to_hash` /
+        /// `max_file_name_length` settings. Those settings can change after the part is written, and a
+        /// name recomputed from the current settings would then not match the file actually on disk:
+        /// the stream would be treated as absent, silently skipped, and the recompression would become
+        /// a no-op. `getStreamNameForColumn` tries both the plain and the hashed name (and the
+        /// alternative stream-file-name settings) and returns the one the part actually has, or
+        /// `nullopt` when the stream is genuinely not present in this part.
+        auto stream_name_opt = IMergeTreeDataPart::getStreamNameForColumn(
+            column, substream_path, IMergeTreeDataPart::DATA_FILE_EXTENSION, part.checksums, part.storage.getSettings());
+        if (!stream_name_opt)
+            return;
+        const String & stream_name = *stream_name_opt;
 
         /// Shared offsets substream of a Nested type appears once per element but is written only once.
         if (!processed_streams.insert(stream_name).second)
-            return;
-
-        if (!storage.existsFile(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION))
             return;
 
         callback(stream_name, substream_path);
@@ -282,12 +288,11 @@ void forEachColumnStream(
 
 NameSet getColumnDataStreamFileNames(
     const IMergeTreeDataPart & part,
-    const NameAndTypePair & column,
-    const MergeTreeSettings & storage_settings)
+    const NameAndTypePair & column)
 {
     const String marks_extension = part.index_granularity_info.mark_type.getFileExtension();
     NameSet result;
-    forEachColumnStream(part, column, storage_settings, [&](const String & stream_name, const ISerialization::SubstreamPath &)
+    forEachColumnStream(part, column, [&](const String & stream_name, const ISerialization::SubstreamPath &)
     {
         result.insert(stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION);
         result.insert(stream_name + marks_extension);
@@ -337,7 +342,7 @@ void recompressColumnStreams(
     const IDataPartStorage & source_storage = source_part.getDataPartStorage();
     IDataPartStorage & new_storage = new_data_part.getDataPartStorage();
 
-    forEachColumnStream(source_part, column, storage_settings, [&](const String & stream_name, const ISerialization::SubstreamPath & substream_path)
+    forEachColumnStream(source_part, column, [&](const String & stream_name, const ISerialization::SubstreamPath & substream_path)
     {
         /// A stream shared by several recompressed columns (the offsets stream of `Nested` siblings
         /// with `share_nested_offsets`, where `n.a`/`n.b` share `n.size0`) must be rewritten exactly

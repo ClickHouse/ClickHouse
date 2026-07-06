@@ -3704,7 +3704,7 @@ bool MutateTask::prepare()
                 continue;
 
             ctx->columns_to_recompress.push_back(column);
-            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, column, *ctx->data->getSettings()))
+            for (const auto & file : getColumnDataStreamFileNames(*ctx->source_part, column))
                 ctx->files_to_skip.insert(file);
         }
 
