@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'Databrain'
+slug: /integrations/databrain
+keywords: ['clickhouse', 'Databrain', 'conectar', 'integrar', 'UI', 'analítica', 'embebido', 'dashboard', 'visualización']
+description: 'Databrain es una plataforma de analítica embebida que se integra a la perfección con ClickHouse para crear dashboard orientados al cliente, métricas y visualizaciones de datos.'
+title: 'Conectar Databrain a ClickHouse'
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Databrain](https://usedatabrain.com) es una plataforma de analítica embebida que le permite crear y compartir dashboard interactivos, métricas y visualizaciones de datos con sus clientes. Databrain se conecta a ClickHouse mediante la interfaz HTTPS, lo que facilita visualizar y analizar sus datos de ClickHouse desde una interfaz moderna y fácil de usar.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_01.webp" alt="Interfaz de dashboard de Databrain que muestra visualizaciones de datos de ClickHouse" border />
+
+<br />
+
+Esta guía le guiará por los pasos necesarios para conectar Databrain con su instancia de ClickHouse.
+
+<div id="pre-requisites">
+  ## Requisitos previos
+</div>
+
+* Una base de datos de ClickHouse alojada en su propia infraestructura o en [ClickHouse Cloud](https://clickhouse.com/).
+* Una [cuenta de Databrain](https://app.usedatabrain.com/users/sign-up).
+* Un espacio de trabajo de Databrain para conectar su fuente de datos.
+
+<div id="steps-to-connect-databrain-to-clickhouse">
+  ## Pasos para conectar Databrain a ClickHouse
+</div>
+
+<div id="1-gather-your-connection-details">
+  ### 1. Recopila los datos de conexión
+</div>
+
+<ConnectionDetails />
+
+<div id="2-allow-databrain-ip-addresses">
+  ### 2. Permita las direcciones IP de Databrain (si es necesario)
+</div>
+
+Si su instancia de ClickHouse tiene habilitado el filtrado por IP, deberá añadir las direcciones IP de Databrain a la lista de IP permitidas.
+
+Para los usuarios de ClickHouse Cloud:
+
+1. Vaya a su servicio en la consola de ClickHouse Cloud
+2. Vaya a **Settings** → **Security**
+3. Añada las direcciones IP de Databrain a la lista de IP permitidas
+
+<Tip>
+  Consulte la [documentación de Databrain sobre la lista de IP permitidas](https://docs.usedatabrain.com/guides/datasources/allow-access-to-our-ip) para ver la lista actual de direcciones IP que debe añadir.
+</Tip>
+
+<div id="3-add-clickhouse-as-a-data-source">
+  ### 3. Añadir ClickHouse como data source en Databrain
+</div>
+
+1. Inicia sesión en tu cuenta de Databrain y ve al espacio de trabajo en el que quieres añadir el data source.
+
+2. Haz clic en **Data Sources** en el menú de navegación.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_02.webp" alt="Menú Data Sources de Databrain" border />
+
+3. Haz clic en **Add a Data Source** o **Connect Data Source**.
+
+4. Selecciona **ClickHouse** de la lista de conectores disponibles.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_03.webp" alt="Selección de conectores de Databrain que muestra la opción ClickHouse" border />
+
+5. Completa los detalles de conexión:
+   * **Destination Name**: Introduce un nombre descriptivo para esta conexión (por ejemplo, &quot;ClickHouse de producción&quot; o &quot;DB de analítica&quot;)
+   * **Host**: Introduce la URL del host de tu instancia de ClickHouse (por ejemplo, `https://your-instance.region.aws.clickhouse.cloud`)
+   * **Port**: Introduce `8443` (puerto HTTPS predeterminado para ClickHouse)
+   * **Username**: Introduce tu nombre de usuario de ClickHouse
+   * **Password**: Introduce tu contraseña de ClickHouse
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_04.webp" alt="Formulario de conexión de ClickHouse en Databrain con campos de configuración" border />
+
+6. Haz clic en **Test Connection** para verificar que Databrain pueda conectarse a tu instancia de ClickHouse.
+
+7. Cuando la conexión se haya establecido correctamente, haz clic en **Save** o **Connect** para añadir el data source.
+
+<div id="4-configure-user-permissions">
+  ### 4. Configura los permisos del usuario
+</div>
+
+Asegúrate de que el usuario de ClickHouse con el que te conectas tenga los permisos necesarios:
+
+```sql
+-- Otorgar permisos para leer información del esquema
+GRANT SELECT ON information_schema.* TO your_databrain_user;
+
+-- Otorgar acceso de lectura a tu base de datos y tablas
+GRANT SELECT ON your_database.* TO your_databrain_user;
+```
+
+Reemplaza `your_databrain_user` y `your_database` por tu nombre de usuario real y el nombre real de tu base de datos.
+
+<div id="using-databrain-with-clickhouse">
+  ## Uso de Databrain con ClickHouse
+</div>
+
+<div id="explore-your-data">
+  ### Explora tus datos
+</div>
+
+1. Después de conectarte, ve a tu espacio de trabajo en Databrain.
+
+2. Verás tus tablas de ClickHouse en el explorador de datos.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_05.webp" alt="Explorador de datos de Databrain que muestra tablas de ClickHouse" border />
+
+3. Haz clic en una tabla para explorar su esquema y ver una vista previa de los datos.
+
+<div id="create-metrics-and-visualizations">
+  ### Crear métricas y visualizaciones
+</div>
+
+1. Haz clic en **Create Metric** para empezar a crear visualizaciones con tus datos de ClickHouse.
+
+2. Selecciona tu fuente de datos de ClickHouse y elige la tabla que quieres visualizar.
+
+3. Usa la interfaz intuitiva de Databrain para:
+   * Seleccionar dimensiones y medidas
+   * Aplicar filtros y agregaciones
+   * Elegir tipos de visualización (gráficos de barras, gráficos de líneas, gráficos circulares, tablas, etc.)
+   * Añadir consultas SQL personalizadas para análisis avanzados
+
+4. Guarda tu métrica para reutilizarla en distintos dashboards.
+
+<div id="build-dashboards">
+  ### Crear dashboards
+</div>
+
+1. Haz clic en **Create Dashboard** para empezar a crear un dashboard.
+
+2. Añade métricas a tu dashboard arrastrando y soltando métricas guardadas.
+
+3. Personaliza el diseño y la apariencia de tu dashboard.
+
+<Image size="md" img="/images/integrations/data-visualization/databrain_06.webp" alt="Dashboard de Databrain con múltiples visualizaciones de ClickHouse" border />
+
+4. Comparte tu dashboard con tu equipo o incrústalo en tu aplicación.
+
+<div id="advanced-features">
+  ### Funcionalidades avanzadas
+</div>
+
+Databrain ofrece varias funcionalidades avanzadas al trabajar con ClickHouse:
+
+* **Consola SQL personalizada**: Escribe y ejecuta consultas SQL personalizadas directamente en tu base de datos de ClickHouse
+* **Multitenencia y tenencia única**: Conecta tu base de datos de ClickHouse con arquitecturas de tenant único o multi-tenant
+* **Programación de informes**: Programa informes automatizados y envíalos por correo electrónico a las partes interesadas
+* **Insights con IA**: Usa IA para generar resúmenes e insights a partir de tus datos
+* **Analítica embebida**: Integra dashboards y métricas directamente en tus aplicaciones
+* **Capa semántica**: Crea modelos de datos y lógica de negocio reutilizables
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+<div id="connection-fails">
+  ### La conexión falla
+</div>
+
+Si no logras conectarte a ClickHouse:
+
+1. **Verifica las credenciales**: vuelve a comprobar tu nombre de usuario, contraseña y la URL del host
+2. **Comprueba el puerto**: asegúrate de usar el puerto `8443` para HTTPS (o `8123` para HTTP si no usas SSL)
+3. **Lista blanca de IP**: confirma que las direcciones IP de Databrain estén incluidas en la lista blanca de la configuración de firewall/seguridad de ClickHouse
+4. **SSL/TLS**: asegúrate de que SSL/TLS esté configurado correctamente si usas HTTPS
+5. **Permisos del usuario**: verifica que el usuario tenga permisos SELECT sobre `information_schema` y tus bases de datos de destino
+
+<div id="slow-query-performance">
+  ### Rendimiento lento de las consultas
+</div>
+
+Si las consultas se ejecutan lentamente:
+
+1. **Optimice sus consultas**: Use filtros y agregaciones de forma eficiente
+2. **Cree vistas materializadas**: Para las agregaciones a las que se accede con frecuencia, considere crear vistas materializadas en ClickHouse
+3. **Use tipos de datos adecuados**: Asegúrese de que el esquema de ClickHouse use tipos de datos óptimos
+4. **Optimización de índices**: Aproveche las claves primarias y los índices de omisión de ClickHouse
+
+<div id="learn-more">
+  ## Más información
+</div>
+
+Para obtener más información sobre las funcionalidades de Databrain y cómo crear análisis avanzados:
+
+* [Documentación de Databrain](https://docs.usedatabrain.com/)
+* [Guía de ClickHouse Integration](https://docs.usedatabrain.com/guides/datasources/connecting-data-sources-to-databrain/clickhouse)
+* [Creación de dashboard](https://docs.usedatabrain.com/guides/dashboards/create-a-dashboard)
+* [Creación de métricas](https://docs.usedatabrain.com/guides/metrics/create-metrics)

@@ -1673,7 +1673,7 @@ TEST_F(FileCacheTest, SLRUFreeSpaceKeepingProtectedOnly)
 
     const auto key = DB::FileCacheKey::fromPath("104307_protected_only_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -1808,7 +1808,7 @@ TEST_F(FileCacheTest, ContinueEvictionPos)
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     auto add_file_segment = [&](size_t offset, size_t size)
     {
@@ -1926,7 +1926,7 @@ TEST_F(FileCacheTest, MoveEvictionPos)
 
     auto key = DB::FileCacheKey::fromPath("move_key");
     auto origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2239,6 +2239,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
 
         FileSegment::complete(FileSegmentPtr(seg), false, false);
         ASSERT_EQ(seg->state(), State::PARTIALLY_DOWNLOADED);
+        /// The holder is still alive, so the segment is not shrunk yet and keeps its full
+        /// reservation; the reserve-ahead surplus (8 reserved vs 3 downloaded) is reclaimed
+        /// once the holder below is destroyed and the last-holder completion shrinks it.
         ASSERT_EQ(seg->getReservedSize(), 8u);
         ASSERT_EQ(seg->getDownloadedSize(), 3u);
     }
@@ -2251,8 +2254,9 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(seg->state(), State::DOWNLOADED);
     }
 
-    /// Both priority entries account for reserved size.
-    ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+    /// seg1's surplus was reclaimed when its holder was released (3 reserved) and seg2 is
+    /// fully downloaded (8 reserved).
+    ASSERT_EQ(cache->getUsedCacheSize(), 11u);
     ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
     /// Force the failed-eviction restore loop to run.
@@ -2262,7 +2266,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
             DB::FailPointInjection::disableFailPoint("file_cache_dynamic_resize_fail_to_evict");
         });
 
-        /// Trigger resize. The restore path must keep total queue size at 16.
+        /// Trigger resize. The restore path must keep the total queue size at 11.
         DB::FileCacheSettings new_settings = settings;
         new_settings[FileCacheSetting::max_size] = 4;
         DB::FileCacheSettings actual_settings = settings;
@@ -2273,7 +2277,7 @@ TEST_F(FileCacheTest, FailedEvictionRestorePreservesInvariants)
         ASSERT_EQ(actual_settings[FileCacheSetting::max_size].value, 16u);
 
         /// Release-visible check for restored reserved-size accounting.
-        ASSERT_EQ(cache->getUsedCacheSize(), 16u);
+        ASSERT_EQ(cache->getUsedCacheSize(), 11u);
         ASSERT_EQ(cache->getFileSegmentsNum(), 2u);
 
         /// All segments must still be reachable from the priority queue.
@@ -2663,7 +2667,7 @@ TEST_F(FileCacheTest, SLRUModifySizeLimitsRollbackOnThrow)
 
     const auto key = DB::FileCacheKey::fromPath("slru_modify_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2716,7 +2720,7 @@ TEST_F(FileCacheTest, SplitTotalSpaceCleanupReclaimsSystemQueue)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2761,7 +2765,7 @@ TEST_F(FileCacheTest, SplitResizeCollectsSystemCandidates)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_resize_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2834,7 +2838,7 @@ TEST_F(FileCacheTest, SLRUDowngradeRollbackResetsEvictingOnSkippedFinalization)
 
     const auto key = DB::FileCacheKey::fromPath("slru_downgrade_rollback_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2925,7 +2929,7 @@ TEST_F(FileCacheTest, SplitSLRUTotalSpaceCleanupSystemOnly)
 
     FileCacheOriginInfo system_origin(FileCache::getCommonOrigin().user_id, 0, FileSegmentKeyType::System);
     auto key = DB::FileCacheKey::fromPath("split_slru_total_cleanup_system_key");
-    auto key_metadata = std::make_shared<KeyMetadata>(key, system_origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(system_origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -2984,7 +2988,7 @@ TEST_F(FileCacheTest, PriorityQueueElementsMetrics)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("metrics_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -3030,7 +3034,7 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     CacheMetadata cache_metadata(cache_path, 0, 0, false);
     const auto key = DB::FileCacheKey::fromPath("downgrade_key");
     const auto & origin = FileCache::getCommonOrigin();
-    auto key_metadata = std::make_shared<KeyMetadata>(key, origin, &cache_metadata);
+    auto key_metadata = std::make_shared<KeyMetadata>(key, std::make_shared<const FileCacheOriginInfo>(origin), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;
@@ -3058,12 +3062,12 @@ TEST_F(FileCacheTest, SLRUDowngradeMetric)
     auto prob_it = add_segment(10, 10, IFileCachePriority::QueueEntryType::SLRU_Probationary);
 
     auto & events = CurrentThread::getProfileEvents();
-    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load();
-    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments].load();
+    const auto downgraded_before = events[ProfileEvents::FilesystemCacheDowngradedFileSegments];
+    const auto evicted_before = events[ProfileEvents::FilesystemCacheEvictedFileSegments];
 
     /// Protected is full, so promoting the probationary entry downgrades (moves) the protected one, not evicts it.
     ASSERT_TRUE(priority.tryIncreasePriority(*prob_it, /* is_space_reservation_complete */true, cache_guard, state_guard));
 
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments].load(), downgraded_before + 1);
-    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments].load(), evicted_before);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheDowngradedFileSegments], downgraded_before + 1);
+    ASSERT_EQ(events[ProfileEvents::FilesystemCacheEvictedFileSegments], evicted_before);
 }

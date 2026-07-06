@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/security
+sidebarTitle: 'Segurança'
+title: 'Segurança'
+description: 'Recursos de segurança do ClickHouse Managed Postgres, incluindo lista de permissões de IP, criptografia e Private Link'
+keywords: ['segurança do Postgres', 'lista de permissões de IP', 'criptografia', 'tls', 'ssl', 'private link', 'retenção de backups']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
+O Managed Postgres foi desenvolvido com recursos de segurança de nível empresarial para proteger seus dados e atender aos requisitos de conformidade. Esta página aborda segurança de rede, criptografia e políticas de retenção de backups.
+
+<div id="ip-whitelisting">
+  ## Lista de permissões de IP
+</div>
+
+Os filtros de IP controlam quais endereços IP de origem têm permissão para se conectar à sua instância do Managed Postgres, fornecendo controle de acesso em nível de rede para proteger seu banco de dados contra conexões não autorizadas.
+
+<Image img="/images/managed-postgres/ip-filters.webp" alt="Configuração da IP Access List" size="md" border />
+
+<div id="configuring-ip-filters">
+  ### Configuração de filtros de IP
+</div>
+
+Para configurar filtros de IP:
+
+1. Navegue até a aba **Configurações**
+2. Em **Filtros de IP**, clique em **Editar**
+3. Adicione endereços IP ou faixas CIDR que devem ter permissão para se conectar
+4. Clique em **Salvar** para aplicar as alterações
+
+Você pode especificar:
+
+* Endereços IP individuais (por exemplo, `203.0.113.5`)
+* Faixas CIDR de redes (por exemplo, `192.168.1.0/24`)
+* **Anywhere** para permitir todos os endereços IP (não recomendado para produção)
+* **Nowhere** para bloquear todas as conexões
+
+<Warning>
+  **Boas práticas para produção**
+
+  Se nenhum filtro de IP for configurado, conexões de todos os endereços IP serão permitidas. Para cargas de trabalho de produção, restrinja o acesso a endereços IP ou faixas CIDR conhecidas. Considere limitar o acesso a:
+
+  * Seus servidores de aplicação
+  * Endereços IP do gateway da VPN
+  * Servidores bastion para acesso administrativo
+  * IPs de pipelines de CI/CD para implantações automatizadas
+</Warning>
+
+<div id="encryption">
+  ## Criptografia
+</div>
+
+O Managed Postgres criptografa seus dados tanto em repouso quanto em trânsito para garantir uma proteção abrangente.
+
+<div id="encryption-at-rest">
+  ### Criptografia em repouso
+</div>
+
+Todos os dados armazenados pelo Managed Postgres são criptografados em repouso para proteger contra acesso não autorizado à infraestrutura de armazenamento subjacente.
+
+<div id="nvme-encryption">
+  #### Criptografia do armazenamento NVMe
+</div>
+
+Seus arquivos de banco de dados, logs de transações e arquivos temporários armazenados em unidades NVMe são criptografados com algoritmos de criptografia padrão do setor. Essa criptografia é transparente para suas aplicações e não requer configuração.
+
+<div id="s3-encryption">
+  #### Criptografia no armazenamento de objetos (S3)
+</div>
+
+Os backups e os arquivos de WAL (Write-Ahead Log) armazenados no armazenamento de objetos também são criptografados em repouso. Isso inclui:
+
+* Backups completos diários
+* Arquivos de WAL incrementais
+* Dados de recuperação pontual
+
+Todos os dados de backup são armazenados em buckets de armazenamento dedicados e isolados, com credenciais de escopo específico para cada instância, garantindo que os dados de backup permaneçam seguros e acessíveis apenas a sistemas autorizados.
+
+<Info>
+  A criptografia em repouso é habilitada por padrão para todas as instâncias do Managed Postgres e não pode ser desabilitada. Nenhuma configuração adicional é necessária.
+</Info>
+
+<div id="encryption-in-transit">
+  ### Criptografia em trânsito
+</div>
+
+Todas as conexões de rede com o Managed Postgres são protegidas com TLS (Transport Layer Security) para proteger os dados durante o tráfego entre suas aplicações e o banco de dados.
+
+<div id="tls-ssl">
+  #### Configuração de TLS/SSL
+</div>
+
+Por padrão, as conexões usam criptografia TLS sem verificação de certificado. Para workloads de produção, recomendamos usar TLS com verificação para garantir que você esteja se comunicando com o servidor correto.
+
+Para mais detalhes sobre a configuração de TLS e as opções de conexão, consulte a página [Conexão](/pt-BR/products/managed-postgres/connection#tls).
+
+<div id="private-link">
+  ## Private Link
+</div>
+
+O Private Link permite conectividade privada entre sua instância do Managed Postgres e sua Virtual Private Cloud (VPC), sem expor o tráfego à internet pública. Isso oferece uma camada adicional de isolamento e segurança de rede.
+
+<Info>
+  **Configuração manual necessária**
+
+  O suporte a Private Link está disponível, mas requer configuração manual pelo suporte do ClickHouse. Esse recurso é ideal para clientes Enterprise com requisitos rigorosos de isolamento de rede.
+</Info>
+
+<div id="requesting-private-link">
+  ### Solicitando a configuração do Private Link
+</div>
+
+Para habilitar o Private Link para sua instância de Managed Postgres:
+
+1. **Entre em contato com o suporte do ClickHouse** criando um ticket de suporte
+
+2. **Forneça as seguintes informações**:
+   * Seu Organization ID do ClickHouse
+   * ID/hostname do serviço Postgres
+   * IDs/ARNs da conta AWS à qual você deseja conectar o Private Link
+     * (Opcional) Quaisquer regiões, além da região da instância do Postgres, das quais você deseja se conectar
+
+3. **O suporte do ClickHouse irá**:
+   * Provisionar o endpoint do Private Link no lado do Managed Postgres
+   * Fornecer os detalhes de conexão do endpoint, que você poderá usar para criar uma interface de endpoint.
+
+4. **Configure seu Private Link**:
+   * Crie o Private Link acessando a interface de endpoint nas configurações da AWS e usando a configuração fornecida pelo suporte do ClickHouse.
+   * Quando seu Private Link estiver no estado &quot;Available&quot;, você poderá se conectar a ele usando o nome DNS privado fornecido na UI da AWS.
+
+<div id="backup-retention">
+  ## Retenção de backups
+</div>
+
+O Managed Postgres faz backup automático dos seus dados para protegê-los contra exclusão acidental, corrupção ou outros cenários de perda de dados.
+
+<div id="retention-policy">
+  ### Política de retenção
+</div>
+
+* **Período de retenção padrão**: 7 dias
+* **Frequência de backup**: backups completos diários + arquivamento contínuo de WAL (a cada 60 segundos ou 16 MB, o que ocorrer primeiro)
+* **Granularidade de recuperação**: recuperação pontual para qualquer momento dentro da janela de retenção
+
+<div id="backup-security">
+  ### Segurança dos backups
+</div>
+
+Os backups são armazenados com as mesmas garantias de segurança dos seus dados principais:
+
+* **Criptografia em repouso** no armazenamento de objetos
+* **Buckets de armazenamento isolados** por instância, com credenciais de escopo restrito
+* **Controle de acesso** limitado à instância do Postgres vinculada ao backup.
+
+Para mais detalhes sobre estratégias de backup e recuperação pontual, consulte a página [Backup e restauração](/pt-BR/products/managed-postgres/backup-and-restore).

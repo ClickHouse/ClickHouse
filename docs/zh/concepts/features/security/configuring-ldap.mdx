@@ -1,0 +1,184 @@
+---
+sidebarTitle: '配置 LDAP'
+slug: /guides/sre/configuring-ldap
+title: '配置 ClickHouse 以使用 LDAP 进行身份验证和角色映射'
+description: '介绍如何配置 ClickHouse 以使用 LDAP 进行身份验证和角色映射'
+keywords: ['LDAP 配置', 'LDAP 身份验证', '角色映射', '用户管理', 'SRE 指南']
+doc_type: 'guide'
+---
+
+import SelfManaged from '/snippets/zh/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+ClickHouse 可以配置为使用 LDAP 对 ClickHouse 数据库用户进行身份验证。本指南提供了一个简单示例，说明如何将 ClickHouse 与使用公开可访问目录服务进行身份验证的 LDAP 系统集成。
+
+<Steps>
+  <Step>
+    ## 在 ClickHouse 中配置 LDAP 连接设置
+
+    1. 测试与此公共 LDAP 服务器的连接：
+
+       ```bash
+       $ ldapsearch -x -b dc=example,dc=com -H ldap://ldap.forumsys.com
+       ```
+
+       返回结果大致如下：
+
+       ```response
+       # 扩展 LDIF
+       #
+       # LDAPv3
+       # 基础 <dc=example,dc=com>，范围为 subtree
+       # 过滤器: (objectclass=*)
+       # 请求: ALL
+       #
+
+       # example.com
+       dn: dc=example,dc=com
+       objectClass: top
+       objectClass: dcObject
+       objectClass: organization
+       o: example.com
+       dc: example
+       ...
+       ```
+
+    2. 编辑 `config.xml` 文件，并添加以下内容来配置 LDAP：
+       ```xml
+       <ldap_servers>
+           <test_ldap_server>
+           <host>ldap.forumsys.com</host>
+           <port>389</port>
+           <bind_dn>uid={user_name},dc=example,dc=com</bind_dn>
+           <enable_tls>no</enable_tls>
+           <tls_require_cert>never</tls_require_cert>
+           </test_ldap_server>
+       </ldap_servers>
+       ```
+
+    <Note>
+      `<test_ldap_server>` 标签是一个任意标识，用于标识特定的 LDAP 服务器。
+    </Note>
+
+    上面使用的是以下基础设置：
+
+    | Parameter                | Description      | Example                             |
+    | ------------------------ | ---------------- | ----------------------------------- |
+    | host                     | LDAP 服务器的主机名或 IP | ldap.forumsys.com                   |
+    | port                     | LDAP 服务器的目录服务端口  | 389                                 |
+    | bind&#95;dn              | 用户 DN 模板路径       | `uid={user_name},dc=example,dc=com` |
+    | enable&#95;tls           | 是否使用安全 LDAP      | no                                  |
+    | tls&#95;require&#95;cert | 连接时是否要求证书        | never                               |
+
+    <Note>
+      在此示例中，由于该公共服务器使用 389 端口且不使用安全端口，我们出于演示目的禁用了 TLS。
+    </Note>
+
+    <Note>
+      有关 LDAP 设置的更多详细信息，请参阅 [LDAP 文档页面](/zh/concepts/features/security/external-authenticators/ldap)。
+    </Note>
+
+    3. 在 `<user_directories>` 部分中添加 `<ldap>` 部分，以配置用户角色映射。此部分定义了用户通过身份验证后将被授予的角色。在这个基础示例中，任何通过 LDAP 进行身份验证的用户都将获得 `scientists_role`，该角色会在 ClickHouse 的后续步骤中定义。该部分应类似如下：
+
+       ```xml
+       <user_directories>
+           <users_xml>
+               <path>users.xml</path>
+           </users_xml>
+           <local_directory>
+               <path>/var/lib/clickhouse/access/</path>
+           </local_directory>
+           <ldap>
+                 <server>test_ldap_server</server>
+                 <roles>
+                    <scientists_role />
+                 </roles>
+                 <role_mapping>
+                    <base_dn>dc=example,dc=com</base_dn>
+                    <search_filter>(&amp;(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))</search_filter>
+                    <attribute>cn</attribute>
+                 </role_mapping>
+           </ldap>
+       </user_directories>
+       ```
+
+       上面使用的是以下基础设置：
+
+       | Parameter         | Description                   | Example                                                       |
+       | ----------------- | ----------------------------- | ------------------------------------------------------------- |
+       | server            | 前面 ldap&#95;servers 部分中定义的标签  | test&#95;ldap&#95;server                                      |
+       | roles             | 用户将映射到的、在 ClickHouse 中定义的角色名称 | scientists&#95;role                                           |
+       | base&#95;dn       | 开始搜索包含该用户的组时使用的基础路径           | dc=example,dc=com                                             |
+       | search&#95;filter | 用于识别并选择要映射给用户的组的 LDAP 搜索过滤器   | `(&(objectClass=groupOfUniqueNames)(uniqueMember={bind_dn}))` |
+       | attribute         | 应返回其值的属性名称                    | cn                                                            |
+
+    4. 重启 ClickHouse server 以应用这些设置。
+  </Step>
+
+  <Step>
+    ## 配置 ClickHouse 数据库角色和权限
+
+    <Note>
+      本节中的操作步骤假定 ClickHouse 中已启用 SQL 访问控制与账户管理。要启用该功能，请参阅 [SQL Users and Roles 指南](/zh/concepts/features/security/access-rights)。
+    </Note>
+
+    1. 在 ClickHouse 中创建一个角色，其名称与 `config.xml` 文件中角色映射部分使用的名称相同
+       ```sql
+       CREATE ROLE scientists_role;
+       ```
+
+    2. 为该角色授予所需权限。以下语句会向任何能够通过 LDAP 进行身份验证的用户授予管理员权限：
+       ```sql
+       GRANT ALL ON *.* TO scientists_role;
+       ```
+  </Step>
+
+  <Step>
+    ## 测试 LDAP 配置
+
+    1. 使用 ClickHouse 客户端登录
+       ```bash
+       $ clickhouse-client --user einstein --password password
+       ClickHouse client version 22.2.2.1.
+       Connecting to localhost:9000 as user einstein.
+       Connected to ClickHouse server version 22.2.2 revision 54455.
+
+       chnode1 :)
+       ```
+
+    <Note>
+      在步骤 1 中使用 `ldapsearch` 命令可查看目录中所有可用用户，并且所有用户的密码均为 `password`
+    </Note>
+
+    2. 验证该用户是否已正确映射到 `scientists_role` 角色，并具有管理员权限
+
+       ```sql
+       SHOW DATABASES
+       ```
+
+       ```response
+       Query id: 93b785ff-1482-4eda-95b0-b2d68b2c5e0f
+
+       ┌─name───────────────┐
+       │ INFORMATION_SCHEMA │
+       │ db1_mysql          │
+       │ db2                │
+       │ db3                │
+       │ db4_mysql          │
+       │ db5_merge          │
+       │ default            │
+       │ information_schema │
+       │ system             │
+       └────────────────────┘
+
+       9 rows in set. Elapsed: 0.004 sec.
+       ```
+  </Step>
+</Steps>
+
+<div id="summary">
+  ## 摘要
+</div>
+
+本文介绍了将 ClickHouse 配置为通过 LDAP 服务器进行身份验证并映射到角色的基本方法。你也可以选择在 ClickHouse 中单独配置用户，同时让这些用户通过 LDAP 进行身份验证，而无需配置自动角色映射。LDAP 模块也可用于连接到 Active Directory。

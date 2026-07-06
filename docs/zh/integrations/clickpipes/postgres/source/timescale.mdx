@@ -1,0 +1,116 @@
+---
+sidebarTitle: 'Timescale'
+description: '将安装了 TimescaleDB 扩展的 Postgres 配置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/timescale
+title: 'Postgres TimescaleDB 源设置指南'
+keywords: ['TimescaleDB']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<div id="background">
+  ## 背景
+</div>
+
+[TimescaleDB](https://github.com/timescale/timescaledb) 是由 Timescale Inc 开发的开源 Postgres 扩展，
+旨在提升分析查询性能，同时无需离开 Postgres。为此，它会创建由该扩展管理的 “hypertable”，并支持自动分区为 “chunks”。
+hypertable 还支持透明压缩和混合行列式存储 (称为 “hypercore”) ，不过这些
+功能需要使用采用专有许可的扩展版本。
+
+Timescale Inc 还为 TimescaleDB 提供两种托管服务：
+
+* `Managed Service for Timescale`
+* `Timescale Cloud`.
+
+此外，也有第三方厂商提供支持使用 TimescaleDB 扩展的托管服务，但由于
+许可限制，这些厂商仅支持该扩展的开源版本。
+
+Timescale hypertable 在多个方面的行为都不同于普通的 Postgres 表。这给复制它们的过程带来了一些复杂性，
+因此，复制 Timescale hypertable 的能力应视为
+**尽力而为**。
+
+<div id="supported-postgres-versions">
+  ## 支持的 Postgres 版本
+</div>
+
+ClickPipes 支持 Postgres 12 及以上版本。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+具体需要执行哪些步骤，取决于您的 TimescaleDB Postgres 实例是如何部署的。
+
+* 如果您使用的是托管服务，且您的提供商已列在侧边栏中，请按照该提供商对应的指南操作。
+* 如果您是自行部署 TimescaleDB，请按照通用指南操作。
+
+对于其他托管服务，如果尚未启用逻辑复制，请向您的提供商提交支持工单，请其协助启用。
+
+<Info>
+  Timescale Cloud 不支持启用逻辑复制，而 Postgres 管道在 CDC 模式下需要此功能。
+  因此，Timescale Cloud 用户只能通过
+  Postgres ClickPipe 对其数据执行一次性加载 (`Initial Load Only`) 。
+</Info>
+
+<div id="configuration">
+  ## 配置
+</div>
+
+Timescale hypertable 本身不会存储插入其中的数据。相反，数据会存储在多个对应的 “chunk” 表中，这些表位于 `_timescaledb_internal` schema 下。对于在 hypertable 上执行查询，这并不是问题。但在逻辑复制期间，我们检测到的不是 hypertable 中的变更，而是 chunk 表中的变更。Postgres ClickPipe 内置了自动将 chunk 表中的变更重新映射到父 hypertable 的逻辑，但这需要额外的配置步骤。
+
+<Info>
+  如果你只想对数据执行一次性加载 (`Initial Load Only`) ，请跳过第 2 步及后续步骤。
+</Info>
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为你在上一步中创建的用户授予 schema 级只读权限。以下示例展示了 `public` schema 的权限。请对每个包含你想要复制的表的 schema 重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 以 Postgres superuser/admin 身份，使用你想要复制的 hypertable 创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。该 publication **还必须包含整个 `_timescaledb_internal` schema**，这样管道才能接收底层 chunk 表的变更。我们强烈建议仅在 publication 中包含所需的表，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须**定义主键**，*或者*将其**副本标识**配置为 `FULL`。有关如何确定 publication 范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+```sql
+   -- When adding new tables to the ClickPipe, you'll need to add them to the publication manually as well.
+   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
+```
+
+`clickpipes` publication 将包含从指定表生成的一组变更事件，后续会用于摄取复制流。
+
+<Info>
+  某些托管服务不会向其管理员用户授予为整个 schema 创建 publication 所需的权限。如果遇到这种情况，请向你的提供商提交支持工单。或者，你也可以跳过这一步 (以及后续步骤) ，改为对数据执行一次性加载。
+</Info>
+
+完成这些步骤后，你应该就可以继续[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)了。
+
+<div id="configure-network-access">
+  ## 配置网络访问
+</div>
+
+如果你想限制对 Timescale 实例的流量访问，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/home#list-of-static-ips)加入允许列表。
+具体操作因提供商而异；如果侧边栏中列出了你的提供商，请参考相应说明，或向他们提交
+工单。

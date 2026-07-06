@@ -1,0 +1,303 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/local-data
+title: 'السجلات والمقاييس المحلية'
+toc_max_heading_level: 2
+description: 'البدء باستخدام بيانات ClickStack المحلية وبيانات النظام ومقاييس النظام'
+doc_type: 'guide'
+keywords: ['clickstack', 'بيانات توضيحية', 'مجموعة بيانات عيّنة', 'السجلات', 'الرصد']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يتيح لك هذا الدليل التمهيدي جمع السجلات والمقاييس المحلية من نظامك وإرسالها إلى ClickStack لعرضها وتحليلها.
+
+**لا يعمل هذا المثال إلا على أنظمة OSX وLinux**
+
+<Tabs>
+  <Tab title="ClickStack المُدار">
+    يفترض هذا الدليل أنك أكملت [دليل البدء الخاص بـ Managed ClickStack](/ar/clickstack/deployment/managed) ولديك [بيانات اعتماد الاتصال مسجّلة](/ar/clickstack/getting-started/managed#next-steps).
+
+    <Steps>
+      <Step>
+        ### أنشئ تهيئة OpenTelemetry مخصّصة
+
+        أنشئ ملف `custom-local-config.yaml` بالمحتوى التالي:
+
+        ```yaml
+        receivers:
+          filelog:
+            include:
+              - /host/var/log/**/*.log        # Linux logs from host
+              - /host/var/log/syslog
+              - /host/var/log/messages
+              - /host/private/var/log/*.log   # macOS logs from host
+            start_at: beginning
+            resource:
+              service.name: "system-logs"
+
+          hostmetrics:
+            collection_interval: 1s
+            scrapers:
+              cpu:
+                metrics:
+                  system.cpu.time:
+                    enabled: true
+                  system.cpu.utilization:
+                    enabled: true
+              memory:
+                metrics:
+                  system.memory.usage:
+                    enabled: true
+                  system.memory.utilization:
+                    enabled: true
+              filesystem:
+                metrics:
+                  system.filesystem.usage:
+                    enabled: true
+                  system.filesystem.utilization:
+                    enabled: true
+              paging:
+                metrics:
+                  system.paging.usage:
+                    enabled: true
+                  system.paging.utilization:
+                    enabled: true
+                  system.paging.faults:
+                    enabled: true
+              disk:
+              load:
+              network:
+              processes:
+
+        service:
+          pipelines:
+            logs/local:
+              receivers: [filelog]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+            metrics/hostmetrics:
+              receivers: [hostmetrics]
+              processors:
+                - memory_limiter
+                - batch
+              exporters:
+                - clickhouse
+        ```
+
+        يجمع هذا الإعداد سجلات النظام والمقاييس لأنظمة OSX وLinux، ويرسل النتائج إلى ClickStack. ويوسّع هذا الإعداد مجمّع ClickStack بإضافة مستقبلات وخطوط معالجة جديدة، إذ يشير إلى المصدّر `clickhouse` الحالي وإلى المعالجات (`memory_limiter`, `batch`) المُعدّة مسبقًا في مجمّع ClickStack الأساسي.
+
+        <Info>
+          **الطوابع الزمنية عند الاستيعاب**
+
+          يضبط هذا الإعداد الطوابع الزمنية عند الاستيعاب، بحيث يعيّن قيمة زمنية محدَّثة لكل حدث. ويُفضَّل استخدام [المعالجة المسبقة أو تحليل الطوابع الزمنية](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) عبر معالجات أو عوامل تشغيل OTel في ملفات السجل لضمان الاحتفاظ بوقت الحدث الفعلي بدقة.
+
+          في إعداد المثال هذا، إذا كان المُستقبِل أو معالج الملفات مُعدًّا للبدء من بداية الملف، فستُسنَد الطابع الزمني المعدَّل نفسه إلى جميع إدخالات السجل الحالية، أي وقت المعالجة بدلًا من وقت الحدث الأصلي. أما أي أحداث جديدة تُلحَق بالملف، فستتلقى طوابع زمنية تقارب وقت إنشائها الفعلي.
+
+          لتجنّب هذا السلوك، يمكنك ضبط موضع البدء على `end` في إعداد المُستقبِل. ويضمن ذلك استيعاب الإدخالات الجديدة فقط وختمها زمنيًا بالقرب من وقت وصولها الفعلي.
+        </Info>
+
+        لمزيد من التفاصيل حول بنية إعداد OpenTelemetry (OTel)، نوصي بالرجوع إلى [الدليل الرسمي](https://opentelemetry.io/docs/collector/configuration/).
+      </Step>
+
+      <Step>
+        ### ابدأ تشغيل OpenTelemetry Collector
+
+        شغّل OpenTelemetry Collector بوضع مستقل باستخدام الأمر التالي:
+
+        ```shell
+        docker run -d \
+          -p 4317:4317 -p 4318:4318 \
+          --user 0:0 \
+          -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+          -v /var/log:/host/var/log:ro \
+          -v /private/var/log:/host/private/var/log:ro \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        سيبدأ الـcollector فورًا في جمع السجلات المحلية للنظام والمقاييس.
+      </Step>
+
+      <Step>
+        ### اختر خدمتك
+
+        اختر الخدمة التي تتضمن Managed ClickStack من الصفحة الرئيسية لـ ClickHouse Cloud.
+
+        <Image img="/images/clickstack/select_service.webp" alt="اختر الخدمة" size="lg" />
+      </Step>
+
+      <Step>
+        ### استكشاف سجلات النظام
+
+        حدِّد `ClickStack` من القائمة اليسرى للانتقال إلى واجهة ClickStack، حيث ستُسجَّل دخولك تلقائيًا.
+
+        يُفترض أن تكون واجهة Search معبأة بسجلات النظام المحلية. وسِّع عوامل التصفية لتحديد `system.log`:
+
+        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="سجلات HyperDX المحلية" size="lg" />
+      </Step>
+
+      <Step>
+        ### استكشاف مقاييس النظام
+
+        يمكننا استكشاف المقاييس باستخدام المخططات.
+
+        انتقل إلى Chart Explorer من خلال القائمة اليسرى. حدِّد المصدر `Metrics`، واختر `Maximum` كنوع التجميع.
+
+        في قائمة `Select a Metric`، اكتب فقط `memory` ثم حدِّد `system.memory.utilization (Gauge)`.
+
+        اضغط على زر `Run` لعرض استخدام الذاكرة بمرور الوقت.
+
+        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="الذاكرة بمرور الوقت" size="lg" />
+
+        لاحظ أن القيمة تُعرَض كنسبة مئوية `%` بصيغة عدد عشري. لعرضها بشكل أوضح، حدِّد `Set number format`.
+
+        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الأرقام" size="lg" />
+
+        من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` قبل النقر على `Apply`.
+
+        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="النسبة المئوية للذاكرة بمرور الوقت" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack مفتوح المصدر">
+    ### إنشاء تهيئة OpenTelemetry مخصصة
+
+    أنشئ ملف `custom-local-config.yaml` بالمحتوى الآتي:
+
+    ```yaml
+    receivers:
+      filelog:
+        include:
+          - /host/var/log/**/*.log        # Linux logs from host
+          - /host/var/log/syslog
+          - /host/var/log/messages
+          - /host/private/var/log/*.log   # macOS logs from host
+        start_at: beginning
+        resource:
+          service.name: "system-logs"
+
+      hostmetrics:
+        collection_interval: 1s
+        scrapers:
+          cpu:
+            metrics:
+              system.cpu.time:
+                enabled: true
+              system.cpu.utilization:
+                enabled: true
+          memory:
+            metrics:
+              system.memory.usage:
+                enabled: true
+              system.memory.utilization:
+                enabled: true
+          filesystem:
+            metrics:
+              system.filesystem.usage:
+                enabled: true
+              system.filesystem.utilization:
+                enabled: true
+          paging:
+            metrics:
+              system.paging.usage:
+                enabled: true
+              system.paging.utilization:
+                enabled: true
+              system.paging.faults:
+                enabled: true
+          disk:
+          load:
+          network:
+          processes:
+
+    service:
+      pipelines:
+        logs/local:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - clickhouse
+        metrics/hostmetrics:
+          receivers: [hostmetrics]
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - clickhouse
+    ```
+
+    تجمع هذه التهيئة سجلات النظام والمقاييس الخاصة بأنظمة OSX وLinux، وترسل النتائج إلى ClickStack. تعمل هذه التهيئة على توسيع ClickStack collector بإضافة receivers وpipelines جديدة—إذ تُشير إلى المُصدِّر `clickhouse` والمعالجات (`memory_limiter` و`batch`) المُهيَّأة مسبقاً في ClickStack collector الأساسي.
+
+    <Info>
+      **الطوابع الزمنية عند الاستيعاب**
+
+      يضبط هذا الإعداد الطوابع الزمنية أثناء الاستيعاب، إذ يعيّن قيمة زمنية محدَّثة لكل حدث. ومن الأفضل، قدر الإمكان، [إجراء معالجة مسبقة للطوابع الزمنية أو تحليلها](/ar/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching) باستخدام معالجات OTel أو المشغّلات على ملفات السجل، لضمان الاحتفاظ بوقت الحدث بدقة.
+
+      في إعداد المثال هذا، إذا كان المستقبِل أو معالج الملفات مهيأً للبدء من بداية الملف، فستُسند إلى جميع إدخالات السجل الحالية الطابع الزمني المعدَّل نفسه، أي وقت المعالجة بدلاً من وقت الحدث الأصلي. أما أي أحداث جديدة تُلحَق بالملف فستتلقى طوابع زمنية تقارب وقت إنشائها الفعلي.
+
+      ولتجنّب هذا السلوك، يمكنك ضبط موضع البدء على `end` في إعدادات المستقبِل. ويضمن ذلك استيعاب الإدخالات الجديدة فقط ومنحها طوابع زمنية قريبة من وقت وصولها الفعلي.
+    </Info>
+
+    لمزيد من التفاصيل حول بنية إعداد OpenTelemetry (OTel)، نوصي بالرجوع إلى [الدليل الرسمي](https://opentelemetry.io/docs/collector/configuration/).
+
+    ### تشغيل ClickStack بتهيئة مخصصة
+
+    نفّذ أمر docker التالي لبدء تشغيل الحاوية الشاملة بإعداداتك المخصصة:
+
+    ```shell
+    docker run -d --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      --user 0:0 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/custom-local-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log:/host/var/log:ro \
+      -v /private/var/log:/host/private/var/log:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Info>
+      **مستخدم الجذر**
+
+      نشغّل المجمّع باستخدام المستخدم root للوصول إلى جميع سجلات النظام—وهذا ضروري لالتقاط السجلات من المسارات المحمية في الأنظمة المستندة إلى Linux. ومع ذلك، لا يُنصح بهذا النهج في بيئات production. في بيئات production، ينبغي نشر OpenTelemetry Collector كعامل محلي مع الحد الأدنى فقط من الأذونات اللازمة للوصول إلى مصادر السجلات المستهدفة.
+
+      لاحظ أننا نربط ‎`/var/log`‎ على المضيف بالمسار ‎`/host/var/log`‎ داخل الحاوية لتجنّب أي تعارض مع ملفات السجل الخاصة بالحاوية نفسها.
+    </Info>
+
+    ### استكشاف سجلات النظام
+
+    انتقل إلى [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة ClickStack UI في حال النشر محليًا.
+
+    ينبغي أن تكون مصادر البيانات قد أُنشئت مسبقاً. يجب أن تكون واجهة Search مملوءةً بسجلات النظام المحلية. وسّع عوامل التصفية لتحديد `system.log`:
+
+    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="السجلات المحلية لـ HyperDX" size="lg" />
+
+    ### استكشاف مقاييس النظام
+
+    يمكننا استكشاف مقاييسنا عبر المخططات البيانية.
+
+    انتقل إلى Chart Explorer عبر القائمة اليسرى. حدد المصدر `Metrics` و`Maximum` كنوع التجميع.
+
+    في قائمة `Select a Metric`، اكتب `memory` ببساطة ثم اختر `system.memory.utilization (Gauge)`.
+
+    اضغط على زر التشغيل لعرض استخدام الذاكرة بصريًا مع مرور الوقت.
+
+    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Memory بمرور الزمن" size="lg" />
+
+    لاحظ أن الرقم يُرجَع كنقطة عائمة `%`. لعرضه بشكل أوضح، حدد `Set number format`.
+
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الرقم" size="lg" />
+
+    من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` ثم النقر على `Apply`.
+
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="نسبة الذاكرة بمرور الوقت" size="lg" />
+  </Tab>
+</Tabs>

@@ -1,0 +1,237 @@
+---
+description: '将所有具有相同主键（更准确地说，具有相同[排序键](/reference/engines/table-engines/mergetree-family/mergetree)）
+  的行合并为一行（在单个数据分区片段内），该行存储聚合函数状态的组合。'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'AggregatingMergeTree 表引擎'
+doc_type: 'reference'
+---
+
+该引擎继承自 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)，并修改了数据分区片段合并的逻辑。ClickHouse 会将所有具有相同主键 (更准确地说，具有相同[排序键](/zh/reference/engines/table-engines/mergetree-family/mergetree)) 的行合并为一行 (在单个数据分区片段内) ，该行存储聚合函数状态的组合。
+
+你可以将 `AggregatingMergeTree` 表用于增量数据聚合，也可用于聚合 materialized view。
+
+你可以在下面的视频中查看如何使用 AggregatingMergeTree 和聚合函数的示例：
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="ClickHouse 中的聚合状态" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+该引擎会处理以下类型的所有列：
+
+* [`AggregateFunction`](/zh/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/zh/reference/data-types/simpleaggregatefunction)
+
+如果 `AggregatingMergeTree` 能将行数减少几个数量级，那么它就是合适的选择。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+有关请求参数的说明，请参阅[请求描述](/zh/reference/statements/create/table)。
+
+**查询子句**
+
+创建 `AggregatingMergeTree` 表时，所需的[子句](/zh/reference/engines/table-engines/mergetree-family/mergetree)与创建 `MergeTree` 表时相同。
+
+<details markdown="1">
+  <summary>创建表的已弃用方法</summary>
+
+  <Note>
+    不要在新项目中使用此方法；如果可能，请将旧项目迁移到上述方法。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  所有参数的含义都与 `MergeTree` 中相同。
+</details>
+
+<div id="select-and-insert">
+  ## SELECT 和 INSERT
+</div>
+
+要插入数据，请使用带有聚合 `-State-` 函数的 [INSERT SELECT](/zh/reference/statements/insert-into) 查询。
+从 `AggregatingMergeTree` 表中查询数据时，请使用 `GROUP BY` 子句，并使用与插入数据时相同的聚合函数，但要加上 `-Merge` 后缀。
+
+在 `SELECT` 查询结果中，`AggregateFunction` 类型的值在所有 ClickHouse 输出格式中都采用特定于实现的二进制表示。例如，如果你使用 `SELECT` 查询将数据转储为 `TabSeparated` 格式，就可以再通过 `INSERT` 查询将该转储重新加载。
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## aggregated materialized view 示例
+</div>
+
+以下示例假设您已有一个名为 `test` 的数据库。如果该数据库尚不存在，请使用以下命令创建：
+
+```sql
+CREATE DATABASE test;
+```
+
+现在创建包含原始数据的表 `test.visits`：
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+接下来，您需要创建一个 `AggregatingMergeTree` 表，用于存储 `AggregationFunction`，以跟踪总访问次数和独立用户数量。
+
+创建一个 `AggregatingMergeTree` materialized view，监听 `test.visits` 表，并使用 [`AggregateFunction`](/zh/reference/data-types/aggregatefunction) 类型：
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+创建一个 materialized view，将数据从 `test.visits` 填充至 `test.agg_visits`：
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+将数据插入 `test.visits` 表：
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+数据已写入 `test.visits` 和 `test.agg_visits` 两张表。
+
+要获取聚合数据，请对 materialized view `test.visits_mv` 执行如下查询，例如 `SELECT ... GROUP BY ...`：
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+再向 `test.visits` 中添加几条记录，但这次为其中一条记录使用不同的时间戳：
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+再次运行 `SELECT` 查询，将返回以下输出：
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+在某些情况下，您可能希望避免在写入时对行进行预聚合，将聚合开销从写入时推迟到合并时。通常，为避免报错，需要在 materialized view 定义的 `GROUP BY` 子句中包含所有不参与聚合的列。不过，您可以配合设置 `optimize_on_insert = 0` (默认为开启状态) ，使用 [`initializeAggregation`](/zh/reference/functions/regular-functions/other-functions#initializeAggregation) 函数来实现这一目的。此时无需再使用 `GROUP BY`：
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  使用 `initializeAggregation` 时，会为每一行分别创建一个聚合状态，而不会进行分组。
+  每个源行都会在 materialized view 中生成一行，实际的聚合会在后续
+  `AggregatingMergeTree` 合并 parts 时发生。只有在 `optimize_on_insert = 0` 时才是如此。
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Tuple 元素聚合
+</div>
+
+启用 `allow_tuple_element_aggregation` 设置后，`Tuple` 列会被递归展平，使每个叶子元素都能独立参与聚合。这意味着，`Tuple` 中的 `AggregateFunction` 或 `SimpleAggregateFunction` 子列会按照各自的函数进行聚合，就像它们是顶层列一样。
+
+排序键中的 `Tuple` 子列不参与聚合。非聚合子列会被视为普通列 (保留其第一个值) 。
+
+<Note>
+  此设置不可变，必须在创建表时指定。
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits` 通过 `sum` 聚合 (100 + 200 = 300) ，而 `unique_users` 则通过 `max` 聚合 (max(5, 8) = 8) 。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[在 ClickHouse 中使用聚合组合器](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
