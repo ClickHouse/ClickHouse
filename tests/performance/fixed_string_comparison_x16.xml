@@ -47,9 +47,9 @@
 
     <!-- string vs constant -->
     <query>WITH toFixedString(concat(repeat('_', 8), reinterpretAsFixedString(0)), 16) AS x SELECT count() FROM fixstr_cmp_16 WHERE NOT ignore(a &lt; x)</query>
-    <query>WITH toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(number)), 32) AS x SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; x)</query>
-    <query>WITH toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(number)), 64) AS x SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; x)</query>
-    <query>WITH toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(number)), 128) AS x SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; x)</query>
+    <query>WITH toFixedString(concat(repeat('_', 24), reinterpretAsFixedString(0)), 32) AS x SELECT count() FROM fixstr_cmp_32 WHERE NOT ignore(a &lt; x)</query>
+    <query>WITH toFixedString(concat(repeat('_', 56), reinterpretAsFixedString(0)), 64) AS x SELECT count() FROM fixstr_cmp_64 WHERE NOT ignore(a &lt; x)</query>
+    <query>WITH toFixedString(concat(repeat('_', 120), reinterpretAsFixedString(0)), 128) AS x SELECT count() FROM fixstr_cmp_128 WHERE NOT ignore(a &lt; x)</query>
     
     <!-- ORDER BY : ColumnFixedString::compareAt and its sort comparator on equal-prefix data.
          `FixedString(16)` is included here specifically: it is the only surface that reaches the
