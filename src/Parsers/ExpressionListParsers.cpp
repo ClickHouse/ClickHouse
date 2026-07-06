@@ -3462,9 +3462,10 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
     const auto * prev_operator = layers.back()->previousOperator();
     const bool prev_is_comparison = prev_operator && prev_operator->type == OperatorType::Comparison;
     /// The keyword comparison predicates `IS DISTINCT FROM` / `IS NOT DISTINCT FROM` and the
-    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` are not
-    /// tagged `OperatorType::Comparison`. They are valid on the left of the array form of
-    /// `SOME`/`ALL`, but not of the subquery form (lowered to `IN`/`NOT IN`).
+    /// string-search predicates `LIKE` / `ILIKE` / `NOT LIKE` / `NOT ILIKE` / `REGEXP` /
+    /// `SIMILAR TO` / `NOT SIMILAR TO` are not tagged `OperatorType::Comparison`. They are valid
+    /// on the left of the array form of `SOME`/`ALL`, but not of the subquery form (lowered to
+    /// `IN`/`NOT IN`).
     const bool prev_is_array_predicate
         = prev_operator && !prev_is_comparison && isArrayQuantifierPredicate(prev_operator->function_name);
 
@@ -3484,7 +3485,8 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         /// implementation, or to `arrayExists`/`arrayAll` lambdas otherwise. The array
         /// form also supports the keyword comparison predicates `IS DISTINCT FROM` and
         /// `IS NOT DISTINCT FROM`, and the string-search predicates `LIKE`, `ILIKE`,
-        /// `NOT LIKE`, `NOT ILIKE`, and `REGEXP`, which only go through the lambda form.
+        /// `NOT LIKE`, `NOT ILIKE`, `REGEXP`, `SIMILAR TO`, and `NOT SIMILAR TO`, which only go
+        /// through the lambda form.
         /// `ANY` is excluded from the array form because `any` is also an aggregate
         /// function, so `expr = any(x)` must keep its function-call meaning.
         const bool any_kw = any_parser.ignore(pos, expected);
