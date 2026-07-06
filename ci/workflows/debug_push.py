@@ -15,25 +15,14 @@ debug_push_job = Job.Config(
 
 workflow = Workflow.Config(
     name="DebugPush",
-    event=Workflow.Event.DISPATCH,
+    # Trigger on push to the work branch, not dispatch: `workflow_dispatch` only
+    # works when the workflow file is on the default branch, and we must not push
+    # this to master. A push-triggered workflow runs the file from the pushed
+    # branch itself, so every push to cr-work runs the probe on the release runner.
+    event=Workflow.Event.PUSH,
+    branches=["cr-work"],
     jobs=[debug_push_job],
     secrets=SECRETS,
-    # At least one input is required: the praktika generator always emits an
-    # `inputs:` key for dispatch/call, and GitHub rejects it when empty.
-    inputs=[
-        Workflow.Config.InputConfig(
-            name="repo",
-            description="Target repository for the probe push (default: this repo)",
-            is_required=False,
-            default_value="",
-        ),
-        Workflow.Config.InputConfig(
-            name="probe-branch",
-            description="Throwaway branch to create and delete for the probe",
-            is_required=False,
-            default_value="robot-clickhouse/debug-push-probe",
-        ),
-    ],
 )
 
 WORKFLOWS = [workflow]
