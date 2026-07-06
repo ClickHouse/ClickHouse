@@ -40,6 +40,7 @@ INNER JOIN (
 ) as r
 ON l.key = r.key
 ORDER BY l.id
+SETTINGS query_plan_optimize_join_order_randomize = 0
 ;
 
 SELECT * FROM (
