@@ -1,0 +1,156 @@
+---
+description: 'Types de layout de dictionnaire pour le stockage des dictionnaires en mémoire'
+sidebarTitle: 'Vue d’ensemble'
+slug: /sql-reference/statements/create/dictionary/layouts
+title: 'Layouts de dictionnaires'
+doc_type: 'référence'
+---
+
+import CloudDetails from '/snippets/fr/_snippet_dictionary_in_cloud.mdx';
+
+<div id="storing-dictionaries-in-memory">
+  ## Types de layout de dictionnaire
+</div>
+
+Il existe plusieurs façons de stocker les dictionnaires en mémoire, chacune avec ses propres compromis en termes d’utilisation du CPU et de la RAM.
+
+| Layout                                                                                                                        | Description                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [flat](/fr/reference/statements/create/dictionary/layouts/flat)                                                                  | Stocke les données dans des tableaux simples indexés par clé. C’est le layout le plus rapide, mais les clés doivent être de type `UInt64` et rester inférieures à `max_array_size`. |
+| [hashed](/fr/reference/statements/create/dictionary/layouts/hashed)                                                              | Stocke les données dans une table de hachage. Aucune limite sur la taille des clés, et prend en charge n’importe quel nombre d’éléments.                                            |
+| [sparse&#95;hashed](/fr/reference/statements/create/dictionary/layouts/hashed#sparse_hashed)                                     | Comme `hashed`, mais avec un compromis en faveur d’une utilisation mémoire plus faible au prix du CPU.                                                                              |
+| [complex&#95;key&#95;hashed](/fr/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                       | Comme `hashed`, pour les clés composites.                                                                                                                                           |
+| [complex&#95;key&#95;sparse&#95;hashed](/fr/reference/statements/create/dictionary/layouts/hashed#complex_key_sparse_hashed)     | Comme `sparse_hashed`, pour les clés composites.                                                                                                                                    |
+| [hashed&#95;array](/fr/reference/statements/create/dictionary/layouts/hashed-array)                                              | Attributs stockés dans des tableaux, avec une table de hachage qui associe les clés aux indices des tableaux. Économe en mémoire lorsqu’il y a de nombreux attributs.               |
+| [complex&#95;key&#95;hashed&#95;array](/fr/reference/statements/create/dictionary/layouts/hashed-array#complex_key_hashed_array) | Comme `hashed_array`, pour les clés composites.                                                                                                                                     |
+| [range&#95;hashed](/fr/reference/statements/create/dictionary/layouts/range-hashed)                                              | Table de hachage avec plages ordonnées. Prend en charge les recherches par clé + plage de dates/heures.                                                                             |
+| [complex&#95;key&#95;range&#95;hashed](/fr/reference/statements/create/dictionary/layouts/range-hashed#complex_key_range_hashed) | Comme `range_hashed`, pour les clés composites.                                                                                                                                     |
+| [cache](/fr/reference/statements/create/dictionary/layouts/cache)                                                                | Cache en mémoire de taille fixe. Seules les clés fréquemment consultées sont stockées.                                                                                              |
+| [complex&#95;key&#95;cache](/fr/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed)                        | Comme `cache`, pour les clés composites.                                                                                                                                            |
+| [ssd&#95;cache](/fr/reference/statements/create/dictionary/layouts/ssd-cache)                                                    | Comme `cache`, mais stocke les données sur SSD avec un index en mémoire.                                                                                                            |
+| [complex&#95;key&#95;ssd&#95;cache](/fr/reference/statements/create/dictionary/layouts/ssd-cache#complex_key_ssd_cache)          | Comme `ssd_cache`, pour les clés composites.                                                                                                                                        |
+| [direct](/fr/reference/statements/create/dictionary/layouts/direct)                                                              | Aucun stockage en mémoire — interroge directement la source pour chaque requête.                                                                                                    |
+| [complex&#95;key&#95;direct](/fr/reference/statements/create/dictionary/layouts/direct#complex_key_direct)                       | Comme `direct`, pour les clés composites.                                                                                                                                           |
+| [ip&#95;trie](/fr/reference/statements/create/dictionary/layouts/ip-trie)                                                        | Structure en trie pour des recherches rapides de préfixes IP (basées sur CIDR).                                                                                                     |
+
+<Tip>
+  **Layouts recommandés**
+
+  [flat](/fr/reference/statements/create/dictionary/layouts/flat), [hashed](/fr/reference/statements/create/dictionary/layouts/hashed) et [complex&#95;key&#95;hashed](/fr/reference/statements/create/dictionary/layouts/hashed#complex_key_hashed) offrent les meilleures performances de requête.
+  Les layouts de cache ne sont pas recommandés en raison de performances potentiellement médiocres et de la difficulté à régler les paramètres — voir [cache](/fr/reference/statements/create/dictionary/layouts/cache) pour plus de détails.
+</Tip>
+
+<div id="specify-dictionary-layout">
+  ## Spécifier le layout du dictionnaire
+</div>
+
+<CloudDetails />
+
+Vous pouvez configurer le layout d&#39;un dictionnaire avec la clause `LAYOUT` (pour le DDL) ou le paramètre `layout` dans les définitions du fichier de configuration.
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY (...)
+    ...
+    LAYOUT(LAYOUT_TYPE(param value)) -- paramètres de layout
+    ...
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <clickhouse>
+        <dictionary>
+            ...
+            <layout>
+                <layout_type>
+                    <!-- paramètres de layout -->
+                </layout_type>
+            </layout>
+            ...
+        </dictionary>
+    </clickhouse>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+Voir aussi [CREATE DICTIONARY](/fr/reference/statements/create/dictionary) pour la syntaxe DDL complète.
+
+Les dictionnaires dont le layout ne contient pas `complex-key*` ont une clé de type [UInt64](/fr/reference/data-types/int-uint) ; les dictionnaires `complex-key*` ont une clé composite (complexe, avec des types arbitraires).
+
+**Exemple de clé numérique** (la colonne key&#95;column est de type [UInt64](/fr/reference/data-types/int-uint)) :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        key_column UInt64,
+        ...
+    )
+    PRIMARY KEY key_column
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <structure>
+        <id>
+            <name>key_column</name>
+        </id>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**Exemple de clé composite** (la clé comporte un élément de type [String](/fr/reference/data-types/string)) :
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    CREATE DICTIONARY dict_name (
+        country_code String,
+        ...
+    )
+    PRIMARY KEY country_code
+    ```
+  </Tab>
+
+  <Tab title="Fichier de configuration">
+    ```xml
+    <structure>
+        <key>
+            <attribute>
+                <name>country_code</name>
+                <type>String</type>
+            </attribute>
+        </key>
+        ...
+    </structure>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="improve-performance">
+  ## Améliorer les performances des dictionnaires
+</div>
+
+Il existe plusieurs façons d&#39;améliorer les performances des dictionnaires :
+
+* Appeler la fonction de manipulation du dictionnaire après `GROUP BY`.
+* Marquer comme injectifs les attributs à extraire.
+  Un attribut est dit injectif si des clés différentes correspondent à des valeurs d&#39;attribut différentes.
+  Ainsi, lorsque `GROUP BY` utilise une fonction qui récupère une valeur d&#39;attribut à partir de la clé, cette fonction est automatiquement retirée de `GROUP BY`.
+
+ClickHouse génère une exception en cas d&#39;erreur liée aux dictionnaires.
+Voici quelques exemples d&#39;erreurs :
+
+* Le dictionnaire auquel l&#39;accès est demandé n&#39;a pas pu être chargé.
+* Erreur lors d&#39;une requête sur un dictionnaire `cached`.
+
+Vous pouvez afficher la liste des dictionnaires et leur statut dans la table [system.dictionaries](/fr/reference/system-tables/dictionaries).

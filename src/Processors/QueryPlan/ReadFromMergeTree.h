@@ -286,7 +286,7 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(KeyCondition key_condition_)
+        explicit Indexes(ConditionTemplate<KeyCondition>::Ptr key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
@@ -294,12 +294,12 @@ public:
             , use_skip_indexes_on_data_read(false)
         {}
 
-        KeyCondition key_condition;
-        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
+        ConditionTemplate<KeyCondition>::Ptr key_condition;
+        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template; /// skeleton of the key condition without resolved columns
+        ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
+        ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
+        ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
-        std::optional<KeyCondition> minmax_idx_condition;
-        std::optional<KeyCondition> part_offset_condition;
-        std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
@@ -506,7 +506,10 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit);
+        UInt64 limit,
+        /// Index of this split when reading in-order with parallel replicas; nullopt means
+        /// a single pool reads the whole table (no splitting).
+        std::optional<size_t> split_index = std::nullopt);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
@@ -563,6 +566,7 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;

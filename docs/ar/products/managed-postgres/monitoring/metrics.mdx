@@ -1,0 +1,126 @@
+---
+slug: /cloud/managed-postgres/monitoring/metrics
+sidebarTitle: 'مرجع المقاييس'
+title: 'مرجع مقاييس Managed Postgres'
+description: 'القائمة الكاملة للمقاييس التي توفّرها نقطة نهاية Prometheus الخاصة بـ Managed Postgres'
+keywords: ['managed postgres', 'المقاييس', 'Prometheus', 'مرجع', 'observability']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
+
+تسرد هذه الصفحة جميع المقاييس التي يوفّرها
+[Managed Postgres Prometheus endpoint](/ar/products/managed-postgres/monitoring/prometheus).
+لإعداد الخدمة والمصادقة، راجع صفحة [نقطة نهاية Prometheus].
+
+<div id="common-labels">
+  ## الوسوم الشائعة
+</div>
+
+يحمل كل مقياس الوسوم التالية:
+
+| الوسم                   | الوصف               |
+| ----------------------- | ------------------- |
+| `clickhouse_org`        | معرّف المؤسسة       |
+| `postgres_service`      | معرّف خدمة Postgres |
+| `postgres_service_name` | اسم خدمة Postgres   |
+
+تضيف بعض المقاييس وسمًا للبُعد الذي تُفصّله (مثلًا،
+`mode` في مقاييس CPU، و`state` في مقاييس الاتصالات، و`database` في حجم
+قاعدة البيانات). وتُدرج هذه الوسوم إلى جانب كل مقياس.
+
+<div id="information-metric">
+  ## مقياس المعلومات
+</div>
+
+`PostgresServiceInfo` هو مقياس من نوع مقياس لحظي تكون قيمته دائمًا `1`، ويحمل
+حالة الخدمة الحالية وإصدارها ضمن وسومه. استخدمه لضمّ
+الحالة إلى مقاييس أخرى أو لإطلاق تنبيه عند انتقال خدمة
+إلى خارج الحالة `running`.
+
+| المقياس               | النوع | الوسوم الإضافية                     | الوصف                                     |
+| --------------------- | ----- | ------------------------------------- | ----------------------------------------- |
+| `PostgresServiceInfo` | مقياس لحظي | `postgres_status`, `postgres_version` | سلسلة واحدة لكل خدمة؛ والقيمة دائمًا `1`. |
+
+يعرض `postgres_status` حالة دورة حياة الخدمة الحالية
+(على سبيل المثال `running` و`creating` و`stopped`). ويعرض `postgres_version`
+الإصدار الرئيسي من Postgres (مثل `17` و`18`).
+
+<div id="capacity">
+  ## السعة
+</div>
+
+الحدود الثابتة المخصصة للخدمة. لا تتغير إلا عند
+تغيير حجم الخدمة.
+
+| المقياس                            | النوع      | الوحدة | الوصف                         |
+| ---------------------------------- | ---------- | ------ | ----------------------------- |
+| `PostgresServer_CPUCores`          | مقياس لحظي | أنوية  | عدد أنوية CPU المخصصة للخدمة. |
+| `PostgresServer_MemoryLimitBytes`  | مقياس لحظي | بايت   | الذاكرة المخصصة للخدمة.       |
+| `PostgresServer_StorageLimitBytes` | مقياس لحظي | بايت   | التخزين المخصص للخدمة.        |
+
+<div id="resource-utilization">
+  ## استخدام الموارد
+</div>
+
+| المقياس                                | النوع | الوسوم الإضافية | الوصف                                                                                                      |
+| -------------------------------------- | ----- | ----------------- | ---------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_CPUSeconds_Total`      | عداد  | `mode`            | وقت CPU المستهلَك، مفصّل حسب الوضع: `user`، `system`، `iowait`، `softirq`، `steal`، `irq`، `nice`، `idle`. |
+| `PostgresServer_MemoryUsedPercent`     | مقياس لحظي |                   | الذاكرة المستخدمة، كنسبة مئوية من `PostgresServer_MemoryLimitBytes`.                                       |
+| `PostgresServer_MemoryCachePercent`    | مقياس لحظي |                   | الذاكرة التي تستخدمها الذاكرة المخبئية والمخازن المؤقتة، كنسبة مئوية من إجمالي الذاكرة.                    |
+| `PostgresServer_FilesystemUsedPercent` | مقياس لحظي |                   | مساحة نظام الملفات المستخدمة، كنسبة مئوية من إجمالي التخزين.                                               |
+
+لحساب استخدام CPU كنسبة مئوية، احسب معدل
+`PostgresServer_CPUSeconds_Total` عبر الأوضاع التي تهمك
+ثم اقسمه على `PostgresServer_CPUCores`.
+
+<div id="io">
+  ## إدخال/إخراج القرص والشبكة
+</div>
+
+| المقياس                                     | النوع | الوحدة | الوصف                          |
+| ------------------------------------------- | ----- | ------ | ------------------------------ |
+| `PostgresServer_DiskReads_Total`            | عداد  | ops    | عمليات قراءة القرص المكتملة.   |
+| `PostgresServer_DiskWrites_Total`           | عداد  | ops    | عمليات كتابة القرص المكتملة.   |
+| `PostgresServer_NetworkReceiveBytes_Total`  | عداد  | bytes  | البايتات المستلَمة عبر الشبكة. |
+| `PostgresServer_NetworkTransmitBytes_Total` | عداد  | bytes  | البايتات المُرسَلة عبر الشبكة. |
+
+<div id="database-activity">
+  ## نشاط قاعدة البيانات
+</div>
+
+عدادات تراكمية منذ بدء الخدمة. استخدم `rate()` أو `irate()` لتحويلها
+إلى قيم لكل ثانية.
+
+| المقياس                                       | النوع | الوصف                            |
+| --------------------------------------------- | ----- | -------------------------------- |
+| `PostgresServer_TuplesFetched_Total`          | عداد  | الصفوف التي جلبتها الاستعلامات.  |
+| `PostgresServer_TuplesInserted_Total`         | عداد  | الصفوف التي أُدرجت.              |
+| `PostgresServer_TuplesUpdated_Total`          | عداد  | الصفوف التي جرى تحديثها.         |
+| `PostgresServer_TuplesDeleted_Total`          | عداد  | الصفوف التي جرى حذفها.           |
+| `PostgresServer_TransactionsCommitted_Total`  | عداد  | المعاملات التي تم تأكيدها.       |
+| `PostgresServer_TransactionsRolledBack_Total` | عداد  | المعاملات التي جرى التراجع عنها. |
+| `PostgresServer_Deadlocks_Total`              | عداد  | حالات الجمود المكتشفة.           |
+
+<div id="connections-cache-size">
+  ## الاتصالات والذاكرة المؤقتة وحجم قاعدة البيانات
+</div>
+
+| المقياس                            | النوع | الوسوم الإضافية | الوصف                                                                                                                       |
+| ---------------------------------- | ----- | ----------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `PostgresServer_ActiveConnections` | مقياس لحظي | `state`           | الاتصالات بحسب الحالة (مثل `active` و`idle`).                                                                               |
+| `PostgresServer_CacheHitRatio`     | مقياس لحظي |                   | نسبة إصابة الذاكرة المؤقتة: الكتل التي جرى تقديمها من الذاكرة المؤقتة مقابل إجمالي الكتل التي تم الوصول إليها، كنسبة مئوية. |
+| `PostgresServer_DatabaseSizeBytes` | مقياس لحظي | `database`        | حجم القرص لكل قاعدة بيانات، بالبايت. يشمل قاعدة `postgres` الافتراضية وأي قواعد بيانات أنشأها المستخدم.                     |
+
+<div id="related">
+  ## صفحات ذات صلة
+</div>
+
+* [نقطة نهاية Prometheus] — الإعداد والمصادقة والكشط
+* [لوحة المعلومات](/ar/products/managed-postgres/monitoring/dashboard) — المخططات المضمّنة في Cloud Console
+* [دليل OpenAPI](/ar/products/managed-postgres/openapi) — إنشاء مفتاح API
+  والعثور على معرّفات المؤسسة والخدمة
+
+[نقطة نهاية Prometheus]: /products/managed-postgres/monitoring/prometheus

@@ -1,0 +1,148 @@
+---
+description: 'Documentation sur le format ParquetMetadata'
+keywords: ['ParquetMetadata']
+slug: /interfaces/formats/ParquetMetadata
+title: 'ParquetMetadata'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Format spécial pour lire les métadonnées d’un fichier Parquet (https://parquet.apache.org/docs/file-format/metadata/). Il renvoie toujours une ligne avec la structure/le contenu suivants :
+
+* `num_columns` - le nombre de colonnes
+* &#96;&#96;num&#95;rows&#96; - le nombre total de lignes
+* `num_row_groups` - le nombre total de groupes de lignes
+* `format_version` - la version du format Parquet, toujours 1.0 ou 2.6
+* `total_uncompressed_size` - la taille totale des données non compressées en octets, calculée comme la somme de total&#95;byte&#95;size de tous les groupes de lignes
+* `total_compressed_size` - la taille totale des données compressées en octets, calculée comme la somme de total&#95;compressed&#95;size de tous les groupes de lignes
+* `columns` - la liste des métadonnées des colonnes avec la structure suivante :
+  * `name` - nom de la colonne
+  * `path` - chemin de la colonne (diffère de name pour une colonne imbriquée)
+  * `max_definition_level` - niveau de définition maximal
+  * `max_repetition_level` - niveau de répétition maximal
+  * `physical_type` - type physique de la colonne
+  * `logical_type` - type logique de la colonne
+  * `compression` - compression utilisée pour cette colonne
+  * `total_uncompressed_size` - taille totale en octets non compressés de la colonne, calculée comme la somme de total&#95;uncompressed&#95;size de la colonne dans tous les groupes de lignes
+  * `total_compressed_size` - taille totale en octets compressés de la colonne, calculée comme la somme de total&#95;compressed&#95;size de la colonne dans tous les groupes de lignes
+  * `space_saved` - pourcentage d’espace économisé grâce à la compression, calculé comme (1 - total&#95;compressed&#95;size/total&#95;uncompressed&#95;size).
+  * `encodings` - la liste des encodages utilisés pour cette colonne
+* `row_groups` - la liste des métadonnées des groupes de lignes avec la structure suivante :
+  * `num_columns` - le nombre de colonnes dans le groupe de lignes
+  * `num_rows` - le nombre de lignes dans le groupe de lignes
+  * `total_uncompressed_size` - taille totale en octets non compressés du groupe de lignes
+  * `total_compressed_size` - taille totale en octets compressés du groupe de lignes
+  * `columns` - la liste des métadonnées des chunks de colonnes avec la structure suivante :
+    * `name` - nom de la colonne
+    * `path` - chemin de la colonne
+    * `total_compressed_size` - taille totale en octets compressés de la colonne
+    * `total_uncompressed_size` - taille totale en octets non compressés du groupe de lignes
+    * `have_statistics` - indicateur booléen indiquant si les métadonnées du chunk de colonne contiennent des statistiques de colonne
+    * `statistics` - statistiques du chunk de colonne (tous les champs sont NULL si have&#95;statistics = false) avec la structure suivante :
+      * `num_values` - le nombre de valeurs non nulles dans le chunk de colonne
+      * `null_count` - le nombre de valeurs NULL dans le chunk de colonne
+      * `distinct_count` - le nombre de valeurs distinctes dans le chunk de colonne
+      * `min` - la valeur minimale du chunk de colonne
+      * `max` - la valeur maximale du chunk de colonne
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Exemple :
+
+```sql
+SELECT * 
+FROM file(data.parquet, ParquetMetadata) 
+FORMAT PrettyJSONEachRow
+```
+
+```json
+{
+    "num_columns": "2",
+    "num_rows": "100000",
+    "num_row_groups": "2",
+    "format_version": "2.6",
+    "metadata_size": "577",
+    "total_uncompressed_size": "282436",
+    "total_compressed_size": "26633",
+    "columns": [
+        {
+            "name": "number",
+            "path": "number",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "concat('Hello', toString(modulo(number, 1000)))",
+            "path": "concat('Hello', toString(modulo(number, 1000)))",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "BYTE_ARRAY",
+            "logical_type": "None",
+            "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        }
+    ],
+    "row_groups": [
+        {
+            "num_columns": "2",
+            "num_rows": "65409",
+            "total_uncompressed_size": "179809",
+            "total_compressed_size": "14163",
+            "columns": [
+                {
+                    "name": "number",
+                    "path": "number",
+                    "total_compressed_size": "7070",
+                    "total_uncompressed_size": "85956",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "0",
+                        "max": "999"
+                    }
+                },
+                {
+                    "name": "concat('Hello', toString(modulo(number, 1000)))",
+                    "path": "concat('Hello', toString(modulo(number, 1000)))",
+                    "total_compressed_size": "7093",
+                    "total_uncompressed_size": "93853",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "Hello0",
+                        "max": "Hello999"
+                    }
+                }
+            ]
+        },
+        ...
+    ]
+}
+```

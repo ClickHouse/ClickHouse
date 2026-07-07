@@ -17,10 +17,15 @@ Steps:
      is one-way, so the checks see exactly what the next sync would produce.
   3. Run the checks from the docs root against the resulting docs.
 
-The check definitions live in ``DEFAULT_CHECKS`` so they are declared once and
-shared: this driver runs them directly, as does the Praktika job
-(``ci/jobs/docs_job_mintlify.py``), which imports the same list. Add a new check
-here and both pick it up.
+The check definitions are declared once here and shared with the Praktika job
+(``ci/jobs/docs_job_mintlify.py``), which imports them. The aggregator job runs
+the full set (``DEFAULT_CHECKS`` plus, when a locale tree changed,
+``LOCALE_CHECKS``); this client driver runs only ``CLIENT_CHECKS`` -- the checks
+a consuming repo can act on for the slice it owns (validate + internal links).
+Redirects, external links, and the locale checks are aggregator-global and are
+left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
+``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
+that imports into them.
 
 A check can be any shell command, including ``python3 <script>``. Checks run
 from the docs root, so a Python check script committed at
@@ -45,10 +50,59 @@ import tempfile
 # A command may invoke a Python check script committed at ci/jobs/scripts/docs,
 # referenced relative to the docs root, e.g.:
 #     ("Frontmatter lint", "python3 ../ci/jobs/scripts/docs/frontmatter_lint.py ."),
+MINT = "NODE_OPTIONS=--max-old-space-size=8192 mint"
+# lychee replaces `mint broken-links`; the three modes are defined in
+# lychee_check.py, which runs each against a throwaway, anchor-rewritten copy of
+# the docs (see that script). The external-links check is a non-blocking
+# warning because it depends on third-party sites being reachable.
+LYCHEE = "python3 ../ci/jobs/scripts/docs/lychee_check.py"
+VALIDATE_CHECK = ("Validate docs.json", f"{MINT} validate")
+INTERNAL_LINKS_CHECK = ("Check internal links and anchors", f"{LYCHEE} --mode links .")
+REDIRECTS_CHECK = ("Check redirects", f"{LYCHEE} --mode redirects .")
+EXTERNAL_LINKS_CHECK = ("Check external links (warnings)", f"{LYCHEE} --mode external .")
 DEFAULT_CHECKS = [
-    ("Validate docs.json", "mint validate"),
-    ("Check for broken links", "mint broken-links"),
+    VALIDATE_CHECK,
+    INTERNAL_LINKS_CHECK,
+    REDIRECTS_CHECK,
+    EXTERNAL_LINKS_CHECK,
 ]
+
+# The subset a consuming client repo (e.g. clickhouse-connect) runs: only the
+# checks that validate the slice it owns. `mint validate` proves its docs.json
+# fragment and frontmatter are well-formed, and the internal-links check proves
+# its own links and anchors resolve. Redirects, external links, and the locale
+# checks are aggregator-global concerns a client neither owns nor can fix (they
+# depend on the site-wide redirects map, third-party sites, and the translated
+# trees), so the client driver does not run them.
+CLIENT_CHECKS = [VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
+
+
+# Swaps the full `mint validate` (which MDX-parses the whole site, ~13 minutes)
+# for scoped_validate.mjs over just the replaced folders -- see that script's
+# header for what it covers.
+def scoped_validate_check(scopes):
+    command = "node ../ci/jobs/scripts/docs/scoped_validate.mjs " + " ".join(
+        f"--scope {shlex.quote(scope)}" for scope in scopes
+    )
+    return ("Validate docs.json and the replaced folders (scoped)", command + " .")
+
+# Locale-only checks, kept out of DEFAULT_CHECKS: the Praktika job runs them only
+# when a PR touches the locale folders (top-level or snippets/<locale>/) -- they
+# are large and change independently via the GT translation bot. The client
+# driver below does not run them (they cover the aggregator's translated trees,
+# which a consuming client repo does not own).
+#   - locale-links: markdown link/file resolution for the translated trees
+#     (lychee), fragments skipped.
+#   - locale components: navigation `href`/`to` paths inside localized JSX
+#     components and MDX `export const` data, which lychee cannot see (JS
+#     literals, not markdown) -- catches cards that route locale readers to
+#     English pages when a localized page exists.
+LOCALE_LINKS_CHECK = ("Check locale links", f"{LYCHEE} --mode locale-links .")
+LOCALE_COMPONENTS_CHECK = (
+    "Check locale component links",
+    "python3 ../ci/jobs/scripts/docs/locale_components_check.py .",
+)
+LOCALE_CHECKS = [LOCALE_LINKS_CHECK, LOCALE_COMPONENTS_CHECK]
 
 
 def run(cmd, **kw):
@@ -130,8 +184,15 @@ def main(argv=None):
     p.add_argument("--replace", action="append", default=[], metavar="SRC:DEST",
                    help="Replace DEST (relative to docs root) with the local folder "
                         "SRC, wiping DEST first; repeatable.")
+    p.add_argument("--scoped", action="store_true",
+                   help="Validate only the --replace destinations instead of running "
+                        "the full (slow) `mint validate` over the whole site. "
+                        "Requires at least one --replace.")
     p.add_argument("--workdir", help="Where to clone (default: a temp dir).")
     args = p.parse_args(argv)
+
+    if args.scoped and not args.replace:
+        p.error("--scoped requires at least one --replace")
 
     base = args.workdir or tempfile.mkdtemp(prefix="docs-check-")
     clone_dir = os.path.abspath(os.path.join(base, "aggregator"))
@@ -142,14 +203,23 @@ def main(argv=None):
     if not os.path.isfile(os.path.join(docs_root, "docs.json")):
         raise FileNotFoundError(f"No docs.json in docs root: {docs_root}")
 
+    replace_dests = []
     for spec in args.replace:
         parts = spec.split(":")
         if len(parts) != 2:
             raise ValueError(f"Invalid --replace '{spec}'. Expected SRC:DEST.")
         replace(parts[0], resolve_replace_dest(docs_root, parts[1]))
+        replace_dests.append(parts[1])
 
+    # A consuming client repo owns only its docs slice, so it runs just the
+    # checks it can act on (see CLIENT_CHECKS): validate + internal links. The
+    # aggregator-global checks -- redirects, external links, and the locale
+    # checks -- are run by the aggregator's own Praktika job, not here.
+    checks = list(CLIENT_CHECKS)
+    if args.scoped:
+        checks[0] = scoped_validate_check(replace_dests)
     results = [(name, run_check(docs_root, name, command))
-               for name, command in DEFAULT_CHECKS]
+               for name, command in checks]
 
     print("\n=== Summary ===", flush=True)
     for name, ok in results:

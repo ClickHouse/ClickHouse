@@ -1,0 +1,80 @@
+---
+title: Comment vérifier si deux requêtes renvoient les mêmes jeux de résultats
+description: Découvrez comment vérifier que deux requêtes ClickHouse produisent des jeux de résultats identiques à l'aide de fonctions de hachage et de techniques de comparaison.
+date: 2023-05-04
+tags: ['Fonctions']
+keywords: ['Vérifier', 'Jeux de résultats', 'Fonctions de hachage']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Comment puis-je vérifier que deux requêtes renvoient le même jeu de résultats ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Vous pouvez procéder comme suit :
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- your query 1 here
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- your query 2 here
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+Cet exemple utilise une [CTE](/fr/reference/statements/select/with) pour calculer la somme de la valeur [cityHash](/fr/reference/functions/regular-functions/hash-functions#cityhash64) de chaque ligne dans ces deux requêtes, et renverra `1` si les deux jeux de résultats sont identiques.
+
+En utilisant une séquence de nombres entiers et un formatage Pretty :
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+renvoie :
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+Bien que cela puisse être pratique dans de nombreux cas, cette méthode ne peut pas être considérée comme une solution miracle pour valider l’égalité des jeux de résultats pour tous les types, et son utilisation comporte certaines limites ; par exemple, si une ligne contient des valeurs `NULL`, l’approche ci-dessus échouera.
