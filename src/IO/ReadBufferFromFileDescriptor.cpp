@@ -160,14 +160,32 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     poll_fd.fd = fd;
     poll_fd.events = POLLIN | POLLPRI;
 
-    const auto timeout_milliseconds = static_cast<int>(
+    auto timeout_milliseconds = static_cast<int>(
         std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
+    /// Retry EINTR with the remaining time: restarting with the full timeout would reset the
+    /// deadline on every signal, and under a periodic signal (e.g. the query profiler, whose
+    /// SA_RESTART does not apply to poll) firing more often than the timeout, the poll would
+    /// then never expire. The remainder is computed in microseconds from a single anchor:
+    /// per-retry millisecond accounting would truncate a sub-millisecond interval to zero and
+    /// make no progress.
+    Stopwatch watch;
     int result = 0;
-    do
+    for (;;)
     {
         result = ::poll(&poll_fd, 1, timeout_milliseconds);
-    } while (result < 0 && errno == EINTR);
+        if (result >= 0 || errno != EINTR)
+            break;
+
+        const UInt64 elapsed_microseconds = watch.elapsedMicroseconds();
+        if (elapsed_microseconds >= timeout_microseconds)
+        {
+            result = 0;
+            break;
+        }
+        timeout_milliseconds = static_cast<int>(std::min<size_t>(
+            (timeout_microseconds - elapsed_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
+    }
 
     if (result < 0)
     {
