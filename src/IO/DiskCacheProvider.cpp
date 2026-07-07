@@ -577,8 +577,15 @@ CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
         if (!seg_range.contains(frontier_obj))
             continue;
 
+        /// A DOWNLOADING segment is pinnable too: the streaming write path holds the
+        /// downloader role across tiles and releases it only after the collect, so the
+        /// pin decision can race the release - the same partial segment shows as
+        /// DOWNLOADING or PARTIALLY_DOWNLOADED depending on thread timing. The pin is
+        /// a plain holder reference; taken while still DOWNLOADING it protects the
+        /// partial across the following plan rebuild with no unprotected gap.
         const auto state = segment->state();
-        const bool partial = state == FileSegmentState::PARTIALLY_DOWNLOADED
+        const bool partial = state == FileSegmentState::DOWNLOADING
+                          || state == FileSegmentState::PARTIALLY_DOWNLOADED
                           || state == FileSegmentState::PARTIALLY_DOWNLOADED_NO_CONTINUATION;
         if (!partial)
             return nullptr;
