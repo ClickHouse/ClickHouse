@@ -32,8 +32,8 @@ node_s3 = cluster.add_instance(
     with_minio=True,
 )
 
-# Stateless coverage checks `ON CLUSTER` access and cancellation rollback.
-# These integration cases stay grey-box: local metadata move, dropped queue,
+# Stateless coverage checks `ON CLUSTER` access. These integration cases stay
+# grey-box: local metadata move, cancellation rollback, dropped queue,
 # `UNDROP`, restart recovery, and remote object cleanup.
 
 
@@ -136,6 +136,14 @@ def assert_detached_table_count(node, table_name, count):
         instance=node,
         query=detached_table_count_query(table_name),
         expectation=str(count),
+    )
+
+
+def wait_query_started(node, query_id):
+    assert_eq_with_retry(
+        instance=node,
+        query=f"SELECT count() FROM system.processes WHERE query_id = '{query_id}'",
+        expectation="1",
     )
 
 
@@ -242,6 +250,79 @@ def test_drop_detached_table_moves_metadata_to_dropped_queue(start_cluster):
     ).strip()
     assert metadata_dropped_path.startswith("metadata_dropped/")
     assert metadata_file_exists(replica1, metadata_dropped_path) == "1"
+
+
+def test_drop_detached_cancel_keeps_detached_table_attachable(start_cluster):
+    table_name = "test_drop_detached_cancel_keeps_detached_table_attachable"
+    select_query_id = f"{table_name}_select"
+    drop_query_id = f"{table_name}_drop"
+
+    create_detached_table(replica1, table_name, rows=10)
+    replica1.query(f"ATTACH TABLE {table_name}")
+
+    select_query = replica1.get_query_request(
+        f"""
+        SELECT sleepEachRow(3) FROM {table_name}
+        SETTINGS max_threads=1, function_sleep_max_microseconds_per_block=0
+        FORMAT Null
+        """,
+        query_id=select_query_id,
+        ignore_error=True,
+        timeout=30,
+    )
+    select_finished = False
+
+    try:
+        wait_query_started(replica1, select_query_id)
+        replica1.query(f"DETACH TABLE {table_name} PERMANENTLY")
+
+        drop_query = replica1.get_query_request(
+            f"SET allow_experimental_drop_detached_table=1; "
+            f"DROP DETACHED TABLE {table_name} SYNC",
+            query_id=drop_query_id,
+            ignore_error=True,
+            timeout=30,
+        )
+
+        try:
+            wait_query_started(replica1, drop_query_id)
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{drop_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+            )
+            _, drop_error = drop_query.get_answer_and_error()
+            assert "QUERY_WAS_CANCELLED" in drop_error or "was cancelled" in drop_error
+        finally:
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{drop_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+                ignore_error=True,
+            )
+
+        assert_detached_table_count(replica1, table_name, "1")
+        replica1.query(
+            f"KILL QUERY WHERE query_id = '{select_query_id}' ASYNC FORMAT Null",
+            timeout=10,
+            ignore_error=True,
+        )
+        select_query.get_answer_and_error()
+        select_finished = True
+        replica1.query(f"ATTACH TABLE {table_name}")
+        assert "10" == replica1.query(f"SELECT count() FROM {table_name}").rstrip()
+    finally:
+        if not select_finished:
+            replica1.query(
+                f"KILL QUERY WHERE query_id = '{select_query_id}' ASYNC FORMAT Null",
+                timeout=10,
+                ignore_error=True,
+            )
+            select_query.get_answer_and_error()
+        replica1.query(f"DROP TABLE IF EXISTS {table_name} SYNC", ignore_error=True)
+        replica1.query(
+            f"SET allow_experimental_drop_detached_table=1; "
+            f"DROP DETACHED TABLE IF EXISTS {table_name} SYNC",
+            ignore_error=True,
+        )
 
 
 def test_force_drop_flag_bypasses_detached_table_size_limit(start_cluster):
