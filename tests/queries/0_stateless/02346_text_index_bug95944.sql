@@ -28,7 +28,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE hasToken(name, 'Hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 3;
+LIMIT 1, 3;
 
 DROP TABLE tab;
 
@@ -37,7 +37,7 @@ SELECT 'Test ALIAS column with preprocessor';
 CREATE TABLE tab
 (
     provider Nullable(String),
-    name String ALIAS ifNull(provider, 'default_name'),
+    name String ALIAS ifNull(provider, 'DEFAULT_NAME'),
     INDEX name_text_idx(name) TYPE text(
         tokenizer = splitByNonAlpha,
         preprocessor = lower(name)
@@ -61,7 +61,7 @@ SELECT trimLeft(explain) AS explain FROM (
     EXPLAIN indexes = 1
     SELECT count() FROM tab WHERE hasToken(name, 'hello')
 ) WHERE explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-LIMIT 3;
+LIMIT 1, 3;
 
 DROP TABLE tab;
 
