@@ -594,11 +594,9 @@ using FunctionMapAll = FunctionMapToArrayAdapter<FunctionArrayAll, MapToNestedAd
 struct NameMapContainsKeyLike
 {
     static constexpr auto name = "mapContainsKeyLike";
-    /// Docs-only — internally builds a `LIKE` lambda via `MapLikeAdapter`,
-    /// which calls `FunctionLike::getReturnTypeImpl(DataTypes &)`. That
-    /// overload isn't provided by `FunctionsStringSearch`, so the legacy
-    /// adapter path must remain in use.
-    static constexpr auto signature_documentation = "(Map(Any, Any), String) -> UInt8";
+    /// The result is always UInt8, so the signature is authoritative; the internal LIKE-lambda
+    /// plumbing (`MapLikeAdapter` over `FunctionArrayExists`) is only used at execution.
+    static constexpr auto signature = "(Map(Any, Any), String) -> UInt8";
 };
 using FunctionMapContainsKeyLike = FunctionMapToArrayAdapter<FunctionArrayExists, MapLikeAdapter<NameMapContainsKeyLike, false, 0>, NameMapContainsKeyLike>;
 

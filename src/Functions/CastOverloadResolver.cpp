@@ -159,10 +159,16 @@ public:
     ///   - `cast_keep_nullable` wraps the result in Nullable depending on the source's nullability;
     ///   - the source time zone is substituted into a tz-less DateTime/DateTime64 target.
     /// Expressing this would require moving the settings-driven validations into the signature
-    /// machinery (they cannot be), so the legacy `getReturnTypeImpl` stays authoritative.
+    /// machinery (they cannot be), so the legacy `getReturnTypeImpl` stays authoritative and the
+    /// signature is never applied by the framework. The signature string is therefore purely
+    /// descriptive; we still make it as informative as possible — `(Any, const t String) ->
+    /// typeFromString(t)` documents that the result type is the one named by the const second
+    /// argument. It is only rendered (e.g. in `system.functions`), never evaluated, so it does not
+    /// matter that CAST-as-overload-resolver would reach type deduction through the types-only path
+    /// where the const value is unavailable.
     String getSignatureString() const override
     {
-        return "(Any, const String) -> Any";
+        return "(Any, const t String) -> typeFromString(t)";
     }
 
     explicit CastOverloadResolverImpl(ContextPtr context_, CastType cast_type_, bool internal_, std::optional<CastDiagnostic> diagnostic_, bool keep_nullable_, const DataTypeValidationSettings & data_type_validation_settings_)
