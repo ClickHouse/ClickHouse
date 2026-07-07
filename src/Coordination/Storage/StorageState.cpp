@@ -26,8 +26,8 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsUInt64 uncommitted_memtable_size;
     extern const CoordinationSettingsUInt64 unflushed_memtables_soft_limit;
     extern const CoordinationSettingsUInt64 sorted_runs_soft_limit;
-    extern const CoordinationSettingsUInt64 write_throttling_min_delay_ms;
-    extern const CoordinationSettingsUInt64 write_throttling_max_delay_ms;
+    extern const CoordinationSettingsUInt64 write_throttling_min_delay_us;
+    extern const CoordinationSettingsUInt64 write_throttling_max_delay_us;
     extern const CoordinationSettingsFloat write_throttling_factor;
 }
 
@@ -331,36 +331,45 @@ void StorageState::listUncommittedChildrenNames(
 
 void StorageState::throttleWrite() const
 {
-    size_t amount = write_throttling.load(std::memory_order_relaxed);
-    if (amount == 0)
-        return;
-
-    const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
-    const uint64_t max_delay_ms = settings[DB::CoordinationSetting::write_throttling_max_delay_ms];
-    const uint64_t min_delay_ms = settings[DB::CoordinationSetting::write_throttling_min_delay_ms];
-    const float factor = settings[DB::CoordinationSetting::write_throttling_factor];
-
-    /// Exponential backoff, clamped to max_delay_ms. If `amount` is very large, pow overflows to
-    /// +inf, and min() clamps it back to max_delay_ms, so delay_ms stays finite.
-    const double delay_ms = std::min(double(max_delay_ms), double(min_delay_ms) * std::pow(double(factor), double(amount)));
-    std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int64_t>(delay_ms)));
+    int64_t delay_us = write_throttling_us.load(std::memory_order_relaxed);
+    if (delay_us != 0)
+        std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
 }
 
 void StorageState::recalculateWriteThrottling()
 {
-    auto excess = [](size_t current, size_t limit) { return current - std::min(current, limit); };
-
     const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
-    size_t flushes_fell_behind = excess(immutable_memtables.size(), settings[DB::CoordinationSetting::unflushed_memtables_soft_limit]);
-    size_t merges_fell_behind = excess(sorted_runs.size(), settings[DB::CoordinationSetting::sorted_runs_soft_limit]);
 
-    /// TODO: Change this to add *relative* excesses: max(0, flushes / max_flushes - 1) + max(merges / max_merges - 1).
-    ///       Having 15/5 memtables in memory is much worse than 110/100 sorted runs on disk.
-    size_t throttle = flushes_fell_behind + merges_fell_behind;
-    size_t prev = write_throttling.exchange(throttle);
+    bool limit_reached = false;
+    double excess = 0.0;
 
-    if (throttle != prev)
-        LOG_INFO(log, "{} writes, there are {} immutable memtables and {} sorted runs", throttle ? "Throttling" : "Unthrottling", immutable_memtables.size(), sorted_runs.size());
+    auto consider = [&](size_t current, size_t limit)
+    {
+        if (current < limit)
+            return;
+        limit_reached = true;
+        excess += double(current) / double(limit) - 1.0;
+    };
+
+    consider(immutable_memtables.size(), settings[DB::CoordinationSetting::unflushed_memtables_soft_limit]);
+    consider(sorted_runs.size(), settings[DB::CoordinationSetting::sorted_runs_soft_limit]);
+
+    int64_t delay_us = 0;
+    if (limit_reached)
+    {
+        const uint64_t max_delay_us = settings[DB::CoordinationSetting::write_throttling_max_delay_us];
+        const uint64_t min_delay_us = settings[DB::CoordinationSetting::write_throttling_min_delay_us];
+        const float factor = settings[DB::CoordinationSetting::write_throttling_factor];
+
+        /// Exponential backoff, clamped to max_delay_us. If `excess` is very large, pow overflows
+        /// to +inf, and min() clamps it back to max_delay_us, so delay stays finite.
+        delay_us = int64_t(std::min(double(max_delay_us), double(min_delay_us) * std::pow(double(factor), excess)));
+    }
+
+    int64_t prev = write_throttling_us.exchange(delay_us);
+
+    if (delay_us != prev)
+        LOG_INFO(log, "{} writes, there are {} immutable memtables and {} sorted runs", delay_us ? "Throttling" : "Unthrottling", immutable_memtables.size(), sorted_runs.size());
 }
 
 }

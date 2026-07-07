@@ -79,9 +79,9 @@ namespace ErrorCodes
     DECLARE(Float, max_size_ratio, 0.7f, "LSMT: background merge will merge a range of sorted runs if the ratio [bytes in the lowest-numbered selected sorted run] / [bytes in all selected sorted runs] is less than this. Smaller values reduce write amplification, bigger values reduce the number of sorted runs.", HOT_RELOAD) \
     DECLARE(UInt64, unflushed_memtables_soft_limit, 4, "LSMT: throttle writes if there are at least this many memtables waiting for flush.", HOT_RELOAD) \
     DECLARE(UInt64, sorted_runs_soft_limit, 100, "LSMT: throttle writes if there are at least this many active sorted runs, implying merges are not keeping up or are misconfigured.", HOT_RELOAD) \
-    DECLARE(UInt64, write_throttling_min_delay_ms, 10, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in milliseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
-    DECLARE(UInt64, write_throttling_max_delay_ms, 1000, "LSMT: the maximum delay added to a write by write throttling, in milliseconds.", HOT_RELOAD) \
-    DECLARE(Float, write_throttling_factor, 1.2f, "LSMT: write throttling delay is multiplied by this factor for each unit by which background work fell behind the soft limits.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_min_delay_us, 10000, "LSMT: when write throttling kicks in, this is the smallest delay added to a write, in microseconds. The delay grows exponentially (by write_throttling_factor) the further background work falls behind, up to write_throttling_max_delay_ms.", HOT_RELOAD) \
+    DECLARE(UInt64, write_throttling_max_delay_us, 1000000, "LSMT: the maximum delay added to a write by write throttling, in microseconds.", HOT_RELOAD) \
+    DECLARE(Float, write_throttling_factor, 32.0f, "LSMT: write throttling delay is multiplied by this factor if soft limit is exceeded by 2x. Delay = write_throttling_min_delay_us * pow(write_throttling_factor, value / soft_limit - 1).", HOT_RELOAD) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of in-memory cache of log entries needed next for commit.", 0) \

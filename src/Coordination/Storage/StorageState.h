@@ -87,8 +87,8 @@ private:
 
     std::unique_ptr<BackgroundWork> background;
 
-    /// The bigger the number the more we should slow down writes. 0 means no throttling.
-    std::atomic<size_t> write_throttling{};
+    /// How long to sleep before each write, in microseconds.
+    std::atomic<int64_t> write_throttling_us{};
 
 public:
     explicit StorageState(DB::KeeperContextPtr keeper_context_, DB::SharedMutex * storage_mutex_);

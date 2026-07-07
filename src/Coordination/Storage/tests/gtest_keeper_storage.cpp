@@ -32,6 +32,9 @@ namespace DB::CoordinationSetting
     extern const CoordinationSettingsFloat max_size_ratio;
     extern const CoordinationSettingsUInt64 unflushed_memtables_soft_limit;
     extern const CoordinationSettingsUInt64 sorted_runs_soft_limit;
+    extern const CoordinationSettingsUInt64 write_throttling_min_delay_us;
+    extern const CoordinationSettingsUInt64 write_throttling_max_delay_us;
+    extern const CoordinationSettingsFloat write_throttling_factor;
 }
 
 namespace
@@ -394,7 +397,10 @@ TEST(KeeperStorage, WriteThrottling)
 {
     auto settings = std::make_shared<DB::CoordinationSettings>();
     (*settings)[DB::CoordinationSetting::unflushed_memtables_soft_limit] = 4;
-    (*settings)[DB::CoordinationSetting::sorted_runs_soft_limit] = 3;
+    (*settings)[DB::CoordinationSetting::sorted_runs_soft_limit] = 2;
+    (*settings)[DB::CoordinationSetting::write_throttling_min_delay_us] = 10000;
+    (*settings)[DB::CoordinationSetting::write_throttling_max_delay_us] = 1000000;
+    (*settings)[DB::CoordinationSetting::write_throttling_factor] = 16.0f;
 
     auto keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper*/ true, settings);
     DB::SharedMutex storage_mutex;
@@ -405,26 +411,26 @@ TEST(KeeperStorage, WriteThrottling)
 
     /// Within both soft limits: no throttling.
     storage.recalculateWriteThrottling();
-    EXPECT_EQ(storage.write_throttling.load(), 0u);
+    EXPECT_EQ(storage.write_throttling_us.load(), 0u);
 
-    /// 6 unflushed memtables (2 over the limit of 4) and 5 sorted runs (2 over the limit of 3).
+    /// 6/4 unflushed memtables and 4/2 sorted runs.
     for (int i = 0; i < 6; ++i)
         storage.immutable_memtables.push_back(std::make_shared<Memtable>());
-    for (uint32_t i = 0; i < 5; ++i)
+    for (uint32_t i = 0; i < 4; ++i)
         storage.sorted_runs.push_back(std::make_shared<SortedRun>(i, i));
 
     storage.recalculateWriteThrottling();
-    EXPECT_EQ(storage.write_throttling.load(), size_t(2 + 2));
+    EXPECT_NEAR(double(storage.write_throttling_us.load()), 10000.0 * pow(16.0, 0.5 + 1.0), 2.0);
 
-    /// Only sorted runs over the limit now (4 over the limit of 3).
+    /// Only 7/2 sorted runs over the limit now.
     storage.immutable_memtables.clear();
-    for (uint32_t i = 5; i < 7; ++i)
+    for (uint32_t i = 4; i < 7; ++i)
         storage.sorted_runs.push_back(std::make_shared<SortedRun>(i, i)); // 7 runs total
     storage.recalculateWriteThrottling();
-    EXPECT_EQ(storage.write_throttling.load(), size_t(7 - 3));
+    EXPECT_EQ(storage.write_throttling_us.load(), 1000000);
 
     /// Back within limits: throttling clears.
     storage.sorted_runs.clear();
     storage.recalculateWriteThrottling();
-    EXPECT_EQ(storage.write_throttling.load(), 0u);
+    EXPECT_EQ(storage.write_throttling_us.load(), 0u);
 }
