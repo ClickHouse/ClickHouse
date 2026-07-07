@@ -22,7 +22,7 @@ instance = cluster.add_instance(
 
 def check_system_quotas(canonical):
     canonical_tsv = TSV(canonical)
-    r = TSV(instance.query("SELECT * FROM system.quotas ORDER BY name"))
+    r = TSV(instance.query("SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas ORDER BY name"))
     print(("system_quotas: {},\ncanonical: {}".format(r, TSV(canonical_tsv))))
     assert r == canonical_tsv
 
@@ -1424,7 +1424,7 @@ def test_reload_users_xml_by_timer():
     copy_quota_xml("tiny_limits.xml", reload_immediately=False)
     assert_eq_with_retry(
         instance,
-        "SELECT * FROM system.quotas",
+        "SELECT name, id, storage, keys, durations, apply_to_all, apply_to_list, apply_to_except FROM system.quotas",
         [
             [
                 "myQuota",
@@ -1792,3 +1792,42 @@ def test_consumption_of_show_privileges():
         "myQuota\\tdefault\\t.*\\t31556952\\t1\\t1000\\t1\\t500\\t0\\t500\\t0\\t\\\\N.*",
         instance.query("SHOW QUOTA"),
     )
+
+
+def test_quota_with_ip_prefix_bits_from_users_xml():
+    # A valid quota keyed by ip_address with prefix bits must load and expose
+    # the masking settings via system.quotas.
+    copy_quota_xml("keyed_by_ip_with_prefix.xml")
+    assert instance.query(
+        "SELECT keys, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'myQuota'"
+    ) == "['ip_address']\t24\t64\n"
+
+    # The forwarded-IP XML branch is a separate config path from keyed_by_ip and
+    # must also load prefix bits and expose them via system.quotas.
+    copy_quota_xml("keyed_by_forwarded_ip_with_prefix.xml")
+    assert instance.query(
+        "SELECT keys, ipv4_prefix_bits, ipv6_prefix_bits FROM system.quotas WHERE name = 'myQuota'"
+    ) == "['forwarded_ip_address']\t24\t64\n"
+
+    # Prefix bits on a non-IP key must be rejected on config load instead of
+    # being silently ignored, mirroring the SQL path.
+    copy_quota_xml("keyed_with_prefix_invalid.xml", reload_immediately=False)
+    error = instance.query_and_get_error("SYSTEM RELOAD CONFIG", user="user_with_no_quota")
+    assert "keyed_by_ip or keyed_by_forwarded_ip" in error
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")
+
+
+def test_quota_keyed_by_normalized_query_hash_from_users_xml():
+    # A quota keyed by normalized_query_hash must load from static config and
+    # expose the key type via system.quotas, mirroring the SQL path which
+    # supports KEYED BY normalized_query_hash.
+    copy_quota_xml("keyed_by_normalized_query_hash.xml")
+    assert (
+        instance.query("SELECT keys FROM system.quotas WHERE name = 'myQuota'")
+        == "['normalized_query_hash']\n"
+    )
+
+    # Restore a clean config so later periodic reloads do not fail.
+    copy_quota_xml("no_quotas.xml")

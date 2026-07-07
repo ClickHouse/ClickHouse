@@ -1,0 +1,148 @@
+---
+alias: []
+description: 'BSONEachRow フォーマットに関するドキュメント'
+input_format: true
+keywords: ['BSONEachRow']
+output_format: true
+slug: /interfaces/formats/BSONEachRow
+title: 'BSONEachRow'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✔  | ✔  |       |
+
+<div id="description">
+  ## 説明
+</div>
+
+`BSONEachRow`フォーマットは、区切りを挟まずに連続する Binary JSON (BSON) ドキュメントの並びとしてデータを解析します。
+各行は単一のドキュメントとしてフォーマットされ、各カラムはカラム名をキーとする単一の BSON ドキュメントフィールドとしてフォーマットされます。
+
+<div id="data-types-matching">
+  ## データ型の対応
+</div>
+
+出力では、ClickHouse 型と BSON 型の間で次の対応が使用されます。
+
+| ClickHouse 型                                                                            | BSON 型                                                                                                                         |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| [Bool](/ja/reference/data-types/boolean)                                                   | `\x08` boolean                                                                                                                 |
+| [Int8/UInt8](/ja/reference/data-types/int-uint)/[Enum8](/ja/reference/data-types/enum)        | `\x10` int32                                                                                                                   |
+| [Int16/UInt16](/ja/reference/data-types/int-uint)/[Enum16](/ja/reference/data-types/enum)     | `\x10` int32                                                                                                                   |
+| [Int32](/ja/reference/data-types/int-uint)                                                 | `\x10` int32                                                                                                                   |
+| [UInt32](/ja/reference/data-types/int-uint)                                                | `\x12` int64                                                                                                                   |
+| [Int64/UInt64](/ja/reference/data-types/int-uint)                                          | `\x12` int64                                                                                                                   |
+| [Float32/Float64](/ja/reference/data-types/float)                                          | `\x01` double                                                                                                                  |
+| [Date](/ja/reference/data-types/date)/[Date32](/ja/reference/data-types/date32)               | `\x10` int32                                                                                                                   |
+| [DateTime](/ja/reference/data-types/datetime)                                              | `\x12` int64                                                                                                                   |
+| [DateTime64](/ja/reference/data-types/datetime64)                                          | `\x09` datetime                                                                                                                |
+| [Decimal32](/ja/reference/data-types/decimal)                                              | `\x10` int32                                                                                                                   |
+| [Decimal64](/ja/reference/data-types/decimal)                                              | `\x12` int64                                                                                                                   |
+| [Decimal128](/ja/reference/data-types/decimal)                                             | `\x05` binary, `\x00` binary subtype, size = 16                                                                                |
+| [Decimal256](/ja/reference/data-types/decimal)                                             | `\x05` binary, `\x00` binary subtype, size = 32                                                                                |
+| [Int128/UInt128](/ja/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` binary subtype, size = 16                                                                                |
+| [Int256/UInt256](/ja/reference/data-types/int-uint)                                        | `\x05` binary, `\x00` binary subtype, size = 32                                                                                |
+| [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring) | `\x05` binary, `\x00` binary subtype、または setting output&#95;format&#95;bson&#95;string&#95;as&#95;string が有効な場合は `\x02` string |
+| [UUID](/ja/reference/data-types/uuid)                                                      | `\x05` binary, `\x04` uuid subtype, size = 16                                                                                  |
+| [Array](/ja/reference/data-types/array)                                                    | `\x04` array                                                                                                                   |
+| [Tuple](/ja/reference/data-types/tuple)                                                    | `\x04` array                                                                                                                   |
+| [Named Tuple](/ja/reference/data-types/tuple)                                              | `\x03` document                                                                                                                |
+| [Map](/ja/reference/data-types/map)                                                        | `\x03` document                                                                                                                |
+| [IPv4](/ja/reference/data-types/ipv4)                                                      | `\x10` int32                                                                                                                   |
+| [IPv6](/ja/reference/data-types/ipv6)                                                      | `\x05` binary, `\x00` binary subtype                                                                                           |
+
+入力では、BSON 型と ClickHouse 型の間で次の対応が使用されます。
+
+| BSON 型                                   | ClickHouse 型                                                                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `\x01` double                            | [Float32/Float64](/ja/reference/data-types/float)                                                                                                                          |
+| `\x02` string                            | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)                                                                                 |
+| `\x03` document                          | [Map](/ja/reference/data-types/map)/[Named Tuple](/ja/reference/data-types/tuple)                                                                                             |
+| `\x04` array                             | [Array](/ja/reference/data-types/array)/[Tuple](/ja/reference/data-types/tuple)                                                                                               |
+| `\x05` binary, `\x00` binary subtype     | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)/[IPv6](/ja/reference/data-types/ipv6)                                              |
+| `\x05` binary, `\x02` old binary subtype | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)                                                                                 |
+| `\x05` binary, `\x03` old uuid subtype   | [UUID](/ja/reference/data-types/uuid)                                                                                                                                      |
+| `\x05` binary, `\x04` uuid subtype       | [UUID](/ja/reference/data-types/uuid)                                                                                                                                      |
+| `\x07` ObjectId                          | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)                                                                                 |
+| `\x08` boolean                           | [Bool](/ja/reference/data-types/boolean)                                                                                                                                   |
+| `\x09` datetime                          | [DateTime64](/ja/reference/data-types/datetime64)                                                                                                                          |
+| `\x0A` null value                        | [NULL](/ja/reference/data-types/nullable)                                                                                                                                  |
+| `\x0D` JavaScript code                   | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)                                                                                 |
+| `\x0E` symbol                            | [String](/ja/reference/data-types/string)/[FixedString](/ja/reference/data-types/fixedstring)                                                                                 |
+| `\x10` int32                             | [Int32/UInt32](/ja/reference/data-types/int-uint)/[Decimal32](/ja/reference/data-types/decimal)/[IPv4](/ja/reference/data-types/ipv4)/[Enum8/Enum16](/ja/reference/data-types/enum) |
+| `\x12` int64                             | [Int64/UInt64](/ja/reference/data-types/int-uint)/[Decimal64](/ja/reference/data-types/decimal)/[DateTime64](/ja/reference/data-types/datetime64)                                |
+
+そのほかの BSON 型はサポートされていません。加えて、異なる整数型間の変換も行われます。
+たとえば、BSON の `int32` 値を ClickHouse に [`UInt8`](/ja/reference/data-types/int-uint) として挿入できます。
+
+`Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` のような大きな整数や Decimal は、`\x00` binary subtype を持つ BSON Binary 値から解析できます。
+この場合、このフォーマットはバイナリデータのサイズが想定される値のサイズと一致することを検証します。
+
+<Note>
+  このフォーマットは Big-Endian プラットフォームでは正しく動作しません。
+</Note>
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="inserting-data">
+  ### データの挿入
+</div>
+
+次のデータを含む、`football.bson` という名前の BSON ファイルを使用します。
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+データを挿入します:
+
+```sql
+INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
+```
+
+<div id="reading-data">
+  ### データの読み込み
+</div>
+
+`BSONEachRow`フォーマットを使用してデータを読み込みます。
+
+```sql
+SELECT *
+FROM football INTO OUTFILE 'docs_data/bson/football.bson'
+FORMAT BSONEachRow
+```
+
+<Tip>
+  BSON はバイナリ形式のため、ターミナル上では人間が読める形では表示されません。BSON ファイルを出力するには、`INTO OUTFILE` を使用します。
+</Tip>
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+| 設定                                                                                                                                                                                 | 説明                                                     | デフォルト   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------- |
+| [`output_format_bson_string_as_string`](/ja/reference/settings/formats#output_format_bson_string_as_string)                                                                           | String カラムでは、Binary の代わりに BSON String 型を使用します。         | `false` |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/ja/reference/settings/formats#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | BSONEachRow フォーマットのスキーマ推論時に、未対応の型を持つカラムをスキップできるようにします。 | `false` |

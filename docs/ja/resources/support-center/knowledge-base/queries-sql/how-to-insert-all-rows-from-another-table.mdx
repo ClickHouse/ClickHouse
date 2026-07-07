@@ -1,0 +1,134 @@
+---
+title: あるテーブルから別のテーブルにすべての行を挿入するには？
+description: "あるテーブルから別のテーブルにすべての行を挿入する方法に関するナレッジベース記事。"
+date: 2024-12-17
+tags: ['データ取り込み']
+keywords: ['テーブルから挿入']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## はじめに
+</div>
+
+あるテーブルから別のテーブルへ、すべてのデータを再取り込みする必要が生じることがあります。
+
+たとえば、ステージングテーブルから本番テーブルにデータを再取り込みしたい場合があります。この記事では、`INSERT INTO` ステートメントを使ってこれを行う方法を説明します。
+
+<div id="example">
+  ## 例
+</div>
+
+以下に、動作の仕組みとテスト方法を示す簡単な例を示します。
+
+* サンプルのデータベースを作成します
+
+```sql
+CREATE DATABASE db1;
+```
+
+* サンプルテーブルを作成する
+
+```sql
+CREATE TABLE db1.source_table
+(
+    city VARCHAR,
+    country VARCHAR,
+    continent VARCHAR
+)
+engine = MergeTree()
+ORDER BY continent;
+```
+
+* ソーステーブルにデータを挿入する
+
+```sql
+INSERT INTO db1.source_table (city, country, continent)
+VALUES
+    ('New York', 'USA', 'North America'),
+    ('Tokyo', 'Japan', 'Asia'),
+    ('Berlin', 'Germany', 'Europe'),
+    ('Paris', 'France', 'Europe'),
+    ('Cairo', 'Egypt', 'Africa'),
+    ('Sydney', 'Australia', 'Australia');
+```
+
+* ソーステーブルの行数を確認する
+
+```sql
+SELECT COUNT(*) FROM db1.source_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+* ソーステーブルと同じ構造を持つ新しいテーブルを作成します。
+
+```sql
+CREATE TABLE db1.target_table AS db1.source_table;
+```
+
+* ソーステーブルのすべての行をターゲットテーブルに挿入します。
+
+```sql
+INSERT INTO db1.target_table SELECT * FROM db1.source_table;
+```
+
+* ターゲットテーブルの行数を確認する
+
+```sql
+SELECT COUNT(*) FROM db1.target_table;
+```
+
+```text
+┌─count()─┐
+│      6  │
+└─────────┘
+```
+
+新しいテーブルの構造を変更したい場合は、まずソーステーブルの構造を表示して確認できます。
+
+```sql
+SHOW CREATE TABLE db1.source_table;
+```
+
+次に、変更後の構造で新しいテーブルを作成します。この例では、ターゲットテーブルに新しいカラム `population` を追加します。
+
+```sql
+CREATE TABLE db1.target_table_population
+(
+    `city` String,
+    `country` String,
+    `continent` String,
+    `population` UInt16,
+)
+ENGINE = MergeTree
+ORDER BY continent;
+```
+
+* 新しいカラムを含むソーステーブルのすべての行をターゲットテーブルに挿入します。population フィールドは、すべての行で 0 に設定されます。
+
+```sql
+INSERT INTO db1.target_table_population (city, country, continent, population)
+SELECT city, country, continent, 0 FROM db1.source_table;
+```
+
+* ターゲットテーブルのデータを確認する
+
+```sql
+SELECT * FROM db1.target_table_population LIMIT 3;
+```
+
+```text
+┌─city──────┬─country───┬─continent──────┬─population─┐
+│ New York  │ USA       │ North America  │          0 │
+│ Tokyo     │ Japan     │ Asia           │          0 │
+│ Berlin    │ Germany   │ Europe         │          0 │
+└───────────┴───────────┴────────────────┴────────────┘
+```

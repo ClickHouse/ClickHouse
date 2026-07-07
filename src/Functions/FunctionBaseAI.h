@@ -7,6 +7,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 
+#include <exception>
+
 namespace DB
 {
 
@@ -68,6 +70,11 @@ public:
     /// `ai_function_retry_initial_delay_ms` or `ai_function_max_retries` cannot produce a multi-hour
     /// sleep or overflow `std::chrono::milliseconds`.
     static UInt64 computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 attempt);
+
+    /// Whether a failed provider request should be retried: transient network failures and
+    /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
+    /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
+    static bool isRetriableProviderError(std::exception_ptr eptr);
 
 protected:
     ContextPtr context;

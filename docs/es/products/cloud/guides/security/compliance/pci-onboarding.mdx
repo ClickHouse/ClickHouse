@@ -1,0 +1,93 @@
+---
+sidebarTitle: 'Incorporación a PCI'
+slug: /cloud/security/compliance/pci-onboarding
+title: 'Incorporación a PCI'
+description: 'Obtén más información sobre cómo incorporarte a servicios compatibles con PCI'
+doc_type: 'guide'
+keywords: ['pci', 'cumplimiento', 'seguridad de pagos', 'protección de datos', 'seguridad']
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/es/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="cumplimiento de PCI" />
+
+ClickHouse ofrece servicios que cumplen con el Estándar de Seguridad de Datos de la Industria de Tarjetas de Pago (PCI-DSS) y se audita conforme a los requisitos de proveedor de servicios de nivel 1. Los clientes pueden procesar números de cuenta principales (PAN) en estos servicios habilitando esta función e implementando servicios en una región compatible.
+
+Para obtener más información sobre el programa de compliance de ClickHouse y la disponibilidad de informes de auditoría de terceros, consulte nuestra [descripción general de compliance](/es/products/cloud/reference/security/compliance-overview). Para obtener una copia de nuestro documento de responsabilidad compartida de PCI, visite nuestro [Trust Center](https://trust.clickhouse.com). Además, los clientes deben revisar nuestra página de [funciones de seguridad](/es/products/cloud/features/security) para seleccionar e implementar los controles de seguridad adecuados para sus cargas de trabajo.
+
+Esta página describe el proceso para habilitar la implementación de servicios compatibles con PCI en ClickHouse Cloud.
+
+<Steps>
+  <Step>
+    ### Regístrese en los servicios Enterprise
+
+    1. Seleccione el nombre de su organización en la esquina inferior izquierda de la consola.
+    2. Haga clic en **Billing**.
+    3. Revise su **Plan** en la esquina superior izquierda.
+    4. Si su **Plan** es **Enterprise**, vaya a la siguiente sección. De lo contrario, haga clic en **Change plan**.
+    5. Seleccione **Switch to Enterprise**.
+  </Step>
+
+  <Step>
+    ### Habilite PCI para su organización
+
+    1. Seleccione el nombre de su organización en la esquina inferior izquierda de la consola.
+    2. Haga clic en **Organization details**.
+    3. Active **Enable PCI**.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="Habilitar PCI" background="black" />
+
+    <br />
+
+    4. Una vez habilitado, se pueden implementar servicios PCI dentro de la organización.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI habilitado" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### Implemente servicios en regiones compatibles con PCI
+
+    1. Seleccione **New service** en la esquina superior izquierda de la pantalla de inicio de la consola
+    2. Cambie **Tipo de región** a **HIPAA compliant**
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="Implementar en una región PCI" background="black" />
+
+    <br />
+
+    3. Introduzca un nombre para el servicio y complete la información restante
+
+    Para consultar una lista completa de proveedores cloud y servicios compatibles con PCI, revise nuestra página de [Supported cloud regions](/es/products/cloud/reference/supported-regions).
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## Migrar servicios existentes
+</div>
+
+Se recomienda encarecidamente a los clientes desplegar servicios en entornos compatibles cuando sea necesario. El proceso para migrar servicios de una región estándar a una región compatible con PCI implica restaurarlos desde una copia de seguridad y puede requerir cierto tiempo de inactividad.
+
+Si es necesario migrar de regiones estándar a regiones compatibles con PCI, sigue estos pasos para realizar migraciones de autoservicio:
+
+1. Selecciona el servicio que se va a migrar.
+2. Haz clic en **Copias de seguridad** en el panel izquierdo.
+3. Selecciona los tres puntos situados a la izquierda de la copia de seguridad que se va a restaurar.
+4. Selecciona el **Tipo de región** para restaurar la copia de seguridad en una región compatible con PCI.
+5. Una vez completada la restauración, ejecuta algunas consultas para verificar que los esquemas y los recuentos de registros sean los esperados.
+6. Elimina el servicio anterior.
+
+<Info>
+  **Restricciones**
+
+  Los servicios deben permanecer en el mismo proveedor de nube y en la misma región geográfica. Este proceso migra el servicio a un entorno compatible dentro del mismo proveedor de nube y la misma región.
+</Info>

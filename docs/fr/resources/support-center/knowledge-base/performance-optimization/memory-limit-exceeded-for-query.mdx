@@ -1,0 +1,80 @@
+---
+title: 'Limite de mémoire dépassée pour la requête'
+description: 'Résolution des erreurs de dépassement de la limite de mémoire pour une requête'
+date: 2025-07-25
+tags: ['Erreurs et exceptions']
+keywords: ['OOM', 'limite de mémoire dépassée']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="troubleshooting-out-of-memory-issues">
+  ## Limite de mémoire dépassée pour la requête
+</div>
+
+Pour un nouvel utilisateur, ClickHouse peut souvent sembler magique : chaque requête est extrêmement rapide,
+même sur les plus gros ensembles de données et les requêtes les plus ambitieuses. Inévitablement, cependant,
+l’utilisation en conditions réelles met aussi les limites de ClickHouse à l’épreuve. Les requêtes qui dépassent la
+limite de mémoire peuvent avoir plusieurs causes. Le plus souvent, nous observons de grosses jointures ou des
+agrégations sur des champs à forte cardinalité. Si les performances sont critiques et que ces
+requêtes sont nécessaires, nous recommandons souvent aux utilisateurs de simplement monter en capacité — ce que
+ClickHouse Cloud fait automatiquement et sans effort afin de garantir que vos requêtes
+restent réactives. Nous comprenons toutefois que, dans les environnements self-managed,
+cela n’est pas toujours simple, et que des performances optimales ne sont pas forcément nécessaires.
+Dans ce cas, les utilisateurs disposent de plusieurs options.
+
+<div id="aggregations">
+  ### Agrégations
+</div>
+
+Pour les scénarios d’agrégation ou de tri gourmands en mémoire, les utilisateurs peuvent utiliser respectivement les paramètres
+[`max_bytes_before_external_group_by`](/fr/reference/settings/session-settings#max_bytes_before_external_group_by)
+et [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings#max_bytes_ratio_before_external_sort).
+Le premier est traité en détail [ici](/fr/reference/statements/select/group-by#group-by-in-external-memory).
+
+En résumé, cela garantit que toute agrégation peut être déportée sur disque si un
+seuil de mémoire est dépassé. Cela aura inévitablement un impact sur les performances des requêtes, mais
+contribuera à éviter que les requêtes ne provoquent une erreur d’OOM. Le second paramètre de tri aide à résoudre des problèmes
+similaires liés aux tris gourmands en mémoire. Cela peut être particulièrement important dans des
+environnements distribués où un nœud coordinateur reçoit des réponses triées
+de shards enfants. Dans ce cas, le serveur coordinateur peut être amené à trier un
+jeu de données plus volumineux que la mémoire dont il dispose. Avec [`max_bytes_before_external_sort`](/fr/reference/settings/session-settings#max_bytes_ratio_before_external_sort),
+le tri peut être autorisé à déborder sur le disque. Ce paramètre est également utile dans
+les cas où l’utilisateur a un `ORDER BY` après un `GROUP BY` avec un `LIMIT`,
+en particulier lorsque la requête est distribuée.
+
+<div id="joins">
+  ### Jointures
+</div>
+
+Pour les jointures, les utilisateurs peuvent sélectionner différents algorithmes `JOIN`, ce qui peut aider à
+réduire la mémoire nécessaire. Par défaut, les jointures utilisent le hash join, qui offre
+la meilleure couverture fonctionnelle et souvent les meilleures performances.
+Cet algorithme charge en mémoire la table située à droite du `JOIN` dans une table de hachage,
+sur laquelle la table de gauche est ensuite évaluée. Pour minimiser l’utilisation de la mémoire,
+les utilisateurs doivent donc placer la plus petite table à droite. Cette approche
+présente toutefois encore des limites lorsque la mémoire est contrainte. Dans ce cas,
+la jointure `partial_merge` peut être activée via le paramètre [`join_algorithm`](/fr/reference/settings/session-settings#join_algorithm).
+Cette variante de l’[algorithme de tri-fusion](https://en.wikipedia.org/wiki/Sort-merge_join)
+commence par trier la table de droite en blocs et à créer un index min-max pour ceux-ci.
+Elle trie ensuite des parties de la table de gauche selon la clé de jointure, puis les joint à la
+table de droite. L’index min-max est utilisé pour ignorer les blocs inutiles de la table de droite.
+Cette méthode consomme moins de mémoire, au détriment des performances. En poussant ce concept
+plus loin, l’algorithme `full_sorting_merge` permet d’exécuter un `JOIN` lorsque
+la partie droite est très volumineuse, ne tient pas en mémoire et que les lookup sont
+impossibles, par exemple dans le cas d’une sous-requête complexe. Dans ce cas, les parties droite et gauche
+sont toutes deux triées sur disque si elles ne tiennent pas en mémoire, ce qui permet de
+joindre de grandes tables.
+
+<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Algorithmes de jointure" />
+
+Depuis la version 20.3, ClickHouse prend en charge la valeur auto pour le paramètre `join_algorithm`.
+Cela indique à ClickHouse d’appliquer une approche adaptative des jointures, dans laquelle l’algorithme de hash join
+est privilégié jusqu’à ce que les limites de mémoire soient dépassées, auquel cas l’algorithme
+partial&#95;merge est tenté. Enfin, concernant les jointures, nous encourageons
+les lecteurs à bien comprendre le comportement des jointures distribuées et la manière de minimiser
+leur consommation de mémoire. Vous trouverez plus d’informations [ici](/fr/reference/statements/in#distributed-subqueries).

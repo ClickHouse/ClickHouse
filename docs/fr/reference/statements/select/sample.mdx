@@ -1,0 +1,121 @@
+---
+description: 'Documentation de la clause SAMPLE'
+sidebarTitle: 'SAMPLE'
+slug: /sql-reference/statements/select/sample
+title: 'Clause SAMPLE'
+doc_type: 'reference'
+---
+
+La clause `SAMPLE` permet un traitement approximatif des requêtes `SELECT`.
+
+Lorsque l’échantillonnage des données est activé, la requête n’est pas exécutée sur l’ensemble des données, mais seulement sur une certaine fraction de celles-ci (un échantillon). Par exemple, si vous devez calculer des statistiques sur l’ensemble des visites, il suffit d’exécuter la requête sur 1/10 des visites, puis de multiplier le résultat par 10.
+
+Le traitement approximatif des requêtes peut être utile dans les cas suivants :
+
+* Lorsque vous avez des exigences strictes en matière de latence (par exemple inférieure à 100 ms), mais que vous ne pouvez pas justifier le coût de ressources matérielles supplémentaires pour les satisfaire.
+* Lorsque vos données brutes ne sont pas exactes, et qu’une approximation ne dégrade donc pas sensiblement la qualité.
+* Lorsque les exigences métier visent des résultats approximatifs (pour des raisons de coût, ou pour réserver les résultats exacts aux utilisateurs premium).
+
+<Note>
+  Vous ne pouvez utiliser l’échantillonnage qu’avec les tables de la famille [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree), et uniquement si l’expression d’échantillonnage a été spécifiée lors de la création de la table (voir [moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)).
+</Note>
+
+Les fonctionnalités de l’échantillonnage des données sont listées ci-dessous :
+
+* L’échantillonnage des données est un mécanisme déterministe. Le résultat de la même requête `SELECT .. SAMPLE` est toujours identique.
+* L’échantillonnage fonctionne de manière cohérente sur différentes tables. Pour les tables avec une seule clé d’échantillonnage, un échantillon avec le même coefficient sélectionne toujours le même sous-ensemble de données possibles. Par exemple, un échantillon d’identifiants utilisateur prend les lignes correspondant au même sous-ensemble de tous les identifiants utilisateur possibles dans différentes tables. Cela signifie que vous pouvez utiliser l’échantillon dans des sous-requêtes de la clause [IN](/fr/reference/statements/in). Vous pouvez également joindre des échantillons à l’aide de la clause [JOIN](/fr/reference/statements/select/join).
+* L’échantillonnage permet de lire moins de données depuis le disque. Notez que vous devez spécifier correctement la clé d’échantillonnage. Pour plus d’informations, consultez [Création d’une table MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table).
+
+Pour la clause `SAMPLE`, la syntaxe suivante est prise en charge :
+
+| Syntaxe de la clause SAMPLE | Description                                                                                                                                                                                                                                                       |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SAMPLE k`                  | Ici, `k` est un nombre compris entre 0 et 1. La requête est exécutée sur une fraction `k` des données. Par exemple, `SAMPLE 0.1` exécute la requête sur 10 % des données. [En savoir plus](#sample-k)                                                             |
+| `SAMPLE n`                  | Ici, `n` est un entier suffisamment grand. La requête est exécutée sur un échantillon d’au moins `n` lignes (mais pas significativement plus). Par exemple, `SAMPLE 10000000` exécute la requête sur un minimum de 10 000 000 lignes. [En savoir plus](#sample-n) |
+| `SAMPLE k OFFSET m`         | Ici, `k` et `m` sont des nombres compris entre 0 et 1. La requête est exécutée sur un échantillon représentant une fraction `k` des données. Les données utilisées pour l’échantillon sont décalées d’une fraction `m`. [En savoir plus](#sample-k-offset-m)      |
+
+<div id="sample-k">
+  ## SAMPLE K
+</div>
+
+Ici, `k` est un nombre compris entre 0 et 1 (les notations fractionnaire et décimale sont toutes deux prises en charge). Par exemple, `SAMPLE 1/2` ou `SAMPLE 0.5`.
+
+Dans une clause `SAMPLE k`, l&#39;échantillon est prélevé sur une fraction `k` des données. L&#39;exemple est présenté ci-dessous :
+
+```sql
+SELECT
+    Title,
+    count() * 10 AS PageViews
+FROM hits_distributed
+SAMPLE 0.1
+WHERE
+    CounterID = 34
+GROUP BY Title
+ORDER BY PageViews DESC LIMIT 1000
+```
+
+Dans cet exemple, la requête est exécutée sur un échantillon représentant 0,1 (10 %) des données. Les valeurs des fonctions d’agrégation ne sont pas corrigées automatiquement. Pour obtenir un résultat approximatif, la valeur `count()` est donc multipliée manuellement par 10.
+
+<div id="sample-n">
+  ## SAMPLE N
+</div>
+
+Ici, `n` est un entier suffisamment grand. Par exemple, `SAMPLE 10000000`.
+
+Dans ce cas, la requête est exécutée sur un échantillon d’au moins `n` lignes (mais pas sensiblement plus). Par exemple, `SAMPLE 10000000` exécute la requête sur un minimum de 10 000 000 lignes.
+
+Comme l’unité minimale de lecture des données est un granule (sa taille est définie par le paramètre `index_granularity`), il est judicieux de définir un échantillon bien plus grand que la taille du granule.
+
+Lors de l’utilisation de la clause `SAMPLE n`, vous ne savez pas quel pourcentage relatif des données a été traité. Vous ne connaissez donc pas le coefficient par lequel les fonctions d’agrégation doivent être multipliées. Utilisez la colonne virtuelle `_sample_factor` pour obtenir un résultat approximatif.
+
+La colonne `_sample_factor` contient des coefficients relatifs calculés dynamiquement. Cette colonne est créée automatiquement lorsque vous [créez](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) une table avec la clé d’échantillonnage spécifiée. Des exemples d’utilisation de la colonne `_sample_factor` sont présentés ci-dessous.
+
+Considérons la table `visits`, qui contient des statistiques sur les visites du site. Le premier exemple montre comment calculer le nombre de pages vues :
+
+```sql
+SELECT sum(PageViews * _sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+L’exemple suivant montre comment calculer le nombre total de visites :
+
+```sql
+SELECT sum(_sample_factor)
+FROM visits
+SAMPLE 10000000
+```
+
+L’exemple ci-dessous montre comment calculer la durée moyenne d’une session. Notez qu’il n’est pas nécessaire d’utiliser le coefficient relatif pour calculer la moyenne.
+
+```sql
+SELECT avg(Duration)
+FROM visits
+SAMPLE 10000000
+```
+
+<div id="sample-k-offset-m">
+  ## SAMPLE K OFFSET M
+</div>
+
+Ici, `k` et `m` sont des nombres compris entre 0 et 1. Des exemples figurent ci-dessous.
+
+**Exemple 1**
+
+```sql
+SAMPLE 1/10
+```
+
+Dans cet exemple, l’échantillon représente un dixième de l’ensemble des données :
+
+`[++------------]`
+
+**Exemple 2**
+
+```sql
+SAMPLE 1/10 OFFSET 1/2
+```
+
+Ici, un échantillon de 10 % est prélevé sur la seconde moitié des données.
+
+`[------++------]`

@@ -90,22 +90,18 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
     ColumnPtr mapped,
     const ColumnWithTypeAndName * fixed_arguments)
 {
-    [[maybe_unused]] const auto limit = [&]() -> size_t
+    /// The limit (how many elements to partially sort) may differ from row to row when it is passed
+    /// as a non-constant column, so it is read per-row inside the loop below.
+    [[maybe_unused]] const IColumn * limit_column = nullptr;
+    if constexpr (is_partial)
     {
-        if constexpr (is_partial)
-        {
-            if (!fixed_arguments)
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR,
-                    "Expected fixed arguments to get the limit for partial array sort"
-                );
+        if (!fixed_arguments)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected fixed arguments to get the limit for partial array sort");
 
-            /// During dryRun the input column might be empty
-            if (!fixed_arguments[0].column->empty())
-                return fixed_arguments[0].column->getUInt(0);
-        }
-        return 0;
-    }();
+        limit_column = fixed_arguments[0].column.get();
+    }
 
     const ColumnArray::Offsets & offsets = array.getOffsets();
 
@@ -122,6 +118,7 @@ ColumnPtr ArraySortImpl<positive, is_partial>::execute(
         auto next_offset = offsets[i]; \
         if constexpr (is_partial) \
         { \
+            const size_t limit = limit_column->getUInt(i); \
             if (limit) \
             { \
                 const auto effective_limit = std::min<size_t>(limit, next_offset - current_offset); \

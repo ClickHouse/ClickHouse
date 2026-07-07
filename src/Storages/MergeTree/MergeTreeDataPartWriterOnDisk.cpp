@@ -1,15 +1,26 @@
 #include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Compression/CompressionFactory.h>
+#include <IO/HashingWriteBuffer.h>
 #include <IO/NullWriteBuffer.h>
+#include <IO/PackedFilesWriter.h>
+#include <Poco/String.h>
+#include <base/find_symbols.h>
 
 namespace ProfileEvents
 {
@@ -23,6 +34,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsUInt64 index_granularity;
     extern const MergeTreeSettingsUInt64 index_granularity_bytes;
+    extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
 }
 
 namespace ErrorCodes
@@ -83,13 +95,16 @@ void MergeTreeDataPartWriterOnDisk::cancel() noexcept
 
     for (auto & stream : skip_indices_streams_holders)
         stream->cancel();
+
+    if (skip_indices_packed_file)
+        skip_indices_packed_file->cancel();
 }
 
 size_t MergeTreeDataPartWriterOnDisk::computeIndexGranularity(const Block & block) const
 {
     return DB::computeIndexGranularity(
         block.rows(),
-        block.bytes(),
+        getBlockSizeForGranularity(block),
         (*storage_settings)[MergeTreeSetting::index_granularity_bytes],
         (*storage_settings)[MergeTreeSetting::index_granularity],
         settings.blocks_are_granules_size,
@@ -121,6 +136,19 @@ void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 
 void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
+    const size_t packed_spill_threshold = (*storage_settings)[MergeTreeSetting::packed_skip_index_max_bytes];
+    /// packed_skip_index_max_bytes = 0 disables packing entirely (always per-file).
+    const bool packing_enabled = packed_spill_threshold > 0;
+
+    /// Secondary writers (vertical-merge per-column `MergedColumnOnlyOutputStream`) borrow
+    /// the outer writer's `PackedFilesWriter` so the two writers don't both try to write
+    /// `skp_idx.packed`. The owner of the borrowed writer is responsible for finalizing the
+    /// archive; see `fillSkipIndicesChecksums`.
+    if (settings.external_packed_skip_indices_writer)
+        skip_indices_packed_writer_borrowed = settings.external_packed_skip_indices_writer;
+    else if (packing_enabled)
+        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>();
+
     if (skip_indices.empty())
         return;
 
@@ -128,35 +156,64 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
+    PackedFilesWriter * packed_writer_for_streams
+        = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+
     for (const auto & skip_index : skip_indices)
     {
         auto index_name = skip_index->getFileName();
         auto index_substreams = skip_index->getSubstreams();
+
+        /// Full-text indices are not supported and never packed: their merge output goes
+        /// through MergeTextIndexesTask which writes standalone files.
+        const bool packs_this_index = packing_enabled
+            && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr;
+
         auto & index_streams = skip_indices_streams.emplace_back();
 
         for (const auto & index_substream : index_substreams)
         {
-            auto full_stream_name = index_name + index_substream.suffix;
-            auto stream_name = replaceFileNameToHashIfNeeded(full_stream_name, *storage_settings, data_part_storage.get());
+            if (index_substream.extension == String(PackedFilesIO::ARCHIVE_EXTENSION))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Skip index '{}' uses reserved substream extension '{}'", skip_index->index.name, index_substream.extension);
+
+            /// The "logical" stream name (skp_idx_<name>[.suffix]) is what the in-archive virtual
+            /// file uses; the on-disk per-file substream may use a hashed form to fit filesystem
+            /// limits. We pass both into the stream's size-adaptive packing:
+            ///   - logical_stream_name: used as the packed_writer virtual filename when the
+            ///     substream stays in the archive (no FS length limit there).
+            ///   - on_disk_stream_name: used as the standalone-file path when the substream
+            ///     spills past the size threshold.
+            auto logical_stream_name = index_name + index_substream.suffix;
+            auto on_disk_stream_name = replaceFileNameToHashIfNeeded(logical_stream_name, *storage_settings, data_part_storage.get());
+
+            SizeAdaptivePacking packing;
+            if (packs_this_index)
+                packing = {
+                    packed_writer_for_streams,
+                    logical_stream_name + index_substream.extension,
+                    logical_stream_name + marks_file_extension,
+                    packed_spill_threshold};
 
             auto stream = std::make_unique<MergeTreeIndexWriterStream>(
-                stream_name,
+                on_disk_stream_name,
                 data_part_storage,
-                stream_name,
+                on_disk_stream_name,
                 index_substream.extension,
-                stream_name,
+                on_disk_stream_name,
                 marks_file_extension,
                 default_codec,
                 settings.max_compress_block_size,
                 marks_compression_codec,
                 settings.marks_compress_block_size,
-                settings.query_write_settings);
+                settings.query_write_settings,
+                packing);
 
             index_streams[index_substream.type] = stream.get();
             skip_indices_streams_holders.push_back(std::move(stream));
 
             if (settings.save_marks_in_cache)
-                cached_index_marks.emplace(stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
+                cached_index_marks.emplace(on_disk_stream_name, std::make_unique<MarksInCompressedFile::PlainArray>());
         }
 
         skip_indices_aggregators.push_back(skip_index->createIndexAggregator());
@@ -213,6 +270,15 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Bloc
 
 void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block, const Granules & granules_to_write)
 {
+    /// Building a skip index over many granules (e.g. an unbounded `set(0)` index on a
+    /// high-cardinality column) can run for minutes. The INSERT pipeline only enforces query limits
+    /// between blocks, so without a check here a KILLed INSERT keeps building the index to completion.
+    /// checkTimeLimit throws on a cancelled query and on an exceeded max_execution_time in throw mode;
+    /// it is cheap (an atomic flag plus an elapsed-timer read).
+    QueryStatusPtr query_status;
+    if (auto query_context = CurrentThread::tryGetQueryContext())
+        query_status = query_context->getProcessListElementSafe();
+
     /// Filling and writing skip indices like in MergeTreeDataPartWriterWide::writeColumn
     for (size_t i = 0; i < skip_indices.size(); ++i)
     {
@@ -221,6 +287,9 @@ void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block
 
         for (const auto & granule : granules_to_write)
         {
+            if (query_status)
+                query_status->checkTimeLimit();
+
             if (skip_index_accumulated_marks[i] == index_helper->index.granularity)
             {
                 auto index_granule = skip_indices_aggregators[i]->getGranuleAndReset();
@@ -336,28 +405,141 @@ void MergeTreeDataPartWriterOnDisk::fillSkipIndicesChecksums(MergeTreeData::Data
         }
     }
 
-    for (const auto & streams : skip_indices_streams)
+    for (size_t i = 0; i < skip_indices_streams.size(); ++i)
     {
-        for (const auto & [type, stream] : streams)
+        const auto & skip_index = skip_indices[i];
+        const auto & index_substreams = skip_index->getSubstreams();
+        const String logical_index_name = skip_index->getFileName();
+        size_t substream_idx = 0;
+        for (const auto & [type, stream] : skip_indices_streams[i])
         {
+            /// preFinalize drains the chain above (compressor + hashing) so the
+            /// size-adaptive packing buffer at the bottom of the stream has seen all bytes and
+            /// the spilled-vs-packed decision is final.
             stream->preFinalize();
-            stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
+
+            if (stream->isPacked())
+            {
+                /// Packed substream: the reader looks up its marks under the LOGICAL
+                /// (unhashed) stream name because checksums.txt has no per-substream entry
+                /// for it to disambiguate against. cached_index_marks was emplaced under the
+                /// on-disk (possibly hashed) name -- if those differ (long index name +
+                /// replace_long_file_name_to_hash) the prewarmed marks never get hit. Re-key
+                /// the entry under the logical name so prewarm survives.
+                const String & on_disk_key = stream->escaped_column_name;
+                const String logical_key = logical_index_name + index_substreams[substream_idx].suffix;
+                if (on_disk_key != logical_key)
+                {
+                    auto node = cached_index_marks.extract(on_disk_key);
+                    if (!node.empty())
+                    {
+                        node.key() = logical_key;
+                        cached_index_marks.insert(std::move(node));
+                    }
+                }
+
+                /// Substream fit under the spill threshold: bytes are still buffered in memory;
+                /// finalize hands them to skip_indices_packed_writer. No per-file checksum
+                /// entry -- the archive's single checksum covers it.
+                stream->finalize();
+
+                /// Record uncompressed size in the archive index so the size accounting doesn't
+                /// have to read the payload back. Virtual name matches the one passed above.
+                if (MergeTreeIndexSubstream::isCompressed(type))
+                {
+                    PackedFilesWriter * packed_writer =
+                        skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
+                    packed_writer->setUncompressedSize(logical_key + index_substreams[substream_idx].extension, stream->getDataUncompressedSize());
+                }
+            }
+            else
+            {
+                /// Substream spilled to a standalone per-file write on data_part_storage.
+                /// Emit per-file checksum entries; the underlying file will be finalized in
+                /// finishSkipIndicesSerialization below.
+                stream->addToChecksums(checksums, MergeTreeIndexSubstream::isCompressed(type));
+            }
+            ++substream_idx;
         }
     }
+
+    if (skip_indices_packed_writer && skip_indices_packed_writer->hasModifiedFiles())
+    {
+        const String packed_filename{SKIP_INDICES_PACKED_FILENAME};
+        skip_indices_packed_file = getDataPartStorage().writeFile(packed_filename, DBMS_DEFAULT_BUFFER_SIZE, settings.query_write_settings);
+        HashingWriteBuffer packed_hashing(*skip_indices_packed_file);
+
+        auto [packed_index, _] = skip_indices_packed_writer->finalize(packed_hashing, {}, PackedFilesIO::VERSION_WITH_UNCOMPRESSED_SIZE);
+        packed_hashing.finalize();
+
+        auto & checksum = checksums.files[packed_filename];
+        checksum.file_size = packed_hashing.count();
+        checksum.file_hash = packed_hashing.getHash();
+
+        skip_indices_packed_file->preFinalize();
+
+        /// Seed the storage's PackedFilesReader from the in-memory archive index so the per-part
+        /// secondary-indices size accounting (which runs between preFinalize and the actual
+        /// finalize) can answer existsFile / getFileSize without touching disk. On object-storage
+        /// disks the archive file isn't visible until the underlying multipart upload completes,
+        /// which only happens at finalize time; without this seed the accounting caches 0 for
+        /// every packed substream.
+        if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&getDataPartStorage()))
+            disk_storage->seedSkipIndicesPackedReader(packed_index);
+    }
+}
+
+void MergeTreeDataPartWriterOnDisk::preloadPackedSkipIndicesArchive(
+    const DataPartStorageOnDiskBase & source, const NameSet & files)
+{
+    if (files.empty())
+        return;
+
+    /// Create the packed writer on demand: the current setting may not pack any index in this
+    /// part (so initSkipIndices left skip_indices_packed_writer null) but we still need a
+    /// destination archive to carry the preserved entries from source into the new part.
+    /// fillSkipIndicesChecksums emits skp_idx.packed iff this writer has any modified files,
+    /// so a writer holding only preserved entries still produces the archive.
+    if (!skip_indices_packed_writer)
+        skip_indices_packed_writer = std::make_unique<PackedFilesWriter>();
+
+    source.copyPackedSkipIndicesFilesInto(
+        files, *skip_indices_packed_writer, ReadSettings{}, settings.query_write_settings);
 }
 
 void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
 {
+    /// finalize() is idempotent thanks to MergeTreeWriterStream::is_prefinalized
+    /// and WriteBuffer's finalized flag, so packed streams (already finalized in
+    /// fillSkipIndicesChecksums) are safe to revisit here.
     for (auto & stream : skip_indices_streams_holders)
         stream->finalize();
+
+    if (skip_indices_packed_file)
+    {
+        skip_indices_packed_file->finalize();
+        if (sync)
+            skip_indices_packed_file->sync();
+    }
 
     if (sync)
     {
         std::vector<const MergeTreeWriterStream *> streams_to_sync;
         streams_to_sync.reserve(skip_indices_streams_holders.size());
-        for (const auto & stream : skip_indices_streams_holders)
-            streams_to_sync.push_back(stream.get());
-        parallelSyncFiles(streams_to_sync);
+        for (const auto & index_streams : skip_indices_streams)
+        {
+            for (const auto & [_, stream] : index_streams)
+            {
+                /// Packed substreams have no on-disk file to sync; the archive is synced
+                /// separately via skip_indices_packed_file->sync() above. Streams that spilled
+                /// (mixed-layout part: some packed, some per-file) still need their per-file
+                /// data and marks synced.
+                if (!stream->isPacked())
+                    streams_to_sync.push_back(stream);
+            }
+        }
+        if (!streams_to_sync.empty())
+            parallelSyncFiles(streams_to_sync);
     }
 
     if (!skip_indices.empty() && log->is(Poco::Message::PRIO_DEBUG))
@@ -411,6 +593,8 @@ void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(bool sync)
     skip_indices_streams_holders.clear();
     skip_indices_aggregators.clear();
     skip_index_accumulated_marks.clear();
+    skip_indices_packed_file.reset();
+    skip_indices_packed_writer.reset();
 }
 
 Names MergeTreeDataPartWriterOnDisk::getSkipIndicesColumns() const

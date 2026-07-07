@@ -1,0 +1,693 @@
+---
+description: '演算子のドキュメント'
+sidebarTitle: '演算子'
+slug: /sql-reference/operators/
+title: '演算子'
+doc_type: 'reference'
+---
+
+ClickHouse では、クエリのパース時に、演算子の優先度・順位・結合性に応じて、演算子が対応する関数に変換されます。
+
+<div id="access-operators">
+  ## アクセス演算子
+</div>
+
+`a[N]` – 配列の要素にアクセスします。`arrayElement(a, N)` 関数。
+
+`a.N` – タプルの要素にアクセスします。`tupleElement(a, N)` 関数。
+
+<div id="numeric-negation-operator">
+  ## 数値の否定演算子
+</div>
+
+`-a` – `negate (a)` 関数です。
+
+タプルの否定については、[tupleNegate](/ja/reference/functions/regular-functions/tuple-functions#tupleNegate) を参照してください。
+
+<div id="multiplication-and-division-operators">
+  ## 乗算および除算の演算子
+</div>
+
+`a * b` – `multiply(a, b)` 関数です。
+
+タプル を数値で乗算する場合は [tupleMultiplyByNumber](/ja/reference/functions/regular-functions/tuple-functions#tupleMultiplyByNumber)、スカラー積については [dotProduct](/ja/reference/functions/regular-functions/array-functions#arrayDotProduct) を参照してください。
+
+`a / b` – `divide(a, b)` 関数です。
+
+タプル を数値で除算する場合は [tupleDivideByNumber](/ja/reference/functions/regular-functions/tuple-functions#tupleDivideByNumber) を参照してください。
+
+`a % b` – `modulo(a, b)` 関数です。
+
+<div id="addition-and-subtraction-operators">
+  ## 加算演算子と減算演算子
+</div>
+
+`a + b` – `plus(a, b)` 関数。
+
+タプルの加算については、[tuplePlus](/ja/reference/functions/regular-functions/tuple-functions#tuplePlus) を参照してください。
+
+`a - b` – `minus(a, b)` 関数。
+
+タプルの減算については、[tupleMinus](/ja/reference/functions/regular-functions/tuple-functions#tupleMinus) を参照してください。
+
+<div id="comparison-operators">
+  ## 比較演算子
+</div>
+
+<div id="equals-function">
+  ### equals 関数
+</div>
+
+`a = b` – `equals(a, b)` 関数です。
+
+`a == b` – `equals(a, b)` 関数です。
+
+<div id="notequals-function">
+  ### notEquals 関数
+</div>
+
+`a != b` — `notEquals(a, b)` 関数。
+
+`a <> b` — `notEquals(a, b)` 関数。
+
+<div id="lessorequals-function">
+  ### lessOrEquals 関数
+</div>
+
+`a <= b` – `lessOrEquals(a, b)` 関数。
+
+<div id="greaterorequals-function">
+  ### greaterOrEquals 関数
+</div>
+
+`a >= b` — `greaterOrEquals(a, b)` 関数。
+
+<div id="less-function">
+  ### less 関数
+</div>
+
+`a < b` – `less(a, b)` 関数。
+
+<div id="greater-function">
+  ### greater 関数
+</div>
+
+`a > b` – `greater(a, b)` 関数です。
+
+<div id="like-function">
+  ### like 関数
+</div>
+
+`a LIKE b` – `like(a, b)` 関数を表します。
+
+<div id="notlike-function">
+  ### notLike 関数
+</div>
+
+`a NOT LIKE b` — `notLike(a, b)` 関数。
+
+<div id="ilike-function">
+  ### ilike 関数
+</div>
+
+`a ILIKE b` – `ilike(a, b)` 関数と同等です。
+
+<div id="between-function">
+  ### BETWEEN 関数
+</div>
+
+`a BETWEEN b AND c` – `a >= b AND a <= c` と同じ意味です。
+
+`a NOT BETWEEN b AND c` – `a < b OR a > c` と同じ意味です。
+
+<div id="is-not-distinct-from">
+  ### is not distinct from 演算子 (`<=>`)
+</div>
+
+<Note>
+  25.10 以降では、`<=>` を他の演算子と同様に使用できます。
+  25.10 より前は、JOIN 式でしか使用できませんでした。たとえば次のとおりです。
+
+  ```sql
+  CREATE TABLE a (x String) ENGINE = Memory;
+  INSERT INTO a VALUES ('ClickHouse');
+
+  SELECT * FROM a AS a1 JOIN a AS a2 ON a1.x <=> a2.x;
+
+  ┌─x──────────┬─a2.x───────┐
+  │ ClickHouse │ ClickHouse │
+  └────────────┴────────────┘
+  ```
+</Note>
+
+`<=>` 演算子は、`IS NOT DISTINCT FROM` と等価な `NULL` セーフの等価演算子です。
+通常の等価演算子 (`=`) と同様に動作しますが、`NULL` 値も比較できるものとして扱います。
+`NULL` 値同士は等しいものと見なされ、`NULL` を `NULL` 以外の任意の値と比較した場合は、`NULL` ではなく 0 (false) を返します。
+
+```sql
+SELECT
+  'ClickHouse' <=> NULL,
+  NULL <=> NULL
+```
+
+```response
+┌─isNotDistinc⋯use', NULL)─┬─isNotDistinc⋯NULL, NULL)─┐
+│                        0 │                        1 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+<div id="operators-for-working-with-strings">
+  ## Stringを扱う演算子
+</div>
+
+<div id="overlay">
+  ### OVERLAY
+</div>
+
+* `OVERLAY(string PLACING replacement FROM offset)` - `overlay(string, replacement, offset)` 関数。
+* `OVERLAY(string PLACING replacement FROM offset FOR length)` - `overlay(string, replacement, offset, length)` 関数。
+* `OVERLAYUTF8(string PLACING replacement FROM offset)` - `overlayUTF8(string, replacement, offset)` 関数。
+* `OVERLAYUTF8(string PLACING replacement FROM offset FOR length)` - `overlayUTF8(string, replacement, offset, length)` 関数。
+
+<div id="operators-for-working-with-data-sets">
+  ## データセットを扱う演算子
+</div>
+
+[IN 演算子](/ja/reference/statements/in)および [EXISTS](/ja/reference/operators/exists) 演算子を参照してください。
+
+<div id="in-function">
+  ### in 関数
+</div>
+
+`a IN ...` - `in(a, b)` 関数。
+
+<div id="notin-function">
+  ### notIn 関数
+</div>
+
+`a NOT IN ...` に対応する `notIn(a, b)` 関数。
+
+<div id="globalin-function">
+  ### globalIn 関数
+</div>
+
+`a GLOBAL IN ...` – `globalIn(a, b)` 関数です。
+
+<div id="globalnotin-function">
+  ### globalNotIn 関数
+</div>
+
+`a GLOBAL NOT IN ...` — `globalNotIn(a, b)` 関数。
+
+<div id="in-subquery-function">
+  ### in サブクエリ function
+</div>
+
+`a = ANY (subquery)` – `in(a, subquery)` 関数を表します。
+
+<div id="notin-subquery-function">
+  ### notIn サブクエリ関数
+</div>
+
+`a != ANY (subquery)` – `a NOT IN (SELECT singleValueOrNull(*) FROM subquery)` と同じです。
+
+<div id="in-subquery-function">
+  ### in サブクエリ function
+</div>
+
+`a = ALL (subquery)` – `a IN (SELECT singleValueOrNull(*) FROM subquery)` と同じです。
+
+<div id="notin-subquery-function-1">
+  ### notIn サブクエリ function
+</div>
+
+`a != ALL (subquery)` — `notIn(a, subquery)` 関数です。
+
+**例**
+
+ALL を使用したクエリ:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ALL (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+ANY を使うクエリ:
+
+```sql title="Query"
+SELECT number AS a FROM numbers(10) WHERE a > ANY (SELECT number FROM numbers(3, 3));
+```
+
+```text title="Response"
+┌─a─┐
+│ 4 │
+│ 5 │
+│ 6 │
+│ 7 │
+│ 8 │
+│ 9 │
+└───┘
+```
+
+<div id="some-all-on-arrays">
+  ### 配列に対する `SOME` / `ALL`
+</div>
+
+上で説明したサブクエリ形式に加えて、`SOME` / `ALL` の右辺には配列式 (配列リテラル、配列型のカラム、または配列を返す任意の式) を指定できます。これは PostgreSQL スタイルの配列量化子構文です。この構文は parse 時に認識され、配列関数に書き換えられるため、手動で書き換える必要はありません。
+
+| 構文                              | 書き換え後                              |
+| ------------------------------- | ---------------------------------- |
+| `expr = SOME(arr)`              | `has(arr, expr)`                   |
+| `expr <> ALL(arr)`              | `NOT has(arr, expr)`               |
+| `expr OP SOME(arr)` (その他の比較演算子) | `arrayExists(x -> expr OP x, arr)` |
+| `expr OP ALL(arr)` (その他の比較演算子)  | `arrayAll(x -> expr OP x, arr)`    |
+
+`SOME` は存在量化子です (`ANY` の SQL における同義語) 。`=` と `<>` は最適化された実装があるため、特別に `has` / `NOT has` に書き換えられます。一般形では、高階関数の `arrayExists` / `arrayAll` が使われます。
+
+配列形式が認識されるのは、比較演算子 `=`, `==`, `!=`, `<>`, `<=>`, `<`, `<=`, `>`, `>=` のみです。右辺に配列を取れるその他の演算子 — たとえば `LIKE`, `ILIKE`, `NOT LIKE`, `REGEXP`, `IN` — は配列量化子には **書き換えられず**、通常どおりの意味を保ちます。たとえば `'abc' LIKE SOME(['a%', 'b%'])` は配列量化子構文ではありません。そのような場合は、`arrayExists` / `arrayAll` を直接使用してください。
+
+<Info>
+  **配列形式では `ANY` はサポートされていません**
+
+  右辺に配列を指定できるのは `SOME` と `ALL` だけです。`any` は aggregate function でもあるため、`expr = any(x)` という shape の式は関数呼び出しとしての意味のまま扱われます。配列量化子には `SOME` を使用してください。
+</Info>
+
+```sql title="Query"
+SELECT
+    3 = SOME([1, 2, 3, 4]) AS in_array,
+    5 < SOME([1, 2, 6])    AS less_than_some,
+    5 > ALL([1, 2, 3])     AS greater_than_all;
+```
+
+```text title="Response"
+┌─in_array─┬─less_than_some─┬─greater_than_all─┐
+│        1 │              1 │                1 │
+└──────────┴────────────────┴──────────────────┘
+```
+
+<Info>
+  **`NULL` の扱いはサブクエリ形式とは異なります**
+
+  配列形式はパーサー内で書き換えられるため (この段階では `transform_null_in` などのクエリ設定は利用できず、また行単位の配列カラムではアナライザの null-safe な `IN` パスを使えません) 、`has` (`=` / `<>` の場合) および `arrayExists` / `arrayAll` の二値セマンティクスを使用します (これらは `NULL` 比較の不明な結果を `0` に畳み込みます) 。この挙動は、`NULL` の処理が `IN` / `NOT IN` を介して行われ、`transform_null_in` に依存するサブクエリ形式とは異なる場合があります。
+
+  ```sql
+  SELECT NULL = SOME([NULL]);   -- has([NULL], NULL)                  -> 1
+  SELECT NULL <> ALL([NULL]);   -- NOT has([NULL], NULL)              -> 0
+  SELECT NULL < SOME([1]);      -- arrayExists(x -> NULL < x, [1])    -> 0
+  SELECT NULL > ALL([1]);       -- arrayAll(x -> NULL > x, [1])       -> 0
+  ```
+</Info>
+
+<div id="operators-for-working-with-dates-and-times">
+  ## 日付と時刻を扱う演算子
+</div>
+
+<div id="extract">
+  ### EXTRACT
+</div>
+
+```sql
+EXTRACT(part FROM date);
+```
+
+指定した日付から各要素を抽出します。たとえば、指定した日付から月を取得したり、時刻から秒を取得したりできます。
+
+`part` パラメータは、日付のどの要素を取得するかを指定します。使用できる値は次のとおりです。
+
+* `NANOSECOND` — ナノ秒。設定可能な値: 0–999999999。
+* `MICROSECOND` — マイクロ秒。設定可能な値: 0–999999。
+* `MILLISECOND` — ミリ秒。設定可能な値: 0–999。
+* `SECOND` — 秒。設定可能な値: 0–59。
+* `MINUTE` — 分。設定可能な値: 0–59。
+* `HOUR` — 時。設定可能な値: 0–23。
+* `DAY` — 日。設定可能な値: 1–31。
+* `WEEK` — ISO 8601 の週番号。設定可能な値: 1–53。
+* `MONTH` — 月の番号。設定可能な値: 1–12。
+* `QUARTER` — 四半期。設定可能な値: 1–4。
+* `YEAR` — 年。
+* `EPOCH` — Unix timestamp (1970-01-01 00:00:00 UTC からの秒数) 。注: `DateTime64` では、小数秒部分は切り捨てられます。
+* `DOW` — 曜日 (PostgreSQL互換) 。0 = 日曜日、6 = 土曜日。
+* `DOY` — 年内通算日。設定可能な値: 1–366。
+* `ISODOW` — ISO の曜日。1 = 月曜日、7 = 日曜日。
+* `ISOYEAR` — ISO 8601 の週番号に対応する年。
+* `CENTURY` — 世紀。たとえば、2024年は21世紀です。
+* `DECADE` — 十年単位 (年を 10 で割ったもの) 。たとえば、2024年の十年単位の値は 202 です。
+* `MILLENNIUM` — 千年紀。たとえば、2024年は第3千年紀です。
+* `TIMEZONE_HOUR` — オペランドの timezone の UTC オフセットの符号付き時部分。たとえば、`+5:30` は `5` を返し、`-3:30` は `-3` を返します。
+* `TIMEZONE_MINUTE` — オペランドの timezone の UTC オフセットの符号付き分部分。たとえば、`+5:30` は `30` を返し、`-3:30` は `-30` を返します。
+
+`part` パラメータでは大文字と小文字は区別されません。
+
+`date` パラメータは、処理する値を指定します。[Date](/ja/reference/data-types/date)、[Date32](/ja/reference/data-types/date32)、[DateTime](/ja/reference/data-types/datetime)、[DateTime64](/ja/reference/data-types/datetime64)、および [Interval](/ja/reference/data-types/special-data-types/interval) 型がサポートされています。`date` が `Interval` の場合、要求する `part` は、その interval に格納されている kind と一致している必要があります (たとえば、`EXTRACT(DAY FROM INTERVAL 5 DAY)` は許可されますが、`EXTRACT(HOUR FROM INTERVAL 5 DAY)` は拒否されます。これは ClickHouse の interval が単一の kind であるためです) 。`Interval` オペランドの結果は `Int64` です。
+
+例:
+
+```sql
+SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
+SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
+SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
+SELECT EXTRACT(EPOCH FROM toDateTime('2024-01-15 12:30:45', 'UTC'));
+SELECT EXTRACT(DOW FROM toDate('2024-01-15'));
+SELECT EXTRACT(CENTURY FROM toDate('2024-01-01'));
+SELECT EXTRACT(TIMEZONE_HOUR   FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 5
+SELECT EXTRACT(TIMEZONE_MINUTE FROM toDateTime('2024-01-15 12:00:00', 'Asia/Kolkata'));    -- 30
+SELECT EXTRACT(DAY   FROM INTERVAL 40 DAY);                                                -- 40
+SELECT EXTRACT(MONTH FROM INTERVAL 7 MONTH);                                               -- 7
+```
+
+次の例では、テーブルを作成し、そのテーブルに `DateTime` 型の値を挿入します。
+
+```sql
+CREATE TABLE test.Orders
+(
+    OrderId UInt64,
+    OrderName String,
+    OrderDate DateTime
+) ENGINE = MergeTree
+ORDER BY ();
+```
+
+```sql
+INSERT INTO test.Orders VALUES (1, 'Jarlsberg Cheese', toDateTime('2008-10-11 13:23:44'));
+```
+
+```sql
+SELECT
+    toYear(OrderDate) AS OrderYear,
+    toMonth(OrderDate) AS OrderMonth,
+    toDayOfMonth(OrderDate) AS OrderDay,
+    toHour(OrderDate) AS OrderHour,
+    toMinute(OrderDate) AS OrderMinute,
+    toSecond(OrderDate) AS OrderSecond
+FROM test.Orders;
+```
+
+```text
+┌─OrderYear─┬─OrderMonth─┬─OrderDay─┬─OrderHour─┬─OrderMinute─┬─OrderSecond─┐
+│      2008 │         10 │       11 │        13 │          23 │          44 │
+└───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
+```
+
+さらに多くの例は[テスト](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql)で確認できます。
+
+<div id="interval">
+  ### INTERVAL
+</div>
+
+[Date](/ja/reference/data-types/date) 型および [DateTime](/ja/reference/data-types/datetime) 型の値に対する算術演算で使用する、[Interval](/ja/reference/data-types/special-data-types/interval) 型の値を作成します。
+
+インターバルの種類:
+
+* `SECOND`
+* `MINUTE`
+* `HOUR`
+* `DAY`
+* `WEEK`
+* `MONTH`
+* `QUARTER`
+* `YEAR`
+
+`INTERVAL` 値の設定時には、文字列リテラルを使用することもできます。たとえば、`INTERVAL 1 HOUR` は `INTERVAL '1 hour'` または `INTERVAL '1' hour` と同じです。
+
+<Tip>
+  種類の異なるインターバルは組み合わせられません。`INTERVAL 4 DAY 1 HOUR` のような式は使用できません。たとえば `INTERVAL 25 HOUR` のように、インターバルはその最小単位以下の単位で指定してください。以下の例のように、連続した演算を使用できます。
+</Tip>
+
+例:
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:09:50 │                                    2020-11-08 01:09:50 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4 day' + INTERVAL '3 hour';
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay(4)), toIntervalHour(3))─┐
+│ 2020-11-03 22:12:10 │                                    2020-11-08 01:12:10 │
+└─────────────────────┴────────────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT now() AS current_date_time, current_date_time + INTERVAL '4' day + INTERVAL '3' hour;
+```
+
+```text
+┌───current_date_time─┬─plus(plus(now(), toIntervalDay('4')), toIntervalHour('3'))─┐
+│ 2020-11-03 22:33:19 │                                        2020-11-08 01:33:19 │
+└─────────────────────┴────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  `INTERVAL` 構文または `addDays` 関数を常に使用することを推奨します。単純な加算や減算 (`now() + ...` のような構文) では、時刻に関する設定が考慮されません。たとえば、夏時間です。
+</Note>
+
+例:
+
+```sql
+SELECT toDateTime('2014-10-26 00:00:00', 'Asia/Istanbul') AS time, time + 60 * 60 * 24 AS time_plus_24_hours, time + toIntervalDay(1) AS time_plus_1_day;
+```
+
+```text
+┌────────────────time─┬──time_plus_24_hours─┬─────time_plus_1_day─┐
+│ 2014-10-26 00:00:00 │ 2014-10-26 23:00:00 │ 2014-10-27 00:00:00 │
+└─────────────────────┴─────────────────────┴─────────────────────┘
+```
+
+**関連項目**
+
+* [Interval](/ja/reference/data-types/special-data-types/interval) データ型
+* [toInterval](/ja/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 型変換関数
+
+<div id="date-time-addition">
+  ### 日付と時刻の加算
+</div>
+
+[Date](/ja/reference/data-types/date) または [Date32](/ja/reference/data-types/date32) の値には、`+` 演算子を使用して [Time](/ja/reference/data-types/time) または [Time64](/ja/reference/data-types/time64) の値を加算できます。結果は、指定した時刻の日付を表す [DateTime](/ja/reference/data-types/datetime) または [DateTime64](/ja/reference/data-types/datetime64) になります。この演算は可換です。
+
+結果の型は、オペランドの型によって決まります。
+
+| 左オペランド   | 右オペランド      | 結果の型            |
+| -------- | ----------- | --------------- |
+| `Date`   | `Time`      | `DateTime`      |
+| `Date`   | `Time64(s)` | `DateTime64(s)` |
+| `Date32` | `Time`      | `DateTime64(0)` |
+| `Date32` | `Time64(s)` | `DateTime64(s)` |
+
+<Note>
+  結果には [session timezone](/ja/reference/settings/session-settings#session_timezone) が使用されます (session timezone が設定されていない場合は、server のデフォルトタイムゾーンが使用されます) 。結果が表現可能な範囲を超えた場合の動作は、[`date_time_overflow_behavior`](/ja/reference/settings/formats#date_time_overflow_behavior) 設定で制御されます。
+</Note>
+
+例:
+
+```sql
+SET use_legacy_to_time = 0;
+SELECT toDate('2024-07-15') + toTime('14:30:25') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25 │ DateTime       │
+└─────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toDate('2024-07-15') + toTime64('14:30:25.123456', 6) AS dt, toTypeName(dt);
+```
+
+```text
+┌─────────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 14:30:25.123456 │ DateTime64(6)  │
+└────────────────────────────┴────────────────┘
+```
+
+```sql
+SELECT toTime64('23:59:59.999', 3) + toDate32('2024-07-15') AS dt, toTypeName(dt);
+```
+
+```text
+┌──────────────────────dt─┬─toTypeName(dt)─┐
+│ 2024-07-15 23:59:59.999 │ DateTime64(3)  │
+└─────────────────────────┴────────────────┘
+```
+
+<div id="logical-and-operator">
+  ## 論理 AND 演算子
+</div>
+
+構文 `SELECT a AND b` — 関数 [and](/ja/reference/functions/regular-functions/logical-functions#and) を用いて `a` と `b` の論理積を計算します。
+
+<div id="logical-or-operator">
+  ## 論理 OR 演算子
+</div>
+
+構文 `SELECT a OR b` — 関数 [or](/ja/reference/functions/regular-functions/logical-functions#or) を使用して、`a` と `b` の論理和を計算します。
+
+<div id="logical-negation-operator">
+  ## 論理否定演算子
+</div>
+
+構文 `SELECT NOT a` — 関数 [not](/ja/reference/functions/regular-functions/logical-functions#not) を使って、`a` の論理否定を計算します。
+
+<div id="conditional-operator">
+  ## 条件演算子
+</div>
+
+`a ? b : c` – `if(a, b, c)` 関数。
+
+注:
+
+条件演算子は、まず b と c の値を計算し、次に条件 a が満たされているかどうかを判定して、対応する値を返します。`b` または `C` が [arrayJoin()](/ja/reference/functions/regular-functions/array-join) 関数である場合、&quot;a&quot; の条件にかかわらず各行が複製されます。
+
+<div id="conditional-expression">
+  ## 条件式
+</div>
+
+```sql
+CASE [x]
+    WHEN a THEN b
+    [WHEN ... THEN ...]
+    [ELSE c]
+END
+```
+
+`x` が指定されている場合は、`transform(x, [a, ...], [b, ...], c)` 関数が使用されます。指定されていない場合は、`multiIf(a, b, ..., c)` が使用されます。
+
+式に `ELSE c` 句がない場合、デフォルト値は `NULL` です。
+
+`transform` 関数は `NULL` では動作しません。
+
+<div id="concatenation-operator">
+  ## 連結演算子
+</div>
+
+`s1 || s2` – `concat(s1, s2) 関数。`
+
+<div id="lambda-creation-operator">
+  ## ラムダ作成演算子
+</div>
+
+`x -> expr` – `lambda(x, expr)` 関数。
+
+以下の演算子は括弧であるため、優先順位を持ちません:
+
+<div id="array-creation-operator">
+  ## Array作成演算子
+</div>
+
+`[x1, ...]` – `array(x1, ...)` 関数。
+
+<div id="tuple-creation-operator">
+  ## Tuple 生成演算子
+</div>
+
+`(x1, x2, ...)` – `tuple(x2, x2, ...)` 関数。
+
+<div id="associativity">
+  ## 結合性
+</div>
+
+すべての二項演算子は左結合です。たとえば、`1 + 2 + 3` は `plus(plus(1, 2), 3)` に変換されます。
+ただし、常に期待どおりの動作になるとは限りません。たとえば、`SELECT 4 > 2 > 3` の結果は 0 になります。
+
+効率化のため、`and` 関数と `or` 関数は任意個の引数を受け取れます。対応する `AND` および `OR` 演算子の連鎖は、これらの関数への単一の呼び出しに変換されます。
+
+<div id="checking-for-null">
+  ## `NULL` かどうかの確認
+</div>
+
+ClickHouse は `IS NULL` および `IS NOT NULL` 演算子をサポートしています。
+
+<div id="is_null">
+  ### IS NULL
+</div>
+
+* [Nullable](/ja/reference/data-types/nullable) 型の値に対して、`IS NULL` 演算子は次の値を返します。
+  * 値が `NULL` の場合は `1`。
+  * それ以外の場合は `0`。
+* その他の値に対しては、`IS NULL` 演算子は常に `0` を返します。
+
+[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすることで最適化できます。`optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NULL FROM table` は `SELECT n.null FROM TABLE` に変換されます。
+
+{/* */}
+
+```sql
+SELECT x+100 FROM t_null WHERE y IS NULL
+```
+
+```text
+┌─plus(x, 100)─┐
+│          101 │
+└──────────────┘
+```
+
+<div id="is_not_null">
+  ### IS NOT NULL
+</div>
+
+* [Nullable](/ja/reference/data-types/nullable) 型の値に対しては、`IS NOT NULL` 演算子は次の値を返します。
+  * 値が `NULL` の場合は `0`
+  * それ以外の場合は `1`
+* その他の値に対しては、`IS NOT NULL` 演算子は常に `1` を返します。
+
+{/* */}
+
+```sql
+SELECT * FROM t_null WHERE y IS NOT NULL
+```
+
+```text
+┌─x─┬─y─┐
+│ 2 │ 3 │
+└───┴───┘
+```
+
+[optimize&#95;functions&#95;to&#95;subcolumns](/ja/reference/settings/session-settings#optimize_functions_to_subcolumns) 設定を有効にすると、最適化できます。`optimize_functions_to_subcolumns = 1` の場合、関数はカラムデータ全体を読み取って処理する代わりに、[null](/ja/reference/data-types/nullable#finding-null) サブカラムだけを読み取ります。クエリ `SELECT n IS NOT NULL FROM table` は `SELECT NOT n.null FROM TABLE` に変換されます。
+
+<div id="checking-boolean-values">
+  ## ブール値の確認
+</div>
+
+ClickHouse は、`IS TRUE`、`IS FALSE`、`IS UNKNOWN`、`IS NOT TRUE`、`IS NOT FALSE`、`IS NOT UNKNOWN` の演算子をサポートしています。
+これらは、[Bool](/ja/reference/data-types/boolean) および `Nullable(Bool)` の式に対して使用されます。
+
+* `expr IS TRUE` は、`expr` が `true` の場合にのみ `1` を返します。
+* `expr IS FALSE` は、`expr` が `false` の場合にのみ `1` を返します。
+* `expr IS UNKNOWN` は、`expr` が `NULL` の場合にのみ `1` を返します。
+* `expr IS NOT TRUE` は、`expr` が `false` または `NULL` の場合に `1` を返します。
+* `expr IS NOT FALSE` は、`expr` が `true` または `NULL` の場合に `1` を返します。
+* `expr IS NOT UNKNOWN` は、`expr` が `NULL` ではない場合に `1` を返します。
+
+ブール式では、`IS UNKNOWN` は `IS NULL` と等価であり、`IS NOT UNKNOWN` は `IS NOT NULL` と等価です。
+
+{/* */}
+
+```sql
+CREATE TABLE t_bool (x Nullable(Bool)) ENGINE = Memory;
+INSERT INTO t_bool VALUES (true), (false), (NULL);
+
+SELECT
+    x,
+    x IS TRUE,
+    x IS FALSE,
+    x IS UNKNOWN,
+    x IS NOT TRUE,
+    x IS NOT FALSE,
+    x IS NOT UNKNOWN
+FROM t_bool;
+```

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/ClientCertificateInfo.h>
 #include <Interpreters/ClientInfo.h>
 #include <Access/Common/AuthenticationType.h>
 #include <Core/NamesAndAliases.h>
@@ -60,6 +61,14 @@ struct SessionLogElement
     ClientInfo client_info;
     String auth_failure_reason;
 
+    /// TLS client certificate presented on this connection (empty if none was presented).
+    bool has_certificate = false;
+    Strings certificate_subjects;
+    String certificate_serial;
+    String certificate_issuer;
+    time_t certificate_not_before{};
+    time_t certificate_not_after{};
+
     static std::string name() { return "SessionLog"; }
 
     static ColumnsDescription getColumnsDescription();
@@ -80,14 +89,21 @@ public:
                          const ContextAccessPtr & access,
                          const ClientInfo & client_info,
                          const UserPtr & login_user,
-                         const AuthenticationData & user_authenticated_with);
+                         const AuthenticationData & user_authenticated_with,
+                         const std::optional<ClientCertificateInfo> & certificate_info = {});
 
-    void addLoginFailure(const UUID & auth_id, const ClientInfo & info, const std::optional<String> & user, const Exception & reason);
+    void addLoginFailure(
+        const UUID & auth_id,
+        const ClientInfo & info,
+        const std::optional<String> & user,
+        const Exception & reason,
+        const std::optional<ClientCertificateInfo> & certificate_info = {});
     void addLogOut(
         const UUID & auth_id,
         const UserPtr & login_user,
         const AuthenticationData & user_authenticated_with,
-        const ClientInfo & client_info);
+        const ClientInfo & client_info,
+        const std::optional<ClientCertificateInfo> & certificate_info = {});
 };
 
 }

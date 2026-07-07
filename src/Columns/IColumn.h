@@ -28,13 +28,12 @@ namespace DB
 class Arena;
 class ColumnGathererStream;
 class Field;
-class WeakHash32;
 class ColumnConst;
 class ColumnReplicated;
 class IDataType;
 class Block;
 class ReadBuffer;
-struct ColumnsInfo;
+struct StoredBlock;
 using DataTypePtr = std::shared_ptr<const IDataType>;
 using IColumnPermutation = PaddedPODArray<size_t>;
 using IColumnFilter = PaddedPODArray<UInt8>;
@@ -86,7 +85,7 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
 struct ColumnsWithRowNumbers
 {
     /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const ColumnsInfo *> columns;
+    VectorWithMemoryTracking<const StoredBlock *> columns;
     VectorWithMemoryTracking<UInt32> row_numbers;
 };
 
@@ -384,10 +383,34 @@ public:
     /// Default implementation calls updateHashWithValue for each element.
     virtual void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const;
 
-    /// Get hash function value. Hash is calculated for each element.
-    /// It's a fast weak hash function. Mainly need to scatter data between threads.
-    /// WeakHash32 must have the same size as column.
-    virtual WeakHash32 getWeakHash32() const = 0;
+    /// Per-row weak hash kernel. Writes a 32-bit CRC32C-based hash for each row in
+    /// [row_begin, row_end) into the caller-provided buffer `hash_out` (which must hold at
+    /// least row_end - row_begin entries). It's a fast weak hash, mainly needed to scatter
+    /// data between threads (sharded aggregation, `grace_hash` joins, parallel-window
+    /// partitioning, hash-join scatter).
+    ///
+    /// `h(row)` denotes the finalized per-row hash. With `initial == true` the buffer is
+    /// overwritten with it; with `initial == false` the buffer is combined with it via
+    /// `combineWeakHash32`, composing hashes across multiple key columns without an
+    /// intermediate per-column array:
+    ///     initial:  hash_out[i] = h(row_begin + i)
+    ///     combine:  hash_out[i] = combineWeakHash32(h(row_begin + i), hash_out[i])
+    /// Scatter consumers seed `hash_out` with `WEAK_HASH32_INITIAL_VALUE` and chain
+    /// `computeHashInto(..., initial=false)` over every key column.
+    ///
+    /// REPRESENTATION-INDEPENDENCE CONTRACT: the non-initial path must combine the same
+    /// finalized `h(row)`, not a column-private intermediate (e.g. the raw value before
+    /// hashing). This makes two physically different but logically equal columns — a
+    /// materialized column and a transparent wrapper of the same values (`ColumnConst`,
+    /// `ColumnLowCardinality`, `ColumnSparse`, `ColumnReplicated`) — produce identical
+    /// composed hashes. A wrapper can only obtain the nested column's finalized `h` (via
+    /// `computeHashInto(initial=true)`), so every column must combine `h`, never its
+    /// pre-finalized form. Violating this routes equal multi-column keys to different
+    /// aggregation shards or `grace_hash` join partitions.
+    ///
+    /// Primitive columns must not allocate; composite columns may use a transient scratch
+    /// buffer for their nested columns.
+    virtual void computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const = 0;
 
     /// Update state of hash with all column.
     virtual void updateHashFast(SipHash & hash) const = 0;
@@ -452,6 +475,15 @@ public:
       */
     [[nodiscard]] virtual Int64 compareTrackAt(size_t n, size_t m, const IColumn & rhs, int nan_direction_hint) const;
 
+    /** Returns the end (exclusive) of the run of values equal to the value at `begin`, i.e. the smallest
+      * r in (begin, end] with compareAt(r, begin, ...) != 0, or `end` if all values in [begin, end) equal
+      * the value at `begin`. Returns `begin` if begin >= end. Equality is by value (`compareAt`), not collation-aware.
+      *
+      * PRECONDITION: [begin, end) is sorted so that equal values are contiguous. Only contiguity matters:
+      * the sort direction (ascending or descending) is irrelevant.
+      */
+    [[nodiscard]] virtual size_t getEqualRangeEndAssumeSorted(size_t begin, size_t end, int nan_direction_hint) const;
+
 #if USE_EMBEDDED_COMPILER
 
     [[nodiscard]] virtual bool isComparatorCompilable() const { return false; }
@@ -505,7 +537,11 @@ public:
      * should have been, we form a new array with intervals that need to be sorted
      * If there is a limit, then for the last interval we do partial sorting and all that is described above,
      * but in addition we still find all the elements equal to the largest sorted, they will also need to be sorted.
-     * `equal_ranges` is not necessarily sorted. Single-element equal ranges are usually omitted.
+     * `equal_ranges` must be sorted in ascending order of `from`, both on input and on output: the limit
+     * handling relies on it (IColumn::updatePermutationImpl treats `equal_ranges.back()` as the only range
+     * that may straddle the limit, and getBlockSortPermutationImpl pops trailing ranges by `from`). An
+     * implementation that returns unsorted ranges silently drops below-limit ranges and yields wrong results
+     * (see issue #104376). Single-element equal ranges are usually omitted.
      */
     virtual void updatePermutation(PermutationSortDirection direction, PermutationSortStability stability,
                             size_t limit, int nan_direction_hint, Permutation & res, EqualRanges & equal_ranges) const = 0;
@@ -703,9 +739,18 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    virtual void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges);
+    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
+    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
+    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
+    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    virtual void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated);
 
     /// Fills column values from list of blocks and row numbers
     /// A nullptr in the list is interpreted as a default value
@@ -929,6 +974,11 @@ bool isColumnNullable(const IColumn & column);
 /// True if column's is ColumnNullable or ColumnLowCardinality with nullable nested column.
 bool isColumnNullableOrLowCardinalityNullable(const IColumn & column);
 
+/// True if the column can contain NULL values: it is ColumnNullable, ColumnVariant, ColumnDynamic,
+/// or ColumnLowCardinality with nullable nested column. The column-level counterpart of
+/// canContainNull(const IDataType &).
+bool canContainNull(const IColumn & column);
+
 /// Implement methods to devirtualize some calls of IColumn in final descendants.
 /// `typename Parent` is needed because some columns don't inherit IColumn directly.
 /// See ColumnFixedSizeHelper for example.
@@ -980,9 +1030,15 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from RowRefList
-    /// If row_refs_are_ranges is true, then each RowRefList has one element with >=1 consecutive rows
-    void fillFromRowRefs(const DataTypePtr & type, size_t source_column_index_in_block, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, bool row_refs_are_ranges) override;
+    /// Fills column values from encoded join row refs
+    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
+    void fillFromRowRefs(
+        const DataTypePtr & type,
+        const UInt64 * row_refs_begin,
+        const UInt64 * row_refs_end,
+        bool row_refs_are_ranges,
+        const IColumn * const * block_columns,
+        const ColumnReplicated * const * block_replicated) override;
 
     /// Fills column values from list of columns and row numbers
     /// A nullptr in the list is interpreted as a default value
