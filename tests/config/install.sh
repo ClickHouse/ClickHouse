@@ -266,6 +266,14 @@ if check_clickhouse_version 26.6; then
     ln -sf $SRC_PATH/users.d/use_reader_executor.xml $DEST_SERVER_PATH/users.d/
     ln -sf $SRC_PATH/config.d/reader_executor_log.xml $DEST_SERVER_PATH/config.d/
 fi
+if check_clickhouse_version 26.7; then
+    # `reader_executor_use_long_connections` is registered in the 26.7
+    # settings-history block (off by default there); enable it in the test
+    # profile so CI exercises the long-connection reuse path together with
+    # the executor. Separate gate: a 26.6 binary knows `use_reader_executor`
+    # but would reject this setting with UNKNOWN_SETTING.
+    ln -sf $SRC_PATH/users.d/reader_executor_long_connections.xml $DEST_SERVER_PATH/users.d/
+fi
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/replicated_ddl_entry.xml $DEST_SERVER_PATH/users.d/
