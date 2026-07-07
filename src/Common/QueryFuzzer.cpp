@@ -1,5 +1,7 @@
 #include <Common/QueryFuzzer.h>
 
+#include <Core/Settings.h>
+
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -142,6 +144,7 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
 /// huge value makes the server block a lock/socket wait for minutes (ignoring query cancellation),
 /// which the stress-test hung-check flags as a false "possible deadlock". Every `Seconds` /
 /// `Milliseconds`-typed setting in `Settings.cpp`, plus a few `UInt64` durations that also wait.
+/// Names are given in canonical form; the caller resolves aliases before the lookup.
 bool isTimeDurationSetting(const String & name)
 {
     static const std::unordered_set<String> time_duration_settings = {
@@ -167,12 +170,23 @@ bool isTimeDurationSetting(const String & name)
         "sleep_in_send_data_ms", "sleep_in_send_tables_status_ms",
         "storage_system_stack_trace_pipe_read_timeout_ms", "stream_flush_interval_ms", "stream_poll_timeout_ms",
         /// durations declared as `UInt64` that also sleep/wait in the execution path
-        "function_sleep_max_microseconds_per_block", "merge_tree_storage_snapshot_sleep_ms",
-        "memory_usage_overcommit_max_wait_microseconds",
+        "distributed_background_insert_timeout", "function_sleep_max_microseconds_per_block",
+        "merge_tree_storage_snapshot_sleep_ms", "memory_usage_overcommit_max_wait_microseconds",
         "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds",
         "temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds",
+        /// Storage / table-engine settings
+        "connection_wait_timeout", "read_write_timeout",  /// MySQL (connect_timeout shares the core name)
+        "command_read_timeout", "command_write_timeout", "command_termination_timeout",  /// Executable
+        "kafka_poll_timeout_ms", "kafka_consumer_acquire_timeout_ms", "kafka_flush_interval_ms",
+        "nats_flush_interval_ms", "nats_reconnect_wait",
+        "rabbitmq_empty_queue_backoff_start_ms", "rabbitmq_empty_queue_backoff_end_ms",
+        "rabbitmq_empty_queue_backoff_step_ms",
+        "poll_timeout_ms", "polling_min_timeout_ms", "polling_max_timeout_ms", "polling_backoff_ms",  /// ObjectStorageQueue
+        "transaction_timeout_ms",
+        "max_delay_to_insert", "min_delay_to_insert_ms",  /// MergeTree insert throttle (delays the INSERT)
+        "max_delay_to_mutate_ms", "min_delay_to_mutate_ms",
     };
-    return time_duration_settings.contains(name);
+    return time_duration_settings.contains(String(Settings::resolveName(name)));
 }
 
 }
