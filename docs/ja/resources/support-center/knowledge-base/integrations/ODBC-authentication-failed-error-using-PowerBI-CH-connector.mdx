@@ -1,0 +1,48 @@
+---
+title: Power BI で ClickHouse Connector を使用した際の ODBC 認証失敗エラー
+description: "Power BI で ClickHouse Connector を使用した際の ODBC 認証失敗エラー"
+date: 2024-07-10
+tags: ['ネイティブクライアントとインターフェイス', 'エラーと例外']
+keywords: ['ODBC', 'Power BI Connector', '認証失敗']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## 質問
+</div>
+
+コネクタを使ってPowerBIからClickHouseに接続しようとすると、認証エラーが発生します。
+
+このエラーは通常、次のように表示されます。
+
+```
+We encountered an error while trying to connect.
+Details: "ODBC: ERROR [HY000] HTTP status code: 403
+Received error:
+Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.ml on the server where
+ClickHouse is installed.
+```
+
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="Power BI ODBC の認証エラーダイアログ" border />
+
+<div id="answer">
+  ## 回答
+</div>
+
+ClickHouse ODBC ドライバをバージョン [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) に更新してください。
+
+更新できない場合は、パスワードにチルダ (~) が含まれていないか確認してください。[1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523) より前のバージョンでは、これが問題を引き起こすことがあります。
+
+接続には専用のユーザーを使用し、パスワードは手動で設定することを推奨します。ClickHouse Cloud を使用していて、`default` ユーザーと同等の管理者レベルのアクセスが必要な場合は、新しいユーザーを作成し、そのユーザーに `default_role` を割り当ててください。
+
+詳細情報:
+https://clickhouse.com/docs/operations/access-rights#user-account-management
+https://clickhouse.com/docs/cloud/security/cloud-access-management#database-roles

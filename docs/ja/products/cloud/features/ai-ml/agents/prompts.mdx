@@ -1,0 +1,66 @@
+---
+sidebarTitle: 'プロンプト'
+slug: /cloud/features/ai-ml/agents/prompts
+title: 'プロンプト'
+description: 'ClickHouse Agents 用の保存済みプロンプトライブラリ'
+keywords: ['AI', 'ClickHouse Cloud', 'エージェント', 'プロンプト', 'テンプレート']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge />
+
+プロンプトライブラリは、繰り返し入力する自然言語のプロンプトを保存して再利用できる場所です。チャットのコンポーザーで使うスニペットのようなものだと考えてください。同じ分析用の質問やフォーマットの指示を複数の会話で何度も使う場合に便利です。
+
+<div id="create-a-prompt">
+  ## プロンプトを作成する
+</div>
+
+左側のナビゲーションにある **プロンプト** アイコンから プロンプト パネルを開き、**+** ボタンをクリックして **Create Prompt** フォームを開きます。以下のフィールドを入力します。
+
+* **Prompt Name** (必須) - ピッカーに表示される名前です。内容が分かる名前にしてください。たとえば、*&quot;Weekly active users by region&quot;* は *&quot;WAU&quot;* より分かりやすいです。
+* **Text** (必須) - コンポーザーに挿入される実際のテキストです。
+* **Special variables** - **Special variables** ボタンをクリックしてプレースホルダーを挿入するか、`{{name}}` 形式のマーカーを直接入力します。ピッカーでは、挿入前に値の入力を求められます。
+* **Category**、**Description**、**Command** (任意) - ライブラリの整理、ピッカーのプレビュー用テキスト、すばやく呼び出すためのショートカットに使用します。
+
+最後に、右下の **Create Prompt** をクリックします。
+
+<Image img="/images/cloud/agent-builder/prompts/create-prompt.webp" alt="左側で + ボタンが強調表示された プロンプト パネルと、右側で開かれた Create Prompt フォーム。Prompt Name、Text、Category、Special variables、Description、Command の各フィールドと、Create Prompt ボタンが表示されている" size="lg" />
+
+<div id="use-a-prompt">
+  ## プロンプトを使用する
+</div>
+
+プロンプト パネルで、プロンプトカードの **...** メニューを開き、**Preview** を選択します。
+
+<Image img="/images/cloud/agent-builder/prompts/preview.webp" alt="プロンプト パネルでプロンプトが選択され、右側にその詳細が表示され、Preview と Edit オプションを含むコンテキストメニューが開かれている" size="lg" />
+
+プレビューには、プロンプトのテキストと、その著者および日付が表示されます。**Use Prompt** をクリックすると、内容がコンポーザーに挿入されます。プロンプトに変数がある場合は、先に入力してください。
+
+<Image img="/images/cloud/agent-builder/prompts/use-prompt-modal.webp" alt="プロンプトのタイトル、著者、日付、本文テキスト、Use Prompt ボタンが表示されたプロンプトのプレビューモーダル" size="md" />
+
+<div id="share-prompts">
+  ## プロンプトを共有
+</div>
+
+デフォルトでは、プロンプトは作成者本人にのみ公開されています。所有者は、プロンプトの公開範囲を次のように変更できます。
+
+* **特定のユーザーまたはグループ** - 指名されたユーザーやグループは、そのプロンプトを見つけて使用できます。
+* **組織全体** - ClickHouse Cloud 組織内の全員がそのプロンプトを見つけて使用できます。
+
+プロンプトでは、エージェントと同じ権限モデルが使用されます。ロールごとの権限の一覧と、それぞれに可能な操作の詳細については、[共有と
+アクセス](/ja/products/cloud/features/ai-ml/agents/sharing-and-access)を参照してください。
+
+<div id="prompts-vs-skills-vs-instructions">
+  ## プロンプト、スキル、指示の違い
+</div>
+
+プロンプト、スキル、エージェント指示はいずれもモデルにテキストを追加しますが、何によってトリガーされるか、またどの程度持続するかが異なります。
+
+* **プロンプト** - 自分でコンポーザーに入力するテキストで、ターンごとに編集します。
+* **[スキル](/ja/products/cloud/features/ai-ml/agents/builder/skills)** - タスクに関連するとエージェントが判断したときに、自動的に読み込まれる指示セットです。
+* **エージェント指示** - エージェントの永続的なシステムプロンプトで、すべての会話に適用されます。
+
+表現を使い回したいものの、毎回 wording は自分で調整したい場合は、プロンプトを使います。毎回入力しなくても、特定の種類のタスクで同じガイダンスを一貫して適用させたい場合は、スキルを使います。エージェントの動作をその存続期間を通じて維持したい場合は、エージェント指示を使います。

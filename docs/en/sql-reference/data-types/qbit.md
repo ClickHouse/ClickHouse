@@ -14,11 +14,12 @@ This stores vectors at full precision while letting you choose the fine-grained 
 To declare a column of `QBit` type, use the following syntax:
 
 ```sql
-column_name QBit(element_type, dimension)
+column_name QBit(element_type, dimension[, stride])
 ```
 
 * `element_type` – the type of each vector element. The allowed types are `Int8`, `BFloat16`, `Float32` and `Float64`
 * `dimension` – the number of elements in each vector
+* `stride` – optional. The number of dimensions stored together in one group of streams. When omitted it defaults to `dimension` (a single group). When provided, `dimension` must be a multiple of `stride`, and, when `stride` is smaller than `dimension`, `stride` must be a multiple of 8. See [Strides](#strides).
 
 ## Creating QBit {#creating-qbit}
 
@@ -98,12 +99,24 @@ SELECT bin(vec.1) FROM test;
 └───────────────────────────┘
 ```
 
-The number of accessible subcolumns depends on the element type:
+The number of accessible subcolumns depends on the element type (and, when strided, on the number of stride groups — see [Strides](#strides)):
 
-* `Int8`: 8 subcolumns (1-8)
-* `BFloat16`: 16 subcolumns (1-16)
-* `Float32`: 32 subcolumns (1-32)
-* `Float64`: 64 subcolumns (1-64)
+* `Int8`: 8 subcolumns per stride group (1-8)
+* `BFloat16`: 16 subcolumns per stride group (1-16)
+* `Float32`: 32 subcolumns per stride group (1-32)
+* `Float64`: 64 subcolumns per stride group (1-64)
+
+## Strides {#strides}
+
+By default a `QBit` stores each bit plane as a single stream spanning all `dimension` dimensions, so a search always reads whole bit planes across the full vector. The optional `stride` parameter partitions the `dimension` dimensions into `dimension / stride` contiguous groups and stores each group's bit planes in separate streams. This lets a search over only the first `D` dimensions (with `D` a multiple of `stride`) read just the streams of the groups that cover those dimensions — useful for [Matryoshka embeddings](https://arxiv.org/abs/2205.13147), where the leading dimensions form a usable lower-dimensional embedding.
+
+```sql
+CREATE TABLE test (id UInt32, vec QBit(BFloat16, 4096, 1024)) ENGINE = MergeTree ORDER BY id;
+```
+
+Here the 4096 dimensions are split into 4 groups of 1024. The subcolumns follow a group-major order: with `BFloat16` (16 bit planes), `vec.1` … `vec.16` are the 16 bit planes of the first stride group (dimensions 1–1024), `vec.17` … `vec.32` belong to the second group (dimensions 1025–2048), and so on. In general `vec.N` reads bit plane `(N-1) % element_size` of stride group `(N-1) / element_size`.
+
+To run a reduced-dimension search, pass the number of dimensions to read as the fourth argument of the transposed distance functions (see below). The reference vector must have exactly that many elements, and the value must be a multiple of `stride`.
 
 ## Vector search functions {#vector-search-functions}
 
@@ -112,3 +125,10 @@ These are the distance functions for vector similarity search that use `QBit` da
 * [`L2DistanceTransposed`](../functions/distance-functions.md#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](../functions/distance-functions.md#cosineDistanceTransposed)
 * [`dotProductTransposed`](../functions/distance-functions.md#dotProductTransposed)
+
+For a strided `QBit`, these functions accept an optional fourth argument `used_dims` — the number of leading dimensions to read — which only reads the stride groups covering those dimensions:
+
+```sql
+-- read 8 bit planes over the first 2048 of 4096 dimensions
+SELECT id, L2DistanceTransposed(vec, reference_vec, 8, 2048) AS dist FROM test ORDER BY dist;
+```

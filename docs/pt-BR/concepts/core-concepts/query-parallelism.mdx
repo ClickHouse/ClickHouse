@@ -1,0 +1,294 @@
+---
+slug: /optimize/query-parallelism
+sidebarTitle: 'Paralelismo de consulta'
+description: 'O ClickHouse paraleliza a execução de consultas usando canais de processamento e a configuração max_threads.'
+title: 'Como o ClickHouse executa uma consulta em paralelo'
+doc_type: 'guide'
+keywords: ['processamento paralelo', 'otimização de consultas', 'desempenho', 'threads', 'boas práticas']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+ClickHouse é [feito para desempenho](/pt-BR/get-started/about/why-clickhouse-is-so-fast). Ele executa consultas de forma altamente paralela, usando todos os núcleos de CPU disponíveis, distribuindo os dados entre lane de processamento e, muitas vezes, levando o hardware quase ao limite.
+
+Este guia mostra como o paralelismo de consultas funciona no ClickHouse e como você pode ajustá-lo ou monitorá-lo para melhorar o desempenho em workloads maiores.
+
+Usamos uma consulta de agregação no conjunto de dados [uk&#95;price&#95;paid&#95;simple](/pt-BR/concepts/core-concepts/parts) para ilustrar os principais conceitos.
+
+<div id="step-by-step-how-clickHouse-parallelizes-an-aggregation-query">
+  ## Passo a passo: como o ClickHouse paraleliza uma consulta de agregação
+</div>
+
+Quando o ClickHouse ① executa uma consulta de agregação com um filtro na chave primária da tabela, ele ② carrega o índice primário em memória para ③ identificar quais grânulos precisam ser processados e quais podem ser ignorados com segurança:
+
+<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Análise do índice" />
+
+<div id="distributing-work-across-processing-lanes">
+  ### Distribuindo o trabalho entre lanes de processamento
+</div>
+
+Os dados selecionados são então distribuídos [dinamicamente](#load-balancing-across-processing-lanes) entre `n` [lanes de processamento](/pt-BR/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) paralelas, que transmitem e processam os dados [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block) a bloco até o resultado final:
+
+<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 lanes de processamento paralelas" />
+
+<br />
+
+<br />
+
+O número de `n` lanes de processamento paralelas é controlado pela configuração [`max_threads`](/pt-BR/reference/settings/session-settings#max_threads), que, por padrão, corresponde ao número de núcleos (threads) de uma única CPU disponíveis ao ClickHouse no servidor. No exemplo acima, assumimos `4` núcleos.
+
+Em uma máquina com `8` núcleos, a taxa de processamento de consultas praticamente dobraria (mas o uso de memória também aumentaria na mesma proporção), já que mais lanes processam dados em paralelo:
+
+<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 lanes de processamento paralelas" />
+
+<br />
+
+<br />
+
+Uma distribuição eficiente das lanes é fundamental para maximizar a utilização da CPU e reduzir o tempo total da consulta.
+
+<div id="processing-queries-on-sharded-tables">
+  ### Processamento de consultas em tabelas com shards
+</div>
+
+Quando os dados da tabela são distribuídos entre vários servidores em [shards](/pt-BR/guides/oss/deployment-and-scaling/shards), cada servidor processa seu shard em paralelo. Em cada servidor, os dados locais são processados por lane de processamento paralelas, exatamente como descrito acima:
+
+<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Vias distribuídas" />
+
+<br />
+
+<br />
+
+O servidor que recebe a consulta inicialmente coleta todos os resultados parciais dos shards e os combina no resultado global final.
+
+Distribuir a carga das consultas entre shards permite ampliar horizontalmente o paralelismo, especialmente em ambientes de alto throughput.
+
+<Info>
+  **ClickHouse Cloud usa réplicas paralelas em vez de shards**
+
+  No ClickHouse Cloud, esse mesmo paralelismo é obtido por meio de [réplicas paralelas](/pt-BR/products/cloud/features/infrastructure/parallel-replicas), que funcionam de forma semelhante aos shards em clusters shared-nothing. Cada réplica do ClickHouse Cloud — um nó de computação sem estado — processa uma parte dos dados em paralelo e contribui para o resultado final, exatamente como faria um shard independente.
+</Info>
+
+<div id="monitoring-query-parallelism">
+  ## Monitoramento do paralelismo de consultas
+</div>
+
+Use estas ferramentas para verificar se sua consulta está aproveitando totalmente os recursos de CPU disponíveis e para diagnosticar quando isso não acontece.
+
+Estamos executando este teste em um servidor com 59 núcleos de CPU, o que permite ao ClickHouse demonstrar plenamente seu paralelismo de consultas.
+
+Para observar como a consulta de exemplo é executada, podemos instruir o servidor ClickHouse a retornar todas as entradas de log no nível de trace durante a consulta de agregação. Para esta demonstração, removemos o predicado da consulta — caso contrário, apenas 3 grânulos seriam processados, o que não fornece dados suficientes para que o ClickHouse use mais do que algumas lanes paralelas de processamento:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+SETTINGS send_logs_level='trace';
+```
+
+```txt
+① <Debug> ...: 3609 marks to read from 3 ranges
+② <Trace> ...: Spreading mark ranges among streams
+② <Debug> ...: Reading approx. 29564928 rows with 59 streams
+```
+
+Podemos ver que
+
+* ① o ClickHouse precisa ler 3.609 grânulos (indicados como marcas nos logs no nível trace) em 3 faixas de dados.
+* ② Com 59 núcleos de CPU, ele distribui esse trabalho em 59 fluxos paralelos de processamento — um por lane.
+
+Como alternativa, podemos usar a cláusula [EXPLAIN](/pt-BR/reference/statements/explain#explain-pipeline) para inspecionar o [plano físico de operadores](/pt-BR/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) — também conhecido como &quot;pipeline de consulta&quot; — da consulta de agregação:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple;
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                      │
+ 2. │ ExpressionTransform × 59                                                          │
+ 3. │   (Aggregating)                                                                   │
+ 4. │   Resize 59 → 59                                                                  │
+ 5. │     AggregatingTransform × 59                                                     │
+ 6. │       StrictResize 59 → 59                                                        │
+ 7. │         (Expression)                                                              │
+ 8. │         ExpressionTransform × 59                                                  │
+ 9. │           (ReadFromMergeTree)                                                     │
+10. │           MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+    └───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Observação: leia o plano de operadores acima de baixo para cima. Cada linha representa uma etapa do plano de execução físico, começando com a leitura dos dados do armazenamento na parte inferior e terminando com as etapas finais de processamento na parte superior. Os operadores marcados com `× 59` são executados de forma concorrente em regiões de dados não sobrepostas, em 59 lanes de processamento paralelas. Isso reflete o valor de `max_threads` e ilustra como cada etapa da consulta é paralelizada entre os núcleos de CPU.
+
+A [interface web embutida](/pt-BR/concepts/features/interfaces/http) do ClickHouse (disponível no endpoint `/play`) pode exibir o plano físico acima como uma visualização gráfica. Neste exemplo, definimos `max_threads` como `4` para manter a visualização compacta, mostrando apenas 4 lanes de processamento paralelas:
+
+<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Pipeline da consulta" />
+
+Observação: leia a visualização da esquerda para a direita. Cada linha representa uma lane de processamento paralela que transmite dados bloco por bloco, aplicando transformações como filtragem, agregação e estágios finais de processamento. Neste exemplo, é possível ver quatro lanes paralelas correspondentes à configuração `max_threads = 4`.
+
+<div id="load-balancing-across-processing-lanes">
+  ### Balanceamento de carga entre lanes de processamento
+</div>
+
+Observe que os operadores `Resize` no plano físico acima [reparticionam e redistribuem](/pt-BR/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) fluxos de blocos de dados entre as lanes de processamento para mantê-las uniformemente ocupadas. Esse rebalanceamento é especialmente importante quando os intervalos de dados variam na quantidade de linhas que correspondem aos predicados da consulta; caso contrário, algumas lanes podem ficar sobrecarregadas enquanto outras permanecem ociosas. Ao redistribuir o trabalho, as lanes mais rápidas efetivamente ajudam as mais lentas, otimizando o tempo geral de execução da consulta.
+
+<div id="why-max-threads-isnt-always-respected">
+  ## Por que `max_threads` nem sempre é respeitado
+</div>
+
+Como mencionado acima, o número de `n` lane de processamento paralelas é controlado pela configuração `max_threads`, que, por padrão, corresponde ao número de núcleos de CPU disponíveis para o ClickHouse no servidor:
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+```txt
+   ┌─getSetting('max_threads')─┐
+1. │                        59 │
+   └───────────────────────────┘
+```
+
+No entanto, o valor de `max_threads` pode ser ignorado, dependendo do volume de dados selecionado para processamento:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 30
+```
+
+Como mostrado no trecho do plano de execução acima, embora `max_threads` esteja definido como `59`, o ClickHouse usa apenas **30** fluxos concorrentes para varrer os dados.
+
+Agora vamos executar a consulta:
+
+```sql
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  594300000 │ -- 594.30 million
+   └────────────┘
+   
+1 row in set. Elapsed: 0.013 sec. Processed 2.31 million rows, 13.66 MB (173.12 million rows/s., 1.02 GB/s.)
+Peak memory usage: 27.24 MiB.   
+```
+
+Como mostrado na saída acima, a consulta processou 2,31 milhões de linhas e leu 13,66 MB de dados. Isso ocorre porque, durante a fase de análise do índice, ClickHouse selecionou **282 grânulos** para processamento, cada um contendo 8.192 linhas, totalizando aproximadamente 2,31 milhões de linhas:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON';
+```
+
+```txt
+    ┌─explain───────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))             │
+ 2. │   Aggregating                                         │
+ 3. │     Expression (Before GROUP BY)                      │
+ 4. │       Expression                                      │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)   │
+ 6. │         Indexes:                                      │
+ 7. │           PrimaryKey                                  │
+ 8. │             Keys:                                     │
+ 9. │               town                                    │
+10. │             Condition: (town in ['LONDON', 'LONDON']) │
+11. │             Parts: 3/3                                │
+12. │             Granules: 282/3609                        │
+    └───────────────────────────────────────────────────────┘  
+```
+
+Independentemente do valor configurado de `max_threads`, o ClickHouse só aloca lane de processamento adicionais quando há dados suficientes para justificá-las. O &quot;max&quot; em `max_threads` refere-se a um limite superior, não a um número garantido de threads em uso.
+
+O que significa &quot;dados suficientes&quot; é determinado principalmente por duas configurações, que definem o número mínimo de linhas (163.840 por padrão) e o número mínimo de bytes (2.097.152 por padrão) que cada lane de processamento deve processar:
+
+Para clusters shared-nothing:
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read](/pt-BR/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read](/pt-BR/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read)
+
+Para clusters com armazenamento compartilhado (por exemplo, ClickHouse Cloud):
+
+* [merge&#95;tree&#95;min&#95;rows&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/pt-BR/reference/settings/session-settings#merge_tree_min_rows_for_concurrent_read_for_remote_filesystem)
+* [merge&#95;tree&#95;min&#95;bytes&#95;for&#95;concurrent&#95;read&#95;for&#95;remote&#95;filesystem](/pt-BR/reference/settings/session-settings#merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem)
+
+Além disso, há um limite inferior rígido para o tamanho da tarefa de leitura, controlado por:
+
+* [Merge&#95;tree&#95;min&#95;read&#95;task&#95;size](/pt-BR/reference/settings/session-settings#merge_tree_min_read_task_size) + [merge&#95;tree&#95;min&#95;bytes&#95;per&#95;task&#95;for&#95;remote&#95;reading](/pt-BR/reference/settings/session-settings#merge_tree_min_bytes_per_task_for_remote_reading)
+
+<Warning>
+  **Não modifique essas configurações**
+
+  Não recomendamos modificar essas configurações em produção. Elas são mostradas aqui apenas para ilustrar por que `max_threads` nem sempre determina o nível real de paralelismo.
+</Warning>
+
+Para fins de demonstração, vamos inspecionar o plano físico com essas configurações sobrescritas para forçar a concorrência máxima:
+
+```sql
+EXPLAIN PIPELINE
+SELECT
+   max(price)
+FROM
+   uk.uk_price_paid_simple
+WHERE town = 'LONDON'
+SETTINGS
+  max_threads = 59,
+  merge_tree_min_read_task_size = 0,
+  merge_tree_min_rows_for_concurrent_read_for_remote_filesystem = 0, 
+  merge_tree_min_bytes_for_concurrent_read_for_remote_filesystem = 0;
+```
+
+```txt
+...   
+(ReadFromMergeTree)
+MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59
+```
+
+Agora o ClickHouse usa 59 fluxos simultâneos para varrer os dados, respeitando totalmente o `max_threads` configurado.
+
+Isso demonstra que, para consultas em conjuntos de dados pequenos, o ClickHouse limitará intencionalmente a concorrência. Use substituições de configuração apenas para testes — nunca em produção —, pois elas podem levar a uma execução ineficiente ou à contenção de recursos.
+
+<div id="key-takeaways">
+  ## Principais pontos
+</div>
+
+* O ClickHouse paraleliza consultas usando lanes de processamento vinculadas a `max_threads`.
+* O número real de lanes depende do volume de dados selecionados para processamento.
+* Use `EXPLAIN PIPELINE` e logs em nível trace para analisar o uso das lanes.
+
+<div id="where-to-find-more-information">
+  ## Onde encontrar mais informações
+</div>
+
+Se você quiser se aprofundar em como o ClickHouse executa consultas em paralelo e como alcança alto desempenho em escala, explore os seguintes recursos:
+
+* [Camada de processamento de consultas – Artigo da VLDB 2024 (edição web)](/pt-BR/concepts/core-concepts/academic-overview#4-query-processing-layer) - Uma análise detalhada do modelo interno de execução do ClickHouse, incluindo agendamento, pipelining e design de operadores.
+
+* [Estados de agregação parciais explicados](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization) - Um aprofundamento técnico sobre como os estados de agregação parciais permitem uma execução eficiente em paralelo nas processing lanes.
+
+* Um tutorial em vídeo que explica em detalhes todas as etapas do processamento de consultas no ClickHouse:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/hP6G2Nlz_cA?si=Imd_i427J_kZOXHe" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

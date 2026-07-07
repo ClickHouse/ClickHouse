@@ -1,0 +1,151 @@
+---
+slug: /changelogs/24.6
+title: 'Список изменений v24.6 для Cloud'
+description: 'Краткий список изменений v24.6'
+keywords: ['список изменений', 'cloud']
+sidebarTitle: '24.6'
+doc_type: 'changelog'
+---
+
+Изменения для сервисов ClickHouse Cloud в релизе v24.6.
+
+<div id="backward-incompatible-change">
+  ## Обратно несовместимое изменение
+</div>
+
+* Переработана параллельная обработка в режиме `Ordered` для хранилища `S3Queue`. Это изменение обратно несовместимо для режима `Ordered`, если вы использовали настройки `s3queue_processing_threads_num` или `s3queue_total_shards_num`. Настройка `s3queue_total_shards_num` удалена; ранее её можно было использовать только с `s3queue_allow_experimental_sharded_mode`, который теперь помечен как устаревший. Добавлена новая настройка — `s3queue_buckets`. [#64349](https://github.com/ClickHouse/ClickHouse/pull/64349) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* Добавлены новые функции `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` и `dateTime64ToSnowflakeID`. В отличие от существующих функций `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` и `dateTime64ToSnowflake`, новые функции совместимы с функцией `generateSnowflakeID`, то есть принимают Snowflake ID, сгенерированные функцией `generateSnowflakeID`, и возвращают Snowflake ID того же типа, что и `generateSnowflakeID` (то есть `UInt64`). Кроме того, новые функции по умолчанию используют эпоху UNIX (то есть 1970-01-01), как и `generateSnowflakeID`. При необходимости можно передать другую эпоху, например эпоху Twitter/X — 2010-11-04, то есть 1288834974657 мс с эпохи UNIX. Старые функции преобразования помечены как устаревшие и будут удалены после переходного периода; если вам всё же нужно их использовать, включите настройку `allow_deprecated_snowflake_conversion_functions`. [#64948](https://github.com/ClickHouse/ClickHouse/pull/64948) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="new-feature">
+  ## Новая возможность
+</div>
+
+* Добавлена поддержка пустых `Tuple`. [#55061](https://github.com/ClickHouse/ClickHouse/pull/55061) ([Amos Bird](https://github.com/amosbird)).
+* Добавлены функции кодирования и декодирования кривой Гильберта. [#60156](https://github.com/ClickHouse/ClickHouse/pull/60156) ([Artem Mustafin](https://github.com/Artemmm91)).
+* Добавлена поддержка анализа индекса для `hilbertEncode`. [#64662](https://github.com/ClickHouse/ClickHouse/pull/64662) ([Artem Mustafin](https://github.com/Artemmm91)).
+* Добавлена поддержка чтения геометрии `LINESTRING` в формате WKT с помощью функции `readWKTLineString`. [#62519](https://github.com/ClickHouse/ClickHouse/pull/62519) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Добавлена новая SQL-функция `generateSnowflakeID` для генерации Snowflake ID в стиле Twitter. [#63577](https://github.com/ClickHouse/ClickHouse/pull/63577) ([Danila Puzov](https://github.com/kazalika)).
+* Добавлена поддержка сравнения типов `IPv4` и `IPv6` с помощью оператора `=`. [#64292](https://github.com/ClickHouse/ClickHouse/pull/64292) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
+* Добавлена поддержка аргументов типа Decimal в бинарных математических функциях (pow, atan2, max2, min2, hypot). [#64582](https://github.com/ClickHouse/ClickHouse/pull/64582) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
+* Добавлены SQL-функции `parseReadableSize` (вместе с вариантами `OrNull` и `OrZero`). [#64742](https://github.com/ClickHouse/ClickHouse/pull/64742) ([Francisco J. Jurado Moreno](https://github.com/Beetelbrox)).
+* В file-подобные хранилища (s3/file/hdfs/url/azureBlobStorage) добавлен виртуальный столбец `_time`. [#64947](https://github.com/ClickHouse/ClickHouse/pull/64947) ([Ilya Golshtein](https://github.com/ilejn)).
+* Добавлены новые функции `base64URLEncode`, `base64URLDecode` и `tryBase64URLDecode`. [#64991](https://github.com/ClickHouse/ClickHouse/pull/64991) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
+* Добавлена новая функция `editDistanceUTF8`, которая вычисляет [расстояние редактирования](https://en.wikipedia.org/wiki/Edit_distance) между двумя строками UTF8. [#65269](https://github.com/ClickHouse/ClickHouse/pull/65269) ([LiuNeng](https://github.com/liuneng1994)).
+* Добавлена configuration `http_response_headers` для поддержки пользовательских headers ответа в пользовательских HTTP handler&#39;ах. [#63562](https://github.com/ClickHouse/ClickHouse/pull/63562) ([Grigorii](https://github.com/GSokol)).
+* Добавлена новая table function `loop`, позволяющая возвращать результаты запроса в бесконечном цикле. [#63452](https://github.com/ClickHouse/ClickHouse/pull/63452) ([Sariel](https://github.com/sarielwxm)). Это полезно для тестирования.
+* В `system.query_log` добавлены два дополнительных столбца: `used_privileges` и `missing_privileges`. `used_privileges` заполняется привилегиями, которые проверялись во время выполнения запроса, а `missing_privileges` содержит необходимые, но отсутствующие привилегии. [#64597](https://github.com/ClickHouse/ClickHouse/pull/64597) ([Alexey Katsman](https://github.com/alexkats)).
+* Добавлена настройка `output_format_pretty_display_footer_column_names`, которая во включенном состоянии отображает имена столбцов в конце таблицы для длинных таблиц (по умолчанию 50 строк), а пороговое минимальное число строк задается параметром `output_format_pretty_display_footer_column_names_min_rows`. [#65144](https://github.com/ClickHouse/ClickHouse/pull/65144) ([Shaun Struwig](https://github.com/Blargian)).
+
+<div id="performance-improvement">
+  ## Повышение производительности
+</div>
+
+* Исправлена регрессия производительности в CROSS JOIN, появившаяся в #60459 (24.5). #65243 (Nikita Taranov).
+* Улучшена видимость повторных отправок в io&#95;uring. Событие профилирования IOUringSQEsResubmits переименовано в IOUringSQEsResubmitsAsync, а также добавлено новое — IOUringSQEsResubmitsSync. #63699 (Tomer Shafir).
+* Добавлены проверки, чтобы убедиться, что все функции вызываются со столбцами правильного размера. #63723 (Raúl Marín).
+* Добавлена возможность перераспределять строки при вставке для оптимизации размера без нарушения порядка, заданного `PRIMARY KEY`. Это поведение управляется настройкой `optimize_row_order` (по умолчанию отключена). [#63578](https://github.com/ClickHouse/ClickHouse/pull/63578) ([Igor Markelov](https://github.com/ElderlyPassionFruit)).
+* Добавлен нативный ридер Parquet, который может напрямую считывать двоичные данные Parquet в столбцы ClickHouse. Он управляется настройкой `input_format_parquet_use_native_reader` (по умолчанию отключён). [#60361](https://github.com/ClickHouse/ClickHouse/pull/60361) ([ZhiHong Zhang](https://github.com/copperybean)).
+* Добавлена поддержка частичной тривиальной оптимизации count, когда фильтр запроса позволяет выбирать точные диапазоны в таблицах MergeTree. [#60463](https://github.com/ClickHouse/ClickHouse/pull/60463) ([Amos Bird](https://github.com/amosbird)).
+* Снижено пиковое использование памяти при многопоточных `INSERT` за счёт сбора фрагментов из нескольких потоков в рамках одного преобразования. [#61047](https://github.com/ClickHouse/ClickHouse/pull/61047) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Снижено использование памяти при работе с объектным хранилищем Azure за счёт фиксированного выделения памяти без выделения дополнительного буфера. [#63160](https://github.com/ClickHouse/ClickHouse/pull/63160) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
+* Сокращено число вызовов виртуальных функций в `ColumnNullable::size`. [#60556](https://github.com/ClickHouse/ClickHouse/pull/60556) ([HappenLee](https://github.com/HappenLee)).
+* Ускорена функция `splitByRegexp`, если аргумент регулярного выражения — одиночный символ. [#62696](https://github.com/ClickHouse/ClickHouse/pull/62696) ([Robert Schulze](https://github.com/rschu1ze)).
+* Ускорено агрегирование по 8- и 16-битным ключам за счет отслеживания минимального и максимального используемых ключей. Это позволяет сократить число ячеек, которые необходимо проверять. [#62746](https://github.com/ClickHouse/ClickHouse/pull/62746) ([Jiebin Sun](https://github.com/jiebinn)).
+* Оптимизирован оператор `IN` в случаях, когда левая часть имеет тип `LowCardinality`, а правая — набор констант. [#64060](https://github.com/ClickHouse/ClickHouse/pull/64060) ([Zhiguo Zhou](https://github.com/ZhiguoZh)).
+* Для инициализации и уничтожения хеш-таблиц внутри `ConcurrentHashJoin` теперь используется пул потоков. [#64241](https://github.com/ClickHouse/ClickHouse/pull/64241) ([Nikita Taranov](https://github.com/nickitat)).
+* Оптимизированы вертикальные слияния в таблицах с разреженными столбцами. [#64311](https://github.com/ClickHouse/ClickHouse/pull/64311) ([Anton Popov](https://github.com/CurtizJ)).
+* Включены операции предварительного чтения данных из удаленной файловой системы при вертикальных слияниях. Это снижает задержку вертикальных слияний в таблицах, данные которых хранятся в удаленной файловой системе. [#64314](https://github.com/ClickHouse/ClickHouse/pull/64314) ([Anton Popov](https://github.com/CurtizJ)).
+* Уменьшено число избыточных вызовов `isDefault` в `ColumnSparse::filter` для повышения производительности. [#64426](https://github.com/ClickHouse/ClickHouse/pull/64426) ([Jiebin Sun](https://github.com/jiebinn)).
+* Команды keeper-client `find_super_nodes` и `find_big_family` ускорены за счёт отправки нескольких асинхронных запросов getChildren. [#64628](https://github.com/ClickHouse/ClickHouse/pull/64628) ([Alexander Gololobov](https://github.com/davenger)).
+* Улучшена работа функций `least`/`greatest` с аргументами числового типа Nullable. [#64668](https://github.com/ClickHouse/ClickHouse/pull/64668) ([KevinyhZou](https://github.com/KevinyhZou)).
+* Разрешено объединять два последовательных шага фильтрации в плане запроса. Это улучшает оптимизацию проталкивания фильтра вниз, если условие фильтрации можно протолкнуть вниз из родительского шага. [#64760](https://github.com/ClickHouse/ClickHouse/pull/64760) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Удалена неудачная оптимизация в вертикальной реализации FINAL, и алгоритм vertical final снова включён по умолчанию. [#64783](https://github.com/ClickHouse/ClickHouse/pull/64783) ([Duc Canh Le](https://github.com/canhld94)).
+* Из выражения фильтра удалены узлы ALIAS. Это немного улучшает производительность запросов с `PREWHERE` (в новом анализаторе). [#64793](https://github.com/ClickHouse/ClickHouse/pull/64793) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* Повторно включено кэширование сеансов OpenSSL. [#65111](https://github.com/ClickHouse/ClickHouse/pull/65111) ([Robert Schulze](https://github.com/rschu1ze)).
+* Добавлены настройки для отключения материализации индексов пропуска данных и статистики во время вставки (`materialize_skip_indexes_on_insert` и `materialize_statistics_on_insert`). [#64391](https://github.com/ClickHouse/ClickHouse/pull/64391) ([Anton Popov](https://github.com/CurtizJ)).
+* Размер выделенной памяти теперь используется для вычисления размера группы строк и снижения пикового потребления памяти модулем записи Parquet в однопоточном режиме. [#64424](https://github.com/ClickHouse/ClickHouse/pull/64424) ([LiuNeng](https://github.com/liuneng1994)).
+* Улучшен итератор разреженного столбца для уменьшения числа вызовов `size`. [#64497](https://github.com/ClickHouse/ClickHouse/pull/64497) ([Jiebin Sun](https://github.com/jiebinn)).
+* Обновлено условие, чтобы для резервных копий в Azure Blob Storage использовалось копирование на стороне сервера. [#64518](https://github.com/ClickHouse/ClickHouse/pull/64518) ([SmitaRKulkarni](https://github.com/SmitaRKulkarni)).
+* Оптимизировано использование памяти при вертикальных слияниях в таблицах с большим количеством индексов пропуска данных. [#64580](https://github.com/ClickHouse/ClickHouse/pull/64580) ([Anton Popov](https://github.com/CurtizJ)).
+
+<div id="improvement">
+  ## Улучшения
+</div>
+
+* Возвращено прежнее поведение ClickHouse при работе с Tuple и их интерпретации в формате CSV. Это изменение фактически отменяет ClickHouse/ClickHouse#60994 и оставляет его доступным только через несколько настроек: output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns, input&#95;format&#95;csv&#95;deserialize&#95;separate&#95;columns&#95;into&#95;tuple и input&#95;format&#95;csv&#95;try&#95;infer&#95;strings&#95;from&#95;quoted&#95;tuples. #65170 (Nikita Mikhaylov).
+* `SHOW CREATE TABLE`, выполненная для системных таблиц, теперь будет показывать очень полезный уникальный для каждой таблицы комментарий, объясняющий, зачем нужна эта таблица. [#63788](https://github.com/ClickHouse/ClickHouse/pull/63788) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Второй аргумент (scale) функций `round()`, `roundBankers()`, `floor()`, `ceil()` и `trunc()` теперь может быть не константой. [#64798](https://github.com/ClickHouse/ClickHouse/pull/64798) ([Mikhail Gorshkov](https://github.com/mgorshkov)).
+* Предотвращена возможная взаимная блокировка при анализе индекса MergeTree во время планирования потоков в перегруженном сервисе. [#59427](https://github.com/ClickHouse/ClickHouse/pull/59427) ([Sean Haynes](https://github.com/seandhaynes)).
+* Несколько небольших исправлений для поддержки S3-прокси и туннелирования в редких пограничных случаях. [#63427](https://github.com/ClickHouse/ClickHouse/pull/63427) ([Arthur Passos](https://github.com/arthurpassos)).
+* Добавлены метрики для отслеживания количества каталогов, созданных и удалённых хранилищем метаданных `plain_rewritable`, а также количества записей в карте соответствия `local-to-remote` в памяти. [#64175](https://github.com/ClickHouse/ClickHouse/pull/64175) ([Julia Kartseva](https://github.com/jkartseva)).
+* Кэш запросов теперь считает одинаковые запросы с разными настройками разными. Это повышает надёжность в случаях, когда разные настройки (например, `limit` или `additional_table_filters`) влияют на результат запроса. [#64205](https://github.com/ClickHouse/ClickHouse/pull/64205) ([Robert Schulze](https://github.com/rschu1ze)).
+* Добавлена поддержка нестандартного кода ошибки `QpsLimitExceeded` в объектном хранилище как ошибки, для которой возможна повторная попытка. [#64225](https://github.com/ClickHouse/ClickHouse/pull/64225) ([Sema Checherinda](https://github.com/CheSema)).
+* Добавлена новая настройка `input_format_parquet_prefer_block_bytes` для управления средним размером выходных блоков в байтах, а значение по умолчанию для `input_format_parquet_max_block_size` изменено на 65409. [#64427](https://github.com/ClickHouse/ClickHouse/pull/64427) ([LiuNeng](https://github.com/liuneng1994)).
+* Настройки из пользовательской конфигурации не влияют на слияния и мутации для `MergeTree`, работающего поверх Объектного хранилища. [#64456](https://github.com/ClickHouse/ClickHouse/pull/64456) ([alesapin](https://github.com/alesapin)).
+* Добавлена поддержка нестандартного кода ошибки `TotalQpsLimitExceeded` в объектном хранилище в качестве ошибки, допускающей повторную попытку. [#64520](https://github.com/ClickHouse/ClickHouse/pull/64520) ([Sema Checherinda](https://github.com/CheSema)).
+* Обновлена панель мониторинга Advanced Dashboard для версий с открытым исходным кодом и ClickHouse Cloud: в неё добавлена диаграмма &#39;Максимальное число одновременных сетевых подключений&#39;. [#64610](https://github.com/ClickHouse/ClickHouse/pull/64610) ([Thom O&#39;Connor](https://github.com/thomoco)).
+* Улучшен отчёт о прогрессе для `zeros_mt` и `generateRandom`. [#64804](https://github.com/ClickHouse/ClickHouse/pull/64804) ([Raúl Marín](https://github.com/Algunenano)).
+* Добавлена асинхронная метрика `jemalloc.profile.active`, которая показывает, активно ли в данный момент сэмплирование. Это дополнительный механизм активации наряду с prof.active; чтобы вызывющий поток участвовал в сэмплировании, активными должны быть оба. [#64842](https://github.com/ClickHouse/ClickHouse/pull/64842) ([Unalian](https://github.com/Unalian)).
+* Убрана пометка `allow_experimental_join_condition` как важной. Эта пометка могла мешать успешному выполнению распределённых запросов в кластере со смешанными версиями. [#65008](https://github.com/ClickHouse/ClickHouse/pull/65008) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+* Добавлены асинхронные метрики сервера `DiskGetObjectThrottler*` и `DiskGetObjectThrottler*`, отражающие лимит запросов в секунду, заданный настройками диска `s3_max_get_rps` и `s3_max_put_rps`, а также текущее число запросов, которое можно отправить, не достигнув лимита throttling на диске. Метрики определены для каждого диска, для которого настроен такой лимит. [#65050](https://github.com/ClickHouse/ClickHouse/pull/65050) ([Sergei Trifonov](https://github.com/serxa)).
+* Добавлена валидация при создании пользователя с `bcrypt_hash`. [#65242](https://github.com/ClickHouse/ClickHouse/pull/65242) ([Raúl Marín](https://github.com/Algunenano)).
+* Добавлены profile events для числа строк, прочитанных во время/после `PREWHERE`. [#64198](https://github.com/ClickHouse/ClickHouse/pull/64198) ([Nikita Taranov](https://github.com/nickitat)).
+* Вывод запроса в `EXPLAIN PLAN` при использовании параллельных реплик. [#64298](https://github.com/ClickHouse/ClickHouse/pull/64298) ([vdimir](https://github.com/vdimir)).
+* Параметр `allow_deprecated_functions` переименован в `allow_deprecated_error_prone_window_functions`. [#64358](https://github.com/ClickHouse/ClickHouse/pull/64358) ([Raúl Marín](https://github.com/Algunenano)).
+* Учитывать настройку `max_read_buffer_size` и для файловых дескрипторов в табличной функции `file`. [#64532](https://github.com/ClickHouse/ClickHouse/pull/64532) ([Azat Khuzhin](https://github.com/azat)).
+* Отключены транзакции для неподдерживаемых хранилищ, в том числе для materialized views. [#64918](https://github.com/ClickHouse/ClickHouse/pull/64918) ([alesapin](https://github.com/alesapin)).
+* Запретили предложение `QUALIFY` в старом анализаторе. Старый анализатор игнорировал `QUALIFY`, из-за чего при мутациях могло происходить непреднамеренное удаление данных. [#65356](https://github.com/ClickHouse/ClickHouse/pull/65356) ([Dmitry Novik](https://github.com/novikd)).
+
+<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
+  ## Исправление ошибки (некорректное поведение, заметное пользователю, в официальном стабильном релизе)
+</div>
+
+* Исправлена ошибка, из-за которой индекс пропуска данных &#39;set&#39; не работал с IN и indexHint(). #62083 (Michael Kolupaev).
+* Исправлена ошибка, из-за которой запросы с FINAL возвращали неверный результат, если таблица была без адаптивной гранулярности. #62432 (Duc Canh Le).
+* Добавлена поддержка выполнения функции при задании значения параметризованного представления. #63502 (SmitaRKulkarni).
+* Исправлен учёт памяти для Parquet. #63584 (Michael Kolupaev).
+* Исправлен редкий случай пропажи данных в результате распределённого запроса. #63691 (vdimir).
+* Исправлено чтение столбцов типа Tuple(Map(LowCardinality(String), String), ...). #63956 (Anton Popov).
+* Исправлено разрешение неквалифицированного сопоставителя COLUMNS. Сохранён порядок входных столбцов и запрещено использование неизвестных идентификаторов. #63962 (Dmitry Novik).
+* Исправлена ошибка Cyclic aliases, возникавшая при циклических псевдонимах разных типов (выражения и функции). #63993 (Nikolai Kochetov).
+* В этом исправлении будет использоваться корректно переопределённый контекст с правильным `definer` для каждого отдельного представления в конвейере выполнения запроса. #64079 (pufit).
+* Исправлен analyzer: ошибка &quot;Not found column&quot; при использовании INTERPOLATE устранена. #64096 (Yakov Olkhovskiy).
+* Предотвращена ошибка LOGICAL&#95;ERROR при CREATE TABLE как MaterializedView. #64174 (Raúl Marín).
+* Кэш запросов теперь рассматривает два одинаковых запроса к разным базам данных как разные. Предыдущее поведение можно было использовать для обхода отсутствующих привилегий на чтение из таблицы. #64199 (Robert Schulze).
+* Исправлено возможное аварийное завершение из-за неперехваченного исключения в ~WriteBufferFromFileDescriptor в StatusFile. #64206 (Kruglov Pavel).
+* Исправлена ошибка из-за дублирования псевдонима в распределённых запросах с ARRAY JOIN. #64226 (Nikolai Kochetov).
+* Исправлено некорректное поведение accurateCast при преобразовании строки в целое число. #64255 (wudidapaopao).
+* Исправлено упрощение CNF в случаях, когда какая-либо группа OR содержит взаимоисключающие атомы. #64256 (Eduard Karacharov).
+* Исправлена валидация размера Query Tree. #64377 (Dmitry Novik).
+* Исправлена логическая ошибка: некорректный CAST для таблицы Buffer с PREWHERE. #64388 (Nikolai Kochetov).
+* Исправлена работа запросов CREATE TABLE AS для таблиц с выражениями по умолчанию. #64455 (Anton Popov).
+* Исправлено поведение optimize&#95;read&#95;in&#95;order для ORDER BY ... NULLS FIRST / LAST при работе с таблицами с ключами Nullable. #64483 (Eduard Karacharov).
+* Исправлены ошибки Expression nodes list expected 1 projection names и Unknown expression or identifier в запросах с псевдонимами в GLOBAL IN.. #64517 (Nikolai Kochetov).
+* Исправлена ошибка Cannot find column при распределённых запросах с константным CTE в ключе GROUP BY. #64519 (Nikolai Kochetov).
+* Исправлен вывод функции formatDateTimeInJodaSyntax в случае, когда форматтер генерирует нечётное количество символов, а последний символ — 0. Например, SELECT formatDateTimeInJodaSyntax(toDate(&#39;2012-05-29&#39;), &#39;D&#39;) теперь корректно возвращает 150 вместо прежнего 15. #64614 (LiuNeng).
+* Не переписывать агрегацию, если уже используется комбинатор -If. #64638 (Dmitry Novik).
+* Исправлен вывод типов для float (при небольшом буфере, то есть --max&#95;read&#95;buffer&#95;size 1). #64641 (Azat Khuzhin).
+* Исправлена ошибка, из-за которой TTL с выражениями могли не работать. #64694 (alesapin).
+* Исправлено удаление выражений WHERE и PREWHERE, которые всегда истинны (в новом анализаторе). #64695 (Nikolai Kochetov).
+* Исправлено чрезмерное отсечение частей текстовыми индексами на основе токенов (ngrambf , full&#95;text) при фильтрации по результатам startsWith, endsWith, match, multiSearchAny. #64720 (Eduard Karacharov).
+* Исправлено некорректное поведение при экранировании ANSI CSI в функции UTF8::computeWidth. #64756 (Shaun Struwig).
+* Исправлен случай некорректного удаления ORDER BY / LIMIT BY между подзапросами. #64766 (Raúl Marín).
+* Исправлен (экспериментальный) JOIN по неравенству с подзапросами для множеств, используемых в смешанных условиях JOIN. #64775 (lgbo).
+* Исправлен сбой в локальном кэше при использовании обычного диска plain&#95;rewritable. #64778 (Julia Kartseva).
+* Исправлена ошибка `Cannot find column` в распределённом запросе с ARRAY JOIN по столбцу Nested. Исправление #64755. #64801 (Nikolai Kochetov).
+* Исправлена утечка памяти в политике кэширования SLRU. #64803 (Kseniia Sumarokova).
+* Исправлен возможный некорректный учет памяти в нескольких типах запросов: запросах, читающих данные из S3, запросах по HTTP-протоколу и при асинхронных вставках. #64844 (Anton Popov).
+* Исправлена ошибка несоответствия структуры блока в запросах, читающих с PREWHERE из materialized view, когда в materialized view есть столбцы типов, отличающихся от типов столбцов в исходной таблице. Исправляет #64611. #64855 (Nikolai Kochetov).
+* Исправлен редкий сбой, возникавший, когда в таблице используется TTL с подзапросом + база данных Replicated + параллельные реплики + анализатор. Это действительно очень редкий случай, но, пожалуйста, не используйте TTL с подзапросами. #64858 (alesapin).
+* Исправлен запрос ALTER MODIFY COMMENT, который не работал для параметризованных VIEW в ClickHouse/ClickHouse#54211. #65031 (Nikolay Degterinsky).
+* Исправлен host&#95;id в DatabaseReplicated, когда включен параметр cluster&#95;secure&#95;connection. Ранее все соединения внутри кластера, создаваемые DatabaseReplicated, были незащищёнными, даже если параметр был включен. #65054 (Nikolay Degterinsky).
+* Исправление ошибки Not-ready Set после применения оптимизации PREWHERE для StorageMerge. #65057 (Nikolai Kochetov).
+* Предотвращена запись в финализированный буфер в хранилищах типа File. #65063 (Kruglov Pavel).
+* Исправлено возможное бесконечное время выполнения запроса в случае циклических псевдонимов. Исправляет #64849. #65081 (Nikolai Kochetov).
+* Исправлена ошибка Unknown expression identifier в удалённых запросах с INTERPOLATE (псевдоним) (новый анализатор). Исправляет #64636. #65090 (Nikolai Kochetov).
+* Исправлено вынесение арифметических операций из агрегации. В новом анализаторе оптимизация применялась только один раз. #65104 (Dmitry Novik).
+* Исправлено переименование агрегатной функции в новом анализаторе. #65110 (Dmitry Novik).
+* Возвращать 5xx вместо 200 OK при тайм-ауте чтения (частей) тела запроса из клиентского сокета. #65118 (Julian Maicher).
+* Исправлено возможное аварийное завершение при хеджированных запросах. #65206 (Azat Khuzhin).
+* Исправлена ошибка в вычислении с коротким замыканием в словарях Hashed и Hashed&#95;Array, из-за которой могло считываться неинициализированное число, что приводило к различным ошибкам. #65256 (jsc0218).
+* Этот PR гарантирует, что тип constant (второго параметра оператора IN) всегда виден в процессе преобразования типов оператором IN. В противном случае потеря информации о типе может привести к сбою некоторых преобразований, например преобразования из DateTime в Date. Исправление (#64487). #65315 (pn).

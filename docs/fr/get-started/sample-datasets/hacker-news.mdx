@@ -1,0 +1,667 @@
+---
+description: 'Jeu de données contenant 28 millions de lignes issues de Hacker News.'
+sidebarTitle: 'Hacker News'
+slug: /getting-started/example-datasets/hacker-news
+title: 'Jeu de données Hacker News'
+doc_type: 'guide'
+keywords: ['jeu de données d’exemple', 'Hacker News', 'données d’exemple', 'analyse de texte', 'recherche vectorielle']
+---
+
+> Dans ce tutoriel, vous allez insérer 28 millions de lignes de données Hacker News dans une table de ClickHouse
+> aux formats CSV et Parquet, puis exécuter quelques requêtes simples pour explorer les données.
+
+<div id="csv">
+  ## CSV
+</div>
+
+<Steps>
+  <Step>
+    ### Télécharger le fichier CSV
+
+    Une version CSV du jeu de données peut être téléchargée depuis notre [bucket S3 public](https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz) ou en exécutant cette commande :
+
+    ```bash
+    wget https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz
+    ```
+
+    Avec ses 4,6 Go et ses 28 M de lignes, le téléchargement de ce fichier compressé devrait prendre de 5 à 10 minutes.
+  </Step>
+
+  <Step>
+    ### Échantillonner les données
+
+    [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local) vous permet de traiter rapidement des fichiers locaux sans
+    avoir à déployer et à configurer le serveur ClickHouse.
+
+    Avant de stocker des données dans ClickHouse, échantillonnons le fichier à l’aide de clickhouse-local.
+    Dans la console, exécutez :
+
+    ```bash
+    clickhouse-local
+    ```
+
+    Ensuite, exécutez la commande suivante pour explorer les données :
+
+    ```sql title="Query"
+    SELECT *
+    FROM file('hacknernews.csv.gz', CSVWithNames)
+    LIMIT 2
+    SETTINGS input_format_try_infer_datetimes = 0
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:          344065
+    deleted:     0
+    type:        comment
+    by:          callmeed
+    time:        2008-10-26 05:06:58
+    text:        What kind of reports do you need?<p>ActiveMerchant just connects your app to a gateway for cc approval and processing.<p>Braintree has very nice reports on transactions and it's very easy to refund a payment.<p>Beyond that, you are dealing with Rails after all–it's pretty easy to scaffold out some reports from your subscriber base.
+    dead:        0
+    parent:      344038
+    poll:        0
+    kids:        []
+    url:
+    score:       0
+    title:
+    parts:       []
+    descendants: 0
+
+    Row 2:
+    ──────
+    id:          344066
+    deleted:     0
+    type:        story
+    by:          acangiano
+    time:        2008-10-26 05:07:59
+    text:
+    dead:        0
+    parent:      0
+    poll:        0
+    kids:        [344111,344202,344329,344606]
+    url:         http://antoniocangiano.com/2008/10/26/what-arc-should-learn-from-ruby/
+    score:       33
+    title:       What Arc should learn from Ruby
+    parts:       []
+    descendants: 10
+    ```
+
+    Cette commande recèle de nombreuses subtilités.
+    L’opérateur [`file`](/fr/reference/functions/regular-functions/files#file) vous permet de lire un fichier depuis un disque local en spécifiant uniquement le format `CSVWithNames`.
+    Plus important encore, le schéma est automatiquement déduit du contenu du fichier.
+    Notez également que `clickhouse-local` est capable de lire le fichier compressé en déduisant le format gzip à partir de l’extension.
+    Le format `Vertical` est utilisé pour visualiser plus facilement les données de chaque colonne.
+  </Step>
+
+  <Step>
+    ### Charger les données avec l’inférence de schéma
+
+    L’outil le plus simple et le plus puissant pour charger des données est `clickhouse-client` : un client natif en ligne de commande doté de nombreuses fonctionnalités.
+    Pour charger les données, vous pouvez de nouveau recourir à l’inférence de schéma et laisser ClickHouse déterminer les types des colonnes.
+
+    Exécutez la commande suivante pour créer une table et insérer directement les données depuis le fichier CSV distant, en accédant à son contenu via la fonction [`url`](/fr/reference/functions/table-functions/url).
+    Le schéma est automatiquement inféré :
+
+    ```sql
+    CREATE TABLE hackernews ENGINE = MergeTree ORDER BY tuple
+    (
+    ) EMPTY AS SELECT * FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames');
+    ```
+
+    Cela crée une table vide à l’aide du schéma inféré à partir des données.
+    La commande [`DESCRIBE TABLE`](/fr/reference/statements/describe-table) permet de voir les types ainsi attribués.
+
+    ```sql title="Query"
+    DESCRIBE TABLE hackernews
+    ```
+
+    ```text title="Response"
+    ┌─name────────┬─type─────────────────────┬
+    │ id          │ Nullable(Float64)        │
+    │ deleted     │ Nullable(Float64)        │
+    │ type        │ Nullable(String)         │
+    │ by          │ Nullable(String)         │
+    │ time        │ Nullable(String)         │
+    │ text        │ Nullable(String)         │
+    │ dead        │ Nullable(Float64)        │
+    │ parent      │ Nullable(Float64)        │
+    │ poll        │ Nullable(Float64)        │
+    │ kids        │ Array(Nullable(Float64)) │
+    │ url         │ Nullable(String)         │
+    │ score       │ Nullable(Float64)        │
+    │ title       │ Nullable(String)         │
+    │ parts       │ Array(Nullable(Float64)) │
+    │ descendants │ Nullable(Float64)        │
+    └─────────────┴──────────────────────────┴
+    ```
+
+    Pour insérer les données dans cette table, utilisez la commande `INSERT INTO, SELECT`.
+    Avec la fonction `url`, les données seront lues directement depuis l’URL :
+
+    ```sql
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.csv.gz', 'CSVWithNames')
+    ```
+
+    Vous avez inséré 28 millions de lignes dans ClickHouse avec une seule commande !
+  </Step>
+
+  <Step>
+    ### Explorer les données
+
+    Obtenez un échantillon des articles Hacker News et de certaines colonnes en exécutant la requête suivante :
+
+    ```sql title="Query"
+    SELECT
+        id,
+        title,
+        type,
+        by,
+        time,
+        url,
+        score
+    FROM hackernews
+    WHERE type = 'story'
+    LIMIT 3
+    FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    id:    2596866
+    title:
+    type:  story
+    by:
+    time:  1306685152
+    url:
+    score: 0
+
+    Row 2:
+    ──────
+    id:    2596870
+    title: WordPress capture users last login date and time
+    type:  story
+    by:    wpsnipp
+    time:  1306685252
+    url:   http://wpsnipp.com/index.php/date/capture-users-last-login-date-and-time/
+    score: 1
+
+    Row 3:
+    ──────
+    id:    2596872
+    title: Recent college graduates get some startup wisdom
+    type:  story
+    by:    whenimgone
+    time:  1306685352
+    url:   http://articles.chicagotribune.com/2011-05-27/business/sc-cons-0526-started-20110527_1_business-plan-recession-college-graduates
+    score: 1
+    ```
+
+    Bien que l’inférence de schéma soit un excellent outil pour l’exploration initiale des données, elle relève d’une approche « best effort » et ne remplace pas, à long terme, la définition d’un schéma optimal pour vos données.
+  </Step>
+
+  <Step>
+    ### Définir un schéma
+
+    Une optimisation simple et immédiate consiste à définir un type pour chaque champ.
+    En plus de déclarer le champ temporel au format `DateTime`, nous définissons un type approprié pour chacun des champs ci-dessous après avoir supprimé notre jeu de données existant.
+    Dans ClickHouse, la clé primaire des données est définie par la clause `ORDER BY`.
+
+    Choisir des types appropriés et les colonnes à inclure dans la clause `ORDER BY`
+    contribue à améliorer la vitesse des requêtes et la compression.
+
+    Exécutez la requête ci-dessous pour supprimer l’ancien schéma et créer le schéma amélioré :
+
+    ```sql title="Query"
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    (
+        `id` UInt32,
+        `deleted` UInt8,
+        `type` Enum('story' = 1, 'comment' = 2, 'poll' = 3, 'pollopt' = 4, 'job' = 5),
+        `by` LowCardinality(String),
+        `time` DateTime,
+        `text` String,
+        `dead` UInt8,
+        `parent` UInt32,
+        `poll` UInt32,
+        `kids` Array(UInt32),
+        `url` String,
+        `score` Int32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` Int32
+    )
+        ENGINE = MergeTree
+    ORDER BY id
+    ```
+
+    Avec un schéma optimisé, vous pouvez maintenant insérer les données depuis le système de fichiers local.
+    Toujours avec `clickhouse-client`, insérez les données du fichier à l’aide de la clause `INFILE` avec un `INSERT INTO` explicite.
+
+    ```sql title="Query"
+    INSERT INTO hackernews FROM INFILE '/data/hacknernews.csv.gz' FORMAT CSVWithNames
+    ```
+  </Step>
+
+  <Step>
+    ### Exécuter des exemples de requêtes
+
+    Quelques exemples de requêtes sont présentés ci-dessous pour vous aider à
+    rédiger vos propres requêtes.
+
+    #### Quelle est la place de « ClickHouse » comme sujet sur Hacker News ?
+
+    Le champ score fournit une métrique de popularité pour les articles, tandis que le champ `id` et l&#39;opérateur de concaténation `||` peuvent être utilisés pour générer un lien vers le post original.
+
+    ```sql title="Query"
+    SELECT
+        time,
+        score,
+        descendants,
+        title,
+        url,
+        'https://news.ycombinator.com/item?id=' || toString(id) AS hn_url
+    FROM hackernews
+    WHERE (type = 'story') AND (title ILIKE '%ClickHouse%')
+    ORDER BY score DESC
+    LIMIT 5 FORMAT Vertical
+    ```
+
+    ```response title="Response"
+    Row 1:
+    ──────
+    time:        1632154428
+    score:       519
+    descendants: 159
+    title:       ClickHouse, Inc.
+    url:         https://github.com/ClickHouse/ClickHouse/blob/master/website/blog/en/2021/clickhouse-inc.md
+    hn_url:      https://news.ycombinator.com/item?id=28595419
+
+    Row 2:
+    ──────
+    time:        1614699632
+    score:       383
+    descendants: 134
+    title:       ClickHouse as an alternative to Elasticsearch for log storage and analysis
+    url:         https://pixeljets.com/blog/clickhouse-vs-elasticsearch/
+    hn_url:      https://news.ycombinator.com/item?id=26316401
+
+    Row 3:
+    ──────
+    time:        1465985177
+    score:       243
+    descendants: 70
+    title:       ClickHouse – high-performance open-source distributed column-oriented DBMS
+    url:         https://clickhouse.yandex/reference_en.html
+    hn_url:      https://news.ycombinator.com/item?id=11908254
+
+    Row 4:
+    ──────
+    time:        1578331410
+    score:       216
+    descendants: 86
+    title:       ClickHouse cost-efficiency in action: analyzing 500B rows on an Intel NUC
+    url:         https://www.altinity.com/blog/2020/1/1/clickhouse-cost-efficiency-in-action-analyzing-500-billion-rows-on-an-intel-nuc
+    hn_url:      https://news.ycombinator.com/item?id=21970952
+
+    Row 5:
+    ──────
+    time:        1622160768
+    score:       198
+    descendants: 55
+    title:       ClickHouse: An open-source column-oriented database management system
+    url:         https://github.com/ClickHouse/ClickHouse
+    hn_url:      https://news.ycombinator.com/item?id=27310247
+    ```
+
+    ClickHouse génère-t-il davantage de bruit au fil du temps ? C&#39;est ici qu&#39;apparaît l&#39;intérêt de définir le champ `time`
+    en tant que `DateTime` : l&#39;utilisation d&#39;un type de données approprié permet de recourir à la fonction `toYYYYMM()` :
+
+    ```sql title="Query"
+    SELECT
+       toYYYYMM(time) AS monthYear,
+       bar(count(), 0, 120, 20)
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY monthYear
+    ORDER BY monthYear ASC
+    ```
+
+    ```response title="Response"
+    ┌─monthYear─┬─bar(count(), 0, 120, 20)─┐
+    │    201606 │ ██▎                      │
+    │    201607 │ ▏                        │
+    │    201610 │ ▎                        │
+    │    201612 │ ▏                        │
+    │    201701 │ ▎                        │
+    │    201702 │ █                        │
+    │    201703 │ ▋                        │
+    │    201704 │ █                        │
+    │    201705 │ ██                       │
+    │    201706 │ ▎                        │
+    │    201707 │ ▎                        │
+    │    201708 │ ▏                        │
+    │    201709 │ ▎                        │
+    │    201710 │ █▌                       │
+    │    201711 │ █▌                       │
+    │    201712 │ ▌                        │
+    │    201801 │ █▌                       │
+    │    201802 │ ▋                        │
+    │    201803 │ ███▏                     │
+    │    201804 │ ██▏                      │
+    │    201805 │ ▋                        │
+    │    201806 │ █▏                       │
+    │    201807 │ █▌                       │
+    │    201808 │ ▋                        │
+    │    201809 │ █▌                       │
+    │    201810 │ ███▌                     │
+    │    201811 │ ████                     │
+    │    201812 │ █▌                       │
+    │    201901 │ ████▋                    │
+    │    201902 │ ███                      │
+    │    201903 │ ▋                        │
+    │    201904 │ █                        │
+    │    201905 │ ███▋                     │
+    │    201906 │ █▏                       │
+    │    201907 │ ██▎                      │
+    │    201908 │ ██▋                      │
+    │    201909 │ █▋                       │
+    │    201910 │ █                        │
+    │    201911 │ ███                      │
+    │    201912 │ █▎                       │
+    │    202001 │ ███████████▋             │
+    │    202002 │ ██████▌                  │
+    │    202003 │ ███████████▋             │
+    │    202004 │ ███████▎                 │
+    │    202005 │ ██████▏                  │
+    │    202006 │ ██████▏                  │
+    │    202007 │ ███████▋                 │
+    │    202008 │ ███▋                     │
+    │    202009 │ ████                     │
+    │    202010 │ ████▌                    │
+    │    202011 │ █████▏                   │
+    │    202012 │ ███▋                     │
+    │    202101 │ ███▏                     │
+    │    202102 │ █████████                │
+    │    202103 │ █████████████▋           │
+    │    202104 │ ███▏                     │
+    │    202105 │ ████████████▋            │
+    │    202106 │ ███                      │
+    │    202107 │ █████▏                   │
+    │    202108 │ ████▎                    │
+    │    202109 │ ██████████████████▎      │
+    │    202110 │ ▏                        │
+    └───────────┴──────────────────────────┘
+    ```
+
+    Il semblerait que &quot;ClickHouse&quot; gagne en popularité au fil du temps.
+
+    #### Qui sont les commentateurs les plus actifs sur les articles liés à ClickHouse ?
+
+    ```sql title="Query"
+    SELECT
+       by,
+       count() AS comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY comments DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by──────────┬─comments─┐
+    │ hodgesrm    │       78 │
+    │ zX41ZdbW    │       45 │
+    │ manigandham │       39 │
+    │ pachico     │       35 │
+    │ valyala     │       27 │
+    └─────────────┴──────────┘
+    ```
+
+    #### Quels commentaires suscitent le plus d&#39;intérêt ?
+
+    ```sql title="Query"
+    SELECT
+      by,
+      sum(score) AS total_score,
+      sum(length(kids)) AS total_sub_comments
+    FROM hackernews
+    WHERE (type IN ('story', 'comment')) AND ((title ILIKE '%ClickHouse%') OR (text ILIKE '%ClickHouse%'))
+    GROUP BY by
+    ORDER BY total_score DESC
+    LIMIT 5
+    ```
+
+    ```response title="Response"
+    ┌─by───────┬─total_score─┬─total_sub_comments─┐
+    │ zX41ZdbW │        571  │              50    │
+    │ jetter   │        386  │              30    │
+    │ hodgesrm │        312  │              50    │
+    │ mechmind │        243  │              16    │
+    │ tosh     │        198  │              12    │
+    └──────────┴─────────────┴────────────────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="parquet">
+  ## Parquet
+</div>
+
+L’un des points forts de ClickHouse est sa capacité à prendre en charge un grand nombre de [formats](/fr/reference/formats/index).
+Le format CSV constitue un cas d’usage assez idéal, mais ce n’est pas le plus efficace pour l’échange de données.
+
+Ensuite, vous chargerez les données à partir d’un fichier Parquet, un format colonnaire efficace.
+
+Parquet ne prend en charge qu’un nombre limité de types, que ClickHouse doit respecter, et ces informations de type sont encodées dans le format lui-même.
+L’inférence de type sur un fichier Parquet conduira invariablement à un schéma légèrement différent de celui du fichier CSV.
+
+<Steps>
+  <Step>
+    ### Insérer les données
+
+    Exécutez la requête suivante pour lire ces mêmes données au format Parquet, en utilisant à nouveau la fonction url pour accéder aux données distantes :
+
+    ```sql
+    DROP TABLE IF EXISTS hackernews;
+
+    CREATE TABLE hackernews
+    ENGINE = MergeTree
+    ORDER BY id
+    SETTINGS allow_nullable_key = 1 EMPTY AS
+    SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+
+    INSERT INTO hackernews SELECT *
+    FROM url('https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet', 'Parquet')
+    ```
+
+    <Info>
+      **Clés `NULL` avec Parquet**
+
+      En raison du format Parquet, nous devons accepter que les clés puissent être `NULL`,
+      même si ce n’est pas le cas dans les données.
+    </Info>
+
+    Exécutez la commande suivante pour afficher le schéma inféré :
+
+    ```response title="Response"
+    ┌─name────────┬─type───────────────────┬
+    │ id          │ Nullable(Int64)        │
+    │ deleted     │ Nullable(UInt8)        │
+    │ type        │ Nullable(String)       │
+    │ time        │ Nullable(Int64)        │
+    │ text        │ Nullable(String)       │
+    │ dead        │ Nullable(UInt8)        │
+    │ parent      │ Nullable(Int64)        │
+    │ poll        │ Nullable(Int64)        │
+    │ kids        │ Array(Nullable(Int64)) │
+    │ url         │ Nullable(String)       │
+    │ score       │ Nullable(Int32)        │
+    │ title       │ Nullable(String)       │
+    │ parts       │ Array(Nullable(Int64)) │
+    │ descendants │ Nullable(Int32)        │
+    └─────────────┴────────────────────────┴
+    ```
+
+    Comme précédemment avec le fichier CSV, vous pouvez spécifier manuellement le schéma afin de mieux contrôler les types choisis et insérer les
+    données directement depuis S3 :
+
+    ```sql
+    CREATE TABLE hackernews
+    (
+        `id` UInt64,
+        `deleted` UInt8,
+        `type` String,
+        `author` String,
+        `timestamp` DateTime,
+        `comment` String,
+        `dead` UInt8,
+        `parent` UInt64,
+        `poll` UInt64,
+        `children` Array(UInt32),
+        `url` String,
+        `score` UInt32,
+        `title` String,
+        `parts` Array(UInt32),
+        `descendants` UInt32
+    )
+    ENGINE = MergeTree
+    ORDER BY (type, author);
+
+    INSERT INTO hackernews
+    SELECT * FROM s3(
+            'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+            'Parquet',
+            'id UInt64,
+             deleted UInt8,
+             type String,
+             by String,
+             time DateTime,
+             text String,
+             dead UInt8,
+             parent UInt64,
+             poll UInt64,
+             kids Array(UInt32),
+             url String,
+             score UInt32,
+             title String,
+             parts Array(UInt32),
+             descendants UInt32');
+    ```
+  </Step>
+
+  <Step>
+    ### Ajouter un index de saut pour accélérer les requêtes
+
+    Pour savoir combien de commentaires mentionnent &quot;ClickHouse&quot;, exécutez la requête suivante :
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'ClickHouse');
+    ```
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.843 sec. Processed 28.74 million rows, 9.75 GB (34.08 million rows/s., 11.57 GB/s.)
+    ┌─count()─┐
+    │     516 │
+    └─────────┘
+    ```
+
+    Ensuite, vous allez créer un [index](/fr/reference/engines/table-engines/mergetree-family/textindexes) inversé sur la colonne &quot;comment&quot;
+    afin d&#39;accélérer cette requête.
+    Notez que les commentaires seront indexés en minuscules afin de retrouver des termes indépendamment de la casse.
+
+    Exécutez les commandes suivantes pour créer l&#39;index :
+
+    ```sql
+    ALTER TABLE hackernews ADD INDEX comment_idx(lower(comment)) TYPE inverted;
+    ALTER TABLE hackernews MATERIALIZE INDEX comment_idx;
+    ```
+
+    La matérialisation de l’index prend un certain temps (pour vérifier si l’index a bien été créé, utilisez la table système `system.data_skipping_indices`).
+
+    Exécutez de nouveau la requête une fois l’index créé :
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse');
+    ```
+
+    Observez que la requête n’a désormais pris que 0,248 seconde avec l’index, contre 0,843 seconde auparavant sans celui-ci :
+
+    ```response title="Response" highlight={1}
+    1 row in set. Elapsed: 0.248 sec. Processed 4.54 million rows, 1.79 GB (18.34 million rows/s., 7.24 GB/s.)
+    ┌─count()─┐
+    │    1145 │
+    └─────────┘
+    ```
+
+    La clause [`EXPLAIN`](/fr/reference/statements/explain) peut être utilisée pour comprendre pourquoi l&#39;ajout de cet index
+    a rendu la requête environ 3,4 fois plus rapide.
+
+    ```response text="Query"
+    EXPLAIN indexes = 1
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'clickhouse')
+    ```
+
+    ```response title="Response"
+    ┌─explain─────────────────────────────────────────┐
+    │ Expression ((Projection + Before ORDER BY))     │
+    │   Aggregating                                   │
+    │     Expression (Before GROUP BY)                │
+    │       Filter (WHERE)                            │
+    │         ReadFromMergeTree (default.hackernews)  │
+    │         Indexes:                                │
+    │           PrimaryKey                            │
+    │             Condition: true                     │
+    │             Parts: 4/4                          │
+    │             Granules: 3528/3528                 │
+    │           Skip                                  │
+    │             Name: comment_idx                   │
+    │             Description: inverted GRANULARITY 1 │
+    │             Parts: 4/4                          │
+    │             Granules: 554/3528                  │
+    └─────────────────────────────────────────────────┘
+    ```
+
+    Remarquez comment l’index a permis d’ignorer un grand nombre de granules
+    pour accélérer la requête.
+
+    Il est désormais également possible de rechercher efficacement un ou plusieurs termes :
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE multiSearchAny(lower(comment), ['oltp', 'olap']);
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │    2177 │
+    └─────────┘
+    ```
+
+    ```sql title="Query"
+    SELECT count(*)
+    FROM hackernews
+    WHERE hasToken(lower(comment), 'avx') AND hasToken(lower(comment), 'sve');
+    ```
+
+    ```response title="Response"
+    ┌─count()─┐
+    │      22 │
+    └─────────┘
+    ```
+  </Step>
+</Steps>

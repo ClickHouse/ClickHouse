@@ -1,0 +1,2445 @@
+---
+description: 'صفحة تشرح الاستنتاج التلقائي للمخطط من بيانات الإدخال في ClickHouse'
+sidebarTitle: 'استنتاج المخطط'
+slug: /interfaces/schema-inference
+title: 'الاستنتاج التلقائي للمخطط من بيانات الإدخال'
+doc_type: 'reference'
+---
+
+يمكن لـ ClickHouse تحديد بنية بيانات الإدخال تلقائيًا في معظم [تنسيقات الإدخال](/ar/reference/formats/index) المدعومة.
+تشرح هذه الصفحة متى يُستخدم استنتاج المخطط، وكيف يعمل مع تنسيقات الإدخال المختلفة، وما الإعدادات التي
+يمكنها التحكم فيه.
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+يُستخدَم استنتاج المخطط عندما يحتاج ClickHouse إلى قراءة البيانات بتنسيق محدد وتكون بنيتها غير معروفة.
+
+<div id="table-functions-file-s3-url-hdfs-azureblobstorage">
+  ## دوال الجدول [file](/ar/reference/functions/table-functions/file)، [s3](/ar/reference/functions/table-functions/s3)، [url](/ar/reference/functions/table-functions/url)، [hdfs](/ar/reference/functions/table-functions/hdfs)، [azureBlobStorage](/ar/reference/functions/table-functions/azureBlobStorage).
+</div>
+
+تتضمن دوال الجدول هذه الوسيط الاختياري `structure` الذي يحدد بنية بيانات الإدخال. وإذا لم يُحدَّد هذا الوسيط أو ضُبط على `auto`، فستُستنتَج البنية من البيانات.
+
+**مثال:**
+
+لنفترض أن لدينا الملف `hobbies.jsonl` بتنسيق JSONEachRow داخل الدليل `user_files` وبالمحتوى التالي:
+
+```json
+{"id" :  1, "age" :  25, "name" :  "Josh", "hobbies" :  ["football", "cooking", "music"]}
+{"id" :  2, "age" :  19, "name" :  "Alan", "hobbies" :  ["tennis", "art"]}
+{"id" :  3, "age" :  32, "name" :  "Lana", "hobbies" :  ["fitness", "reading", "shopping"]}
+{"id" :  4, "age" :  47, "name" :  "Brayan", "hobbies" :  ["movies", "skydiving"]}
+```
+
+يمكن لـ ClickHouse قراءة هذه البيانات دون الحاجة إلى تحديد بنيتها:
+
+```sql
+SELECT * FROM file('hobbies.jsonl')
+```
+
+```response
+┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
+│  1 │  25 │ Josh   │ ['football','cooking','music']   │
+│  2 │  19 │ Alan   │ ['tennis','art']                 │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
+│  4 │  47 │ Brayan │ ['movies','skydiving']           │
+└────┴─────┴────────┴──────────────────────────────────┘
+```
+
+ملاحظة: جرى تحديد التنسيق `JSONEachRow` تلقائيًا استنادًا إلى امتداد الملف `.jsonl`.
+
+يمكنك الاطلاع على البنية التي جرى تحديدها تلقائيًا باستخدام استعلام `DESCRIBE`:
+
+```sql
+DESCRIBE file('hobbies.jsonl')
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="table-engines-file-s3-url-hdfs-azureblobstorage">
+  ## محركات الجداول [File](/ar/reference/engines/table-engines/special/file), [S3](/ar/reference/engines/table-engines/integrations/s3), [URL](/ar/reference/engines/table-engines/special/url), [HDFS](/ar/reference/engines/table-engines/integrations/hdfs), [azureBlobStorage](/ar/reference/engines/table-engines/integrations/azureBlobStorage)
+</div>
+
+إذا لم تُحدَّد قائمة الأعمدة في استعلام `CREATE TABLE`، فستُستنتج بنية الجدول تلقائيًا من البيانات.
+
+**مثال:**
+
+لنستخدم الملف `hobbies.jsonl`. يمكننا إنشاء جدول باستخدام المحرك `File` استنادًا إلى البيانات الموجودة في هذا الملف:
+
+```sql
+CREATE TABLE hobbies ENGINE=File(JSONEachRow, 'hobbies.jsonl')
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT * FROM hobbies
+```
+
+```response
+┌─id─┬─age─┬─name───┬─hobbies──────────────────────────┐
+│  1 │  25 │ Josh   │ ['football','cooking','music']   │
+│  2 │  19 │ Alan   │ ['tennis','art']                 │
+│  3 │  32 │ Lana   │ ['fitness','reading','shopping'] │
+│  4 │  47 │ Brayan │ ['movies','skydiving']           │
+└────┴─────┴────────┴──────────────────────────────────┘
+```
+
+```sql
+DESCRIBE TABLE hobbies
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="clickhouse-local">
+  ## clickhouse-local
+</div>
+
+يحتوي `clickhouse-local` على معامل اختياري `-S/--structure` يحدّد بنية بيانات الإدخال. إذا لم يتم تحديد هذا المعامل أو تم ضبطه على `auto`، فسيتم استنتاج البنية تلقائيًا من البيانات.
+
+**مثال:**
+
+لنستخدم الملف `hobbies.jsonl`. يمكننا إجراء استعلام على البيانات من هذا الملف باستخدام `clickhouse-local`:
+
+```shell
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='DESCRIBE TABLE hobbies'
+```
+
+```response
+id    Nullable(Int64)
+age    Nullable(Int64)
+name    Nullable(String)
+hobbies    Array(Nullable(String))
+```
+
+```shell
+clickhouse-local --file='hobbies.jsonl' --table='hobbies' --query='SELECT * FROM hobbies'
+```
+
+```response
+1    25    Josh    ['football','cooking','music']
+2    19    Alan    ['tennis','art']
+3    32    Lana    ['fitness','reading','shopping']
+4    47    Brayan    ['movies','skydiving']
+```
+
+<div id="using-structure-from-insertion-table">
+  ## استخدام البنية من جدول الإدراج
+</div>
+
+عند استخدام دوال الجداول `file/s3/url/hdfs` لإدراج البيانات في جدول،
+يتوفر خيار لاستخدام البنية من جدول الإدراج بدلًا من استخلاصها من البيانات.
+يمكن أن يحسّن ذلك أداء الإدراج لأن استنتاج المخطط قد يستغرق بعض الوقت. كما يكون ذلك مفيدًا عندما يكون للجدول مخطط مُحسَّن، بحيث
+لن تُجرى أي تحويلات بين الأنواع.
+
+يوجد إعداد خاص [use&#95;structure&#95;from&#95;insertion&#95;table&#95;in&#95;table&#95;functions](/ar/reference/settings/session-settings#use_structure_from_insertion_table_in_table_functions)
+يتحكم في هذا السلوك. وله 3 قيم ممكنة:
+
+* 0 - ستستخلص دالة الجدول البنية من البيانات.
+* 1 - ستستخدم دالة الجدول البنية من جدول الإدراج.
+* 2 - سيحدّد ClickHouse تلقائيًا ما إذا كان من الممكن استخدام البنية من جدول الإدراج أو اللجوء إلى استنتاج المخطط. هذه هي القيمة الافتراضية.
+
+**مثال 1:**
+
+لنُنشئ الجدول `hobbies1` بالبنية التالية:
+
+```sql
+CREATE TABLE hobbies1
+(
+    `id` UInt64,
+    `age` LowCardinality(UInt8),
+    `name` String,
+    `hobbies` Array(String)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+وأدخِل البيانات من الملف `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies1 SELECT * FROM file(hobbies.jsonl)
+```
+
+في هذه الحالة، تُدرَج جميع الأعمدة من الملف في الجدول من دون أي تغيير، لذا سيستخدم ClickHouse البنية الموجودة في جدول الإدراج بدلًا من استنتاج المخطط.
+
+**مثال 2:**
+
+لنُنشئ الجدول `hobbies2` بالبنية التالية:
+
+```sql
+CREATE TABLE hobbies2
+(
+  `id` UInt64,
+  `age` LowCardinality(UInt8),
+  `hobbies` Array(String)
+)
+  ENGINE = MergeTree
+ORDER BY id;
+```
+
+وأدرِج البيانات من ملف `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies2 SELECT id, age, hobbies FROM file(hobbies.jsonl)
+```
+
+في هذه الحالة، تكون جميع الأعمدة في استعلام `SELECT` موجودة في الجدول، لذا سيستخدم ClickHouse البنية من جدول الإدراج.
+لاحظ أن هذا سيعمل فقط مع تنسيقات الإدخال التي تدعم قراءة مجموعة فرعية من الأعمدة، مثل JSONEachRow وTSKV وParquet وغيرها. (لذلك، لن يعمل مثلًا مع تنسيق TSV).
+
+**مثال 3:**
+
+لننشئ الجدول `hobbies3` بالبنية التالية:
+
+```sql
+CREATE TABLE hobbies3
+(
+  `identifier` UInt64,
+  `age` LowCardinality(UInt8),
+  `hobbies` Array(String)
+)
+  ENGINE = MergeTree
+ORDER BY identifier;
+```
+
+وأدرِج البيانات من الملف `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies3 SELECT id, age, hobbies FROM file(hobbies.jsonl)
+```
+
+في هذه الحالة، يُستخدَم العمود `id` في استعلام `SELECT`، لكن الجدول لا يحتوي على هذا العمود (بل يحتوي على عمود باسم `identifier`)،
+لذلك لا يمكن لـ ClickHouse استخدام بنية جدول الإدراج، وسيُستخدَم استنتاج المخطط.
+
+**Example 4:**
+
+لنُنشئ الجدول `hobbies4` بالبنية التالية:
+
+```sql
+CREATE TABLE hobbies4
+(
+  `id` UInt64,
+  `any_hobby` Nullable(String)
+)
+  ENGINE = MergeTree
+ORDER BY id;
+```
+
+وأدرِج البيانات من الملف `hobbies.jsonl`:
+
+```sql
+INSERT INTO hobbies4 SELECT id, empty(hobbies) ? NULL : hobbies[1] FROM file(hobbies.jsonl)
+```
+
+في هذه الحالة، تُجرى بعض العمليات على العمود `hobbies` في استعلام `SELECT` لإدراجه في الجدول، لذلك لا يمكن لـ ClickHouse استخدام البنية الخاصة بجدول الإدراج، وسيُستخدم استدلال المخطط.
+
+<div id="schema-inference-cache">
+  ## ذاكرة التخزين المؤقت لاستنتاج المخطط
+</div>
+
+بالنسبة إلى معظم تنسيقات الإدخال، يقرأ استنتاج المخطط بعض البيانات لتحديد بنيتها، وقد تستغرق هذه العملية بعض الوقت.
+ولتجنّب استنتاج المخطط نفسه في كل مرة يقرأ فيها ClickHouse البيانات من الملف نفسه، يُخزَّن المخطط المستنتَج مؤقتًا، وعند الوصول إلى الملف نفسه مرة أخرى، سيستخدم ClickHouse المخطط من ذاكرة التخزين المؤقت.
+
+توجد إعدادات خاصة تتحكم في ذاكرة التخزين المؤقت هذه:
+
+* `schema_inference_cache_max_elements_for_{file/s3/hdfs/url/azure}` - الحد الأقصى لعدد المخططات المخزنة مؤقتًا لوظيفة الجدول المقابلة. القيمة الافتراضية هي `4096`. يجب ضبط هذه الإعدادات في إعدادات الخادم.
+* `schema_inference_use_cache_for_{file,s3,hdfs,url,azure}` - يتيح تشغيل استخدام ذاكرة التخزين المؤقت لاستنتاج المخطط أو إيقافه. يمكن استخدام هذه الإعدادات في الاستعلامات.
+
+يمكن أن يتغيّر مخطط الملف إما بتعديل البيانات أو بتغيير إعدادات التنسيق.
+ولهذا السبب، تحدد ذاكرة التخزين المؤقت لاستنتاج المخطط المخطط استنادًا إلى مصدر الملف، واسم التنسيق، وإعدادات التنسيق المستخدمة، ووقت التعديل الأخير للملف.
+
+ملاحظة: قد لا تحتوي بعض الملفات التي يُوصَل إليها عبر URL في وظيفة الجدول `url` على معلومات عن وقت التعديل الأخير؛ وفي هذه الحالة، يوجد إعداد خاص
+`schema_inference_cache_require_modification_time_for_url`. يتيح تعطيل هذا الإعداد استخدام المخطط من ذاكرة التخزين المؤقت دون وقت التعديل الأخير لمثل هذه الملفات.
+
+يوجد أيضًا جدول نظام [schema&#95;inference&#95;cache](/ar/reference/system-tables/schema_inference_cache) يضم جميع المخططات الحالية في ذاكرة التخزين المؤقت، وكذلك استعلام النظام `SYSTEM CLEAR SCHEMA CACHE [FOR File/S3/URL/HDFS]`
+الذي يتيح تنظيف ذاكرة التخزين المؤقت للمخطط لجميع المصادر أو لمصدر محدد.
+
+**أمثلة:**
+
+لنجرب استنتاج البنية لمجموعة بيانات تجريبية من S3 باسم `github-2022.ndjson.gz` ونرى كيف تعمل ذاكرة التخزين المؤقت لاستنتاج المخطط:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+```
+
+```response
+┌─name───────┬─type─────────────────────────────────────────┐
+│ type       │ Nullable(String)                             │
+│ actor      │ Tuple(                                      ↴│
+│            │↳    avatar_url Nullable(String),            ↴│
+│            │↳    display_login Nullable(String),         ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    login Nullable(String),                 ↴│
+│            │↳    url Nullable(String))                    │
+│ repo       │ Tuple(                                      ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    name Nullable(String),                  ↴│
+│            │↳    url Nullable(String))                    │
+│ created_at │ Nullable(String)                             │
+│ payload    │ Tuple(                                      ↴│
+│            │↳    action Nullable(String),                ↴│
+│            │↳    distinct_size Nullable(Int64),          ↴│
+│            │↳    pull_request Tuple(                     ↴│
+│            │↳        author_association Nullable(String),↴│
+│            │↳        base Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        head Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        number Nullable(Int64),             ↴│
+│            │↳        state Nullable(String),             ↴│
+│            │↳        title Nullable(String),             ↴│
+│            │↳        updated_at Nullable(String),        ↴│
+│            │↳        user Tuple(                         ↴│
+│            │↳            login Nullable(String))),       ↴│
+│            │↳    ref Nullable(String),                   ↴│
+│            │↳    ref_type Nullable(String),              ↴│
+│            │↳    size Nullable(Int64))                    │
+└────────────┴──────────────────────────────────────────────┘
+5 rows in set. Elapsed: 0.601 sec.
+```
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+```
+
+```response
+┌─name───────┬─type─────────────────────────────────────────┐
+│ type       │ Nullable(String)                             │
+│ actor      │ Tuple(                                      ↴│
+│            │↳    avatar_url Nullable(String),            ↴│
+│            │↳    display_login Nullable(String),         ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    login Nullable(String),                 ↴│
+│            │↳    url Nullable(String))                    │
+│ repo       │ Tuple(                                      ↴│
+│            │↳    id Nullable(Int64),                     ↴│
+│            │↳    name Nullable(String),                  ↴│
+│            │↳    url Nullable(String))                    │
+│ created_at │ Nullable(String)                             │
+│ payload    │ Tuple(                                      ↴│
+│            │↳    action Nullable(String),                ↴│
+│            │↳    distinct_size Nullable(Int64),          ↴│
+│            │↳    pull_request Tuple(                     ↴│
+│            │↳        author_association Nullable(String),↴│
+│            │↳        base Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        head Tuple(                         ↴│
+│            │↳            ref Nullable(String),           ↴│
+│            │↳            sha Nullable(String)),          ↴│
+│            │↳        number Nullable(Int64),             ↴│
+│            │↳        state Nullable(String),             ↴│
+│            │↳        title Nullable(String),             ↴│
+│            │↳        updated_at Nullable(String),        ↴│
+│            │↳        user Tuple(                         ↴│
+│            │↳            login Nullable(String))),       ↴│
+│            │↳    ref Nullable(String),                   ↴│
+│            │↳    ref_type Nullable(String),              ↴│
+│            │↳    size Nullable(Int64))                    │
+└────────────┴──────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.059 sec.
+```
+
+كما ترى، نجح الاستعلام الثاني على الفور تقريبًا.
+
+لنحاول تغيير بعض الإعدادات التي يمكن أن تؤثر في المخطط المُستنتَج:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/github/github-2022.ndjson.gz')
+SETTINGS input_format_json_try_infer_named_tuples_from_objects=0, input_format_json_read_objects_as_strings = 1
+
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ type       │ Nullable(String) │              │                    │         │                  │                │
+│ actor      │ Nullable(String) │              │                    │         │                  │                │
+│ repo       │ Nullable(String) │              │                    │         │                  │                │
+│ created_at │ Nullable(String) │              │                    │         │                  │                │
+│ payload    │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+5 rows in set. Elapsed: 0.611 sec
+```
+
+كما ترى، لم يُستخدم المخطط من ذاكرة التخزين المؤقت للملف نفسه، لأن الإعداد الذي قد يؤثر في المخطط المستنتج قد تغيّر.
+
+لنتحقق من محتويات جدول `system.schema_inference_cache`:
+
+```sql
+SELECT schema, format, source FROM system.schema_inference_cache WHERE storage='S3'
+```
+
+```response
+┌─schema──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─format─┬─source───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ type Nullable(String), actor Tuple(avatar_url Nullable(String), display_login Nullable(String), id Nullable(Int64), login Nullable(String), url Nullable(String)), repo Tuple(id Nullable(Int64), name Nullable(String), url Nullable(String)), created_at Nullable(String), payload Tuple(action Nullable(String), distinct_size Nullable(Int64), pull_request Tuple(author_association Nullable(String), base Tuple(ref Nullable(String), sha Nullable(String)), head Tuple(ref Nullable(String), sha Nullable(String)), number Nullable(Int64), state Nullable(String), title Nullable(String), updated_at Nullable(String), user Tuple(login Nullable(String))), ref Nullable(String), ref_type Nullable(String), size Nullable(Int64)) │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+│ type Nullable(String), actor Nullable(String), repo Nullable(String), created_at Nullable(String), payload Nullable(String)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 │ NDJSON │ datasets-documentation.s3.eu-west-3.amazonaws.com443/datasets-documentation/github/github-2022.ndjson.gz │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+كما ترى، هناك مخططان مختلفان للملف نفسه.
+
+يمكننا مسح ذاكرة التخزين المؤقت للمخطط باستخدام استعلام SYSTEM:
+
+```sql
+SYSTEM CLEAR SCHEMA CACHE FOR S3
+```
+
+```response
+Ok.
+```
+
+```sql
+SELECT count() FROM system.schema_inference_cache WHERE storage='S3'
+```
+
+```response
+┌─count()─┐
+│       0 │
+└─────────┘
+```
+
+<div id="text-formats">
+  ## تنسيقات النص
+</div>
+
+في تنسيقات النص، يقرأ ClickHouse البيانات صفًا تلو الآخر، ويستخرج قيم الأعمدة وفقًا للتنسيق،
+ثم يستخدم بعض المحلِّلات التكرارية وأساليب الاستدلال لتحديد النوع لكل قيمة. ويجري التحكُّم في الحد الأقصى لعدد الصفوف والبايتات المقروءة من البيانات عند استنتاج المخطط
+بواسطة الإعدادين `input_format_max_rows_to_read_for_schema_inference` (25000 افتراضيًا) و`input_format_max_bytes_to_read_for_schema_inference` (32Mb افتراضيًا).
+وافتراضيًا، تكون جميع الأنواع المستنتجة من نوع [Nullable](/ar/reference/data-types/nullable)، ولكن يمكنك تغيير ذلك عن طريق تعيين `schema_inference_make_columns_nullable` (راجع الأمثلة في قسم [الإعدادات](#settings-for-text-formats)).
+
+<div id="json-formats">
+  ### تنسيقات JSON
+</div>
+
+في تنسيقات JSON، يُحلِّل ClickHouse القيم وفقاً لمواصفات JSON ثم يحاول تحديد نوع البيانات الأنسب لها.
+
+دعنا نستعرض آلية عمل هذه الميزة، وأنواع البيانات التي يمكن استنتاجها تلقائيًا، والإعدادات المحددة التي يمكن استخدامها في تنسيقات JSON.
+
+**أمثلة**
+
+هنا وفيما يلي، ستُستخدم دالة الجدول [format](/ar/reference/functions/table-functions/format) في الأمثلة.
+
+الأعداد الصحيحة، والأعداد العائمة، والقيم المنطقية، والسلاسل النصية:
+
+```sql
+DESC format(JSONEachRow, '{"int" : 42, "float" : 42.42, "string" : "Hello, World!"}');
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ int    │ Nullable(Int64)   │              │                    │         │                  │                │
+│ float  │ Nullable(Float64) │              │                    │         │                  │                │
+│ bool   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ string │ Nullable(String)  │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Dates، DateTimes:
+
+```sql
+DESC format(JSONEachRow, '{"date" : "2022-01-01", "datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}')
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date       │ Nullable(Date)          │              │                    │         │                  │                │
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [1, 2, 3], "nested_arrays" : [[1, 2, 3], [4, 5, 6], []]}')
+```
+
+```response
+┌─name──────────┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr           │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ nested_arrays │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────────────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا احتوت المصفوفة على `null`، فسيستخدم ClickHouse الأنواع المستمدة من عناصر المصفوفة الأخرى:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, 42, null]}')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا كانت المصفوفة تحتوي على قيم من أنواع مختلفة وكان الإعداد `input_format_json_infer_array_of_dynamic_from_array_of_different_types` مُفعَّلاً (وهو مُفعَّل افتراضياً)، فسيكون نوعها `Array(Dynamic)`:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=1;
+DESC format(JSONEachRow, '{"arr" : [42, "hello", [1, 2, 3]]}');
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Dynamic) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuples المسمّاة:
+
+عندما يكون الإعداد `input_format_json_try_infer_named_tuples_from_objects` ممكّنًا، سيحاول ClickHouse أثناء استنتاج المخطط استنتاج Tuple مُسمّى من كائنات JSON.
+وسيحتوي الـ Tuple المُسمّى الناتج على جميع العناصر من كل كائنات JSON المقابلة في بيانات العينة.
+
+```sql
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+```response
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuples غير المسماة:
+
+إذا كان الإعداد `input_format_json_infer_array_of_dynamic_from_array_of_different_types` معطّلًا، فنعتبر المصفوفات التي تتكوّن من عناصر ذات أنواع مختلفة Tuples غير مسماة في تنسيقات JSON.
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types = 0;
+DESC format(JSONEachRow, '{"tuple" : [1, "Hello, World!", [1, 2, 3]]}')
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا كانت بعض القيم `null` أو فارغة، فإننا نستخدم أنواع القيم المناظرة من الصفوف الأخرى:
+
+```sql
+SET input_format_json_infer_array_of_dynamic_from_array_of_different_types=0;
+DESC format(JSONEachRow, $$
+                              {"tuple" : [1, null, null]}
+                              {"tuple" : [null, "Hello, World!", []]}
+                              {"tuple" : [null, null, [1, 2, 3]]}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ tuple │ Tuple(Nullable(Int64), Nullable(String), Array(Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Maps:
+
+في JSON، يمكننا قراءة الكائنات التي تكون قيمها من النوع نفسه على أنها من النوع Map.
+ملاحظة: لن يعمل هذا إلا عند تعطيل الإعدادين `input_format_json_read_objects_as_strings` و`input_format_json_try_infer_named_tuples_from_objects`.
+
+```sql
+SET input_format_json_read_objects_as_strings = 0, input_format_json_try_infer_named_tuples_from_objects = 0;
+DESC format(JSONEachRow, '{"map" : {"key1" : 42, "key2" : 24, "key3" : 4}}')
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ map  │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+الأنواع المعقدة من نوع Nested:
+
+```sql
+DESC format(JSONEachRow, '{"value" : [[[42, 24], []], {"key1" : 42, "key2" : 24}]}')
+```
+
+```response
+┌─name──┬─type─────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Tuple(Array(Array(Nullable(String))), Tuple(key1 Nullable(Int64), key2 Nullable(Int64))) │              │                    │         │                  │                │
+└───────┴──────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا تعذّر على ClickHouse استنتاج النوع لبعض المفاتيح لأن البيانات لا تحتوي إلا على قيم NULL/كائنات فارغة/مصفوفات فارغة، فسيُستخدم النوع `String` إذا كان الإعداد `input_format_json_infer_incomplete_types_as_strings` مفعّلًا، وإلا فسيُطلق استثناء:
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 1;
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ arr  │ Array(Nullable(String)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, '{"arr" : [null, null]}') SETTINGS input_format_json_infer_incomplete_types_as_strings = 0;
+```
+
+```response
+Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
+Cannot determine type for column 'arr' by first 1 rows of data,
+most likely this column contains only Nulls or empty Arrays/Maps.
+...
+```
+
+<div id="json-settings">
+  #### إعدادات JSON
+</div>
+
+<div id="input_format_json_try_infer_numbers_from_strings">
+  ##### input_format_json_try_infer_numbers_from_strings
+</div>
+
+يتيح تمكين هذا الإعداد استنتاج الأرقام من القيم النصية.
+
+يكون هذا الإعداد معطّلًا افتراضيًا.
+
+**مثال:**
+
+```sql
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(JSONEachRow, $$
+                              {"value" : "42"}
+                              {"value" : "424242424242"}
+                         $$)
+```
+
+```response
+┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(Int64) │              │                    │         │                  │                │
+└───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_try_infer_named_tuples_from_objects">
+  ##### input_format_json_try_infer_named_tuples_from_objects
+</div>
+
+يتيح تفعيل هذا الإعداد استنتاج Tuples مُسمّاة من كائنات JSON. وسيحتوي الـ Tuple المُسمّى الناتج على جميع العناصر من كل كائن JSON مطابق ضمن بيانات العينة.
+وقد يكون ذلك مفيدًا عندما لا تكون بيانات JSON متناثرة، بحيث تتضمن عينة البيانات جميع مفاتيح الكائن المحتملة.
+
+هذا الإعداد مُمكَّن افتراضيًا.
+
+**مثال**
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 43, "c" : [1, 2, 3]}}, {"obj" : {"d" : {"e" : 42}}}')
+```
+
+```response title="Response"
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Tuple(e Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+DESC format(JSONEachRow, '{"array" : [{"a" : 42, "b" : "Hello"}, {}, {"c" : [1,2,3]}, {"d" : "2020-01-01"}]}')
+```
+
+```markdown title="Response"
+┌─name──┬─type────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ array │ Array(Tuple(a Nullable(Int64), b Nullable(String), c Array(Nullable(Int64)), d Nullable(Date))) │              │                    │         │                  │                │
+└───────┴─────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects">
+  ##### input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+</div>
+
+يتيح تمكين هذا الإعداد استخدام النوع String للمسارات غير الواضحة أثناء استنتاج الـ Tuples المُسمّاة من كائنات JSON (عندما يكون `input_format_json_try_infer_named_tuples_from_objects` مُمكّنًا) بدلًا من ظهور استثناء.
+كما يتيح قراءة كائنات JSON باعتبارها Tuples مُسمّاة حتى عند وجود مسارات غير واضحة.
+
+يكون معطّلًا افتراضيًا.
+
+**أمثلة**
+
+عند تعطيل الإعداد:
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 0;
+DESC format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+
+```response title="Response"
+Code: 636. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'a' has type 'Int64' and in some - 'Tuple(b String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'a'. (INCORRECT_DATA) (version 24.3.1.1).
+You can specify the structure manually. (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+عند تمكين الإعداد:
+
+```sql title="Query"
+SET input_format_json_try_infer_named_tuples_from_objects = 1;
+SET input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = 1;
+DESC format(JSONEachRow, '{"obj" : "a" : 42}, {"obj" : {"a" : {"b" : "Hello"}}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : 42}}, {"obj" : {"a" : {"b" : "Hello"}}}');
+```
+
+```response title="Response"
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Nullable(String))     │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+┌─obj─────────────────┐
+│ ('42')              │
+│ ('{"b" : "Hello"}') │
+└─────────────────────┘
+```
+
+<div id="input_format_json_read_objects_as_strings">
+  ##### input_format_json_read_objects_as_strings
+</div>
+
+يتيح تمكين هذا الإعداد قراءة كائنات JSON المتداخلة على أنها سلاسل نصية.
+يمكن استخدام هذا الإعداد لقراءة كائنات JSON المتداخلة دون استخدام نوع JSON object.
+
+هذا الإعداد مفعّل افتراضيًا.
+
+ملاحظة: لا يسري مفعول تمكين هذا الإعداد إلا إذا كان الإعداد `input_format_json_try_infer_named_tuples_from_objects` معطّلًا.
+
+```sql
+SET input_format_json_read_objects_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 0;
+DESC format(JSONEachRow, $$
+                             {"obj" : {"key1" : 42, "key2" : [1,2,3,4]}}
+                             {"obj" : {"key3" : {"nested_key" : 1}}}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_read_numbers_as_strings">
+  ##### input_format_json_read_numbers_as_strings
+</div>
+
+يؤدي تمكين هذا الإعداد إلى قراءة القيم الرقمية كسلاسل نصية.
+
+يكون هذا الإعداد مُمكّنًا افتراضيًا.
+
+**مثال**
+
+```sql
+SET input_format_json_read_numbers_as_strings = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : 1055}
+                                {"value" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(String) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_read_bools_as_numbers">
+  ##### input_format_json_read_bools_as_numbers
+</div>
+
+يؤدي تفعيل هذا الإعداد إلى قراءة قيم Bool كأرقام.
+
+هذا الإعداد مفعّل افتراضيًا.
+
+**مثال:**
+
+```sql
+SET input_format_json_read_bools_as_numbers = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : true}
+                                {"value" : 42}
+                         $$)
+```
+
+```response
+┌─name──┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(Int64) │              │                    │         │                  │                │
+└───────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_read_bools_as_strings">
+  ##### input_format_json_read_bools_as_strings
+</div>
+
+يؤدي تمكين هذا الإعداد إلى قراءة قيم Bool كسلاسل نصية.
+
+يكون هذا الإعداد مفعّلًا افتراضيًا.
+
+**مثال:**
+
+```sql
+SET input_format_json_read_bools_as_strings = 1;
+DESC format(JSONEachRow, $$
+                                {"value" : true}
+                                {"value" : "Hello, World"}
+                         $$)
+```
+
+```response
+┌─name──┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ value │ Nullable(String) │              │                    │         │                  │                │
+└───────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input_format_json_read_arrays_as_strings">
+  ##### input_format_json_read_arrays_as_strings
+</div>
+
+يتيح تفعيل هذا الإعداد قراءة قيم مصفوفات JSON كسلاسل نصية.
+
+هذا الإعداد مفعّل افتراضيًا.
+
+**مثال**
+
+```sql
+SET input_format_json_read_arrays_as_strings = 1;
+SELECT arr, toTypeName(arr), JSONExtractArrayRaw(arr)[3] from format(JSONEachRow, 'arr String', '{"arr" : [1, "Hello", [1,2,3]]}');
+```
+
+```response
+┌─arr───────────────────┬─toTypeName(arr)─┬─arrayElement(JSONExtractArrayRaw(arr), 3)─┐
+│ [1, "Hello", [1,2,3]] │ String          │ [1,2,3]                                   │
+└───────────────────────┴─────────────────┴───────────────────────────────────────────┘
+```
+
+<div id="input_format_json_infer_incomplete_types_as_strings">
+  ##### input_format_json_infer_incomplete_types_as_strings
+</div>
+
+يؤدي تمكين هذا الإعداد إلى إتاحة استخدام النوع String لمفاتيح JSON التي لا تحتوي في عينة البيانات أثناء استنتاج المخطّط إلا على `Null`/`{}`/`[]`.
+في تنسيقات JSON، يمكن قراءة أي قيمة باعتبارها String إذا كانت جميع الإعدادات المقابلة مُمكَّنة (وهي جميعها مُمكَّنة افتراضيًا)، ويمكن تجنّب أخطاء مثل `Cannot determine type for column 'column_name' by first 25000 rows of data, most likely this column contains only Nulls or empty Arrays/Maps` أثناء استنتاج المخطّط
+باستخدام النوع String للمفاتيح ذات الأنواع غير المعروفة.
+
+مثال:
+
+```sql title="Query"
+SET input_format_json_infer_incomplete_types_as_strings = 1, input_format_json_try_infer_named_tuples_from_objects = 1;
+DESCRIBE format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+SELECT * FROM format(JSONEachRow, '{"obj" : {"a" : [1,2,3], "b" : "hello", "c" : null, "d" : {}, "e" : []}}');
+```
+
+```markdown title="Response"
+┌─name─┬─type───────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ obj  │ Tuple(a Array(Nullable(Int64)), b Nullable(String), c Nullable(String), d Nullable(String), e Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+
+┌─obj────────────────────────────┐
+│ ([1,2,3],'hello',NULL,'{}',[]) │
+└────────────────────────────────┘
+```
+
+<div id="csv">
+  ### CSV
+</div>
+
+في تنسيق CSV، يستخرج ClickHouse قيم الأعمدة من الصف وفقًا للمحددات. ويتوقع ClickHouse أن تكون جميع الأنواع، باستثناء الأرقام والسلاسل النصية، محاطة بعلامات اقتباس مزدوجة. وإذا كانت القيمة محاطة بعلامات اقتباس مزدوجة، يحاول ClickHouse تحليل
+البيانات داخل علامات الاقتباس باستخدام المحلل التكراري، ثم يحاول العثور على أنسب نوع بيانات لها. وإذا لم تكن القيمة محاطة بعلامات اقتباس مزدوجة، يحاول ClickHouse تحليلها كرقم،
+وإذا لم تكن رقمًا، فإن ClickHouse يتعامل معها على أنها سلسلة نصية.
+
+إذا كنت لا تريد أن يحاول ClickHouse تحديد الأنواع المعقدة باستخدام بعض المحللات والاستدلالات، يمكنك تعطيل الإعداد `input_format_csv_use_best_effort_in_schema_inference`
+وعندها سيتعامل ClickHouse مع جميع الأعمدة على أنها Strings.
+
+إذا كان الإعداد `input_format_csv_detect_header` ممكّنًا، فسيحاول ClickHouse اكتشاف صف العناوين الذي يتضمن أسماء الأعمدة (وربما الأنواع أيضًا) أثناء استنتاج المخطط. وهذا الإعداد مفعّل افتراضيًا.
+
+**أمثلة:**
+
+الأعداد الصحيحة، والأعداد العائمة، والقيم المنطقية، والسلاسل النصية:
+
+```sql
+DESC format(CSV, '42,42.42,true,"Hello,World!"')
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+السلاسل النصية من دون علامات اقتباس:
+
+```sql
+DESC format(CSV, 'Hello world!,World hello!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+التواريخ، DateTimes:
+
+```sql
+DESC format(CSV, '"2020-01-01","2020-01-01 00:00:00","2022-01-01 00:00:00.000"')
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات:
+
+```sql
+DESC format(CSV, '"[1,2,3]","[[1, 2], [], [3, 4]]"')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(CSV, $$"['Hello', 'world']","[['Abc', 'Def'], []]"$$)
+```
+
+```response
+┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا احتوت المصفوفة على NULL، فسيعتمد ClickHouse على أنواع عناصر المصفوفة الأخرى:
+
+```sql
+DESC format(CSV, '"[NULL, 42, NULL]"')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Maps:
+
+```sql
+DESC format(CSV, $$"{'key1' : 42, 'key2' : 24}"$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات المتداخلة والخرائط:
+
+```sql
+DESC format(CSV, $$"[{'key1' : [[42, 42], []], 'key2' : [[null], [42]]}]"$$)
+```
+
+```response
+┌─name─┬─type──────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Array(Nullable(Int64))))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا تعذّر على ClickHouse تحديد النوع داخل علامات الاقتباس، لأن البيانات تحتوي على قيم null فقط، فسيتعامل معها على أنها String:
+
+```sql
+DESC format(CSV, '"[NULL, NULL]"')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+مثال عند تعطيل الإعداد `input_format_csv_use_best_effort_in_schema_inference`:
+
+```sql
+SET input_format_csv_use_best_effort_in_schema_inference = 0
+DESC format(CSV, '"[1,2,3]",42.42,Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+أمثلة على الاكتشاف التلقائي لصف العناوين (عندما يكون `input_format_csv_detect_header` ممكّنًا):
+
+الأسماء فقط:
+
+```sql
+SELECT * FROM format(CSV,
+$$"number","string","array"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+الأسماء والأنواع:
+
+```sql
+DESC format(CSV,
+$$"number","string","array"
+"UInt32","String","Array(UInt16)"
+42,"Hello","[1, 2, 3]"
+43,"World","[4, 5, 6]"
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+لاحظ أنه لا يمكن التعرّف على صف العناوين إلا إذا كان هناك عمود واحد على الأقل ليس من النوع `String`. وإذا كانت جميع الأعمدة من النوع `String`، فلن يتم التعرّف على صف العناوين:
+
+```sql
+SELECT * FROM format(CSV,
+$$"first_column","second_column"
+"Hello","World"
+"World","Hello"
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
+<div id="csv-settings">
+  #### إعدادات CSV
+</div>
+
+<div id="input_format_csv_try_infer_numbers_from_strings">
+  ##### input_format_csv_try_infer_numbers_from_strings
+</div>
+
+يتيح تمكين هذا الإعداد استنتاج الأرقام من القيم من النوع String.
+
+هذا الإعداد معطّل افتراضيًا.
+
+**مثال:**
+
+```sql
+SET input_format_json_try_infer_numbers_from_strings = 1;
+DESC format(CSV, '42,42.42');
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="tsv-tskv">
+  ### TSV/TSKV
+</div>
+
+في تنسيقات TSV/TSKV، يستخرج ClickHouse قيمة العمود من الصف وفقًا للمحددات الجدولية، ثم يحلل القيمة المستخرجة باستخدام
+المحلل التكراري لتحديد النوع الأنسب. وإذا تعذر تحديد النوع، فسيتعامل ClickHouse مع هذه القيمة على أنها String.
+
+إذا كنت لا تريد أن يحاول ClickHouse تحديد الأنواع المعقدة باستخدام بعض المحللات والأساليب الاستدلالية، فيمكنك تعطيل الإعداد `input_format_tsv_use_best_effort_in_schema_inference`
+وعندها سيتعامل ClickHouse مع جميع الأعمدة على أنها Strings.
+
+إذا كان الإعداد `input_format_tsv_detect_header` مُمكّنًا، فسيحاول ClickHouse اكتشاف صف العناوين الذي يحتوي على أسماء الأعمدة (وربما الأنواع) أثناء استنتاج المخطط. وهذا الإعداد مُمكّن افتراضيًا.
+
+**أمثلة:**
+
+الأعداد الصحيحة، الأعداد ذات الفاصلة العائمة، القيم المنطقية، السلاسل النصية:
+
+```sql
+DESC format(TSV, '42    42.42    true    Hello,World!')
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(TSKV, 'int=42    float=42.42    bool=true    string=Hello,World!\n')
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ int    │ Nullable(Int64)   │              │                    │         │                  │                │
+│ float  │ Nullable(Float64) │              │                    │         │                  │                │
+│ bool   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ string │ Nullable(String)  │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Dates، DateTimes:
+
+```sql
+DESC format(TSV, '2020-01-01    2020-01-01 00:00:00    2022-01-01 00:00:00.000')
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات:
+
+```sql
+DESC format(TSV, '[1,2,3]    [[1, 2], [], [3, 4]]')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(TSV, '[''Hello'', ''world'']    [[''Abc'', ''Def''], []]')
+```
+
+```response
+┌─name─┬─type───────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(String))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(String))) │              │                    │         │                  │                │
+└──────┴────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا كانت المصفوفة تحتوي على قيمة null، فسيستخدم ClickHouse الأنواع المستمدة من عناصر المصفوفة الأخرى:
+
+```sql
+DESC format(TSV, '[NULL, 42, NULL]')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Tuples:
+
+```sql
+DESC format(TSV, $$(42, 'Hello, world!')$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Map:
+
+```sql
+DESC format(TSV, $${'key1' : 42, 'key2' : 24}$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Nested، Arrays، Tuples وMaps:
+
+```sql
+DESC format(TSV, $$[{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}]$$)
+```
+
+```response
+┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
+└──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا تعذّر على ClickHouse تحديد النوع لأن البيانات لا تحتوي إلا على قيم null، فسيتعامل معها ClickHouse باعتبارها String:
+
+```sql
+DESC format(TSV, '[NULL, NULL]')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+مثال عند تعطيل الإعداد `input_format_tsv_use_best_effort_in_schema_inference`:
+
+```sql
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+أمثلة على الاكتشاف التلقائي لصف العناوين (عندما يكون `input_format_tsv_detect_header` ممكّنًا):
+
+الأسماء فقط:
+
+```sql
+SELECT * FROM format(TSV,
+$$number    string    array
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
+$$);
+```
+
+```response
+┌─number─┬─string─┬─array───┐
+│     42 │ Hello  │ [1,2,3] │
+│     43 │ World  │ [4,5,6] │
+└────────┴────────┴─────────┘
+```
+
+الأسماء والأنواع:
+
+```sql
+DESC format(TSV,
+$$number    string    array
+UInt32    String    Array(UInt16)
+42    Hello    [1, 2, 3]
+43    World    [4, 5, 6]
+$$)
+```
+
+```response
+┌─name───┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ UInt32        │              │                    │         │                  │                │
+│ string │ String        │              │                    │         │                  │                │
+│ array  │ Array(UInt16) │              │                    │         │                  │                │
+└────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+لاحظ أنه لا يمكن اكتشاف صف العناوين إلا إذا وُجد عمود واحد على الأقل ليس من النوع String. وإذا كانت جميع الأعمدة من النوع String، فلن يُكتشف صف العناوين:
+
+```sql
+SELECT * FROM format(TSV,
+$$first_column    second_column
+Hello    World
+World    Hello
+$$)
+```
+
+```response
+┌─c1───────────┬─c2────────────┐
+│ first_column │ second_column │
+│ Hello        │ World         │
+│ World        │ Hello         │
+└──────────────┴───────────────┘
+```
+
+<div id="values">
+  ### القيم
+</div>
+
+في تنسيق Values، يستخرج ClickHouse قيمة العمود من الصف ثم يُحللها باستخدام
+المحلل اللغوي التعاودي، على غرار الطريقة التي تُحلَّل بها القيم الحرفية.
+
+**أمثلة:**
+
+الأعداد الصحيحة، Floats، Bools، Strings:
+
+```sql
+DESC format(Values, $$(42, 42.42, true, 'Hello,World!')$$)
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)   │              │                    │         │                  │                │
+│ c2   │ Nullable(Float64) │              │                    │         │                  │                │
+│ c3   │ Nullable(Bool)    │              │                    │         │                  │                │
+│ c4   │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+التواريخ، الطوابع الزمنية:
+
+```sql
+ DESC format(Values, $$('2020-01-01', '2020-01-01 00:00:00', '2022-01-01 00:00:00.000')$$)
+```
+
+```response
+┌─name─┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Date)          │              │                    │         │                  │                │
+│ c2   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ c3   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└──────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات:
+
+```sql
+DESC format(Values, '([1,2,3], [[1, 2], [], [3, 4]])')
+```
+
+```response
+┌─name─┬─type──────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64))        │              │                    │         │                  │                │
+│ c2   │ Array(Array(Nullable(Int64))) │              │                    │         │                  │                │
+└──────┴───────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا احتوت المصفوفة على قيمة NULL، فسيستخدم ClickHouse الأنواع من عناصر المصفوفة الأخرى:
+
+```sql
+DESC format(Values, '([NULL, 42, NULL])')
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المجموعات المرتبة:
+
+```sql
+DESC format(Values, $$((42, 'Hello, world!'))$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Tuple(Nullable(Int64), Nullable(String)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Maps:
+
+```sql
+DESC format(Values, $$({'key1' : 42, 'key2' : 24})$$)
+```
+
+```response
+┌─name─┬─type─────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Map(String, Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴──────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+المصفوفات والصفوف والخرائط المتداخلة:
+
+```sql
+DESC format(Values, $$([{'key1' : [(42, 'Hello'), (24, NULL)], 'key2' : [(NULL, ','), (42, 'world!')]}])$$)
+```
+
+```response
+┌─name─┬─type────────────────────────────────────────────────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Array(Map(String, Array(Tuple(Nullable(Int64), Nullable(String))))) │              │                    │         │                  │                │
+└──────┴─────────────────────────────────────────────────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+إذا تعذّر على ClickHouse تحديد النوع لأن البيانات لا تحتوي إلا على قيم NULL، فسيتم إطلاق استثناء:
+
+```sql
+DESC format(Values, '([NULL, NULL])')
+```
+
+```response
+Code: 652. DB::Exception: Received from localhost:9000. DB::Exception:
+Cannot determine type for column 'c1' by first 1 rows of data,
+most likely this column contains only Nulls or empty Arrays/Maps.
+...
+```
+
+مثال على تعطيل الإعداد `input_format_tsv_use_best_effort_in_schema_inference`:
+
+```sql
+SET input_format_tsv_use_best_effort_in_schema_inference = 0
+DESC format(TSV, '[1,2,3]    42.42    Hello World!')
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(String) │              │                    │         │                  │                │
+│ c2   │ Nullable(String) │              │                    │         │                  │                │
+│ c3   │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="custom-separated">
+  ### CustomSeparated
+</div>
+
+في تنسيق CustomSeparated، يستخرج ClickHouse أولاً جميع قيم الأعمدة من الصف وفقًا للفواصل المحددة، ثم يحاول استنتاج
+نوع البيانات لكل قيمة بحسب قاعدة الإفلات.
+
+إذا كان الإعداد `input_format_custom_detect_header` مُمكّنًا، فسيحاول ClickHouse اكتشاف صف العناوين الذي يحتوي على أسماء الأعمدة (وربما الأنواع) أثناء استنتاج المخطط. ويكون هذا الإعداد مُمكّنًا افتراضيًا.
+
+**مثال**
+
+```sql
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+       format_custom_row_after_delimiter = '<row_after_delimiter>\n',
+       format_custom_row_between_delimiter = '<row_between_delimiter>\n',
+       format_custom_result_before_delimiter = '<result_before_delimiter>\n',
+       format_custom_result_after_delimiter = '<result_after_delimiter>\n',
+       format_custom_field_delimiter = '<field_delimiter>',
+       format_custom_escaping_rule = 'Quoted'
+
+DESC format(CustomSeparated, $$<result_before_delimiter>
+<row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Float64)      │              │                    │         │                  │                │
+│ c2   │ Nullable(String)       │              │                    │         │                  │                │
+│ c3   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+مثال على التعرّف التلقائي على صفّ العناوين (عندما يكون `input_format_custom_detect_header` مفعّلًا):
+
+```sql
+SET format_custom_row_before_delimiter = '<row_before_delimiter>',
+       format_custom_row_after_delimiter = '<row_after_delimiter>\n',
+       format_custom_row_between_delimiter = '<row_between_delimiter>\n',
+       format_custom_result_before_delimiter = '<result_before_delimiter>\n',
+       format_custom_result_after_delimiter = '<result_after_delimiter>\n',
+       format_custom_field_delimiter = '<field_delimiter>',
+       format_custom_escaping_rule = 'Quoted'
+
+DESC format(CustomSeparated, $$<result_before_delimiter>
+<row_before_delimiter>'number'<field_delimiter>'string'<field_delimiter>'array'<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>42.42<field_delimiter>'Some string 1'<field_delimiter>[1, NULL, 3]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>NULL<field_delimiter>'Some string 3'<field_delimiter>[1, 2, NULL]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─number─┬─string────────┬─array──────┐
+│  42.42 │ Some string 1 │ [1,NULL,3] │
+│   ᴺᵁᴸᴸ │ Some string 3 │ [1,2,NULL] │
+└────────┴───────────────┴────────────┘
+```
+
+<div id="template">
+  ### Template
+</div>
+
+في تنسيق Template، يستخرج ClickHouse أولًا جميع قيم الأعمدة من الصف وفقًا للقالب المحدد، ثم يحاول استدلال
+نوع البيانات لكل قيمة وفقًا لقاعدة الإفلات الخاصة بها.
+
+**مثال**
+
+لنفترض أن لدينا ملفًا باسم `resultset` بالمحتوى التالي:
+
+```bash
+<result_before_delimiter>
+${data}<result_after_delimiter>
+```
+
+وملف `row_format` بالمحتوى التالي:
+
+```text
+<row_before_delimiter>${column_1:CSV}<field_delimiter_1>${column_2:Quoted}<field_delimiter_2>${column_3:JSON}<row_after_delimiter>
+```
+
+بعد ذلك، يمكننا تنفيذ الاستعلامات التالية:
+
+```sql
+SET format_template_rows_between_delimiter = '<row_between_delimiter>\n',
+       format_template_row = 'row_format',
+       format_template_resultset = 'resultset_format'
+
+DESC format(Template, $$<result_before_delimiter>
+<row_before_delimiter>42.42<field_delimiter_1>'Some string 1'<field_delimiter_2>[1, null, 2]<row_after_delimiter>
+<row_between_delimiter>
+<row_before_delimiter>\N<field_delimiter_1>'Some string 3'<field_delimiter_2>[1, 2, null]<row_after_delimiter>
+<result_after_delimiter>
+$$)
+```
+
+```response
+┌─name─────┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ column_1 │ Nullable(Float64)      │              │                    │         │                  │                │
+│ column_2 │ Nullable(String)       │              │                    │         │                  │                │
+│ column_3 │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="regexp">
+  ### Regexp
+</div>
+
+على غرار Template، في تنسيق Regexp، يستخرج ClickHouse أولًا جميع قيم الأعمدة من الصف وفقًا للتعبير النمطي المحدد، ثم يحاول استنتاج نوع البيانات لكل قيمة وفقًا لقاعدة الإفلات المحددة.
+
+**مثال**
+
+```sql
+SET format_regexp = '^Line: value_1=(.+?), value_2=(.+?), value_3=(.+?)',
+       format_regexp_escaping_rule = 'CSV'
+
+DESC format(Regexp, $$Line: value_1=42, value_2="Some string 1", value_3="[1, NULL, 3]"
+Line: value_1=2, value_2="Some string 2", value_3="[4, 5, NULL]"$$)
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Int64)        │              │                    │         │                  │                │
+│ c2   │ Nullable(String)       │              │                    │         │                  │                │
+│ c3   │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="settings-for-text-formats">
+  ### إعدادات تنسيقات النص
+</div>
+
+<div id="input-format-max-rows-to-read-for-schema-inference">
+  #### input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference
+</div>
+
+تتحكم هذه الإعدادات في مقدار البيانات التي ستُقرأ أثناء استدلال المخطط.
+وكلما زاد عدد الصفوف/البايتات المقروءة، زاد الوقت المستغرَق في استدلال المخطط، لكن تزداد أيضًا احتمالية
+تحديد الأنواع بشكل صحيح (خصوصًا عندما تحتوي البيانات على الكثير من القيم NULL).
+
+القيم الافتراضية:
+
+* `25000` لـ `input_format_max_rows_to_read_for_schema_inference`.
+* `33554432` (32 Mb) لـ `input_format_max_bytes_to_read_for_schema_inference`.
+
+<div id="column-names-for-schema-inference">
+  #### column_names_for_schema_inference
+</div>
+
+قائمة أسماء الأعمدة المستخدمة في استدلال المخطط للتنسيقات التي لا تتضمن أسماء أعمدة صريحة. ستُستخدم الأسماء المحددة بدلًا من الأسماء الافتراضية `c1,c2,c3,...`. التنسيق: `column1,column2,column3,...`.
+
+**مثال**
+
+```sql
+DESC format(TSV, 'Hello, World!    42    [1, 2, 3]') settings column_names_for_schema_inference = 'str,int,arr'
+```
+
+```response
+┌─name─┬─type───────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ str  │ Nullable(String)       │              │                    │         │                  │                │
+│ int  │ Nullable(Int64)        │              │                    │         │                  │                │
+│ arr  │ Array(Nullable(Int64)) │              │                    │         │                  │                │
+└──────┴────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="schema-inference-hints">
+  #### schema_inference_hints
+</div>
+
+قائمة بأسماء الأعمدة وأنواعها لاستخدامها في استدلال المخطط بدلًا من الأنواع المحددة تلقائيًا. التنسيق: &#39;column&#95;name1 column&#95;type1, column&#95;name2 column&#95;type2, ...&#39;.
+يمكن استخدام هذا الإعداد لتحديد أنواع الأعمدة التي تعذّر تحديدها تلقائيًا أو لتحسين المخطط.
+
+**مثال**
+
+```sql
+DESC format(JSONEachRow, '{"id" : 1, "age" : 25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}') SETTINGS schema_inference_hints = 'age LowCardinality(UInt8), status Nullable(String)', allow_suspicious_low_cardinality_types=1
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ LowCardinality(UInt8)   │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ status  │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="schema-inference-make-columns-nullable">
+  #### schema_inference_make_columns_nullable $
+</div>
+
+يتحكم في جعل الأنواع المستنتجة `Nullable` في استنتاج المخطط للتنسيقات التي لا تحتوي على معلومات حول قابلية القيم الفارغة. القيم المحتملة:
+
+* 0 - لن يكون النوع المُستنتَج `Nullable` أبدًا،
+* 1 - ستكون جميع الأنواع المُستنتَجة `Nullable`،
+* 2 or &#39;auto&#39; - بالنسبة إلى التنسيقات النصية، سيكون النوع المُستنتَج `Nullable` فقط إذا كان العمود يحتوي على `NULL` ضمن عيّنة جرى تحليلها أثناء استدلال المخطط؛ أما في التنسيقات ذات الأنواع الصريحة (Parquet وORC وArrow)، فتُستمد معلومات قابلية القيم الفارغة من البيانات الوصفية للملف،
+* 3 - بالنسبة إلى التنسيقات النصية، استخدم `Nullable`؛ أما في التنسيقات ذات الأنواع الصريحة، فاستخدم البيانات الوصفية للملف.
+
+الافتراضي: 3.
+
+**أمثلة**
+
+```sql
+SET schema_inference_make_columns_nullable = 1;
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+┌─name────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Nullable(Int64)         │              │                    │         │                  │                │
+│ age     │ Nullable(Int64)         │              │                    │         │                  │                │
+│ name    │ Nullable(String)        │              │                    │         │                  │                │
+│ status  │ Nullable(String)        │              │                    │         │                  │                │
+│ hobbies │ Array(Nullable(String)) │              │                    │         │                  │                │
+└─────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET schema_inference_make_columns_nullable = 'auto';
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+┌─name────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Int64            │              │                    │         │                  │                │
+│ age     │ Int64            │              │                    │         │                  │                │
+│ name    │ String           │              │                    │         │                  │                │
+│ status  │ Nullable(String) │              │                    │         │                  │                │
+│ hobbies │ Array(String)    │              │                    │         │                  │                │
+└─────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET schema_inference_make_columns_nullable = 0;
+DESC format(JSONEachRow, $$
+                                {"id" :  1, "age" :  25, "name" : "Josh", "status" : null, "hobbies" : ["football", "cooking"]}
+                                {"id" :  2, "age" :  19, "name" :  "Alan", "status" : "married", "hobbies" :  ["tennis", "art"]}
+                         $$)
+```
+
+```response
+
+┌─name────┬─type──────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ id      │ Int64         │              │                    │         │                  │                │
+│ age     │ Int64         │              │                    │         │                  │                │
+│ name    │ String        │              │                    │         │                  │                │
+│ status  │ String        │              │                    │         │                  │                │
+│ hobbies │ Array(String) │              │                    │         │                  │                │
+└─────────┴───────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input-format-try-infer-integers">
+  #### input_format_try_infer_integers
+</div>
+
+<Note>
+  لا ينطبق هذا الإعداد على نوع البيانات `JSON`.
+</Note>
+
+إذا كان هذا الإعداد مُمكّنًا، فسيحاول ClickHouse استنتاج الأعداد الصحيحة بدلًا من الأعداد العائمة عند استدلال المخطط في تنسيقات النص.
+إذا كانت جميع الأرقام في العمود ضمن بيانات العينة أعدادًا صحيحة، فسيكون النوع الناتج `Int64`، أما إذا وُجد رقم عائم واحد على الأقل، فسيكون النوع الناتج `Float64`.
+إذا كانت بيانات العينة تحتوي على أعداد صحيحة فقط، وكان هناك عدد صحيح موجب واحد على الأقل يتجاوز `Int64`، فسيستنتج ClickHouse النوع `UInt64`.
+
+مُمكَّن افتراضيًا.
+
+**أمثلة**
+
+```sql
+SET input_format_try_infer_integers = 0
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2}
+                         $$)
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Float64) │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_integers = 1
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2}
+                         $$)
+```
+
+```response
+┌─name───┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Int64) │              │                    │         │                  │                │
+└────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 18446744073709551615}
+                         $$)
+```
+
+```response
+┌─name───┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(UInt64) │              │                    │         │                  │                │
+└────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"number" : 1}
+                                {"number" : 2.2}
+                         $$)
+```
+
+```response
+┌─name───┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ number │ Nullable(Float64) │              │                    │         │                  │                │
+└────────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input-format-try-infer-datetimes">
+  #### input_format_try_infer_datetimes
+</div>
+
+إذا كان مفعّلًا، فسيحاول ClickHouse استنتاج النوع `DateTime` أو `DateTime64` من الحقول النصية أثناء استدلال المخطط في تنسيقات النص.
+إذا جرى تحليل جميع الحقول في عمود من بيانات العينة بنجاح على أنها قيم تاريخ/وقت، فسيكون النوع الناتج هو `DateTime` أو `DateTime64(9)` (إذا كانت أي قيمة تاريخ/وقت تحتوي على جزء كسري)،
+وإذا تعذّر تحليل حقل واحد على الأقل على أنه قيمة تاريخ/وقت، فسيكون النوع الناتج هو `String`.
+
+مفعّل افتراضيًا.
+
+**أمثلة**
+
+```sql
+SET input_format_try_infer_datetimes = 0;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_datetimes = 1;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime)      │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "unknown", "datetime64" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(String) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(String) │              │                    │         │                  │                │
+└────────────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input-format-try-infer-datetimes-only-datetime64">
+  #### input_format_try_infer_datetimes_only_datetime64
+</div>
+
+إذا كان مفعّلًا، فسيستنتج ClickHouse دائمًا `DateTime64(9)` عند تفعيل `input_format_try_infer_datetimes` حتى إذا كانت قيم التاريخ والوقت لا تحتوي على جزء عشري.
+
+يكون معطّلًا افتراضيًا.
+
+**أمثلة**
+
+```sql
+SET input_format_try_infer_datetimes = 1;
+SET input_format_try_infer_datetimes_only_datetime64 = 1;
+DESC format(JSONEachRow, $$
+                                {"datetime" : "2021-01-01 00:00:00", "datetime64" : "2021-01-01 00:00:00.000"}
+                                {"datetime" : "2022-01-01 00:00:00", "datetime64" : "2022-01-01 00:00:00.000"}
+                         $$)
+```
+
+```response
+┌─name───────┬─type────────────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ datetime   │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+│ datetime64 │ Nullable(DateTime64(9)) │              │                    │         │                  │                │
+└────────────┴─────────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+ملاحظة: يراعي تحليل قيم التاريخ والوقت أثناء استدلال المخطط الإعداد [date&#95;time&#95;input&#95;format](/ar/reference/settings/formats#date_time_input_format)
+
+<div id="input-format-try-infer-dates">
+  #### input_format_try_infer_dates
+</div>
+
+إذا كان مفعّلًا، فسيحاول ClickHouse استنتاج النوع `Date` من الحقول النصية عند استدلال المخطط في التنسيقات النصية.
+إذا جرى تحليل جميع الحقول في عمود من البيانات العيّنية بنجاح على أنها تواريخ، فسيكون نوع النتيجة `Date`،
+أما إذا تعذّر تحليل حقل واحد على الأقل على أنه تاريخ، فسيكون نوع النتيجة `String`.
+
+مفعّل افتراضيًا.
+
+**أمثلة**
+
+```sql
+SET input_format_try_infer_datetimes = 0, input_format_try_infer_dates = 0
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "2022-01-01"}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+SET input_format_try_infer_dates = 1
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "2022-01-01"}
+                         $$)
+```
+
+```response
+┌─name─┬─type───────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(Date) │              │                    │         │                  │                │
+└──────┴────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+```sql
+DESC format(JSONEachRow, $$
+                                {"date" : "2021-01-01"}
+                                {"date" : "unknown"}
+                         $$)
+```
+
+```response
+┌─name─┬─type─────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ date │ Nullable(String) │              │                    │         │                  │                │
+└──────┴──────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="input-format-try-infer-exponent-floats">
+  #### input_format_try_infer_exponent_floats
+</div>
+
+إذا كان مفعّلًا، فسيحاول ClickHouse استنتاج قيم Float بالصيغة الأسية في التنسيقات النصية (باستثناء JSON، حيث تُستنتج الأرقام بالصيغة الأسية دائمًا).
+
+يكون معطّلًا افتراضيًا.
+
+**مثال**
+
+```sql
+SET input_format_try_infer_exponent_floats = 1;
+DESC format(CSV,
+$$1.1E10
+2.3e-12
+42E00
+$$)
+```
+
+```response
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ c1   │ Nullable(Float64) │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="self-describing-formats">
+  ## التنسيقات ذاتية الوصف
+</div>
+
+تتضمن التنسيقات ذاتية الوصف معلومات عن بنية البيانات داخل البيانات نفسها،
+وقد تكون هذه المعلومات على شكل ترويسة تتضمن وصفًا، أو شجرة أنواع ثنائية، أو جدولٍ من نوع ما.
+ولاستنتاج مخطط من الملفات بهذه التنسيقات تلقائيًا، يقرأ ClickHouse جزءًا من البيانات يتضمن
+معلومات عن الأنواع ثم يحوّلها إلى مخطط جدول في ClickHouse.
+
+<div id="formats-with-names-and-types">
+  ### التنسيقات ذات اللاحقة -WithNamesAndTypes
+</div>
+
+يدعم ClickHouse بعض التنسيقات النصية ذات اللاحقة -WithNamesAndTypes. وتعني هذه اللاحقة أن البيانات تحتوي على صفَّين إضافيين يسبقان البيانات الفعلية، ويتضمنان أسماء الأعمدة وأنواعها.
+وعند استدلال المخطط لهذه التنسيقات، يقرأ ClickHouse الصفين الأولين ويستخرج أسماء الأعمدة وأنواعها.
+
+**مثال**
+
+```sql
+DESC format(TSVWithNamesAndTypes,
+$$num    str    arr
+UInt8    String    Array(UInt8)
+42    Hello, World!    [1,2,3]
+$$)
+```
+
+```response
+┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ num  │ UInt8        │              │                    │         │                  │                │
+│ str  │ String       │              │                    │         │                  │                │
+│ arr  │ Array(UInt8) │              │                    │         │                  │                │
+└──────┴──────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="json-with-metadata">
+  ### تنسيقات JSON مع البيانات الوصفية
+</div>
+
+تتضمن بعض تنسيقات إدخال JSON ([JSON](/ar/reference/formats/JSON/JSON)، [JSONCompact](/ar/reference/formats/JSON/JSONCompact)، [JSONColumnsWithMetadata](/ar/reference/formats/JSON/JSONColumnsWithMetadata)) بيانات وصفية تحتوي على أسماء الأعمدة وأنواعها.
+عند استدلال المخطط لهذه التنسيقات، يقرأ ClickHouse هذه البيانات الوصفية.
+
+**مثال**
+
+```sql
+DESC format(JSON, $$
+{
+    "meta":
+    [
+        {
+            "name": "num",
+            "type": "UInt8"
+        },
+        {
+            "name": "str",
+            "type": "String"
+        },
+        {
+            "name": "arr",
+            "type": "Array(UInt8)"
+        }
+    ],
+
+    "data":
+    [
+        {
+            "num": 42,
+            "str": "Hello, World",
+            "arr": [1,2,3]
+        }
+    ],
+
+    "rows": 1,
+
+    "statistics":
+    {
+        "elapsed": 0.005723915,
+        "rows_read": 1,
+        "bytes_read": 1
+    }
+}
+$$)
+```
+
+```response
+┌─name─┬─type─────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ num  │ UInt8        │              │                    │         │                  │                │
+│ str  │ String       │              │                    │         │                  │                │
+│ arr  │ Array(UInt8) │              │                    │         │                  │                │
+└──────┴──────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="avro">
+  ### Avro
+</div>
+
+في صيغة Avro، يستخلص ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse باستخدام مطابقات الأنواع التالية:
+
+| نوع بيانات Avro                    | نوع بيانات ClickHouse                                                 |
+| ---------------------------------- | --------------------------------------------------------------------- |
+| `boolean`                          | [Bool](/ar/reference/data-types/boolean)                                 |
+| `int`                              | [Int32](/ar/reference/data-types/int-uint)                               |
+| `int (date)` *                     | [Date32](/ar/reference/data-types/date32)                                |
+| `long`                             | [Int64](/ar/reference/data-types/int-uint)                               |
+| `float`                            | [Float32](/ar/reference/data-types/float)                                |
+| `double`                           | [Float64](/ar/reference/data-types/float)                                |
+| `bytes`, `string`                  | [String](/ar/reference/data-types/string)                                |
+| `fixed`                            | [FixedString(N)](/ar/reference/data-types/fixedstring)                   |
+| `enum`                             | [Enum](/ar/reference/data-types/enum)                                    |
+| `array(T)`                         | [Array(T)](/ar/reference/data-types/array)                               |
+| `union(null, T)`, `union(T, null)` | [Nullable(T)](/ar/reference/data-types/date)                             |
+| `null`                             | [Nullable(Nothing)](/ar/reference/data-types/special-data-types/nothing) |
+| `string (uuid)` *                  | [UUID](/ar/reference/data-types/uuid)                                    |
+| `binary (decimal)` *               | [Decimal(P, S)](/ar/reference/data-types/decimal)                        |
+
+* [الأنواع المنطقية في Avro](https://avro.apache.org/docs/current/spec.html#Logical+Types)
+
+أنواع Avro الأخرى غير مدعومة.
+
+<div id="parquet">
+  ### Parquet
+</div>
+
+في صيغة Parquet، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse وفقًا لمطابقات الأنواع التالية:
+
+| نوع بيانات Parquet           | نوع بيانات ClickHouse                          |
+| ---------------------------- | ---------------------------------------------- |
+| `BOOL`                       | [Bool](/ar/reference/data-types/boolean)          |
+| `UINT8`                      | [UInt8](/ar/reference/data-types/int-uint)        |
+| `INT8`                       | [Int8](/ar/reference/data-types/int-uint)         |
+| `UINT16`                     | [UInt16](/ar/reference/data-types/int-uint)       |
+| `INT16`                      | [Int16](/ar/reference/data-types/int-uint)        |
+| `UINT32`                     | [UInt32](/ar/reference/data-types/int-uint)       |
+| `INT32`                      | [Int32](/ar/reference/data-types/int-uint)        |
+| `UINT64`                     | [UInt64](/ar/reference/data-types/int-uint)       |
+| `INT64`                      | [Int64](/ar/reference/data-types/int-uint)        |
+| `FLOAT`                      | [Float32](/ar/reference/data-types/float)         |
+| `DOUBLE`                     | [Float64](/ar/reference/data-types/float)         |
+| `DATE`                       | [Date32](/ar/reference/data-types/date32)         |
+| `TIME (ms)`                  | [DateTime](/ar/reference/data-types/datetime)     |
+| `TIMESTAMP`, `TIME (us, ns)` | [DateTime64](/ar/reference/data-types/datetime64) |
+| `STRING`, `BINARY`           | [String](/ar/reference/data-types/string)         |
+| `DECIMAL`                    | [Decimal](/ar/reference/data-types/decimal)       |
+| `LIST`                       | [Array](/ar/reference/data-types/array)           |
+| `STRUCT`                     | [Tuple](/ar/reference/data-types/tuple)           |
+| `MAP`                        | [Map](/ar/reference/data-types/map)               |
+
+أنواع Parquet الأخرى غير مدعومة.
+
+<div id="arrow">
+  ### Arrow
+</div>
+
+في صيغة Arrow، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse باستخدام مطابقات الأنواع التالية:
+
+| نوع بيانات Arrow                | نوع بيانات ClickHouse                          |
+| ------------------------------- | ---------------------------------------------- |
+| `BOOL`                          | [Bool](/ar/reference/data-types/boolean)          |
+| `UINT8`                         | [UInt8](/ar/reference/data-types/int-uint)        |
+| `INT8`                          | [Int8](/ar/reference/data-types/int-uint)         |
+| `UINT16`                        | [UInt16](/ar/reference/data-types/int-uint)       |
+| `INT16`                         | [Int16](/ar/reference/data-types/int-uint)        |
+| `UINT32`                        | [UInt32](/ar/reference/data-types/int-uint)       |
+| `INT32`                         | [Int32](/ar/reference/data-types/int-uint)        |
+| `UINT64`                        | [UInt64](/ar/reference/data-types/int-uint)       |
+| `INT64`                         | [Int64](/ar/reference/data-types/int-uint)        |
+| `FLOAT`, `HALF_FLOAT`           | [Float32](/ar/reference/data-types/float)         |
+| `DOUBLE`                        | [Float64](/ar/reference/data-types/float)         |
+| `DATE32`                        | [Date32](/ar/reference/data-types/date32)         |
+| `DATE64`                        | [DateTime](/ar/reference/data-types/datetime)     |
+| `TIMESTAMP`, `TIME32`, `TIME64` | [DateTime64](/ar/reference/data-types/datetime64) |
+| `STRING`, `BINARY`              | [String](/ar/reference/data-types/string)         |
+| `DECIMAL128`, `DECIMAL256`      | [Decimal](/ar/reference/data-types/decimal)       |
+| `LIST`                          | [Array](/ar/reference/data-types/array)           |
+| `STRUCT`                        | [Tuple](/ar/reference/data-types/tuple)           |
+| `MAP`                           | [Map](/ar/reference/data-types/map)               |
+
+أنواع Arrow الأخرى غير مدعومة.
+
+<div id="orc">
+  ### ORC
+</div>
+
+في تنسيق ORC، يقرأ ClickHouse المخطط من البيانات ويحوّله إلى مخطط ClickHouse وفق تطابقات الأنواع التالية:
+
+| نوع بيانات ORC                       | نوع بيانات ClickHouse                          |
+| ------------------------------------ | ---------------------------------------------- |
+| `Boolean`                            | [Bool](/ar/reference/data-types/boolean)          |
+| `Tinyint`                            | [Int8](/ar/reference/data-types/int-uint)         |
+| `Smallint`                           | [Int16](/ar/reference/data-types/int-uint)        |
+| `Int`                                | [Int32](/ar/reference/data-types/int-uint)        |
+| `Bigint`                             | [Int64](/ar/reference/data-types/int-uint)        |
+| `Float`                              | [Float32](/ar/reference/data-types/float)         |
+| `Double`                             | [Float64](/ar/reference/data-types/float)         |
+| `Date`                               | [Date32](/ar/reference/data-types/date32)         |
+| `Timestamp`                          | [DateTime64](/ar/reference/data-types/datetime64) |
+| `String`, `Char`, `Varchar`,`BINARY` | [String](/ar/reference/data-types/string)         |
+| `Decimal`                            | [Decimal](/ar/reference/data-types/decimal)       |
+| `List`                               | [Array](/ar/reference/data-types/array)           |
+| `Struct`                             | [Tuple](/ar/reference/data-types/tuple)           |
+| `Map`                                | [Map](/ar/reference/data-types/map)               |
+
+أنواع ORC الأخرى غير مدعومة.
+
+<div id="native">
+  ### Native
+</div>
+
+يُستخدم تنسيق Native داخل ClickHouse، ويتضمن المخطط ضمن البيانات نفسها.
+في استنتاج المخطط، يقرأ ClickHouse المخطط من البيانات مباشرةً دون أي تحويلات.
+
+<div id="formats-with-external-schema">
+  ## التنسيقات ذات المخطط الخارجي
+</div>
+
+تستلزم هذه التنسيقات مخططًا يصف البيانات في ملف منفصل وبلغة مخطط محددة.
+ولاستنتاج المخطط تلقائيًا من ملفات بهذه التنسيقات، يقرأ ClickHouse المخطط الخارجي من ملف منفصل ثم يحوّله إلى مخطط جدول في ClickHouse.
+
+<div id="protobuf">
+  ### Protobuf
+</div>
+
+في استنتاج المخطط لتنسيق Protobuf، يستخدم ClickHouse تطابقات الأنواع التالية:
+
+| نوع بيانات Protobuf           | نوع بيانات ClickHouse                    |
+| ----------------------------- | ---------------------------------------- |
+| `bool`                        | [UInt8](/ar/reference/data-types/int-uint)  |
+| `float`                       | [Float32](/ar/reference/data-types/float)   |
+| `double`                      | [Float64](/ar/reference/data-types/float)   |
+| `int32`, `sint32`, `sfixed32` | [Int32](/ar/reference/data-types/int-uint)  |
+| `int64`, `sint64`, `sfixed64` | [Int64](/ar/reference/data-types/int-uint)  |
+| `uint32`, `fixed32`           | [UInt32](/ar/reference/data-types/int-uint) |
+| `uint64`, `fixed64`           | [UInt64](/ar/reference/data-types/int-uint) |
+| `string`, `bytes`             | [String](/ar/reference/data-types/string)   |
+| `enum`                        | [Enum](/ar/reference/data-types/enum)       |
+| `repeated T`                  | [Array(T)](/ar/reference/data-types/array)  |
+| `message`, `group`            | [Tuple](/ar/reference/data-types/tuple)     |
+
+<div id="capnproto">
+  ### CapnProto
+</div>
+
+في استنتاج المخطط لتنسيق CapnProto، يستخدم ClickHouse تطابقات الأنواع التالية:
+
+| نوع بيانات CapnProto               | نوع بيانات ClickHouse                         |
+| ---------------------------------- | --------------------------------------------- |
+| `Bool`                             | [UInt8](/ar/reference/data-types/int-uint)       |
+| `Int8`                             | [Int8](/ar/reference/data-types/int-uint)        |
+| `UInt8`                            | [UInt8](/ar/reference/data-types/int-uint)       |
+| `Int16`                            | [Int16](/ar/reference/data-types/int-uint)       |
+| `UInt16`                           | [UInt16](/ar/reference/data-types/int-uint)      |
+| `Int32`                            | [Int32](/ar/reference/data-types/int-uint)       |
+| `UInt32`                           | [UInt32](/ar/reference/data-types/int-uint)      |
+| `Int64`                            | [Int64](/ar/reference/data-types/int-uint)       |
+| `UInt64`                           | [UInt64](/ar/reference/data-types/int-uint)      |
+| `Float32`                          | [Float32](/ar/reference/data-types/float)        |
+| `Float64`                          | [Float64](/ar/reference/data-types/float)        |
+| `Text`, `Data`                     | [String](/ar/reference/data-types/string)        |
+| `enum`                             | [Enum](/ar/reference/data-types/enum)            |
+| `List`                             | [Array](/ar/reference/data-types/array)          |
+| `struct`                           | [Tuple](/ar/reference/data-types/tuple)          |
+| `union(T, Void)`, `union(Void, T)` | [Nullable(T)](/ar/reference/data-types/nullable) |
+
+<div id="strong-typed-binary-formats">
+  ## التنسيقات الثنائية ذات الأنواع المحددة بصرامة
+</div>
+
+في مثل هذه التنسيقات، تتضمن كل قيمة مُسلسلة معلومات عن نوعها (وربما عن اسمها)، لكن لا تتوفر أي معلومات عن الجدول ككل.
+في استنتاج المخطط لمثل هذه التنسيقات، يقرأ ClickHouse البيانات صفًا تلو الآخر (حتى `input_format_max_rows_to_read_for_schema_inference` صفًا أو `input_format_max_bytes_to_read_for_schema_inference` بايتًا)، ويستخرج
+النوع (وربما الاسم) لكل قيمة من البيانات، ثم يحوّل هذه الأنواع إلى أنواع ClickHouse.
+
+<div id="msgpack">
+  ### MsgPack
+</div>
+
+في تنسيق MsgPack، لا يوجد محدِّد بين الصفوف، ولاستخدام استنتاج المخطط لهذا التنسيق، يجب تحديد عدد الأعمدة في الجدول
+باستخدام الإعداد `input_format_msgpack_number_of_columns`. يستخدم ClickHouse تطابقات الأنواع التالية:
+
+| نوع بيانات MessagePack (`INSERT`)                                  | نوع بيانات ClickHouse                        |
+| ------------------------------------------------------------------ | -------------------------------------------- |
+| `int N`, `uint N`, `negative fixint`, `positive fixint`            | [Int64](/ar/reference/data-types/int-uint)      |
+| `bool`                                                             | [UInt8](/ar/reference/data-types/int-uint)      |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [String](/ar/reference/data-types/string)       |
+| `float 32`                                                         | [Float32](/ar/reference/data-types/float)       |
+| `float 64`                                                         | [Float64](/ar/reference/data-types/float)       |
+| `uint 16`                                                          | [Date](/ar/reference/data-types/date)           |
+| `uint 32`                                                          | [DateTime](/ar/reference/data-types/datetime)   |
+| `uint 64`                                                          | [DateTime64](/ar/reference/data-types/datetime) |
+| `fixarray`, `array 16`, `array 32`                                 | [Array](/ar/reference/data-types/array)         |
+| `fixmap`, `map 16`, `map 32`                                       | [Map](/ar/reference/data-types/map)             |
+
+افتراضيًا، تكون جميع الأنواع المستنتجة ضمن `Nullable`، ولكن يمكن تغيير ذلك باستخدام الإعداد `schema_inference_make_columns_nullable`.
+
+<div id="bsoneachrow">
+  ### BSONEachRow
+</div>
+
+في BSONEachRow، يُمثَّل كل صف من البيانات على أنه مستند BSON. عند استنتاج المخطط، يقرأ ClickHouse مستندات BSON واحدًا تلو الآخر ويستخرج
+القيم والأسماء والأنواع من البيانات، ثم يحوّل هذه الأنواع إلى أنواع ClickHouse باستخدام تطابقات الأنواع التالية:
+
+| نوع BSON                                                                                      | نوع ClickHouse                                                                                                |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `\x08` boolean                                                                                | [Bool](/ar/reference/data-types/boolean)                                                                         |
+| `\x10` int32                                                                                  | [Int32](/ar/reference/data-types/int-uint)                                                                       |
+| `\x12` int64                                                                                  | [Int64](/ar/reference/data-types/int-uint)                                                                       |
+| `\x01` double                                                                                 | [Float64](/ar/reference/data-types/float)                                                                        |
+| `\x09` datetime                                                                               | [DateTime64](/ar/reference/data-types/datetime64)                                                                |
+| `\x05` binary with`\x00` binary subtype, `\x02` string, `\x0E` symbol, `\x0D` JavaScript code | [String](/ar/reference/data-types/string)                                                                        |
+| `\x07` ObjectId,                                                                              | [FixedString(12)](/ar/reference/data-types/fixedstring)                                                          |
+| `\x05` binary with `\x04` uuid subtype, size = 16                                             | [UUID](/ar/reference/data-types/uuid)                                                                            |
+| `\x04` array                                                                                  | [Array](/ar/reference/data-types/array)/[Tuple](/ar/reference/data-types/tuple) (إذا كانت الأنواع المتداخلة مختلفة) |
+| `\x03` document                                                                               | [Named Tuple](/ar/reference/data-types/tuple)/[Map](/ar/reference/data-types/map) (بمفاتيح من نوع String)           |
+
+افتراضيًا، تكون جميع الأنواع المستنتجة ضمن `Nullable`، ولكن يمكن تغيير ذلك باستخدام الإعداد `schema_inference_make_columns_nullable`.
+
+<div id="formats-with-constant-schema">
+  ## التنسيقات ذات المخطط الثابت
+</div>
+
+تأتي البيانات في هذه التنسيقات دائمًا بالمخطط نفسه.
+
+<div id="line-as-string">
+  ### LineAsString
+</div>
+
+في هذا التنسيق، يقرأ ClickHouse السطر كاملًا من البيانات إلى عمود واحد من نوع البيانات `String`. ويكون النوع المُستنتَج لهذا التنسيق دائمًا `String`، ويكون اسم العمود `line`.
+
+**مثال**
+
+```sql
+DESC format(LineAsString, 'Hello\nworld!')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ line │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="json-as-string">
+  ### JSONAsString
+</div>
+
+في هذا التنسيق، يقرأ ClickHouse كائن JSON بالكامل من البيانات إلى عمود واحد من نوع البيانات `String`. ويكون النوع المُستنتَج لهذا التنسيق دائمًا `String`، ويكون اسم العمود `json`.
+
+**مثال**
+
+```sql
+DESC format(JSONAsString, '{"x" : 42, "y" : "Hello, World!"}')
+```
+
+```response
+┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ String │              │                    │         │                  │                │
+└──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="json-as-object">
+  ### JSONAsObject
+</div>
+
+في هذا التنسيق، يقرأ ClickHouse كائن JSON بالكامل من البيانات ويضعه في عمود واحد من نوع البيانات `JSON`. ويكون النوع المستنتج لهذا التنسيق دائمًا `JSON`، ويكون اسم العمود `json`.
+
+**مثال**
+
+```sql
+DESC format(JSONAsObject, '{"x" : 42, "y" : "Hello, World!"}');
+```
+
+```response
+┌─name─┬─type─┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ json │ JSON │              │                    │         │                  │                │
+└──────┴──────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+<div id="schema-inference-modes">
+  ## أوضاع استنتاج المخطط
+</div>
+
+يمكن أن يتم استنتاج المخطط من مجموعة ملفات البيانات وفق وضعين مختلفين: `default` و`union`.
+ويُتحكَّم في هذا الوضع عبر الإعداد `schema_inference_mode`.
+
+<div id="default-schema-inference-mode">
+  ### الوضع الافتراضي
+</div>
+
+في الوضع الافتراضي، يفترض ClickHouse أن جميع الملفات تتبع المخطط نفسه، ويحاول استنتاجه بقراءة الملفات واحدًا تلو الآخر حتى ينجح.
+
+مثال:
+
+لنفترض أن لدينا 3 ملفات `data1.jsonl` و`data2.jsonl` و`data3.jsonl` بالمحتوى التالي:
+
+`data1.jsonl`:
+
+```json
+{"field1" :  1, "field2" :  null}
+{"field1" :  2, "field2" :  null}
+{"field1" :  3, "field2" :  null}
+```
+
+`data2.jsonl`:
+
+```json
+{"field1" :  4, "field2" :  "Data4"}
+{"field1" :  5, "field2" :  "Data5"}
+{"field1" :  6, "field2" :  "Data5"}
+```
+
+`data3.jsonl`:
+
+```json
+{"field1" :  7, "field2" :  "Data7", "field3" :  [1, 2, 3]}
+{"field1" :  8, "field2" :  "Data8", "field3" :  [4, 5, 6]}
+{"field1" :  9, "field2" :  "Data9", "field3" :  [7, 8, 9]}
+```
+
+لنجرّب استنتاج المخطط لهذه الملفات الثلاثة:
+
+```sql title="Query"
+:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='default'
+```
+
+```response title="Response"
+┌─name───┬─type─────────────┐
+│ field1 │ Nullable(Int64)  │
+│ field2 │ Nullable(String) │
+└────────┴──────────────────┘
+```
+
+كما نرى، لا يحتوي لدينا على `field3` من الملف `data3.jsonl`.
+يحدث ذلك لأن ClickHouse حاول أولًا استنتاج المخطط من الملف `data1.jsonl`، لكنه فشل بسبب احتواء الحقل `field2` على قيم null فقط،
+ثم حاول استنتاج المخطط من `data2.jsonl` ونجح، لذلك لم تُقرأ البيانات من الملف `data3.jsonl`.
+
+<div id="default-schema-inference-mode-1">
+  ### وضع union
+</div>
+
+في وضع union، يفترض ClickHouse أن الملفات قد تكون لها مخططات مختلفة، لذا يستنتج مخططات جميع الملفات ثم يدمجها في مخطط مشترك.
+
+لنفترض أن لدينا 3 ملفات `data1.jsonl` و`data2.jsonl` و`data3.jsonl` بالمحتوى التالي:
+
+`data1.jsonl`:
+
+```json
+{"field1" :  1}
+{"field1" :  2}
+{"field1" :  3}
+```
+
+`data2.jsonl`:
+
+```json
+{"field2" :  "Data4"}
+{"field2" :  "Data5"}
+{"field2" :  "Data5"}
+```
+
+`data3.jsonl`:
+
+```json
+{"field3" :  [1, 2, 3]}
+{"field3" :  [4, 5, 6]}
+{"field3" :  [7, 8, 9]}
+```
+
+لنجرّب استخدام استنتاج المخطط على هذه الملفات الثلاثة:
+
+```sql title="Query"
+:) DESCRIBE file('data{1,2,3}.jsonl') SETTINGS schema_inference_mode='union'
+```
+
+```response title="Response"
+┌─name───┬─type───────────────────┐
+│ field1 │ Nullable(Int64)        │
+│ field2 │ Nullable(String)       │
+│ field3 │ Array(Nullable(Int64)) │
+└────────┴────────────────────────┘
+```
+
+كما نرى، لدينا جميع الحقول من كل الملفات.
+
+ملاحظة:
+
+* نظرًا إلى أن بعض الملفات قد لا تحتوي على بعض الأعمدة في المخطط الناتج، فإن وضع union مدعوم فقط للتنسيقات التي تدعم قراءة مجموعة فرعية من الأعمدة (مثل JSONEachRow وParquet وTSVWithNames وما إلى ذلك)، ولن يعمل مع التنسيقات الأخرى (مثل CSV وTSV وJSONCompactEachRow وما إلى ذلك).
+* إذا تعذّر على ClickHouse استنتاج المخطط من أحد الملفات، فسيُطرَح استثناء.
+* إذا كان لديك عدد كبير من الملفات، فقد تستغرق قراءة المخطط من جميعها وقتًا طويلًا.
+
+<div id="automatic-format-detection">
+  ## الكشف التلقائي عن التنسيق
+</div>
+
+إذا لم يُحدَّد تنسيق البيانات وتعذّر استنتاجه من امتداد الملف، فسيحاول ClickHouse اكتشاف تنسيق الملف من خلال محتواه.
+
+**أمثلة:**
+
+لنفترض أن لدينا `data` بالمحتوى التالي:
+
+```csv
+"a","b"
+1,"Data1"
+2,"Data2"
+3,"Data3"
+```
+
+يمكننا فحص هذا الملف وإجراء استعلام عليه دون تحديد التنسيق أو البنية:
+
+```sql
+:) desc file(data);
+```
+
+```response
+┌─name─┬─type─────────────┐
+│ a    │ Nullable(Int64)  │
+│ b    │ Nullable(String) │
+└──────┴──────────────────┘
+```
+
+```sql
+:) select * from file(data);
+```
+
+```response
+┌─a─┬─b─────┐
+│ 1 │ Data1 │
+│ 2 │ Data2 │
+│ 3 │ Data3 │
+└───┴───────┘
+```
+
+<Note>
+  لا يستطيع ClickHouse اكتشاف سوى بعض التنسيقات، كما أن هذا الاكتشاف يستغرق بعض الوقت، لذلك من الأفضل دائمًا تحديد التنسيق صراحةً.
+</Note>

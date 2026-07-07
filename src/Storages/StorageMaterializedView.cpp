@@ -22,6 +22,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/executeQuery.h>
@@ -191,6 +192,11 @@ StorageMaterializedView::StorageMaterializedView(
     {
         fixed_uuid = query.refresh_strategy->append;
 
+        /// The temporary view of a CREATE OR REPLACE shares the target with the view being replaced.
+        /// Start its refresh paused so it cannot touch the target before the rename commits.
+        const bool is_create_or_replace_temp = (query.create_or_replace || query.replace_view)
+            && TemporaryReplaceTableName::fromString(table_id_.table_name).has_value();
+
         /// Decide whether to enable coordination.
         if (is_replicated_db)
         {
@@ -221,8 +227,11 @@ StorageMaterializedView::StorageMaterializedView(
             }
             else
             {
-                if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
+                /// The replacement temp's target ownership is checked in doCreateOrReplaceTable, so
+                /// skip the guard here for it (a plain CREATE still goes through this check).
+                if (!is_create_or_replace_temp)
+                    if (auto task = getContext()->getRefreshSet().tryGetTaskForInnerTable(to_table_id))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table {} is already a target of another refreshable materialized view: {}", to_table_id.getFullTableName(), task->getInfo().view_id.getFullTableName());
 
                 StoragePtr inner_table = DatabaseCatalog::instance().tryGetTable(to_table_id, getContext());
                 if (inner_table)
@@ -255,7 +264,7 @@ StorageMaterializedView::StorageMaterializedView(
             }
         }
 
-        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_restore_from_backup);
+        refresher = RefreshTask::create(this, getContext(), *query.refresh_strategy, mode >= LoadingStrictnessLevel::ATTACH, refresh_coordinated, query.is_create_empty, is_create_or_replace_temp, is_restore_from_backup);
     }
 
     if (!fixed_uuid)
@@ -557,6 +566,32 @@ void StorageMaterializedView::truncate(const ASTPtr &, const StorageMetadataPtr 
 {
     if (has_inner_table)
         InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind::Truncate, getContext(), local_context, getTargetTableId(), true);
+}
+
+void StorageMaterializedView::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    /// `MATERIALIZED VIEW ... TO <existing_table>` keeps no on-disk data of its own;
+    /// the implicit drop will not touch the user-owned target.
+    if (!has_inner_table)
+        return;
+
+    /// Mirror `dropInnerTableIfAny`: it builds `to_drop` from `getTargetTableId()` and,
+    /// when `!fixed_uuid` (refreshable / non-append), additionally from the `.tmp` inner
+    /// table name. We must size-check every table that the implicit drop could delete,
+    /// otherwise the zeroed `max_table_size_to_drop` context would silently bypass the
+    /// guard for a non-empty `.tmp.inner...` produced by a previous refresh.
+    auto target_id = getTargetTableId();
+    std::vector<StorageID> to_check = {target_id};
+    if (!fixed_uuid)
+        to_check.push_back(StorageID(target_id.getDatabaseName(), ".tmp" + target_id.getTableName()));
+
+    for (const StorageID & inner_id : to_check)
+    {
+        /// On a race (e.g. `SYSTEM RESTART REPLICA` detached the inner table),
+        /// `dropInnerTableIfAny` is a no-op too, so we mirror its tolerance.
+        if (auto inner = DatabaseCatalog::instance().tryGetTable(inner_id, getContext()))
+            inner->checkTableSizeBelowDropLimit(query_context);
+    }
 }
 
 void StorageMaterializedView::checkStatementCanBeForwarded() const
