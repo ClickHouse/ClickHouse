@@ -17,7 +17,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # ts6, bin_val) exercise the correctness guards in the min-max pruner; removing the corresponding
 # C++ guard would make one of these fail (wrong rows, wrong file count, or an exception).
 
-U="$CLICKHOUSE_TEST_UNIQUE_NAME"
+# Per-run token for `log_comment`. CLICKHOUSE_TEST_UNIQUE_NAME is derived only from the test name plus
+# the database, so a local rerun against the same server/database would leave older `system.query_log`
+# rows whose `log_comment` still matches the filter below; summing `EngineFileLikeReadFiles` across all
+# matching rows would then double the reference counts even when pruning is correct. Appending a random
+# suffix isolates each invocation. The suffix is identical for every query in this run, so the
+# `ORDER BY log_comment` at the end (and thus the reference output) is unaffected.
+U="${CLICKHOUSE_TEST_UNIQUE_NAME}_${RANDOM}${RANDOM}"
 
 $CLICKHOUSE_CLIENT --session_timezone="UTC" --query "
 -- test 1: full scan baseline (no pruning)
