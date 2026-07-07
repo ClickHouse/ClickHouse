@@ -1,0 +1,371 @@
+---
+slug: /dictionary
+title: 'Dictionary'
+keywords: ['dictionary', 'dictionaries']
+description: 'Dictionary は、高速なルックアップのためのデータのキー・バリュー表現を提供します。'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse の Dictionary は、さまざまな[内部および外部ソース](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources)のデータをメモリ内の[キー・バリュー](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)形式で表現する機能で、超低レイテンシのルックアップクエリ向けに最適化されています。
+
+Dictionary は、次のような用途で役立ちます。
+
+* クエリのパフォーマンスを向上させる。特に `JOIN` と組み合わせて使用する場合
+* インジェスト処理を遅くすることなく、取り込みデータをその場でエンリッチする
+
+<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse における Dictionary のユースケース" />
+
+<div id="speeding-up-joins-using-a-dictionary">
+  ## Dictionary を使用した JOIN の高速化
+</div>
+
+Dictionary は、特定の種類の `JOIN` を高速化するために使用できます。具体的には、結合キーが基盤となるキー・バリュー ストレージのキー属性と一致している必要がある [`LEFT ANY` 型](/ja/reference/statements/select/join#supported-types-of-join) です。
+
+<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="LEFT ANY JOIN で Dictionary を使用する" />
+
+この条件に該当する場合、ClickHouse は Dictionary を利用して [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join) を実行できます。これは ClickHouse で最も高速な JOIN アルゴリズムで、右側のテーブルの基盤となる[テーブルエンジン](/ja/reference/engines/table-engines/index)が低レイテンシのキー・バリュー リクエストをサポートしている場合に適用できます。ClickHouse には、これを実現する 3 つのテーブルエンジンがあります: [Join](/ja/reference/engines/table-engines/special/join) (基本的には事前計算済みの hash table) 、[EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb)、および [Dictionary](/ja/reference/engines/table-engines/special/dictionary) です。ここでは Dictionary ベースのアプローチを説明しますが、仕組みはこれら 3 つのエンジンすべてで同じです。
+
+Direct Join アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの JOIN 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
+
+<div id="example">
+  ### 例
+</div>
+
+[Stack Overflow データセット](/ja/get-started/sample-datasets/stackoverflow)を使って、次の問いに答えてみましょう。
+*Hacker Newsで、SQL に関する最も賛否が分かれた投稿は何でしょうか？*
+
+ここでは、賛成票と反対票の数が近い場合を「賛否が分かれている」と定義します。その絶対差を計算し、この値が 0 に近いほど、より賛否が分かれているとみなします。また、対象の投稿は賛成票・反対票の両方が少なくとも 10 票あるものとします。ほとんど投票されていない投稿は、あまり賛否が分かれているとは言えないためです。
+
+データを正規化した状態では、このクエリは現時点で `posts` テーブルと `votes` テーブルを使った `JOIN` を必要とします。
+
+```sql
+WITH PostIds AS
+(
+         SELECT Id
+         FROM posts
+         WHERE Title ILIKE '%SQL%'
+)
+SELECT
+    Id,
+    Title,
+    UpVotes,
+    DownVotes,
+    abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+INNER JOIN
+(
+    SELECT
+         PostId,
+         countIf(VoteTypeId = 2) AS UpVotes,
+         countIf(VoteTypeId = 3) AS DownVotes
+    FROM votes
+    WHERE PostId IN (PostIds)
+    GROUP BY PostId
+    HAVING (UpVotes > 10) AND (DownVotes > 10)
+) AS votes ON posts.Id = votes.PostId
+WHERE Id IN (PostIds)
+ORDER BY Controversial_ratio ASC
+LIMIT 1
+```
+
+```response
+Row 1:
+──────
+Id:                     25372161
+Title:                  How to add exception handling to SqlDataSource.UpdateCommand
+UpVotes:                13
+DownVotes:              13
+Controversial_ratio: 0
+
+1 rows in set. Elapsed: 1.283 sec. Processed 418.44 million rows, 7.23 GB (326.07 million rows/s., 5.63 GB/s.)
+Peak memory usage: 3.18 GiB.
+```
+
+> **`JOIN` の右側には、より小さいデータセットを使用してください**: このクエリは、`PostId` による絞り込みを外側のクエリとサブクエリの両方で行っているため、必要以上に冗長に見えるかもしれません。これは、クエリの応答時間を高速に保つためのパフォーマンス最適化です。最適なパフォーマンスを得るには、`JOIN` の右側が常により小さい集合であり、できるだけ小さくなるようにしてください。JOIN のパフォーマンスを最適化するためのヒントや、利用可能なアルゴリズムを理解するには、[このブログ記事シリーズ](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)を参照することをお勧めします。
+
+このクエリは高速ですが、高いパフォーマンスを得るには、`JOIN` を注意深く記述する必要があります。理想的には、まず投稿のうち &quot;SQL&quot; を含むものだけに絞り込み、そのうえで、その投稿の部分集合について `UpVote` と `DownVote` の件数を確認し、メトリクスを計算できるのが望ましいです。
+
+<div id="applying-a-dictionary">
+  #### Dictionary の適用
+</div>
+
+これらの概念を説明するために、投票データに Dictionary を使用します。Dictionary は通常メモリ上に保持されるため (例外は [ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache) です) 、データサイズを意識する必要があります。まず、`votes` テーブルのサイズを確認します。
+
+```sql
+SELECT table,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+FROM system.columns
+WHERE table IN ('votes')
+GROUP BY table
+```
+
+```response
+┌─table───────────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+│ votes           │ 1.25 GiB        │ 3.79 GiB          │  3.04 │
+└─────────────────┴─────────────────┴───────────────────┴───────┘
+```
+
+データは Dictionary 内に非圧縮で保存されるため、すべてのカラムを Dictionary に格納する場合 (実際にはそうしません) 、少なくとも 4GB のメモリが必要になります。Dictionary はクラスター全体にレプリケートされるため、このメモリ容量は *ノードごとに* 確保しておく必要があります。
+
+> 以下の例では、Dictionary の元データは ClickHouse テーブルです。これは Dictionary で最も一般的なデータソースですが、[さまざまなソース](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) がサポートされており、ファイル、HTTP、[Postgres](/ja/reference/statements/create/dictionary/sources/postgresql) などのデータベースも利用できます。後で示すように、Dictionary は自動的に更新できるため、頻繁に変更される小規模なデータセットを direct joins で使える状態に保つのに最適です。
+
+この Dictionary では、ルックアップを行うための主キーが必要です。これは概念的にはトランザクションデータベースの主キーと同じで、一意である必要があります。上記のクエリでは、結合キー `PostId` に対するルックアップが必要です。したがって、Dictionary には `votes` テーブルから `PostId` ごとの賛成票と反対票の合計を格納する必要があります。この Dictionary 用のデータを取得するクエリは次のとおりです。
+
+```sql
+SELECT PostId,
+   countIf(VoteTypeId = 2) AS UpVotes,
+   countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY PostId
+```
+
+このDictionaryを作成するには、以下のDDLが必要です。先ほどのクエリを使用している点に注目してください。
+
+```sql
+CREATE DICTIONARY votes_dict
+(
+  `PostId` UInt64,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+PRIMARY KEY PostId
+SOURCE(CLICKHOUSE(QUERY 'SELECT PostId, countIf(VoteTypeId = 2) AS UpVotes, countIf(VoteTypeId = 3) AS DownVotes FROM votes GROUP BY PostId'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+```response
+0 rows in set. Elapsed: 36.063 sec.
+```
+
+> セルフマネージドの OSS では、上記のコマンドをすべてのノードで実行する必要があります。ClickHouse Cloud では、Dictionary は自動的にすべてのノードへレプリケートされます。上記の処理は RAM 64GB の ClickHouse Cloud ノードで実行しており、読み込みには 36 秒かかりました。
+
+Dictionary が消費しているメモリを確認するには:
+
+```sql
+SELECT formatReadableSize(bytes_allocated) AS size
+FROM system.dictionaries
+WHERE name = 'votes_dict'
+```
+
+```response
+┌─size─────┐
+│ 4.00 GiB │
+└──────────┘
+```
+
+特定の`PostId`に対する賛成票と反対票は、シンプルな`dictGet`関数で取得できるようになりました。以下では、投稿`11227902`の票数を取得します。
+
+```sql
+SELECT dictGet('votes_dict', ('UpVotes', 'DownVotes'), '11227902') AS votes
+```
+
+```response
+┌─votes──────┐
+│ (34999,32) │
+└────────────┘
+```
+
+先ほどのクエリでこれを活用すると、JOINは不要になります：
+
+```sql
+WITH PostIds AS
+(
+        SELECT Id
+        FROM posts
+        WHERE Title ILIKE '%SQL%'
+)
+SELECT Id, Title,
+        dictGet('votes_dict', 'UpVotes', Id) AS UpVotes,
+        dictGet('votes_dict', 'DownVotes', Id) AS DownVotes,
+        abs(UpVotes - DownVotes) AS Controversial_ratio
+FROM posts
+WHERE (Id IN (PostIds)) AND (UpVotes > 10) AND (DownVotes > 10)
+ORDER BY Controversial_ratio ASC
+LIMIT 3
+```
+
+```response
+3 rows in set. Elapsed: 0.551 sec. Processed 119.64 million rows, 3.29 GB (216.96 million rows/s., 5.97 GB/s.)
+Peak memory usage: 552.26 MiB.
+```
+
+このクエリはかなりシンプルになるだけでなく、速度も2倍以上に向上します！ さらに、賛成票と反対票がそれぞれ10票を超える投稿だけをDictionaryに読み込み、事前計算した `controversial` の値だけを保存するようにすれば、さらに最適化できます。
+
+<div id="query-time-enrichment">
+  ## クエリ時エンリッチメント
+</div>
+
+Dictionariesを使用すると、クエリ時に値を参照できます。これらの値は結果として返したり、集計に使用したりできます。たとえば、ユーザーIDを所在地に対応付けるDictionaryを作成するとします。
+
+```sql
+CREATE DICTIONARY users_dict
+(
+  `Id` Int32,
+  `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM stackoverflow.users'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+このDictionaryを使って、post の結果を補完できます:
+
+```sql
+SELECT
+        Id,
+        Title,
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location
+FROM posts
+WHERE Title ILIKE '%clickhouse%'
+LIMIT 5
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌───────Id─┬─Title─────────────────────────────────────────────────────────┬─Location──────────────┐
+│ 52296928 │ Comparison between two Strings in ClickHouse                  │ Spain                 │
+│ 52345137 │ How to use a file to migrate data from mysql to a clickhouse? │ 中国江苏省Nanjing Shi   │
+│ 61452077 │ How to change PARTITION in clickhouse                         │ Guangzhou, 广东省中国   │
+│ 55608325 │ Clickhouse select last record without max() on all table      │ Moscow, Russia        │
+│ 55758594 │ ClickHouse create temporary table                             │ Perm', Russia         │
+└──────────┴───────────────────────────────────────────────────────────────┴───────────────────────┘
+
+5 rows in set. Elapsed: 0.033 sec. Processed 4.25 million rows, 82.84 MB (130.62 million rows/s., 2.55 GB/s.)
+Peak memory usage: 249.32 MiB.
+```
+
+上記の join の例と同様に、同じ Dictionary を使って、ほとんどの投稿がどこから来ているのかを効率的に特定できます。
+
+```sql
+SELECT
+        dictGet('users_dict', 'Location', CAST(OwnerUserId, 'UInt64')) AS location,
+        count() AS c
+FROM posts
+WHERE location != ''
+GROUP BY location
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+│ United Kingdom         │ 537699 │
+└────────────────────────┴────────┘
+
+5 rows in set. Elapsed: 0.763 sec. Processed 59.82 million rows, 239.28 MB (78.40 million rows/s., 313.60 MB/s.)
+Peak memory usage: 248.84 MiB.
+```
+
+<div id="index-time-enrichment">
+  ## インデックス時のエンリッチメント
+</div>
+
+上の例では、クエリ時に Dictionary を使って join を不要にしました。Dictionary は、insert 時に行をエンリッチするためにも使用できます。これは通常、エンリッチメントに使う値が変化せず、かつ Dictionary の投入元として使える外部ソースに存在する場合に適しています。この場合、insert 時に行をエンリッチしておけば、クエリ時に Dictionary へのルックアップを行う必要がなくなります。
+
+Stack Overflow のユーザーの `Location` は変わらないと仮定しましょう (実際には変わります) 。具体的には、`users` テーブルの `Location` カラムです。location ごとに `posts` テーブルを分析するクエリを実行したいとします。このテーブルには `UserId` が含まれています。
+
+Dictionary は、`users` テーブルを基に、ユーザー ID から location へのマッピングを提供します。
+
+```sql
+CREATE DICTIONARY users_dict
+(
+    `Id` UInt64,
+    `Location` String
+)
+PRIMARY KEY Id
+SOURCE(CLICKHOUSE(QUERY 'SELECT Id, Location FROM users WHERE Id >= 0'))
+LIFETIME(MIN 600 MAX 900)
+LAYOUT(HASHED())
+```
+
+> `Id < 0` のユーザーは除外します。これにより、`Hashed` Dictionary 型を使用できます。`Id < 0` のユーザーはシステムユーザーです。
+
+posts テーブルでこの辞書をデータ挿入時に利用するには、スキーマを変更する必要があります。
+
+```sql
+CREATE TABLE posts_with_location
+(
+    `Id` UInt32,
+    `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+     ...
+    `Location` MATERIALIZED dictGet(users_dict, 'Location', OwnerUserId::'UInt64')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CommentCount)
+```
+
+上記の例では、`Location` は `MATERIALIZED` カラムとして宣言されています。これは、値を `INSERT` クエリの一部として指定でき、その場合でも常に計算されることを意味します。
+
+> ClickHouse は [`DEFAULT` columns](/ja/reference/statements/create/table#default_values) もサポートしています (この場合、値は挿入することも、指定されていない場合は計算させることもできます) 。
+
+テーブルにデータを投入するには、通常どおり S3 からの `INSERT INTO SELECT` を使用できます:
+
+```sql
+INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
+```
+
+これで、最も多くの投稿が発信されている場所の名前を取得できます：
+
+```sql
+SELECT Location, count() AS c
+FROM posts_with_location
+WHERE Location != ''
+GROUP BY Location
+ORDER BY c DESC
+LIMIT 4
+```
+
+```response
+┌─Location───────────────┬──────c─┐
+│ India                  │ 787814 │
+│ Germany                │ 685347 │
+│ United States          │ 595818 │
+│ London, United Kingdom │ 538738 │
+└────────────────────────┴────────┘
+
+4 rows in set. Elapsed: 0.142 sec. Processed 59.82 million rows, 1.08 GB (420.73 million rows/s., 7.60 GB/s.)
+Peak memory usage: 666.82 MiB.
+```
+
+<div id="advanced-dictionary-topics">
+  ## Dictionary の高度なトピック
+</div>
+
+Dictionary レイアウトの選び方、Dictionary と JOIN の使い分け、Dictionary の使用状況の監視については、[Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices)を参照してください。
+
+<div id="refreshing-dictionaries">
+  ### Dictionary の更新
+</div>
+
+Dictionary に `MIN 600 MAX 900` の `LIFETIME` を指定しました。LIFETIME はDictionaryの更新間隔で、ここでの値を指定すると、600〜900 秒のランダムな間隔で定期的に再読み込みされます。このランダムな間隔は、多数のサーバーで更新する際に Dictionary ソースへの負荷を分散するために必要です。更新中もDictionaryの古いバージョンに対して引き続きクエリを実行できますが、クエリがブロックされるのは初期ロード時だけです。なお、`(LIFETIME(0))` を設定するとDictionaryは更新されなくなります。
+Dictionary は `SYSTEM RELOAD DICTIONARY` コマンドを使って強制的に再読み込みできます。
+
+ClickHouse や Postgres などのデータベースソースでは、一定間隔で更新する代わりに、Dictionary が実際に変更された場合にのみ更新するクエリを設定できます (これを判定するのはそのクエリの応答です) 。詳しくは [こちら](/ja/reference/statements/create/dictionary/lifetime) を参照してください。
+
+<div id="other-dictionary-types">
+  ### その他の Dictionary の種類
+</div>
+
+ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/ja/reference/statements/create/dictionary/layouts/polygon)、[Regular Expression](/ja/reference/statements/create/dictionary/layouts/regexp-tree) の Dictionary にも対応しています。
+
+<div id="more-reading">
+  ### 参考資料
+</div>
+
+* [Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices) — レイアウトの選択、Dictionary と JOIN の使い分け、監視
+* [Dictionary を使ってクエリを高速化する](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [Dictionary の高度な設定](/ja/reference/statements/create/dictionary)

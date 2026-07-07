@@ -32,6 +32,25 @@ SELECT toTypeName(mapExists((k, v) -> 1, map('a'::LowCardinality(String), 'x')))
 SELECT '-- plain Map (no LowCardinality) is unaffected';
 SELECT toTypeName(mapFilter((k, v) -> 1, map('a', 'x')));
 
+SELECT '-- issue #108439: functions returning a Map must rebuild a nested Map value type';
+SELECT toTypeName(mapFilter((k, v) -> 1, map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y'))));
+SELECT mapFilter((k, v) -> 1, map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y')));
+SELECT toTypeName(mapSort((k, v) -> k, map('b'::LowCardinality(String), map('x'::LowCardinality(String), 'y'), 'a'::LowCardinality(String), map('z'::LowCardinality(String), 'w'))));
+SELECT mapSort((k, v) -> k, map('b'::LowCardinality(String), map('x'::LowCardinality(String), 'y'), 'a'::LowCardinality(String), map('z'::LowCardinality(String), 'w')));
+SELECT toTypeName(mapReverseSort(map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y'))));
+SELECT toTypeName(mapPartialSort((k, v) -> k, 1, map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y'))));
+SELECT toTypeName(mapConcat(map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y'))));
+SELECT mapConcat(map('a'::LowCardinality(String), map('x'::LowCardinality(String), 'y')));
+
+SELECT '-- nested Map inside Array / Tuple value';
+SELECT toTypeName(mapFilter((k, v) -> 1, map('a'::LowCardinality(String), [map('x'::LowCardinality(String), 'y')])));
+SELECT mapFilter((k, v) -> 1, map('a'::LowCardinality(String), [map('x'::LowCardinality(String), 'y')]));
+SELECT toTypeName(mapFilter((k, v) -> 1, map('a'::LowCardinality(String), tuple(map('x'::LowCardinality(String), 'y')))));
+SELECT mapFilter((k, v) -> 1, map('a'::LowCardinality(String), tuple(map('x'::LowCardinality(String), 'y'))));
+
+SELECT '-- nested Map with LowCardinality only in the inner value';
+SELECT toTypeName(mapFilter((k, v) -> 1, map('a', map('x', 'y'::LowCardinality(String)))));
+
 SELECT '-- the reproducer from the issue: CREATE TABLE AS keeps the column type and passes CHECK';
 DROP TABLE IF EXISTS t_map_lc_src;
 DROP TABLE IF EXISTS t_map_lc_dst;

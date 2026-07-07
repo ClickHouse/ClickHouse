@@ -1,0 +1,22 @@
+---
+title: اجمع تفاصيل Native الخاصة بك
+---
+
+للاتصال بـ ClickHouse باستخدام native TCP، ستحتاج إلى المعلومات التالية:
+
+| المعلمات                  | الوصف                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------ |
+| `HOST` and `PORT`         | يكون المنفذ عادةً 9440 عند استخدام TLS، أو 9000 عند عدم استخدام TLS.                             |
+| `DATABASE NAME`           | توجد افتراضيًا قاعدة بيانات باسم `default`؛ استخدم اسم قاعدة البيانات التي تريد الاتصال بها.     |
+| `USERNAME` and `PASSWORD` | يكون اسم المستخدم افتراضيًا هو `default`. استخدم اسم المستخدم المناسب لحالة الاستخدام الخاصة بك. |
+
+تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في ClickHouse Cloud console.
+حدّد الخدمة التي ستتصل بها، ثم انقر على **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر Connect لخدمة ClickHouse Cloud" border />
+
+اختر **Native**، وستتوفر التفاصيل ضمن مثال لأمر `clickhouse-client`.
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="تفاصيل اتصال ClickHouse Cloud عبر Native TCP" border />
+
+إذا كنت تستخدم ClickHouse مُدارًا ذاتيًا، فسيحدّد مسؤول ClickHouse لديك تفاصيل الاتصال.

@@ -1,0 +1,104 @@
+---
+slug: /deployment-modes
+sidebarTitle: '배포 모드'
+description: 'ClickHouse는 동일한 강력한 데이터베이스 엔진을 기반으로, 특정 요구에 맞게 구성된 5가지 배포 옵션을 제공합니다.'
+title: '배포 모드'
+keywords: ['배포 모드', 'chDB']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+ClickHouse는 필요에 따라 여러 방식으로 배포할 수 있는 유연한 데이터베이스 시스템입니다. 모든 배포 옵션의 핵심은 **동일한 강력한 ClickHouse 데이터베이스 엔진**을 사용한다는 점이며, 차이는 상호작용 방식과 실행 위치에 있습니다.
+
+프로덕션 환경에서 대규모 분석을 수행하든, 로컬에서 데이터를 분석하든, 애플리케이션을 개발하든, 각 사용 사례에 맞는 배포 옵션이 마련되어 있습니다. 기반 엔진이 일관되므로 모든 배포 모드에서 동일한 고성능과 SQL 호환성을 활용할 수 있습니다.
+이 가이드에서는 ClickHouse를 배포하고 사용하는 5가지 주요 방법을 살펴봅니다.
+
+* 전통적인 클라이언트/서버 배포를 위한 ClickHouse 서버
+* 완전 관리형 데이터베이스 운영을 위한 ClickHouse Cloud
+* 로컬 개발 및 Cloud 관리를 위한 ClickHouse CLI
+* 명령줄 데이터 처리를 위한 clickhouse-local
+* 애플리케이션에 ClickHouse를 직접 임베드하기 위한 chDB
+
+각 배포 모드마다 강점과 적합한 사용 사례가 다르며, 아래에서 이를 자세히 살펴보겠습니다.
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/EOXEW_-r10A?si=6IanDSJlRzN8f9Mo" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="clickhouse-server">
+  ## ClickHouse 서버
+</div>
+
+ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반으로 하며, 프로덕션 배포에 적합합니다. 이 배포 모드는 ClickHouse의 강점으로 잘 알려진 고처리량과 낮은 지연 시간의 쿼리를 비롯해, OLAP 데이터베이스의 전체 기능을 제공합니다.
+
+<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse 서버" size="sm" />
+
+<br />
+
+배포 유연성 측면에서 ClickHouse 서버는 개발이나 테스트용으로 로컬 머신에 설치할 수 있고, 클라우드 기반 운영을 위해 AWS, GCP, Azure와 같은 주요 클라우드 제공업체에 배포할 수도 있으며, 자체 온프레미스 하드웨어에 구축할 수도 있습니다. 더 큰 규모의 운영에서는 증가한 부하를 처리하고 고가용성을 제공할 수 있도록 분산 클러스터로 구성할 수 있습니다.
+
+이 배포 모드는 신뢰성, 성능, 그리고 모든 기능에 대한 접근이 중요한 프로덕션 환경에서 선호되는 선택지입니다.
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+[ClickHouse Cloud](/ko/products/cloud/getting-started/intro)는 자체 배포를 운영할 때 따르는 운영 부담을 없애 주는 완전 관리형 ClickHouse 버전입니다. ClickHouse 서버의 모든 핵심 기능을 유지하면서도, 개발과 운영을 간소화하도록 설계된 추가 기능을 제공해 전반적인 사용 경험을 향상합니다.
+
+<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
+
+ClickHouse Cloud의 주요 장점 중 하나는 통합 도구 세트입니다. [ClickPipes](/ko/get-started/setup/cloud#clickpipes)는 강력한 데이터 수집 프레임워크를 제공하므로 복잡한 ETL 파이프라인을 관리하지 않고도 다양한 소스의 데이터를 손쉽게 연결하고 스트리밍할 수 있습니다. 또한 이 플랫폼은 전용 [querying API](/ko/products/cloud/guides/sql-console/query-endpoints)도 제공하므로 애플리케이션을 훨씬 더 쉽게 구축할 수 있습니다.
+
+ClickHouse Cloud의 SQL 콘솔에는 강력한 [dashboarding](/ko/products/cloud/features/sql-console-features/dashboards) 기능이 포함되어 있어 쿼리를 대화형 시각화로 변환할 수 있습니다. 저장된 쿼리를 기반으로 대시보드를 만들고 공유할 수 있으며, 쿼리 매개변수를 통해 대화형 요소를 추가할 수도 있습니다. 이러한 대시보드는 전역 필터를 사용해 동적으로 구성할 수 있으므로 사용자는 사용자 지정 가능한 보기로 데이터를 탐색할 수 있습니다. 다만 시각화를 보려면 기반이 되는 저장된 쿼리에 대해 최소한 읽기 권한이 있어야 한다는 점에 유의해야 합니다.
+
+모니터링과 최적화를 위해 ClickHouse Cloud에는 기본 제공 차트와 [query insights](/ko/products/cloud/features/sql-console-features/query-insights)가 포함되어 있습니다. 이러한 도구는 클러스터 성능에 대한 심층적인 가시성을 제공하여 쿼리 패턴, 리소스 사용률, 잠재적인 최적화 기회를 파악하는 데 도움이 됩니다. 이러한 수준의 관측성은 인프라 관리를 위해 별도의 리소스를 투입하지 않으면서도 고성능 분석 운영을 유지해야 하는 팀에 특히 유용합니다.
+
+이 서비스는 관리형이므로 업데이트, 백업, 스케일링, 보안 패치를 걱정할 필요가 없습니다. 이러한 작업은 모두 자동으로 처리됩니다. 따라서 데이터베이스 관리보다 데이터와 애플리케이션에 집중하려는 조직에 이상적인 선택입니다.
+
+<div id="clickhouse-cli">
+  ## ClickHouse CLI
+</div>
+
+ClickHouse CLI(`clickhousectl`)는 로컬 ClickHouse 개발과 ClickHouse Cloud 관리를 위한 명령줄 도구입니다. ClickHouse 버전 설치, 로컬 서버 인스턴스 실행 및 관리, 쿼리 실행과 관련된 작업을 간소화합니다.
+
+로컬 개발에서는 `clickhousectl`를 사용해 ClickHouse 버전을 설치하고 서버를 실행할 수 있습니다. 원하는 ClickHouse 버전을 설치하고, 이름이 지정된 서버를 띄우고, 내장 클라이언트를 통해 연결할 수 있습니다. 각 서버에는 자체 데이터 디렉터리가 할당되므로, 서로 격리된 여러 환경을 나란히 실행할 수 있습니다.
+
+또한 `clickhousectl`는 서비스 생성 및 스케일링, API Key 관리, 조직 관리 등 ClickHouse Cloud 리소스를 전반적으로 관리할 수 있는 기능을 제공하므로, 로컬과 Cloud 워크플로를 모두 아우르는 통합 도구로 사용할 수 있습니다.
+
+```bash
+# Install the CLI
+curl https://clickhouse.com/cli | sh
+
+# Install the latest ClickHouse, set it as your default, and symlink the clickhouse binary onto your PATH
+clickhousectl local use latest
+clickhousectl local server start
+clickhousectl local client
+```
+
+<div id="clickhouse-local">
+  ## clickhouse-local
+</div>
+
+[clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)은 독립 실행형 실행 파일에서 ClickHouse의 전체 기능을 제공하는 강력한 명령줄 도구입니다. 본질적으로는 ClickHouse 서버와 동일한 데이터베이스(database)이지만, 서버 인스턴스를 실행하지 않고도 명령줄에서 직접 ClickHouse의 모든 기능을 활용할 수 있도록 패키징되어 있습니다.
+
+<Image img="/images/deployment-modes/ch-local.webp" alt="clickHouse-local" size="sm" />
+
+이 도구는 특히 로컬 파일이나 클라우드 스토리지 서비스에 저장된 데이터를 다룰 때 애드혹 데이터 분석에 매우 적합합니다. ClickHouse의 SQL 방언을 사용해 다양한 포맷의 파일(CSV, JSON, Parquet 등)을 직접 쿼리할 수 있으므로, 빠른 데이터 탐색이나 일회성 분석 작업에 탁월한 선택입니다.
+
+clickhouse-local에는 ClickHouse의 모든 기능이 포함되어 있으므로, 데이터 변환, 포맷 변환 또는 일반적으로 ClickHouse 서버에서 수행하는 각종 데이터베이스 작업에 사용할 수 있습니다. 주로 임시 작업에 사용되지만, 필요할 때는 ClickHouse 서버와 동일한 스토리지 엔진을 사용해 데이터를 영구적으로 저장할 수도 있습니다.
+
+원격 테이블 함수와 로컬 파일 시스템에 대한 접근을 함께 활용할 수 있으므로, clickhouse-local은 ClickHouse 서버와 로컬 머신의 파일 간 데이터를 join해야 하는 시나리오에서 특히 유용합니다. 이는 서버에 업로드하고 싶지 않은 민감한 로컬 데이터나 임시 데이터를 다룰 때 특히 유용합니다.
+
+<div id="chdb">
+  ## chDB
+</div>
+
+[chDB](/ko/products/chdb/index)는 ClickHouse를 프로세스 내 데이터베이스 엔진으로 내장한 형태이며, Python이 주요 구현체이지만 Go, Rust, NodeJS, Bun에서도 사용할 수 있습니다. 이 배포 옵션은 ClickHouse의 강력한 OLAP 기능을 애플리케이션 프로세스에 직접 제공하므로 별도의 데이터베이스 설치가 필요 없습니다.
+
+<Image img="/images/deployment-modes/chdb.webp" alt="chDB - 내장 ClickHouse" size="sm" />
+
+chDB는 애플리케이션 생태계와 자연스럽게 통합됩니다. 예를 들어 Python에서는 Pandas, Arrow와 같은 널리 사용되는 데이터 과학 도구와 효율적으로 연동되도록 최적화되어 있으며, Python memoryview를 통해 데이터 복사 오버헤드를 최소화합니다. 따라서 기존 워크플로에서 ClickHouse의 쿼리 성능을 활용하려는 데이터 과학자와 분석가에게 특히 유용합니다.
+
+또한 chDB는 clickhouse-local로 생성한 데이터베이스에도 연결할 수 있어 데이터를 다루는 방식에 유연성을 제공합니다. 즉, 데이터 액세스 패턴을 바꾸지 않고도 로컬 개발, Python에서의 데이터 탐색, 보다 영구적인 스토리지 솔루션 사이를 자연스럽게 오갈 수 있습니다.

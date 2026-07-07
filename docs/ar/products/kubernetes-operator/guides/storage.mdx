@@ -1,0 +1,189 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: التخزين ووحدات التخزين
+keywords: ['kubernetes', 'التخزين', 'وحدات التخزين', 'pvc', 'jbod', 'الأقراص']
+description: 'يوضح هذا الدليل كيف يوفّر المشغّل التخزين الدائم لعناقيد ClickHouse، بما في ذلك وحدة تخزين البيانات الأساسية، وبُنى الأقراص المتعددة (JBOD)، وتوسعة السعة، وما لا يمكن تغييره بعد الإنشاء.'
+doc_type: 'guide'
+---
+
+يشرح هذا الدليل كيفية قيام المشغّل بتوفير التخزين الدائم لـ
+`ClickHouseCluster`: وحدة تخزين البيانات الأساسية، وإرفاق أقراص إضافية ضمن
+بنية متعددة الأقراص (JBOD)، وتوسعة السعة، والقواعد التي تحدد ما يمكنك
+وما لا يمكنك تغييره بعد إنشاء العنقود.
+
+للاطلاع على المرجع المفصل حسب الحقول، راجع
+[تهيئة → Storage configuration](/ar/products/kubernetes-operator/guides/configuration#storage-configuration)
+و[مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference).
+
+<div id="primary-data-volume">
+  ## وحدة تخزين البيانات الأساسية
+</div>
+
+`spec.dataVolumeClaimSpec` هو `PersistentVolumeClaimSpec` قياسي في Kubernetes.
+ويحوّله المشغّل إلى `volumeClaimTemplate` ضمن StatefulSet، بحيث تُنشئ وحدة تحكم
+StatefulSet عنصر PersistentVolumeClaim واحدًا لكل نسخة متماثلة وتحتفظ به، ثم تربطه
+بمسار بيانات ClickHouse `/var/lib/clickhouse`.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+* عند عدم تحديد `accessModes`، يضبطه المشغّل تلقائيًا على `ReadWriteOnce`.
+* يتم الاحتفاظ بـ PVC الخاص بكل نسخة متماثلة عند حذف الـ عنقود، لذا تبقى البيانات بعد
+  حذف المورد المخصص وإعادة إنشائه.
+* يوجد الحقل نفسه أيضًا في `KeeperCluster` ويعمل بالطريقة نفسها.
+
+<div id="ephemeral-storage">
+  ## التشغيل بدون وحدة تخزين بيانات دائمة
+</div>
+
+يكون `dataVolumeClaimSpec` اختياريًا. إذا حذفته ولم تقم بربط وحدة التخزين الخاصة بك
+في مسار البيانات، فسيكتب ClickHouse إلى نظام الملفات المؤقت للحاوية، وسيُرجع
+`admission webhook` تحذيرًا يفيد بأن البيانات قد تُفقد إذا أُعيد تشغيل العنقود.
+
+هذا مخصّص فقط للعناقيد المؤقتة أو الاختبارية. لتوفير وحدة التخزين
+الخاصة بك بدلًا من `dataVolumeClaimSpec` — على سبيل المثال `emptyDir` أو وحدة
+تخزين مُجهَّزة مسبقًا — عرّفها عبر `spec.podTemplate.volumes` ثم اربطها في
+`/var/lib/clickhouse` باستخدام `spec.containerTemplate.volumeMounts`.
+
+<Note>
+  يُعد `dataVolumeClaimSpec` ووحدة التخزين المخصّصة في مسار البيانات خيارين متنافيين.
+  إذا تم تعيين `dataVolumeClaimSpec`، فسيتم رفض ربط وحدة تخزين مخصّصة في `/var/lib/clickhouse`.
+  ولا يمكن استخدام أسماء وحدات التخزين المحجوزة `clickhouse-storage-volume`,
+  `clickhouse-server-tls-volume`, و `clickhouse-server-custom-ca-volume`
+  في `podTemplate.volumes`.
+</Note>
+
+<div id="expanding-storage">
+  ## توسيع مساحة التخزين
+</div>
+
+لتوسيع وحدة تخزين، زِد قيمة `resources.requests.storage` وطبّق التغيير. سيعمل
+المشغّل على تحديث وحدات PVC الحالية في مكانها.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+  لا ينجح التوسيع إلا إذا كانت قيمة `allowVolumeExpansion: true` مفعّلة في `StorageClass` الأساسية. لا يدعم Kubernetes تصغير PVC، لذا
+  يجب أن يكون الحجم الجديد أكبر من الحجم الحالي أو مساويًا له.
+</Note>
+
+<div id="multi-disk-jbod">
+  ## تخزين متعدد الأقراص (JBOD)
+</div>
+
+يقوم `spec.additionalVolumeClaimTemplates` بإرفاق أقراص إضافية بكل نسخة متماثلة من ClickHouse
+إلى جانب `dataVolumeClaimSpec` الأساسية. وكل entry عبارة عن قالب PVC
+مسمّى — يتكوّن من `metadata.name` و`spec` الخاصة بـ PVC — وتتم مواءمته تمامًا مثل
+قرص البيانات الأساسي، بحيث تُنشئ وحدة تحكم StatefulSet وتُبقي PVC واحدة لكل
+نسخة متماثلة باسم `<name>-<statefulset>-0`.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+يقوم المُشغِّل بربط كل وحدة تخزين إضافية عند `/var/lib/clickhouse/disks/<name>`
+و**يُنشئ لك `storage_configuration` الخاصة بـ ClickHouse** — لذلك لا تكتبها
+يدويًا. كما يسجّل كل قرص إضافي ويضيفه إلى سياسة التخزين المضمّنة `default`.
+
+يشترك قرص البيانات الأساسي (`default`) وكل قرص إضافي في وحدة تخزين واحدة
+ضمن سياسة `default`، لذلك يوزّع ClickHouse data parts الجديدة عليها جميعًا
+بأسلوب round-robin. وتساوي السعة القابلة للاستخدام مجموع كل أقراص، وكل table
+لا يحدّد `storage_policy` خاصته — بما في ذلك جداول `system.*` — يستخدم
+هذه المجموعة الموحّدة.
+
+<Note>
+  يحتفظ مسار الربط باسم القالب كما هو حرفيًا، لكن معرّف القرص داخل
+  `storage_configuration` يستبدل الشرطات `-` بشرطات سفلية `_`. لذلك يُربط قالب باسم
+  `cold-disk` عند `/var/lib/clickhouse/disks/cold-disk` ويظهر باسم
+  `cold_disk` في configuration المُنشأة.
+</Note>
+
+<div id="custom-storage-policies">
+  ## سياسات التخزين المخصّصة
+</div>
+
+أنت **لست** بحاجة إلى `extraConfig` لتخطيط JBOD أعلاه — إذ يُنشئ المُشغِّل
+سياسة `default` تلقائيًا. لا تستخدم `spec.settings.extraConfig` إلا عندما
+تريد سياسات تخزين *تتجاوز* الإعداد الافتراضي المُنشأ، مثل سياسة متدرجة
+للتخزين الساخن/البارد مع `move_factor` و`prefer_not_to_merge`، أو قرصًا
+مدعومًا بـ S3. وأي تهيئة تضيفها هناك تُدمج فوق `storage_configuration` المُنشأ.
+
+راجع
+[وثائق التخزين في ClickHouse](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
+للاطلاع على حقول السياسة.
+
+<div id="immutability">
+  ## ما الذي لا يمكنك تغييره بعد الإنشاء
+</div>
+
+يصبح تخطيط التخزين ثابتًا إلى حدٍّ كبير بمجرد إنشاء عنقود. يرفض admission webhook
+التحديثات التي قد تترك PersistentVolumeClaims بدون ارتباط أو تعيد ربطها:
+
+* وجود `dataVolumeClaimSpec` غير قابل للتغيير — لا يمكنك **إضافة** data
+  وحدة تخزين إلى عنقود أُنشئ من دونه، ولا **إزالته** من عنقود أُنشئ
+  معه.
+* تكون مجموعة `additionalVolumeClaimTemplates` ثابتة — لا يمكنك **إضافة**
+  عناصر أو **إزالتها** أو **إعادة تسميتها** بعد الإنشاء.
+* يُسمح **بتوسيع** `resources.requests.storage` في عنصر موجود (رهناً
+  بدعم StorageClass، راجع [توسيع التخزين](#expanding-storage)).
+
+<div id="validation-reference">
+  ## مرجع التحقق
+</div>
+
+| الشرط                                                                                | النتيجة                                            |
+| ------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| عدم وجود `dataVolumeClaimSpec` وعدم وجود وحدة تخزين مخصّصة عند `/var/lib/clickhouse` | تحذير — احتمال فقدان البيانات عند إعادة التشغيل    |
+| ربط وحدة تخزين مخصّصة عند `/var/lib/clickhouse` مع تعيين `dataVolumeClaimSpec`       | مرفوض                                              |
+| تعيين `additionalVolumeClaimTemplates` مع غياب `dataVolumeClaimSpec`                 | مرفوض                                              |
+| قرص إضافي باسم `default`                                                             | مرفوض — الاسم محجوز لقرص ClickHouse الافتراضي      |
+| قرص إضافي باسم `clickhouse-storage-volume`                                           | مرفوض — يتعارض مع اسم وحدة تخزين البيانات الأساسية |
+| تكرار اسم قرص إضافي                                                                  | مرفوض                                              |
+| اسم لا يطابق `^[a-z]([-a-z0-9]*[a-z0-9])?$` أو يزيد عن 63 حرفًا                      | مرفوض بواسطة مخطط CRD                              |
+| إضافة `dataVolumeClaimSpec` أو إزالته بعد الإنشاء                                    | مرفوض                                              |
+| إضافة `additionalVolumeClaimTemplates` أو إزالتها أو إعادة تسميتها بعد الإنشاء       | مرفوض                                              |
+| اسم وحدة تخزين محجوز في `podTemplate.volumes`                                        | مرفوض                                              |
+
+<div id="related-guides">
+  ## أدلة ذات صلة
+</div>
+
+* [التهيئة](/ar/products/kubernetes-operator/guides/configuration) — المرجع الكامل للحقول، بما في ذلك `extraConfig`.
+* [توسيع نطاق العناقيد](/ar/products/kubernetes-operator/guides/scaling) — كيفية إضافة النسخ المتماثلة والشظايا وإزالتها.

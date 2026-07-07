@@ -1,0 +1,400 @@
+---
+slug: /guides/replacing-merge-tree
+title: 'ReplacingMergeTree 엔진 사용하기'
+description: 'ClickHouse에서 ReplacingMergeTree 엔진을 사용하는 방법을 설명하는 가이드'
+keywords: ['replacingmergetree', '삽입', '중복 제거']
+doc_type: 'guide'
+sidebarTitle: 'ReplacingMergeTree 엔진 사용하기'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+트랜잭션 데이터베이스는 트랜잭션성 업데이트 및 삭제 워크로드에 최적화되어 있지만, OLAP 데이터베이스는 이러한 작업에 대해서는 더 제한적인 보장을 제공합니다. 대신 훨씬 더 빠른 분석 쿼리를 위해 batch로 삽입되는 불변 데이터에 최적화되어 있습니다. ClickHouse는 뮤테이션을 통한 업데이트 작업과 행을 삭제하는 경량 방식도 제공하지만, 컬럼 지향 구조이므로 앞서 설명한 대로 이러한 작업은 신중하게 계획하여 수행해야 합니다. 이러한 작업은 비동기적으로 처리되고, 단일 스레드로 처리되며, (업데이트의 경우) 데이터를 디스크에 다시 기록해야 합니다. 따라서 작은 변경이 대량으로 발생하는 경우에는 사용하지 않아야 합니다.
+위와 같은 사용 패턴을 피하면서 업데이트 및 삭제 행의 스트림을 처리하려면 ClickHouse 테이블 엔진 ReplacingMergeTree를 사용할 수 있습니다.
+
+<div id="automatic-upserts-of-inserted-rows">
+  ## 삽입된 행의 자동 업서트
+</div>
+
+[ReplacingMergeTree 테이블 엔진](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree)은 비효율적인 `ALTER` 또는 `DELETE` SQL 문을 사용하지 않고도 행에 대한 업데이트 작업을 적용할 수 있게 해줍니다. 동일한 행의 여러 복사본을 삽입한 뒤 그중 하나를 최신 버전으로 표시할 수 있기 때문입니다. 이후 백그라운드 프로세스가 동일한 행의 이전 버전을 비동기적으로 제거하여, 불변 삽입을 통해 업데이트 작업을 효율적으로 모방합니다.
+이 기능은 테이블 엔진이 중복 행을 식별할 수 있다는 점에 기반합니다. 이는 `ORDER BY` 절을 사용해 고유성을 판단함으로써 구현됩니다. 즉, 두 행이 `ORDER BY`에 지정된 컬럼에서 동일한 값을 가지면 중복으로 간주됩니다. 테이블 정의 시 지정하는 `version` 컬럼을 사용하면, 두 행이 중복으로 식별되었을 때 최신 버전의 행을 유지할 수 있습니다. 즉, 가장 높은 버전 값을 가진 행이 유지됩니다.
+아래 예시에서는 이 과정을 설명합니다. 여기서는 행이 A 컬럼(테이블의 `ORDER BY`)으로 고유하게 식별됩니다. 이 행들이 두 개의 배치로 삽입되어 디스크에 두 개의 데이터 파트가 생성되었다고 가정합니다. 이후 비동기 백그라운드 프로세스에서 이 파트들이 함께 머지됩니다.
+
+ReplacingMergeTree에서는 deleted 컬럼도 추가로 지정할 수 있습니다. 이 컬럼에는 0 또는 1이 들어가며, 값이 1이면 해당 행(및 그 중복 행)이 삭제되었음을 의미하고, 그렇지 않은 경우 0이 사용됩니다. **참고: 삭제된 행은 머지 시점에 제거되지 않습니다.**
+
+이 과정에서 파트 병합 중에는 다음과 같은 일이 발생합니다.
+
+* A 컬럼 값이 1인 행에는 version 2의 업데이트 행과 version 3의 삭제 행(deleted 컬럼 값은 1)이 모두 있습니다. 따라서 삭제된 것으로 표시된 최신 행이 유지됩니다.
+* A 컬럼 값이 2인 행에는 두 개의 업데이트 행이 있습니다. 더 나중 행이 유지되며, price 컬럼 값은 6입니다.
+* A 컬럼 값이 3인 행에는 version 1의 행과 version 2의 삭제 행이 있습니다. 이 삭제 행이 유지됩니다.
+
+이 머지 프로세스의 결과로, 최종 상태를 나타내는 4개의 행이 남습니다.
+
+<br />
+
+<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree 프로세스" />
+
+<br />
+
+삭제된 행은 절대 제거되지 않는다는 점에 유의하십시오. 이러한 행은 `OPTIMIZE table FINAL CLEANUP`으로 강제로 삭제할 수 있습니다. 이를 위해서는 실험적 설정 `allow_experimental_replacing_merge_with_cleanup=1`이 필요합니다. 이는 다음 조건에서만 실행해야 합니다.
+
+1. 작업 실행 후 이전 버전의 행(정리 작업으로 삭제되는 행에 해당함)이 삽입되지 않을 것이라고 확신할 수 있어야 합니다. 이러한 행이 삽입되면 삭제된 행이 더 이상 존재하지 않으므로 잘못 유지됩니다.
+2. 정리 작업을 실행하기 전에 모든 레플리카가 동기화되어 있는지 확인하십시오. 이는 다음 명령으로 수행할 수 있습니다.
+
+<br />
+
+```sql
+SYSTEM SYNC REPLICA table
+```
+
+(1)이 보장된 후에는 이 명령과 후속 정리가 완료될 때까지 삽입을 일시 중지하는 것이 좋습니다.
+
+> ReplacingMergeTree로 삭제를 처리하는 방식은, 위 조건에 따라 정리 작업 시간을 확보할 수 있는 경우가 아니라면 삭제 비율이 낮거나 중간 수준(10% 미만)인 테이블에만 권장됩니다.
+
+> 팁: 더 이상 변경되지 않는 일부 파티션에 대해서는 `OPTIMIZE FINAL CLEANUP`을 실행할 수도 있습니다.
+
+<div id="choosing-a-primarydeduplication-key">
+  ## 프라이머리/중복 제거 키 선택하기
+</div>
+
+위에서 ReplacingMergeTree에 대해 반드시 충족해야 하는 중요한 추가 제약 조건을 강조했습니다. 즉, `ORDER BY`의 컬럼 값은 변경이 일어나더라도 하나의 행을 고유하게 식별할 수 있어야 합니다. 따라서 Postgres와 같은 트랜잭션 데이터베이스에서 마이그레이션하는 경우, 원래 Postgres 프라이머리 키를 ClickHouse `ORDER BY` 절에 포함해야 합니다.
+
+ClickHouse 사용자는 테이블의 `ORDER BY` 절에 어떤 컬럼을 넣어 [쿼리 성능을 최적화](/ko/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)할지 결정하는 데 익숙할 것입니다. 일반적으로 이러한 컬럼은 [자주 사용하는 쿼리와 카디널리티가 증가하는 순서](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales)를 기준으로 선택해야 합니다. 중요한 점은 ReplacingMergeTree에는 추가 제약 조건이 있다는 것입니다. 즉, 이러한 컬럼은 불변이어야 합니다. 다시 말해 Postgres에서 복제하는 경우, 기반이 되는 Postgres 데이터에서 값이 바뀌지 않는 컬럼만 이 절에 추가해야 합니다. 다른 컬럼은 변경될 수 있지만, 이 컬럼들은 행을 고유하게 식별하기 위해 일관되게 유지되어야 합니다.
+분석 워크로드에서는 Postgres 프라이머리 키가 대체로 큰 의미가 없습니다. 특정 단일 행 lookup을 수행하는 경우가 드물기 때문입니다. 또한 컬럼은 카디널리티가 증가하는 순서로 배치하는 것을 권장하며, [ORDER BY에서 앞쪽에 나열된 컬럼과 일치하는 조건이 일반적으로 더 빠르다](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently)는 점을 고려하면, Postgres 프라이머리 키는 `ORDER BY`의 끝에 추가해야 합니다(분석적 가치가 있는 경우는 예외). Postgres에서 여러 컬럼이 프라이머리 키를 구성한다면, 카디널리티와 쿼리 활용 가능성을 고려해 이들을 `ORDER BY` 끝에 추가해야 합니다. 또한 `MATERIALIZED` 컬럼을 사용해 값을 연결하여 고유한 프라이머리 키를 생성할 수도 있습니다.
+
+Stack Overflow dataset의 posts 테이블을 예로 살펴보겠습니다.
+
+```sql
+CREATE TABLE stackoverflow.posts_updateable
+(
+       `Version` UInt32,
+       `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+        `Score` Int32,
+        `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+        `Body` String,
+        `OwnerUserId` Int32,
+        `OwnerDisplayName` String,
+        `LastEditorUserId` Int32,
+        `LastEditorDisplayName` String,
+        `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+        `LastActivityDate` DateTime64(3, 'UTC'),
+        `Title` String,
+        `Tags` String,
+        `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+        `CommentCount` UInt8,
+        `FavoriteCount` UInt8,
+        `ContentLicense` LowCardinality(String),
+        `ParentId` String,
+        `CommunityOwnedDate` DateTime64(3, 'UTC'),
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(Version, Deleted)
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+```
+
+`ORDER BY` 키로 `(PostTypeId, toDate(CreationDate), CreationDate, Id)`를 사용합니다. 각 게시물에 대해 고유한 `Id` 컬럼이 있으므로 행을 중복 제거할 수 있습니다. 필요에 따라 스키마에 `Version` 및 `Deleted` 컬럼을 추가합니다.
+
+<div id="querying-replacingmergetree">
+  ## ReplacingMergeTree 쿼리하기
+</div>
+
+머지 시점에 ReplacingMergeTree는 `ORDER BY` 컬럼 값을 고유 식별자로 사용해 중복된 행을 식별하고, 가장 높은 버전만 유지하거나 최신 버전이 삭제를 나타내면 중복된 행을 모두 제거합니다. 그러나 이는 궁극적으로만 정확성을 보장할 뿐이며, 행이 항상 중복 제거된다고 보장하지는 않으므로 여기에 의존해서는 안 됩니다.
+
+<Info>
+  **중복 제거된 데이터를 읽으려면 FINAL을 사용하십시오**
+
+  중복 제거는 백그라운드 머지 동안에만 발생하므로, 일반 `SELECT`는 여전히 중복되었거나 삭제된 행을 반환할 수 있습니다. 쿼리 시점에 올바른 결과를 읽으려면 쿼리 실행 중 중복 제거와 삭제 행 제거를 완료하는 `FINAL` 수정자를 사용하십시오.
+</Info>
+
+위의 Posts 테이블을 예로 들어보겠습니다. 이 데이터셋을 로드하는 일반적인 메서드를 사용할 수 있지만, 값 0과 함께 deleted 컬럼과 version 컬럼도 지정합니다. 예시를 위해 10000개의 행만 로드합니다.
+
+```sql
+INSERT INTO stackoverflow.posts_updateable SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet') WHERE AnswerCount > 0 LIMIT 10000
+```
+
+```response
+0 rows in set. Elapsed: 1.980 sec. Processed 8.19 thousand rows, 3.52 MB (4.14 thousand rows/s., 1.78 MB/s.)
+```
+
+행 수를 확인해보겠습니다:
+
+```sql
+SELECT count() FROM stackoverflow.posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+이제 답변 이후 통계를 업데이트합니다. 이러한 값을 직접 업데이트하는 대신, 5000개 행의 새 사본을 삽입하고 해당 버전 번호에 1을 더합니다(즉, 테이블에 150개의 행이 존재하게 됩니다). 이는 간단한 `INSERT INTO SELECT`로 시뮬레이션할 수 있습니다:
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0
+LIMIT 5000
+```
+
+```response
+0 rows in set. Elapsed: 4.056 sec. Processed 1.42 million rows, 2.20 GB (349.63 thousand rows/s., 543.39 MB/s.)
+```
+
+또한 무작위 게시물 1000개를 삭제하기 위해 해당 행을 `deleted` 컬럼 값을 1로 설정한 상태로 다시 삽입합니다. 이 역시 간단한 `INSERT INTO SELECT`로 시뮬레이션할 수 있습니다.
+
+```sql
+INSERT INTO posts_updateable SELECT
+        Version + 1 AS Version,
+        1 AS Deleted,
+        Id,
+        PostTypeId,
+        AcceptedAnswerId,
+        CreationDate,
+        Score,
+        ViewCount,
+        Body,
+        OwnerUserId,
+        OwnerDisplayName,
+        LastEditorUserId,
+        LastEditorDisplayName,
+        LastEditDate,
+        LastActivityDate,
+        Title,
+        Tags,
+        AnswerCount + 1 AS AnswerCount,
+        CommentCount,
+        FavoriteCount,
+        ContentLicense,
+        ParentId,
+        CommunityOwnedDate,
+        ClosedDate
+FROM posts_updateable --select 100 random rows
+WHERE (Id % toInt32(floor(randUniform(1, 11)))) = 0 AND AnswerCount > 0
+LIMIT 1000
+```
+
+```response
+0 rows in set. Elapsed: 0.166 sec. Processed 135.53 thousand rows, 212.65 MB (816.30 thousand rows/s., 1.28 GB/s.)
+```
+
+위 작업의 결과는 16,000행, 즉 10,000 + 5000 + 1000이 됩니다. 실제로는 원래 총합보다 1000행만 적어야 하므로, 즉 10,000 - 1000 = 9000이어야 합니다.
+
+```sql
+SELECT count()
+FROM posts_updateable
+```
+
+```response
+┌─count()─┐
+│   10000 │
+└─────────┘
+1 row in set. Elapsed: 0.002 sec.
+```
+
+어떤 머지가 발생했는지에 따라 결과가 달라집니다. 중복된 행 때문에 총계가 달라집니다. 테이블에 `FINAL`을 적용하면 올바른 결과를 얻을 수 있습니다.
+
+```sql
+SELECT count()
+FROM posts_updateable
+FINAL
+```
+
+```response
+┌─count()─┐
+│    9000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 11.81 thousand rows, 212.54 KB (2.14 million rows/s., 38.61 MB/s.)
+Peak memory usage: 8.14 MiB.
+```
+
+<div id="final-performance">
+  ## FINAL 성능
+</div>
+
+`FINAL` 연산자는 쿼리 성능에 약간의 오버헤드를 추가합니다.
+이는 쿼리가 프라이머리 키 컬럼(primary key columns)으로 필터링되지 않을 때 가장 두드러지며,
+더 많은 데이터를 읽게 되어 중복 제거 오버헤드도 커집니다. `WHERE` 조건으로
+키 컬럼을 필터링하면 중복 제거를 위해 로드되고 전달되는 데이터가
+줄어듭니다.
+
+`WHERE` 조건이 키 컬럼을 사용하지 않으면, 현재 ClickHouse는 `FINAL`을 사용할 때 `PREWHERE` 최적화를 활용하지 않습니다. 이 최적화는 필터링에 사용되지 않은 컬럼에서 읽는 행 수를 줄이기 위한 것입니다. 이 `PREWHERE`를 에뮬레이션해 성능을 개선할 수 있는 예시는 [여기](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1#final-performance)에서 확인할 수 있습니다.
+
+<div id="exploiting-partitions-with-replacingmergetree">
+  ## ReplacingMergeTree에서 파티션 활용하기
+</div>
+
+ClickHouse에서 데이터 머지는 파티션 수준에서 발생합니다. ReplacingMergeTree를 사용할 때는 **파티셔닝 키가 해당 행에서 변경되지 않도록** 보장할 수 있다면, 모범 사례에 따라 테이블을 파티셔닝하는 것을 권장합니다. 이렇게 하면 동일한 행에 대한 업데이트가 같은 ClickHouse 파티션으로 전송됩니다. 여기에서 설명하는 모범 사례를 따른다면 Postgres와 동일한 파티션 키를 재사용할 수도 있습니다.
+
+이 조건이 충족된다고 가정하면, `FINAL` 쿼리 성능을 개선하기 위해 `do_not_merge_across_partitions_select_final=1` 설정을 사용할 수 있습니다. 이 설정을 사용하면 FINAL 사용 시 파티션이 서로 독립적으로 머지되고 처리됩니다.
+
+다음은 파티셔닝을 사용하지 않는 posts 테이블의 예입니다:
+
+```sql
+CREATE TABLE stackoverflow.posts_no_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+INSERT INTO stackoverflow.posts_no_part SELECT 0 AS Version, 0 AS Deleted, *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 182.895 sec. Processed 59.82 million rows, 38.07 GB (327.07 thousand rows/s., 208.17 MB/s.)
+```
+
+`FINAL`이 실제로 처리 작업을 수행하도록, 100만 개의 행을 업데이트합니다. 즉, 중복 행을 삽입하여 해당 행들의 `AnswerCount`를 증가시킵니다.
+
+```sql
+INSERT INTO posts_no_part SELECT Version + 1 AS Version, Deleted, Id, PostTypeId, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount + 1 AS AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate
+FROM posts_no_part
+LIMIT 1000000
+```
+
+`FINAL`로 연도별 답변 합계를 계산합니다:
+
+```sql
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_no_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │        371480 │
+...
+│ 2024 │        127765 │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 2.338 sec. Processed 122.94 million rows, 1.84 GB (52.57 million rows/s., 788.58 MB/s.)
+Peak memory usage: 2.09 GiB.
+```
+
+연도별로 파티셔닝된 테이블에서도 동일한 단계를 반복하고, `do_not_merge_across_partitions_select_final=1`로 위의 쿼리를 다시 실행합니다.
+
+```sql
+CREATE TABLE stackoverflow.posts_with_part
+(
+        `Version` UInt32,
+        `Deleted` UInt8,
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        ...
+)
+ENGINE = ReplacingMergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate, Id)
+
+// populate & update omitted
+
+SELECT toYear(CreationDate) AS year, sum(AnswerCount) AS total_answers
+FROM posts_with_part
+FINAL
+GROUP BY year
+ORDER BY year ASC
+```
+
+```response
+┌─year─┬─total_answers─┐
+│ 2008 │       387832  │
+│ 2009 │       1165506 │
+│ 2010 │       1755437 │
+...
+│ 2023 │       787032  │
+│ 2024 │       127765  │
+└──────┴───────────────┘
+
+17 rows in set. Elapsed: 0.994 sec. Processed 64.65 million rows, 983.64 MB (65.02 million rows/s., 989.23 MB/s.)
+```
+
+보시다시피, 이 경우 파티셔닝 덕분에 중복 제거 프로세스를 파티션 수준에서 병렬로 수행할 수 있어 쿼리 성능이 크게 향상되었습니다.
+
+<div id="merge-behavior-considerations">
+  ## 머지 동작 시 고려 사항
+</div>
+
+ClickHouse의 머지 선택 메커니즘은 단순히 파트를 머지하는 것에 그치지 않습니다. 아래에서는 ReplacingMergeTree를 기준으로 이러한 동작을 살펴보고, 오래된 데이터가 더 적극적으로 머지되도록 하는 구성 옵션과 더 큰 파트에서의 고려 사항을 함께 설명합니다.
+
+<div id="merge-selection-logic">
+  ### 머지 선택 로직
+</div>
+
+머지는 파트 수를 최소화하는 것을 목표로 하지만, 동시에 이 목표와 쓰기 증폭 비용 사이의 균형도 고려합니다. 따라서 내부 계산에 따라 과도한 쓰기 증폭을 초래할 수 있는 일부 파트 범위는 머지 대상에서 제외됩니다. 이러한 동작은 불필요한 리소스 사용을 방지하고 스토리지 구성 요소의 수명을 연장하는 데 도움이 됩니다.
+
+<div id="merging-behavior-on-large-parts">
+  ### 큰 파트에서의 머지 동작
+</div>
+
+ClickHouse의 ReplacingMergeTree 엔진은 데이터 파트를 머지해 중복 행을 관리하도록 최적화되어 있으며, 지정된 고유 키를 기준으로 각 행의 최신 버전만 유지합니다. 그러나 병합된 파트가 `max_bytes_to_merge_at_max_space_in_pool` 임계값에 도달하면 `min_age_to_force_merge_seconds`가 설정되어 있어도 더 이상 추가 머지 대상으로 선택되지 않습니다. 그 결과, 데이터가 계속 삽입되면서 쌓이는 중복을 제거하는 데 자동 머지를 더 이상 기대할 수 없게 됩니다.
+
+이 문제를 해결하려면 `OPTIMIZE FINAL`을 실행해 파트를 수동으로 머지하고 중복을 제거할 수 있습니다. 자동 머지와 달리 `OPTIMIZE FINAL`은 `max_bytes_to_merge_at_max_space_in_pool` 임계값을 우회하며, 각 파티션에 파트가 하나만 남을 때까지 사용 가능한 리소스, 특히 디스크 공간만을 기준으로 파트를 머지합니다. 다만 이 방식은 큰 테이블에서 메모리 사용량이 많이 늘어날 수 있으며, 새 데이터가 추가될 때마다 반복 실행이 필요할 수 있습니다.
+
+성능을 유지하면서 더 지속 가능한 해결책을 원한다면 테이블에 파티셔닝을 적용하는 것을 권장합니다. 이렇게 하면 데이터 파트가 최대 머지 크기에 도달하는 것을 방지하는 데 도움이 되며, 지속적인 수동 최적화의 필요성도 줄일 수 있습니다.
+
+<div id="partitioning-and-merging-across-partitions">
+  ### 파티셔닝 및 파티션 간 머지
+</div>
+
+Exploiting Partitions with ReplacingMergeTree에서 설명했듯이, 모범 사례로 테이블에 파티셔닝을 적용하는 것을 권장합니다. 파티셔닝은 데이터를 분리하여 머지를 더 효율적으로 수행할 수 있게 하며, 특히 쿼리 실행 중에는 파티션 간 머지를 방지합니다. 이러한 동작은 23.12 이후 버전에서 더욱 개선되었습니다. 파티션 키가 정렬 키의 접두사인 경우, 쿼리 시점에는 파티션 간 머지가 수행되지 않으므로 쿼리 성능이 향상됩니다.
+
+<div id="tuning-merges-for-better-query-performance">
+  ### 더 나은 쿼리 성능을 위한 머지 조정
+</div>
+
+기본적으로 `min_age_to_force_merge_seconds`와 `min_age_to_force_merge_on_partition_only`는 각각 0과 false로 설정되어 있으므로, 이러한 기능은 비활성화됩니다. 이 구성에서는 ClickHouse가 파티션 경과 시간에 따라 머지를 강제하지 않고, 표준 머지 동작을 적용합니다.
+
+`min_age_to_force_merge_seconds` 값을 지정하면 ClickHouse는 지정된 주기보다 오래된 파트에 대해서는 일반적인 머지 휴리스틱을 무시합니다. 이는 대체로 전체 파트 수를 최소화하는 것이 목표일 때에만 효과적이지만, 쿼리 시점에 머지해야 하는 파트 수를 줄여 ReplacingMergeTree의 쿼리 성능을 개선할 수 있습니다.
+
+이 동작은 `min_age_to_force_merge_on_partition_only=true`를 설정해 추가로 세부 조정할 수 있습니다. 이렇게 하면 적극적인 머지를 수행하려면 해당 파티션의 모든 파트가 `min_age_to_force_merge_seconds`보다 오래되어야 합니다. 이 구성에서는 오래된 파티션이 시간이 지나면서 하나의 파트로 머지될 수 있으므로, 데이터를 통합하고 쿼리 성능을 유지하는 데 도움이 됩니다.
+
+<div id="recommended-settings">
+  ### 권장 설정
+</div>
+
+<Warning>
+  머지 동작 조정은 고급 작업입니다. 운영 워크로드에서 이러한 설정을 활성화하기 전에 ClickHouse 지원팀과 먼저 상의하는 것을 권장합니다.
+</Warning>
+
+대부분의 경우 `min_age_to_force_merge_seconds`를 낮은 값, 즉 파티션 주기보다 훨씬 작은 값으로 설정하는 편이 좋습니다. 이렇게 하면 파트 수를 줄이고, `FINAL` 연산자로 인해 쿼리 시점에 불필요한 머지가 발생하는 것을 방지할 수 있습니다.
+
+예를 들어, 이미 단일 파트로 머지된 월별 파티션을 생각해 보겠습니다. 이 파티션 안에서 작고 산발적인 삽입이 발생해 새 파트가 생성되면, 머지가 완료될 때까지 ClickHouse가 여러 파트를 읽어야 하므로 쿼리 성능이 저하될 수 있습니다. `min_age_to_force_merge_seconds`를 설정하면 이러한 파트가 보다 적극적으로 머지되도록 하여 쿼리 성능 저하를 방지할 수 있습니다.

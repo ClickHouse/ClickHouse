@@ -1,0 +1,421 @@
+---
+title: 인덱스
+mode: "custom"
+max-toc-depth: 3
+sidebarTitle: "홈"
+"icon": "/images/menu-icon-house.svg"
+---
+
+export const FullWidthDivider = ({ style }) => {
+    const ref = useRef(null);
+    useEffect(() => {
+        if (!ref.current) return;
+        const el = ref.current;
+        const update = () => {
+            requestAnimationFrame(() => {
+                el.style.marginLeft = '';
+                el.style.width = '';
+                const elRect = el.getBoundingClientRect();
+                const sidebar = document.getElementById('sidebar');
+                const sidebarRect = sidebar && sidebar.getBoundingClientRect();
+                const leftEdge = (sidebarRect && sidebarRect.width > 0) ? sidebarRect.right : 0;
+                const rightEdge = document.documentElement.clientWidth;
+                const ml = Math.max(0, elRect.left - leftEdge);
+                const mr = Math.max(0, rightEdge - elRect.right);
+                el.style.marginLeft = `-${ml}px`;
+                el.style.width = `calc(100% + ${ml + mr}px)`;
+            });
+        };
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, []);
+    return <hr ref={ref} className="ch-usecase-divider" style={style} />;
+};
+
+export const HeroCard = ({ filename, darkFilename: darkFilenameProp, title, description, body, href, links, icon, showArrow, arrowBottom, extraClassName, logo, logoInvert, overlayImg, fullWidthImage, imageHeight = 'h-48' }) => {
+    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const withBase = (p) => p && p.startsWith('/') ? assetBase + p : p;
+    const darkFilename = darkFilenameProp || (filename ? filename.replace('-light.', '-dark.') : null);
+    const cardClassName = `ch-hero-card relative ${arrowBottom ? 'flex flex-col' : 'block'} p-4 rounded-lg no-underline bg-[#f9f9f9] border border-[#e5e7eb] text-inherit${fullWidthImage ? ' overflow-hidden' : ''}`;
+
+    const content = (
+        <>
+            {logo && (
+                <div className="absolute top-3 right-3 z-10 flex items-center justify-center w-8 h-8 rounded-md bg-white dark:bg-white/10 shadow-sm border border-[#e5e7eb] dark:border-white/10">
+                    <img src={`${assetBase}/images/${logo}`} alt="" className={`w-5 h-5 object-contain${logoInvert ? ' ch-logo-invert' : ''}`} />
+                </div>
+            )}
+            {icon ? (
+                <div className="mb-6">
+                    {icon}
+                </div>
+            ) : filename ? (
+                <div className={`${overlayImg ? 'relative mb-12' : ''}${fullWidthImage ? ' -mx-4 -mt-4' : ''}`}>
+                    <img
+                        src={`${assetBase}/images/${filename}`}
+                        alt={title}
+                        className={`block dark:hidden w-full ${imageHeight} object-cover pointer-events-none${fullWidthImage ? '' : ' rounded-lg border border-[#d1d5db]'}`}
+                    />
+                    <img
+                        src={`${assetBase}/images/${darkFilename}`}
+                        alt={title}
+                        className={`hidden dark:block w-full ${imageHeight} object-cover pointer-events-none${fullWidthImage ? '' : ' rounded-lg'}`}
+                    />
+                    {overlayImg && (
+                        <img
+                            src={`${assetBase}/images/${overlayImg}`}
+                            alt=""
+                            className="absolute right-4 bottom-0 translate-y-[40%] w-[46%] rounded-xl pointer-events-none z-20 ch-overlay-shadow"
+                        />
+                    )}
+                </div>
+            ) : null}
+            <h3 className={`text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] ${(icon || !filename) ? 'mt-0' : 'mt-5'}`}>
+                {title}
+            </h3>
+            {body ? body : (
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm font-normal leading-normal min-h-[42px]">{description}</span>
+            )}
+            {links && links.length > 0 && (
+                <ul className="mt-6 list-none p-0">
+                    {links.map((link, index) => (
+                        <li key={index} className={index > 0 ? 'mt-2' : 'mt-0'}>
+                            <a href={link.href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(link.href); }} className="goal-card-link flex items-center justify-between text-[#374151] dark:text-[#FCFF74] text-sm font-medium no-underline gap-1">
+                                <span className="truncate min-w-0">{link.label}</span>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                                </svg>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+            )}
+            {showArrow && (
+                <>
+                    {arrowBottom && <div className="flex-1" />}
+                    <div className="ch-usecase-arrow flex justify-end mt-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </div>
+                </>
+            )}
+        </>
+    );
+
+    const fullClassName = [cardClassName, extraClassName].filter(Boolean).join(' ');
+    if (links && links.length > 0) {
+        return <div className={fullClassName}>{content}</div>;
+    }
+
+    return <a className={fullClassName} href={href} onClick={(e) => { e.preventDefault(); window.location.href = withBase(href); }}>{content}</a>;
+};
+
+export const HighlightedClickHouse = () => {
+    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    return (
+        <span className="relative inline-block px-8 py-3 -ml-4">
+            <img src={`${assetBase}/images/highlight-lightmode.webp`} className="block dark:hidden absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <img src={`${assetBase}/images/highlight-darkmode.webp`} className="hidden dark:block absolute top-0 right-0 bottom-0 left-[10px] w-full h-full object-fill pointer-events-none select-none" alt="" aria-hidden="true" />
+            <span className="relative z-10 text-white dark:text-[#1c1c1c]">ClickHouse</span>
+        </span>
+    );
+};
+
+export const McpLink = () => {
+    const assetBase = typeof window !== 'undefined' && window.location.pathname.startsWith('/docs') ? '/docs' : '';
+    const handleClick = (e) => {
+        e.preventDefault();
+        const target = document.getElementById('mcp-setup');
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    return (
+        <a
+            href="#mcp-setup"
+            onClick={handleClick}
+            className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors no-underline"
+        >
+            <span
+                aria-hidden="true"
+                className="shrink-0 w-[13px] h-[13px] bg-current ch-mcp-icon"
+                style={{
+                    WebkitMaskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
+                    maskImage: `url(${assetBase}/images/icons/icon-mcp.svg)`,
+                }}
+            />
+            Set up docs MCP server
+        </a>
+    );
+};
+
+export const McpSetup = () => {
+    const jsonConfig = `{
+  "mcpServers": {
+    "clickhouse-docs": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://private-7c7dfe99.mintlify.app/mcp"]
+    }
+  }
+}`;
+    return (
+        <Tabs>
+            <Tab title="Claude Code" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claudecode-color.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Run in your terminal:</p>
+                <CodeBlock language="bash">{`claude mcp add --transport http clickhouse-docs https://private-7c7dfe99.mintlify.app/mcp --scope user`}</CodeBlock>
+            </Tab>
+            <Tab title="Claude Desktop" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-claude.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>claude_desktop_config.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+            <Tab title="Cursor" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-cursor.png">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>.cursor/mcp.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+            <Tab title="Windsurf" icon="https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/logo-windsurf.svg">
+                <p className="mb-2 text-[#9ca3af] text-[13px]">Add to <code>~/.codeium/windsurf/mcp_config.json</code>:</p>
+                <CodeBlock language="json">{jsonConfig}</CodeBlock>
+            </Tab>
+        </Tabs>
+    );
+};
+
+export const PageWrapper = ({ children }) => {
+    const [visible, setVisible] = useState(false);
+    useEffect(() => {
+        let id1, id2;
+        id1 = requestAnimationFrame(() => {
+            id2 = requestAnimationFrame(() => setVisible(true));
+        });
+        return () => { cancelAnimationFrame(id1); cancelAnimationFrame(id2); };
+    }, []);
+    return <div className={visible ? 'ch-page-visible' : 'ch-page-hidden'}>{children}</div>;
+};
+
+<style>
+  {`
+          .ch-goal-icon { color: #374151; }
+          .dark .ch-goal-icon { color: #FAFF69; }
+          /* 홈페이지에서 사이드바를 즉시 숨깁니다(깜빡임 방지) */
+          #sidebar { display: none !important; }
+          /* 사이드바가 숨겨져 있으므로 내비게이션 바가 전체 너비를 차지하도록 합니다 */
+          #navbar-transition-maple {
+            width: 100vw !important;
+            left: 0 !important;
+            margin-left: 0 !important;
+            /* 내비게이션 바 자체의 오른쪽 패딩(3rem)과 일치시킵니다 */
+            padding-left: 3rem !important;
+            justify-content: flex-start !important;
+          }
+          `}
+</style>
+
+<PageWrapper>
+  <div className="relative">
+    <div className="absolute -top-14 left-0 right-0 opacity-80">
+      <img src="/images/background-light.svg" className="block dark:hidden pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+
+      <img src="/images/background-dark.svg" className="hidden dark:block pointer-events-none w-full h-auto" alt="장식용 배경 이미지." />
+    </div>
+
+    <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
+      <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
+        <HighlightedClickHouse />와 함께 시작하세요
+      </h1>
+
+      <div className="mx-auto px-4 -mt-5 text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
+        가장 빠른 데이터 플랫폼을 위한 문서
+      </div>
+
+      <div className="flex items-center justify-center gap-3 mx-auto mt-8">
+        <button type="button" id="home-search-entry" className="flex pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-3 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] justify-between truncate gap-2 min-w-[43px] w-[320px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-white/10 ring-0 dark:ring-0 rounded" aria-label="검색 열기">
+          <div className="flex items-center gap-2 min-w-[42px]"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">검색...</div></div>
+          <span className="flex-none text-xs font-semibold">⌘K</span>
+        </button>
+
+        <button type="button" className="flex-none hidden lg:flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded" id="home-assistant-entry" aria-label="Ask AI 열기" onClick={() => {
+                                  if (window.Kapa && typeof window.Kapa.open === 'function') {
+                                      window.Kapa.open({ mode: 'ai' });
+                                      return;
+                                  }
+                                  let attempts = 0;
+                                  const iv = setInterval(() => {
+                                      attempts++;
+                                      if (window.Kapa && typeof window.Kapa.open === 'function') {
+                                          clearInterval(iv);
+                                          window.Kapa.open({ mode: 'ai' });
+                                      } else if (attempts > 60) {
+                                          clearInterval(iv);
+                                      }
+                                  }, 50);
+                              }}><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" className="size-4 shrink-0 text-gray-700 hover:text-gray-800 dark:text-[#fdff75]"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none" /><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></g></svg><span className="text-sm text-gray-500 dark:text-white/50 whitespace-nowrap">Ask AI</span></button>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 my-6 text-xs">
+        <McpLink />
+
+        <span className="text-gray-300 dark:text-zinc-600">|</span>
+
+        <a className="inline-flex items-center gap-1.5 text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors font-normal no-underline" href="/ko/get-started/quickstarts/create-your-first-service-on-cloud" onClick={(e) => { e.preventDefault(); window.location.href = (window.location.pathname.startsWith('/docs') ? '/docs' : '') + '/get-started/quickstarts/create-your-first-service-on-cloud'; }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="currentColor" viewBox="0 0 256 256" aria-hidden="true" className="shrink-0">
+            <path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z" />
+          </svg>
+
+          빠른 시작 보기
+        </a>
+      </div>
+
+      <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">
+        <HeroCard
+          title="시작하기"
+          description="처음 방문했습니다. 시작해 보고 더 알아보고 싶습니다"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M215.79,118.17a8,8,0,0,0-5-5.66L153.18,90.9l14.66-73.33a8,8,0,0,0-13.69-7l-112,120a8,8,0,0,0,3,13l57.63,21.61L88.16,238.43a8,8,0,0,0,13.69,7l112-120A8,8,0,0,0,215.79,118.17ZM109.37,214l10.47-52.38a8,8,0,0,0-5-9.06L62,132.71l84.62-90.66L136.16,94.43a8,8,0,0,0,5,9.06l52.8,19.8Z"></path>
+        </svg>
+    }
+          links={[
+        { label: "ClickHouse란?", href: "/ko/get-started/about/intro" },
+        { label: "설치", href: "/ko/get-started/setup/cloud" },
+        { label: "빠른 시작", href: "/ko/get-started/quickstarts/home" },
+        { label: "ClickHouse 개념", href: "/ko/concepts/core-concepts/index" },
+        { label: "예제 데이터셋", href: "/ko/get-started/sample-datasets/index" },
+        { label: "마이그레이션 가이드", href: "/ko/get-started/migrate/overview" },
+        { label: "모범 사례", href: "/ko/concepts/best-practices/index" },
+    ]}
+        />
+
+        <HeroCard
+          title="가이드"
+          description="ClickHouse로 특정 작업을 수행하고 싶습니다"
+          icon={
+        <svg width="24" height="24" viewBox="0 0 23 26" fill="currentColor" xmlns="http://www.w3.org/2000/svg" className="ch-goal-icon">
+            <path d="M10.5468 0.000410874L10.9455 0.0348784L11.0594 0.0463676H11.1391L11.1619 0.0578567L11.3442 0.0808351C12.6542 0.241684 13.9187 0.655294 15.0693 1.32167L15.411 1.52847C16.8188 2.40717 17.9913 3.62092 18.8255 5.0632C19.6597 6.50549 20.1302 8.13224 20.1956 9.80068V9.97301L22.8385 15.0972C22.998 15.4534 23.0207 15.8555 22.9296 16.2346L22.8727 16.4184C22.7092 16.8547 22.3875 17.212 21.9727 17.418L19.2842 18.6588V22.3354C19.2842 22.749 19.1361 23.1511 18.8741 23.4728L18.7602 23.5992C18.4185 23.9439 17.9628 24.1277 17.5071 24.1277H11.9479C11.7213 24.1277 11.504 24.0369 11.3438 23.8753C11.1836 23.7137 11.0936 23.4945 11.0936 23.266C11.0936 23.0375 11.1836 22.8183 11.3438 22.6567C11.504 22.4951 11.7213 22.4043 11.9479 22.4043H17.5071C17.5161 22.4043 17.525 22.4025 17.5333 22.3991C17.5416 22.3956 17.5491 22.3905 17.5555 22.3841C17.5618 22.3777 17.5668 22.3701 17.5703 22.3617C17.5737 22.3534 17.5755 22.3444 17.5755 22.3354V18.1073C17.5755 17.7627 17.7691 17.464 18.0767 17.3261L21.2322 15.867C21.255 15.867 21.2664 15.844 21.2664 15.821C21.2664 15.821 21.2664 15.798 21.2892 15.821L18.5893 10.5934C18.5289 10.4723 18.4977 10.3384 18.4982 10.2028C18.4985 8.26916 17.8435 6.39351 16.6417 4.88686C15.44 3.38021 13.7638 2.33308 11.891 1.9191L11.8796 3.87226C12.4908 4.07696 13.0099 4.49442 13.3437 5.04989C13.6776 5.60537 13.8045 6.26257 13.7017 6.90381C13.5989 7.54504 13.2731 8.12843 12.7827 8.54949C12.2923 8.97055 11.6693 9.20179 11.0252 9.20179C10.3811 9.20179 9.75813 8.97055 9.26771 8.54949C8.77729 8.12843 8.45151 7.54504 8.34872 6.90381C8.24592 6.26257 8.37282 5.60537 8.70668 5.04989C9.04055 4.49442 9.55958 4.07696 10.1708 3.87226V1.72379H10.1139C8.92912 1.72379 7.74437 1.97655 6.66215 2.45909L6.34318 2.61994C4.36348 3.61458 2.85289 5.3569 2.13962 7.46837H4.54328C4.80529 7.46837 5.04452 7.58327 5.2154 7.77858L8.18865 11.3862C8.59946 11.2227 9.04377 11.1633 9.48264 11.2132C9.9215 11.2632 10.3415 11.421 10.7058 11.6728C11.0702 11.9245 11.3677 12.2626 11.5723 12.6573C11.777 13.052 11.8825 13.4914 11.8796 13.9368C11.8731 14.3547 11.7712 14.7655 11.582 15.1373C11.3927 15.5092 11.1211 15.8321 10.7882 16.081C10.4553 16.33 10.0701 16.4983 9.66231 16.573C9.25455 16.6476 8.83522 16.6266 8.43681 16.5116C8.03839 16.3965 7.67159 16.1905 7.36482 15.9094C7.05805 15.6284 6.81954 15.2799 6.66777 14.891C6.51601 14.5021 6.45505 14.0831 6.48964 13.6666C6.52422 13.2501 6.65341 12.8472 6.8672 12.4891L4.13318 9.19175H1.76369C1.58869 10.6683 1.80182 12.1653 2.38167 13.5326C2.96152 14.8998 3.88771 16.0892 5.0673 16.9814C5.31792 17.1652 5.44323 17.464 5.40906 17.7742L4.47493 25.2421C4.44623 25.4691 4.32929 25.6754 4.14983 25.8154C3.97038 25.9555 3.74311 26.0179 3.51802 25.9889C3.29294 25.96 3.08847 25.842 2.94961 25.661C2.81074 25.4801 2.74885 25.2508 2.77756 25.0238L3.64333 18.0384L3.42689 17.8546C2.43295 16.9732 1.62017 15.9036 1.03461 14.7066L0.875129 14.3389C0.0261547 12.4177 -0.2126 10.2786 0.191623 8.21517V8.33006V8.16921C0.670038 5.78467 1.9776 3.65103 3.87844 2.15317C5.77929 0.6553 8.1483 -0.10819 10.5581 0.000410874H10.5468ZM9.17974 12.9257C8.91537 12.9257 8.66184 13.0316 8.47491 13.2202C8.28797 13.4087 8.18295 13.6644 8.18295 13.931C8.18295 14.1977 8.28797 14.4534 8.47491 14.6419C8.66184 14.8304 8.91537 14.9363 9.17974 14.9363C9.4441 14.9363 9.69763 14.8304 9.88457 14.6419C10.0715 14.4534 10.1765 14.1977 10.1765 13.931C10.1765 13.6644 10.0715 13.4087 9.88457 13.2202C9.69763 13.0316 9.4441 12.9257 9.17974 12.9257ZM11.0252 5.45777C10.7608 5.45777 10.5073 5.56368 10.3204 5.75221C10.1334 5.94075 10.0284 6.19645 10.0284 6.46307C10.0284 6.72969 10.1334 6.9854 10.3204 7.17393C10.5073 7.36246 10.7608 7.46837 11.0252 7.46837C11.2896 7.46837 11.5431 7.36246 11.73 7.17393C11.917 6.9854 12.022 6.72969 12.022 6.46307C12.022 6.19645 11.917 5.94075 11.73 5.75221C11.5431 5.56368 11.2896 5.45777 11.0252 5.45777Z"/>
+        </svg>
+    }
+          links={[
+        { label: "데이터 모델링", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
+        { label: "성능 최적화", href: "/ko/guides/clickhouse/performance-and-monitoring/query-optimization" },
+        { label: "ClickHouse Cloud", href: "/ko/products/cloud/guides" },
+        { label: "사용 사례", href: "/ko/guides/use-cases" }
+    ]}
+        />
+
+        <HeroCard
+          title="참고"
+          description="무엇을 하고 싶은지는 알고 있습니다 - 자세한 내용만 필요합니다"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M128,80a48,48,0,1,0,48,48A48.05,48.05,0,0,0,128,80Zm0,80a32,32,0,1,1,32-32A32,32,0,0,1,128,160Zm88-29.84q.06-2.16,0-4.32l14.92-18.64a8,8,0,0,0,1.48-7.06,107.21,107.21,0,0,0-10.88-26.25,8,8,0,0,0-6-3.93l-23.72-2.64q-1.48-1.56-3-3L186,40.54a8,8,0,0,0-3.94-6,107.71,107.71,0,0,0-26.25-10.87,8,8,0,0,0-7.06,1.49L130.16,40Q128,40,125.84,40L107.2,25.11a8,8,0,0,0-7.06-1.48A107.6,107.6,0,0,0,73.89,34.51a8,8,0,0,0-3.93,6L67.32,64.27q-1.56,1.49-3,3L40.54,70a8,8,0,0,0-6,3.94,107.71,107.71,0,0,0-10.87,26.25,8,8,0,0,0,1.49,7.06L40,125.84Q40,128,40,130.16L25.11,148.8a8,8,0,0,0-1.48,7.06,107.21,107.21,0,0,0,10.88,26.25,8,8,0,0,0,6,3.93l23.72,2.64q1.49,1.56,3,3L70,215.46a8,8,0,0,0,3.94,6,107.71,107.71,0,0,0,26.25,10.87,8,8,0,0,0,7.06-1.49L125.84,216q2.16.06,4.32,0l18.64,14.92a8,8,0,0,0,7.06,1.48,107.21,107.21,0,0,0,26.25-10.88,8,8,0,0,0,3.93-6l2.64-23.72q1.56-1.48,3-3L215.46,186a8,8,0,0,0,6-3.94,107.71,107.71,0,0,0,10.87-26.25,8,8,0,0,0-1.49-7.06Zm-16.1-6.5a73.93,73.93,0,0,1,0,8.68,8,8,0,0,0,1.74,5.48l14.19,17.73a91.57,91.57,0,0,1-6.23,15L187,173.11a8,8,0,0,0-5.1,2.64,74.11,74.11,0,0,1-6.14,6.14,8,8,0,0,0-2.64,5.1l-2.51,22.58a91.32,91.32,0,0,1-15,6.23l-17.74-14.19a8,8,0,0,0-5-1.75h-.48a73.93,73.93,0,0,1-8.68,0,8,8,0,0,0-5.48,1.74L100.45,215.8a91.57,91.57,0,0,1-15-6.23L82.89,187a8,8,0,0,0-2.64-5.1,74.11,74.11,0,0,1-6.14-6.14,8,8,0,0,0-5.1-2.64L46.43,170.6a91.32,91.32,0,0,1-6.23-15l14.19-17.74a8,8,0,0,0,1.74-5.48,73.93,73.93,0,0,1,0-8.68,8,8,0,0,0-1.74-5.48L40.2,100.45a91.57,91.57,0,0,1,6.23-15L69,82.89a8,8,0,0,0,5.1-2.64,74.11,74.11,0,0,1,6.14-6.14A8,8,0,0,0,82.89,69L85.4,46.43a91.32,91.32,0,0,1,15-6.23l17.74,14.19a8,8,0,0,0,5.48,1.74,73.93,73.93,0,0,1,8.68,0,8,8,0,0,0,5.48-1.74L155.55,40.2a91.57,91.57,0,0,1,15,6.23L173.11,69a8,8,0,0,0,2.64,5.1,74.11,74.11,0,0,1,6.14,6.14,8,8,0,0,0,5.1,2.64l22.58,2.51a91.32,91.32,0,0,1,6.23,15l-14.19,17.74A8,8,0,0,0,199.87,123.66Z"></path>
+        </svg>
+    }
+          links={[
+        { label: "SQL reference", href: "/ko/reference/statements" },
+        { label: "Settings", href: "/ko/reference/settings/index" },
+        { label: "Functions", href: "/ko/reference/functions/regular-functions/overview" },
+        { label: "Engines", href: "/ko/reference/engines/engines" },
+        { label: "System tables", href: "/ko/reference/system-tables" },
+        { label: "Formats", href: "/ko/reference/formats/index" },
+        { label: "Data types", href: "/ko/reference/data-types/index" }
+    ]}
+        />
+
+        <HeroCard
+          title="솔루션"
+          description="ClickHouse 솔루션을 살펴보고 싶습니다"
+          icon={
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
+            <path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm0,64H56V56h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm0,64H152V56h48v48ZM104,136H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm0,64H56V152h48v48Zm96-64H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Zm0,64H152V152h48v48Z"/>
+        </svg>
+    }
+          links={[
+        { label: "chDB", href: "/ko/products/chdb" },
+        { label: "ClickHouse Cloud", href: "/ko/products/cloud/getting-started/cloud-get-started" },
+        { label: "ClickStack", href: "/ko/clickstack" },
+        { label: "Langfuse", href: "https://langfuse.com/docs" },
+        { label: "Managed Postgres", href: "/ko/products/managed-postgres/overview" },
+        { label: "Kubernetes operator", href: "/ko/products/kubernetes-operator/overview" },
+    ]}
+        />
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 40px' }} />
+
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">사용 사례별 탐색</h2>
+      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">ClickHouse가 어떤 규모에서도 실시간 분석, 관측성, 데이터 웨어하우징, 에이전트형 AI를 지원하는 방법을 알아보세요.</p>
+
+      <div className="grid sm:grid-cols-2 min-[1300px]:grid-cols-4 gap-x-6 gap-y-4 mt-6">
+        <HeroCard title="실시간 분석" description="대규모 환경에서 즉각적인 인사이트와 대시보드를 제공합니다. 수십억 개의 행을 실시간으로 분석하고 밀리초 단위로 결과를 확인할 수 있습니다." href="/ko/get-started/use-cases/real-time-analytics" showArrow />
+
+        <HeroCard title="관측성" description="ClickHouse로 구동되는 오픈 소스 관측성 스택인 ClickStack을 사용해 대규모 로그, 메트릭, 트레이스를 저장하고 쿼리할 수 있습니다." href="/ko/clickstack/overview" showArrow />
+
+        <HeroCard title="데이터 웨어하우징" description="인사이트와 앱을 위해 데이터를 즉시 분석하고 탐색합니다. 무거운 워크로드를 오프로드해 더 빠르게 확장할 수 있습니다." href="/ko/get-started/use-cases/data-warehousing" showArrow />
+
+        <HeroCard title="에이전트형 분석" description="AI 에이전트가 실시간 데이터를 직접 쿼리해 즉각적이고 대화형 인사이트와 시각화를 제공하도록 합니다" href="/ko/get-started/use-cases/agentic-analytics" showArrow />
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 40px' }} />
+
+      <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">제품별 탐색</h2>
+      <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">관리형 Cloud 서비스부터 오픈 소스 프로젝트까지, ClickHouse 제품과 통합을 살펴보세요.</p>
+
+      <div className="space-y-4 mt-6">
+        {/* 1행: ClickHouse Cloud (col-span-2) + 세로로 쌓인 카드 3개 (col-span-1) */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+          <div className="col-span-2">
+            <HeroCard
+              filename="thumbnail-cloud-base.webp"
+              fullWidthImage
+              imageHeight="h-[72px]"
+              title="ClickHouse Cloud"
+              href="/ko/products/cloud/getting-started/intro"
+              extraClassName="h-full"
+              body={<>
+              <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
+                  이 섹션에서는 ClickHouse가 데이터 웨어하우징을 얼마나 빠르고 간단하며 예측 가능하게 만드는지 보여줍니다. 취약한 파이프라인과 느린 쿼리 엔진에 매달리는 대신, 앱, 서비스, 도구의 데이터를 몇 주가 아니라 몇 분 만에 중앙으로 통합할 수 있습니다. 그런 다음 동일한 플랫폼에서 실시간 대시보드를 구동하고, 알림을 트리거하고, 과거 추세를 분석하고, 이벤트 기반 제품을 구축할 수 있습니다.
+              </p>
+          </>}
+              links={[
+              { label: "일반적인 소스에서 최소한의 작업으로 데이터를 수집하는 방법", href: "/ko/integrations" },
+              { label: "분석과 성장을 위한 데이터 구성 모범 사례", href: "/ko/guides/clickhouse/data-modelling/schema-design" },
+              { label: "대규모 데이터셋을 실시간으로 쿼리하는 방법", href: "/ko/get-started/use-cases/real-time-analytics" },
+              { label: "그 위에 대시보드, 알림, 이벤트 기반 기능을 구축하는 방법", href: "/ko/get-started/use-cases/data-warehousing" },
+              { label: "성능은 높게 유지하면서 비용은 낮추기 위한 팁", href: "/ko/concepts/best-practices/index" },
+          ]}
+            />
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <HeroCard logo="logo-ch.svg" logoInvert title="ClickStack" description="ClickHouse로 구동되는 올인원 관측성 스택으로, 로그, 메트릭, 트레이스, 세션 리플레이, 오류에 대해 매우 빠른 쿼리와 강력한 집계를 제공합니다." href="/ko/clickstack/overview" extraClassName="flex-1" showArrow arrowBottom />
+
+            <HeroCard logo="logo-postgres.svg" title="Managed Postgres" description="ClickHouse와 네이티브로 통합된 빠르고 확장 가능하며 엔터프라이즈급 Postgres 서비스입니다. 트랜잭션에는 Postgres를, 분석에는 ClickHouse를 손쉽게 함께 사용할 수 있습니다." href="/ko/products/managed-postgres/overview" extraClassName="flex-1" showArrow arrowBottom />
+
+            <HeroCard logo="logo-integration.svg" logoInvert title="Integrations" description="자주 사용하는 도구와 서비스를 ClickHouse에 연결할 수 있는 100개 이상의 통합을 제공합니다." href="/ko/integrations/home" extraClassName="flex-1" showArrow arrowBottom />
+          </div>
+        </div>
+
+        {/* 행 2: 같은 크기의 카드 3개 */}
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <HeroCard filename="thumbnail-langfuse-light.webp" title="LangFuse" description="관측성, 메트릭, 평가, 프롬프트 관리를 위한 오픈 소스 LLM 엔지니어링 플랫폼입니다." href="https://langfuse.com/docs" showArrow />
+
+          <HeroCard filename="thumbnail-kubernetes-light.webp" title="Kubernetes Operator" description="Kubernetes에서 ClickHouse 및 ClickHouse Keeper 클러스터의 배포, 구성, 관리를 자동화합니다." href="/ko/products/kubernetes-operator/overview" showArrow />
+
+          <HeroCard filename="thumbnail-chdb-light.webp" title="chDB" description="빠르고 안정적이며 확장 가능한 인프로세스 데이터베이스입니다. 인프로세스 환경에서 ClickHouse의 강력함을 경험해 보세요." href="/ko/products/chdb/index" showArrow />
+        </div>
+      </div>
+
+      <FullWidthDivider style={{ margin: '40px 0 0' }} />
+
+      <div id="mcp-setup" className="mt-16 scroll-mt-20">
+        <h2 className="text-2xl font-semibold text-gray-900 dark:text-zinc-50 mb-0">문서 MCP Server 설정</h2>
+        <p className="text-sm text-gray-500 dark:text-zinc-500 mb-6">Model Context Protocol을 사용해 AI 도구에서 ClickHouse 문서를 직접 쿼리할 수 있습니다.</p>
+
+        <div className="mt-6">
+          <McpSetup />
+        </div>
+      </div>
+    </div>
+  </div>
+</PageWrapper>
