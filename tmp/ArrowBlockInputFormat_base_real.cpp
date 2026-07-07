@@ -323,10 +323,7 @@ void registerArrowSchemaReader(FormatFactory & factory)
 
     factory.registerAdditionalInfoForSchemaCacheGetter("Arrow", [](const FormatSettings & settings)
     {
-        return fmt::format(
-            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={}",
-            settings.schema_inference_make_columns_nullable,
-            settings.schema_inference_allow_nullable_tuple_type);
+        return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
     });
     factory.registerSchemaReader(
         "ArrowStream",
@@ -337,10 +334,7 @@ void registerArrowSchemaReader(FormatFactory & factory)
 
     factory.registerAdditionalInfoForSchemaCacheGetter("ArrowStream", [](const FormatSettings & settings)
     {
-        return fmt::format(
-            "schema_inference_make_columns_nullable={};schema_inference_allow_nullable_tuple_type={}",
-            settings.schema_inference_make_columns_nullable,
-            settings.schema_inference_allow_nullable_tuple_type);
+       return fmt::format("schema_inference_make_columns_nullable={}", settings.schema_inference_make_columns_nullable);
     });
 }
 

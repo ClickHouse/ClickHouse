@@ -1565,14 +1565,6 @@ void registerAvroSchemaReader(FormatFactory & factory)
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });
 
-    for (const auto * format_name : {"Avro", "AvroConfluent"})
-    {
-        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
-        {
-            return fmt::format(
-                "schema_inference_allow_nullable_tuple_type={}", settings.schema_inference_allow_nullable_tuple_type);
-        });
-    }
 }
 
 
