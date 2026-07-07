@@ -582,7 +582,7 @@ void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector
     for (const auto & patch_reader : patch_readers)
     {
         const auto & patch = patch_reader->getPatchPart();
-        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key || !patch.sorting_key->expression)
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
             continue;
 
         /// A column that is present in the header but not filled yet counts as missing.
