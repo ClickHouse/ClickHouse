@@ -42,7 +42,7 @@ struct ReplicaInfo
 struct ReplicasInfo
 {
     std::vector<ReplicaInfo> replicas;
-    bool replicas_belong_to_shared_catalog;
+    bool replicas_belong_to_shared_catalog = false;
 };
 
 class DatabaseReplicated : public DatabaseAtomic

@@ -1,0 +1,149 @@
+---
+description: "Les mises à jour légères simplifient la mise à jour des données dans la base de données à l’aide de patch parts."
+keywords: ['update']
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/update
+title: "L’instruction Lightweight UPDATE"
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<Note>
+  Les mises à jour légères sont actuellement en bêa.
+  Si vous rencontrez des problèmes, veuillez ouvrir une issue dans le dépôt [ClickHouse repository](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+L’instruction `UPDATE` légère met à jour les lignes d’une table `[db.]table` qui correspondent à l’expression `filter_expr`.
+On l’appelle &quot;mise à jour légère&quot; pour la distinguer de la requête [`ALTER TABLE ... UPDATE`](/fr/reference/statements/alter/update), qui est un processus lourd réécrivant des colonnes entières dans les parties de données.
+Elle n’est disponible que pour la famille de moteurs de table [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+
+```sql
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+```
+
+Le `filter_expr` doit être de type `UInt8`. Cette requête met à jour les valeurs des colonnes spécifiées en leur attribuant les valeurs des expressions correspondantes, pour les lignes dans lesquelles `filter_expr` prend une valeur non nulle.
+Les valeurs sont converties en type de colonne à l&#39;aide de l&#39;opérateur `CAST`. La mise à jour des colonnes utilisées dans le calcul des clés primaire ou de partition n&#39;est pas prise en charge.
+
+<div id="examples">
+  ## Exemples
+</div>
+
+```sql
+UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
+
+UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
+```
+
+<div id="lightweight-update-does-not-update-data-immediately">
+  ## Les mises à jour légères ne mettent pas les données à jour immédiatement
+</div>
+
+L’`UPDATE` léger repose sur des **patch parts** — un type spécial de partie de données qui contient uniquement les colonnes et les lignes mises à jour.
+Un `UPDATE` léger crée des patch parts, mais ne modifie pas immédiatement et physiquement les données d’origine en stockage.
+Le processus de mise à jour est similaire à une requête `INSERT ... SELECT ...`, mais la requête `UPDATE` attend que la création de la patch part soit terminée avant de renvoyer la réponse.
+
+Les valeurs mises à jour sont :
+
+* **Immédiatement visibles** dans les requêtes `SELECT` grâce à l’application des patchs
+* **Physiquement matérialisées** uniquement lors des fusions et mutations ultérieures
+* **Supprimées automatiquement** une fois les patchs matérialisés dans toutes les parties actives
+
+<div id="lightweight-update-requirements">
+  ## Exigences pour les mises à jour légères
+</div>
+
+Les mises à jour légères sont prises en charge par les moteurs [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree), [`ReplacingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree), [`CollapsingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/fr/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), ainsi que par leurs versions [`Replicated`](/fr/reference/engines/table-engines/mergetree-family/replication) et [`Shared`](/fr/products/cloud/features/infrastructure/shared-merge-tree).
+
+Pour utiliser les mises à jour légères, la matérialisation des colonnes `_block_number` et `_block_offset` doit être activée à l’aide des paramètres de table [`enable_block_number_column`](/fr/reference/settings/merge-tree-settings#enable_block_number_column) et [`enable_block_offset_column`](/fr/reference/settings/merge-tree-settings#enable_block_offset_column).
+
+<div id="lightweight-delete">
+  ## `DELETE` légers
+</div>
+
+Une requête [de `DELETE` léger](/fr/reference/statements/delete) peut être exécutée sous la forme d’un `UPDATE` léger plutôt que d’une mutation `ALTER UPDATE`. Le fonctionnement de `DELETE` léger est contrôlé par le paramètre [`lightweight_delete_mode`](/fr/reference/settings/session-settings#lightweight_delete_mode).
+
+<div id="performance-considerations">
+  ## Considérations relatives aux performances
+</div>
+
+**Avantages des mises à jour légères :**
+
+* La latence de la mise à jour est comparable à celle de la requête `INSERT ... SELECT ...`
+* Seules les colonnes et les valeurs mises à jour sont écrites, et non des colonnes entières dans les parties de données
+* Il n’est pas nécessaire d’attendre la fin des fusions/mutations en cours, la latence d’une mise à jour est donc prévisible
+* L’exécution parallèle des mises à jour légères est possible
+
+**Impacts potentiels sur les performances :**
+
+* Ajoute un surcoût aux requêtes `SELECT` qui doivent appliquer des patchs
+* Les [index de saut de données](/fr/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) ne seront pas utilisés pour les colonnes des parties de données auxquelles des patchs doivent être appliqués. Les [projections](/fr/reference/engines/table-engines/mergetree-family/mergetree#projections) ne seront pas utilisées s’il existe des patch parts pour la table, y compris pour les parties de données auxquelles aucun patch ne doit être appliqué.
+* De petites mises à jour trop fréquentes peuvent entraîner une erreur « too many parts ». Il est recommandé de regrouper plusieurs mises à jour dans une seule requête, par exemple en plaçant les ID à mettre à jour dans une seule clause `IN` de la clause `WHERE`
+* Les mises à jour légères sont conçues pour mettre à jour de petites quantités de lignes (jusqu’à environ 10 % de la table). Si vous devez en mettre à jour une plus grande quantité, il est recommandé d’utiliser la mutation [`ALTER TABLE ... UPDATE`](/fr/reference/statements/alter/update)
+
+<div id="concurrent-operations">
+  ## Opérations concurrentes
+</div>
+
+Contrairement aux mutations lourdes, les mises à jour légères n&#39;attendent pas la fin des fusions/mutations en cours.
+La cohérence des mises à jour légères concurrentes est contrôlée par les paramètres [`update_sequential_consistency`](/fr/reference/settings/session-settings#update_sequential_consistency) et [`update_parallel_mode`](/fr/reference/settings/session-settings#update_parallel_mode).
+
+<div id="update-permissions">
+  ## Autorisations de mise à jour
+</div>
+
+`UPDATE` nécessite le privilège `ALTER UPDATE`. Pour permettre à un utilisateur donné d’exécuter des instructions `UPDATE` sur une table spécifique, exécutez :
+
+```sql
+GRANT ALTER UPDATE ON db.table TO username;
+```
+
+<div id="details-of-the-implementation">
+  ## Détails de l&#39;implémentation
+</div>
+
+Les patch parts sont identiques aux parts ordinaires, mais ne contiennent que les colonnes mises à jour et plusieurs colonnes système :
+
+* `_part` - le nom de la part d&#39;origine
+* `_part_offset` - le numéro de ligne dans la part d&#39;origine
+* `_block_number` - le numéro du block de la ligne dans la part d&#39;origine
+* `_block_offset` - le décalage du block de la ligne dans la part d&#39;origine
+* `_data_version` - la version des données mises à jour (numéro de block alloué à la requête `UPDATE`)
+
+En moyenne, cela représente environ 40 octets (données non compressées) de surcoût par ligne mise à jour dans les patch parts.
+Les colonnes système aident à trouver les lignes de la part d&#39;origine qui doivent être mises à jour.
+Les colonnes système sont liées aux [colonnes virtuelles](/fr/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) de la part d&#39;origine, qui sont ajoutées à la lecture lorsque des patch parts doivent être appliquées.
+Les patch parts sont triées par `_part` et `_part_offset`.
+
+Les patch parts appartiennent à des partitions différentes de celle de la part d&#39;origine.
+L&#39;identifiant de partition de la patch part est `patch-<hash of column names in patch part>-<original_partition_id>`.
+Par conséquent, les patch parts avec des colonnes différentes sont stockées dans des partitions différentes.
+Par exemple, trois mises à jour `SET x = 1 WHERE <cond>`, `SET y = 1 WHERE <cond>` et `SET x = 1, y = 1 WHERE <cond>` créeront trois patch parts dans trois partitions différentes.
+
+Les patch parts peuvent être fusionnées entre elles afin de réduire le nombre de patchs appliqués aux requêtes `SELECT` et de limiter le surcoût. La fusion des patch parts utilise l&#39;algorithme de fusion [replacing](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) avec `_data_version` comme version column.
+Par conséquent, les patch parts stockent toujours la version la plus récente de chaque ligne mise à jour dans la part.
+
+Les lightweight updates n&#39;attendent pas la fin des fusions et mutations en cours et utilisent toujours un snapshot actuel des parties de données pour exécuter une mise à jour et produire une patch part.
+De ce fait, il peut y avoir deux cas d&#39;application des patch parts.
+
+Par exemple, si nous lisons la part `A`, nous devons appliquer la patch part `X` :
+
+* si `X` contient la part `A` elle-même. Cela se produit si `A` ne participait pas à une fusion lorsque `UPDATE` a été exécuté.
+* si `X` contient les parts `B` et `C`, qui sont couvertes par la part `A`. Cela se produit si une fusion (`B`, `C`) -&gt; `A` était en cours lorsque `UPDATE` a été exécuté.
+
+Pour ces deux cas, il existe respectivement deux façons d&#39;appliquer les patch parts :
+
+* Utiliser une fusion sur les colonnes triées `_part`, `_part_offset`.
+* Utiliser une jointure sur les colonnes `_block_number`, `_block_offset`.
+
+Le mode jointure est plus lent et nécessite plus de mémoire que le mode fusion, mais il est utilisé moins souvent.
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* [`ALTER UPDATE`](/fr/reference/statements/alter/update) - Opérations `UPDATE` lourdes
+* [Lightweight `DELETE`](/fr/reference/statements/delete) - Opérations `DELETE` légères
+* [`APPLY PATCHES`](/fr/reference/statements/alter/apply-patches) - Forcer la matérialisation physique des patches sur les parties de données (opération de mutation)

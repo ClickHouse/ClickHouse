@@ -1,0 +1,106 @@
+---
+sidebarTitle: 'Draxlr'
+slug: /integrations/draxlr
+keywords: ['clickhouse', 'Draxlr', 'подключение', 'интеграция', 'интерфейс']
+description: 'Draxlr — это инструмент бизнес-аналитики для визуализации и анализа данных.'
+title: 'Подключение Draxlr к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Draxlr предлагает интуитивно понятный интерфейс для подключения к базе данных ClickHouse, позволяя вашей команде изучать данные, визуализировать их и публиковать аналитические материалы за считанные минуты. Это руководство поможет вам выполнить необходимые шаги для успешного подключения.
+
+<div id="1-get-your-clickhouse-credentials">
+  ## 1. Получите учетные данные ClickHouse
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-draxlr-to-clickhouse">
+  ## 2.  Подключите Draxlr к ClickHouse
+</div>
+
+1. Нажмите кнопку **Connect a Database** на панели навигации.
+
+2. Выберите **ClickHouse** из списка доступных баз данных и нажмите **Next**.
+
+3. Выберите один из хостинг-провайдеров и нажмите **Next**.
+
+4. Укажите любое имя в поле **Connection Name**.
+
+5. Введите сведения о подключении в форму.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="Форма подключения Draxlr с параметрами конфигурации базы данных ClickHouse" border />
+
+6. Нажмите кнопку **Next** и дождитесь установки подключения. Если подключение выполнено успешно, откроется страница с таблицами.
+
+<div id="4-explore-your-data">
+  ## 4. Изучение данных
+</div>
+
+1. Нажмите на одну из таблиц в списке.
+
+2. Вы перейдёте на страницу Explore, где сможете просмотреть данные в таблице.
+
+3. Здесь можно добавлять фильтры, выполнять JOIN и задавать сортировку данных.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="Интерфейс изучения данных Draxlr с фильтрами и параметрами сортировки" border />
+
+4. Вы также можете нажать кнопку **Graph** и выбрать тип графика для визуализации данных.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="Параметры визуализации графиков Draxlr для данных ClickHouse" border />
+
+<div id="4-using-sql-queries">
+  ## 4. Использование SQL-запросов
+</div>
+
+1. Нажмите кнопку Explore на панели навигации.
+
+2. Нажмите кнопку **Raw Query** и введите запрос в текстовое поле.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="Интерфейс SQL-запросов Draxlr для ClickHouse" border />
+
+3. Нажмите кнопку **Execute Query**, чтобы просмотреть результаты.
+
+<div id="4-saving-you-query">
+  ## 4. Сохранение запроса
+</div>
+
+1. После выполнения запроса нажмите кнопку **Save Query**.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="Диалог сохранения запроса в Draxlr с параметрами панели мониторинга" border />
+
+2. В текстовом поле **Query Name** можно указать имя запроса и выбрать папку для его сохранения.
+
+3. Вы также можете использовать параметр **Add to dashboard**, чтобы добавить результат на панель мониторинга.
+
+4. Нажмите кнопку **Save**, чтобы сохранить запрос.
+
+<div id="5-building-dashboards">
+  ## 5. Создание панелей мониторинга
+</div>
+
+1. Нажмите кнопку **Dashboards** на панели навигации.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="Интерфейс управления панелями мониторинга Draxlr" border />
+
+2. Чтобы добавить новую панель мониторинга, нажмите кнопку **Add +** на левой боковой панели.
+
+3. Чтобы добавить новый виджет, нажмите кнопку **Add** в правом верхнем углу.
+
+4. Выберите запрос из списка сохранённых запросов, укажите тип визуализации и нажмите кнопку **Add Dashboard Item**.
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+Чтобы узнать больше о Draxlr, посетите [документацию Draxlr](https://draxlr.notion.site/draxlr/Draxlr-Docs-d228b23383f64d00a70836ff9643a928).

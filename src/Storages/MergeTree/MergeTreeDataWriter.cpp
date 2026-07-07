@@ -355,7 +355,7 @@ void updateTTL(
     }
 
     if (update_part_min_max_ttls)
-        ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
@@ -404,7 +404,14 @@ MergeTreeIndices collectSkipIndicesToMaterialize(
         if (is_virtual_column_index(index))
             continue;
 
-        indices.emplace_back(MergeTreeIndexFactory::instance().get(metadata_snapshot, index, merge_tree_settings));
+        auto index_ptr = MergeTreeIndexFactory::instance().get(metadata_snapshot, index, merge_tree_settings);
+
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot be materialized. Skip them so inserts into an attached legacy table do not throw.
+        if (index_ptr->isInert())
+            continue;
+
+        indices.emplace_back(std::move(index_ptr));
     }
 
     return indices;

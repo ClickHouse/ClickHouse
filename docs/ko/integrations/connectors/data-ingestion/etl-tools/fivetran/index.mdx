@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: 'Fivetran을 사용하면 자동화된 스키마 생성, 중복 제거, 히스토리 모드(SCD Type 2)를 통해 모든 소스의 데이터를 ClickHouse Cloud로 이동할 수 있습니다.'
+title: 'Fivetran과 ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', '데이터 이동', 'etl', 'ClickHouse 대상', '자동화 데이터 플랫폼', '히스토리 모드', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## 개요
+</div>
+
+[Fivetran](https://www.fivetran.com)은 클라우드 데이터 플랫폼 간은 물론, 플랫폼에서 데이터를 내보내고 가져오는 작업을 자동화하는 데이터 이동 플랫폼입니다.
+
+[ClickHouse Cloud](https://clickhouse.com/cloud)는 [Fivetran 대상](https://fivetran.com/docs/destinations/clickhouse)으로 지원되므로, 다양한 소스의 데이터를 ClickHouse로 적재할 수 있습니다. 오픈 소스 ClickHouse 버전은 대상으로 지원되지 않습니다.
+
+대상 커넥터는 ClickHouse와 Fivetran이 공동으로 개발 및 유지 관리합니다. 소스 코드는 [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination)에서 확인할 수 있습니다.
+
+<Note>
+  [ClickHouse Cloud 대상](https://fivetran.com/docs/destinations/clickhouse)은 현재 **베타** 상태이지만, 곧 일반 제공될 수 있도록 작업하고 있습니다.
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## 주요 기능
+</div>
+
+* **ClickHouse Cloud 호환**: ClickHouse Cloud 데이터베이스를 Fivetran의 대상으로 사용할 수 있습니다.
+* **SaaS 배포 모델**: Fivetran이 완전 관리형으로 제공하므로 자체 인프라를 관리할 필요가 없습니다.
+* **히스토리 모드 (SCD Type 2)**: 시점 분석과 감사 추적을 위해 모든 레코드 버전에 대한 전체 이력을 보존합니다.
+* **구성 가능한 배치 크기**: JSON 설정 파일을 통해 write, select, mutation, hard delete의 배치 크기를 조정하여 Fivetran을 사용 사례에 맞게 최적화할 수 있습니다.
+
+<div id="limitations">
+  ## 제한 사항
+</div>
+
+* 스키마 마이그레이션은 아직 지원되지 않지만, 현재 지원을 위해 작업 중입니다.
+* 프라이머리 키(primary key) 컬럼의 추가, 제거 또는 수정은 지원되지 않습니다.
+* `CREATE TABLE` SQL 문에서 사용자 지정 ClickHouse 설정은 지원되지 않습니다.
+* 역할 기반 권한 부여(role-based grants)는 완전히 지원되지 않습니다. 커넥터의 권한 확인은 사용자에게 직접 부여된 권한만 조회합니다. 대신 [직접 권한 부여](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants)를 사용하세요.
+
+<div id="related-pages">
+  ## 관련 페이지
+</div>
+
+* [기술 참고](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/reference): 유형 매핑, 테이블 엔진, 메타데이터 컬럼 및 고급 구성
+* [문제 해결 및 모범 사례](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting): 일반적인 오류, 최적화 팁 및 디버깅 쿼리
+* [GitHub의 ClickHouse Fivetran 대상](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## 설정 가이드
+</div>
+
+* 구성과 일반적인 기술 세부 사항을 찾고 있다면 [기술 참고](/ko/integrations/connectors/data-ingestion/etl-tools/fivetran/reference)를 참조하십시오.
+* 전체 안내는 Fivetran 문서의 [설정 가이드](https://fivetran.com/docs/destinations/clickhouse/setup-guide)를 확인하십시오.
+
+<div id="contact-us">
+  ## 문의 및 지원
+</div>
+
+ClickHouse Fivetran 대상은 소유 및 운영 책임이 분리된 모델로 운영됩니다:
+
+* **ClickHouse**는 대상 커넥터 코드를 개발하고 유지 관리합니다.
+* **Fivetran**은 커넥터를 호스팅하며 데이터 이동, 파이프라인 일정 관리, 소스 커넥터를 담당합니다.
+
+Fivetran ClickHouse 대상에 대해서는 Fivetran과 ClickHouse 모두 지원을 제공합니다. 일반적인 문의는 Fivetran 플랫폼에 가장 정통한 Fivetran에 문의하는 것을 권장합니다. ClickHouse 관련 질문이나 문제가 있으면 지원 팀에서 도와드립니다. 질문하거나 문제를 보고하려면 [지원 티켓](/ko/resources/about/support)을 생성하십시오.

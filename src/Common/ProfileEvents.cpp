@@ -44,6 +44,8 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
+    M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -252,6 +254,10 @@
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
     M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -574,7 +580,7 @@
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
     M(RowPolicyCacheRecalculations, "Number of times the row policy cache re-mixed filters for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
-    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets, off the RowPolicyCache mutex (so it does not block the ContextAccess build path).", ValueType::Microseconds) \
     M(RoleCacheRecalculations, "Number of times the role cache recalculated all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
     M(RoleCacheRecalculationMicroseconds, "Total time spent recalculating all live enabled role sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     M(SettingsProfileCacheRecalculations, "Number of times the settings profile cache re-merged settings and constraints for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
