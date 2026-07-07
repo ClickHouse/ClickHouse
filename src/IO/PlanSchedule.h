@@ -58,7 +58,6 @@ struct PlanSchedule
         ByteRange range;                              /// physical, plan coords
         Source source = Source::Remote;
         VectorWithMemoryTracking<WriteTarget> into;   /// cells to populate
-        VectorWithMemoryTracking<size_t> deps;        /// same-segment predecessors (natural order)
         /// May the background run this job ahead of the serve? `Remote` fills depend on nothing
         /// but the source; the handed kinds (`UpperCacheRead`, `HandedChain`) take the SERVE's
         /// output as their input, so they are inherently serve-front (sync) jobs. The fg/bg

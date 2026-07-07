@@ -43,7 +43,6 @@ public:
     size_t cursor() const { return ex.read_plan.cursor; }
     size_t stepCount() const { return ex.read_plan.schedule.steps.size(); }
     ByteRange stepOutput(size_t i) const { return ex.read_plan.schedule.steps[i].output; }
-    bool retrieveDone(size_t i) const { return ex.read_plan.retrieve_status[i].done; }
     /// Job-RELATIVE launch progress (bytes from the job's range start).
     size_t retrieveLaunchProgress(size_t i) const
     {

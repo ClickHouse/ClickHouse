@@ -375,17 +375,17 @@ TEST(PlanScheduleRetrieves, PerGapRetrievesNotGrouped)
     }
 }
 
-/// One fs segment filled by two split connections: the later one appends after
-/// the earlier (natural-order dep).
-TEST(PlanScheduleRetrieves, SpanningSegmentSplitHasDep)
+/// One fs segment filled by two split connections: both retrieves carry the SPANNING cell
+/// in `into` - the input the executor's ahead clamp orders them by (`clampAllowsAhead`;
+/// append-only ordering is a launch-time frontier bound now, not a schedule graph).
+TEST(PlanScheduleRetrieves, SpanningSegmentSplitSharesCell)
 {
     auto g = geometry(0, 12, {
         tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
         tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // ONE segment [0,12), incremental
     });
     auto s = describeSeek(g, {0, 12}, /*min_bytes_for_seek=*/2);  // split
-    /// Two Remote connections [0,4),[8,12), both filling the spanning fs segment;
-    /// the later one appends after the earlier.
+    /// Two Remote connections [0,4),[8,12), both filling the spanning fs segment.
     std::vector<size_t> remotes;
     for (size_t i = 0; i < s.retrieves.size(); ++i)
         if (s.retrieves[i].source == PlanSchedule::Source::Remote)
@@ -394,13 +394,6 @@ TEST(PlanScheduleRetrieves, SpanningSegmentSplitHasDep)
             remotes.push_back(i);
         }
     ASSERT_EQ(remotes.size(), 2u);
-    const size_t lo = s.retrieves[remotes[0]].range.offset <= s.retrieves[remotes[1]].range.offset ? remotes[0] : remotes[1];
-    const size_t hi = lo == remotes[0] ? remotes[1] : remotes[0];
-    bool hi_deps_on_lo = false;
-    for (size_t d : s.retrieves[hi].deps)
-        if (d == lo)
-            hi_deps_on_lo = true;
-    EXPECT_TRUE(hi_deps_on_lo) << "later connection appends after the earlier";
 }
 
 /// The embedded-upper-hit case: a faster tier holds [4,8) inside the slow fs

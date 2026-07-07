@@ -3999,7 +3999,7 @@ TEST(ReaderExecutor, PumpHealsAbandonedSiblingSegment)
         /// The death: give up the downloader with ZERO bytes written and drop the holder -
         /// the killed-query path. The segment resets to EMPTY; nobody will ever commit it.
         seg.resetDownloader();
-        holder.reset();
+        holder = nullptr;
         died.count_down();
     });
 
@@ -4140,7 +4140,7 @@ TEST(ReaderExecutor, RealDiskCacheSiblingReadViewOutlivesDownloaderOfDownloading
     /// DOWNLOADING segment as a NON-downloader LAST holder -> the abort (pre-fix).
     std::thread dropper([&]
     {
-        dl_holder.reset();   // non-downloader, not last -> segment stays DOWNLOADING
+        dl_holder = nullptr;   // non-downloader, not last -> segment stays DOWNLOADING
         view.reset();        // non-downloader, LAST holder of DOWNLOADING -> abort (pre-fix)
     });
     dropper.join();
@@ -4932,7 +4932,7 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
             << "cursor step [" << step.offset << "," << step.offset + step.size
             << ") must contain position " << pos;
         for (size_t i = 0; i < inspect(executor).retrieveStatusSize(); ++i)
-            if (inspect(executor).retrieveDone(i) || inspect(executor).retrieveLaunchProgress(i) > 0)
+            if (inspect(executor).retrieveLaunchProgress(i) > 0)
                 saw_progress = true;
 #endif
     }

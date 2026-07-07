@@ -389,22 +389,6 @@ PlanSchedule buildSchedule(
             sched.retrieves.push_back(std::move(up));
         }
 
-    /// --- deps: natural-order among retrieves writing the same cell ---
-    /// A segment appends at its write frontier, so two retrieves filling the
-    /// same (entry, cell) must run in offset order (the spanning-writer case
-    /// across split connections).
-    for (size_t j = 0; j < sched.retrieves.size(); ++j)
-        for (size_t i = 0; i < j; ++i)
-        {
-            bool shares_cell = false;
-            for (const auto & tj : sched.retrieves[j].into)
-                for (const auto & ti : sched.retrieves[i].into)
-                    if (ti.entry == tj.entry && overlaps(ti.cell, tj.cell))
-                        shares_cell = true;
-            if (shares_cell && sched.retrieves[i].range.offset <= sched.retrieves[j].range.offset)
-                sched.retrieves[j].deps.push_back(i);
-        }
-
     /// --- steps: what each readNextWindow returns, wired to its retrieve ---
     size_t cursor = request.offset;
     const size_t request_end = request.offset + request.size;

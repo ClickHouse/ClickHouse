@@ -297,16 +297,18 @@ public:
     }
 
     /// Construct + initialize a real `FileCache` rooted in a fresh subdir.
-    /// `boundary_alignment == max_file_segment_size` keeps partially-filled
-    /// segments at their full range (the state pins protect).
-    std::shared_ptr<FileCache> makeFileCache(const String & name, size_t segment_size, size_t max_size)
+    /// `boundary_alignment == max_file_segment_size` (the default) keeps partially-filled
+    /// segments at their full range (the state pins protect); pass a finer `alignment` for
+    /// the spanning-segment shapes (fetch cells smaller than the write segment).
+    std::shared_ptr<FileCache> makeFileCache(
+        const String & name, size_t segment_size, size_t max_size, size_t alignment = 0)
     {
         FileCacheSettings settings;
         settings[FileCacheSetting::path] = (cache_root / name).string();
         settings[FileCacheSetting::max_size] = max_size;
         settings[FileCacheSetting::max_elements] = 1000;
         settings[FileCacheSetting::max_file_segment_size] = segment_size;
-        settings[FileCacheSetting::boundary_alignment] = segment_size;
+        settings[FileCacheSetting::boundary_alignment] = alignment ? alignment : segment_size;
         settings[FileCacheSetting::load_metadata_asynchronously] = false;
         settings[FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
 
@@ -1309,4 +1311,151 @@ TEST_F(ReaderExecutorCacheChain, EvictionInChainRefetchesEvictedCells)
     /// forward, so the held long connection streams the whole scan: ONE request.
     EXPECT_EQ(sourceRequestsSoFar(), 1u)
         << "a cache-refused segment is fetched once and served from the bank while it stays banked";
+}
+
+
+/// T3's ahead-anchor CLAMP (`clampAllowsAhead`): a background launch must not run past an
+/// unfilled range ANOTHER job contributes to the same append-only segment. With
+/// `boundary_alignment` (16) finer than the fs segment (64), the gaps around a page-resident
+/// middle [16,48) stay two Remote retrieves - [0,16) and [48,64) - both filling the ONE
+/// spanning segment. The deleted deps graph could not order the tail Remote after the
+/// middle's down-fill (`UpperCacheRead`s are appended after all Remotes), so it launched
+/// early and its write was refused at the segment frontier. The clamp holds the launch until
+/// the down-fills commit the middle, and releases exactly then.
+TEST_F(ReaderExecutorCacheChain, AheadClampHoldsBehindForeignMiddle)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t alignment = 16;
+    constexpr size_t block_size = 16;
+    constexpr size_t file_size = 64;
+    constexpr size_t window = block_size;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto page_cache = makePageCache();
+    auto fc = makeFileCache("t3_clamp", segment_size, /*max_size=*/1ull << 20, alignment);
+
+    /// Warm ONLY the middle [16,48) into the page cache (a page-only pass).
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> warm_caches;
+        warm_caches.push_back(makePageProvider(page_cache, "obj", block_size, file_size));
+        ReaderExecutor::Options warm_opts;
+        warm_opts.window_size = window;
+        warm_opts.min_bytes_for_seek = 8;
+        ReaderExecutor warmer(source, objects, warm_caches, warm_opts);
+        warmer.seek(16);
+        size_t warmed = 0;
+        while (warmed < 32)
+        {
+            auto chain = warmer.readNextWindow();
+            if (chain.empty())
+                break;
+            warmed += chain.range().size;
+        }
+        ASSERT_GE(warmed, 32u);
+    }
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makePageProvider(page_cache, "obj", block_size, file_size));
+    caches.push_back(makeDiskProvider(fc));
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 8;   /// the 32-byte middle is NOT bridged: two Remote jobs
+    opts.prefetch_pool = pool;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, caches, opts);
+
+    String got;
+    const auto read_window = [&]
+    {
+        auto chain = executor.readNextWindow();
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    };
+
+    read_window();   /// [0,16): the pump fetches the head Remote; segment committed to 16
+    EXPECT_FALSE(inspect(executor).hasInflightPrefetch())
+        << "the tail Remote must HOLD: the segment below its launch position waits on the middle's down-fill";
+    read_window();   /// [16,32): page hit; the down-fill commits the segment to 32
+    EXPECT_FALSE(inspect(executor).hasInflightPrefetch())
+        << "still held: [32,48) of the middle is not yet in the segment";
+    read_window();   /// [32,48): page hit; the down-fill completes the middle - the clamp releases
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
+        << "released: everything below the tail's launch position is committed";
+    read_window();   /// [48,64): served from the ahead machine's cells
+    EXPECT_TRUE(executor.readNextWindow().empty());
+    EXPECT_EQ(got, content);
+}
+
+
+/// T3 clamp, the SAME-TIER exemption: bytes already resident in the cell's own tier - here a
+/// partially-downloaded fs segment's prefix, held alive (no downloader) by another holder -
+/// can never enter this plan's committed sets, but they are the segment's CONTENT: the tail
+/// write appends right after them. The clamp must not hold the ahead launch on them (the
+/// gate found the un-exempted version parked read-ahead for every resumed partial segment).
+TEST_F(ReaderExecutorCacheChain, AheadClampIgnoresSameTierResidentPrefix)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 64;
+    constexpr size_t warm_prefix = 20;
+    constexpr size_t window = 16;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto fc = makeFileCache("t3_resume", segment_size, /*max_size=*/1ull << 20);
+    const auto & user = FileCache::getCommonOrigin();
+    auto key = FileCacheKey::fromPath("obj");
+
+    /// A live holder fills [0,20) and releases the downloader WITHOUT completing: the
+    /// segment stays PARTIALLY_DOWNLOADED at its full [0,64) range for as long as the
+    /// holder lives - the mid-life resume shape.
+    auto partial_holder = fc->getOrSet(key, 0, segment_size, file_size, {}, 0, user);
+    {
+        auto & seg = partial_holder->front();
+        ASSERT_EQ(seg.getOrSetDownloader(), FileSegment::getCallerId());
+        std::string failure_reason;
+        ASSERT_TRUE(seg.reserve(warm_prefix, 1000, failure_reason));
+        seg.write(const_cast<char *>(content.data()), warm_prefix, 0);
+        seg.completePartAndResetDownloader();
+    }
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.min_bytes_for_seek = 8;
+    opts.prefetch_pool = pool;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, caches, opts);
+
+    String got;
+    {
+        auto chain = executor.readNextWindow();   /// [0,16): served from the resident prefix
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    }
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
+        << "the resident prefix is the segment's own content - the tail launch must NOT be held on it";
+
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    }
+    EXPECT_EQ(got, content);
 }

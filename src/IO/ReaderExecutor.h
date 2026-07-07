@@ -377,10 +377,6 @@ private:
     /// `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
     struct RetrieveStatus
     {
-        /// The job's put has committed its LAST window into every `into[]` cell.
-        /// `depsSatisfied` gates an offset-later same-cell write's launch on this (append-only
-        /// ordering across split jobs); nothing else reads it.
-        bool done = false;
         /// The launch HIGH-WATER (job-relative): bytes attempted end to end - launched over, or
         /// served inline past the cursor - whether they committed, were refused by the cache,
         /// or belong to a sibling's download. LAUNCH POLICY only (`launchProgress`); a
@@ -913,7 +909,12 @@ private:
     /// reject (the connection is reclaimed). The sole machine builder, shared by both runners.
     bool launchMachineForWindow(size_t ri, ByteRange window, IFetchMachineRunner & machine_runner);
     void launchRetrieve(size_t ri);
-    bool depsSatisfied(size_t ri) const;
+    /// The ahead-anchor CLAMP: may job `ri`'s next background piece launch, or does one of
+    /// its target cells wait, below the launch position, on bytes outside the job's own
+    /// fetch runs (an embedded resident middle awaiting its serve-time down-fill - the
+    /// append-only cell would refuse a write past it)? Replaces the schedule deps graph;
+    /// the pump is exempt.
+    bool clampAllowsAhead(size_t ri) const;
 
     /// Feed the plan SCHEDULE's predicted source reads (the `Source::Remote`
     /// retrieves, in offset order, only past `continuity_fed_end`) into

@@ -1938,18 +1938,6 @@ void ReaderExecutor::reapPutMachine(FetchMachine & m)
         tryLogException(m.failure, log, "Cache fill failed", LogsLevel::debug);
     }
     stats += m.stats;
-
-    /// Ready -> Done: the job's bytes are now written into its `into[]` cells (this put
-    /// committed). Only once the WHOLE job's launch frontier reached its end - a multi-window
-    /// job reaps a put per window. `depsSatisfied` gates the launch of an offset-later
-    /// same-cell write on this, so without it a deps-bearing job would never read ahead; the
-    /// launch frontier (not the pure display one) keeps Done reachable when a sibling owns a
-    /// segment this writer can never commit. The machine inherits `retrieve_index` from its
-    /// launch; `schedulePutStep` keeps it for the fill.
-    if (m.retrieve_index < read_plan.retrieve_status.size()
-        && m.retrieve_index < read_plan.schedule.retrieves.size()
-        && launchProgress(m.retrieve_index) >= read_plan.schedule.retrieves[m.retrieve_index].range.end())
-        read_plan.retrieve_status[m.retrieve_index].done = true;
 }
 
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
@@ -2046,13 +2034,59 @@ void ReaderExecutor::advanceCursor()
 // (LOGICAL coords, matching the I/O leaves' output, so banking needs no shift), sliced per
 // step. The long connection coalesces the GETs across pieces.
 
-bool ReaderExecutor::depsSatisfied(size_t ri) const
+bool ReaderExecutor::clampAllowsAhead(size_t ri) const
 {
-    /// An offset-earlier write into a shared append-only cell must be committed
-    /// (its put reaped, `done`) before this job's bytes land in the same cell.
-    for (size_t dep : read_plan.schedule.retrieves[ri].deps)
-        if (!read_plan.retrieve_status[dep].done)
-            return false;
+    /// THE CLAMP - same-cell ordering as a frontier bound, not a graph. A cell is
+    /// append-only: bytes launched past an unfilled range the job does NOT fetch itself -
+    /// an embedded resident middle awaiting its serve-time down-fill (`UpperCacheRead` /
+    /// handed) - would only be refused at the frontier and discarded. Hold the AHEAD launch
+    /// until everything in the target cells below the launch position is committed or lies
+    /// in the job's OWN fetch runs (its refused or pending bytes were never a reason to
+    /// hold - the serve banks them). The deleted deps graph ordered nothing here: same-cell
+    /// gaps FOLD into one Remote (the fill closure spans the merged miss run), so its
+    /// Remote-vs-Remote edges never fired, and the down-fill ordering was unrepresentable -
+    /// the old code launched the tail run early and paid a refused GET. The PUMP is exempt:
+    /// demand production heals through the bank; only the ahead anchor waits. A hold is
+    /// BOUNDED by the held job's own consumption: the pump advances the launch high-water
+    /// past every served window regardless of refusals, so the scan retires the job even
+    /// when the awaited down-fill itself was refused - degradation, never a livelock.
+    const auto & r = read_plan.schedule.retrieves[ri];
+    const auto & geom = read_plan.geometry();
+    const size_t launch_pos = std::max(r.range.offset, launchProgress(ri));
+    for (const auto & wt : r.into)
+    {
+        const size_t lo = wt.cell.offset;
+        const size_t hi = std::min(wt.cell.end(), launch_pos);
+        if (lo >= hi)
+            continue;
+        const ByteRange below{lo, hi - lo};
+        for (const auto & gap : committedCoverage(below).subtract(below))
+        {
+            bool own = false;
+            for (const auto & run : r.fetch_runs)
+                if (run.offset <= gap.offset && gap.end() <= run.end())
+                {
+                    own = true;
+                    break;
+                }
+            if (own)
+                continue;
+            /// Bytes resident in the CELL's OWN tier are already the segment's content - a
+            /// resumed partially-downloaded segment's prefix, a DOWNLOADED middle merged into
+            /// the cell - and can never enter this plan's committed sets (the writer appends
+            /// at the live segment frontier, past them). Nothing to wait for: only a FASTER
+            /// tier's resident range awaits a down-fill into this cell.
+            bool in_cell_tier = false;
+            for (const auto & res : geom->entries[wt.entry].resident)
+                if (res.offset <= gap.offset && gap.end() <= res.end())
+                {
+                    in_cell_tier = true;
+                    break;
+                }
+            if (!in_cell_tier)
+                return false;
+        }
+    }
     return true;
 }
 
@@ -2193,8 +2227,8 @@ void ReaderExecutor::maybeLaunchAhead()
                 ++read_plan.launch_frontier;
             continue;
         }
-        if (!depsSatisfied(ri))
-            return;  /// hold: an offset-earlier same-cell write is not committed yet
+        if (!clampAllowsAhead(ri))
+            return;  /// hold: the target cell waits on another job's fill below the launch position
         launchRetrieve(ri);
         return;
     }
