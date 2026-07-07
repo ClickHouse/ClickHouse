@@ -21,3 +21,8 @@ EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT JSONEachRow;
 -- byte-for-byte identical to the pre-#80410 per-line output, so it is not a regression: any
 -- multi-line String is non-round-trippable through a line-delimited raw format.
 EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT TSVRaw;
+
+-- Display formats (Vertical, and the interactive Pretty* default) render the single record
+-- across physical lines with literal newlines, so the reformatted query is visibly multi-line.
+-- Only the line-delimited escaping text formats (TSV/CSV) show the \n as the escaped sequence.
+EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT Vertical;

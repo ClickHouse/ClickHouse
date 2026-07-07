@@ -6,3 +6,8 @@
 SELECT 1
 FROM system.one
 WHERE equals(dummy, 0)
+Row 1:
+──────
+explain: SELECT 1
+FROM system.one
+WHERE equals(dummy, 0)
