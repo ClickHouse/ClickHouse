@@ -220,10 +220,13 @@ public:
     /// Map subcolumn names (e.g. `t.a` for a `Tuple` column `t`) to their parent
     /// storage column names for column-level access checks. Column-level grants are
     /// stored against top-level storage columns only, so `GRANT SELECT(t)` must
-    /// implicitly cover `t.a`, `t.b`, etc. Names that are not subcolumns (real
-    /// columns, including columns literally containing a dot, or unknown names such
-    /// as virtual columns) are returned unchanged. The result is deduplicated while
-    /// preserving the order of first appearance.
+    /// implicitly cover `t.a`, `t.b`, etc. This includes dynamic subcolumns of
+    /// `Dynamic` / `JSON` / dynamic `Map` columns (e.g. `json.a.b`), which are resolved
+    /// by the same type-aware, first-matching-prefix logic as identifier resolution, so
+    /// the check authorizes exactly the column the query reads from. Names that are not
+    /// subcolumns (real columns, including columns literally containing a dot, or unknown
+    /// names such as virtual columns) are returned unchanged. The result is deduplicated
+    /// while preserving the order of first appearance.
     Names getColumnNamesInStorageForAccessCheck(const Names & column_names) const;
 
     bool hasPhysical(const String & column_name) const;

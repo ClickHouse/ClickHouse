@@ -1,0 +1,8 @@
+=== json.a.b with SELECT(`json.a`) only (denied) ===
+ACCESS_DENIED
+=== `json.a` column with SELECT(`json.a`) (allowed) ===
+OK
+=== json.a.b with SELECT(json) (allowed) ===
+OK
+=== `json.a` column with SELECT(json) only (denied) ===
+ACCESS_DENIED
