@@ -1013,9 +1013,15 @@ private:
                     else if (const auto * const_map = typeid_cast<const ColumnMap *>(data_col))
                         total += ColumnarV1::complexDataSize(const_map->getNestedColumn(), 1) + null_map_bytes;
                     else if (const auto * const_lc = typeid_cast<const ColumnLowCardinality *>(data_col))
-                        total += estimateComplexRowBytes(*const_lc->getDictionary().getNestedColumn(), const_lc->getIndexes().getUInt(0)) + null_map_bytes;
+                        // COL_IS_CONST reuses the normal COL_LOWCARD layout with 1 row (see
+                        // "COL_IS_CONST sets data for 1 row" in ColumnarV1Wire.h), so it still
+                        // carries the full header + a 1-entry dictionary + a 1-entry index —
+                        // not just the resolved value's own size.
+                        total += estimateLowCardTotalBytes(*const_lc, 1, false) + null_map_bytes;
                     else if (const auto * const_var = typeid_cast<const ColumnVariant *>(data_col))
-                        total += estimateVariantRowBytes(*const_var, 0) + null_map_bytes;
+                        // Same reasoning: COL_IS_CONST reuses the normal COL_VARIANT layout
+                        // with 1 row, so the alternatives' header is still present.
+                        total += estimateVariantTotalBytes(*const_var, 1, false) + null_map_bytes;
                     else
                         total += 256 + null_map_bytes;
                     continue;
@@ -1023,19 +1029,6 @@ private:
                 col = &const_col->getDataColumn();
                 materialized_const = true;
             }
-            // Any argument reaching this point is not a wire-preserved constant (that case
-            // already `continue`d above); its contribution is purely a function of how many
-            // rows are actually being sized, so it is exactly 0 when row_count == 0. This
-            // matters because both call sites above also call this function with row_count = 0
-            // specifically to get the fixed reservation of preserved-const arguments alone —
-            // without this early exit, the String/Array/Tuple/Map/LowCardinality/Variant
-            // branches below would still charge their real (non-row-scaled) data — chars,
-            // dictionary bytes, sub-column bytes — regardless of row_count, turning ordinary
-            // large non-const arguments into false "preserved constant arguments alone
-            // require ..." exceptions instead of letting them go through the normal
-            // per-row splitting path.
-            if (row_count == 0)
-                continue;
             // Declared Nullable(String)/Nullable(Array)/Nullable(Tuple) arguments carry a
             // real ColumnNullable at runtime; unwrap it so the String/Array/Tuple branches
             // below actually match instead of silently falling to the flat 256-byte guess,
@@ -1047,9 +1040,22 @@ private:
                 is_col_nullable = true;
             }
             size_t null_map_bytes = is_col_nullable ? row_count : 0;
+            // row_count == 0 is not just "no data": both call sites above also call this
+            // function with row_count = 0 specifically to get the fixed reservation that
+            // applies to every batch regardless of its size — the per-batch structural
+            // overhead each argument's own wire encoding always carries (a lone sentinel
+            // offset entry, a LowCardinality/Variant header), not its real content, which
+            // scales with the actual number of rows in a given batch and is covered
+            // separately by the per-row loop (estimateRowSerializedSize) and the whole-batch
+            // check (row_count = input_rows_count) above. Getting this wrong in either
+            // direction is a real bug: charging real content here (proportional to the
+            // column's actual size, not row_count) turns ordinary non-const arguments into
+            // false "preserved constant arguments alone require ..." exceptions; omitting the
+            // structural overhead entirely (e.g. Variant's `4 + K * (4 + 40)` header) lets
+            // running_bytes under-count and send an oversized batch unsplit.
             if (const auto * s = typeid_cast<const ColumnString *>(col))
             {
-                size_t bytes = s->getChars().size(); // raw bytes including null terminators
+                size_t bytes = row_count == 0 ? 0 : s->getChars().size(); // raw bytes including null terminators
                 // Wire offsets[row_count+1] (uint64) accompany every non-const String column,
                 // whether it started that way or was just materialized from a ColumnConst.
                 size_t offset_bytes = (row_count + 1) * sizeof(uint64_t);
@@ -1061,13 +1067,16 @@ private:
                 // complexDataSize matches the exact COL_COMPLEX byte layout (uint64 offsets +
                 // nested payload); a flat 256-byte guess badly undercounts e.g. an Array(UInt64)
                 // row with thousands of elements, letting the splitter miss a needed split.
-                total += (materialized_const
+                // At row_count == 0, complexDataSize's nested recursion still reads the real
+                // (non-row-scaled) element count, so charge just the outer sentinel offset
+                // entry instead of calling into it.
+                total += (row_count == 0 ? sizeof(uint64_t) : (materialized_const
                     ? ColumnarV1::complexDataSize(*col, 1) * row_count
-                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count))) + null_map_bytes;
+                    : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count)))) + null_map_bytes;
             else if (const auto * map_col = typeid_cast<const ColumnMap *>(col))
-                total += (materialized_const
+                total += (row_count == 0 ? sizeof(uint64_t) : (materialized_const
                     ? ColumnarV1::complexDataSize(map_col->getNestedColumn(), 1) * row_count
-                    : ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count))) + null_map_bytes;
+                    : ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count)))) + null_map_bytes;
             else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
                 total += estimateLowCardTotalBytes(*lc_col, row_count, materialized_const) + null_map_bytes;
             else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
@@ -1133,8 +1142,14 @@ private:
     /// exact layout in O(1) instead of falling back to a flat per-row guess.
     static size_t estimateLowCardTotalBytes(const ColumnLowCardinality & lc, size_t row_count, bool materialized_const)
     {
-        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
         constexpr size_t header_bytes = 4 + 4 + 40; // dict_row_count + index_elem_width/pad + embedded ColDescriptor
+        // header_bytes is a fixed per-column structural cost present on the wire regardless of
+        // how many rows a given batch carries (see the matching comment in
+        // estimateTotalSerializedSize above) — a row_count == 0 reservation call must still
+        // charge it, but must not charge the dictionary's real (non-row-scaled) data.
+        if (row_count == 0)
+            return header_bytes;
+        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
         if (materialized_const)
             // A materializing format expands the single constant value row_count times; the
             // dictionary then holds just that one distinct value, and the index array is
@@ -1148,9 +1163,19 @@ private:
     static size_t estimateVariantTotalBytes(const ColumnVariant & var, size_t row_count, bool materialized_const)
     {
         size_t num_variants = var.getNumVariants();
+        // num_variants is every declared alternative; the wire header only counts non-empty
+        // ones (k <= num_variants, see the COL_VARIANT writer in ColumnarV1Wire.h), so this is
+        // a safe upper bound rather than an exact figure.
         size_t header_bytes = 4 + num_variants * (4 + 40); // sub_rows + embedded ColDescriptor per alternative
+        // Fixed per-column structural cost, present on the wire regardless of row count (see
+        // the matching comment in estimateTotalSerializedSize above); must still be charged at
+        // row_count == 0, but not the real (non-row-scaled) per-alternative data.
+        if (row_count == 0)
+            return header_bytes;
         if (materialized_const)
-            return 1 + 4 + estimateVariantRowBytes(var, 0) * row_count + header_bytes;
+            // Each of the row_count materialized rows needs its own discriminator + row-offset
+            // + payload (estimateVariantRowBytes already includes all three per row).
+            return estimateVariantRowBytes(var, 0) * row_count + header_bytes;
         size_t sub_bytes = 0;
         for (size_t local = 0; local < num_variants; ++local)
         {
@@ -1162,15 +1187,18 @@ private:
     }
 
     /// Precise per-row Variant cost: locate the row's active alternative and size just that
-    /// one value, rather than the flat 256-byte guess.
+    /// one value, rather than the flat 256-byte guess. Every row unconditionally carries a
+    /// 1-byte discriminator and a 4-byte row-offset entry on the wire (see the COL_VARIANT
+    /// writer in ColumnarV1Wire.h), even a null row, so those are never skipped.
     static size_t estimateVariantRowBytes(const ColumnVariant & var, size_t row_index)
     {
+        constexpr size_t control_bytes = 1 + 4; // discriminator + row-offset entry
         auto global_discr = var.globalDiscriminatorAt(row_index);
         if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
-            return 0;
+            return control_bytes;
         const IColumn & sub = var.getVariantByGlobalDiscriminator(global_discr);
         size_t sub_row = var.getOffsets()[row_index];
-        return estimateComplexRowBytes(sub, sub_row);
+        return control_bytes + estimateComplexRowBytes(sub, sub_row);
     }
 
     /// Estimate the serialized byte size of a single row across all argument columns.
