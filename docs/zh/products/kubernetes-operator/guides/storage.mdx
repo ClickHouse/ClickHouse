@@ -1,0 +1,181 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: 存储与卷
+keywords: ['kubernetes', '存储', '卷', 'pvc', 'jbod', 'disks']
+description: '本指南介绍 operator 如何为 ClickHouse 集群配置持久存储，包括主数据卷、多磁盘（JBOD）布局中的额外磁盘、容量扩展，以及集群创建后哪些内容可以更改、哪些不能更改。'
+doc_type: 'guide'
+---
+
+本指南介绍 operator 如何为
+`ClickHouseCluster` 配置持久存储：包括主数据卷、在多磁盘 (JBOD) 布局中挂载额外磁盘、扩展容量，以及集群创建后哪些内容可以更改、哪些不能更改的规则。
+
+如需查看按字段划分的参考信息，请参阅
+[Configuration → Storage configuration](/zh/products/kubernetes-operator/guides/configuration#storage-configuration)
+和 [API 参考文档](/zh/products/kubernetes-operator/reference/api-reference)。
+
+<div id="primary-data-volume">
+  ## 主数据卷
+</div>
+
+`spec.dataVolumeClaimSpec` 是标准的 Kubernetes `PersistentVolumeClaimSpec`。
+Operator 会将其转换为 StatefulSet 的 `volumeClaimTemplate`，因此 StatefulSet
+控制器会为每个副本创建并保留一个 PersistentVolumeClaim，并将其挂载到
+ClickHouse 数据路径 `/var/lib/clickhouse`。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+* 省略 `accessModes` 时，operator 会默认将其设置为 `ReadWriteOnce`。
+* 删除 cluster 时，每个副本的 PVC 都会被保留，因此即使删除后重新创建 Custom Resource，数据也仍然存在。
+* `KeeperCluster` 上也有同样的字段，行为也完全一致。
+
+<div id="ephemeral-storage">
+  ## 在没有持久数据卷的情况下运行
+</div>
+
+`dataVolumeClaimSpec` 是可选的。如果省略它，并且未在数据路径挂载您自己的卷，
+ClickHouse 会写入容器的临时文件系统，准入 webhook 也会返回一条警告，提示如果集群重启，数据可能会丢失。
+
+这仅适用于一次性或测试集群。若要提供您自己的存储来替代 `dataVolumeClaimSpec`
+—— 例如 `emptyDir` 或预置卷 —— 请通过 `spec.podTemplate.volumes` 定义它，并使用
+`spec.containerTemplate.volumeMounts` 将其挂载到 `/var/lib/clickhouse`。
+
+<Note>
+  `dataVolumeClaimSpec` 与数据路径上的自定义卷互斥。
+  如果设置了 `dataVolumeClaimSpec`，则在 `/var/lib/clickhouse`
+  挂载自定义卷会被拒绝。保留卷名称 `clickhouse-storage-volume`、
+  `clickhouse-server-tls-volume` 和 `clickhouse-server-custom-ca-volume` 不能在
+  `podTemplate.volumes` 中使用。
+</Note>
+
+<div id="expanding-storage">
+  ## 扩展存储
+</div>
+
+要扩容卷，请增大 `resources.requests.storage` 并应用更改。
+operator 会就地更新现有的 PVC。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+  只有在底层 StorageClass 设置了
+  `allowVolumeExpansion: true` 时，才能进行扩容。Kubernetes 不支持缩小 PVC，因此
+  新容量必须大于或等于当前容量。
+</Note>
+
+<div id="multi-disk-jbod">
+  ## 多磁盘 (JBOD) 存储
+</div>
+
+`spec.additionalVolumeClaimTemplates` 会在主 `dataVolumeClaimSpec` 的基础上，为每个 ClickHouse
+副本挂载额外磁盘。每个条目都是一个具名 PVC
+模板——即一个 `metadata.name` 加上一个 PVC `spec`——其协调方式与
+主数据磁盘完全相同，因此 StatefulSet 控制器会为每个
+副本创建并保留一个名为 `<name>-<statefulset>-0` 的 PVC。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+operator 会将每个附加卷挂载到 `/var/lib/clickhouse/disks/<name>`
+，并且**会为你自动生成 ClickHouse 的 `storage_configuration`**——你无需手动编写
+它。它会注册每个附加磁盘，并将其添加到内置的 `default`
+存储策略中。
+
+主数据磁盘 (`default`) 和所有附加磁盘共同对应 `default` 策略中的同一个卷，
+因此 ClickHouse 会以轮询方式将新的数据分区片段分布到这些磁盘上。
+可用容量等于所有磁盘容量之和，而所有未单独设置 `storage_policy` 的表
+——包括 `system.*` 表——都会使用这一组合。
+
+<Note>
+  挂载路径会原样保留模板名称，但 `storage_configuration` 中的磁盘标识符
+  会将连字符替换为下划线。名为
+  `cold-disk` 的模板会挂载到 `/var/lib/clickhouse/disks/cold-disk`，并在
+  生成的配置中显示为 `cold_disk`。
+</Note>
+
+<div id="custom-storage-policies">
+  ## 自定义存储策略
+</div>
+
+对于上面的 JBOD 布局，你**不**需要 `extraConfig`——operator 会自动生成
+`default` 策略。只有当你需要生成的默认策略之外的存储策略时，才使用 `spec.settings.extraConfig`，例如带有 `move_factor` 和 `prefer_not_to_merge` 的分层冷热策略，或 S3 支持的 disk。
+你在这里添加的配置会合并到生成的 `storage_configuration` 之上。
+
+有关这些策略字段，请参阅
+[ClickHouse 存储文档](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)。
+
+<div id="immutability">
+  ## 创建后不可更改的内容
+</div>
+
+集群一旦创建，存储布局基本就固定了。准入 webhook 会拒绝
+会导致 PersistentVolumeClaims 成为孤立对象或重新绑定的更新：
+
+* `dataVolumeClaimSpec` 的存在与否是不可变的——对于创建时未配置数据
+  卷的集群，你不能**添加**数据卷；对于创建时已配置数据卷的集群，你也不能**移除**它。
+* `additionalVolumeClaimTemplates` 的集合是固定的——创建后你不能**添加**、
+  **移除**或**重命名**其中的条目。
+* 允许扩展现有条目的 `resources.requests.storage` (前提是
+  StorageClass 支持，参见[扩展存储](#expanding-storage)) 。
+
+<div id="validation-reference">
+  ## 校验参考
+</div>
+
+| 条件                                                             | 结果                          |
+| -------------------------------------------------------------- | --------------------------- |
+| 未设置 `dataVolumeClaimSpec`，且 `/var/lib/clickhouse` 下也没有自定义卷     | 警告 — 重启时可能会导致数据丢失           |
+| 在 `/var/lib/clickhouse` 挂载了自定义卷，同时又设置了 `dataVolumeClaimSpec`   | 拒绝                          |
+| 设置了 `additionalVolumeClaimTemplates`，但缺少 `dataVolumeClaimSpec` | 拒绝                          |
+| 附加磁盘命名为 `default`                                              | 拒绝 — 该名称被 ClickHouse 默认磁盘保留 |
+| 附加磁盘命名为 `clickhouse-storage-volume`                            | 拒绝 — 与主数据卷名称冲突              |
+| 附加磁盘名称重复                                                       | 拒绝                          |
+| 名称不匹配 `^[a-z]([-a-z0-9]*[a-z0-9])?$` 或长度超过 63 个字符              | 被 CRD schema 拒绝             |
+| 创建后添加或删除 `dataVolumeClaimSpec`                                 | 拒绝                          |
+| 创建后添加、删除或重命名 `additionalVolumeClaimTemplates`                  | 拒绝                          |
+| 在 `podTemplate.volumes` 中使用保留卷名称                               | 拒绝                          |
+
+<div id="related-guides">
+  ## 相关指南
+</div>
+
+* [配置](/zh/products/kubernetes-operator/guides/configuration) — 完整的字段参考，包括 `extraConfig`。
+* [集群扩缩容](/zh/products/kubernetes-operator/guides/scaling) — 介绍如何添加和移除副本与分片。

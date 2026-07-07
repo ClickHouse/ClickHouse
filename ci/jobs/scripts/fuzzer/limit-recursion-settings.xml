@@ -1,0 +1,52 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <!--
+                    Prevent pathologically slow/hung queries built from deeply nested
+                    expressions (e.g. `SELECT formatQuery($$SELECT [[[[...20000...]]]]$$)`).
+                    Bound the parser/AST depth and size settings to [1, default] so neither
+                    the query fuzzer nor a test can raise them to values that build huge,
+                    slow-to-parse/format queries. The `<min>1</min>` matters: for all of these
+                    a value of `0` means "unlimited" and disables the guard, so a `<max>` alone
+                    would still let `SET ... = 0` remove the safeguard. Lowering to any value
+                    >= 1 is still allowed.
+
+                    Installed by both the AST fuzzer and the stress test, since the stress
+                    test ignores `no-*` build tags and runs the fuzzer over every query.
+
+                    `max_parser_backtracks` is additionally pinned on the client command line
+                    (run-fuzzer.sh, stress.py): its pre-24.3 default is 0, so a client
+                    `compatibility=...` reverts it to 0 and sends that to the server, which a
+                    value in this profile cannot prevent (the client value wins).
+                -->
+                <max_ast_depth>
+                    <min>1</min>
+                    <max>1000</max>
+                </max_ast_depth>
+                <max_parser_depth>
+                    <min>1</min>
+                    <max>1000</max>
+                </max_parser_depth>
+                <max_parser_backtracks>
+                    <min>1</min>
+                    <max>1000000</max>
+                </max_parser_backtracks>
+                <max_ast_elements>
+                    <min>1</min>
+                    <max>50000</max>
+                </max_ast_elements>
+                <max_expanded_ast_elements>
+                    <min>1</min>
+                    <max>500000</max>
+                </max_expanded_ast_elements>
+            </constraints>
+
+            <!-- Server-side backstop: keeps max_parser_backtracks `changed` so a server-side
+                 `SET compatibility=...` can't revert it to 0. The client-option compatibility
+                 path is handled by the command-line pin in run-fuzzer.sh / stress.py, which
+                 overrides this value anyway. -->
+            <max_parser_backtracks>1000000</max_parser_backtracks>
+        </default>
+    </profiles>
+</clickhouse>

@@ -1,0 +1,187 @@
+---
+description: 'リモートの MySQL サーバー上のデータベースに接続し、ClickHouse と MySQL の間でデータをやり取りするための
+  `INSERT` および `SELECT` クエリを実行できます。'
+sidebarTitle: 'MySQL'
+slug: /engines/database-engines/mysql
+title: 'MySQL'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="mysql-database-engine">
+  # MySQL データベースエンジン
+</div>
+
+<CloudNotSupportedBadge />
+
+リモートの MySQL サーバー上のデータベースに接続し、ClickHouse と MySQL の間でデータをやり取りするための `INSERT` および `SELECT` クエリを実行できます。
+
+`MySQL` データベースエンジンはクエリを MySQL サーバー向けに変換するため、`SHOW TABLES` や `SHOW CREATE TABLE` などの操作を実行できます。
+
+次のクエリは実行できません。
+
+* `RENAME`
+* `CREATE TABLE`
+* `ALTER`
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
+[SETTINGS enable_compression=0]
+```
+
+**エンジンパラメータ**
+
+* `host:port` — MySQL サーバーのアドレス。
+* `database` — リモートデータベースの名前。
+* `user` — MySQL のユーザー名。
+* `password` — ユーザーのパスワード。
+
+**設定**
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+MySQLプロトコルの接続で zlib 圧縮を有効にします。`1` に設定すると、ClickHouse は MySQLサーバーに対してプロトコルレベルの圧縮を要求します。
+
+デフォルト値: `0`。
+
+例:
+
+```sql
+CREATE DATABASE mysql_db
+ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
+SETTINGS enable_compression = 1;
+```
+
+<div id="data_types-support">
+  ## 対応するデータ型
+</div>
+
+| MySQL                            | ClickHouse                                       |
+| -------------------------------- | ------------------------------------------------ |
+| UNSIGNED TINYINT                 | [UInt8](/ja/reference/data-types/int-uint)          |
+| TINYINT                          | [Int8](/ja/reference/data-types/int-uint)           |
+| UNSIGNED SMALLINT                | [UInt16](/ja/reference/data-types/int-uint)         |
+| SMALLINT                         | [Int16](/ja/reference/data-types/int-uint)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](/ja/reference/data-types/int-uint)         |
+| INT, MEDIUMINT                   | [Int32](/ja/reference/data-types/int-uint)          |
+| UNSIGNED BIGINT                  | [UInt64](/ja/reference/data-types/int-uint)         |
+| BIGINT                           | [Int64](/ja/reference/data-types/int-uint)          |
+| FLOAT                            | [Float32](/ja/reference/data-types/float)           |
+| DOUBLE                           | [Float64](/ja/reference/data-types/float)           |
+| DATE                             | [Date](/ja/reference/data-types/date)               |
+| DATETIME, TIMESTAMP              | [DateTime](/ja/reference/data-types/datetime)       |
+| BINARY                           | [FixedString](/ja/reference/data-types/fixedstring) |
+
+それ以外の MySQL データ型はすべて [String](/ja/reference/data-types/string) に変換されます。
+
+[Nullable](/ja/reference/data-types/nullable) もサポートされています。
+
+<div id="global-variables-support">
+  ## グローバル変数のサポート
+</div>
+
+互換性を高めるため、MySQL スタイルで `@@identifier` としてグローバル変数を参照できます。
+
+サポートされている変数は次のとおりです。
+
+* `version`
+* `max_allowed_packet`
+
+<Note>
+  現時点では、これらの変数はダミーであり、実際には何にも対応していません。
+</Note>
+
+例:
+
+```sql
+SELECT @@version;
+```
+
+<div id="examples-of-use">
+  ## 使用例
+</div>
+
+MySQLのテーブル:
+
+```text
+mysql> USE test;
+Database changed
+
+mysql> CREATE TABLE `mysql_table` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into mysql_table (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from mysql_table;
++------+-----+
+| int_id | value |
++------+-----+
+|      1 |     2 |
++------+-----+
+1 row in set (0,00 sec)
+```
+
+MySQLサーバーとデータをやり取りする ClickHouse 内のデータベース:
+
+```sql
+CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password') SETTINGS read_write_timeout=10000, connect_timeout=100;
+```
+
+```sql
+SHOW DATABASES
+```
+
+```text
+┌─name─────┐
+│ default  │
+│ mysql_db │
+│ system   │
+└──────────┘
+```
+
+```sql
+SHOW TABLES FROM mysql_db
+```
+
+```text
+┌─name─────────┐
+│  mysql_table │
+└──────────────┘
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+```sql
+INSERT INTO mysql_db.mysql_table VALUES (3,4)
+```
+
+```sql
+SELECT * FROM mysql_db.mysql_table
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```

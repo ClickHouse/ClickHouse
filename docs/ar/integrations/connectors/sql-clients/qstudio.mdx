@@ -1,0 +1,80 @@
+---
+slug: /integrations/qstudio
+sidebarTitle: 'QStudio'
+description: 'QStudio أداة SQL مجانية.'
+title: 'توصيل QStudio بـ ClickHouse'
+doc_type: 'guide'
+keywords: ['qstudio', 'عميل SQL', 'أداة قاعدة بيانات', 'أداة استعلام', 'بيئة تطوير متكاملة']
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+QStudio هي واجهة رسومية مجانية لـ SQL، تتيح تشغيل نصوص SQL البرمجية، واستعراض الجداول بسهولة، وإنشاء المخططات وتصدير النتائج. وهي تعمل على جميع أنظمة التشغيل ومع أي قاعدة بيانات.
+
+يتصل QStudio بـ ClickHouse باستخدام JDBC.
+
+<div id="1-gather-your-clickhouse-details">
+  ## 1. اجمع معلومات ClickHouse الخاصة بك
+</div>
+
+يستخدم QStudio بروتوكول JDBC عبر HTTP(S) للاتصال بـ ClickHouse؛ وتحتاج إلى ما يلي:
+
+* نقطة النهاية
+* رقم المنفذ
+* اسم المستخدم
+* كلمة المرور
+
+<ConnectionDetails />
+
+<div id="2-download-qstudio">
+  ## 2. تنزيل QStudio
+</div>
+
+يتوفر QStudio على الرابط https://www.timestored.com/qstudio/download/
+
+<div id="3-add-a-database">
+  ## 3. إضافة قاعدة بيانات
+</div>
+
+* عند فتح QStudio لأول مرة، انقر على خيارات القائمة **Server-&gt;Add Server** أو على زر إضافة خادم في شريط الأدوات.
+* ثم أدخِل التفاصيل التالية:
+
+<Image img="/images/integrations/sql-clients/qstudio-add-connection.webp" size="lg" border alt="شاشة إعداد اتصال قاعدة بيانات QStudio تعرض إعدادات اتصال ClickHouse" />
+
+1. نوع الخادم: Clickhouse.com
+2. ملاحظة: في حقل Host، يجب أن تُدرج https://
+   Host: https://abc.def.clickhouse.cloud
+   Port: 8443
+3. اسم المستخدم: default
+   كلمة المرور: `XXXXXXXXXXX`
+4. انقر على Add
+
+إذا اكتشف QStudio أن برنامج تشغيل ClickHouse JDBC غير مثبّت لديك، فسيعرض تنزيله لك:
+
+<div id="4-query-clickhouse">
+  ## 4. تنفيذ استعلامات على ClickHouse
+</div>
+
+* افتح محرر الاستعلامات ونفّذ استعلامًا. يمكنك تنفيذ الاستعلامات باستخدام:
+
+* Ctrl + e - ينفّذ النص المحدد
+
+* Ctrl + Enter - ينفّذ السطر الحالي
+
+* مثال على استعلام:
+
+<Image img="/images/integrations/sql-clients/qstudio-running-query.webp" size="lg" border alt="واجهة QStudio تعرض تنفيذ استعلام SQL نموذجي على قاعدة بيانات ClickHouse" />
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+اطّلع على [QStudio](https://www.timestored.com/qstudio) للتعرّف على إمكانات QStudio، وعلى [وثائق ClickHouse](/ar/) للتعرّف على إمكانات ClickHouse.

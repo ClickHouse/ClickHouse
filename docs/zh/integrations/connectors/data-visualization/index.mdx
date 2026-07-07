@@ -1,0 +1,78 @@
+---
+sidebarTitle: '概览'
+keywords: ['ClickHouse', 'connect', 'Luzmo', 'Explo', 'Fabi.ai', 'Tableau', 'Grafana', 'Metabase', 'Mitzu', 'superset', 'Databrain','Deepnote', 'Draxlr', 'RocketBI', 'Omni', 'Querio', 'bi', 'visualization', 'tool', 'lightdash']
+title: '在 ClickHouse 中可视化数据'
+slug: /integrations/data-visualization
+description: '了解如何在 ClickHouse 中可视化数据'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://player.vimeo.com/video/754460217?h=3dcae2e1ca" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen />
+  </Frame>
+</div>
+
+<br />
+
+现在，数据已经存入 ClickHouse，接下来就该进行分析了，而这通常需要借助 BI 工具来构建可视化。许多常用的 BI 和数据可视化工具都可以连接到 ClickHouse。其中一些可直接连接 ClickHouse，另一些则需要安装连接器。我们已为其中一些工具提供了相关文档，包括：
+
+* [Apache Superset](/zh/integrations/connectors/data-visualization/superset-and-clickhouse)
+* [Astrato](/zh/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse)
+* [Chartbrew](/zh/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse)
+* [Databrain](/zh/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse)
+* [Deepnote](/zh/integrations/connectors/data-visualization/community-integrations/deepnote)
+* [Dot](/zh/integrations/connectors/data-visualization/community-integrations/dot-and-clickhouse)
+* [Draxlr](/zh/integrations/connectors/data-visualization/community-integrations/draxlr-and-clickhouse)
+* [Embeddable](/zh/integrations/connectors/data-visualization/community-integrations/embeddable-and-clickhouse)
+* [Explo](/zh/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse)
+* [Fabi.ai](/zh/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse)
+* [Grafana](/zh/integrations/connectors/data-visualization/grafana/index)
+* [Lightdash](/zh/integrations/connectors/data-visualization/lightdash-and-clickhouse)
+* [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse)
+* [Luzmo](/zh/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse)
+* [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse)
+* [Mitzu](/zh/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse)
+* [Omni](/zh/integrations/connectors/data-visualization/omni-and-clickhouse)
+* [Querio](/zh/integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse)
+* [Rill](https://docs.rilldata.com/reference/olap-engines/clickhouse)
+* [Rocket BI](/zh/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse)
+* [Tableau](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)
+* [Zing Data](/zh/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse)
+* [Holistics BI](/zh/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse)
+
+<div id="clickhouse-cloud-compatibility-with-data-visualization-tools">
+  ## ClickHouse Cloud 与数据可视化工具的兼容性
+</div>
+
+| 工具                                                                                                       | 支持方式             | 已测试 | 已文档化 | 备注                                                                                                                       |
+| -------------------------------------------------------------------------------------------------------- | ---------------- | --- | ---- | ------------------------------------------------------------------------------------------------------------------------ |
+| [Apache Superset](/zh/integrations/connectors/data-visualization/superset-and-clickhouse)                   | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Astrato](/zh/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse)     | 原生连接器            | ✅   | ✅    | 原生支持下推 SQL (仅限 Direct Query 模式) 。                                                                                        |
+| [AWS QuickSight](/zh/integrations/connectors/data-visualization/quicksight-and-clickhouse)                  | MySQL 接口         | ✅   | ✅    | 可以使用，但存在一些限制；详情请参阅[文档](/zh/integrations/connectors/data-visualization/quicksight-and-clickhouse)                            |
+| [Chartbrew](/zh/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse) | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Databrain](/zh/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse) | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Deepnote](/zh/integrations/connectors/data-visualization/community-integrations/deepnote)                  | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Dot](/zh/integrations/connectors/data-visualization/community-integrations/dot-and-clickhouse)             | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Explo](/zh/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse)         | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Fabi.ai](/zh/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse)        | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Grafana](/zh/integrations/connectors/data-visualization/grafana/index)                                     | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Hashboard](/zh/integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse) | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Holistics](/zh/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse) | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Lightdash](/zh/integrations/connectors/data-visualization/lightdash-and-clickhouse)                        | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+|                                                                                                          |                  |     |      |                                                                                                                          |
+| [Looker](/zh/integrations/connectors/data-visualization/looker-and-clickhouse)                              | 原生连接器            | ✅   | ✅    | 可以使用，但存在一些限制，详见[文档](/zh/integrations/connectors/data-visualization/looker-and-clickhouse)                                   |
+| Looker                                                                                                   | MySQL 接口         | 🚧  | ❌    |                                                                                                                          |
+| [Luzmo](/zh/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse)         | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Looker Studio](/zh/integrations/connectors/data-visualization/looker-studio-and-clickhouse)                | MySQL 接口         | ✅   | ✅    |                                                                                                                          |
+| [Metabase](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse)                          | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Mitzu](/zh/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse)         | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Omni](/zh/integrations/connectors/data-visualization/omni-and-clickhouse)                                  | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Power BI Desktop](/zh/integrations/connectors/data-visualization/powerbi-and-clickhouse)                   | ClickHouse 官方连接器 | ✅   | ✅    | 通过 ODBC，支持 Direct Query 模式                                                                                               |
+| [Power BI Service](/zh/integrations/connectors/data-visualization/powerbi-and-clickhouse#power-bi-service)  | ClickHouse 官方连接器 | ✅   | ✅    | 需要配置 [Microsoft Data Gateway](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-custom-connectors) |
+| [Querio](/zh/integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse)       | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Rill](https://docs.rilldata.com/reference/olap-engines/clickhouse)                                      | 原生连接器            | ✅   | ✅    |                                                                                                                          |
+| [Rocket BI](/zh/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse)  | 原生连接器            | ✅   | ❌    |                                                                                                                          |
+| [Tableau Desktop](/zh/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)            | ClickHouse 官方连接器 | ✅   | ✅    |                                                                                                                          |
+| [Tableau Online](/zh/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)      | MySQL interface  | ✅   | ✅    | 可用，但有一些限制；详情请参阅[文档](/zh/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)                   |
+| [Zing Data](/zh/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse)  | 原生连接器            | ✅   | ✅    |                                                                                                                          |

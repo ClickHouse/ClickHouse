@@ -1,0 +1,71 @@
+---
+title: 'BYOC FAQ'
+slug: /cloud/reference/byoc/reference/faq
+sidebarTitle: 'FAQ'
+keywords: ['BYOC', '云', '自备 Cloud', 'FAQ']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: '参考'
+---
+
+<div id="faq">
+  ## FAQ
+</div>
+
+<div id="compute">
+  ### 计算资源
+</div>
+
+<Accordion title="我可以在这个 EKS 集群中创建多个服务吗？">
+  可以。对于每个 AWS 账户与区域组合，基础设施只需预配一次。
+</Accordion>
+
+<Accordion title="BYOC 支持哪些区域？">
+  文档中 [支持的区域](/zh/products/cloud/reference/supported-regions) 列出的所有**公共区域**都可用于 BYOC 部署。
+</Accordion>
+
+<Accordion title="会有额外的资源开销吗？运行 ClickHouse 实例之外的服务需要哪些资源？">
+  除了 ClickHouse 实例本身 (ClickHouse 服务器和 ClickHouse Keeper) 之外，我们还会运行一些配套服务，例如 `clickhouse-operator`、`aws-cluster-autoscaler`、Istio 和监控栈。
+
+  这些共享组件的资源消耗相对稳定，不会随着 ClickHouse 服务的数量或规模而线性增长。粗略来说，在 AWS 上，我们通常会使用一个专用节点组，由大约四台 `4xlarge` EC2 实例来运行这些工作负载。
+</Accordion>
+
+<div id="network-and-security">
+  ### 网络与安全
+</div>
+
+<Accordion title="设置完成后，是否可以撤销安装期间配置的权限？">
+  目前还无法实现。
+</Accordion>
+
+<Accordion title="对于 ClickHouse 工程师出于故障排查需要访问客户基础设施这一情况，你们是否考虑过未来提供一些安全控制措施？">
+  是的。我们已将实现一种由客户控制的机制纳入路线图，届时客户可批准工程师访问集群。目前，工程师必须经过我们的内部处理流程，才能获得集群的即时访问权限。此过程会由我们的安全团队记录并审计。
+</Accordion>
+
+<Accordion title="创建的 VPC IP 地址范围有多大？">
+  默认情况下，我们的 BYOC VPC 使用 `10.0.0.0/16`。我们建议至少预留 /22，以满足未来可能的扩缩容需求；
+  但如果你希望限制地址范围，在预计最多只会使用 30 个服务器 pod (容器组) 的情况下，也可以使用 /23。
+</Accordion>
+
+<Accordion title="我可以决定维护频率吗？">
+  请联系支持团队安排维护窗口。更新频率至少为每周一次。
+</Accordion>
+
+<Accordion title="BYOC VPC 与 S3 之间的网络通信是如何工作的？">
+  你的 BYOC VPC 与 S3 之间的流量通过 AWS S3 API 使用 HTTPS (443 端口) 传输，用于表数据、备份和日志。使用 S3 VPC 端点时，这些流量会始终保留在 AWS 网络内部，不会经过公共互联网。
+</Accordion>
+
+<Accordion title="ClickHouse 集群内部通信使用哪些端口？">
+  客户 BYOC VPC 内部的 ClickHouse 集群通信使用：
+
+  * 9000 端口上的原生 ClickHouse 协议
+  * 8123/8443 端口上的 HTTP/HTTPS
+  * 9009 端口上的服务器间通信，用于复制和分布式查询
+</Accordion>
+
+<div id="uptime-sla">
+  ### 运行时间 SLA
+</div>
+
+<Accordion title="ClickHouse 是否为 BYOC 提供运行时间 SLA？">
+  不提供。由于数据平面托管在客户自己的云环境中，服务可用性取决于 ClickHouse 无法控制的资源。因此，ClickHouse 不为 BYOC 部署提供正式的运行时间 SLA。如有其他问题，请联系 support@clickhouse.com。
+</Accordion>

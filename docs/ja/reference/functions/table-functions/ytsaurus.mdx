@@ -1,0 +1,49 @@
+---
+description: 'テーブル関数を使用すると、YTsaurusクラスターからデータを読み取ることができます。'
+sidebarTitle: 'ytsaurus'
+slug: /sql-reference/table-functions/ytsaurus
+title: 'ytsaurus'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<div id="ytsaurus-table-function">
+  # ytsaurus テーブル関数
+</div>
+
+<ExperimentalBadge />
+
+テーブル関数を使用すると、YTsaurusクラスターからデータを読み取ることができます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+ytsaurus(http_proxy_url, cypress_path, oauth_token, format)
+```
+
+<Info>
+  これは実験的な機能であり、将来のリリースで後方互換性のない変更が加えられる可能性があります。
+  YTsaurus テーブル関数 を使用するには、
+  [allow&#95;experimental&#95;ytsaurus&#95;table&#95;function](/ja/reference/settings/session-settings#allow_experimental_ytsaurus_table_engine) 設定を有効にします。
+  `set allow_experimental_ytsaurus_table_function = 1` コマンドを実行します。
+</Info>
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `http_proxy_url` — YTsaurus の HTTP プロキシの URL。
+* `cypress_path` — データソースへの Cypress パス。
+* `oauth_token` — OAuth トークン。
+* `format` — データソースの[フォーマット](/ja/reference/formats/index)。
+
+**戻り値**
+
+YTsaurus クラスター内の指定した Cypress パスにあるデータを読み取るための、指定した構造を持つテーブル。
+
+**関連項目**
+
+* [YTsaurus エンジン](/ja/reference/engines/table-engines/integrations/ytsaurus)

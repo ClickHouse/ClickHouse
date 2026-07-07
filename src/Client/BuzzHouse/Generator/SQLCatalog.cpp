@@ -254,211 +254,287 @@ String SQLDatabase::getSparkCatalogName() const
     return (catalog == LakeCatalog::None && format == LakeFormat::DeltaLake) ? "spark_catalog" : getName();
 }
 
+bool TableEngineDescriptor::isMergeTreeFamily() const
+{
+    return value >= TableEngineValues::MergeTree && value <= TableEngineValues::GraphiteMergeTree;
+}
+
+bool TableEngineDescriptor::isLogFamily() const
+{
+    return value >= TableEngineValues::StripeLog && value <= TableEngineValues::TinyLog;
+}
+
+bool TableEngineDescriptor::isShared() const
+{
+    return option.has_value() && option.value() == TableEngineOption::TShared;
+}
+
+bool TableEngineDescriptor::isReplicated() const
+{
+    return option.has_value() && option.value() == TableEngineOption::TReplicated;
+}
+
+bool TableEngineDescriptor::supportsFinal() const
+{
+    return value >= TableEngineValues::ReplacingMergeTree && value <= TableEngineValues::GraphiteMergeTree;
+}
+
+bool TableEngineDescriptor::hasSignColumn() const
+{
+    return value >= TableEngineValues::CollapsingMergeTree && value <= TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool TableEngineDescriptor::hasVersionColumn() const
+{
+    return value == TableEngineValues::VersionedCollapsingMergeTree;
+}
+
+bool TableEngineDescriptor::areInsertsAppends() const
+{
+    return value == TableEngineValues::MergeTree || isLogFamily() || value == TableEngineValues::Memory || value == TableEngineValues::MySQL
+        || value == TableEngineValues::PostgreSQL || value == TableEngineValues::MaterializedPostgreSQL
+        || value == TableEngineValues::SQLite || value == TableEngineValues::MongoDB || value == TableEngineValues::Redis
+        || value == TableEngineValues::Hudi || (value >= TableEngineValues::DeltaLakeS3 && value <= TableEngineValues::DeltaLakeLocal)
+        || (value >= TableEngineValues::IcebergS3 && value <= TableEngineValues::IcebergLocal)
+        || (value >= TableEngineValues::PaimonS3 && value <= TableEngineValues::PaimonLocal) || value == TableEngineValues::Dictionary;
+}
+
 void SQLBase::setDeterministic(const FuzzConfig & fc, RandomGenerator & rg, SQLBase & b)
 {
-    b.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
-    b.random_engine = !b.is_deterministic && rg.nextMediumNumber() < 6;
+    b.engine.is_deterministic = rg.nextMediumNumber() <= fc.deterministic_prob;
+    b.random_engine = !b.engine.is_deterministic && rg.nextMediumNumber() < 6;
 }
 
-bool SQLBase::supportsFinal(const TableEngineValues teng)
+bool SQLBase::isDeterministic() const
 {
-    return teng >= TableEngineValues::ReplacingMergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return engine.isDeterministic() && (!subengine.has_value() || subengine->isDeterministic());
 }
 
-bool SQLBase::isMergeTreeFamily() const
+bool SQLBase::isMergeTreeFamily(const bool as_alias) const
 {
-    return teng >= TableEngineValues::MergeTree && teng <= TableEngineValues::GraphiteMergeTree;
+    return engine.isMergeTreeFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily());
 }
 
-bool SQLBase::isLogFamily() const
+bool SQLBase::isLogFamily(const bool as_alias) const
 {
-    return teng >= TableEngineValues::StripeLog && teng <= TableEngineValues::TinyLog;
+    return engine.isLogFamily() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isLogFamily());
 }
 
-bool SQLBase::isSharedMergeTree() const
+bool SQLBase::isSharedMergeTree(const bool as_alias) const
 {
-    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TShared;
+    return (isMergeTreeFamily() && engine.isShared())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isShared());
 }
 
-bool SQLBase::isReplicatedMergeTree() const
+bool SQLBase::isReplicatedMergeTree(const bool as_alias) const
 {
-    return isMergeTreeFamily() && toption.has_value() && toption.value() == TableEngineOption::TReplicated;
+    return (isMergeTreeFamily() && engine.isReplicated())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isMergeTreeFamily() && subengine->isReplicated());
 }
 
-bool SQLBase::isReplicatedOrSharedMergeTree() const
+bool SQLBase::isReplicatedOrSharedMergeTree(const bool as_alias) const
 {
-    return isReplicatedMergeTree() || isSharedMergeTree();
+    return isReplicatedMergeTree(as_alias) || isSharedMergeTree(as_alias);
 }
 
-bool SQLBase::isShared() const
+bool SQLBase::isShared(const bool as_alias) const
 {
-    return toption.has_value() && toption.value() == TableEngineOption::TShared;
+    return engine.isShared() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->isShared());
 }
 
-bool SQLBase::isFileEngine() const
+bool SQLBase::isFileEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::File;
+    return engine.value == TableEngineValues::File
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::File);
 }
 
-bool SQLBase::isJoinEngine() const
+bool SQLBase::isJoinEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Join;
+    return engine.value == TableEngineValues::Join
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Join);
 }
 
-bool SQLBase::isNullEngine() const
+bool SQLBase::isNullEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Null;
+    return engine.value == TableEngineValues::Null
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Null);
 }
 
-bool SQLBase::isSetEngine() const
+bool SQLBase::isSetEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Set;
+    return engine.value == TableEngineValues::Set
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Set);
 }
 
-bool SQLBase::isBufferEngine() const
+bool SQLBase::isBufferEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Buffer;
+    return engine.value == TableEngineValues::Buffer
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Buffer);
 }
 
-bool SQLBase::isRocksEngine() const
+bool SQLBase::isRocksEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::EmbeddedRocksDB;
+    return engine.value == TableEngineValues::EmbeddedRocksDB
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::EmbeddedRocksDB);
 }
 
-bool SQLBase::isMemoryEngine() const
+bool SQLBase::isMemoryEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Memory;
+    return engine.value == TableEngineValues::Memory
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Memory);
 }
 
-bool SQLBase::isMySQLEngine() const
+bool SQLBase::isMySQLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::MySQL || (isExternalDistributedEngine() && sub == TableEngineValues::MySQL);
+    return engine.value == TableEngineValues::MySQL
+        || (isExternalDistributedEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL)
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MySQL);
 }
 
-bool SQLBase::isPostgreSQLEngine() const
+bool SQLBase::isPostgreSQLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::PostgreSQL || teng == TableEngineValues::MaterializedPostgreSQL
-        || (isExternalDistributedEngine() && (sub == TableEngineValues::PostgreSQL || sub == TableEngineValues::MaterializedPostgreSQL));
+    return engine.value == TableEngineValues::PostgreSQL || engine.value == TableEngineValues::MaterializedPostgreSQL
+        || (isExternalDistributedEngine() && subengine.has_value()
+            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL))
+        || (as_alias && isAliasEngine() && subengine.has_value()
+            && (subengine->value == TableEngineValues::PostgreSQL || subengine->value == TableEngineValues::MaterializedPostgreSQL));
 }
 
-bool SQLBase::isSQLiteEngine() const
+bool SQLBase::isSQLiteEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::SQLite;
+    return engine.value == TableEngineValues::SQLite
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::SQLite);
 }
 
-bool SQLBase::isMongoDBEngine() const
+bool SQLBase::isMongoDBEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::MongoDB;
+    return engine.value == TableEngineValues::MongoDB
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MongoDB);
 }
 
-bool SQLBase::isRedisEngine() const
+bool SQLBase::isRedisEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Redis;
+    return engine.value == TableEngineValues::Redis
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Redis);
 }
 
-bool SQLBase::isS3Engine() const
+bool SQLBase::isS3Engine(const bool as_alias) const
 {
-    return teng == TableEngineValues::S3;
+    return engine.value == TableEngineValues::S3
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3);
 }
 
-bool SQLBase::isS3QueueEngine() const
+bool SQLBase::isS3QueueEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::S3Queue;
+    return engine.value == TableEngineValues::S3Queue
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::S3Queue);
 }
 
-bool SQLBase::isAnyS3Engine() const
+bool SQLBase::isAnyS3Engine(const bool as_alias) const
 {
-    return isS3Engine() || isS3QueueEngine();
+    return isS3Engine(as_alias) || isS3QueueEngine(as_alias);
 }
 
-bool SQLBase::isAzureEngine() const
+bool SQLBase::isAzureEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::AzureBlobStorage;
+    return engine.value == TableEngineValues::AzureBlobStorage
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureBlobStorage);
 }
 
-bool SQLBase::isAzureQueueEngine() const
+bool SQLBase::isAzureQueueEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::AzureQueue;
+    return engine.value == TableEngineValues::AzureQueue
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::AzureQueue);
 }
 
-bool SQLBase::isAnyAzureEngine() const
+bool SQLBase::isAnyAzureEngine(const bool as_alias) const
 {
-    return isAzureEngine() || isAzureQueueEngine();
+    return isAzureEngine(as_alias) || isAzureQueueEngine(as_alias);
 }
 
-bool SQLBase::isAnyQueueEngine() const
+bool SQLBase::isAnyQueueEngine(const bool as_alias) const
 {
-    return isS3QueueEngine() || isAzureQueueEngine();
+    return isS3QueueEngine(as_alias) || isAzureQueueEngine(as_alias);
 }
 
-bool SQLBase::isHudiEngine() const
+bool SQLBase::isHudiEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Hudi;
+    return engine.value == TableEngineValues::Hudi
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Hudi);
 }
 
-bool SQLBase::isDeltaLakeS3Engine() const
+bool SQLBase::isDeltaLakeS3Engine(const bool as_alias) const
 {
-    return teng == TableEngineValues::DeltaLakeS3;
+    return engine.value == TableEngineValues::DeltaLakeS3
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeS3);
 }
 
-bool SQLBase::isDeltaLakeAzureEngine() const
+bool SQLBase::isDeltaLakeAzureEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::DeltaLakeAzure;
+    return engine.value == TableEngineValues::DeltaLakeAzure
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeAzure);
 }
 
-bool SQLBase::isDeltaLakeLocalEngine() const
+bool SQLBase::isDeltaLakeLocalEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::DeltaLakeLocal;
+    return engine.value == TableEngineValues::DeltaLakeLocal
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::DeltaLakeLocal);
 }
 
-bool SQLBase::isAnyDeltaLakeEngine() const
+bool SQLBase::isAnyDeltaLakeEngine(const bool as_alias) const
 {
-    return teng >= TableEngineValues::DeltaLakeS3 && teng <= TableEngineValues::DeltaLakeLocal;
+    return isDeltaLakeS3Engine(as_alias) || isDeltaLakeAzureEngine(as_alias) || isDeltaLakeLocalEngine(as_alias);
 }
 
-bool SQLBase::isIcebergS3Engine() const
+bool SQLBase::isIcebergS3Engine(const bool as_alias) const
 {
-    return teng == TableEngineValues::IcebergS3;
+    return engine.value == TableEngineValues::IcebergS3
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergS3);
 }
 
-bool SQLBase::isIcebergAzureEngine() const
+bool SQLBase::isIcebergAzureEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::IcebergAzure;
+    return engine.value == TableEngineValues::IcebergAzure
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergAzure);
 }
 
-bool SQLBase::isIcebergLocalEngine() const
+bool SQLBase::isIcebergLocalEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::IcebergLocal;
+    return engine.value == TableEngineValues::IcebergLocal
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::IcebergLocal);
 }
 
-bool SQLBase::isAnyIcebergEngine() const
+bool SQLBase::isAnyIcebergEngine(const bool as_alias) const
 {
-    return teng >= TableEngineValues::IcebergS3 && teng <= TableEngineValues::IcebergLocal;
+    return isIcebergS3Engine(as_alias) || isIcebergAzureEngine(as_alias) || isIcebergLocalEngine(as_alias);
 }
 
-bool SQLBase::isPaimonS3Engine() const
+bool SQLBase::isPaimonS3Engine(const bool as_alias) const
 {
-    return teng == TableEngineValues::PaimonS3;
+    return engine.value == TableEngineValues::PaimonS3
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonS3);
 }
 
-bool SQLBase::isPaimonAzureEngine() const
+bool SQLBase::isPaimonAzureEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::PaimonAzure;
+    return engine.value == TableEngineValues::PaimonAzure
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonAzure);
 }
 
-bool SQLBase::isPaimonLocalEngine() const
+bool SQLBase::isPaimonLocalEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::PaimonLocal;
+    return engine.value == TableEngineValues::PaimonLocal
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::PaimonLocal);
 }
 
-bool SQLBase::isAnyPaimonEngine() const
+bool SQLBase::isAnyPaimonEngine(const bool as_alias) const
 {
-    return teng >= TableEngineValues::PaimonS3 && teng <= TableEngineValues::PaimonLocal;
+    return isPaimonS3Engine(as_alias) || isPaimonAzureEngine(as_alias) || isPaimonLocalEngine(as_alias);
 }
 
-bool SQLBase::isAnyLakeEngine() const
+bool SQLBase::isAnyLakeEngine(const bool as_alias) const
 {
-    return isAnyIcebergEngine() || isAnyDeltaLakeEngine() || isAnyPaimonEngine();
+    return isAnyIcebergEngine(as_alias) || isAnyDeltaLakeEngine(as_alias) || isAnyPaimonEngine(as_alias);
 }
 
 bool SQLBase::isOnS3() const
@@ -476,59 +552,70 @@ bool SQLBase::isOnLocal() const
     return isIcebergLocalEngine() || isDeltaLakeLocalEngine() || isPaimonLocalEngine();
 }
 
-bool SQLBase::isMergeEngine() const
+bool SQLBase::isMergeEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Merge;
+    return engine.value == TableEngineValues::Merge
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Merge);
 }
 
-bool SQLBase::isDistributedEngine() const
+bool SQLBase::isDistributedEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Distributed;
+    return engine.value == TableEngineValues::Distributed
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Distributed);
 }
 
-bool SQLBase::isDictionaryEngine() const
+bool SQLBase::isDictionaryEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Dictionary;
+    return engine.value == TableEngineValues::Dictionary
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Dictionary);
 }
 
-bool SQLBase::isGenerateRandomEngine() const
+bool SQLBase::isGenerateRandomEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::GenerateRandom;
+    return engine.value == TableEngineValues::GenerateRandom
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::GenerateRandom);
 }
 
-bool SQLBase::isURLEngine() const
+bool SQLBase::isURLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::URL;
+    return engine.value == TableEngineValues::URL
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::URL);
 }
 
-bool SQLBase::isKeeperMapEngine() const
+bool SQLBase::isKeeperMapEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::KeeperMap;
+    return engine.value == TableEngineValues::KeeperMap
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::KeeperMap);
 }
 
-bool SQLBase::isExternalDistributedEngine() const
+bool SQLBase::isExternalDistributedEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::ExternalDistributed;
+    return engine.value == TableEngineValues::ExternalDistributed
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ExternalDistributed);
 }
 
-bool SQLBase::isMaterializedPostgreSQLEngine() const
+bool SQLBase::isMaterializedPostgreSQLEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::MaterializedPostgreSQL;
+    return engine.value == TableEngineValues::MaterializedPostgreSQL
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::MaterializedPostgreSQL);
 }
 
-bool SQLBase::isArrowFlightEngine() const
+bool SQLBase::isArrowFlightEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::ArrowFlight;
+    return engine.value == TableEngineValues::ArrowFlight
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::ArrowFlight);
 }
 
-bool SQLBase::isAliasEngine() const
+bool SQLBase::isAliasEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Alias;
+    return engine.value == TableEngineValues::Alias
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Alias);
 }
 
-bool SQLBase::isKafkaEngine() const
+bool SQLBase::isKafkaEngine(const bool as_alias) const
 {
-    return teng == TableEngineValues::Kafka;
+    return engine.value == TableEngineValues::Kafka
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->value == TableEngineValues::Kafka);
 }
 
 bool SQLBase::isNotTruncableEngine() const
@@ -552,7 +639,7 @@ bool SQLBase::isAnotherRelationalDatabaseEngine() const
 
 bool SQLBase::hasDatabasePeer() const
 {
-    chassert(is_deterministic || peer_table == PeerTableDatabase::None);
+    chassert(isDeterministic() || peer_table == PeerTableDatabase::None);
     return peer_table != PeerTableDatabase::None;
 }
 
@@ -976,25 +1063,26 @@ size_t SQLTable::numberOfInsertableColumns(const bool all) const
     return res;
 }
 
-bool SQLTable::supportsFinal() const
+bool SQLTable::supportsFinal(const bool as_alias) const
 {
-    return SQLBase::supportsFinal(teng) || isBufferEngine() || (isDistributedEngine() && SQLBase::supportsFinal(sub));
+    return engine.supportsFinal() || isBufferEngine() || (isDistributedEngine() && subengine.has_value() && subengine->supportsFinal())
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->supportsFinal());
 }
 
-bool SQLTable::hasSignColumn() const
+bool SQLTable::hasSignColumn(const bool as_alias) const
 {
-    return teng >= TableEngineValues::CollapsingMergeTree && teng <= TableEngineValues::VersionedCollapsingMergeTree;
+    return engine.hasSignColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasSignColumn());
 }
 
-bool SQLTable::hasVersionColumn() const
+bool SQLTable::hasVersionColumn(const bool as_alias) const
 {
-    return teng == TableEngineValues::VersionedCollapsingMergeTree;
+    return engine.hasVersionColumn() || (as_alias && isAliasEngine() && subengine.has_value() && subengine->hasVersionColumn());
 }
 
-bool SQLTable::areInsertsAppends() const
+bool SQLTable::areInsertsAppends(const bool as_alias) const
 {
-    return teng == TableEngineValues::MergeTree || isLogFamily() || isMemoryEngine() || isMySQLEngine() || isPostgreSQLEngine()
-        || isSQLiteEngine() || isMongoDBEngine() || isRedisEngine() || isHudiEngine() || isAnyLakeEngine() || isDictionaryEngine();
+    return engine.areInsertsAppends() || isMySQLEngine() || isPostgreSQLEngine()
+        || (as_alias && isAliasEngine() && subengine.has_value() && subengine->areInsertsAppends());
 }
 
 bool SQLView::supportsFinal() const

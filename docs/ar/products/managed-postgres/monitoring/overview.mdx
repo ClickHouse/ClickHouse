@@ -1,0 +1,39 @@
+---
+slug: /cloud/managed-postgres/monitoring/overview
+sidebarTitle: 'نظرة عامة'
+title: 'مراقبة Managed Postgres'
+description: 'نظرة عامة على خيارات المراقبة وObservability في ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'المراقبة', 'Observability', 'المقاييس', 'لوحة المعلومات', 'prometheus', 'query insights', 'pg_stat_ch']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
+
+يمكنك مراقبة خدمات Managed Postgres باستخدام الطرق
+التالية:
+
+| القسم                                                                     | الوصف                                                                                   | الإعداد المطلوب          |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------ |
+| [لوحة المعلومات](/ar/products/managed-postgres/monitoring/dashboard)         | مخططات مضمّنة في Cloud Console لاستخدام الموارد ونشاط قاعدة البيانات                    | لا شيء                   |
+| [Query Insights](/ar/products/managed-postgres/monitoring/query-insights)    | بيانات قياس عن بُعد لكل عبارة: كل نمط استعلام مُرتَّب حسب التأثير، مع عدادات تشخيصية    | لا شيء                   |
+| [نقطة نهاية Prometheus](/ar/products/managed-postgres/monitoring/prometheus) | اجمع المقاييس في Prometheus أو Grafana أو Datadog أو أي collector متوافق مع OpenMetrics | مفتاح API + تهيئة الكاشط |
+| [مرجع المقاييس](/ar/products/managed-postgres/monitoring/metrics)            | القائمة الكاملة للمقاييس التي تعرضها نقطة نهاية Prometheus، مع الأنواع وlabels والمعاني | غير متاح                 |
+
+<div id="quick-start">
+  ## Quick Start
+</div>
+
+افتح Cloud Console وانتقل إلى علامة تبويب **Monitoring** لأي
+مثيل Managed Postgres لعرض مخططات مباشرة لـ CPU والذاكرة وIOPS
+والاتصالات والمعاملات ونسبة نجاح cache وحالات التوقف التام. من دون
+أي تهيئة.
+
+للاطّلاع على بيانات قياس عن بُعد لكل query — مئينات زمن الاستجابة، والقراءات من cache
+مقابل disk، وعمليات spill المؤقتة، ومستوى استخدام worker المتوازي،
+وحجم WAL — افتح علامة تبويب
+[Query Insights](/ar/products/managed-postgres/monitoring/query-insights)
+على المثيل نفسه. ولتمرير metrics على مستوى host إلى
+مكدس observability الخاص بك، استخدم
+[نقطة نهاية Prometheus](/ar/products/managed-postgres/monitoring/prometheus).

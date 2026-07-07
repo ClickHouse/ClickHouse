@@ -1,0 +1,142 @@
+---
+sidebarTitle: 'Vector مع Kafka'
+slug: /integrations/kafka/kafka-vector
+description: 'استخدام Vector مع Kafka وClickHouse'
+title: 'استخدام Vector مع Kafka وClickHouse'
+doc_type: 'guide'
+keywords: ['kafka', 'vector', 'جمع السجلات', 'observability', 'التكامل']
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+<div id="using-vector-with-kafka-and-clickhouse">
+  ## استخدام Vector مع Kafka وClickHouse
+</div>
+
+Vector هو خط أنابيب بيانات محايد تجاه المورّد، ويمكنه القراءة من Kafka وإرسال الأحداث إلى ClickHouse.
+
+يركّز دليل [البدء](/ar/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse) الخاص باستخدام Vector مع ClickHouse على حالة استخدام السجلات وقراءة الأحداث من ملف. نستخدم [مجموعة بيانات GitHub النموذجية](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson) حيث تُحفَظ الأحداث في topic على Kafka.
+
+يستخدم Vector [المصادر](https://vector.dev/docs/about/concepts/#sources) لجلب البيانات وفق نموذج push أو pull. وفي المقابل، توفّر [المصبات](https://vector.dev/docs/about/concepts/#sinks) وجهةً للأحداث. لذلك نستخدم مصدر Kafka ومصب ClickHouse. لاحظ أنه رغم دعم Kafka باعتباره Sink، فلا يتوفر مصدر لـ ClickHouse. لذلك لا يُعد Vector مناسبًا إذا كنت تريد نقل البيانات من ClickHouse إلى Kafka.
+
+يدعم Vector أيضًا [تحويل](https://vector.dev/docs/reference/configuration/transforms/) البيانات. وهذا خارج نطاق هذا الدليل. ويمكن الرجوع إلى وثائق Vector إذا احتجت إلى ذلك لمجموعة بياناتك.
+
+لاحظ أن التنفيذ الحالي لمصب ClickHouse يستخدم واجهة HTTP. ولا يدعم مصب ClickHouse حاليًا استخدام مخطط JSON. ويجب نشر البيانات إلى Kafka إما بتنسيق JSON العادي أو على هيئة Strings.
+
+<div id="license">
+  ### الترخيص
+</div>
+
+يخضع Vector لـ[ترخيص MPL-2.0](https://github.com/vectordotdev/vector/blob/master/LICENSE)
+
+<div id="gather-your-connection-details">
+  ### اجمع تفاصيل الاتصال
+</div>
+
+<ConnectionDetails />
+
+<div id="steps">
+  ### الخطوات
+</div>
+
+1. أنشئ topic ‏`github` في Kafka، ثم أدرِج [مجموعة بيانات GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson).
+
+```bash
+cat /opt/data/github/github_all_columns.ndjson | kcat -b <host>:<port> -X security.protocol=sasl_ssl -X sasl.mechanisms=PLAIN -X sasl.username=<username> -X sasl.password=<password> -t github
+```
+
+تضم مجموعة البيانات هذه 200,000 صف، وتركّز على مستودع `ClickHouse/ClickHouse`.
+
+2. تأكد من إنشاء الجدول الهدف. نستخدم أدناه قاعدة البيانات الافتراضية.
+
+```sql
+
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4,
+                    'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at);
+
+```
+
+3. [نزّل وثبّت Vector](https://vector.dev/docs/setup/quickstart/). أنشئ ملف الإعداد `kafka.toml` وعدّل القيم بما يتناسب مع مثيلات Kafka وClickHouse لديك.
+
+```toml
+[sources.github]
+type = "kafka"
+auto_offset_reset = "smallest"
+bootstrap_servers = "<kafka_host>:<kafka_port>"
+group_id = "vector"
+topics = [ "github" ]
+tls.enabled = true
+sasl.enabled = true
+sasl.mechanism = "PLAIN"
+sasl.username = "<username>"
+sasl.password = "<password>"
+decoding.codec = "json"
+
+[sinks.clickhouse]
+type = "clickhouse"
+inputs = ["github"]
+endpoint = "http://localhost:8123"
+database = "default"
+table = "github"
+skip_unknown_fields = true
+auth.strategy = "basic"
+auth.user = "username"
+auth.password = "password"
+buffer.max_events = 10000
+batch.timeout_secs = 1
+```
+
+بعض الملاحظات المهمة حول هذا التكوين وسلوك Vector:
+
+* تم اختبار هذا المثال مع Confluent Cloud. لذلك، قد لا تكون خيارات الأمان `sasl.*` و`ssl.enabled` مناسبة في حالات النشر ذاتية الإدارة.
+* لا يلزم استخدام بادئة بروتوكول مع معلمة التهيئة `bootstrap_servers`، على سبيل المثال: `pkc-2396y.us-east-1.aws.confluent.cloud:9092`
+* تضمن معلمة المصدر `decoding.codec = "json"` تمرير الرسالة إلى مصب ClickHouse على شكل كائن JSON واحد. عند التعامل مع الرسائل بوصفها `Strings` واستخدام القيمة الافتراضية `bytes`، سيُضاف محتوى الرسالة إلى الحقل `message`. وفي معظم الحالات، سيتطلب ذلك معالجتها في ClickHouse كما هو موضح في دليل [البدء باستخدام Vector](/ar/integrations/connectors/data-ingestion/etl-tools/vector-to-clickhouse#4-parse-the-logs).
+* يضيف Vector [عددًا من الحقول](https://vector.dev/docs/reference/configuration/sources/kafka/#output-data) إلى الرسائل. وفي مثالنا، نتجاهل هذه الحقول في مصب ClickHouse عبر معلمة التهيئة `skip_unknown_fields = true`. ويتجاهل هذا الحقول التي لا تشكّل جزءًا من مخطط الجدول الهدف. ويمكنك تعديل المخطط لديك لضمان إضافة هذه الحقول الوصفية، مثل `offset`.
+* لاحظ كيف يشير المصب إلى مصدر الأحداث عبر المعلمة `inputs`.
+* لاحظ سلوك مصب ClickHouse كما هو موضح [هنا](https://vector.dev/docs/reference/configuration/sinks/clickhouse/#buffers-and-batches). ولتحقيق أفضل معدل نقل، قد ترغب في ضبط المعلمات `buffer.max_events` و`batch.timeout_secs` و`batch.max_bytes`. ووفقًا [لتوصيات](/ar/reference/statements/insert-into#performance-considerations) ClickHouse، ينبغي اعتبار القيمة 1000 حدًا أدنى لعدد الأحداث في أي دفعة واحدة. وفي حالات الاستخدام ذات معدل النقل المرتفع المنتظم، يمكنك زيادة المعلمة `buffer.max_events`. أما معدلات النقل الأكثر تقلبًا فقد تتطلب تغييرات في المعلمة `batch.timeout_secs`
+* تفرض المعلمة `auto_offset_reset = "smallest"` على مصدر Kafka أن يبدأ من بداية الـ topic، مما يضمن استهلاك الرسائل المنشورة في الخطوة (1). وقد تحتاج إلى سلوك مختلف. راجع [هنا](https://vector.dev/docs/reference/configuration/sources/kafka/#auto_offset_reset) لمزيد من التفاصيل.
+
+4. ابدأ Vector
+
+```bash
+vector --config ./kafka.toml
+```
+
+افتراضيًا، يلزم إجراء [فحص الصحة](https://vector.dev/docs/reference/configuration/sinks/clickhouse/#healthcheck) قبل بدء عمليات الإدراج إلى ClickHouse. وهذا يضمن إمكانية إنشاء الاتصال وقراءة المخطط. أضِف `VECTOR_LOG=debug` في البداية للحصول على سجلات إضافية قد تكون مفيدة إذا واجهت مشكلات.
+
+5. أكِّد إدراج البيانات.
+
+```sql
+SELECT count() AS count FROM github;
+```
+
+| العدد  |
+| :----- |
+| 200000 |

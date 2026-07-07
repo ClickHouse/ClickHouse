@@ -97,6 +97,7 @@
 #include <Storages/Cache/registerRemoteFileMetadatas.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -237,6 +238,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 config_reload_interval_ms;
     extern const ServerSettingsUInt64 database_catalog_drop_table_concurrency;
     extern const ServerSettingsString default_database;
+    extern const ServerSettingsString insert_deduplication_version;
     extern const ServerSettingsBool disable_internal_dns_cache;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
@@ -328,6 +330,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_pending_mutations_execution_time_to_warn;
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_named_collection_num_to_warn;
+    extern const ServerSettingsUInt64 max_named_collection_num_to_throw;
+    extern const ServerSettingsUInt64 max_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_replicated_table_num_to_throw;
+    extern const ServerSettingsUInt64 max_view_num_to_throw;
+    extern const ServerSettingsUInt64 max_dictionary_num_to_throw;
+    extern const ServerSettingsUInt64 max_database_num_to_throw;
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
@@ -360,6 +368,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 query_condition_cache_size;
     extern const ServerSettingsDouble query_condition_cache_size_ratio;
     extern const ServerSettingsBool prepare_system_log_tables_on_startup;
+    extern const ServerSettingsBool user_profile_events_per_cpu;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
     extern const ServerSettingsBool shutdown_wait_backups_and_restores;
     extern const ServerSettingsUInt64 shutdown_wait_unfinished;
@@ -422,6 +431,7 @@ namespace ServerSetting
     extern const ServerSettingsString user_files_path;
     extern const ServerSettingsString dictionaries_lib_path;
     extern const ServerSettingsString user_scripts_path;
+    extern const ServerSettingsString dynamic_user_defined_executable_functions_path;
     extern const ServerSettingsString top_level_domains_path;
     extern const ServerSettingsString interserver_http_host;
     extern const ServerSettingsUInt64 interserver_http_port;
@@ -1230,6 +1240,34 @@ try
     ServerSettings server_settings;
     server_settings.loadSettingsFromConfig(config());
 
+    /// Fail closed if an operator is still on a legacy insert deduplication version. This build only
+    /// writes the unified deduplication hash, so silently ignoring the setting would break the
+    /// mixed-version deduplication contract; refuse to start and explain how to migrate. This must run
+    /// after every server-settings load, not just this first one: the ZooKeeper-include reload below
+    /// and the runtime config reloader re-read the settings, so a legacy value could otherwise slip in
+    /// through a ZK-backed config or a `SYSTEM RELOAD CONFIG`.
+    auto validate_insert_deduplication_version = [](const ServerSettings & settings)
+    {
+        const String dedup_version = settings[ServerSetting::insert_deduplication_version];
+        if (dedup_version != "new_unified_hash")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Server setting 'insert_deduplication_version' is set to '{}', but this version of ClickHouse "
+                "supports only the unified insert deduplication hash ('new_unified_hash'). Remove the setting from "
+                "the configuration (or set it to 'new_unified_hash'). To migrate from a version that used "
+                "'old_separate_hashes' or 'compatible_double_hashes', first run on a release that supports "
+                "'compatible_double_hashes' (writing both the legacy and unified hashes), then upgrade to this "
+                "version. For replicated tables run it for at least 'replicated_deduplication_window_seconds' "
+                "(one hour by default); the default windows retain the unified hashes of all inserts for that "
+                "one-hour window, which is considered long enough to cover an insert retry loop. For "
+                "non-replicated tables with 'non_replicated_deduplication_window' > 0 that window is count-based, "
+                "not time-based, so run 'compatible_double_hashes' for at least that many inserts before "
+                "upgrading; otherwise stale legacy block ids can survive the upgrade and a retried insert may be "
+                "accepted as new.",
+                dedup_version);
+    };
+    validate_insert_deduplication_version(server_settings);
+
 #if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     /// Remap before creating other threads to prevent crashes
@@ -1329,6 +1367,8 @@ try
 #endif
 
     StackTrace::setShowAddresses(server_settings[ServerSetting::show_addresses_in_stack_traces]);
+
+    ProfileEvents::setUserPerCPUEnabled(server_settings[ServerSetting::user_profile_events_per_cpu]);
 
 #if USE_HDFS
     /// This will point libhdfs3 to the right location for its config.
@@ -1768,6 +1808,7 @@ try
 
     /// We need to reload server settings because config could be updated via zookeeper.
     server_settings.loadSettingsFromConfig(config());
+    validate_insert_deduplication_version(server_settings);
     global_context->configureServerWideThrottling();
 
 #if defined(OS_LINUX)
@@ -1997,6 +2038,14 @@ try
         std::string user_scripts_path = user_scripts_path_setting.changed
             ? getCanonicalPath(String(user_scripts_path_setting.value), path_str) : String(path / "user_scripts/");
         global_context->setUserScriptsPath(user_scripts_path);
+    }
+
+    {
+        const auto & dynamic_udf_path_setting = server_settings[ServerSetting::dynamic_user_defined_executable_functions_path];
+        std::string dynamic_udf_path = dynamic_udf_path_setting.changed
+            ? getCanonicalPath(String(dynamic_udf_path_setting.value), path_str) : String(path / "dynamic_user_defined_executable_functions/");
+        global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+        fs::create_directories(dynamic_udf_path);
     }
 
     /// top_level_domains_lists
@@ -2406,6 +2455,16 @@ try
         main_config_zk_changed_event,
         [&](ConfigurationPtr loaded_config, bool initial_loading)
         {
+            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Validate the incoming config BEFORE config().replace below: validating after would mutate
+            /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
+            /// system.server_settings reporting an unsupported value. Reject first, then replace.
+            {
+                ServerSettings incoming_server_settings;
+                incoming_server_settings.loadSettingsFromConfig(*loaded_config);
+                validate_insert_deduplication_version(incoming_server_settings);
+            }
+
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             Settings::checkNoSettingNamesAtTopLevel(config(), config_path);
@@ -2511,6 +2570,7 @@ try
                 /// It does not make sense to reload anything before server has started.
                 /// Moreover, it may break initialization order.
                 global_context->loadOrReloadDictionaries(config());
+                global_context->loadUserDefinedExecutableFunctionDrivers(config());
                 global_context->loadOrReloadUserDefinedExecutableFunctions(config());
             }
 
@@ -2525,6 +2585,12 @@ try
             global_context->setMaxDictionaryNumToWarn(new_server_settings[ServerSetting::max_dictionary_num_to_warn]);
             global_context->setMaxDatabaseNumToWarn(new_server_settings[ServerSetting::max_database_num_to_warn]);
             global_context->setMaxPartNumToWarn(new_server_settings[ServerSetting::max_part_num_to_warn]);
+            global_context->setMaxNamedCollectionNumToThrow(new_server_settings[ServerSetting::max_named_collection_num_to_throw]);
+            global_context->setMaxTableNumToThrow(new_server_settings[ServerSetting::max_table_num_to_throw]);
+            global_context->setMaxReplicatedTableNumToThrow(new_server_settings[ServerSetting::max_replicated_table_num_to_throw]);
+            global_context->setMaxViewNumToThrow(new_server_settings[ServerSetting::max_view_num_to_throw]);
+            global_context->setMaxDictionaryNumToThrow(new_server_settings[ServerSetting::max_dictionary_num_to_throw]);
+            global_context->setMaxDatabaseNumToThrow(new_server_settings[ServerSetting::max_database_num_to_throw]);
             global_context->setMaxPendingMutationsToWarn(new_server_settings[ServerSetting::max_pending_mutations_to_warn]);
             global_context->setMaxPendingMutationsExecutionTimeToWarn(new_server_settings[ServerSetting::max_pending_mutations_execution_time_to_warn]);
             global_context->getAccessControl().setAllowTierSettings(new_server_settings[ServerSetting::allow_feature_tier]);
@@ -3216,7 +3282,13 @@ try
         /// After loading validate that default database exists
         database_catalog.assertDatabaseExists(default_database);
         /// Load user-defined SQL functions.
+        global_context->loadUserDefinedExecutableFunctionDrivers(config());
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+
+        /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
+        /// dynamic configuration files exist; re-run their drivers if they are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
 
         global_context->getRefreshSet().setRefreshesStopped(false);
     }
