@@ -140,41 +140,13 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
     matcher.asterisk_like_pattern = pattern;
 }
 
-/// Time-duration settings whose value must NOT be fuzzed: a timeout/sleep/interval blown up to a
-/// huge value makes the server block a lock/socket wait for minutes (ignoring query cancellation),
-/// which the stress-test hung-check flags as a false "possible deadlock". Every `Seconds` /
-/// `Milliseconds`-typed setting in `Settings.cpp`, plus a few `UInt64` durations that also wait.
-/// Names are given in canonical form; the caller resolves aliases before the lookup.
-bool isTimeDurationSetting(const String & name)
+/// Storage/table-engine timeout settings that must NOT be fuzzed: a timeout/sleep blown up huge
+/// blocks the server for minutes and trips a false hung-check. Query-level and MergeTree settings
+/// are pinned read-only in `query-fuzzer-tweaks-users.xml` instead; only these, which have no
+/// profile-constraint mechanism, are handled here. Aliases are resolved before the lookup.
+bool isEngineTimeDurationSetting(const String & name)
 {
     static const std::unordered_set<String> time_duration_settings = {
-        /// `Seconds`
-        "connect_timeout", "distributed_replica_error_half_life", "http_connection_timeout",
-        "http_headers_read_timeout", "http_receive_timeout", "http_send_timeout",
-        "iceberg_compaction_data_cleanup", "iceberg_compaction_delay_bias", "lock_acquire_timeout",
-        "max_estimated_execution_time", "max_execution_time", "max_execution_time_leaf",
-        "query_cache_ttl", "receive_timeout", "send_timeout", "tcp_keep_alive_timeout",
-        "timeout_before_checking_execution_speed", "wait_for_async_insert_timeout",
-        "wait_for_window_view_fire_signal_timeout", "window_view_clean_interval",
-        "window_view_heartbeat_interval",
-        /// `Milliseconds`
-        "async_insert_busy_timeout_max_ms", "async_insert_busy_timeout_min_ms",
-        "async_insert_poll_timeout_ms", "connection_pool_max_wait_ms",
-        "connect_timeout_with_failover_ms", "connect_timeout_with_failover_secure_ms",
-        "distributed_background_insert_max_sleep_time_ms", "distributed_background_insert_sleep_time_ms",
-        "handshake_timeout_ms", "hedged_connection_timeout_ms", "insert_quorum_timeout",
-        "kafka_max_wait_ms", "log_queries_min_query_duration_ms", "low_priority_query_wait_time_ms",
-        "parallel_replicas_connect_timeout_ms", "query_cache_min_query_duration", "queue_max_wait_ms",
-        "rabbitmq_max_wait_ms", "read_backoff_min_interval_between_events_ms", "read_backoff_min_latency_ms",
-        "receive_data_timeout_ms", "replace_running_query_max_wait_ms", "sleep_after_receiving_query_ms",
-        "sleep_in_send_data_ms", "sleep_in_send_tables_status_ms",
-        "storage_system_stack_trace_pipe_read_timeout_ms", "stream_flush_interval_ms", "stream_poll_timeout_ms",
-        /// durations declared as `UInt64` that also sleep/wait in the execution path
-        "distributed_background_insert_timeout", "function_sleep_max_microseconds_per_block",
-        "merge_tree_storage_snapshot_sleep_ms", "memory_usage_overcommit_max_wait_microseconds",
-        "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds",
-        "temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds",
-        /// Storage / table-engine settings
         "connection_wait_timeout", "read_write_timeout",  /// MySQL (connect_timeout shares the core name)
         "command_read_timeout", "command_write_timeout", "command_termination_timeout",  /// Executable
         "kafka_poll_timeout_ms", "kafka_consumer_acquire_timeout_ms", "kafka_flush_interval_ms",
@@ -183,8 +155,9 @@ bool isTimeDurationSetting(const String & name)
         "rabbitmq_empty_queue_backoff_step_ms",
         "poll_timeout_ms", "polling_min_timeout_ms", "polling_max_timeout_ms", "polling_backoff_ms",  /// ObjectStorageQueue
         "transaction_timeout_ms",
-        "max_delay_to_insert", "min_delay_to_insert_ms",  /// MergeTree insert throttle (delays the INSERT)
-        "max_delay_to_mutate_ms", "min_delay_to_mutate_ms",
+        /// Distributed engine settings
+        "max_delay_to_insert", "background_insert_sleep_time_ms", "background_insert_max_sleep_time_ms",
+        "monitor_sleep_time_ms", "monitor_max_sleep_time_ms",
     };
     return time_duration_settings.contains(String(Settings::resolveName(name)));
 }
@@ -693,8 +666,8 @@ Field QueryFuzzer::fuzzField(Field field)
 void QueryFuzzer::fuzzSettingValue(const String & name, Field & value)
 {
     /// Leave time-duration settings untouched so the fuzzer cannot turn a timeout/sleep/interval
-    /// into a multi-minute server hang (see isTimeDurationSetting).
-    if (isTimeDurationSetting(name))
+    /// into a multi-minute server hang (see isEngineTimeDurationSetting).
+    if (isEngineTimeDurationSetting(name))
         return;
     value = fuzzField(value);
 }
