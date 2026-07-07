@@ -3117,54 +3117,20 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if constexpr (requires { Name::authoritative; })
+        /// Every conversion `Name` is authoritative: the per-`Name` declarative signature owns the
+        /// (non-Nullable) result type, and signaturePropagatesNullability() re-wraps Nullable /
+        /// only-NULL arguments. The one rule the signature cannot express is conversion-specific:
+        /// under `cast_keep_nullable` a Variant or Dynamic argument keeps the result Nullable (they
+        /// can contain NULL). Apply just that, then defer to the declarative path.
+        if (settings.cast_keep_nullable)
         {
-            /// The per-`Name` declarative signature owns the (non-Nullable) result type;
-            /// signaturePropagatesNullability() re-wraps Nullable / only-NULL arguments. The one
-            /// rule the signature cannot express is conversion-specific: under `cast_keep_nullable`
-            /// a Variant or Dynamic argument keeps the result Nullable (they can contain NULL).
-            /// Apply just that, then defer to the declarative path.
-            if (settings.cast_keep_nullable)
+            for (const auto & arg : arguments)
             {
-                for (const auto & arg : arguments)
-                {
-                    if (isDynamic(*arg.type) || isVariant(*arg.type))
-                        return makeNullable(IFunction::getReturnTypeImpl(arguments));
-                }
+                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                    return makeNullable(IFunction::getReturnTypeImpl(arguments));
             }
-            return IFunction::getReturnTypeImpl(arguments);
         }
-        else
-        {
-            NullPresence null_presence = getNullPresense(arguments);
-
-            /// When cast_keep_nullable is enabled, treat Dynamic and Variant
-            /// as Nullable because they can contain nulls.
-            if (settings.cast_keep_nullable)
-            {
-                for (const auto & arg : arguments)
-                {
-                    if (isDynamic(*arg.type) || isVariant(*arg.type))
-                    {
-                        null_presence.has_nullable = true;
-                        break;
-                    }
-                }
-            }
-
-            if (null_presence.has_null_constant)
-            {
-                return makeNullable(std::make_shared<DataTypeNothing>());
-            }
-            if (null_presence.has_nullable)
-            {
-                auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-                auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-                return makeNullable(return_type);
-            }
-
-            return getReturnTypeImplRemovedNullable(arguments);
-        }
+        return IFunction::getReturnTypeImpl(arguments);
     }
 
     /// See IFunction::signaturePropagatesNullability. The conversion functions do not use
@@ -3175,103 +3141,6 @@ public:
         return requires { Name::authoritative; };
     }
 
-    DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
-    {
-        FunctionArgumentDescriptors mandatory_args = {{"Value", nullptr, nullptr, "any type"}};
-        FunctionArgumentDescriptors optional_args;
-
-        if constexpr (to_decimal)
-        {
-            mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
-        }
-
-        if (!to_decimal && (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments)))
-        {
-            mandatory_args.push_back({"scale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isNativeInteger), &isColumnConst, "const Integer"});
-        }
-
-        // toString(DateTime or DateTime64, [timezone: String])
-        if ((std::is_same_v<Name, NameToString> && !arguments.empty() && (isDateTime64(arguments[0].type) || isDateTime(arguments[0].type)))
-            // toUnixTimestamp(value[, timezone : String])
-            || std::is_same_v<Name, NameToUnixTimestamp>
-            // toDate(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeDate> // TODO: shall we allow timestamp argument for toDate? DateTime knows nothing about timezones and this argument is ignored below.
-            // toDate32(value[, timezone : String])
-            || std::is_same_v<ToDataType, DataTypeDate32>
-            // toDateTime(value[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeDateTime>
-            // toDateTime64(value, scale : Integer[, timezone: String])
-            || std::is_same_v<ToDataType, DataTypeDateTime64>)
-        {
-            optional_args.push_back({"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"});
-        }
-
-            validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
-
-        if constexpr (std::is_same_v<ToDataType, DataTypeInterval>)
-        {
-            if (isDecimal(arguments[0].type))
-                throw Exception(
-                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "Illegal type {} of argument of function {}",
-                    arguments[0].type->getName(), getName());
-
-            return std::make_shared<DataTypeInterval>(Name::kind);
-        }
-        else if constexpr (to_decimal)
-        {
-            UInt64 scale = extractToDecimalScale(arguments[1]);
-
-            if constexpr (std::is_same_v<Name, NameToDecimal32>)
-                return createDecimalMaxPrecision<Decimal32>(scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal64>)
-                return createDecimalMaxPrecision<Decimal64>(scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal128>)
-                return createDecimalMaxPrecision<Decimal128>(scale);
-            else if constexpr (std::is_same_v<Name, NameToDecimal256>)
-                return createDecimalMaxPrecision<Decimal256>(scale);
-
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
-        }
-        else
-        {
-            // Optional second argument with time zone for DateTime.
-            UInt8 timezone_arg_position = 1;
-            UInt32 scale [[maybe_unused]] = DataTypeDateTime64::default_scale;
-
-            // DateTime64 requires more arguments: scale and timezone. Since timezone is optional, scale should be first.
-            if (isDateTime64<Name, ToDataType>(arguments))
-            {
-                timezone_arg_position += 1;
-                scale = static_cast<UInt32>(arguments[1].column->get64(0));
-
-                if (to_datetime64 || scale != 0) /// toDateTime('xxxx-xx-xx xx:xx:xx', 0) return DateTime
-                    return std::make_shared<DataTypeDateTime64>(scale,
-                        extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
-
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
-            }
-            else if (isTime64<Name, ToDataType>(arguments))
-            {
-                timezone_arg_position += 1;
-                scale = static_cast<UInt32>(arguments[1].column->get64(0));
-
-                if (to_time64 || scale != 0) /// toTime('xxx:xx:xx', 0) return Time
-                    return std::make_shared<DataTypeTime64>(scale);
-
-                return std::make_shared<DataTypeTime>();
-            }
-
-            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
-                return std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, timezone_arg_position, 0, false));
-            else if constexpr (std::is_same_v<ToDataType, DataTypeTime>)
-                return std::make_shared<DataTypeTime>();
-            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected branch in code of conversion function: it is a bug.");
-            else
-                return std::make_shared<ToDataType>();
-        }
-    }
 
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForConstants() const override { return true; }
