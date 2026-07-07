@@ -140,16 +140,14 @@ public:
     }
 
     /// Probe the cache without insert-on-miss. Returns the cached JSON or empty string on miss.
-    /// Caller must verify the returned JSON's `table-uuid` matches the expected UUID before use.
+    /// Caller must verify the returned JSON's `table-uuid` matches the expected UUID before use,
+    /// and is responsible for recording `IcebergMetadataFilesCacheHits` / `Misses` once the
+    /// validation outcome is known (a found-but-unvalidated cell is not a real hit).
     std::string tryGetTableMetadata(const String & data_path)
     {
         auto cell = Base::get(data_path);
         if (cell)
-        {
-            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheHits);
             return std::get<String>(cell->cached_element);
-        }
-        ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheMisses);
         return {};
     }
 

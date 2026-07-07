@@ -177,49 +177,54 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
     bool content_cache_hit = false;
 
     /// Probe content cache with the catalog hint UUID (without insert-on-miss).
-    /// `tryGetTableMetadata` increments `IcebergMetadataFilesCacheHits` / `Misses`
-    /// internally, so we don't count here.
     /// This is safe because:
     /// - On miss: we read from storage and insert under the validated parsed UUID.
     /// - On hit: we verify the cached JSON's `table-uuid` field matches the hint.
+    /// `IcebergMetadataFilesCacheHits` / `Misses` are recorded once below, after the
+    /// hit is validated, so an unvalidated cell (wrong UUID/location) counts as a miss.
     if (const auto & hint = configuration->catalog_uuid_hint; !hint.empty())
     {
-        String cached = cache_ptr ? cache_ptr->tryGetTableMetadata(
-            IcebergMetadataFilesCache::getKey(normalizeUuid(hint), metadata_file_path))
-                                  : std::string{};
-        if (!cached.empty())
+        if (cache_ptr)
         {
-            Poco::JSON::Parser parser;
-            auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
-            if (candidate->has(f_table_uuid))
+            String cached = cache_ptr->tryGetTableMetadata(
+                IcebergMetadataFilesCache::getKey(normalizeUuid(hint), metadata_file_path));
+            if (!cached.empty())
             {
-                String cached_uuid = normalizeUuid(candidate->getValue<String>(f_table_uuid));
-                if (cached_uuid == normalizeUuid(hint))
+                Poco::JSON::Parser parser;
+                auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
+                if (candidate->has(f_table_uuid))
                 {
-                    /// Also verify the cached JSON's `location` field encodes this table's
-                    /// root path.  A stale hint equal to another table's UUID would match on
-                    /// UUID alone; the location check prevents accepting that table's metadata
-                    /// when both tables happen to share the same relative metadata path.
-                    const String & table_root = configuration->getPathForRead().path;
-                    bool location_ok = true;
-                    if (!table_root.empty() && candidate->has(f_location))
+                    String cached_uuid = normalizeUuid(candidate->getValue<String>(f_table_uuid));
+                    if (cached_uuid == normalizeUuid(hint))
                     {
-                        const String & cached_location = candidate->getValue<String>(f_location);
-                        /// `cached_location` is the full URI (e.g. "s3://bucket/ns/table");
-                        /// `table_root` is the path portion ("bucket/ns/table").
-                        /// Accept only when table_root is a suffix of cached_location.
-                        location_ok = cached_location.ends_with(table_root);
-                    }
-                    if (location_ok)
-                    {
-                        /// Hit from a prior validated init: cached JSON belongs to this table.
-                        content_cache_hit = true;
-                        raw_metadata_json = std::move(cached);
-                        metadata_object = candidate;
-                        table_uuid = cached_uuid;
+                        /// Also verify the cached JSON's `location` field encodes this table's
+                        /// root path.  A stale hint equal to another table's UUID would match on
+                        /// UUID alone; the location check prevents accepting that table's metadata
+                        /// when both tables happen to share the same relative metadata path.
+                        const String & table_root = configuration->getPathForRead().path;
+                        bool location_ok = true;
+                        if (!table_root.empty() && candidate->has(f_location))
+                        {
+                            const String & cached_location = candidate->getValue<String>(f_location);
+                            /// `cached_location` is the full URI (e.g. "s3://bucket/ns/table");
+                            /// `table_root` is the path portion ("bucket/ns/table").
+                            /// Accept only when table_root is a suffix of cached_location.
+                            location_ok = cached_location.ends_with(table_root);
+                        }
+                        if (location_ok)
+                        {
+                            /// Hit from a prior validated init: cached JSON belongs to this table.
+                            content_cache_hit = true;
+                            raw_metadata_json = std::move(cached);
+                            metadata_object = candidate;
+                            table_uuid = cached_uuid;
+                        }
                     }
                 }
             }
+            ProfileEvents::increment(content_cache_hit
+                ? ProfileEvents::IcebergMetadataFilesCacheHits
+                : ProfileEvents::IcebergMetadataFilesCacheMisses);
         }
     }
     else if (cache_ptr)
