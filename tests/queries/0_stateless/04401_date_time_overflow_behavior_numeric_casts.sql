@@ -228,3 +228,24 @@ INSERT INTO t_parity VALUES (65535 + 0), (65536 + 0), (100000 + 0), (5662310399 
 SELECT 'VALUES', toString(x) FROM t_parity ORDER BY x;
 SELECT 'CAST  ', toString(CAST(v AS Date)) FROM (SELECT arrayJoin([65535, 65536, 100000, 5662310399]) AS v) ORDER BY CAST(v AS Date);
 DROP TABLE t_parity;
+
+-- The overflow-aware coercion above applies only in the explicit saturate/throw modes. In the default
+-- ignore mode the Date/Date32/Time coercion still rejects an out-of-storage-range value (Null ->
+-- ARGUMENT_OUT_OF_BOUND in convertFieldToTypeOrThrow), so a DROP/OPTIMIZE PARTITION with a bogus numeric
+-- literal is rejected instead of being silently reinterpreted and dropping the wrong partition.
+SELECT '-- ignore (default): out-of-range numeric partition literal must be rejected, not silently clamped';
+SET date_time_overflow_behavior = 'ignore';
+DROP TABLE IF EXISTS t_part_date;
+CREATE TABLE t_part_date (d Date, x UInt32) ENGINE = MergeTree PARTITION BY d ORDER BY x;
+INSERT INTO t_part_date VALUES ('2012-04-05', 1);
+ALTER TABLE t_part_date DROP PARTITION 20200523; -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE t_part_date DROP PARTITION tuple(toInt64(20200523)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT count() FROM t_part_date;
+DROP TABLE t_part_date;
+
+DROP TABLE IF EXISTS t_part_time;
+CREATE TABLE t_part_time (id UInt64, p Time) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+INSERT INTO t_part_time SELECT number, 0 FROM numbers(3);
+OPTIMIZE TABLE t_part_time PARTITION -2147483649 FINAL; -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT count() FROM t_part_time;
+DROP TABLE t_part_time;
