@@ -844,7 +844,7 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
 namespace
 {
     /// Parse and cache function signatures globally.
-    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false)
+    DataTypePtr applyFunctionSignature(const String & signature_str, const String & function_name, const ColumnsWithTypeAndName & arguments, bool types_only = false, bool propagate_nullability = false)
     {
         static std::mutex cache_mutex;
         static std::unordered_map<String, std::shared_ptr<FunctionSignature>> cache; // STYLE_CHECK_ALLOW_STD_CONTAINERS
@@ -872,6 +872,21 @@ namespace
             }
             else
                 sig = it->second;
+        }
+
+        /// See IFunction::signaturePropagatesNullability: apply the signature to the arguments with
+        /// the outer Nullable removed and re-wrap the result, instead of letting the signature match
+        /// Nullable literally.
+        if (propagate_nullability)
+        {
+            const NullPresence null_presence = getNullPresense(arguments);
+            if (null_presence.has_null_constant)
+                return makeNullable(std::make_shared<DataTypeNothing>());
+            if (null_presence.has_nullable)
+            {
+                const ColumnsWithTypeAndName nested_columns = createBlockWithNestedColumns(arguments);
+                return makeNullable(applyFunctionSignature(signature_str, function_name, nested_columns, types_only, /*propagate_nullability=*/false));
+            }
         }
 
         std::string reason;
@@ -932,7 +947,7 @@ namespace
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (auto signature_str = getSignatureString(); !signature_str.empty())
-        return applyFunctionSignature(signature_str, getName(), arguments);
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability());
 
     DataTypes data_types(arguments.size());
     for (size_t i = 0; i < arguments.size(); ++i)
@@ -968,7 +983,7 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
         columns.reserve(arguments.size());
         for (const auto & type : arguments)
             columns.emplace_back(nullptr, type, String{});
-        return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true);
+        return applyFunctionSignature(signature_str, getName(), columns, /*types_only=*/true, signaturePropagatesNullability());
     }
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
 }
@@ -976,7 +991,7 @@ DataTypePtr IFunction::getReturnTypeImpl(const DataTypes & arguments) const
 DataTypePtr IFunction::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
     if (auto signature_str = getSignatureString(); !signature_str.empty())
-        return applyFunctionSignature(signature_str, getName(), arguments);
+        return applyFunctionSignature(signature_str, getName(), arguments, /*types_only=*/false, signaturePropagatesNullability());
 
     DataTypes data_types(arguments.size());
     for (size_t i = 0; i < arguments.size(); ++i)

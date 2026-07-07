@@ -429,6 +429,16 @@ public:
       */
     virtual String getSignatureString() const { return {}; }
 
+    /** Whether the declarative signature should propagate argument nullability into the result
+      * type instead of matching it literally. When true, the default getReturnTypeImpl applies the
+      * signature to the arguments with the outer Nullable removed and re-wraps the result in
+      * Nullable if any argument was Nullable (and returns Nullable(Nothing) for an only-NULL
+      * argument). This is for functions that do NOT use useDefaultImplementationForNulls (so the
+      * framework does not do it for them) but still want the declarative signature to own the
+      * non-Nullable result type — e.g. the conversion functions.
+      */
+    virtual bool signaturePropagatesNullability() const { return false; }
+
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const;
 
     const FunctionCreator * getFactoryHandle() const { return factory_handle; }
@@ -621,6 +631,9 @@ public:
 
     /// Declarative signature, see IFunction::getSignatureString. Same opt-in mechanism.
     virtual String getSignatureString() const { return {}; }
+
+    /// See IFunction::signaturePropagatesNullability.
+    virtual bool signaturePropagatesNullability() const { return false; }
 
     virtual bool isVariadic() const { return false; }
 

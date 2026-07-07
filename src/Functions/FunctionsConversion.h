@@ -3087,34 +3087,62 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        NullPresence null_presence = getNullPresense(arguments);
-
-        /// When cast_keep_nullable is enabled, treat Dynamic and Variant
-        /// as Nullable because they can contain nulls.
-        if (settings.cast_keep_nullable)
+        if constexpr (requires { Name::authoritative; })
         {
-            for (const auto & arg : arguments)
+            /// The per-`Name` declarative signature owns the (non-Nullable) result type;
+            /// signaturePropagatesNullability() re-wraps Nullable / only-NULL arguments. The one
+            /// rule the signature cannot express is conversion-specific: under `cast_keep_nullable`
+            /// a Variant or Dynamic argument keeps the result Nullable (they can contain NULL).
+            /// Apply just that, then defer to the declarative path.
+            if (settings.cast_keep_nullable)
             {
-                if (isDynamic(*arg.type) || isVariant(*arg.type))
+                for (const auto & arg : arguments)
                 {
-                    null_presence.has_nullable = true;
-                    break;
+                    if (isDynamic(*arg.type) || isVariant(*arg.type))
+                        return makeNullable(IFunction::getReturnTypeImpl(arguments));
                 }
             }
+            return IFunction::getReturnTypeImpl(arguments);
         }
-
-        if (null_presence.has_null_constant)
+        else
         {
-            return makeNullable(std::make_shared<DataTypeNothing>());
-        }
-        if (null_presence.has_nullable)
-        {
-            auto nested_columns = Block(createBlockWithNestedColumns(arguments));
-            auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
-            return makeNullable(return_type);
-        }
+            NullPresence null_presence = getNullPresense(arguments);
 
-        return getReturnTypeImplRemovedNullable(arguments);
+            /// When cast_keep_nullable is enabled, treat Dynamic and Variant
+            /// as Nullable because they can contain nulls.
+            if (settings.cast_keep_nullable)
+            {
+                for (const auto & arg : arguments)
+                {
+                    if (isDynamic(*arg.type) || isVariant(*arg.type))
+                    {
+                        null_presence.has_nullable = true;
+                        break;
+                    }
+                }
+            }
+
+            if (null_presence.has_null_constant)
+            {
+                return makeNullable(std::make_shared<DataTypeNothing>());
+            }
+            if (null_presence.has_nullable)
+            {
+                auto nested_columns = Block(createBlockWithNestedColumns(arguments));
+                auto return_type = getReturnTypeImplRemovedNullable(ColumnsWithTypeAndName(nested_columns.begin(), nested_columns.end()));
+                return makeNullable(return_type);
+            }
+
+            return getReturnTypeImplRemovedNullable(arguments);
+        }
+    }
+
+    /// See IFunction::signaturePropagatesNullability. The conversion functions do not use
+    /// useDefaultImplementationForNulls, so the declarative path must propagate Nullable itself
+    /// for the authoritative `Name`s.
+    bool signaturePropagatesNullability() const override
+    {
+        return requires { Name::authoritative; };
     }
 
     DataTypePtr getReturnTypeImplRemovedNullable(const ColumnsWithTypeAndName & arguments) const
@@ -4237,24 +4265,28 @@ struct ToStringMonotonicity
 };
 
 
-struct NameToUInt8 { static constexpr auto name = "toUInt8"; static constexpr auto signature = "(Any) -> UInt8"; };
-struct NameToUInt16 { static constexpr auto name = "toUInt16"; static constexpr auto signature = "(Any) -> UInt16"; };
-struct NameToUInt32 { static constexpr auto name = "toUInt32"; static constexpr auto signature = "(Any) -> UInt32"; };
-struct NameToUInt64 { static constexpr auto name = "toUInt64"; static constexpr auto signature = "(Any) -> UInt64"; };
-struct NameToUInt128 { static constexpr auto name = "toUInt128"; static constexpr auto signature = "(Any) -> UInt128"; };
-struct NameToUInt256 { static constexpr auto name = "toUInt256"; static constexpr auto signature = "(Any) -> UInt256"; };
-struct NameToInt8 { static constexpr auto name = "toInt8"; static constexpr auto signature = "(Any) -> Int8"; };
-struct NameToInt16 { static constexpr auto name = "toInt16"; static constexpr auto signature = "(Any) -> Int16"; };
-struct NameToInt32 { static constexpr auto name = "toInt32"; static constexpr auto signature = "(Any) -> Int32"; };
-struct NameToInt64 { static constexpr auto name = "toInt64"; static constexpr auto signature = "(Any) -> Int64"; };
-struct NameToInt128 { static constexpr auto name = "toInt128"; static constexpr auto signature = "(Any) -> Int128"; };
-struct NameToInt256 { static constexpr auto name = "toInt256"; static constexpr auto signature = "(Any) -> Int256"; };
-struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; static constexpr auto signature = "(Any) -> BFloat16"; };
-struct NameToFloat32 { static constexpr auto name = "toFloat32"; static constexpr auto signature = "(Any) -> Float32"; };
-struct NameToFloat64 { static constexpr auto name = "toFloat64"; static constexpr auto signature = "(Any) -> Float64"; };
-struct NameToUUID { static constexpr auto name = "toUUID"; static constexpr auto signature = "(Any) -> UUID"; };
-struct NameToIPv4 { static constexpr auto name = "toIPv4"; static constexpr auto signature = "(Any) -> IPv4"; };
-struct NameToIPv6 { static constexpr auto name = "toIPv6"; static constexpr auto signature = "(Any) -> IPv6"; };
+/// `authoritative` opts the `Name` into the declarative-signature path in `FunctionConvert`
+/// (see its getReturnTypeImpl / signaturePropagatesNullability). These conversions have a fixed
+/// single-argument shape `(Any) -> T`; Nullable/LowCardinality propagation and the Variant/Dynamic
+/// under-cast_keep_nullable rule are handled around the signature, not by it.
+struct NameToUInt8 { static constexpr auto name = "toUInt8"; static constexpr auto signature = "(Any) -> UInt8"; static constexpr bool authoritative = true; };
+struct NameToUInt16 { static constexpr auto name = "toUInt16"; static constexpr auto signature = "(Any) -> UInt16"; static constexpr bool authoritative = true; };
+struct NameToUInt32 { static constexpr auto name = "toUInt32"; static constexpr auto signature = "(Any) -> UInt32"; static constexpr bool authoritative = true; };
+struct NameToUInt64 { static constexpr auto name = "toUInt64"; static constexpr auto signature = "(Any) -> UInt64"; static constexpr bool authoritative = true; };
+struct NameToUInt128 { static constexpr auto name = "toUInt128"; static constexpr auto signature = "(Any) -> UInt128"; static constexpr bool authoritative = true; };
+struct NameToUInt256 { static constexpr auto name = "toUInt256"; static constexpr auto signature = "(Any) -> UInt256"; static constexpr bool authoritative = true; };
+struct NameToInt8 { static constexpr auto name = "toInt8"; static constexpr auto signature = "(Any) -> Int8"; static constexpr bool authoritative = true; };
+struct NameToInt16 { static constexpr auto name = "toInt16"; static constexpr auto signature = "(Any) -> Int16"; static constexpr bool authoritative = true; };
+struct NameToInt32 { static constexpr auto name = "toInt32"; static constexpr auto signature = "(Any) -> Int32"; static constexpr bool authoritative = true; };
+struct NameToInt64 { static constexpr auto name = "toInt64"; static constexpr auto signature = "(Any) -> Int64"; static constexpr bool authoritative = true; };
+struct NameToInt128 { static constexpr auto name = "toInt128"; static constexpr auto signature = "(Any) -> Int128"; static constexpr bool authoritative = true; };
+struct NameToInt256 { static constexpr auto name = "toInt256"; static constexpr auto signature = "(Any) -> Int256"; static constexpr bool authoritative = true; };
+struct NameToBFloat16 { static constexpr auto name = "toBFloat16"; static constexpr auto signature = "(Any) -> BFloat16"; static constexpr bool authoritative = true; };
+struct NameToFloat32 { static constexpr auto name = "toFloat32"; static constexpr auto signature = "(Any) -> Float32"; static constexpr bool authoritative = true; };
+struct NameToFloat64 { static constexpr auto name = "toFloat64"; static constexpr auto signature = "(Any) -> Float64"; static constexpr bool authoritative = true; };
+struct NameToUUID { static constexpr auto name = "toUUID"; static constexpr auto signature = "(Any) -> UUID"; static constexpr bool authoritative = true; };
+struct NameToIPv4 { static constexpr auto name = "toIPv4"; static constexpr auto signature = "(Any) -> IPv4"; static constexpr bool authoritative = true; };
+struct NameToIPv6 { static constexpr auto name = "toIPv6"; static constexpr auto signature = "(Any) -> IPv6"; static constexpr bool authoritative = true; };
 
 extern template class FunctionConvert<DataTypeUInt8, NameToUInt8, ToNumberMonotonicity<UInt8>>;
 extern template class FunctionConvert<DataTypeUInt16, NameToUInt16, ToNumberMonotonicity<UInt16>>;
