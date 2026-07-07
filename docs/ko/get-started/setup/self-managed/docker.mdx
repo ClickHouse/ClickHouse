@@ -1,0 +1,241 @@
+---
+description: 'Debian/Ubuntu Linux에 ClickHouse 설치'
+keywords: ['ClickHouse', '설치', 'Docker']
+sidebarTitle: 'Docker'
+slug: /install/docker
+title: 'Docker를 사용해 ClickHouse 설치'
+hide_title: true
+doc_type: 'guide'
+---
+
+편의를 위해 [Docker Hub](https://hub.docker.com/r/clickhouse/clickhouse-server/)의 가이드를
+아래에 그대로 옮겼습니다. 제공되는 Docker 이미지는
+공식 ClickHouse deb 패키지를 사용합니다.
+
+Docker pull 명령:
+
+```bash
+docker pull clickhouse/clickhouse-server
+```
+
+<div id="versions">
+  ## 버전
+</div>
+
+* `latest` 태그는 최신 안정 브랜치의 최신 릴리스를 가리킵니다.
+* `22.2`와 같은 브랜치 태그는 해당 브랜치의 최신 릴리스를 가리킵니다.
+* `22.2.3` 및 `22.2.3.5`와 같은 전체 버전 태그는 해당 릴리스를 가리킵니다.
+* `head` 태그는 `default` 브랜치의 최신 commit으로 빌드됩니다.
+* 각 태그에는 `alpine` 기반으로 빌드되었음을 나타내는 선택적 `-alpine` 접미사를 붙일 수 있습니다.
+
+<div id="compatibility">
+  ### 호환성
+</div>
+
+* amd64 이미지는 [SSE3 instructions](https://en.wikipedia.org/wiki/SSE3)을 지원해야 합니다.
+  2005년 이후의 거의 모든 x86 CPU는 SSE3를 지원합니다.
+* arm64 이미지는 [ARMv8.2-A architecture](https://en.wikipedia.org/wiki/AArch64#ARMv8.2-A)를 지원해야 하며
+  추가로 Load-Acquire RCpc 레지스터도 지원해야 합니다. 이 레지스터는 ARMv8.2-A에서는 선택 사항이지만
+  [ARMv8.3-A](https://en.wikipedia.org/wiki/AArch64#ARMv8.3-A)에서는 필수입니다. Graviton &gt;=2, Azure 및 GCP 인스턴스에서 지원됩니다.
+  지원되지 않는 장치의 예시로는 Raspberry Pi 4 (ARMv8.0-A)와 Jetson AGX Xavier/Orin (ARMv8.2-A)이 있습니다.
+* ClickHouse 24.11부터 Ubuntu 이미지는 기본 이미지로 `ubuntu:22.04`를 사용합니다. 이를 위해서는 [패치](https://github.com/moby/moby/commit/977283509f75303bc6612665a04abf76ff1d2468)가 포함된 `20.10.10` 이상의 docker 버전이 필요합니다.
+  우회 방법으로는 대신 `docker run --security-opt seccomp=unconfined`를 사용할 수 있지만, 보안상 위험이 따를 수 있습니다.
+
+<div id="how-to-use-image">
+  ## 이 이미지 사용 방법
+</div>
+
+<div id="start-server-instance">
+  ### 서버 인스턴스 시작하기
+</div>
+
+```bash
+docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+기본적으로 ClickHouse는 Docker 네트워크를 통해서만 접속할 수 있습니다. 아래의 네트워킹 섹션을 참조하십시오.
+
+기본적으로 위 서버 인스턴스는 비밀번호 없이 `default` 사용자로 실행됩니다.
+
+<div id="connect-to-it-from-native-client">
+  ### 네이티브 클라이언트로 연결하기
+</div>
+
+```bash
+docker run -it --rm --network=container:some-clickhouse-server --entrypoint clickhouse-client clickhouse/clickhouse-server
+# OR
+docker exec -it some-clickhouse-server clickhouse-client
+```
+
+ClickHouse client에 대한 자세한 내용은 [ClickHouse client](/ko/concepts/features/interfaces/cli)를 참조하십시오.
+
+<div id="connect-to-it-using-curl">
+  ### curl로 연결하기
+</div>
+
+```bash
+echo "SELECT 'Hello, ClickHouse!'" | docker run -i --rm --network=container:some-clickhouse-server buildpack-deps:curl curl 'http://localhost:8123/?query=' -s --data-binary @-
+```
+
+HTTP 인터페이스에 대한 자세한 내용은 [ClickHouse HTTP Interface](/ko/concepts/features/interfaces/http)를 참조하십시오.
+
+<div id="stopping-removing-container">
+  ### 컨테이너 중지 및 제거
+</div>
+
+```bash
+docker stop some-clickhouse-server
+docker rm some-clickhouse-server
+```
+
+<div id="networking">
+  ### 네트워킹
+</div>
+
+<Note>
+  미리 정의된 사용자 `default`는 비밀번호가 설정되어 있지 않으면 네트워크에 접근할 수 없습니다.
+  아래의 &quot;시작 시 default 데이터베이스 및 사용자 생성 방법&quot;과 &quot;`default` 사용자 관리&quot;를 참조하십시오.
+</Note>
+
+Docker에서 실행 중인 ClickHouse는 컨테이너 내부의 특정 포트를 호스트 포트에 [매핑하여](https://docs.docker.com/config/containers/container-networking/)
+외부에 노출할 수 있습니다:
+
+```bash
+docker run -d -p 18123:8123 -p19000:9000 -e CLICKHOUSE_PASSWORD=changeme --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+echo 'SELECT version()' | curl 'http://localhost:18123/?password=changeme' --data-binary @-
+```
+
+또는 `--network=host`를 사용해 컨테이너가 [호스트 포트를 직접](https://docs.docker.com/network/host/) 사용하도록 설정할 수 있습니다
+(네트워크 성능을 더 높이는 데도 도움이 됩니다):
+
+```bash
+docker run -d --network=host --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+echo 'SELECT version()' | curl 'http://localhost:8123/' --data-binary @-
+```
+
+<Note>
+  위 예시의 default 사용자는 localhost에서 오는 요청에만 사용할 수 있습니다
+</Note>
+
+<div id="volumes">
+  ### 볼륨
+</div>
+
+일반적으로 데이터를 영구적으로 보존하려면 다음 폴더를 컨테이너 내부에 마운트하는 것이 좋습니다:
+
+* `/var/lib/clickhouse/` - ClickHouse가 데이터를 저장하는 기본 폴더
+* `/var/log/clickhouse-server/` - 로그
+
+```bash
+docker run -d \
+    -v "$PWD/ch_data:/var/lib/clickhouse/" \
+    -v "$PWD/ch_logs:/var/log/clickhouse-server/" \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+다음 경로도 마운트할 수 있습니다:
+
+* `/etc/clickhouse-server/config.d/*.xml` - 서버 구성 조정 파일
+* `/etc/clickhouse-server/users.d/*.xml` - 사용자 설정 조정 파일
+* `/docker-entrypoint-initdb.d/` - 데이터베이스 초기화 스크립트가 들어 있는 폴더(아래 참조).
+
+<div id="linear-capabilities">
+  ## Linux capability
+</div>
+
+ClickHouse에는 여러 [Linux capability](https://man7.org/linux/man-pages/man7/capabilities.7.html)를 활성화해야 하는 몇 가지 고급 기능이 있습니다.
+
+이는 선택 사항이며, 다음 [docker 명령줄 인수](https://docs.docker.com/engine/reference/run/#runtime-privilege-and-linux-capabilities)를 사용해 활성화할 수 있습니다:
+
+```bash
+docker run -d \
+    --cap-add=SYS_NICE --cap-add=NET_ADMIN --cap-add=IPC_LOCK \
+    --name some-clickhouse-server --ulimit nofile=262144:262144 clickhouse/clickhouse-server
+```
+
+자세한 내용은 [&quot;Docker에서 CAP&#95;IPC&#95;LOCK 및 CAP&#95;SYS&#95;NICE capability 설정&quot;](/ko/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker) 문서를 참조하십시오.
+
+<div id="configuration">
+  ## 구성
+</div>
+
+이 컨테이너는 [HTTP 인터페이스](/ko/concepts/features/interfaces/http)용으로 8123 포트, [네이티브 클라이언트](/ko/concepts/features/interfaces/tcp)용으로 9000 포트를 노출합니다.
+
+ClickHouse 구성은 &quot;config.xml&quot; 파일로 표현됩니다([문서](/ko/concepts/features/configuration/server-config/configuration-files)).
+
+<div id="start-server-instance-with-custom-config">
+  ### 사용자 지정 구성으로 서버 인스턴스 시작하기
+</div>
+
+```bash
+docker run -d --name some-clickhouse-server --ulimit nofile=262144:262144 -v /path/to/your/config.xml:/etc/clickhouse-server/config.xml clickhouse/clickhouse-server
+```
+
+<div id="start-server-custom-user">
+  ### 지정한 사용자 계정으로 서버 시작
+</div>
+
+```bash
+# $PWD/data/clickhouse should exist and be owned by current user
+docker run --rm --user "${UID}:${GID}" --name some-clickhouse-server --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server
+```
+
+로컬 디렉터리를 마운트해 이미지를 사용할 때는 올바른 파일 소유권을 유지할 수 있도록 사용자를 지정하는 것이 좋습니다. `--user` 인수를 사용하고 `/var/lib/clickhouse`와 `/var/log/clickhouse-server`를 컨테이너 내부에 마운트하십시오. 그렇지 않으면 이미지가 오류를 내고 시작되지 않습니다.
+
+<div id="start-server-from-root">
+  ### root 권한으로 서버 시작
+</div>
+
+사용자 네임스페이스가 활성화된 경우에는 root 권한으로 서버를 시작하는 것이 유용합니다.
+이렇게 하려면 다음을 실행하세요:
+
+```bash
+docker run --rm -e CLICKHOUSE_RUN_AS_ROOT=1 --name clickhouse-server-userns -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server
+```
+
+<div id="how-to-create-default-db-and-user">
+  ### 시작 시 default 데이터베이스와 사용자를 생성하는 방법
+</div>
+
+경우에 따라 컨테이너가 시작될 때 사용자(기본적으로 `default`라는 이름의 사용자가 사용됩니다)와 데이터베이스를 생성해야 할 수 있습니다. 이 작업은 환경 변수 `CLICKHOUSE_DB`, `CLICKHOUSE_USER`, `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT`, `CLICKHOUSE_PASSWORD`를 사용해 수행할 수 있습니다:
+
+```bash
+docker run --rm -e CLICKHOUSE_DB=my_database -e CLICKHOUSE_USER=username -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -e CLICKHOUSE_PASSWORD=password -p 9000:9000/tcp clickhouse/clickhouse-server
+```
+
+<div id="managing-default-user">
+  #### `default` 사용자 관리
+</div>
+
+`CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`, `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT` 중 어느 것도 설정되지 않으면 사용자 `default`의 네트워크 액세스가 기본적으로 비활성화됩니다.
+
+환경 변수 `CLICKHOUSE_SKIP_USER_SETUP`를 1로 설정하면 `default` 사용자를 안전하지 않은 방식으로 사용할 수 있습니다:
+
+```bash
+docker run --rm -e CLICKHOUSE_SKIP_USER_SETUP=1 -p 9000:9000/tcp clickhouse/clickhouse-server
+```
+
+<div id="how-to-extend-image">
+  ## 이 이미지를 확장하는 방법
+</div>
+
+이 이미지를 기반으로 파생된 이미지에서 추가 초기화를 수행하려면 `/docker-entrypoint-initdb.d` 아래에 `*.sql`, `*.sql.gz` 또는 `*.sh` 스크립트를 하나 이상 추가하십시오. 엔트리포인트가 `initdb`를 호출한 후에는 서비스가 시작되기 전에 추가 초기화를 위해 해당 디렉터리에서 찾은 `*.sql` 파일을 실행하고, 실행 권한이 있는 `*.sh` 스크립트를 실행하며, 실행 권한이 없는 `*.sh` 스크립트는 source합니다.
+
+<Note>
+  `/docker-entrypoint-initdb.d` 아래의 스크립트는 파일명 기준 **알파벳 순서**로 실행됩니다. 스크립트 간에 의존성이 있는 경우(예: 뷰를 생성하는 스크립트는 참조 대상 테이블을 생성하는 스크립트 다음에 실행되어야 함) 파일명이 올바른 순서로 정렬되도록 하십시오.
+</Note>
+
+또한 초기화 중 `clickhouse-client`에서 사용할 환경 변수 `CLICKHOUSE_USER` 및 `CLICKHOUSE_PASSWORD`를 지정할 수 있습니다.
+
+예를 들어, 다른 사용자와 데이터베이스를 추가하려면 `/docker-entrypoint-initdb.d/init-db.sh`에 다음 내용을 추가하십시오:
+
+```bash
+#!/bin/bash
+set -e
+
+clickhouse client -n <<-EOSQL
+    CREATE DATABASE docker;
+    CREATE TABLE docker.docker (x Int32) ENGINE = MergeTree
+    ORDER BY ();
+EOSQL
+```

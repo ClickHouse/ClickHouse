@@ -1,0 +1,29 @@
+---
+title: README
+---
+
+<div id="customizations">
+  # 사용자 지정
+</div>
+
+Mintlify 사이트의 외관과 동작을 사용자 지정하는 스크립트입니다.
+이 스크립트는 `docs.json`의 `scripts` 배열을 통해 로드되며 모든 페이지에서 실행됩니다.
+
+자세한 내용은 [사용자 지정 스크립트](https://www.mintlify.com/docs/customize/custom-scripts)에 관한 Mintlify 문서를 참조하십시오.
+
+<div id="scripts">
+  ## 스크립트
+</div>
+
+* `ask-ai-button.js` — Ask-AI 버튼의 스타일과 동작을 조정합니다.
+* `cookie-banner.js` — 쿠키 동의 배너를 삽입하고 관리합니다.
+* `custom-footer.js` — 사용자 지정 사이트 푸터(`#ch-custom-footer`)를 렌더링합니다.
+* `inkeep-init.js` — Mintlify의 네이티브 검색(⌘K / 내비게이션 바 검색창)을 Inkeep 검색 모달로 대체합니다. 검색 전용이며 AI Chat은 계속 Kapa를 사용합니다.
+* `kapa-init.js` — Kapa.ai RAG 위젯의 초기 설정을 수행합니다.
+* `navbar-cta.js` — 내비게이션 바에 &quot;Get started&quot; CTA를 추가합니다.
+* `clickhouse-sql-lexer-wasm.js` — ClickHouse의 SQL 렉서(`src/Parsers/Lexer.cpp`를 WebAssembly로 컴파일한 것)를 base64 전역 변수로 노출합니다. ClickHouse `programs/server/play.html`에서 가져온 스냅샷이며, upstream 렉서/키워드 목록이 변경되면 다시 추출하십시오.
+* `clickhouse-sql-highlight.js` — WASM 렉서를 사용해 `language="sql"` 코드 블록을 다시 하이라이트합니다(Shiki 대신 ClickHouse 네이티브 색상을 사용하며, `play.html` / `clickhouse-client`와 일치). `clickhouse-sql-lexer-wasm.js` 뒤에 로드해야 합니다. 다른 언어는 Shiki가 렌더링한 상태를 그대로 유지합니다.
+* `quickstart-back-link.js` — 빠른 시작 페이지에서 자동 생성된 &quot;All quickstarts&quot; 배지를 본문 상단에서 제목 위 헤더(브레드크럼 위치)로 이동합니다.
+
+새 스크립트를 연결하려면 `{ "src": "/_site/customizations/<name>.js" }`
+항목을 `docs.json`의 최상위 `scripts` 배열에 추가하십시오.

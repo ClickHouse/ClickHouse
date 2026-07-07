@@ -1,0 +1,66 @@
+---
+description: 'RawBLOB 포맷 문서'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+`RawBLOB` 포맷은 모든 입력 데이터를 하나의 값으로 읽어들입니다. [`String`](/ko/reference/data-types/string) 타입 또는 이와 유사한 타입의 단일 필드만 가진 테이블만 파싱할 수 있습니다.
+결과는 구분 기호와 이스케이프 처리 없이 바이너리 형식으로 출력됩니다. 둘 이상의 값이 출력되면 이 포맷은 모호해져 데이터를 다시 읽을 수 없게 됩니다.
+
+<div id="raw-formats-comparison">
+  ### Raw 포맷 비교
+</div>
+
+아래는 `RawBLOB` 포맷과 [`TabSeparatedRaw`](/ko/reference/formats/TabSeparated/TabSeparatedRaw) 포맷의 비교입니다.
+
+`RawBLOB`:
+
+* 데이터는 바이너리 형식으로 출력되며, 이스케이프되지 않습니다;
+* 값 사이에 구분 기호가 없습니다;
+* 각 값 끝에 줄바꿈이 없습니다.
+
+`TabSeparatedRaw`:
+
+* 데이터는 이스케이프 없이 출력됩니다;
+* 행의 값은 탭으로 구분됩니다;
+* 모든 행에서 마지막 값 뒤에 줄바꿈(line feed)이 있습니다.
+
+다음은 `RawBLOB` 포맷과 [RowBinary](/ko/reference/formats/RowBinary/RowBinary) 포맷의 비교입니다.
+
+`RawBLOB`:
+
+* String 필드는 길이 접두사 없이 출력됩니다.
+
+`RowBinary`:
+
+* String 필드는 varint 포맷의 길이(부호 없는 [LEB128] (https://en.wikipedia.org/wiki/LEB128)) 뒤에 문자열의 바이트가 오는 형태로 표현됩니다.
+
+빈 데이터가 `RawBLOB` 입력으로 전달되면 ClickHouse는 예외를 발생시킵니다:
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

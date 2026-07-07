@@ -1,0 +1,125 @@
+---
+slug: /cloud/billing/marketplace/azure-marketplace-committed-contract
+title: 'Azure Marketplaceのコミットメント契約'
+description: 'Azure Marketplace経由でClickHouse Cloudに申し込む（コミットメント契約）'
+keywords: ['Microsoft', 'Azure', 'Marketplace', '請求', 'コミットメント', 'コミットメント契約']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps) から、コミット型契約を利用して ClickHouse Cloud を使い始めましょう。コミット型契約は Private Offer とも呼ばれ、一定期間にわたって ClickHouse Cloud に一定額を支出することを顧客が確約できる仕組みです。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* 特定の契約条件に基づく ClickHouse の Private Offer。
+
+<div id="steps-to-sign-up">
+  ## 登録手順
+</div>
+
+1. Private Offer を確認して承諾するためのリンクが記載されたメールを受信しているはずです。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-1.webp" size="md" alt="Azure Marketplace の Private Offer メール" border />
+
+<br />
+
+2. メール内の **Review Private Offer** リンクをクリックします。Private Offer の詳細が表示された Azure Marketplace のページに移動します。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-2.webp" size="md" alt="Azure Marketplace の Private Offer 詳細" border />
+
+<br />
+
+3. オファーを承諾すると、**Private Offer Management** 画面に移動します。Azure が購入可能な状態にオファーを準備するまで、少し時間がかかる場合があります。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-3.webp" size="md" alt="Azure Marketplace の Private Offer Management ページ" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-4.webp" size="md" alt="読み込み中の Azure Marketplace Private Offer Management ページ" border />
+
+<br />
+
+4. 数分後にページを更新します。オファーが **Purchase** 可能になっているはずです。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-5.webp" size="md" alt="Purchase が有効になった Azure Marketplace Private Offer Management ページ" border />
+
+<br />
+
+5. **Purchase** をクリックすると、フライアウトが開きます。次の内容を入力してください。
+
+<br />
+
+* サブスクリプションとリソース グループ
+* SaaS サブスクリプションの名前を入力する
+* Private Offer の対象となっている課金プランを選択します。金額が設定されているのは、Private Offer 作成時に指定された契約期間 (たとえば 1 年) のみです。その他の課金期間オプションは $0 になります。
+* 定期課金を有効にするかどうかを選択します。定期課金を選択しない場合、契約は請求期間の終了時に終了し、リソースは廃止予定の状態に設定されます。
+* **Review + subscribe** をクリックします。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-6.webp" size="md" alt="Azure Marketplace のサブスクリプションフォーム" border />
+
+<br />
+
+6. 次の画面で、すべての詳細を確認し、**Subscribe** をクリックします。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-7.webp" size="md" alt="Azure Marketplace のサブスクリプション確認" border />
+
+<br />
+
+7. 次の画面で、**Your SaaS subscription in progress** と表示されます。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-8.webp" size="md" alt="Azure Marketplace のサブスクリプション送信ページ" border />
+
+<br />
+
+8. 準備が完了したら、**Configure account now** をクリックできます。これは、Azure サブスクリプションを、お使いのアカウントの ClickHouse Cloud 組織に関連付ける重要な手順です。この手順を行わないと、Marketplace サブスクリプションは完了しません。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-committed-9.webp" size="md" alt="Azure Marketplace の Configure account now ボタン" border />
+
+<br />
+
+9. ClickHouse Cloud の登録またはサインイン ページにリダイレクトされます。新しいアカウントで登録することも、既存のアカウントでサインインすることもできます。サインインすると、新しい組織が作成され、Azure Marketplace 経由で利用および課金できる状態になります。
+
+10. 続行する前に、住所や会社情報など、いくつかの質問に回答する必要があります。
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="ClickHouse Cloud の登録情報フォーム" border />
+
+<br />
+
+11. **Complete sign up** をクリックすると、ClickHouse Cloud 内の組織に移動します。そこで、Azure Marketplace 経由で課金されていることを課金画面で確認でき、サービスを作成できます。
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-11.webp" size="sm" alt="ClickHouse Cloud の登録情報フォーム" border />
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/azure-marketplace-payg-12.webp" size="md" alt="ClickHouse Cloud の登録情報フォーム" border />
+
+<br />
+
+問題が発生した場合は、遠慮なく[サポートチーム](https://clickhouse.com/support/program)までお問い合わせください。

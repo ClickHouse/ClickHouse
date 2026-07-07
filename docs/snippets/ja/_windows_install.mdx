@@ -1,0 +1,99 @@
+---
+title: Windows へのインストール
+---
+
+<div id="install-clickhouse-on-windows-with-wsl">
+  # WSL を使用して Windows に ClickHouse をインストールする
+</div>
+
+<div id="requirements">
+  ## 要件
+</div>
+
+<Note>
+  Windows に ClickHouse をインストールするには、WSL (Windows Subsystem for Linux) が必要です。
+</Note>
+
+<Steps>
+  <Step>
+    ## WSL をインストールする
+
+    Windows PowerShell を管理者として開き、次のコマンドを実行します。
+
+    ```bash
+    wsl --install
+    ```
+
+    新しい UNIX ユーザー名とパスワードの入力を求められます。希望するユーザー名とパスワードを入力すると、次のようなメッセージが表示されます。
+
+    ```bash
+    Welcome to Ubuntu 24.04.1 LTS (GNU/Linux 5.15.133.1-microsoft-WSL2 x86_64)
+    ```
+  </Step>
+
+  <Step>
+    ## curl を使ってスクリプト経由で ClickHouse をインストールする
+
+    curl を使ってスクリプト経由で ClickHouse をインストールするには、次のコマンドを実行します。
+
+    ```bash
+    curl https://clickhouse.com/ | sh
+    ```
+
+    スクリプトが正常に実行されると、次のメッセージが表示されます。
+
+    ```bash
+    Successfully downloaded the ClickHouse binary, you can run it as:
+      ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-local を起動する
+
+    `clickhouse-local` を使うと、設定不要で ClickHouse の強力な SQL 構文を利用してローカルファイルやリモートファイルを処理できます。テーブルデータは一時的な場所に保存されるため、`clickhouse-local` を再起動すると、以前に作成したテーブルは利用できなくなります。
+
+    [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) を起動するには、次のコマンドを実行します。
+
+    ```bash
+    ./clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-server を起動する
+
+    データを永続化したい場合は、`clickhouse-server` を実行します。ClickHouse サーバーは次のコマンドで起動できます。
+
+    ```bash
+    ./clickhouse server
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-client を起動する
+
+    サーバーが起動したら、新しいターミナルウィンドウを開き、`clickhouse-client` を起動するために次のコマンドを実行します。
+
+    ```bash
+    ./clickhouse client
+    ```
+
+    次のような表示になります。
+
+    ```response
+    ./clickhouse client
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    テーブルデータは現在のディレクトリに保存され、ClickHouse サーバーを再起動した後も引き続き利用できます。必要に応じて、`./clickhouse server` に追加のコマンドライン引数として `-C config.xml` を渡し、設定ファイルでさらに詳細な設定を行うこともできます。利用可能なすべての設定項目は、[こちら](/ja/reference/settings/server-settings/settings) と
+    [設定ファイルのサンプル
+    テンプレート](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) に記載されています。
+
+    これで、ClickHouse に SQL コマンドを送信する準備が整いました。
+  </Step>
+</Steps>

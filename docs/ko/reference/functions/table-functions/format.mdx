@@ -1,0 +1,100 @@
+---
+description: '지정된 입력 형식에 따라 인수의 데이터를 파싱합니다. structure 인수를 지정하지 않으면 데이터에서 추출합니다.'
+slug: /sql-reference/table-functions/format
+sidebarTitle: 'format'
+title: 'format'
+doc_type: 'reference'
+---
+
+지정된 입력 형식에 따라 인수의 데이터를 파싱합니다. structure 인수를 지정하지 않으면 데이터에서 추출합니다.
+
+<div id="syntax">
+  ## 구문
+</div>
+
+```sql
+format(format_name, [structure], data)
+```
+
+<div id="arguments">
+  ## 인수
+</div>
+
+* `format_name` — 데이터의 [포맷](/ko/reference/formats/index)입니다.
+* `structure` - 테이블의 구조입니다. 선택 사항입니다. 형식은 &#39;column1&#95;name column1&#95;type, column2&#95;name column2&#95;type, ...&#39;입니다.
+* `data` — 지정된 포맷의 데이터를 포함하는 문자열을 반환하는 문자열 리터럴 또는 상수 표현식입니다.
+
+<div id="returned_value">
+  ## 반환 값
+</div>
+
+지정된 포맷과 지정되거나 추출된 구조에 따라 `data` 인수에서 구문 분석된 데이터를 포함하는 테이블입니다.
+
+<div id="examples">
+  ## 예시
+</div>
+
+`structure` 인수 없이:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌───b─┬─a─────┐
+│ 111 │ Hello │
+│ 123 │ World │
+│ 112 │ Hello │
+│ 124 │ World │
+└─────┴───────┘
+```
+
+```sql title="Query"
+DESC format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ b    │ Nullable(Float64) │              │                    │         │                  │                │
+│ a    │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+`structure` 인수를 사용하면:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─a─────┬───b─┐
+│ Hello │ 111 │
+│ World │ 123 │
+│ Hello │ 112 │
+│ World │ 124 │
+└───────┴─────┘
+```
+
+<div id="related">
+  ## 관련 문서
+</div>
+
+* [포맷](/ko/reference/formats/index)

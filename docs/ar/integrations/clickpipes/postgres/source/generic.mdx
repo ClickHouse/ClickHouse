@@ -1,0 +1,153 @@
+---
+sidebarTitle: 'Postgres عام'
+description: 'أعِد أي مثيل من Postgres كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/generic
+title: 'دليل إعداد مصدر Postgres عام'
+doc_type: 'guide'
+keywords: ['postgres', 'clickpipes', 'النسخ المتماثل المنطقي', 'pg_hba.conf', 'wal level']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+  إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، فيُرجى الرجوع إلى الدليل المخصّص لذلك المزوّد.
+</Info>
+
+يدعم ClickPipes الإصدار 12 من Postgres وما بعده.
+
+<div id="enable-logical-replication">
+  ## تمكين النسخ المتماثل المنطقي
+</div>
+
+1. لتمكين النسخ المتماثل على مثيل Postgres لديك، نحتاج إلى التأكد من ضبط الإعدادات التالية:
+
+   ```sql
+   wal_level = logical
+   ```
+
+   للتحقق من ذلك، يمكنك تشغيل أمر SQL التالي:
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   يجب أن تكون النتيجة `logical`. وإذا لم تكن كذلك، فنفّذ:
+
+   ```sql
+   ALTER SYSTEM SET wal_level = logical;
+   ```
+
+2. بالإضافة إلى ذلك، يُوصى بضبط الإعدادات التالية على مثيل Postgres:
+
+   ```sql
+   max_wal_senders > 1
+   max_replication_slots >= 4
+   ```
+
+   للتحقق من ذلك، يمكنك تشغيل أوامر SQL التالية:
+
+   ```sql
+   SHOW max_wal_senders;
+   SHOW max_replication_slots;
+   ```
+
+   إذا لم تطابق القيمُ القيمَ الموصى بها، فيمكنك تشغيل أوامر SQL التالية لضبطها:
+
+   ```sql
+   ALTER SYSTEM SET max_wal_senders = 10;
+   ALTER SYSTEM SET max_replication_slots = 10;
+   ```
+
+3. إذا أجريت أي تغييرات على الإعدادات كما هو موضح أعلاه، فيجب عليك إعادة تشغيل مثيل Postgres لكي تسري التغييرات.
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## إنشاء مستخدم مع الأذونات والمنشور
+</div>
+
+اتصل بمثيل Postgres باستخدام مستخدم Admin ونفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصّصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة صلاحية الوصول على مستوى المخطط بصلاحية القراءة فقط. يوضّح المثال التالي الأذونات الخاصة بمخطط `public`. كرر هذه الأوامر لكل مخطط يحتوي على جداول تريد تضمينها في النسخ المتماثل:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [منشورًا](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد تضمينها في النسخ المتماثل. نوصي بشدة بقصر المنشور على الجداول التي تحتاج إليها فقط لتجنّب أي عبء إضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لأي جدول مُدرج في المنشور **مفتاح أساسي** معرّف، *أو* أن تكون **هوية النسخة المتماثلة** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة الخاصة بـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء منشور لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء منشور لكل الجداول ضمن مخطط محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+سيحتوي المنشور `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب دفق النسخ المتماثل.
+
+<div id="enabling-connections-in-pg_hbaconf-to-the-clickpipes-user">
+  ## تمكين الاتصالات في pg_hba.conf لمستخدم ClickPipes
+</div>
+
+إذا كنت تستضيف الخدمة بنفسك، فأنت بحاجة إلى السماح باتصالات مستخدم ClickPipes الواردة من عناوين IP الخاصة بـ ClickPipes باتباع الخطوات أدناه. وإذا كنت تستخدم خدمة مُدارة، فيمكنك فعل الشيء نفسه باتباع وثائق المزوّد.
+
+1. أجرِ التعديلات اللازمة على ملف `pg_hba.conf` للسماح باتصالات مستخدم ClickPipes الواردة من عناوين IP الخاصة بـ ClickPipes. سيبدو مثال على مُدخل في ملف `pg_hba.conf` كما يلي:
+   ```response
+   host    all   clickpipes_user     0.0.0.0/0          scram-sha-256
+   ```
+
+2. أعد تحميل مثيل PostgreSQL لتصبح التغييرات نافذة:
+   ```sql
+   SELECT pg_reload_conf();
+   ```
+
+<div id="increase-max_slot_wal_keep_size">
+  ## زيادة `max_slot_wal_keep_size`
+</div>
+
+هذا تغيير مُوصى به في الإعدادات لضمان ألّا تؤدي المعاملات الكبيرة أو عمليات `commit` إلى إسقاط فتحة النسخ المتماثل.
+
+يمكنك زيادة قيمة المعلمة `max_slot_wal_keep_size` لمثيل PostgreSQL لديك إلى قيمة أعلى (100GB على الأقل أو `102400`) عبر تحديث ملف `postgresql.conf`.
+
+```sql
+max_slot_wal_keep_size = 102400
+```
+
+يمكنك إعادة تحميل مثيل Postgres لتصبح التغييرات نافذة:
+
+```sql
+SELECT pg_reload_conf();
+```
+
+<Note>
+  للحصول على توصية أدق بشأن هذه القيمة، يمكنك التواصل مع فريق ClickPipes.
+</Note>
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) وبدء إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres الخاص بك، إذ ستحتاج إليها أثناء عملية إنشاء ClickPipe.

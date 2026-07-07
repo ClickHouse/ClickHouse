@@ -24,6 +24,11 @@ perf_right_config = f"{perf_right}/config"
 perf_left_config = f"{perf_left}/config"
 raw_query_metrics_path = f"{perf_wd}/analyze/raw-query-metrics-upload.tsv"
 
+# Disable cgroup memory correction for report-building clickhouse-local so each
+# process is tracked against its own RSS, not the shared job cgroup (avoids Code 241).
+# Keep in sync with CHPC_REPORT_LOCAL_SERVER_SETTINGS in compare.sh.
+REPORT_LOCAL_SERVER_SETTINGS = ["--", "--memory_worker_use_cgroup=0"]
+
 GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
@@ -516,7 +521,7 @@ def get_insert_metadata(info, compare_against_release):
 def build_raw_query_metrics_tsv():
     Path(raw_query_metrics_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY],
+        ["clickhouse-local", "--query", BUILD_RAW_QUERY_METRICS_QUERY, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,
@@ -556,7 +561,7 @@ def build_flamegraph_upload_tsv():
     Path(ch_uploads_dir).mkdir(parents=True, exist_ok=True)
     Path(flamegraph_upload_path).unlink(missing_ok=True)
     result = subprocess.run(
-        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY],
+        ["clickhouse-local", "--query", BUILD_FLAMEGRAPH_UPLOAD_QUERY, *REPORT_LOCAL_SERVER_SETTINGS],
         cwd=perf_wd,
         text=True,
         capture_output=True,

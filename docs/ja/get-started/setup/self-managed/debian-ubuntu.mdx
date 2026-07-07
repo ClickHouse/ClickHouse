@@ -1,0 +1,152 @@
+---
+description: 'Debian/Ubuntu LinuxにClickHouseをインストールする'
+keywords: ['ClickHouse', 'install', 'Debian', 'Ubuntu', 'deb']
+sidebarTitle: 'Debian/Ubuntu'
+slug: /install/debian_ubuntu
+title: 'Debian/UbuntuにClickHouseをインストールする'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ja/recommendations.mdx';
+
+> **Debian** または **Ubuntu** では、公式の事前コンパイル済み `deb` パッケージを使用することを推奨します。
+
+<Steps>
+  <Step>
+    ## 推奨事項を確認する
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## Debian リポジトリを設定する
+
+    ClickHouse をインストールするには、次のコマンドを実行します。
+
+    ```bash
+    # 前提パッケージをインストール
+    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+    # ClickHouse の GPG キーをダウンロードしてキーリングに保存
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+
+    # システムアーキテクチャを取得
+    ARCH=$(dpkg --print-architecture)
+
+    # ClickHouse リポジトリを apt ソースに追加
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+
+    # apt パッケージリストを更新
+    sudo apt-get update
+    ```
+
+    * 必要に応じて `stable` を `lts` に置き換えることで、異なる[リリース種別](/ja/resources/support-center/knowledge-base/setup-installation/production)を利用できます。
+    * [packages.clickhouse.com](https://packages.clickhouse.com/deb/pool/main/c/) からパッケージを手動でダウンロードしてインストールすることもできます。
+
+    <br />
+
+    <Accordion title="古いディストリビューションで deb パッケージをインストールする方法">
+      ```bash
+      # 前提パッケージをインストール
+      sudo apt-get install apt-transport-https ca-certificates dirmngr
+
+      # パッケージ認証用に ClickHouse の GPG キーを追加
+      sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+      # ClickHouse リポジトリを apt ソースに追加
+      echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+          /etc/apt/sources.list.d/clickhouse.list
+          
+      # apt パッケージリストを更新
+      sudo apt-get update
+
+      # ClickHouse サーバー と ClickHouse クライアント パッケージをインストール
+      sudo apt-get install -y clickhouse-server clickhouse-client
+
+      # ClickHouse サーバー サービスを起動
+      sudo service clickhouse-server start
+
+      # ClickHouse コマンドライン client を起動
+      clickhouse-client # password を設定している場合は "clickhouse-client --password"
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ## ClickHouse サーバー と ClickHouse クライアント をインストールする
+
+    ```bash
+    sudo apt-get install -y clickhouse-server clickhouse-client
+    ```
+  </Step>
+
+  <Step>
+    ## ClickHouse を起動する
+
+    ClickHouse サーバー を起動するには、次を実行します。
+
+    ```bash
+    sudo service clickhouse-server start
+    ```
+
+    ClickHouse クライアント を起動するには、次を実行します。
+
+    ```bash
+    clickhouse-client
+    ```
+
+    server に password を設定している場合は、次を実行する必要があります。
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## スタンドアロンの ClickHouse Keeper をインストールする
+
+    <Tip>
+      production 環境では、ClickHouse Keeper は専用ノードで実行することを強く推奨します。
+      テスト環境で ClickHouse Server と ClickHouse Keeper を同じ server 上で実行する場合は、
+      ClickHouse サーバー に ClickHouse Keeper が含まれているため、ClickHouse Keeper をインストールする必要はありません。
+    </Tip>
+
+    スタンドアロンの ClickHouse Keeper サーバーに `clickhouse-keeper` をインストールするには、次を実行します。
+
+    ```bash
+    sudo apt-get install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## ClickHouse Keeper を有効化して起動する
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>
+
+<div id="packages">
+  ## パッケージ
+</div>
+
+利用可能な各種 deb パッケージについて、以下に詳しく説明します。
+
+| Package                        | Description                                                                                                                                                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `clickhouse-common-static`     | ClickHouse のコンパイル済みバイナリファイルをインストールします。                                                                                                                                                                       |
+| `clickhouse-server`            | `clickhouse-server` のシンボリックリンクを作成し、デフォルトのサーバー設定をインストールします。                                                                                                                                                   |
+| `clickhouse-client`            | `clickhouse-client` およびその他のクライアント関連ツールのシンボリックリンクを作成し、クライアント設定ファイルをインストールします。                                                                                                                                 |
+| `clickhouse-common-static-dbg` | デバッグ情報付きの ClickHouse コンパイル済みバイナリファイルをインストールします。                                                                                                                                                              |
+| `clickhouse-keeper`            | 専用の ClickHouse Keeper ノードに ClickHouse Keeper をインストールする際に使用します。ClickHouse サーバー と同じサーバーで ClickHouse Keeper を実行している場合、このパッケージをインストールする必要はありません。ClickHouse Keeper と、デフォルトの ClickHouse Keeper 設定ファイルをインストールします。 |
+
+<br />
+
+<Info>
+  特定のバージョンの ClickHouse をインストールする必要がある場合は、すべてのパッケージを同じバージョンでインストールする必要があります。
+  `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+</Info>

@@ -1,0 +1,108 @@
+---
+slug: /cloud/managed-postgres/connection
+sidebarTitle: 'Conexión'
+title: 'Conexión a Managed Postgres'
+description: 'Cadenas de conexión, pool de conexiones de PgBouncer y configuración de TLS para ClickHouse Managed Postgres'
+keywords: ['conexión de Postgres', 'cadena de conexión', 'pgbouncer', 'tls', 'ssl']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
+
+<Tip>
+  **SQL Console**
+
+  Esta página explica cómo conectar sus sistemas de producción a Postgres. Si desea una forma rápida de ejecutar una consulta, puede conectarse mediante [SQL Console](/es/integrations/connectors/sql-clients/sql-console), igual que con las instancias de ClickHouse.
+</Tip>
+
+<div id="accessing-connection-details">
+  ## Acceso a los detalles de conexión
+</div>
+
+Para conectar sus aplicaciones a Managed Postgres, vaya a la vista **Connect** en la barra lateral izquierda de su instancia.
+
+<Image img="/images/managed-postgres/connect-button.webp" alt="Haga clic en Connect en la barra lateral izquierda para ver los detalles de conexión" size="md" border />
+
+Al hacer clic en **Connect**, se abre una ventana modal que muestra sus credenciales de conexión y cadenas de conexión en varios formatos.
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="Ventana modal de conexión que muestra las credenciales y los formatos de cadena de conexión" size="md" border />
+
+La ventana modal de conexión muestra la siguiente información:
+
+* **Username**: El usuario de base de datos (predeterminado: `postgres`)
+* **Password**: La contraseña de la base de datos (oculta de forma predeterminada; haga clic en el icono del ojo para mostrarla)
+* **Server**: El hostname de su instancia de Managed Postgres
+* **Port**: El puerto de PostgreSQL (predeterminado: `5432`)
+
+Managed Postgres proporciona acceso de superusuario a su base de datos. Use estas credenciales para conectarse como superusuario, lo que le permitirá crear usuarios adicionales y administrar objetos de la base de datos.
+
+<div id="connection-string">
+  ## Formatos de cadena de conexión
+</div>
+
+Las pestañas **Conectar mediante** muestran tu cadena de conexión en varios formatos para adaptarse a los requisitos de tu aplicación:
+
+| Formato  | Descripción                                                                                       |
+| -------- | ------------------------------------------------------------------------------------------------- |
+| **url**  | URL de conexión estándar con el formato `postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>` |
+| **psql** | Comando listo para usar para conectarse mediante la herramienta de línea de comandos `psql`       |
+| **env**  | Variables de entorno para clientes basados en `libpq`                                             |
+| **yaml** | Configuración en formato YAML                                                                     |
+| **jdbc** | Cadena de conexión JDBC para aplicaciones Java                                                    |
+
+Por motivos de seguridad, la contraseña en las cadenas de conexión aparece enmascarada de forma predeterminada. Haz clic en el icono de copia junto a cualquier campo o cadena de conexión para copiarla directamente al portapapeles.
+
+<div id="pgbouncer">
+  ## Pool de conexiones con PgBouncer
+</div>
+
+Managed Postgres incluye una instancia integrada de [PgBouncer](https://www.pgbouncer.org/) para el pool de conexiones del servidor. PgBouncer ayuda a mejorar la gestión de conexiones, el rendimiento y el uso de recursos, especialmente en aplicaciones que:
+
+* Abren muchas conexiones concurrentes
+* Crean y cierran conexiones con frecuencia
+* Usan entornos de cómputo sin servidor o efímeros
+
+Para usar el pool de conexiones, haga clic en el interruptor **via PgBouncer** en la parte superior del modal de conexión. Los datos de conexión se actualizarán para enrutar sus conexiones a través del pool de conexiones en lugar de hacerlo directamente a PostgreSQL.
+
+<Tip>
+  **Cuándo usar PgBouncer**
+
+  Use PgBouncer cuando su aplicación abra muchas conexiones de corta duración. Para conexiones de larga duración o aplicaciones que usan funcionalidades de PostgreSQL incompatibles con el pool de conexiones (como sentencias preparadas entre transacciones), conéctese directamente.
+
+  No se admite mover datos a ClickHouse con ClickPipes a través de PgBouncer.
+</Tip>
+
+<div id="tls">
+  ## Configuración de TLS
+</div>
+
+Todas las instancias de Managed Postgres están protegidas con TLS. La versión mínima compatible es **TLS 1.3**.
+
+<div id="quick-connection">
+  ### Conexión rápida (cifrada con TLS)
+</div>
+
+De forma predeterminada, las conexiones utilizan cifrado TLS sin verificación de certificados:
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
+```
+
+<div id="verified-tls">
+  ### Conexión TLS verificada (recomendada para producción)
+</div>
+
+Para workloads de producción, recomendamos conectarse mediante TLS verificado para garantizar que se está comunicando con el servidor correcto. Para ello, descargue el paquete de certificados de la CA desde la pestaña **Settings** y añádalo a los certificados de confianza de su cliente de base de datos.
+
+<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Descargue el certificado de la CA desde la pestaña Settings" size="md" border />
+
+El certificado de la CA es exclusivo de su instancia de Managed Postgres y no funcionará con otras instancias.
+
+Para conectarse mediante una conexión TLS verificada, añada `sslmode=verify-full` y la ruta a su certificado descargado:
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
+```
