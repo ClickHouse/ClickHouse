@@ -247,7 +247,7 @@ using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
 /// Settings for the decoded changelog read-ahead engine. One shared reader/fill implementation
 /// (ReadAheadReader) backs two independent consumers: peer catch-up read-ahead, gated by `enabled`
 /// and using window_bytes/max_peer_readers/eviction_timeout_ms/pool_threads; and commit read-ahead,
-/// always-on and gated independently by `commit_window_bytes` (0 disables it).
+/// always enabled when `commit_window_bytes != 0`; its reader is created on demand and idle-evicted.
 struct ReadAheadSettings
 {
     /// Gates peer read-ahead only; commit read-ahead is controlled solely by commit_window_bytes.
@@ -286,11 +286,10 @@ struct ReadAheadReader;
   * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
   *
-  * Committing is served by a single always-on commit read-ahead reader (commit_reader), built on
-  * the same machinery but exempt from peer capacity limits (not from idle eviction), with its window
+  * Committing is served by a single commit read-ahead reader (commit_reader), created on demand and
+  * idle-evicted, built on the same machinery but exempt from peer capacity limits, with its window
   * sized by ReadAheadSettings::commit_window_bytes. Lookup order: in-memory hits -> commit reader
-  * fast-path pop -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as
-  * fallback.
+  * fast-path pop -> on miss, build a plan and bounded-wait for the reader -> blocking direct read.
   *
   * Both planners derive fill cursors from per-file valid-run metadata (ChangelogFileDescription::
   * valid_runs, appendRunCursors), bounding every cursor to a single run of current records. This
@@ -449,11 +448,17 @@ private:
     /// Append bounded fill cursors covering `file`'s valid runs over [from_index, end_limit).
     /// PRECONDITION: caller holds changelog_lock (shared); from_index is located and its location is in
     /// `file`. Returns the exclusive end of the emitted coverage (== from_index when nothing to emit).
+    /// Bounded by max_index_with_location, never by latest_logs_cache: the cache window moves forward
+    /// with appends, so a cached entry may be evicted before the fill reaches it and gets served from
+    /// the already-decoded read-ahead instead of stalling on a replan.
     uint64_t appendRunCursors(
         LogReadPlan::ReadAheadWindow & window,
         const ChangelogFileDescriptionPtr & file,
         uint64_t from_index,
         uint64_t end_limit) const;
+
+    /// Shared N+1 planning step: extend the window with the next file's cursors past `coverage_end`.
+    void appendNextFileCursors(LogReadPlan::ReadAheadWindow & window, uint64_t coverage_end) const;
 
     /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
     /// Taken by value, not by reference into the map, since erasing the entry below would dangle a reference.
@@ -505,10 +510,16 @@ private:
     /// Stores the raw tick count since std::atomic<time_point> would need an internal lock.
     std::atomic<std::chrono::steady_clock::rep> last_eviction_scan_ticks{0};
 
+    std::chrono::steady_clock::time_point lastEvictionScanTimePoint() const
+    {
+        return std::chrono::steady_clock::time_point(
+            std::chrono::steady_clock::duration(last_eviction_scan_ticks.load(std::memory_order_relaxed)));
+    }
+
     /// Sentinel reader id for the commit reader (logging + drainReader retire routing).
     static constexpr int32_t COMMIT_READER_ID = -2;
-    /// Always-on reader feeding the NuRaft commit loop; owned separately from peer_readers, exempt from
-    /// max_peer_readers capacity but not from idle eviction.
+    /// Reader feeding the NuRaft commit loop; created on demand, idle-evicted, owned separately from
+    /// peer_readers, exempt from max_peer_readers capacity.
     std::shared_ptr<ReadAheadReader> commit_reader TSA_GUARDED_BY(readers_mutex);
 
     std::shared_ptr<ReadAheadReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)

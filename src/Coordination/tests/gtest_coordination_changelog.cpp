@@ -3793,6 +3793,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadMatchesDirectPath)
             .latest_logs_cache_size_threshold = 1,
         },
         DB::FlushSettings(),
+        // commit_window_bytes = 1 (not 0) keeps the commit reader out of the way without disabling it.
         DB::ReadAheadSettings{.enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100, .commit_window_bytes = 1},
         this->keeper_context);
     changelog.init(0, 0);
@@ -4124,29 +4125,33 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadPoolSaturationFallsBackToDirectRe
 
     const uint64_t rejected_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadScheduleRejected];
 
-    // The pool holds exactly 3 threads (2 peer + 1 commit). Occupy all three with wedged fills; each
-    // call still returns correct data via the serve-timeout direct-read fallback.
-    auto peer1 = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/1);
-    ASSERT_NE(peer1, nullptr);
-    EXPECT_EQ(peer1->size(), 5u);
+    // The pool holds (max_peer_readers + 1) threads and 2x that as total queue capacity (running +
+    // queued). eviction_timeout_ms=1 lets evictIdleReadersLocked reap each reader's map entry while
+    // its fill task is still wedged occupying a pool slot, so repeated distinct requests each consume
+    // a fresh slot without ever freeing an old one.
+    const size_t pool_capacity = 2 * (readahead_settings.max_peer_readers + 1);
+    int32_t next_peer_id = 1;
+    for (size_t i = 0; i < pool_capacity; ++i)
+    {
+        if (i == pool_capacity / 2)
+        {
+            auto commit_entry = changelog.entry_at_ext(1, /*for_commit=*/true);
+            ASSERT_NE(commit_entry, nullptr);
+            EXPECT_EQ(commit_entry->get_term(), 1u);
+            continue;
+        }
+        auto peer_batch = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, next_peer_id++);
+        ASSERT_NE(peer_batch, nullptr);
+        EXPECT_EQ(peer_batch->size(), 5u);
+    }
 
-    // eviction_timeout_ms=1 lets evictIdleReadersLocked reap peer 1's reader while its fill task is
-    // still wedged occupying a pool thread -- the logical count drops but the physical slot doesn't.
-    auto peer2 = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/2);
-    ASSERT_NE(peer2, nullptr);
-    EXPECT_EQ(peer2->size(), 5u);
-
-    auto commit_entry = changelog.entry_at_ext(1, /*for_commit=*/true);
-    ASSERT_NE(commit_entry, nullptr);
-    EXPECT_EQ(commit_entry->get_term(), 1u);
-
-    // All three pool slots are now occupied; a new peer's reader creation must trySchedule-fail and
-    // fall back to a direct read instead of wedging on the saturated pool.
-    auto peer3 = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, /*peer_id=*/3);
-    ASSERT_NE(peer3, nullptr);
-    ASSERT_EQ(peer3->size(), 5u);
+    // The pool is now fully occupied; a new reader's fill scheduling must trySchedule-fail and fall
+    // back to a direct read instead of wedging on the saturated pool.
+    auto peer_final = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, next_peer_id);
+    ASSERT_NE(peer_final, nullptr);
+    ASSERT_EQ(peer_final->size(), 5u);
     for (size_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*peer3)[i]->get_term(), static_cast<uint64_t>(i + 1));
+        EXPECT_EQ((*peer_final)[i]->get_term(), static_cast<uint64_t>(i + 1));
 
     const uint64_t rejected_after = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadScheduleRejected];
     EXPECT_GT(rejected_after, rejected_before)
@@ -5061,6 +5066,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
         EXPECT_EQ(entry->get_term(), i);
     }
 
+    // flush() -> refreshCache() -> maybeEvictIdleReaders() is what triggers the retirement below.
     changelog.flush();
 
     EXPECT_FALSE(changelog.hasCommitReaderForTests()) << "The idle commit reader must be retired";
@@ -5137,7 +5143,7 @@ TYPED_TEST(CoordinationChangelogTest, LogEntriesThrowsOnConcurrentTruncation)
     {
         EXPECT_EQ(ex.code(), DB::ErrorCodes::LOGICAL_ERROR) << ex.message();
     }
-    catch (...)
+    catch (...) // Ok: FAIL() reports the test failure
     {
         FAIL() << "Expected a DB::Exception";
     }

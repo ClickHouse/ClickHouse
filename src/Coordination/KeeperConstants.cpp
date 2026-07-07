@@ -329,6 +329,10 @@
     M(KeeperLogsReadAheadFillReopens) \
     M(KeeperLogsReadAheadFillDecodedEntries) \
     M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsReadAheadPlanEpochMismatches) \
+    M(KeeperLogsReadAheadScheduleRejected) \
+    M(KeeperLogsReadAheadReadersCreated) \
+    M(KeeperLogsReadAheadTimeoutFallbacks) \
     M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \

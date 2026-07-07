@@ -5,7 +5,7 @@ Scenario:
   1. Configure a 3-node Keeper cluster with a small log cache (forces entries to
      disk quickly) and log file rotation every 1000 entries.
   2. Start only nodes 1 and 2 (quorum = 2 of 3).
-  3. Write 5000 znodes via kazoo — produces at least 5 sealed log files on the leader.
+  3. Write 5000 znodes via kazoo — produces ~5 log files on the leader (at least 4 sealed).
   4. Start node 3, which has no log and must catch up by streaming log entries from
      the leader via log_entries_ext.
   5. Wait for node 3 to become a connected follower.
@@ -89,7 +89,7 @@ def test_readahead_catchup(started_cluster):
         zk.stop()
         zk.close()
 
-    # Confirm the leader has sealed at least 4 log files (5000 / 1000 = 5 files).
+    # 5000 znodes / 1000 per file ~= 5 files, but the newest may still be active; assert >= 4 sealed.
     leader = node1 if keeper_utils.is_leader(cluster, node1) else node2
     log_files = (
         leader.exec_in_container(["ls", "/var/lib/clickhouse/coordination/log"])

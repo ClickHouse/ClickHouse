@@ -1564,7 +1564,8 @@ struct ReadAheadReader
     void waitForCursor(uint64_t local_generation);
 };
 
-/// Byte size of a decoded entry for decoded_bytes accounting.
+/// Byte size of a decoded entry for decoded_bytes accounting. Counts only the serialized buffer, so
+/// window budgets underestimate resident memory for tiny entries (per-entry object overhead is ignored).
 static size_t entryBytes(const LogEntryPtr & entry)
 {
     return entry ? entry->get_buf().size() : 0;
@@ -1662,6 +1663,7 @@ void ReadAheadReader::resetFillCursorLocked()
 {
     held_buf.reset();
     resume_cursor.reset();
+    fill_serve_cv.notify_all();
 }
 
 void ReadAheadReader::closeHeld()
@@ -1952,10 +1954,15 @@ CursorOutcome fillFromCursor(
             return CursorOutcome::Eof;
 
         // Save the current decode position so the fill can resume from here on the next wakeup.
-        // Written at the top of every iteration so all exit paths (window park,
-        // FileMoved, generation restart) automatically have an up-to-date resume point.
         {
             std::lock_guard dq_lock(reader.deque_mutex);
+            if (reader.state != ReaderState::Running)
+                return CursorOutcome::Terminal;
+            if (reader.generation != local_generation)
+            {
+                reader.resetFillCursorLocked();
+                return CursorOutcome::Restart;
+            }
             reader.setResumeCursorLocked(
                 cursor.file_description,
                 next_position,
@@ -2115,6 +2122,14 @@ uint64_t LogEntryStorage::appendRunCursors(
     return end;
 }
 
+void LogEntryStorage::appendNextFileCursors(LogReadPlan::ReadAheadWindow & window, uint64_t coverage_end) const
+{
+    if (coverage_end > max_index_with_location)
+        return;
+    const auto & next_loc = logs_location.at(coverage_end);
+    appendRunCursors(window, next_loc.file_description, coverage_end, max_index_with_location + 1);
+}
+
 /// Build a read-ahead plan: direct-read items via getReadPlan, plus speculative fill cursors covering
 /// each touched file's valid runs, clipped to that file's first planned index, plus one extra file
 /// beyond the touched range so the fill task is already primed for the next file boundary.
@@ -2151,14 +2166,8 @@ LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int6
         coverage_end = appendRunCursors(window, run->file_description, run->first_index, std::numeric_limits<uint64_t>::max());
     }
 
-    // N+1 planning: extend one file past the touched range, clipped to max_index_with_location, not
-    // latest_logs_cache (a size-bounded window that moves independently of what's persisted). Each
-    // later plan re-derives these cursors as no-ops and extends one further file.
-    if (prev_file && coverage_end <= max_index_with_location)
-    {
-        const auto & next_loc = logs_location.at(coverage_end);
-        appendRunCursors(window, next_loc.file_description, coverage_end, max_index_with_location + 1);
-    }
+    if (prev_file)
+        appendNextFileCursors(window, coverage_end);
 
     if (!window.empty())
         plan.read_ahead_window = std::move(window);
@@ -2198,16 +2207,9 @@ LogReadPlan LogEntryStorage::getCommitReadPlan(uint64_t index, uint64_t retained
     if (!can_use_commit_readahead)
         return plan;
 
-    /// N+1 planning: window covers the base file's remainder plus, if that ends before
-    /// max_index_with_location, one more file beyond it. Unlike the peer path there's no per-batch
-    /// renewal, so crossing into a third file costs one serve-wait before the next rebuild extends further.
     LogReadPlan::ReadAheadWindow window;
     uint64_t coverage_end = appendRunCursors(window, base_loc.file_description, index, max_index_with_location + 1);
-    if (coverage_end <= max_index_with_location)
-    {
-        const auto & next_loc = logs_location.at(coverage_end);
-        appendRunCursors(window, next_loc.file_description, coverage_end, max_index_with_location + 1);
-    }
+    appendNextFileCursors(window, coverage_end);
     if (!window.empty())
         plan.read_ahead_window = std::move(window);
     return plan;
@@ -2289,15 +2291,15 @@ void LogEntryStorage::ensureReadAheadPoolLocked()
             peer_threads = readahead_settings.max_peer_readers;
     }
     const size_t threads = peer_threads + 1;
-    // One queue slot per possible reader (peers + commit); trySchedule fails fast rather than
-    // blocking when full, since this all runs under readers_mutex.
+    // Double the per-reader slot count: a retired reader's fill task keeps its slot until it
+    // observes Closed and returns, so retire/recreate overlap can transiently need up to 2x.
     readahead_pool = std::make_unique<ThreadPool>(
         CurrentMetrics::KeeperChangelogReadAheadThreads,
         CurrentMetrics::KeeperChangelogReadAheadThreadsActive,
         CurrentMetrics::KeeperChangelogReadAheadThreadsScheduled,
         threads,
         threads,
-        readahead_settings.max_peer_readers + 1,
+        2 * (readahead_settings.max_peer_readers + 1),
         /*shutdown_on_exception_=*/false); /// a failed fill must not disable read-ahead process-wide
 }
 
@@ -2309,8 +2311,7 @@ void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_poi
     // suppresses the scan; terminal reaping in acquireReaderLocked covers the per-peer case.
     const bool at_capacity = peer_readers.size() >= readahead_settings.max_peer_readers;
     const auto gate_interval = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
-    const auto last_scan = std::chrono::steady_clock::time_point(
-        std::chrono::steady_clock::duration(last_eviction_scan_ticks.load(std::memory_order_relaxed)));
+    const auto last_scan = lastEvictionScanTimePoint();
     if (!at_capacity && (now - last_scan) < gate_interval)
         return;
     last_eviction_scan_ticks.store(now.time_since_epoch().count(), std::memory_order_relaxed);
@@ -2347,8 +2348,7 @@ void LogEntryStorage::maybeEvictIdleReaders()
     // Skip taking readers_mutex entirely when clearly inside the gate interval.
     const auto now = std::chrono::steady_clock::now();
     const auto gate_interval = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
-    const auto last_scan = std::chrono::steady_clock::time_point(
-        std::chrono::steady_clock::duration(last_eviction_scan_ticks.load(std::memory_order_relaxed)));
+    const auto last_scan = lastEvictionScanTimePoint();
     if ((now - last_scan) < gate_interval)
         return;
 
@@ -2461,7 +2461,8 @@ void LogEntryStorage::installPlanLocked(ReadAheadReader & reader, const LogReadP
     if (!plan.read_ahead_window || plan.read_ahead_window->empty())
         return;
 
-    // Append only cursors for files the fill is not already covering.
+    // Append only cursors for files the fill is not already covering. A run growing past coverage_end
+    // is dropped here too, so a reader at the flushed tip takes one fallback per exhaustion cycle.
     size_t installed = 0;
     for (const auto & cursor : *plan.read_ahead_window)
     {
