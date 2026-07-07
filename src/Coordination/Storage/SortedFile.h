@@ -3,6 +3,7 @@
 #include <Coordination/Storage/Common.h>
 #include <Coordination/KeeperCommon.h>
 #include <Common/Arena.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 #include <vector>
 
@@ -29,6 +30,10 @@ struct SortedFile
     };
 
     String file_path;
+
+    /// The file opened for reading. All block loads use positioned reads (readBigAt) on this
+    /// buffer, which is thread safe. Null in memory-only mode.
+    std::unique_ptr<DB::ReadBufferFromFileBase> read_buffer;
 
     uint32_t serialization_version = 0;
     /// Forward compatibility: the file can be read by readers this old and newer.

@@ -5,7 +5,15 @@
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Exception.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
+#include <Core/Defines.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 
 #include <algorithm>
 #include <chrono>
@@ -16,11 +24,14 @@
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
 namespace DB::CoordinationSetting
 {
+    extern const CoordinationSettingsBool storage_memory_only;
+    extern const CoordinationSettingsUInt64 block_cache_size;
     extern const CoordinationSettingsUInt64 committed_memtable_size;
     extern const CoordinationSettingsUInt64 memtable_block_size;
     extern const CoordinationSettingsUInt64 uncommitted_memtable_size;
@@ -37,7 +48,18 @@ namespace Coordination::Storage
 StorageState::StorageState(DB::KeeperContextPtr keeper_context_, DB::SharedMutex * storage_mutex_)
     : keeper_context(std::move(keeper_context_)), log(getLogger("KeeperLSMT")), storage_mutex(storage_mutex_)
 {
-    /// TODO: Init memory_only. Init block_cache if not memory_only.
+    const DB::CoordinationSettings & settings = keeper_context->getCoordinationSettings();
+
+    memory_only = settings[DB::CoordinationSetting::storage_memory_only];
+
+    /// pread is the default, but spell it out because positioned reads (readBigAt) on local
+    /// disks depend on it.
+    read_settings.local_fs_settings.method = DB::LocalFSReadMethod::pread;
+    /// Skip the async prefetching wrapper: we don't do sequential reads, only readBigAt.
+    read_settings.remote_fs_settings.method = DB::RemoteFSReadMethod::read;
+
+    if (!memory_only)
+        block_cache = std::make_unique<BlockCache>(settings[DB::CoordinationSetting::block_cache_size]);
 }
 
 StorageState::~StorageState()
@@ -47,8 +69,47 @@ StorageState::~StorageState()
 
 void StorageState::startup()
 {
+    if (!memory_only)
+    {
+        disk = keeper_context->getDataDisk();
+        writeInfoFile();
+    }
+
     chassert(!background);
     background = std::make_unique<BackgroundWork>(this);
+}
+
+void StorageState::writeInfoFile()
+{
+    DB::WriteBufferFromOwnString content_buf;
+    DB::writeText("server version: ", content_buf);
+    DB::writeText(VERSION_DESCRIBE, content_buf);
+    DB::writeText("\nstartup time: ", content_buf);
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    DB::writeDateTimeText(DB::DateTime64(now_ns), 9, content_buf);
+    DB::writeChar('\n', content_buf);
+    const std::string & content = content_buf.str();
+
+    auto out = disk->writeFile("info", DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, write_settings);
+    DB::writeString(content, *out);
+    out->finalize();
+
+    auto in = disk->readFile("info", read_settings, /*read_hint*/ {});
+    if (!in->supportsReadAt())
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "Keeper data disk '{}' doesn't support positioned reads, required by the node storage. "
+            "Use a 'local' or plain object storage (e.g. 's3_plain') disk.",
+            disk->getName());
+
+    std::string read_back(content.size(), '\0');
+    const size_t bytes_read = in->readBigAt(read_back.data(), content.size(), 0, /*progress_callback*/ nullptr);
+    if (bytes_read != content.size() || read_back != content)
+        throw DB::Exception(
+            DB::ErrorCodes::LOGICAL_ERROR,
+            "Read unexpected data back from file 'info' on Keeper data disk '{}' ({} bytes instead of {})",
+            disk->getName(), bytes_read, content.size());
 }
 
 void StorageState::shutdown()
@@ -172,8 +233,6 @@ NodeRef StorageState::appendCommittedNode(FullNode & node)
         mutable_memtable->file_seqno = next_file_seqno++;
 
         LOG_DEBUG(log, "Creating new memtable {}", mutable_memtable->file_seqno);
-
-        /// TODO: Create block_cache (if not memory-only mode) or update its settings if changed.
     }
 
     const NodePathHash hash = node.getOrCalculatePathHash();
@@ -334,6 +393,11 @@ void StorageState::throttleWrite() const
     int64_t delay_us = write_throttling_us.load(std::memory_order_relaxed);
     if (delay_us != 0)
         std::this_thread::sleep_for(std::chrono::microseconds(delay_us));
+}
+
+std::string StorageState::makeSortedFilePath(uint32_t min_file_seqno, uint32_t max_file_seqno, size_t file_idx_in_run) const
+{
+    return fmt::format("{}_{}_{}_{:016x}", min_file_seqno, max_file_seqno, file_idx_in_run, thread_local_rng());
 }
 
 void StorageState::recalculateWriteThrottling()

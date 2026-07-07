@@ -2,6 +2,13 @@
 
 #include <Coordination/Storage/Common.h>
 
+#include <memory>
+
+namespace DB
+{
+class WriteBufferFromFileBase;
+}
+
 namespace Coordination::Storage
 {
 
@@ -73,11 +80,11 @@ struct SortedRunWriter
     StorageState * storage = nullptr;
     size_t target_block_size = 0;
     size_t target_file_uncompressed_size = 0;
-    std::string file_path_prefix;
 
     SortedRunPtr sorted_run;
 
     SortedFilePtr file; // not added to sorted_run yet
+    std::unique_ptr<DB::WriteBufferFromFileBase> file_writer; // writes to `file`; null in memory-only mode
 
     BlockPtr block; // not added to `file` yet
     NodePath block_min_path;
