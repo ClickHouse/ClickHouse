@@ -62,7 +62,7 @@ public:
     const size_t thread_number;
     const bool profile_processors;
     const bool trace_processors;
-    const bool collect_work_intervals;
+    const bool collect_work_intervals = false;
 
     void wait(std::atomic_bool & finished);
     void wakeUp();
@@ -81,13 +81,13 @@ public:
 
     WorkIntervals takeWorkIntervals();
 
-    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_ = false, const StepWallClockRegistry * step_wall_clock_registry_, ReadProgressCallback * callback)
+    explicit ExecutionThreadContext(size_t thread_number_, bool profile_processors_, bool trace_processors_, bool collect_work_intervals_, const StepWallClockRegistry * step_wall_clock_registry_ , ReadProgressCallback * callback)
         : read_progress_callback(callback)
         , step_to_wall_clock_registry(step_wall_clock_registry_)
-        , collect_work_intervals(collect_work_intervals_)
         , thread_number(thread_number_)
         , profile_processors(profile_processors_)
         , trace_processors(trace_processors_)
+        , collect_work_intervals(collect_work_intervals_)
     {
         if (collect_work_intervals)
             work_intervals.reserve(1024ul);

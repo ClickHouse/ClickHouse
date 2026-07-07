@@ -96,18 +96,13 @@ public:
     // threads can cover the push, or no new tasks were added).
     size_t pushTasks(Queue & queue, Queue & async_queue, ExecutionThreadContext & context);
 
-<<<<<<< HEAD
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, bool collect_work_intervals, ReadProgressCallback * callback);
-    void fill(Queue & queue, Queue & async_queue);
-=======
-    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
+    void init(size_t num_threads_, size_t use_threads_, const SlotAllocationPtr & cpu_slots_, bool profile_processors, bool trace_processors, bool collect_work_intervals, const StepWallClockRegistry * step_to_wall_clock_registry, ReadProgressCallback * callback);
 
     /// Push initial tasks. Returns the count of tasks pushed (regular + async) — used by
     /// `PipelineExecutor::initializeExecution` to size the slot-allocation ceiling via
     /// `cpu_slots->setMax(...)` so the initial parallelism is admitted to the scheduler
     /// without waiting for a later `pushTasks` round to expand it.
     size_t fill(Queue & queue, Queue & async_queue);
->>>>>>> 7a90d91b53a5de5f79d7d47ce2e097e65af37906
 
     /// Release CPU slots
     void freeCPU();

@@ -35,9 +35,17 @@ public:
         IColumn::Filter filter_,
         IColumn::Offsets && matched_rows_,
         ScatteredBlock && block_,
-        Properties properties_);
+        Properties properties_,
+        UInt64 probe_times_,
+        UInt64 match_times_);
 
     JoinResultBlock next() override;
+
+    /// Probe statistics collected while producing this result (during the probe loop).
+    /// The caller (HashJoin::joinBlock / ConcurrentHashJoin) is responsible for folding
+    /// these into its own counters once it takes ownership of the result.
+    UInt64 getProbeTimes() const { return probe_times; }
+    UInt64 getMatchTimes() const { return match_times; }
 
     void setNextBlock(ScatteredBlock && block);
 
@@ -54,6 +62,9 @@ private:
     IColumn::Offsets offsets;
     IColumn::Filter filter;
     IColumn::Offsets matched_rows;
+
+    const UInt64 probe_times;
+    const UInt64 match_times;
 
     size_t next_row = 0;
     size_t next_matched_rows_it = 0;

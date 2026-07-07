@@ -212,7 +212,9 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             join.joined_block_split_single_row,
             join.enable_lazy_columns_replication,
             join.enable_lazy_columns_indexing
-        });
+        },
+        added_columns.lookups,
+        added_columns.matches);
 
     if (next_scattered_block)
         join_result->setNextBlock(std::move(next_scattered_block.value()));
@@ -602,6 +604,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         });
 
     IColumn::Offset current_offset = 0;
+    size_t lookups = 0;
+    size_t matches = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (can_prefetch)
@@ -626,12 +630,15 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             else
                 row_acceptable = !join_keys.isRowFiltered(ind);
 
+            lookups += row_acceptable;
+            
             using FindResult = typename KeyGetter::FindResult;
             auto find_result = row_acceptable ? key_getter.findKey(*map, ind, pool) : FindResult();
 
             if (find_result.isFound())
             {
                 right_row_found = true;
+                ++matches;
                 processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                     find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows);
             }
@@ -651,6 +658,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
+    added_columns.lookups = lookups;
+    added_columns.matches = matches;
     return 0;
 }
 
@@ -731,6 +740,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     IColumn::Offset current_offset = 0;
     size_t i = 0;
+    size_t lookups = 0;
+    size_t matches = 0;
     for (; i < rows && current_offset < max_joined_rows; ++i)
     {
         if constexpr (can_prefetch)
@@ -757,12 +768,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 else
                     row_acceptable = !join_keys.isRowFiltered(ind);
 
+                lookups += row_acceptable;
                 using FindResult = typename KeyGetter::FindResult;
                 auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), ind, pool) : FindResult();
 
                 if (find_result.isFound())
                 {
                     right_row_found = true;
+                    ++matches;
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                         find_result, added_columns, used_flags, i, ind, current_offset, known_rows);
 
@@ -784,6 +797,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
+    added_columns.lookups = lookups;
+    added_columns.matches = matches;
     return i;
 }
 
@@ -979,6 +994,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     find_results.reserve(left_block_rows);
     IColumn::Offset total_added_rows = 0;
 
+    size_t lookups = 0;
+    size_t matches = 0;
+
     IColumn::Offsets row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
 
@@ -1021,12 +1039,14 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     continue;
 
                 bool row_acceptable = !join_keys.isRowFiltered(ind);
+                lookups += row_acceptable;
                 auto find_result
                     = row_acceptable ? key_getter_vector[join_clause_idx].findKey(*(mapv[join_clause_idx]), ind, *pool) : FindResult();
 
                 if (find_result.isFound())
                 {
                     auto & mapped = find_result.getMapped();
+                    ++matches;
                     find_results.push_back(find_result);
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
@@ -1198,6 +1218,8 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         added_columns.filter.resize(left_block_rows);
     }
     added_columns.applyLazyDefaults();
+    added_columns.lookups = lookups;
+    added_columns.matches = matches;
     return left_block_rows;
 }
 

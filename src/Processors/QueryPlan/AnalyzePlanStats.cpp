@@ -1,11 +1,15 @@
 #include <algorithm>
 #include <iterator>
 #include <set>
+#include <type_traits>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
+#include <Processors/QueryPlan/BoundaryPortStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/StepWallClock.h>
 #include <Processors/StepWallClockRegistry.h>
 #include <base/defines.h>
@@ -13,6 +17,55 @@
 
 namespace DB
 {
+
+namespace
+{
+
+/// `Format::Time` is shown as an absolute duration plus its share of the stage time
+/// (sum of elapsed time across the stage's processors), uniformly for any producing step.
+String formatStepMetricValue(const StepMetric & metric, UInt64 stage_sum_elapsed_ns)
+{
+    if (metric.format == StepMetric::Format::Raw)
+        return std::visit([](const auto & value) -> String
+        {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, std::string>)
+                return value;
+            else
+                return fmt::format("{}", value);
+        }, metric.value);
+
+    const double numeric = std::visit([](const auto & value) -> double
+    {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_arithmetic_v<T>)
+            return static_cast<double>(value);
+        else
+            return 0.0;
+    }, metric.value);
+
+    switch (metric.format)
+    {
+        case StepMetric::Format::Bytes:
+            return formatReadableSizeWithDecimalSuffix(numeric);
+        case StepMetric::Format::Quantity:
+            return formatReadableQuantity(numeric);
+        case StepMetric::Format::Time:
+        {
+            String result = formatReadableTime(numeric);
+            if (stage_sum_elapsed_ns != 0)
+                result += fmt::format(" ({:.1f}%)", 100.0 * numeric / static_cast<double>(stage_sum_elapsed_ns));
+            return result;
+        }
+        case StepMetric::Format::Percent:
+            return fmt::format("{:.2f}%", numeric);
+        case StepMetric::Format::Raw:
+            return {};
+    }
+    return {};
+}
+
+}
 
 AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
@@ -28,7 +81,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 
     // step_to_in_ports.reserve(64);
     // step_to_out_ports.reserve(64);
-    steps_to_stats.reserve(64);
+    // steps_to_stats.reserve(64);
 
     const auto & processors = pipeline.getProcessors();
 
@@ -39,10 +92,7 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 
 void AnalyzeStepsStats::collectIoStats(const Processors & processors)
 {
-    auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
-    {
-        return owner.getQueryPlanStep() != neighbour.getQueryPlanStep();
-    };
+    auto step_of = [](const IProcessor & processor) { return processor.getQueryPlanStep(); };
 
     for (const auto & proc : processors)
     {
@@ -52,32 +102,19 @@ void AnalyzeStepsStats::collectIoStats(const Processors & processors)
             continue;
 
         auto & step_stats = stats_by_step[step];
+        processors_by_step[step].push_back(proc.get());
 
-        for (const auto & input_port : proc->getInputs())
+        forEachBoundaryInputPort(*proc, step_of, [&](const IProcessor::PortDataCounters & counters)
         {
-            if (!input_port.isConnected())
-                continue;
+            step_stats.input_rows += counters.rows;
+            step_stats.input_bytes += counters.bytes;
+        });
 
-            if (crosses_step_boundary(*proc, input_port.getOutputPort().getProcessor()))
-            {
-                const auto counters = proc->getPortDataCounters(input_port);
-                step_stats.input_rows += counters.rows;
-                step_stats.input_bytes += counters.bytes;
-            }
-        }
-
-        for (const auto & output_port : proc->getOutputs())
+        forEachBoundaryOutputPort(*proc, step_of, [&](const IProcessor::PortDataCounters & counters)
         {
-            if (!output_port.isConnected())
-                continue;
-
-            if (crosses_step_boundary(*proc, output_port.getInputPort().getProcessor()))
-            {
-                const auto counters = proc->getPortDataCounters(output_port);
-                step_stats.output_rows += counters.rows;
-                step_stats.output_bytes += counters.bytes;
-            }
-        }
+            step_stats.output_rows += counters.rows;
+            step_stats.output_bytes += counters.bytes;
+        });
     }
 }
 
@@ -209,6 +246,19 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
                 << " · median " << formatReadableTime(static_cast<double>(group_stats.median_elapsed_ns))
                 << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
                 << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
+
+        const StepAnalyzeInfo internal_stats = step->getAnalyzedInternalStats(group, {});
+        if (!internal_stats.empty())
+        {
+            out << prefix << "    ";
+            for (size_t i = 0; i < internal_stats.size(); ++i)
+            {
+                if (i != 0)
+                    out << " · ";
+                out << internal_stats[i].name << " " << formatStepMetricValue(internal_stats[i], group_stats.sum_elapsed_ns);
+            }
+            out << "\n";
+        }
     }
 }
 

@@ -223,6 +223,8 @@ private:
 
     bool enable_analyzer = false;
 
+    bool collect_analyze_stats = false;
+
     Names requiredJoinedNames() const;
 
     /// Create converting actions and change key column names if required
@@ -282,6 +284,9 @@ public:
 
     bool enableAnalyzer() const { return enable_analyzer; }
     void assertEnableAnalyzer() const;
+
+    bool collectAnalyzeStats() const { return collect_analyze_stats; }
+    void setCollectAnalyzeStats(bool value) { collect_analyze_stats = value; }
     TemporaryDataOnDiskScopePtr getTempDataOnDisk();
 
     ActionsDAG createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const;

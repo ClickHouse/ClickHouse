@@ -233,6 +233,10 @@ public:
 
     size_t max_joined_block_rows = 0;
     size_t rows_to_add;
+    /// During probe phase of Hash based Joins we record
+    /// the statistics of hit ratio
+    UInt64 lookups = 0;
+    UInt64 matches = 0;
     bool need_filter = false;
     bool enable_prefetch = true;
 

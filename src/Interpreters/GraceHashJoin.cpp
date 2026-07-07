@@ -12,6 +12,7 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Interpreters/IJoin.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Core/Settings.h>
 
 #include <numeric>
@@ -176,6 +177,11 @@ public:
         ensureState(State::JOINING_BLOCKS);
         return AccumulatedBlockReader(left_file.getReadStream(), left_file_mutex);
     }
+
+    /// Spilled bytes for this bucket.Only called after the join
+    /// has finished, when no thread is writing to the files.
+    TemporaryDataBuffer::Stat leftSpillStat() const { return left_file.getHolder()->getStat(); }
+    TemporaryDataBuffer::Stat rightSpillStat() const { return right_file.getHolder()->getStat(); }
 
     const size_t idx;
 
@@ -394,6 +400,7 @@ GraceHashJoin::Buckets GraceHashJoin::rehashBuckets()
     LOG_TRACE(log, "Rehashing from {} to {}", current_size, to_size);
 
     addBuckets(to_size - current_size);
+    ++stats.num_rehashes;
 
     return buckets;
 }
@@ -500,6 +507,68 @@ size_t GraceHashJoin::getTotalByteCount() const
     chassert(hash_join);
     return hash_join->getTotalByteCount();
 }
+
+void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
+{
+    right_rows += in_memory_join.getRightTableRowCount();
+    unique_keys += in_memory_join.getTotalRowCount();
+    const auto probe = in_memory_join.getProbeStats();
+    lookups += probe.lookups;
+    matches += probe.matches;
+    peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
+}
+
+GraceHashJoin::GraceHashJoinStats GraceHashJoin::collectStats() const
+{
+    GraceHashJoinStats result = stats;
+
+    if (current_bucket && hash_join)
+        result.foldIn(*hash_join);
+
+    Buckets buckets_snapshot = getCurrentBuckets();
+    result.num_buckets = buckets_snapshot.size();
+    for (const auto & bucket : buckets_snapshot)
+    {
+        const auto left = bucket->leftSpillStat();
+        const auto right = bucket->rightSpillStat();
+        result.left_spill.compressed_size += left.compressed_size;
+        result.left_spill.uncompressed_size += left.uncompressed_size;
+        result.right_spill.compressed_size += right.compressed_size;
+        result.right_spill.uncompressed_size += right.uncompressed_size;
+    }
+    return result;
+}
+
+StepAnalyzeInfo GraceHashJoin::getAnalyzedInternalStats(size_t group) const
+{
+    const GraceHashJoinStats stats_snapshot = collectStats();
+
+    StepAnalyzeInfo internal_stats;
+    switch (static_cast<JoinStage>(group))
+    {
+        case JoinStage::Build:
+        {
+            internal_stats.emplace_back("right rows", stats_snapshot.right_rows, StepMetric::Format::Quantity);
+            internal_stats.emplace_back("unique keys", stats_snapshot.unique_keys, StepMetric::Format::Quantity);
+            internal_stats.emplace_back("memory", stats_snapshot.peak_in_memory_bytes, StepMetric::Format::Bytes);
+            internal_stats.emplace_back("buckets", stats_snapshot.num_buckets, StepMetric::Format::Quantity);
+            internal_stats.emplace_back("rehashes", stats_snapshot.num_rehashes, StepMetric::Format::Quantity);
+            internal_stats.emplace_back("right spilled", stats_snapshot.right_spill.compressed_size, StepMetric::Format::Bytes);
+            break;
+        }
+        case JoinStage::Probe:
+        {
+            const double match_rate = stats_snapshot.lookups ? 100.0 * static_cast<double>(stats_snapshot.matches) / static_cast<double>(stats_snapshot.lookups) : 0.0;
+            internal_stats.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+            internal_stats.emplace_back("left spilled", stats_snapshot.left_spill.compressed_size, StepMetric::Format::Bytes);
+            break;
+        }
+        case JoinStage::Default:
+            break;
+    }
+    return internal_stats;
+}
+
 
 bool GraceHashJoin::alwaysReturnsEmptySet() const
 {
@@ -693,6 +762,9 @@ IBlocksStreamPtr GraceHashJoin::getDelayedBlocks()
 
     size_t bucket_idx = current_bucket->idx;
 
+    if (hash_join)
+        stats.foldIn(*hash_join);
+
     size_t prev_keys_num = 0;
     if (hash_join && buckets.size() > 1)
     {
@@ -810,6 +882,8 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
         force_spill = false;
+        /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
+        stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
         auto right_blocks = hash_join->releaseJoinedBlocks(/* restructure */ false);
         hash_join = nullptr;
 

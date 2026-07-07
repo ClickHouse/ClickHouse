@@ -37,6 +37,9 @@ using QueryPlanStepPtr = std::unique_ptr<IQueryPlanStep>;
 
 struct ExplainFormatSettings;
 
+struct StepMetric;
+using StepAnalyzeInfo = std::vector<StepMetric>;
+
 /// Single step of query plan.
 class IQueryPlanStep
 {
@@ -173,6 +176,8 @@ public:
 
     virtual std::vector<size_t> getStepGroups() const { return {0}; }
     virtual String getStepGroupName(size_t) const { return {}; }
+
+    virtual StepAnalyzeInfo getAnalyzedInternalStats(size_t /*group*/, const std::vector<IProcessor *> /*processors*/) const { return {}; }
 
 protected:
     virtual void updateOutputHeader() = 0;

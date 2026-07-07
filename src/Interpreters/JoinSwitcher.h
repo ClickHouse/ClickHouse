@@ -61,6 +61,11 @@ public:
         return join->alwaysReturnsEmptySet();
     }
 
+    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override
+    {
+        return join->getAnalyzedInternalStats(group);
+    }
+
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override
     {

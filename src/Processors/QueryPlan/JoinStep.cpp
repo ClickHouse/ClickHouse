@@ -13,6 +13,7 @@
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -225,6 +226,12 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
+StepAnalyzeInfo JoinStep::getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> /*processors*/) const
+{
+    return join->getAnalyzedInternalStats(group);
+}
+
+
 bool JoinStep::allowPushDownToRight() const
 {
     return join->pipelineType() == JoinPipelineType::YShaped || join->pipelineType() == JoinPipelineType::FillRightFirst;
@@ -245,8 +252,8 @@ std::vector<size_t> JoinStep::getStepGroups() const
 {
     return {
         static_cast<size_t>(JoinStage::Default),
-        static_cast<size_t>(JoinStage::Probe),
-        static_cast<size_t>(JoinStage::Build)
+        static_cast<size_t>(JoinStage::Build),
+        static_cast<size_t>(JoinStage::Probe)
     };
 }
 

@@ -2,6 +2,7 @@
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
+#include <Processors/QueryPlan/JoinStep.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -158,6 +159,14 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     IColumn::Offsets offsets;
     Chunk joined_chunk = storage->getByKeys({key_col}, attribute_names, null_map, offsets);
 
+    /// One lookup per probed key; a missed key contributes exactly one zero to `null_map`, so the
+    /// number of matched keys is `lookups - zeros`. Holds for both one-to-one stores (one row per
+    /// key) and the one-to-many MergeTree entity (matched keys are all-ones, a miss is a single zero).
+    const size_t lookups = key_col.column->size();
+    const size_t matches = lookups - (null_map.size() - countBytesInFilter(null_map));
+    probe_times.fetch_add(lookups, std::memory_order_relaxed);
+    match_times.fetch_add(matches, std::memory_order_relaxed);
+
     /// Expected right block may differ from structure in storage, because of `join_use_nulls` or we just select not all joined attributes
     Block sample_storage_block = storage->getSampleBlock(attribute_names);
     MutableColumns result_columns = convertBlockStructure(sample_storage_block, right_block_to_use, joined_chunk.mutateColumns(), null_map);
@@ -207,6 +216,19 @@ JoinResultPtr DirectKeyValueJoin::joinBlock(Block block)
     }
 
     return IJoinResult::createFromBlock(std::move(block));
+}
+
+StepAnalyzeInfo DirectKeyValueJoin::getAnalyzedInternalStats(size_t group) const
+{
+    StepAnalyzeInfo internal_stats;
+    /// There is no build phase: the right side lives in the external key-value storage, so only
+    /// the probe (lookup) stage has meaningful statistics.
+    if (static_cast<JoinStage>(group) == JoinStage::Probe)
+    {
+        internal_stats.emplace_back("lookups", probe_times.load(std::memory_order_relaxed), StepMetric::Format::Quantity);
+        internal_stats.emplace_back("matched lookups", match_times.load(std::memory_order_relaxed), StepMetric::Format::Quantity);
+    }
+    return internal_stats;
 }
 
 }

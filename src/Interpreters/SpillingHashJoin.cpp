@@ -350,6 +350,20 @@ bool SpillingHashJoin::alwaysReturnsEmptySet() const
     return chosen_join->alwaysReturnsEmptySet();
 }
 
+StepAnalyzeInfo SpillingHashJoin::getAnalyzedInternalStats(size_t group) const
+{
+    /// This method always runs after `onBuildPhaseFinish`, so in practice we have already left
+    /// `COLLECTING` and `chosen_join` is set - the branch below is not strictly needed. We keep it
+    /// for canonicity with the other accessors and safety in case the call order ever changes.
+    if (state.load(std::memory_order_acquire) == State::COLLECTING)
+    {
+        if (concurrent_join)
+            return concurrent_join->getAnalyzedInternalStats(group);
+        return hash_join->getAnalyzedInternalStats(group);
+    }
+    return chosen_join->getAnalyzedInternalStats(group);
+}
+
 bool SpillingHashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     return supports_parallel_non_joined_blocks_processing;

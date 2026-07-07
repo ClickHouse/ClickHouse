@@ -12,6 +12,7 @@
 #include <Core/Block_fwd.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
@@ -194,6 +195,12 @@ public:
     size_t getTotalRowCount() const final;
     /// Sum size in bytes of all buffers, used for JOIN maps and for all memory pools.
     size_t getTotalByteCount() const final;
+    /// Number of right-side rows ingested into the build.
+    size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
+    /// Peak bytes the build occupied, captured during the build phase so it survives `data` release.
+    size_t getPeakBuildBytes() const { return peak_build_bytes; }
+
+    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
 
     bool alwaysReturnsEmptySet() const final;
 
@@ -538,6 +545,31 @@ public:
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
+    struct ProbeStats
+    {
+        UInt64 lookups = 0;
+        UInt64 matches = 0;
+
+        ProbeStats & operator+=(const ProbeStats & other)
+        {
+            lookups += other.lookups;
+            matches += other.matches;
+            return *this;
+        }
+    };
+
+    void addProbeStats(size_t probe, size_t match)
+    {
+        probe_times.fetch_add(probe, std::memory_order_relaxed);
+        match_times.fetch_add(match, std::memory_order_relaxed);
+    }
+
+    /// Read the accumulated raw probe statistics (counts only, no formatting).
+    ProbeStats getProbeStats() const
+    {
+        return {probe_times.load(std::memory_order_relaxed), match_times.load(std::memory_order_relaxed)};
+    }
+
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
@@ -595,6 +627,10 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
+    /// Probe hit-ratio counters. Updated only from the non-const probe entry point
+    /// (joinBlock), so no `mutable` is needed; read (load) from the const stats getter.
+    std::atomic<UInt64> probe_times{0};
+    std::atomic<UInt64> match_times{0};
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
     bool enable_lazy_columns_indexing = false;
@@ -603,6 +639,11 @@ private:
     /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
     bool shrink_blocks = false;
     Int64 memory_usage_before_adding_blocks = 0;
+
+    /// Peak of `getTotalByteCount()` observed during the build phase. Stored separately so it
+    /// survives `data.reset()` (the maps are released after the query, before EXPLAIN ANALYZE reads
+    /// stats). Updated only during build, which is serialized per `HashJoin`, so no atomic is needed.
+    size_t peak_build_bytes = 0;
 
     /// Track if conversion to fixed hash map was already attempted to prevent repeated checks.
     bool conversion_to_fixed_hash_map_attempted = false;
@@ -625,6 +666,11 @@ private:
     void initRightBlockStructure(Block & saved_block_sample);
 
     JoinResultPtr joinBlockImplCross(Block block) const;
+
+    /// Shared probe path for `joinBlock` and `joinScatteredBlock`: runs the join dispatch on an
+    /// already-prepared block and folds the per-block probe statistics carried by the result into
+    /// our counters.
+    JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
 

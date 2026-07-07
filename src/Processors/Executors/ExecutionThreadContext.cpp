@@ -4,11 +4,8 @@
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-<<<<<<< HEAD
 #include <base/types.h>
-=======
 #include <base/defines.h>
->>>>>>> 7a90d91b53a5de5f79d7d47ce2e097e65af37906
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>

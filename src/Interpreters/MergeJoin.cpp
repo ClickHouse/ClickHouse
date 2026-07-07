@@ -17,6 +17,8 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Common/Stopwatch.h>
 
 
 namespace CurrentMetrics
@@ -568,6 +570,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, SharedHeader right_
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
     , max_files_to_merge(table_join->maxFilesToMerge())
+    , collect_stats(table_join->collectAnalyzeStats())
     , log(getLogger("MergeJoin"))
 {
     switch (table_join->strictness())
@@ -671,6 +674,10 @@ void MergeJoin::mergeInMemoryRightBlocks()
     if (right_blocks.empty())
         return;
 
+    std::optional<Stopwatch> merge_watch;
+    if (collect_stats)
+        merge_watch.emplace();
+
     Pipe source(std::make_shared<BlocksListSource>(std::move(right_blocks.blocks)));
     right_blocks.clear();
 
@@ -706,6 +713,9 @@ void MergeJoin::mergeInMemoryRightBlocks()
         right_blocks.countBlockSize(block);
         loaded_right_blocks.emplace_back(std::make_shared<Block>(std::move(block)));
     }
+
+    if (merge_watch)
+        build_sort_time_ns.fetch_add(merge_watch->elapsedNanoseconds(), std::memory_order_relaxed);
 }
 
 void MergeJoin::mergeFlushedRightBlocks()
@@ -719,8 +729,19 @@ void MergeJoin::mergeFlushedRightBlocks()
         right_blocks.countBlockSize(block);
     };
 
+    std::optional<Stopwatch> merge_watch;
+    if (collect_stats)
+        merge_watch.emplace();
+
     flushed_right_blocks = disk_writer->finishMerge(callback);
     disk_writer.reset();
+
+    if (collect_stats)
+    {
+        build_sort_time_ns.fetch_add(merge_watch->elapsedNanoseconds(), std::memory_order_relaxed);
+        if (auto tmp_data = table_join->getTempDataOnDisk())
+            right_spilled_bytes.store(tmp_data->currentCompressedSize(), std::memory_order_relaxed);
+    }
 
     /// Get memory limit or approximate it from row limit and bytes per row factor
     UInt64 memory_limit = size_limits.max_bytes;
@@ -767,7 +788,14 @@ bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
     Block block = modifyRightBlock(src_block);
 
     addConditionJoinColumn(block, JoinTableSide::Right);
+
+    std::optional<Stopwatch> sort_watch;
+    if (collect_stats)
+        sort_watch.emplace();
     sortBlock(block, right_sort_description);
+    if (sort_watch)
+        build_sort_time_ns.fetch_add(sort_watch->elapsedNanoseconds(), std::memory_order_relaxed);
+
     return saveRightBlock(std::move(block));
 }
 
@@ -831,7 +859,12 @@ void MergeJoin::joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> 
                 lowcard_keys.push_back(column_name);
         }
 
+        std::optional<Stopwatch> sort_watch;
+        if (collect_stats)
+            sort_watch.emplace();
         sortBlock(block, left_sort_description);
+        if (sort_watch)
+            probe_sort_time_ns.fetch_add(sort_watch->elapsedNanoseconds(), std::memory_order_relaxed);
     }
 
     if (!not_processed && left_blocks_buffer)
@@ -1256,6 +1289,34 @@ IBlocksStreamPtr MergeJoin::getNonJoinedBlocks(
         return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
     }
     return nullptr;
+}
+
+StepAnalyzeInfo MergeJoin::getAnalyzedInternalStats(size_t group) const
+{
+    StepAnalyzeInfo internal_stats;
+    switch (static_cast<JoinStage>(group))
+    {
+        case JoinStage::Build:
+        {
+            const bool in_memory = is_in_memory.load(std::memory_order_relaxed);
+            internal_stats.emplace_back("right rows", getTotalRowCount(), StepMetric::Format::Quantity);
+            internal_stats.emplace_back("memory", getTotalByteCount(), StepMetric::Format::Bytes);
+            internal_stats.emplace_back("right blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
+            internal_stats.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
+            if (!in_memory)
+                internal_stats.emplace_back("right spilled", right_spilled_bytes.load(std::memory_order_relaxed), StepMetric::Format::Bytes);
+            internal_stats.emplace_back("sort time", build_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
+            break;
+        }
+        case JoinStage::Probe:
+        {
+            internal_stats.emplace_back("sort time", probe_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
+            break;
+        }
+        case JoinStage::Default:
+            break;
+    }
+    return internal_stats;
 }
 
 bool MergeJoin::needConditionJoinColumn() const

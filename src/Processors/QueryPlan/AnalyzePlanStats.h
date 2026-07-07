@@ -4,6 +4,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <vector>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Processors/IProcessor.h>
@@ -63,6 +64,10 @@ private:
 
     std::unordered_map<const IQueryPlanStep *, StepStats> stats_by_step;
     std::unordered_map<StepAndGroup, StepGroupStats, boost::hash<StepAndGroup>> stats_by_step_group;
+
+    /// Processors belonging to each step, so steps that consume several distinct inputs
+    /// (e.g. a join) can report per-input actual rows from their processors' port counters.
+    std::unordered_map<const IQueryPlanStep *, std::vector<IProcessor *>> processors_by_step;
 
     UInt64 max_num_threads_per_query = 0;
     UInt64 execution_query_time_ns = 0;

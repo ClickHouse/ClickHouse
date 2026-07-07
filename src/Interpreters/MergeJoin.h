@@ -51,6 +51,8 @@ public:
 
     IBlocksStreamPtr getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
+    StepAnalyzeInfo getAnalyzedInternalStats(size_t group) const override;
+
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
     static bool isSupported(JoinKind kind, JoinStrictness strictness);
 
@@ -121,6 +123,11 @@ private:
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
     const size_t max_files_to_merge;
+    const bool collect_stats;
+
+    std::atomic<UInt64> build_sort_time_ns{0};
+    std::atomic<UInt64> probe_sort_time_ns{0};
+    std::atomic<UInt64> right_spilled_bytes{0};
 
     Names lowcard_right_keys;
 
