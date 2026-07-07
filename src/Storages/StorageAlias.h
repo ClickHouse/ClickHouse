@@ -281,6 +281,9 @@ public:
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;
     std::optional<CheckResult> checkDataNext(DataValidationTasksPtr & check_task_list) override;
 
+    /// CHECK TABLE delegates to the target table, so shutdown state must reflect it too.
+    bool isShuttingDown() const override { auto target = tryGetTargetTable(); return target && target->isShuttingDown(); }
+
     CancellationCode killPartMoveToShard(const UUID & task_uuid) override;
 
     /// These operations are not proxied (executed on alias itself)

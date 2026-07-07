@@ -161,6 +161,9 @@ public:
         return getNested()->checkDataNext(check_task_list);
     }
 
+    /// CHECK TABLE delegates to the nested storage, so shutdown state must reflect it too.
+    bool isShuttingDown() const override { return getNested()->isShuttingDown(); }
+
     void checkTableCanBeDropped([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableCanBeDropped(query_context); }
     void checkTableSizeBelowDropLimit([[ maybe_unused ]] ContextPtr query_context) const override { getNested()->checkTableSizeBelowDropLimit(query_context); }
 

@@ -371,9 +371,10 @@ def test_check_replicated_table_corruption(
     assert node1.query("SELECT count() from replicated_mt_1") == "4\n"
 
 @pytest.mark.parametrize("engine", ["ReplicatedMergeTree"])
-def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
+@pytest.mark.parametrize("via_alias", [False, True])
+def test_check_replicated_does_not_block_shutdown(started_cluster, engine, via_alias):
     part_count = 100
-    table_name = f"replicated_check_{engine}"
+    table_name = f"replicated_check_{engine}_{int(via_alias)}"
     node1.query(
         f"""
             CREATE TABLE {table_name}(id UInt32, value Int32)
@@ -383,6 +384,15 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
             AS SELECT number, number FROM numbers({part_count})
         """
     )
+
+    # When via_alias, CHECK TABLE runs against a StorageAlias that delegates to the
+    # replicated target. The shutdown-time ABORTED carve-out must reach the target's
+    # shutdown state through the wrapper, otherwise CHECK TABLE alias regresses to an
+    # exception instead of a prompt failed-check result.
+    check_name = table_name
+    if via_alias:
+        check_name = f"{table_name}_alias"
+        node1.query(f"CREATE TABLE {check_name} ENGINE = Alias('{table_name}')")
 
     query_id = uuid.uuid4().hex
 
@@ -410,7 +420,7 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
     def run_check_table_and_measure_time():
         start_time = time.time()
         result = node1.query(
-            f"CHECK TABLE {table_name} SETTINGS max_threads=1, check_query_single_value_result = 1", query_id=query_id
+            f"CHECK TABLE {check_name} SETTINGS max_threads=1, check_query_single_value_result = 1", query_id=query_id
         )
         end_time = time.time()
         assert result == "0\n"  # 0 means error
@@ -429,4 +439,6 @@ def test_check_replicated_does_not_block_shutdown(started_cluster, engine):
             future.result()
 
     node1.query("SYSTEM DISABLE FAILPOINT check_table_query_delay_for_part")
+    if via_alias:
+        node1.query(f"DROP TABLE {check_name} SYNC")
     node1.query(f"DROP TABLE {table_name} SYNC")
