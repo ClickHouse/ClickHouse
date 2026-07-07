@@ -515,3 +515,59 @@ TEST(SimpleMergeSelector, MinAgeToForceMergeOverridesSmallPartsMinCountAfterTrim
     ASSERT_FALSE(selected.empty())
         << "min_age_to_force_merge must still override small_parts_min_count after trimming";
 }
+
+
+/// Regression test for the *untrimmed* small-parts gate in `allow` (the `max_age` check).
+///
+/// The gate must key off `max_age` — the age of the oldest part in the candidate range — not
+/// `min_age` (the youngest). As soon as any part in a below-`min_count` small range is older
+/// than `small_parts_max_age`, the restriction is lifted so a backlog of stale small parts is
+/// not deferred forever. If the check regressed to `min_age`, a range with one old part and
+/// several fresh ones would still look "fresh" and be blocked.
+///
+/// Unlike `SmallPartsMinCountUsesTrimmedMaxAge`, this exercises the pre-trim path directly:
+/// all parts are equal-sized (so right-tail trimming is a no-op) and the range stays below
+/// `small_parts_min_count`, so `allow`'s `size < small_parts_min_count` gate is armed and the
+/// only thing that lets the merge through is the `max_age` escape valve.
+TEST(SimpleMergeSelector, SmallPartsMinCountUntrimmedMaxAgeLiftsGate)
+{
+    SimpleMergeSelector::Settings settings;
+    settings.base = 5;
+    settings.small_parts_threshold = 10 * 1024 * 1024;
+    settings.small_parts_min_count = 8;
+    settings.small_parts_max_age = 600;
+    settings.enable_heuristic_to_remove_small_parts_at_right = true;
+
+    PartsRange parts;
+    auto add_part = [&](int64_t block, size_t size, time_t age)
+    {
+        auto name = fmt::format("all_{0}_{0}_0", block);
+        auto info = MergeTreePartInfo::fromPartName(name, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
+        parts.push_back(PartProperties{
+            .name = name,
+            .info = info,
+            .size = size,
+            .age = age,
+            .rows = 1000,
+        });
+    };
+
+    /// Seven equal 1 MiB small parts (all below `small_parts_threshold`), only 7 < 8 =
+    /// `small_parts_min_count`, so the gate is armed. Six are fresh (age 1) and the first
+    /// one is aged 700 > `small_parts_max_age` (600). Equal sizes mean no right-tail
+    /// trimming, so the range reaches `allow` untrimmed with `max_age = 700` and `min_age = 1`.
+    add_part(0, 1024 * 1024, 700);
+    for (int64_t i = 1; i < 7; ++i)
+        add_part(i, 1024 * 1024, 1);
+
+    SimpleMergeSelector selector(settings);
+    std::vector<MergeConstraint> constraints{{100ULL * 1024 * 1024 * 1024, std::numeric_limits<size_t>::max()}};
+    PartsRanges selected = selector.select({parts}, constraints, nullptr);
+
+    /// The oldest part exceeds `small_parts_max_age`, so the gate is lifted and a merge is
+    /// returned even though the range is below `small_parts_min_count`. Had the gate used
+    /// `min_age` instead of `max_age`, the range would look fresh and be blocked (no other
+    /// range qualifies), leaving `selected` empty.
+    ASSERT_FALSE(selected.empty())
+        << "small_parts gate must use max_age: an old part must lift the restriction on the untrimmed range";
+}
