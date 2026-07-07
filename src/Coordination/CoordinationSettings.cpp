@@ -86,7 +86,8 @@ namespace ErrorCodes
     DECLARE(UInt64, max_request_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes in the request queue before blocking new requests", 0) \
     DECLARE(UInt64, max_response_queue_bytes_size, 100 * 1024 * 1024, "Maximum total bytes across all response queues; the dispatch thread throttles at half this limit", 0) \
     DECLARE(Bool, optimize_read_order, true, "Reorder read requests within a batch to group them together for parallel execution, without changing ordering guarantees within each session", 0) \
-    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Sleep duration in microseconds for busy-wait loops in the dispatch and response threads", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_sleep_us, 100, "Dispatch and response threads periodically poll to check for work to do, sleeping between checks if idle (as opposed to waiting on something like a futex). The sleep duration is dispatch_busy_wait_sleep_us if there was recent activity, gradually backing off to dispatch_busy_wait_long_sleep_us when idle. Reducing these settings reduces request latency by about the same amount but increases cpu usage when the server is idle.", 0) \
+    DECLARE(UInt64, dispatch_busy_wait_long_sleep_us, 10000, "See dispatch_busy_wait_sleep_us", 0) \
     DECLARE(Milliseconds, stream_suspect_retry_delay_ms, 1000, "Delay before reconnecting to the leader after a stream breaks while the new stream is suspected to be unhealthy", 0) \
     DECLARE(Milliseconds, stream_in_flight_drain_timeout_ms, 5000, "Maximum time to wait for in-flight requests to drain after a stream break (e.g. leader change) before dropping them", 0) \
     DECLARE(Bool, nuraft_use_bg_thread_for_snapshot_io, false, "Use a background thread for NuRaft snapshot IO instead of reading snapshot objects synchronously from Raft worker threads.", 0) \

@@ -188,7 +188,7 @@ void collectTextIndexReadInfos(const ReadFromMergeTree * read_from_merge_tree_st
 
     for (const auto & index : indexes->skip_indexes.useful_indices)
     {
-        if (!typeid_cast<MergeTreeIndexConditionText *>(index.condition.get()))
+        if (!index.index->isTextIndex())
             continue;
 
         if (auto result = MergeTreeDataSelectExecutor::canUseIndex(index.index, metadata_snapshot, all_updated_columns); !result)
@@ -450,7 +450,7 @@ private:
 
         for (const auto & [index_name, info] : text_index_read_infos)
         {
-            auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition);
+            auto & text_index_condition = typeid_cast<MergeTreeIndexConditionText &>(*info.index->condition_template->generateUnsubstituted());
             const auto & index_header = text_index_condition.getHeader();
 
             /// Take the first text index if there are multiple text indexes set for the same expression.
@@ -547,7 +547,7 @@ private:
         DataTypePtr needles_type = arg_needles->result_type;
 
         const auto & condition = selected_conditions.front();
-        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition);
+        const auto & condition_text = typeid_cast<MergeTreeIndexConditionText &>(*condition.info->index->condition_template->generateUnsubstituted());
         auto preprocessor = condition_text.getPreprocessor();
         auto postprocessor = condition_text.getPostprocessor();
         const bool has_postprocessor = postprocessor && postprocessor->hasActions();
