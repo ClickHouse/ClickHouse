@@ -65,17 +65,9 @@ void mergeSettingsAst(ASTPtr & insert_settings_ast, const ASTPtr & select_settin
 
 bool InsertQuerySettingsPushDownMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
-    if (node->as<ASTSelectQuery>())
-        return true;
-    if (node->as<ASTSelectWithUnionQuery>())
-        return true;
-    if (node->as<ASTSelectIntersectExceptQuery>())
-        return true;
-    if (node->as<ASTSubquery>())
-        return true;
-    if (child->as<ASTSelectQuery>())
-        return true;
-    return false;
+    (void)node;
+    (void)child;
+    return true;
 }
 
 void InsertQuerySettingsPushDownMatcher::visit(ASTPtr & ast, Data & data)
