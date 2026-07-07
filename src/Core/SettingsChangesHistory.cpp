@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
+            {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.7, an unquoted number for a `DateTime`/`DateTime64` column (in `JSON`, `Values` and other text input formats, and in `JSONExtract`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.6'`) to restore the pre-26.7 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks)."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",

@@ -223,6 +223,10 @@ void SerializationDateTime64::deserializeTextQuoted(IColumn & column, ReadBuffer
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('\'', istr);
     }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    {
+        readIntText(x, istr);
+    }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
     {
         readDateTime64AsNumber(x, scale, istr);
@@ -236,6 +240,11 @@ bool SerializationDateTime64::tryDeserializeTextQuoted(IColumn & column, ReadBuf
     if (checkChar('\'', istr)) /// Cases: '2017-08-31 18:36:48' or '1504193808'
     {
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('\'', istr))
+            return false;
+    }
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
+    {
+        if (!tryReadIntText(x, istr))
             return false;
     }
     else /// Just 1504193808 or 1703363853.035 (a Unix timestamp, possibly with sub-second precision)
@@ -262,7 +271,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
-    else if (settings.json.read_datetime64_number_as_raw_value)
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
         readIntText(x, istr);
     }
@@ -281,7 +290,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
-    else if (settings.json.read_datetime64_number_as_raw_value)
+    else if (settings.read_datetime_number_as_raw_value) /// Legacy: the raw scaled value (ticks).
     {
         if (!tryReadIntText(x, istr))
             return false;

@@ -755,6 +755,16 @@ See also:
     DECLARE(Bool, date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands, false, R"(
 Dynamically trim the trailing zeros of datetime64 values to adjust the output scale to [0, 3, 6],
 corresponding to 'seconds', 'milliseconds', and 'microseconds')", 0) \
+    DECLARE(Bool, input_format_read_datetime_number_as_raw_value, false, R"(
+Read an unquoted number for a `DateTime`/`DateTime64` column (in `JSON`, `Values` and the other text input
+formats, as well as in `JSONExtract` and typed `JSON`) as the raw underlying value — seconds for `DateTime`,
+ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
+
+Disabled by default: an unquoted number is a Unix timestamp in seconds (with optional sub-second precision),
+consistent with the `Values` format, `CAST` and `toDateTime64`. Enable it (or use `SET compatibility = '26.6'`)
+to restore the behavior of versions up to and including 26.6, where a bare unquoted integer fed to a `DateTime64`
+column was interpreted as the raw scaled value (ticks).
+)", 0) \
     DECLARE(Bool, input_format_ipv4_default_on_conversion_error, false, R"(
 Deserialization of IPv4 will use default values instead of throwing exception on conversion error.
 
