@@ -88,10 +88,9 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     if (!is_buildable(lhs_subset) || !is_buildable(rhs_subset))
         return;
 
-    const UInt32 left_mask = static_cast<UInt32>(lhs_subset);
-    const UInt32 right_mask = static_cast<UInt32>(rhs_subset);
-
-    auto join_kind = optimizer.isValidJoinOrderMask(left_mask, right_mask);
+    /// `UInt` (the DP table `Key`) is the same native integer as the optimizer's `DPsubMask`,
+    /// so the relation subsets are forwarded to the mask helpers without narrowing.
+    auto join_kind = optimizer.isValidJoinOrderMask(lhs_subset, rhs_subset);
     if (!join_kind)
         return;
 
@@ -99,7 +98,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
 
     /// `edge` aliases an internal scratch buffer that the next `collectJoinEdgesMask` call overwrites
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
-    const auto & edge = optimizer.collectJoinEdgesMask(left_mask, right_mask);
+    const auto & edge = optimizer.collectJoinEdgesMask(lhs_subset, rhs_subset);
 
     /// The enumerator only invokes the acceptor for connected pairs, so a `Cross`
     /// kind here is a connected join that should be treated as `Inner` (mirrors the
@@ -107,7 +106,7 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     if (kind == JoinKind::Cross)
         kind = JoinKind::Inner;
 
-    auto selectivity = optimizer.computeSelectivityMask(edge, left_mask, right_mask);
+    auto selectivity = optimizer.computeSelectivityMask(edge, lhs_subset, rhs_subset);
     auto plan_cost = computeJoinCost(lhs_subset, rhs_subset, selectivity);
 
     LOG_TEST(logger, "selectivity: {} costs: {}, lhs est. rows: {}, rhs est. rows: {}",

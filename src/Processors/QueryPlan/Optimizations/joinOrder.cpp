@@ -39,17 +39,19 @@ namespace ErrorCodes
     extern const int EXPERIMENTAL_FEATURE_ERROR;
 }
 
-/// Pack a `BitSet` (boost::dynamic_bitset) of relation ids into a native 32-bit mask.
-/// Used by the DPsub hot path, where the relation count is guaranteed below 32 so every
-/// set bit fits, allowing the per-CCP work to run on native integers instead of allocating
-/// a `dynamic_bitset` for every plan it considers.
-static UInt32 toMask(const BitSet & bits)
+/// Pack a `BitSet` (boost::dynamic_bitset) of relation ids into a native integer mask.
+/// Used by the DPsub hot path, where the relation count is guaranteed below the mask width so
+/// every set bit fits, allowing the per-CCP work to run on native integers instead of allocating
+/// a `dynamic_bitset` for every plan it considers. The mask width is chosen by the caller via
+/// `TUInt` (see `JoinOrderOptimizer::DPsubMask`).
+template <std::unsigned_integral TUInt>
+static TUInt toMask(const BitSet & bits)
 {
-    UInt32 mask = 0;
+    TUInt mask = 0;
     for (auto bit : bits)
     {
-        chassert(bit < std::numeric_limits<UInt32>::digits);
-        mask |= (static_cast<UInt32>(1) << bit);
+        chassert(bit < std::numeric_limits<TUInt>::digits);
+        mask |= (static_cast<TUInt>(1) << bit);
     }
     return mask;
 }
@@ -349,16 +351,22 @@ private:
         std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, double selectivity, JoinKind join_kind) const;
     size_t getColumnStats(const BitSet & rels, const String & column_name);
 
+    /// Native integer type used to pack a `BitSet` of relation ids into a single machine word for
+    /// the DPsub hot path. This is the single knob controlling the DPsub mask width: `solveDPsub`
+    /// sets its `dp_table` `Key` (the `Bitvector`) to this type, so widening it here (`UInt64`,
+    /// `UInt128`) lifts the relation-count limit for the whole DPsub pipeline at once.
+    using DPsubMask = UInt32;
+
     /// Native-mask counterparts of the helpers above, used exclusively by the DPsub acceptor.
-    /// They operate on `UInt32` relation masks and the data precomputed by `initDPsubScratch`,
+    /// They operate on `DPsubMask` relation masks and the data precomputed by `initDPsubScratch`,
     /// so the hot enumeration loop never constructs a `BitSet` (which heap-allocates). They are
     /// equivalent to the `BitSet` overloads but bypass per-CCP allocations entirely.
     void initDPsubScratch();
-    std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
+    std::optional<JoinKind> isValidJoinOrderMask(DPsubMask left_mask, DPsubMask right_mask) const;
     /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
     /// reusing an internal scratch buffer that is overwritten on every call.
-    const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    const std::vector<JoinActionRef *> & collectJoinEdgesMask(DPsubMask left_mask, DPsubMask right_mask);
+    double computeSelectivityMask(const std::vector<JoinActionRef *> & edges, DPsubMask left_mask, DPsubMask right_mask);
 
     /// Periodically called from potentially long running optimization to check time limits and send progress
     void checkLimits();
@@ -430,7 +438,7 @@ private:
         UInt64 equiv_generation = 0;              /// bumped on each computeSelectivityMask call
         std::vector<JoinActionRef *> applicable_scratch; /// reused output of collectJoinEdgesMask
     };
-    DPsubMaskData<UInt32> dpsub_data;
+    DPsubMaskData<DPsubMask> dpsub_data;
 
     /** A hyperedge in the join graph connecting a set of left relations to a set of right relations.
     * For simple binary predicates (A.x = B.y), |left| = |right| = 1.
@@ -746,11 +754,11 @@ void JoinOrderOptimizer::initDPsubScratch()
         const auto & edge = edges[i];
         if (!edge)
             continue;
-        dpsub_data.edge_source_mask[i] = toMask(edge.getSourceRelations());
+        dpsub_data.edge_source_mask[i] = toMask<DPsubMask>(edge.getSourceRelations());
         if (auto pin_it = query_graph.pinned.find(edge); pin_it != query_graph.pinned.end())
         {
             dpsub_data.edge_pinned[i] = 1;
-            dpsub_data.edge_pin_mask[i] = toMask(pin_it->second);
+            dpsub_data.edge_pin_mask[i] = toMask<DPsubMask>(pin_it->second);
         }
     }
 
@@ -761,8 +769,8 @@ void JoinOrderOptimizer::initDPsubScratch()
         if (rel >= num_relations)
             continue;
         auto & native = dpsub_data.restriction_by_rel[rel];
-        native.required = toMask(restriction.required_partners);
-        native.forbidden = toMask(restriction.forbidden_partners);
+        native.required = toMask<DPsubMask>(restriction.required_partners);
+        native.forbidden = toMask<DPsubMask>(restriction.forbidden_partners);
         native.kind = restriction.kind;
         native.present = true;
     }
@@ -789,9 +797,9 @@ void JoinOrderOptimizer::initDPsubScratch()
     dpsub_data.equiv_generation = 0;
 }
 
-std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const
+std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(DPsubMask left_mask, DPsubMask right_mask) const
 {
-    auto check = [&](UInt32 lhs, UInt32 rhs) -> std::optional<JoinKind>
+    auto check = [&](DPsubMask lhs, DPsubMask rhs) -> std::optional<JoinKind>
     {
         if (std::popcount(lhs) == 1)
         {
@@ -834,12 +842,12 @@ std::optional<JoinKind> JoinOrderOptimizer::isValidJoinOrderMask(UInt32 left_mas
     return {};
 }
 
-const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask)
+const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(DPsubMask left_mask, DPsubMask right_mask)
 {
     auto & out = dpsub_data.applicable_scratch;
     out.clear();
 
-    const UInt32 joined = left_mask | right_mask;
+    const DPsubMask joined = left_mask | right_mask;
     const bool two_relations = std::popcount(joined) == 2;
     auto & edges = query_graph.edges;
 
@@ -849,20 +857,38 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
         if (!edge)
             continue;
 
-        const UInt32 sources = dpsub_data.edge_source_mask[i];
+        const DPsubMask sources = dpsub_data.edge_source_mask[i];
         if (sources & ~joined) /// edge sources not proper subset of joined relations
             continue;
         if (dpsub_data.edge_pinned[i] && (dpsub_data.edge_pin_mask[i] & ~joined))
             continue;
 
-        if ((sources & left_mask) && (sources & right_mask))
+        /// Relations that must all be present before the predicate is applicable: the relations it
+        /// references (`sources`) plus any relations it is pinned to. For a plain equi-predicate the
+        /// pin is empty, so this is just `sources`. For a single-table conjunct of an outer join's ON
+        /// clause (e.g. `t2.value = 'x'` in `... LEFT JOIN t3 ON t2.id = t3.id AND t2.value = 'x'`),
+        /// `sources` is only `{t2}` but the pin is `{t3}`: the predicate belongs to the ON condition of
+        /// the join that brings in `t3`, not to `t2` as a base-table filter. Placing it by `sources`
+        /// alone would push it below (or drop it from) that join, silently changing outer-join
+        /// semantics, since `t2` may already have been NULL-extended (or default-filled) by an
+        /// earlier join.
+        const DPsubMask pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : 0;
+        const DPsubMask applicable = sources | pin;
+
+        if (std::popcount(applicable) <= 1)
         {
-            /// Predicate connects the two sides
-            out.push_back(&edge);
+            /// Base-relation filter or constant predicate: it becomes applicable as soon as its single
+            /// relation is present, so attach it at the earliest (two-relation) join to filter as low
+            /// as possible.
+            if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+                out.push_back(&edge);
         }
-        else if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+        else if ((applicable & ~left_mask) && (applicable & ~right_mask))
         {
-            /// Single-table or constant predicate attached at the earliest (two-relation) stage
+            /// The predicate spans the split (a connecting equi-predicate, or a single-table ON-clause
+            /// conjunct pinned to the opposite side): neither side alone contains all the relations it
+            /// needs. This join is the lowest one that makes it applicable, so attach it here — into the
+            /// correct join's ON condition.
             out.push_back(&edge);
         }
     }
@@ -870,7 +896,7 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
 }
 
 double JoinOrderOptimizer::computeSelectivityMask(
-    const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
+    const std::vector<JoinActionRef *> & edges, DPsubMask left_mask, DPsubMask right_mask)
 {
     double selectivity = computeSelectivity(edges);
 
@@ -878,12 +904,12 @@ double JoinOrderOptimizer::computeSelectivityMask(
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
     const UInt64 generation = ++dpsub_data.equiv_generation;
 
-    for (UInt32 remaining = left_mask; remaining;)
+    for (DPsubMask remaining = left_mask; remaining;)
     {
-        const UInt32 rel = std::countr_zero(remaining);
+        const auto rel = std::countr_zero(remaining);
         remaining &= remaining - 1;
 
-        for (UInt32 class_idx : dpsub_data.rel_to_classes[rel])
+        for (auto class_idx : dpsub_data.rel_to_classes[rel])
         {
             if (dpsub_data.class_visited[class_idx] == generation)
                 continue;
@@ -897,7 +923,7 @@ double JoinOrderOptimizer::computeSelectivityMask(
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
                 if (!relation)
                     continue;
-                const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                const DPsubMask relation_bit = static_cast<DPsubMask>(1) << *relation;
                 if (left_mask & relation_bit)
                 {
                     has_left = true;
@@ -1087,7 +1113,11 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::buildPhysicalPlan(const DPTable
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsub()
 {
     const size_t n = query_graph.relation_stats.size();
-    using Bitvector = UInt32; // choose UInt64 or even UInt128 for larger sets
+    /// The DPsub `dp_table` key width. Tied to `DPsubMask` so the native-mask acceptor helpers
+    /// (`isValidJoinOrderMask`, `collectJoinEdgesMask`, `computeSelectivityMask`) and the packed
+    /// scratch in `dpsub_data` all operate on the same integer type. Widen `DPsubMask` (to `UInt64`
+    /// or `UInt128`) to support larger relation sets.
+    using Bitvector = DPsubMask;
     // A budget cap on nr. of connected components considered by DPsub to avoid excessive optimization time on large join graphs.
     // This budget cap is obtained from empirical testing using different queries and join graphs.
     static constexpr UInt32 max_nr_ccps = 50'000;
