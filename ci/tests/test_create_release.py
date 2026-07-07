@@ -504,12 +504,13 @@ def test_prepare_recovers_already_released_commit(tmp_path):
 
 
 def test_prepare_refuses_out_of_order_commit(tmp_path):
-    """A commit ref that is behind the latest release tag must fail.
+    """A commit ref that is behind the branch tip's release must fail.
 
-    The decision is topological, not version-based: an old commit that predates
-    the branch's latest release tag (``v26.6.3.1-stable`` here, at a later
-    commit) is stale, so ``prepare`` must refuse it rather than create a release
-    from it. Re-publishing an existing release is done by passing its tag.
+    The branch tip's version file already describes a newer release
+    (``26.6.3`` here) than the dispatched commit (``26.6.2``), so ``prepare``
+    must refuse it rather than create a release from a stale commit. The
+    decision reads the branch-tip version file, not release tags. Re-publishing
+    an existing release is done by passing its tag.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -543,10 +544,15 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
         capture_output=True,
         text=True,
     ).stdout.strip()
-    # Advance the branch and put the latest release tag ahead of that commit.
+    # Advance the branch and bump the version file so the branch tip is a newer
+    # release (26.6.3) than the dispatched commit (26.6.2).
+    later_versions = _VERSIONS_CONTENT.replace(
+        "VERSION_PATCH 2", "VERSION_PATCH 3"
+    ).replace("26.6.2.1", "26.6.3.1")
+    (repo / _VERSIONS_FILE).write_text(later_versions, encoding="utf-8")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
-    git("commit", "-q", "-m", "Later commit")
+    git("commit", "-q", "-m", "Later commit (bump to 26.6.3)")
     git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")
@@ -592,10 +598,10 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
 
     Recovery is expressed by the ref being a release *tag name*; passing the raw
     commit that an older release tag points at must not be mistaken for recovery
-    of that release. The commit predates the branch's latest release tag
-    (``v26.6.3.1-stable``), so ``prepare`` must refuse it as out-of-order rather
-    than re-publish the stale ``v26.6.2.1-stable`` sitting at that commit. This
-    mirrors dispatching e.g. the commit behind an existing ``v25.8.24.21-lts``.
+    of that release. The branch tip is a newer release (``26.6.3``) than the
+    dispatched commit (``26.6.2``), so ``prepare`` must refuse it as out-of-order
+    rather than re-publish the stale ``v26.6.2.1-stable`` sitting at that commit.
+    This mirrors dispatching e.g. the commit behind an existing ``v25.8.24.21-lts``.
     """
     pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
 
@@ -631,10 +637,15 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
         text=True,
     ).stdout.strip()
     git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
-    # Advance the branch and put a newer release tag ahead of that commit.
+    # Advance the branch and bump the version file so the tip is a newer release
+    # (26.6.3) than the dispatched commit (26.6.2), plus a tag for realism.
+    later_versions = _VERSIONS_CONTENT.replace(
+        "VERSION_PATCH 2", "VERSION_PATCH 3"
+    ).replace("26.6.2.1", "26.6.3.1")
+    (repo / _VERSIONS_FILE).write_text(later_versions, encoding="utf-8")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
-    git("commit", "-q", "-m", "Later commit")
+    git("commit", "-q", "-m", "Later commit (bump to 26.6.3)")
     git("tag", "-a", "v26.6.3.1-stable", "-m", "Release v26.6.3.1-stable")
     git("remote", "add", "origin", str(repo))
     git("fetch", "-q", "origin")

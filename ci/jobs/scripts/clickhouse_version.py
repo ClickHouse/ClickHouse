@@ -102,32 +102,15 @@ class CHVersion:
     def get_stable_release_type(self) -> str:
         return VersionType.LTS if self._minor % 5 == 3 else VersionType.STABLE
 
-    def latest_release_tag(self) -> str:
-        """The highest-version release tag on this branch, or '' if there is none.
-
-        Scans all `vX.Y.*` tags by name (so it sees the whole branch regardless
-        of what is reachable from the current commit) and ignores the `-new`
-        branch-cut tag.
-        """
-        latest_tag = ""
-        latest_version = None
-        for tag in Shell.get_output(
-            f"git tag --list 'v{self._major}.{self._minor}.*'"
-        ).split():
-            if tag.endswith("-new"):
-                continue
-            try:
-                other = _version_from_tag(tag)
-            except Exception:
-                continue
-            if latest_version is None or latest_version < other:
-                latest_version, latest_tag = other, tag
-        return latest_tag
-
-    def has_newer_release_tag(self) -> bool:
-        """Whether the branch already has a release tag with a higher version."""
-        latest_tag = self.latest_release_tag()
-        return bool(latest_tag) and self < _version_from_tag(latest_tag)
+    def is_older_release_than(self, other: "CHVersion") -> bool:
+        """Whether this is an older release than `other`, compared by release
+        triple (major, minor, patch). The tweak is a within-patch commit count
+        and does not define a newer release."""
+        return (self._major, self._minor, self._patch) < (
+            other._major,
+            other._minor,
+            other._patch,
+        )
 
     @property
     def major(self) -> int:

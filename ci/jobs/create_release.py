@@ -247,6 +247,10 @@ class ReleaseInfo:
         release_tag = None
         latest_release = False
         codename = ""
+        # Whether the branch has already moved to a newer release than this one
+        # (set for patch releases from the branch-tip version file). A new
+        # release cuts a fresh minor, so it is always the latest.
+        newer_release_exists = False
 
         if release_type == "new":
             if commit_ref != "master":
@@ -281,6 +285,14 @@ class ReleaseInfo:
                 verbose=True,
             )
 
+            # The branch's current version, read from the version file at its tip
+            # (not from release tags). If this commit's version is older than the
+            # branch tip, the branch has already moved to a newer release, so this
+            # ref is behind / superseded.
+            with checkout(f"origin/{release_branch}"):
+                branch_version = CHVersion.current()
+            newer_release_exists = version.is_older_release_than(branch_version)
+
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
                 latest_release = True
@@ -303,19 +315,18 @@ class ReleaseInfo:
         self.release_progress = ReleaseProgress.STARTED
         self.latest = latest_release
 
-        # Does the branch already carry a release tag newer than this version?
-        # This release is the latest on its branch unless a newer tag exists —
+        # Is the branch already developing a newer release than this one? This
+        # release is the latest on its branch unless the branch tip is newer —
         # controls the floating minor/major Docker tags (recovering the current
         # release re-applies them; recovering a superseded one does not).
-        self.is_branch_release = not version.has_newer_release_tag()
+        self.is_branch_release = not newer_release_exists
 
-        # The operation is decided from the ref and the branch's release tags:
+        # The operation is decided from the ref and the branch's version:
         #   * ref is an existing release tag -> recovery: re-publish exactly that
         #     release (allowed even for a superseded one);
-        #   * ref is a branch/commit while the branch already has a strictly newer
-        #     release tag -> out-of-order. A branch ref can't reach this (its
-        #     version is always ahead of every tag), so it is a raw SHA pointing
-        #     behind the tip; refuse it;
+        #   * ref is a branch/commit that is older than the branch tip -> out of
+        #     order. A branch ref can't reach this (its tip is never older than
+        #     itself), so it is a raw SHA pointing behind the tip; refuse it;
         #   * ref is a branch/commit whose own release tag already exists at this
         #     commit -> recovery: a rerun. auto_releases dispatches ref=<commit_sha>
         #     and GitHub's "Re-run failed jobs" replays the matrix with that same
@@ -326,7 +337,8 @@ class ReleaseInfo:
         #
         # The stale-SHA and superseded-recovery cases both compute the same
         # existing release_tag; only the ref KIND distinguishes them, so the tag
-        # ref is checked first and the newer-tag guard runs before the rerun case.
+        # ref is checked first and the newer-release guard runs before the rerun
+        # case.
         if Git.tag_exists(commit_ref):
             recover = True
             assert release_tag == commit_ref, (
@@ -334,10 +346,10 @@ class ReleaseInfo:
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
-        elif version.has_newer_release_tag():
+        elif newer_release_exists:
             raise RuntimeError(
                 f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
-                f"branch [{release_branch}] already has a newer release tag. Pass a "
+                f"branch [{release_branch}] is already on a newer release. Pass a "
                 f"release tag to recover an existing release, or the branch to "
                 f"release its next commit."
             )
