@@ -97,6 +97,21 @@ namespace
 
         return engine_args;
     }
+
+    /// Listable path wildcards (`*` / `**`) are expanded by listing HTTP index pages through the `web`
+    /// object storage, which issues plain `GET` requests and has no way to carry a request body. The AST
+    /// rebuilt by `makeWebObjectStorageEngineArgs` above does not forward `body(...)`, so without this check
+    /// the body would be silently dropped and the read would fall back to a `GET`. Reject it explicitly,
+    /// consistently with the other surfaces that cannot send a body.
+    void rejectBodyForListableWildcard(const IStorageURLBase::Body & body)
+    {
+        if (!body.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The 'body' argument is not supported for `url` with listable path wildcards "
+                "(expanded from HTTP index pages): the wildcard expansion reads through the `web` "
+                "object-storage path, which sends plain GET requests and cannot carry a request body.");
+    }
 }
 
 VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
@@ -232,6 +247,7 @@ StoragePtr TableFunctionURL::getStorage(
 
     if (use_web_wildcard)
     {
+        rejectBodyForListableWildcard(configuration.body);
         checkExperimentalURLWildcardFromIndexPages(context);
         auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
 
@@ -288,6 +304,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
 
         if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
         {
+            rejectBodyForListableWildcard(configuration.body);
             checkExperimentalURLWildcardFromIndexPages(context);
 
             auto object_storage_configuration = std::make_shared<StorageWebConfiguration>();
