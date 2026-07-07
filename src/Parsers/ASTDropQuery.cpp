@@ -30,8 +30,22 @@ String ASTDropQuery::getID(char delim) const
 ASTPtr ASTDropQuery::clone() const
 {
     auto res = make_intrusive<ASTDropQuery>(*this);
+    /// The copy constructor above copies the `children` vector as-is; clear it and rebuild it from
+    /// the (re-cloned) members below, mirroring `ASTQueryWithTableAndOutputImpl::clone`. Without the
+    /// clear, `cloneTableOptions` appends a second copy of `table` (and `cloneOutputOptions` its
+    /// options), so a cloned `DROP` ends up with duplicated children and a `getTreeHash` that no
+    /// longer matches a freshly parsed one -- which broke rewrite-rule matching of `DROP` queries,
+    /// whose stored rule template is such a clone.
+    res->children.clear();
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
+    /// `cloneTableOptions` only handles `database` / `table`; the `DROP TABLE a, b, ...` list lives
+    /// in `database_and_tables`, which is a child too, so re-clone it here as well.
+    if (database_and_tables)
+    {
+        res->database_and_tables = database_and_tables->clone();
+        res->children.push_back(res->database_and_tables);
+    }
     return res;
 }
 
