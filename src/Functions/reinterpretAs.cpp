@@ -56,10 +56,9 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Documentation-only — the result type is parsed from the const-string
-    /// second argument; the override below stays authoritative because it
-    /// additionally validates that source and destination types are
-    /// memory-compatible.
+    /// The result type is the type named by the const second argument (`typeFromString`). The
+    /// override below is authoritative-but-examined: it delegates the type computation to the
+    /// declarative signature and only adds the source/destination memory-compatibility validation.
     String getSignatureString() const override
     {
         return "(Any, const t String) -> typeFromString(t)";
@@ -67,19 +66,11 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        const auto & column = arguments.back().column;
-
         DataTypePtr from_type = arguments[0].type;
 
-        const auto * type_col = checkAndGetColumnConst<ColumnString>(column.get());
-        if (!type_col)
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Second argument to {} must be a constant string describing type."
-                " Instead there is non-constant column of type {}",
-                getName(),
-                arguments.back().type->getName());
-
-        DataTypePtr to_type = DataTypeFactory::instance().get(type_col->getValue<String>());
+        /// The result type comes from the declarative signature (see getSignatureString); the checks
+        /// below only validate that the source and destination types are memory-compatible.
+        DataTypePtr to_type = IFunction::getReturnTypeImpl(arguments);
 
         WhichDataType result_reinterpret_type(to_type);
 
@@ -475,8 +466,8 @@ public:
     String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
-            /// Documentation-only: the FixedString length N is derived from the input value size.
-            return "(Any) -> FixedString";
+            /// The FixedString length N is the source value's in-memory size.
+            return "(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))";
         else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
             /// reinterpretAsString accepts any value laid out contiguously in memory.
             return "(UnambiguouslyRepresentedInContiguousMemoryRegion) -> String";
@@ -530,17 +521,9 @@ public:
         return arguments_with_type;
     }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        /// reinterpretAsFixedString derives its N from the input value size, so it stays
-        /// documentation-only. The other targets are authoritative: the input matcher in the
-        /// declarative signature encodes exactly which source types can be reinterpreted.
-        if constexpr (!std::is_same_v<ToDataType, DataTypeFixedString>)
-            return IFunction::getReturnTypeImpl(arguments);
-
-        auto arguments_with_type = addTypeColumnToArguments(arguments);
-        return impl.getReturnTypeImpl(arguments_with_type);
-    }
+    /// getReturnTypeImpl is intentionally not overridden: the declarative signature is
+    /// authoritative for every target (including FixedString, whose N is `sizeOfValueInMemory`).
+    /// The input matcher encodes exactly which source types can be reinterpreted.
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type, size_t input_rows_count) const override
     {

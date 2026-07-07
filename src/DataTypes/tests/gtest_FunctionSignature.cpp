@@ -155,6 +155,20 @@ GTEST_TEST(FunctionSignature, DecimalConstValueTypeFunction)
     }
 }
 
+/// The `sizeOfValueInMemory` type function + fixed-size-contiguous matcher used by
+/// `reinterpretAsFixedString`: the result is `FixedString(N)` with N the source value's memory size.
+GTEST_TEST(FunctionSignature, ReinterpretAsFixedStringSignature)
+{
+    const String sig = "(T : UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion) -> FixedString(sizeOfValueInMemory(T))";
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt32")}), "FixedString(4)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UInt64")}), "FixedString(8)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("UUID")}), "FixedString(16)");
+    EXPECT_EQ(checkSignature(sig, {makeColumn("Float32")}), "FixedString(4)");
+    /// String is not fixed-size, so it is rejected by the matcher.
+    EXPECT_THAT(checkSignature(sig, {makeColumn("String")}), ::testing::StartsWith("FAIL:"));
+    EXPECT_THAT(checkSignature(sig, {makeColumn("Array(UInt8)")}), ::testing::StartsWith("FAIL:"));
+}
+
 /// The `dateTimeFromScale` / `timeFromScale` type functions used by `toDateTime` / `toTime`: a scale
 /// of 0 collapses to DateTime/Time; a non-zero scale widens to DateTime64/Time64. A timezone (for
 /// DateTime) is carried through.

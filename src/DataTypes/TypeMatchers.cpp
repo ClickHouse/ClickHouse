@@ -157,6 +157,17 @@ public:
     size_t getIndex() const override { return 0; }
 };
 
+class TypeMatcherUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion : public ITypeMatcher
+{
+public:
+    std::string toString() const override { return "UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion"; }
+    bool match(const DataTypePtr & type, Variables &, size_t, size_t, std::string &) const override
+    {
+        return type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion();
+    }
+    size_t getIndex() const override { return 0; }
+};
+
 class TypeMatcherDateOrDateTime : public ITypeMatcher
 {
 public:
@@ -1071,6 +1082,7 @@ void registerTypeMatchers()
     registerTypeMatcherWithNoArguments<TypeMatcherSet>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherDateOrDateTime>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherUnambiguouslyRepresentedInContiguousMemoryRegion>(factory);
+    registerTypeMatcherWithNoArguments<TypeMatcherUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherAny>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherFloat>(factory);
     registerTypeMatcherWithNoArguments<TypeMatcherNativeFloat>(factory);

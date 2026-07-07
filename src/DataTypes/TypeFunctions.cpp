@@ -660,6 +660,23 @@ public:
     std::string name() const override { return "timeFromScale"; }
 };
 
+/// `sizeOfValueInMemory(T)` — the fixed in-memory size (in bytes) of a value of type T, as a UInt64
+/// constant. Used by `reinterpretAsFixedString`, whose result is `FixedString(N)` with N equal to
+/// the source value's memory size. The caller constrains T to a fixed-size contiguous type (via the
+/// `UnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion` matcher), so the size is well defined.
+class TypeFunctionSizeOfValueInMemory : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function sizeOfValueInMemory");
+        return Value(Field(static_cast<UInt64>(args.front().type()->getSizeOfValueInMemory())));
+    }
+
+    std::string name() const override { return "sizeOfValueInMemory"; }
+};
+
 /// If the type was already Nullable, return it as is.
 class TypeFunctionNullable : public ITypeFunction
 {
@@ -1433,6 +1450,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionDecimal>();
     factory.registerElement<TypeFunctionDateTimeFromScale>();
     factory.registerElement<TypeFunctionTimeFromScale>();
+    factory.registerElement<TypeFunctionSizeOfValueInMemory>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();
