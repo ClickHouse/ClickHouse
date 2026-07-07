@@ -1,0 +1,106 @@
+---
+sidebarTitle: 'Draxlr'
+slug: /integrations/draxlr
+keywords: ['ClickHouse', 'Draxlr', 'اتصال', 'تكامل', 'واجهة المستخدم']
+description: 'Draxlr هي أداة لذكاء الأعمال تتضمن تصوّر البيانات والتحليلات.'
+title: 'ربط Draxlr بـ ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+يوفّر Draxlr واجهة سهلة الاستخدام للاتصال بقاعدة بيانات ClickHouse، مما يتيح لفريقك استكشاف الرؤى وتصوّرها ونشرها في غضون دقائق. سيرشدك هذا الدليل خلال الخطوات اللازمة لإعداد اتصال ناجح.
+
+<div id="1-get-your-clickhouse-credentials">
+  ## 1. احصل على بيانات اعتمادك في ClickHouse
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-draxlr-to-clickhouse">
+  ## 2.  ربط Draxlr بـ ClickHouse
+</div>
+
+1. انقر على زر **Connect a Database** في شريط التنقل.
+
+2. اختر **ClickHouse** من قائمة قواعد البيانات المتاحة، ثم انقر على **Next**.
+
+3. اختر إحدى خدمات الاستضافة، ثم انقر على **Next**.
+
+4. استخدم أي اسم في حقل **Connection Name**.
+
+5. أضف تفاصيل الاتصال في النموذج.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_01.webp" alt="نموذج اتصال Draxlr يعرض خيارات إعداد قاعدة بيانات ClickHouse" border />
+
+6. انقر على زر **Next** وانتظر حتى يتم إنشاء الاتصال. ستظهر لك صفحة الجداول إذا تم الاتصال بنجاح.
+
+<div id="4-explore-your-data">
+  ## 4. استكشف بياناتك
+</div>
+
+1. انقر على أحد الجداول في القائمة.
+
+2. سينقلك ذلك إلى صفحة Explore لعرض البيانات الموجودة في الجدول.
+
+3. يمكنك البدء بإضافة عوامل التصفية، وإجراء عمليات join، وإضافة الفرز إلى بياناتك.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_02.webp" alt="واجهة استكشاف البيانات في Draxlr تعرض عوامل التصفية وخيارات الفرز" border />
+
+4. يمكنك أيضًا استخدام زر **Graph** وتحديد نوع الرسم البياني لعرض البيانات بصريًا.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_05.webp" alt="خيارات عرض الرسم البياني في Draxlr لبيانات ClickHouse" border />
+
+<div id="4-using-sql-queries">
+  ## 4. استخدام استعلامات SQL
+</div>
+
+1. انقر على زر Explore في شريط التنقل.
+
+2. انقر على زر **الاستعلام الخام** وأدخل الاستعلام في حقل النص.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_03.webp" alt="واجهة استعلامات SQL في Draxlr لـ ClickHouse" border />
+
+3. انقر على زر **تنفيذ الاستعلام** للاطّلاع على النتائج.
+
+<div id="4-saving-you-query">
+  ## 4. حفظ استعلامك
+</div>
+
+1. بعد تنفيذ الاستعلام، انقر على زر **حفظ الاستعلام**.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_04.webp" alt="مربع حوار حفظ الاستعلام في Draxlr مع خيارات لوحة المعلومات" border />
+
+2. يمكنك تسمية الاستعلام في مربع النص **اسم الاستعلام** واختيار مجلد لتصنيفه.
+
+3. يمكنك أيضًا استخدام خيار **إضافة إلى لوحة المعلومات** لإضافة النتيجة إلى لوحة المعلومات.
+
+4. انقر على زر **حفظ** لحفظ الاستعلام.
+
+<div id="5-building-dashboards">
+  ## 5. إنشاء لوحات المعلومات
+</div>
+
+1. انقر على زر **لوحات المعلومات** في شريط التنقل.
+
+<Image size="md" img="/images/integrations/data-visualization/draxlr_06.webp" alt="واجهة إدارة لوحات المعلومات في Draxlr" border />
+
+2. يمكنك إضافة لوحة معلومات جديدة بالنقر على زر **إضافة +** في الشريط الجانبي الأيسر.
+
+3. لإضافة أداة جديدة، انقر على زر **إضافة** في الزاوية العلوية اليمنى.
+
+4. يمكنك اختيار استعلام من قائمة الاستعلامات المحفوظة وتحديد نوع التصور، ثم النقر على زر **إضافة عنصر إلى لوحة المعلومات**.
+
+<div id="learn-more">
+  ## اطّلع على المزيد
+</div>
+
+لمعرفة المزيد عن Draxlr، يمكنك زيارة [وثائق Draxlr](https://draxlr.notion.site/draxlr/Draxlr-Docs-d228b23383f64d00a70836ff9643a928).

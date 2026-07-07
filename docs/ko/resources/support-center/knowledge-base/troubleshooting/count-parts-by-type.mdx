@@ -1,0 +1,101 @@
+---
+title: wide 또는 compact 파트의 개수 및 크기 찾기
+description: '이 지식베이스 문서에서는 wide 또는 compact와 같은 파트 유형별로 파트 개수를 확인하는 방법을 설명합니다.'
+date: 2026-01-12
+tags: ['문제 해결']
+keywords: ['compact parts', 'wide parts']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+다음 쿼리를 사용하면 유형별 파트 개수를 확인할 수 있습니다:
+
+```sql
+SELECT
+    table,
+    part_type,
+    count(*)
+FROM system.parts
+WHERE active
+GROUP BY
+    table,
+    part_type
+ORDER BY
+    table ASC,
+    part_type ASC
+```
+
+응답 예시는 아래와 같습니다:
+
+```response
+┌─table───────────────────┬─part_type─┬─count()─┐
+│ asynchronous_metric_log │ Compact   │       6 │
+│ metric_log              │ Compact   │       1 │
+│ otel_logs               │ Compact   │       5 │
+│ otel_logs               │ Wide      │       2 │
+│ part_log                │ Compact   │       2 │
+│ query_log               │ Compact   │       5 │
+│ session_log             │ Compact   │       2 │
+│ text_log                │ Compact   │       7 │
+│ trace_log               │ Compact   │       6 │
+└─────────────────────────┴───────────┴─────────┘
+```
+
+wide 및 compact 파트 크기를 조회하려면 아래 쿼리를 실행하십시오:
+
+```sql
+SELECT
+    table,
+    column,
+    part_type,
+    sum(rows),
+    sum(column_data_compressed_bytes),
+    sum(column_data_uncompressed_bytes)
+FROM system.parts_columns
+WHERE active
+GROUP BY
+    table,
+    column,
+    part_type
+ORDER BY
+    table ASC,
+    column ASC,
+    part_type ASC
+```
+
+응답 예시는 아래와 같습니다:
+
+```response
+┌─table─────┬─column─────────────┬─part_type─┬─sum(rows)─┬─sum(column_data_compressed_bytes)─┬─sum(column_data_uncompressed_bytes)─┐
+│ otel_logs │ Body               │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ Body               │ Wide      │  18900157 │                         316784170 │                          2807508947 │
+│ otel_logs │ LogAttributes      │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ LogAttributes      │ Wide      │  18900157 │                         215812392 │                          3173566494 │
+│ otel_logs │ ResourceAttributes │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ ResourceAttributes │ Wide      │  18900157 │                          94428129 │                          2258154988 │
+│ otel_logs │ ServiceName        │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ ServiceName        │ Wide      │  18900157 │                             24726 │                            18973727 │
+│ otel_logs │ SeverityNumber     │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SeverityNumber     │ Wide      │  18900157 │                             51973 │                            75600628 │
+│ otel_logs │ SeverityText       │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SeverityText       │ Wide      │  18900157 │                             24726 │                            18973727 │
+│ otel_logs │ SpanId             │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ SpanId             │ Wide      │  18900157 │                             13048 │                            18900157 │
+│ otel_logs │ Timestamp          │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ Timestamp          │ Wide      │  18900157 │                          61225801 │                           151201256 │
+│ otel_logs │ TraceFlags         │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ TraceFlags         │ Wide      │  18900157 │                             51973 │                            75600628 │
+│ otel_logs │ TraceId            │ Compact   │   1564357 │                                 0 │                                   0 │
+│ otel_logs │ TraceId            │ Wide      │  18900157 │                             13048 │                            18900157 │
+└───────────┴────────────────────┴───────────┴───────────┴───────────────────────────────────┴─────────────────────────────────────┘
+```
+
+<Info>
+  **Compact 파트 크기가 0으로 표시됩니다**
+
+  Compact 파트에서는 컬럼 크기가 계산되지 않으므로 위에는 `0`으로 표시됩니다.
+</Info>

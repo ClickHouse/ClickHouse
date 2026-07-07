@@ -1,0 +1,863 @@
+---
+description: '在文本中快速查找搜索词。'
+keywords: ['全文检索', '文本索引', '索引', '索引']
+sidebarTitle: '使用文本索引进行全文检索'
+slug: /engines/table-engines/mergetree-family/invertedindexes
+title: '使用文本索引进行全文检索'
+doc_type: 'reference'
+---
+
+import {PrivatePreviewBadge} from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx'
+
+<PrivatePreviewBadge />
+
+ClickHouse 中的文本索引 (也称为[&quot;倒排索引&quot;](https://en.wikipedia.org/wiki/Inverted_index)) 可为字符串数据提供快速的全文检索能力。
+索引会将列中的每个标记映射到包含该标记的行。
+这些标记通过称为分词的过程生成。
+例如，默认情况下，ClickHouse 会将英文句子 &quot;All cat like mice.&quot; 分词为 [&quot;All&quot;, &quot;cat&quot;, &quot;like&quot;, &quot;mice&quot;] (请注意，末尾的句点会被忽略) 。
+此外，还提供了更高级的分词器，例如适用于日志数据的分词器。
+
+<div id="creating-a-text-index">
+  ## 创建文本索引
+</div>
+
+要创建文本索引，首先启用相应的 Experimental 设置：
+
+```sql
+SET allow_experimental_full_text_index = true;
+```
+
+可以使用以下语法在 [String](/zh/reference/data-types/string)、[FixedString](/zh/reference/data-types/fixedstring)、[Array(String)](/zh/reference/data-types/array)、[Array(FixedString)](/zh/reference/data-types/array) 和 [Map](/zh/reference/data-types/map) (通过映射函数 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapkeys) 和 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapvalues)) 列上定义文本索引：
+
+```sql
+CREATE TABLE tab
+(
+    `key` UInt64,
+    `str` String,
+    INDEX text_idx(str) TYPE text(
+                                -- 必填参数：
+                                tokenizer = splitByNonAlpha|splitByString(S)|ngrams(N)|array
+                                -- 可选参数：
+                                [, preprocessor = expression(str)]
+                                -- 可选高级参数：
+                                [, dictionary_block_size = D]
+                                [, dictionary_block_frontcoding_compression = B]
+                                [, max_cardinality_for_embedded_postings = M]
+                                [, bloom_filter_false_positive_rate = R]
+                            ) [GRANULARITY 64]
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+**分词器参数**。`tokenizer` 参数用于指定分词器：
+
+* `splitByNonAlpha` 按非字母数字的 ASCII 字符拆分字符串 (另见函数 [splitByNonAlpha](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha)) 。
+* `splitByString(S)` 按用户定义的特定分隔符字符串 `S` 拆分字符串 (另见函数 [splitByString](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByString)) 。
+  分隔符可通过可选参数指定，例如 `tokenizer = splitByString([', ', '; ', '\n', '\\'])`。
+  请注意，每个分隔符字符串都可以由多个字符组成 (如示例中的 `', '`) 。
+  如果未显式指定，默认分隔符列表 (例如 `tokenizer = splitByString`) 为单个空格 `[' ']`。
+* `ngrams(N)` 将字符串拆分为等长的 `N`-gram (另见函数 [ngrams](/zh/reference/functions/regular-functions/splitting-merging-functions#ngrams)) 。
+  ngram 的长度可通过 2 到 8 之间的可选整数参数指定，例如 `tokenizer = ngrams(3)`。
+  如果未显式指定，默认 ngram 大小 (例如 `tokenizer = ngrams`) 为 3。
+* `array` 不执行分词，即每个行值都是一个标记 (另见函数 [array](/zh/reference/functions/regular-functions/array-functions#array)) 。
+* `sparseGrams(min_length, max_length, min_cutoff_length)` — 使用与 [sparseGrams](/zh/reference/functions/regular-functions/string-functions#sparseGrams) 函数相同的算法，将字符串拆分为所有长度为 `min_length` 的 ngram，以及若干长度更大、最大可达 `max_length` (含) 的 ngram。如果指定了 `min_cutoff_length`，则只有长度大于或等于 `min_cutoff_length` 的 N-gram 会保存到索引中。与仅生成固定长度 N-gram 的 `ngrams(N)` 不同，`sparseGrams` 会在指定范围内生成一组可变长度的 N-gram，从而更灵活地表示文本上下文。例如，`tokenizer = sparseGrams(3, 5, 4)` 会从输入字符串生成 3-、4-、5-gram，但只将 4- 和 5-gram 保存到索引中。
+
+<Note>
+  `splitByString` 分词器会按从左到右的顺序应用分隔符。
+  这可能会产生歧义。
+  例如，分隔符字符串 `['%21', '%']` 会使 `%21abc` 被分词为 `['abc']`；而如果将这两个分隔符字符串改为 `['%', '%21']`，输出则会变为 `['21abc']`。
+  大多数情况下，你会希望优先匹配更长的分隔符。
+  通常可以通过按长度降序传入分隔符字符串来实现。
+  如果这些分隔符字符串恰好构成[前缀码](https://en.wikipedia.org/wiki/Prefix_code)，则可以按任意顺序传入。
+</Note>
+
+<Warning>
+  目前不建议对非西方语言 (例如中文) 的文本构建文本索引。
+  当前支持的分词器可能会导致索引体积巨大、查询时间过长。
+  我们计划在未来添加专门针对特定语言的分词器，以更好地处理这些情况。
+</Warning>
+
+要测试分词器如何对输入字符串进行拆分，可以使用 ClickHouse 的 [tokens](/zh/reference/functions/regular-functions/splitting-merging-functions#tokens) 函数：
+
+例如，
+
+```sql
+SELECT tokens('abc def', 'ngrams', 3) AS tokens;
+```
+
+返回
+
+```result
++-tokens--------------------------+
+| ['abc','bc ','c d',' de','def'] |
++---------------------------------+
+```
+
+**预处理器参数**。可选参数 `preprocessor` 是一个表达式，用于在分词前转换输入字符串。
+
+`preprocessor` 参数的典型用法包括：
+
+1. 将输入字符串转换为小写 (或大写) ，以支持不区分大小写的匹配，例如 [lower](/zh/reference/functions/regular-functions/string-functions#lower)、[lowerUTF8](/zh/reference/functions/regular-functions/string-functions#lowerUTF8)；请参见下面的第一个示例。
+2. UTF-8 规范化，例如 [normalizeUTF8NFC](/zh/reference/functions/regular-functions/string-functions#normalizeUTF8NFC)、[normalizeUTF8NFD](/zh/reference/functions/regular-functions/string-functions#normalizeUTF8NFD)、[normalizeUTF8NFKC](/zh/reference/functions/regular-functions/string-functions#normalizeUTF8NFKC)、[normalizeUTF8NFKD](/zh/reference/functions/regular-functions/string-functions#normalizeUTF8NFKD)、[toValidUTF8](/zh/reference/functions/regular-functions/string-functions#toValidUTF8)。
+3. 删除或转换不需要的字符或子字符串，例如 [extractTextFromHTML](/zh/reference/functions/regular-functions/string-functions#extractTextFromHTML)、[substring](/zh/reference/functions/regular-functions/string-functions#substring)、[idnaEncode](/zh/reference/functions/regular-functions/string-functions#idnaEncode)。
+
+`preprocessor` 表达式必须将类型为 [String](/zh/reference/data-types/string) 或 [FixedString](/zh/reference/data-types/fixedstring) 的输入值转换为相同类型的值。
+
+示例：
+
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = substringIndex(col, '\n', 1))`
+* `INDEX idx(col) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(extractTextFromHTML(col))`
+
+此外，`preprocessor` 表达式只能引用定义 text index 时所基于的列。
+不允许使用非确定性函数。
+
+函数 [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken)、[hasAllTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens) 和 [hasAnyTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens) 会先使用 `preprocessor` 转换搜索词，再对其进行分词。
+
+例如：
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(str) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(str))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, 'Foo');
+```
+
+等价于：
+
+```sql
+CREATE TABLE tab
+(
+    key UInt64,
+    str String,
+    INDEX idx(lower(str)) TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+SELECT count() FROM tab WHERE hasToken(str, lower('Foo'));
+```
+
+**其他参数**。ClickHouse 中的文本索引是作为[二级索引](/zh/reference/engines/table-engines/mergetree-family/mergetree#skip-index-types)实现的。
+但与其他跳过索引不同，文本索引的默认索引 GRANULARITY 为 64。
+这个值是基于经验选定的，在大多数使用场景下，能够在速度和索引大小之间取得良好的平衡。
+高级用户也可以指定不同的索引粒度 (但我们不建议这样做) 。
+
+<AccordionGroup>
+  <Accordion title="可选高级参数">
+    以下高级参数的默认值在几乎所有情况下都适用。
+    我们不建议修改它们。
+
+    可选参数 `dictionary_block_size` (默认值：128) 用于指定字典块的大小 (以行为单位) 。
+
+    可选参数 `dictionary_block_frontcoding_compression` (默认值：1) 用于指定字典块是否使用前缀编码进行压缩。
+
+    可选参数 `max_cardinality_for_embedded_postings` (默认值：16) 用于指定基数阈值；低于该阈值时，倒排列表会嵌入到字典块中。
+
+    可选参数 `bloom_filter_false_positive_rate` (默认值：0.1) 用于指定字典布隆过滤器的误报率。
+  </Accordion>
+</AccordionGroup>
+
+表创建完成后，也可以为列添加或移除文本索引：
+
+```sql
+ALTER TABLE tab DROP INDEX text_idx;
+ALTER TABLE tab ADD INDEX text_idx(s) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<div id="using-a-text-index">
+  ## 使用文本索引
+</div>
+
+在 SELECT 查询中使用文本索引非常简单，因为常见的字符串搜索函数会自动利用该索引。
+如果不存在索引，下面的字符串搜索函数将退回到速度较慢的暴力扫描。
+
+<div id="supported-functions">
+  ### 支持的函数
+</div>
+
+如果在 SELECT 查询的 `WHERE` 子句中使用了文本函数，则可以使用文本索引：
+
+```sql
+SELECT [...]
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+<div id="and">
+  #### `=` and `!=`
+</div>
+
+`=` ([equals](/zh/reference/functions/regular-functions/comparison-functions#equals)) 和 `!=` ([notEquals](/zh/reference/functions/regular-functions/comparison-functions#notEquals)) 会匹配给定搜索词的完整内容。
+
+示例：
+
+```sql
+SELECT * from tab WHERE str = 'Hello';
+```
+
+文本索引支持 `=` 和 `!=`，但只有在使用 `array` 分词器时，等值和不等值搜索才有意义 (这会使索引存储整行的值) 。
+
+<div id="in-and-not-in">
+  #### `IN` and `NOT IN`
+</div>
+
+`IN` ([in](/zh/reference/functions/regular-functions/in-functions)) 和 `NOT IN` ([notIn](/zh/reference/functions/regular-functions/in-functions)) 与函数 `equals` 和 `notEquals` 类似，但它们分别匹配所有 (`IN`) 或完全不匹配 (`NOT IN`) 搜索词。
+
+示例：
+
+```sql
+SELECT * from tab WHERE str IN ('Hello', 'World');
+```
+
+适用与 `=` 和 `!=` 相同的限制；也就是说，`IN` 和 `NOT IN` 只有与 `array` 分词器配合使用时才有意义。
+
+<div id="like-not-like-and-match">
+  #### `LIKE`、`NOT LIKE` 和 `match`
+</div>
+
+<Note>
+  目前，只有当索引分词器为 `splitByNonAlpha` 或 `ngrams` 时，这些函数才会使用文本索引进行过滤。
+</Note>
+
+要让 `LIKE` [like](/zh/reference/functions/regular-functions/string-search-functions#like)、`NOT LIKE` ([notLike](/zh/reference/functions/regular-functions/string-search-functions#notLike)) 以及 [match](/zh/reference/functions/regular-functions/string-search-functions#match) 函数与文本索引配合使用，ClickHouse 必须能够从搜索词中提取完整的标记。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE 'support%';
+```
+
+示例中的 `support` 可以匹配 `support`、`supports`、`supporting` 等。
+这种查询属于子串查询，无法通过文本索引加速。
+
+要让 LIKE 查询利用文本索引，必须将 LIKE 模式改写为以下形式：
+
+```sql
+SELECT count() FROM tab WHERE comment LIKE ' support %'; -- 或 `% support %`
+```
+
+`support` 左右两侧的空格可确保该术语能被提取为一个标记。
+
+<div id="startswith-and-endswith">
+  #### `startsWith` 和 `endsWith`
+</div>
+
+与 `LIKE` 类似，[startsWith](/zh/reference/functions/regular-functions/string-functions#startsWith) 和 [endsWith](/zh/reference/functions/regular-functions/string-functions#endsWith) 这两个函数只有在能从搜索词中提取出完整标记时，才能使用文本索引。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE startsWith(comment, 'clickhouse support');
+```
+
+在该示例中，只有 `clickhouse` 会被视为一个标记。
+`support` 不算标记，因为它可以匹配 `support`、`supports`、`supporting` 等形式。
+
+要查找所有以 `clickhouse supports` 开头的行，请在搜索模式末尾加上一个空格：
+
+```sql
+startsWith(comment, 'clickhouse supports ')`
+```
+
+同样，`endsWith` 也应搭配前导空格使用：
+
+```sql
+SELECT count() FROM tab WHERE endsWith(comment, ' olap engine');
+```
+
+<div id="hastoken-and-hastokenornull">
+  #### `hasToken` and `hasTokenOrNull`
+</div>
+
+函数 [hasToken](/zh/reference/functions/regular-functions/string-search-functions#hasToken) 和 [hasTokenOrNull](/zh/reference/functions/regular-functions/string-search-functions#hasTokenOrNull) 用于匹配单个给定的标记。
+
+与前面提到的函数不同，它们不会对搜索词进行分词 (假定输入是单个标记) 。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE hasToken(comment, 'clickhouse');
+```
+
+函数 `hasToken` 和 `hasTokenOrNull` 是与 `text` 索引配合使用时性能最佳的函数。
+
+<div id="hasanytokens-and-hasalltokens">
+  #### `hasAnyTokens` 和 `hasAllTokens`
+</div>
+
+函数 [hasAnyTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAnyTokens) 和 [hasAllTokens](/zh/reference/functions/regular-functions/string-search-functions#hasAllTokens) 用于匹配给定标记中的任意一个或全部标记。
+
+这两个函数接受搜索标记时，既可以传入一个字符串 (会使用与索引列相同的分词器进行分词) ，也可以传入一个已处理好的标记数组，搜索前不会再对其进行分词。
+更多信息请参见函数文档。
+
+示例：
+
+```sql
+-- 以字符串参数传入搜索标记
+SELECT count() FROM tab WHERE hasAnyTokens(comment, 'clickhouse olap');
+SELECT count() FROM tab WHERE hasAllTokens(comment, 'clickhouse olap');
+
+-- 以 Array(String) 传入搜索标记
+SELECT count() FROM tab WHERE hasAnyTokens(comment, ['clickhouse', 'olap']);
+SELECT count() FROM tab WHERE hasAllTokens(comment, ['clickhouse', 'olap']);
+```
+
+<div id="has">
+  #### `has`
+</div>
+
+数组函数 [has](/zh/reference/functions/regular-functions/array-functions#has) 用于匹配字符串数组中的单个标记。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE has(array, 'clickhouse');
+```
+
+<div id="mapcontains">
+  #### `mapContains`
+</div>
+
+函数 [mapContains](/zh/reference/functions/regular-functions/tuple-map-functions#mapcontainskey) (`mapContainsKey` 的别名) 用于匹配 map 键中的单个标记。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE mapContainsKey(map, 'clickhouse');
+-- OR
+SELECT count() FROM tab WHERE mapContains(map, 'clickhouse');
+```
+
+<div id="operator">
+  #### `operator[]`
+</div>
+
+访问 [operator[]](/zh/reference/operators/index#access-operators) 可与文本索引配合使用，用于过滤键和值。
+
+示例：
+
+```sql
+SELECT count() FROM tab WHERE map['engine'] = 'clickhouse'; -- will use the text index if defined
+```
+
+请参阅以下示例，了解文本索引如何与 `Array(T)` 和 `Map(K, V)` 配合使用。
+
+<div id="examples-for-the-text-index-array-and-map-support">
+  ### 文本索引对 `Array` 和 `Map` 的支持示例。
+</div>
+
+<div id="indexing-arraystring">
+  #### 为 Array(String) 创建索引
+</div>
+
+在一个简单的博客平台中，作者会给文章添加关键词，以便对内容进行分类。
+一项常见功能是允许用户通过点击关键词或搜索主题来查找相关内容。
+
+考虑以下表定义：
+
+```sql
+CREATE TABLE posts (
+    post_id UInt64,
+    title String,
+    content String,
+    keywords Array(String) COMMENT 'Author-defined keywords'
+)
+ENGINE = MergeTree
+ORDER BY (post_id);
+```
+
+如果没有文本索引，要查找包含特定关键字 (例如 `clickhouse`) 的帖子，就需要扫描所有记录：
+
+```sql
+SELECT count() FROM posts WHERE has(keywords, 'clickhouse'); -- 全表扫描，速度慢——需检查每篇文章中的每个关键词
+```
+
+随着平台规模不断扩大，这种方式会越来越慢，因为查询必须检查每一行中的每个 `keywords` 数组。
+
+为了解决这个性能问题，我们可以为 `keywords` 定义一个文本索引，构建针对搜索优化的结构，对所有关键词预先处理，从而实现即时查找：
+
+```sql
+ALTER TABLE posts ADD INDEX keywords_idx(keywords) TYPE text(tokenizer = splitByNonAlpha);
+```
+
+<Note>
+  重要：添加文本索引后，必须为现有数据将其重新构建：
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX keywords_idx;
+  ```
+</Note>
+
+<div id="indexing-map">
+  #### 为 Map 建立索引
+</div>
+
+在日志系统中，服务器请求通常会将元数据存储为键值对。运维团队需要高效搜索日志，以便进行调试、处理安全事件和监控。
+
+考虑下面这个日志表：
+
+```sql
+CREATE TABLE logs (
+    id UInt64,
+    timestamp DateTime,
+    message String,
+    attributes Map(String, String)
+)
+ENGINE = MergeTree
+ORDER BY (timestamp);
+```
+
+如果没有文本索引，在 [Map](/zh/reference/data-types/map) 数据中搜索需要进行全表扫描：
+
+1. 查找所有包含限流信息的日志：
+
+```sql
+SELECT count() FROM logs WHERE has(mapKeys(attributes), 'rate_limit'); -- 慢速全表扫描
+```
+
+2. 查找特定 IP 的所有日志：
+
+```sql
+SELECT count() FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 全表扫描，速度慢
+```
+
+随着日志量增加，这些查询会变得很慢。
+
+解决办法是为 [Map](/zh/reference/data-types/map) 的键和值创建文本索引。
+
+当你需要按字段名或属性类型查找日志时，请使用 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapkeys) 创建文本索引：
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_keys_idx mapKeys(attributes) TYPE text(tokenizer = array);
+```
+
+如果需要在属性的实际内容中进行搜索，可使用 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapvalues) 创建文本索引：
+
+```sql
+ALTER TABLE logs ADD INDEX attributes_vals_idx mapValues(attributes) TYPE text(tokenizer = array);
+```
+
+<Note>
+  重要：添加文本索引后，必须为现有数据重新构建索引：
+
+  ```sql
+  ALTER TABLE posts MATERIALIZE INDEX attributes_keys_idx;
+  ALTER TABLE posts MATERIALIZE INDEX attributes_vals_idx;
+  ```
+</Note>
+
+1. 查找所有被限流的请求：
+
+```sql
+SELECT * FROM logs WHERE mapContainsKey(attributes, 'rate_limit'); -- 快速
+```
+
+2. 查找特定 IP 的所有日志：
+
+```sql
+SELECT * FROM logs WHERE has(mapValues(attributes), '192.168.1.1'); -- 快速
+```
+
+<div id="implementation">
+  ## 实现
+</div>
+
+<div id="index-layout">
+  ### 索引布局
+</div>
+
+每个文本索引由两种 (抽象的) 数据结构组成：
+
+* 一个字典，将每个标记映射到对应的倒排列表；以及
+* 一组倒排列表，其中每个倒排列表都表示一组行号。
+
+由于文本索引属于跳过索引，因此这些数据结构在逻辑上是按每个索引粒度组织的。
+
+在创建索引时，会创建三个文件 (每个分片各一组) ：
+
+**字典块文件 (.dct)**
+
+索引粒度中的标记会先排序，然后存储到字典块中，每个字典块包含 128 个标记 (块大小可通过参数 `dictionary_block_size` 配置) 。
+字典块文件 (.dct) 包含一个分片中所有索引粒度的全部字典块。
+
+**索引粒度文件 (.idx)**
+
+索引粒度文件为每个字典块保存以下信息：该块的第一个标记、它在字典块文件中的相对偏移量，以及该块中所有标记的布隆过滤器。
+这种稀疏索引结构类似于 ClickHouse 的[稀疏主键索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes))。
+如果要查找的标记不在某个字典块中，布隆过滤器可以提前跳过该字典块。
+
+**倒排列表文件 (.pst)**
+
+所有标记对应的倒排列表都会按顺序存放在倒排列表文件中。
+为了节省空间，同时仍支持快速执行交集和并集操作，倒排列表以 [roaring bitmaps](https://roaringbitmap.org/) 的形式存储。
+如果某个倒排列表的基数小于 16 (可通过参数 `max_cardinality_for_embedded_postings` 配置) ，则会将其直接嵌入字典中。
+
+<div id="direct-read">
+  ### 直接读取
+</div>
+
+某些类型的文本查询可通过一种称为“直接读取”的优化显著提速。
+更具体地说，如果 SELECT 查询的结果中*不*包含该文本列，就可以应用这种优化。
+
+示例：
+
+```sql
+SELECT column_a, column_b, ... -- 不含: column_with_text_index
+FROM [...]
+WHERE string_search_function(column_with_text_index)
+```
+
+ClickHouse 中的直接读取优化仅通过文本索引 (即文本索引查找) 来响应查询，而无需访问底层文本列。
+文本索引查找读取的数据量相对较少，因此比 ClickHouse 中常规的跳过索引快得多 (后者会先执行跳过索引查找，然后再加载并过滤未被跳过的粒度) 。
+
+直接读取由两个设置控制：
+
+* 设置 [query&#95;plan&#95;direct&#95;read&#95;from&#95;text&#95;index](/zh/reference/settings/session-settings#query_plan_direct_read_from_text_index) (默认值：1) ，用于指定是否全局启用直接读取。
+* 设置 [use&#95;skip&#95;indexes&#95;on&#95;data&#95;read](/zh/reference/settings/session-settings#use_skip_indexes_on_data_read) (默认值：1) ，这是直接读取的另一个前置条件。请注意，在 [compatibility](/zh/reference/settings/session-settings#compatibility) &lt; 25.10 的 ClickHouse 数据库中，`use_skip_indexes_on_data_read` 默认处于禁用状态，因此你需要提高 compatibility 设置值，或显式执行 `SET use_skip_indexes_on_data_read = 1`。
+
+此外，文本索引必须已完全物化，才能使用直接读取 (可通过 `ALTER TABLE ... MATERIALIZE INDEX` 完成) 。
+
+**支持的函数**
+直接读取优化支持 `hasToken`、`hasAllTokens` 和 `hasAnyTokens` 函数。
+这些函数也可以通过 AND、OR 和 NOT 运算符组合使用。
+WHERE 子句还可以包含额外的非文本搜索函数过滤器 (针对文本列或其他列) ——在这种情况下，仍会使用直接读取优化，但效果会打折扣 (它仅适用于受支持的文本搜索函数) 。
+
+要判断某个查询是否使用了直接读取，请使用 `EXPLAIN PLAN actions = 1` 运行该查询。
+例如，一个禁用了直接读取的查询
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 0;
+```
+
+返回
+
+```text
+[...]
+Filter ((WHERE + Change column names to column identifiers))
+Filter column: hasToken(__table1.col, 'some_token'_String) (removed)
+Actions: INPUT : 0 -> col String : 0
+         COLUMN Const(String) -> 'some_token'_String String : 1
+         FUNCTION hasToken(col :: 0, 'some_token'_String :: 1) -> hasToken(__table1.col, 'some_token'_String) UInt8 : 2
+[...]
+```
+
+而在使用 `query_plan_direct_read_from_text_index = 1` 运行相同查询时
+
+```sql
+EXPLAIN PLAN actions = 1
+SELECT count()
+FROM tab
+WHERE hasToken(col, 'some_token')
+SETTINGS query_plan_direct_read_from_text_index = 1;
+```
+
+返回
+
+```text
+[...]
+Expression (Before GROUP BY)
+Positions:
+  Filter
+  Filter column: __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 (removed)
+  Actions: INPUT :: 0 -> __text_index_idx_hasToken_94cc2a813036b453d84b6fb344a63ad3 UInt8 : 0
+[...]
+```
+
+第二个 EXPLAIN PLAN 输出包含一个虚拟列 `__text_index_<index_name>_<function_name>_<id>`。
+如果存在此列，则表示使用了直接读取。
+
+<div id="example-hackernews-dataset">
+  ## 示例：Hackernews 数据集
+</div>
+
+下面我们来看看，文本索引在包含大量文本的大型数据集上能带来怎样的性能提升。
+我们将使用热门网站 Hacker News 上的 2870 万行评论数据。
+下面是未使用文本索引的表：
+
+```sql
+CREATE TABLE hackernews (
+    id UInt64,
+    deleted UInt8,
+    type String,
+    author String,
+    timestamp DateTime,
+    comment String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    children Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32
+)
+ENGINE = MergeTree
+ORDER BY (type, author);
+```
+
+这 2870 万行数据位于 S3 中的一个 Parquet 文件里——我们把它们插入到 `hackernews` 表中：
+
+```sql
+INSERT INTO hackernews
+    SELECT * FROM s3Cluster(
+        'default',
+        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/hackernews/hacknernews.parquet',
+        'Parquet',
+        '
+    id UInt64,
+    deleted UInt8,
+    type String,
+    by String,
+    time DateTime,
+    text String,
+    dead UInt8,
+    parent UInt64,
+    poll UInt64,
+    kids Array(UInt32),
+    url String,
+    score UInt32,
+    title String,
+    parts Array(UInt32),
+    descendants UInt32');
+```
+
+我们将使用 `ALTER TABLE` 在 comment 列上添加文本索引，然后将其物化：
+
+```sql
+-- 添加索引
+ALTER TABLE hackernews ADD INDEX comment_idx(comment) TYPE text(tokenizer = splitByNonAlpha);
+
+-- 对现有数据物化索引
+ALTER TABLE hackernews MATERIALIZE INDEX comment_idx SETTINGS mutations_sync = 2;
+```
+
+现在，我们来使用 `hasToken`、`hasAnyTokens` 和 `hasAllTokens` 函数执行查询。
+下面的示例将展示标准索引扫描与直接读取优化之间巨大的性能差异。
+
+<div id="1-using-hastoken">
+  ### 1. 使用 `hasToken`
+</div>
+
+`hasToken` 用于检查文本是否包含某个特定的单个标记。
+我们将搜索区分大小写的标记 &#39;ClickHouse&#39;。
+
+**禁用直接读取 (标准扫描)&#x20;**&#xA;默认情况下，ClickHouse 会使用跳过索引筛选粒度，然后再读取这些粒度的列数据。
+我们可以通过禁用直接读取来模拟这种行为。
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.362 sec. Processed 24.90 million rows, 9.51 GB
+```
+
+**启用直接读取 (快速索引读取)&#x20;**&#xA;现在我们在启用直接读取 (默认设置) 的情况下运行相同的查询。
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     516 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 3.15 million rows, 3.15 MB
+```
+
+直接读取查询的速度快了 45 倍以上 (0.362 秒 vs 0.008 秒) ，而且由于只需读取索引，处理的数据量也显著减少 (9.51 GB vs 3.15 MB) 。
+
+<div id="2-using-hasanytokens">
+  ### 2. 使用 `hasAnyTokens`
+</div>
+
+`hasAnyTokens` 用于检查文本是否包含给定标记中的至少一个。
+我们将搜索包含 &#39;love&#39; 或 &#39;ClickHouse&#39; 的评论。
+
+**已禁用直接读取 (标准扫描)&#x20;**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 1.329 sec. Processed 28.74 million rows, 9.72 GB
+```
+
+**已启用直接读取 (快速索引读取)&#x20;**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAnyTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│  408426 │
+└─────────┘
+
+1 row in set. Elapsed: 0.015 sec. Processed 27.99 million rows, 27.99 MB
+```
+
+对于这种常见的 &quot;OR&quot; 搜索，性能提升更为显著。
+通过避免扫描整列数据，该查询速度几乎提升了 89 倍 (1.329 秒 vs 0.015 秒) 。
+
+<div id="3-using-hasalltokens">
+  ### 3. 使用 `hasAllTokens`
+</div>
+
+`hasAllTokens` 用于检查文本是否包含给定的所有标记。
+我们将搜索同时包含 &#39;love&#39; 和 &#39;ClickHouse&#39; 的评论。
+
+**禁用直接读取 (标准扫描)&#x20;**&#xA;即使禁用了直接读取，标准跳过索引依然有效。
+它将 2870 万行过滤到仅 14.746 万行，但仍必须从该列读取 57.03 MB 数据。
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.184 sec. Processed 147.46 thousand rows, 57.03 MB
+```
+
+**已启用直接读取 (快速索引读取)&#x20;**&#xA;直接读取通过操作索引数据来响应查询，仅读取 147.46 KB。
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasAllTokens(comment, 'love ClickHouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│      11 │
+└─────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 147.46 thousand rows, 147.46 KB
+```
+
+对于这种 &quot;AND&quot; 搜索，直接读取优化比标准的跳过索引扫描快 26 倍以上 (0.184s vs 0.007s) 。
+
+<div id="4-compound-search-or-and-not">
+  ### 4. 复合搜索：OR、AND、NOT、...
+</div>
+
+直接读取优化也适用于复合布尔表达式。
+这里，我们将执行一次不区分大小写的搜索，查找 &#39;ClickHouse&#39; OR &#39;clickhouse&#39;。
+
+**禁用直接读取 (标准扫描)&#x20;**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 0, use_skip_indexes_on_data_read = 0;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.450 sec. Processed 25.87 million rows, 9.58 GB
+```
+
+**直接读取已启用 (快速索引读取)&#x20;**
+
+```sql
+SELECT count()
+FROM hackernews
+WHERE hasToken(comment, 'ClickHouse') OR hasToken(comment, 'clickhouse')
+SETTINGS query_plan_direct_read_from_text_index = 1, use_skip_indexes_on_data_read = 1;
+
+┌─count()─┐
+│     769 │
+└─────────┘
+
+1 row in set. Elapsed: 0.013 sec. Processed 25.87 million rows, 51.73 MB
+```
+
+通过合并索引中的结果，直接读取查询快了 34 倍 (0.450s 对比 0.013s) ，并且无需读取 9.58 GB 的列数据。
+对于这种情况，`hasAnyTokens(comment, ['ClickHouse', 'clickhouse'])` 是更推荐、也更高效的写法。
+
+<div id="tuning-the-text-index">
+  ## 调优文本索引
+</div>
+
+目前，针对已反序列化的字典块、头部以及文本索引的倒排列表，提供了缓存机制以减少 I/O。
+
+可分别通过设置 [use&#95;text&#95;index&#95;dictionary&#95;cache](/zh/reference/settings/session-settings#use_text_index_dictionary_cache)、[use&#95;text&#95;index&#95;header&#95;cache](/zh/reference/settings/session-settings#use_text_index_header_cache) 和 [use&#95;text&#95;index&#95;postings&#95;cache](/zh/reference/settings/session-settings#use_text_index_postings_cache) 启用这些缓存。默认情况下，它们均处于禁用状态。
+
+请参考以下服务器设置来配置缓存。
+
+<div id="server-settings">
+  ### 服务器设置
+</div>
+
+<div id="dictionary-blocks-cache-settings">
+  #### 字典块缓存设置
+</div>
+
+| Setting                                                                                                                                                             | Description               | Default      |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ------------ |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_dictionary_block_cache_policy)               | 文本索引字典块缓存策略的名称。           | `SLRU`       |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size)                   | 缓存的最大大小 (字节) 。            | `1073741824` |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_dictionary_block_cache_max_entries) | 缓存中反序列化后的字典块最大数量。         | `1'000'000`  |
+| [text&#95;index&#95;dictionary&#95;block&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_dictionary_block_cache_size_ratio)   | 文本索引字典块缓存中受保护队列占缓存总大小的比例。 | `0.5`        |
+
+<div id="header-cache-settings">
+  #### 头部缓存设置
+</div>
+
+| Setting                                                                                                                                     | Description                 | Default      |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | ------------ |
+| [text&#95;index&#95;header&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_header_cache_policy)               | 文本索引头部缓存策略名称。               | `SLRU`       |
+| [text&#95;index&#95;header&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_header_cache_size)                   | 缓存的最大大小 (以字节为单位) 。          | `1073741824` |
+| [text&#95;index&#95;header&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_header_cache_max_entries) | 缓存中反序列化后的头部最大数量。            | `100'000`    |
+| [text&#95;index&#95;header&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_header_cache_size_ratio)   | 文本索引头部缓存中受保护队列的大小占缓存总大小的比例。 | `0.5`        |
+
+<div id="posting-lists-cache-settings">
+  #### 倒排列表缓存设置
+</div>
+
+| 设置                                                                                                                                              | 描述                           | 默认值          |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------ |
+| [text&#95;index&#95;postings&#95;cache&#95;policy](/zh/reference/settings/server-settings/settings#text_index_postings_cache_policy)               | 文本索引倒排列表缓存策略的名称。             | `SLRU`       |
+| [text&#95;index&#95;postings&#95;cache&#95;size](/zh/reference/settings/server-settings/settings#text_index_postings_cache_size)                   | 缓存的最大大小 (以字节为单位) 。           | `2147483648` |
+| [text&#95;index&#95;postings&#95;cache&#95;max&#95;entries](/zh/reference/settings/server-settings/settings#text_index_postings_cache_max_entries) | 缓存中反序列化后的倒排列表最大数量。           | `1'000'000`  |
+| [text&#95;index&#95;postings&#95;cache&#95;size&#95;ratio](/zh/reference/settings/server-settings/settings#text_index_postings_cache_size_ratio)   | 文本索引倒排列表缓存中受保护队列大小占缓存总大小的比例。 | `0.5`        |
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[ClickHouse 中的倒排索引简介](https://clickhouse.com/blog/clickhouse-search-with-inverted-indices)
+* 博客：[深入了解 ClickHouse 全文搜索：快速、原生、列式](https://clickhouse.com/blog/clickhouse-full-text-search)
+* 视频：[全文索引：设计与实验](https://www.youtube.com/watch?v=O_MnyUkrIq8)

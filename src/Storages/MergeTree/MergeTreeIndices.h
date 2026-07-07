@@ -300,6 +300,11 @@ struct IMergeTreeIndex
     virtual bool isVectorSimilarityIndex() const { return false; }
     virtual bool isTextIndex() const { return false; }
 
+    /// An inert index holds no on-disk data and cannot be (re)computed. It exists only so old
+    /// tables that still reference a removed index type stay attachable. Merge and mutation must
+    /// never schedule it for recalculation, otherwise those operations get wedged.
+    virtual bool isInert() const { return false; }
+
     Names getColumnsRequiredForIndexCalc() const;
 
     StorageMetadataPtr metadata_snapshot;

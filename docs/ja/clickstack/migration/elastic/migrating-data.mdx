@@ -1,0 +1,692 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-data
+title: 'Elastic から ClickStack へのデータ移行'
+sidebarTitle: 'データ移行'
+description: 'Elastic から ClickStack へのデータ移行'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+<div id="parallel-operation-strategy">
+  ## 並行運用戦略
+</div>
+
+オブザーバビリティ用途で Elastic から ClickStack へ移行する場合は、過去データの移行を試みるのではなく、**並行運用**のアプローチを推奨します。この戦略には、次のような利点があります。
+
+1. **リスクを最小限に抑えられる**: 両方のシステムを同時に運用することで、ClickStack の検証を進めたり、ユーザーに新しいシステムへ慣れてもらったりする間も、既存のデータやダッシュボードに引き続きアクセスできます。
+2. **データが自然に期限切れになる**: オブザーバビリティデータの多くは保持期間が限られており (通常は 30 日以下) 、Elastic 上のデータが期限切れになるのに合わせて自然に移行できます。
+3. **移行を簡素化できる**: システム間で過去データを移動するための複雑なデータ転送ツールやプロセスは必要ありません。
+
+<br />
+
+<Info>
+  **データの移行**
+
+  Elasticsearch から ClickHouse へ重要なデータを移行する方法については、[&quot;データの移行&quot;](#migrating-data) のセクションで紹介しています。ただし、これは大規模なデータセットには推奨されません。Elasticsearch のエクスポート効率に制約があり、対応フォーマットも JSON のみのため、十分な性能が得られないことがほとんどです。
+</Info>
+
+<div id="implementation-steps">
+  ### 実装手順
+</div>
+
+<Steps>
+  <Step>
+    #### 二重インジェストを設定する
+
+    データ収集パイプラインを設定し、Elastic と ClickStack の両方へ同時にデータを送信します。
+
+    具体的な方法は、現在収集に使用しているエージェントによって異なります。[&quot;Migrating Agents&quot;](/ja/clickstack/migration/elastic/migrating-agents) を参照してください。
+  </Step>
+
+  <Step>
+    #### 保持期間を調整する
+
+    Elastic の有効期限 (TTL) 設定を、希望する保持期間に合わせて構成します。ClickStack 側でも、同じ期間データを保持するように [有効期限 (TTL)](/ja/clickstack/managing/production#configure-ttl) を設定します。
+  </Step>
+
+  <Step>
+    #### 検証と比較を行う
+
+    * 両方のシステムに対してクエリを実行し、データの整合性を確認する
+    * クエリのパフォーマンスと結果を比較する
+    * ダッシュボードとアラートを ClickStack に移行する。現在、これは手動で行う必要があります。
+    * 重要なダッシュボードとアラートがすべて ClickStack で期待どおりに動作することを確認する
+  </Step>
+
+  <Step>
+    #### 段階的に移行する
+
+    * Elastic のデータが自然に期限切れになるにつれて、ClickStack への依存度は徐々に高まります
+    * ClickStack への信頼性を確認できたら、クエリとダッシュボードの切り替えを開始できます
+  </Step>
+</Steps>
+
+<div id="long-term-retention">
+  ### 長期保持
+</div>
+
+より長い保持期間が必要な組織向け:
+
+* Elastic 内のすべてのデータが期限切れになるまで、両方のシステムを並行して稼働し続けます
+* ClickStack の[階層型ストレージ](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)機能は、長期データを効率的に管理するのに役立ちます。
+* [materialized view](/ja/concepts/features/materialized-views/incremental-materialized-view)の利用を検討し、集約済みまたはフィルタリング済みの履歴データを保持しつつ、生データは期限切れにできるようにします。
+
+<div id="migration-timeline">
+  ### 移行スケジュール
+</div>
+
+移行スケジュールは、データ保持期間の要件によって異なります。
+
+* **30日間保持**: 移行は1か月以内に完了できます。
+* **より長い保持期間**: データが Elastic から期限切れで削除されるまで、並行運用を継続してください。
+* **履歴データ**: どうしても必要な場合は、特定の履歴データをインポートするために [データの移行](#migrating-data) の利用を検討してください。
+
+<div id="migration-settings">
+  ## 設定の移行
+</div>
+
+Elastic から ClickStack へ移行する際は、索引とストレージの設定を ClickHouse のアーキテクチャに合わせて調整する必要があります。Elasticsearch は、パフォーマンスと耐障害性を確保するために水平スケーリングとシャーディングに依存しているため、既定で複数の分片を使用します。一方、ClickHouse は垂直スケーリング向けに最適化されており、一般に分片数を少なくしたほうが高い性能を発揮します。
+
+<div id="recommended-settings">
+  ### 推奨設定
+</div>
+
+**単一の分片**から始めて、まずはスケールアップすることを推奨します。この構成は、ほとんどのオブザーバビリティ workloads に適しており、運用管理とクエリのパフォーマンスチューニングの両方をシンプルにできます。
+
+* **[ClickHouse Cloud](https://clickhouse.com/cloud)**: デフォルトで、単一分片・複数レプリカのアーキテクチャを採用しています。ストレージとコンピュートを独立してスケールできるため、取り込みパターンの予測が難しく、読み取り負荷の高いオブザーバビリティのユースケースに最適です。
+* **ClickHouse OSS**: セルフマネージド環境では、次を推奨します。
+  * 単一の分片から開始する
+  * CPU と RAM を追加してスケールアップする
+  * [階層型ストレージ](/ja/guides/use-cases/observability/build-your-own/managing-data#storage-tiers)を使用して、ローカルディスクを S3互換のオブジェクトストレージで拡張する
+  * 高可用性が必要な場合は、[`ReplicatedMergeTree`](/ja/reference/engines/table-engines/mergetree-family/replication) を使用する
+  * 耐障害性の観点では、オブザーバビリティ workloads では通常、[各分片に 1 レプリカ](/ja/reference/engines/table-engines/mergetree-family/replication) で十分です。
+
+<div id="when-to-shard">
+  ### 分片化が必要な場合
+</div>
+
+次のような場合は、分片化が必要になることがあります。
+
+* データ取り込みレートが単一ノードの処理能力を超える場合 (通常は 500K 行/秒超)
+* テナントの分離やリージョンごとのデータ分離が必要な場合
+* オブジェクトストレージを使用していても、総データ量が単一サーバーでは収まらない場合
+
+分片化が必要な場合は、分片キーと分散テーブルの設定について [Horizontal scaling](/ja/guides/oss/deployment-and-scaling/examples/2-shards-1-replica) を参照してください。
+
+<div id="retention-and-ttl">
+  ### 保持期間と有効期限 (TTL)
+</div>
+
+ClickHouse は、データの有効期限を管理するために、MergeTree テーブルで [TTL句](/ja/clickstack/managing/production#configure-ttl) を使用します。TTL ポリシーでは、次のことが可能です。
+
+* 有効期限が切れたデータを自動的に削除する
+* 古いデータをコールドオブジェクトストレージに移動する
+* 高速ディスク上には、最近のよくクエリされるログのみを保持する
+
+移行中も一貫したデータライフサイクルを維持できるよう、ClickHouse の TTL 設定を既存の Elastic の保持ポリシーに合わせることを推奨します。例については、[ClickStack 本番環境の TTL 設定](/ja/clickstack/managing/production#configure-ttl) を参照してください。
+
+<div id="migrating-data">
+  ## データの移行
+</div>
+
+ほとんどのオブザーバビリティデータについては並行運用を推奨していますが、場合によっては Elasticsearch から ClickHouse へデータを直接移行する必要があります。
+
+* データのエンリッチメントに使用する小規模なルックアップテーブル (例: ユーザーマッピング、サービスカタログ)
+* Elasticsearch に保存されている業務データのうち、オブザーバビリティデータと相関付ける必要があるもの。ClickHouse の SQL 機能と BI インテグレーションにより、Elasticsearch のより限定的なクエリオプションと比べて、データの維持管理やクエリが容易になります。
+* 移行後も保持する必要がある設定データ
+
+このアプローチが現実的なのは 1,000 万行未満のデータセットに限られます。これは、Elasticsearch のエクスポート機能が HTTP 経由の JSON に限られており、より大規模なデータセットには適していないためです。
+
+以下の手順では、ClickHouse を使って単一の Elasticsearch 索引を移行できます。
+
+<Steps>
+  <Step>
+    ### スキーマの移行
+
+    Elasticsearchから移行する索引に対応するテーブルをClickHouseに作成します。[ElasticsearchのタイプをClickHouseの対応するタイプ](/ja/clickstack/migration/elastic/types)にマッピングできます。または、ClickHouseのJSONデータ型を利用する方法もあります。この場合、データが挿入されると適切な型のカラムが動的に作成されます。
+
+    `syslog` データを含むインデックスに対する以下の Elasticsearch マッピングを確認してください。
+
+    <Accordion title="Elasticsearchのマッピング">
+      ```javascripton
+      GET .ds-logs-system.syslog-default-2025.06.03-000001/_mapping
+      {
+        ".ds-logs-system.syslog-default-2025.06.03-000001": {
+          "mappings": {
+            "_meta": {
+              "managed_by": "fleet",
+              "managed": true,
+              "package": {
+                "name": "system"
+              }
+            },
+            "_data_stream_timestamp": {
+              "enabled": true
+            },
+            "dynamic_templates": [],
+            "date_detection": false,
+            "properties": {
+              "@timestamp": {
+                "type": "date",
+                "ignore_malformed": false
+              },
+              "agent": {
+                "properties": {
+                  "ephemeral_id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "cloud": {
+                "properties": {
+                  "account": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "availability_zone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "image": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "instance": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "machine": {
+                    "properties": {
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "provider": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "region": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "service": {
+                    "properties": {
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "data_stream": {
+                "properties": {
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "namespace": {
+                    "type": "constant_keyword",
+                    "value": "default"
+                  },
+                  "type": {
+                    "type": "constant_keyword",
+                    "value": "logs"
+                  }
+                }
+              },
+              "ecs": {
+                "properties": {
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "elastic_agent": {
+                "properties": {
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "snapshot": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "event": {
+                "properties": {
+                  "agent_id_status": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "ingested": {
+                    "type": "date",
+                    "format": "strict_date_time_no_millis||strict_date_optional_time||epoch_millis",
+                    "ignore_malformed": false
+                  },
+                  "module": {
+                    "type": "constant_keyword",
+                    "value": "system"
+                  },
+                  "timezone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "host": {
+                "properties": {
+                  "architecture": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "containerized": {
+                    "type": "boolean"
+                  },
+                  "hostname": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "ip": {
+                    "type": "ip"
+                  },
+                  "mac": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "os": {
+                    "properties": {
+                      "build": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "codename": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "family": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "kernel": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      },
+                      "platform": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "version": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  }
+                }
+              },
+              "input": {
+                "properties": {
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "log": {
+                "properties": {
+                  "file": {
+                    "properties": {
+                      "path": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "offset": {
+                    "type": "long"
+                  }
+                }
+              },
+              "message": {
+                "type": "match_only_text"
+              },
+              "process": {
+                "properties": {
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "pid": {
+                    "type": "long"
+                  }
+                }
+              },
+              "system": {
+                "properties": {
+                  "syslog": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      ```
+    </Accordion>
+
+    対応するClickHouseのテーブルスキーマ：
+
+    <Accordion title="ClickHouse スキーマ">
+      ```sql
+      SET enable_json_type = 1;
+
+      CREATE TABLE logs_system_syslog
+      (
+          `@timestamp` DateTime,
+          `agent` Tuple(
+              ephemeral_id String,
+              id String,
+              name String,
+              type String,
+              version String),
+          `cloud` Tuple(
+              account Tuple(
+                  id String),
+              availability_zone String,
+              image Tuple(
+                  id String),
+              instance Tuple(
+                  id String),
+              machine Tuple(
+                  type String),
+              provider String,
+              region String,
+              service Tuple(
+                  name String)),
+          `data_stream` Tuple(
+              dataset String,
+              namespace String,
+              type String),
+          `ecs` Tuple(
+              version String),
+          `elastic_agent` Tuple(
+              id String,
+              snapshot UInt8,
+              version String),
+          `event` Tuple(
+              agent_id_status String,
+              dataset String,
+              ingested DateTime,
+              module String,
+              timezone String),
+          `host` Tuple(
+              architecture String,
+              containerized UInt8,
+              hostname String,
+              id String,
+              ip Array(Variant(IPv4, IPv6)),
+              mac Array(String),
+              name String,
+              os Tuple(
+                  build String,
+                  codename String,
+                  family String,
+                  kernel String,
+                  name String,
+                  platform String,
+                  type String,
+                  version String)),
+          `input` Tuple(
+              type String),
+          `log` Tuple(
+              file Tuple(
+                  path String),
+              offset Int64),
+          `message` String,
+          `process` Tuple(
+              name String,
+              pid Int64),
+          `system` Tuple(
+              syslog JSON)
+      )
+      ENGINE = MergeTree
+      ORDER BY (`host.name`, `@timestamp`)
+      ```
+    </Accordion>
+
+    注意事項：
+
+    * ドット記法ではなく、タプルを使用してネストした構造を表します
+    * マッピングに基づいて、適切なClickHouseの型を使用しました:
+      * `keyword` → `String`
+      * `date` → `DateTime`
+      * `boolean` → `UInt8`
+      * `long` → `Int64`
+      * `ip` → `Array(Variant(IPv4, IPv6))`。このフィールドには [`IPv4`](/ja/reference/data-types/ipv4) と [`IPv6`](/ja/reference/data-types/ipv6) が混在するため、ここでは [`Variant(IPv4, IPv6)`](/ja/reference/data-types/variant) を使用します。
+      * `object` → `JSON`。これは、構造が一定でない syslog オブジェクトに使用します。
+    * カラム `host.ip` と `host.mac` は、すべての型が配列として扱われる Elasticsearch とは異なり、明示的に `Array` 型です。
+    * timestamp と hostname を用いた `ORDER BY` 句が追加され、時系列クエリを効率化します
+    * ログデータに最適なエンジンタイプとして`MergeTree`が使用されます
+
+    **スキーマを静的に定義し、必要な箇所にのみ選択的にJSON型を使用するこのアプローチは[推奨されます](/ja/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures)。**
+
+    この厳格なスキーマには、次のような利点があります：
+
+    * **データ検証** – 特定の構造を除いて、厳格なスキーマを適用することで、カラム数の爆発的な増加を防げます。
+    * **カラム爆発のリスクを回避**: JSON 型は、サブカラムを専用カラムとして保存することで、潜在的には数千ものカラムまでスケールできますが、その一方で、過剰な数のカラムファイルが作成される「カラムファイル爆発」を招き、パフォーマンスに影響する可能性があります。これを軽減するため、JSON の基盤となる [Dynamic 型](/ja/reference/data-types/dynamic) では [`max_dynamic_paths`](/ja/reference/data-types/newjson#reading-json-paths-as-sub-columns) パラメーターを提供しており、個別のカラムファイルとして保存される一意のパス数を制限できます。しきい値に達すると、追加のパスはコンパクトにエンコードされた共有カラムファイルに保存されるため、柔軟なデータのインジェストをサポートしながら、パフォーマンスとストレージ効率を維持できます。ただし、この共有カラムファイルへのアクセスは、専用カラムほど高性能ではありません。なお、JSON カラムは [型ヒント](/ja/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths) と組み合わせて使用することもできます。&quot;ヒント付き&quot; カラムは、専用カラムと同等のパフォーマンスを発揮します。
+    * **パスと型のより簡単なイントロスペクション**: JSON型は、推論された型とパスを特定するための[イントロスペクション関数](/ja/reference/data-types/newjson#introspection-functions)をサポートしていますが、静的な構造のほうが、たとえば `DESCRIBE` を使って調べる際には簡単な場合があります。
+
+    <br />
+
+    あるいは、`JSON` カラムを1つ持つテーブルを単純に作成することもできます。
+
+    ```sql
+    SET enable_json_type = 1;
+
+    CREATE TABLE syslog_json
+    (
+     `json` JSON(`host.name` String, `@timestamp` DateTime)
+    )
+    ENGINE = MergeTree
+    ORDER BY (`json.host.name`, `json.@timestamp`)
+    ```
+
+    <Note>
+      JSON 定義では、`host.name` と `timestamp` のカラムに型ヒントを指定しています。これらをソート順／主キーで使用するためです。これにより、ClickHouse はこのカラムが NULL にならないことを把握でき、どのサブカラムを使うべきかも判断できるようになります (型ごとに複数存在する場合があるため、そうしないと曖昧になります) 。
+    </Note>
+
+    後者のアプローチはよりシンプルですが、プロトタイピングやデータエンジニアリング作業に適しています。本番環境では、必要な場合に限り、動的なサブ構造に対してのみ `JSON` を使用してください。
+
+    スキーマでのJSON型の使用方法と効率的な適用方法の詳細については、ガイド [&quot;スキーマの設計&quot;](/ja/guides/clickhouse/data-formats/json/schema) を参照してください。
+  </Step>
+
+  <Step>
+    ### `elasticdump` をインストールする
+
+    Elasticsearch からデータをエクスポートするには、[`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) の使用を推奨します。このツールには `node` が必要で、Elasticsearch と ClickHouse の両方にネットワーク的に近いマシンにインストールする必要があります。ほとんどのエクスポートでは、少なくとも 4 コアと 16GB の RAM を備えた専用サーバーを推奨します。
+
+    ```shell
+    npm install elasticdump -g
+    ```
+
+    `elasticdump` には、データ移行において次のような利点があります。
+
+    * Elasticsearch の REST API と直接やり取りするため、データを適切にエクスポートできます。
+    * Point-in-Time (PIT) API を使用して、エクスポート処理中のデータ整合性を維持します。これにより、特定時点の一貫したスナップショットが作成されます。
+    * データを JSON フォーマットに直接エクスポートでき、そのまま ClickHouse client にストリーミングして挿入できます。
+
+    可能であれば、ネットワーク egress を最小限に抑え、スループットを最大化するために、ClickHouse、Elasticsearch、`elastic dump` はすべて同じアベイラビリティゾーンまたはデータセンター内で実行することを推奨します。
+  </Step>
+
+  <Step>
+    ### ClickHouse client をインストールする
+
+    `elasticdump` が配置されているサーバーに、[ClickHouse がインストールされている](/ja/get-started/setup/install)ことを確認してください。**ClickHouse server は起動しないでください**。この手順で必要なのは client のみです。
+  </Step>
+
+  <Step>
+    ### データをストリーミング
+
+    Elasticsearch と ClickHouse 間でデータをストリーミングするには、`elasticdump` コマンドを使用し、その出力を ClickHouse client に直接パイプします。以下の例では、データを適切に構造化されたテーブル `logs_system_syslog` に挿入します。
+
+    ```shell
+    # URLと認証情報をエクスポート
+    export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
+    export ELASTICSEARCH_URL=
+    export ELASTICDUMP_INPUT_USERNAME=
+    export ELASTICDUMP_INPUT_PASSWORD=
+    export CLICKHOUSE_HOST=
+    export CLICKHOUSE_PASSWORD=
+    export CLICKHOUSE_USER=default
+
+    # 実行するコマンド - 必要に応じて変更
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
+    ```
+
+    `elasticdump` では、次のフラグを使用している点に注意してください。
+
+    * `type=data` - レスポンスを Elasticsearch 内のドキュメント本体のみに限定します。
+    * `input-index` - Elasticsearch の入力インデックスです。
+    * `output=$` - すべての結果を stdout にリダイレクトします。
+    * `sourceOnly` フラグ - レスポンスからメタデータのフィールドを除外します。
+    * `searchAfter` フラグ - 結果を効率的にページネーションするために [`searchAfter` API](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) を使用します。
+    * `pit=true` - [point in time API](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-open-point-in-time) を使用して、クエリ間で一貫した結果を得られるようにします。
+
+    <br />
+
+    ここでの ClickHouse クライアントのパラメータは次のとおりです (認証情報を除く) 。
+
+    * `max_insert_block_size=1000` - ClickHouse クライアントは、この行数に達するとデータを送信します。値を大きくするとスループットは向上しますが、その分ブロックの生成に時間がかかるため、データが ClickHouse に現れるまでの時間も長くなります。
+    * `min_insert_block_size_bytes=0` - バイト数に基づくサーバー側のブロックのまとめる処理を無効にします。
+    * `min_insert_block_size_rows=1000` - サーバー側でクライアントからのブロックをまとめます。この例では、行がすぐに現れるように `max_insert_block_size` と同じ値に設定しています。スループットを向上させるには値を増やしてください。
+    * `query="INSERT INTO logs_system_syslog FORMAT JSONAsRow"` - データを [JSONEachRow フォーマット](/ja/guides/clickhouse/data-formats/json/formats) として挿入します。これは `logs_system_syslog.` のような明確に定義されたスキーマに送信する場合に適しています。
+
+    <br />
+
+    **1 秒あたり数千行程度のスループットが見込めます。**
+
+    <Info>
+      **単一の JSON 行への挿入**
+
+      単一の JSON カラムに挿入する場合 (前述の `syslog_json` スキーマを参照) 、同じ insert コマンドを使用できます。ただし、フォーマットには `JSONEachRow` ではなく `JSONAsObject` を指定する必要があります。例:
+
+      ```shell
+      elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+      clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+      --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONAsObject"
+      ```
+
+      詳細は [&quot;Reading JSON as an object&quot;](/ja/guides/clickhouse/data-formats/json/formats#reading-json-as-an-object) を参照してください。
+    </Info>
+  </Step>
+
+  <Step>
+    ### データの変換 (任意)
+
+    上記のコマンドは、Elasticsearch のフィールドと ClickHouse のカラムが 1:1 で対応していることを前提としています。多くの場合、ClickHouse に挿入する前に、Elasticsearch のデータをフィルタリングして変換する必要があります。
+
+    これは、[`input`](/ja/reference/functions/table-functions/input) テーブル関数を使って実現できます。この関数を使うと、標準出力に対して任意の `SELECT` クエリを実行できます。
+
+    たとえば、先ほどのデータから `timestamp` フィールドと `hostname` フィールドだけを保存したいとします。ClickHouse のスキーマは次のとおりです。
+
+    ```sql
+    CREATE TABLE logs_system_syslog_v2
+    (
+        `timestamp` DateTime,
+        `hostname` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (hostname, timestamp)
+    ```
+
+    `elasticdump` からこのテーブルに挿入するには、`input` テーブル関数をそのまま使うだけです。JSON type を使って必要なカラムを動的に検出し、選択できます。なお、この `SELECT` クエリにはフィルターも簡単に含められます。
+
+    ```shell
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog_v2 SELECT json.\`@timestamp\` as timestamp, json.host.hostname as hostname FROM input('json JSON') FORMAT JSONAsObject"
+    ```
+
+    `@timestamp` フィールド名はエスケープし、入力フォーマットには `JSONAsObject` を使用する必要がある点に注意してください。
+  </Step>
+</Steps>
