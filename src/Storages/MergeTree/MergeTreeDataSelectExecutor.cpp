@@ -1093,7 +1093,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             if (!skip_indexes.empty())
             {
                 CurrentMetrics::Increment metric(CurrentMetrics::FilteringMarksWithSecondaryKeys);
-                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context);
+                auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ranges.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                    , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+                );
                 const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>

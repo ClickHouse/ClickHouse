@@ -20,6 +20,7 @@
 #include <IO/HTTPCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+
 namespace ProfileEvents
 {
     extern const Event AIInputTokens;
@@ -118,16 +119,15 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     return delay_ms;
 }
 
-bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
 {
-    /// Catch order matters: more derived exception types must come first.
     try
     {
-        std::rethrow_exception(eptr);
+        std::rethrow_exception(exception);
     }
-    catch (const AIProviderHTTPException & e)
+    catch (const AIProviderHTTPException & exception)
     {
-        return isRetriableHTTPError(e.getHTTPStatus());
+        return isRetriableHTTPError(exception.getHTTPStatus());
     }
     catch (const NetException &)
     {
@@ -144,16 +144,16 @@ bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr eptr)
         /// Connect or receive timeout.
         return true;
     }
-    catch (const Poco::IOException & e)
+    catch (const Poco::IOException & exception)
     {
         /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
         /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
-        return e.code() != POCO_EMFILE;
+        return exception.code() != POCO_EMFILE;
     }
     catch (...)
     {
-        /// Ok: any other exception is a deterministic argument/usage error (malformed provider
-        /// response, bad configuration, JSON parse failure, …) — retrying would only repeat it.
+        /// Ok: any other exception is a deterministic and non-retrieable error, e.g. a malformed
+        /// provider response, bad configuration, JSON parse failure, etc.
         return false;
     }
 }
@@ -268,9 +268,8 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
-            /// Enforce the API-call quota before every provider request, including retries, so a flaky
-            /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
-            /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
+            /// Check quotas before every request.
+            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
             if (quota.checkQuotas())
                 break;
 
@@ -300,8 +299,6 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             }
             catch (...)
             {
-                /// Retry transient failures (network errors, provider-side HTTP errors) like the
-                /// `url` table function does; deterministic errors are surfaced immediately.
                 if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));

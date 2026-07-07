@@ -1131,6 +1131,10 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
 )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
+)", 0) \
     DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
 )", 0) \
@@ -6750,6 +6754,9 @@ A higher value reduces the number of HTTP requests for cold scans on object stor
 Load MergeTree marks asynchronously
 
 Cloud default value: `1`.
+)", 0) \
+    DECLARE(Bool, use_streaming_marks_compression, false, R"(
+When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
 )", 0) \
     DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
 Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default

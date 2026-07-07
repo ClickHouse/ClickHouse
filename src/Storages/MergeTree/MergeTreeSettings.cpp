@@ -1626,7 +1626,11 @@ The maximum postpone time for failed replicated task. The value is used if the t
     /** Compatibility settings */ \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
-)", 0) \
+    )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
+    )", 0) \
     DECLARE(Bool, allow_tuple_element_aggregation, false, R"(
 When enabled, individual elements within Tuple columns participate in
 aggregation during merge in SummingMergeTree, AggregatingMergeTree, and
@@ -1939,6 +1943,21 @@ the partition or sorting key.
     DECLARE(Bool, allow_coalescing_columns_in_partition_or_order_key, false, R"(
 When enabled, allows coalescing columns in a CoalescingMergeTree table to be used in
 the partition or sorting key.
+)", 0) \
+    DECLARE(Bool, allow_dimensions_outside_sorting_key, false, R"(
+In `AggregatingMergeTree`, background merges collapse rows that share the same value of the sorting
+key, combining their aggregate states. A column that is neither part of the sorting key nor an
+aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`) is a *dimension*: after
+a merge it keeps an arbitrary value of one of the collapsed rows, which silently produces wrong
+results for queries that `GROUP BY` or filter on it (see
+https://github.com/ClickHouse/ClickHouse/issues/751).
+
+By default, such a schema is rejected when the table is created. Enable this setting if the column is
+functionally dependent on the sorting key (so all collapsed rows share the same value) and the
+behavior is intentional.
+
+The check applies only to tables that actually aggregate (those with at least one aggregate-state
+column) and is skipped when `allow_tuple_element_aggregation` is enabled.
 )", 0) \
     DECLARE(Bool, shared_merge_tree_enable_keeper_parts_extra_data, true, R"(
 Enables writing attributes into virtual parts and committing blocks in keeper
