@@ -11,5 +11,5 @@ SHOW TABLES FROM db
 RENAME TABLE a TO b
 RENAME DATABASE a TO b
 SYSTEM DROP REPLICA \'r\'
-SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01\'
+SYSTEM DROP REPLICA \'r\' FROM ZKPATH \'/clickhouse/tables/01/\'
 BACKUP FROM SNAPSHOT Disk(\'default\', \'/snapshot/\') TO Disk(\'default\', \'/backup/\')
