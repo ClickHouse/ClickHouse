@@ -23,7 +23,6 @@
 #include <Common/likePatternToRegexp.h>
 
 #include <IO/ReadBufferFromString.h>
-#include <IO/readFloatText.h>
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 
@@ -139,53 +138,41 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
     matcher.asterisk_like_pattern = pattern;
 }
 
-/// True if the whole string parses as a number (integer or floating point, incl. exponent form).
-/// Used to catch numeric-valued settings written as quoted strings (see isNumericSettingValue).
-bool isNumericLikeString(const std::string & s)
+/// Time-duration settings whose value must NOT be fuzzed: a timeout/sleep/interval blown up to a
+/// huge value makes the server block a lock/socket wait for minutes (ignoring query cancellation),
+/// which the stress-test hung-check flags as a false "possible deadlock". Every `Seconds` /
+/// `Milliseconds`-typed setting in `Settings.cpp`, plus a few `UInt64` durations that also wait.
+bool isTimeDurationSetting(const String & name)
 {
-    if (s.empty())
-        return false;
-    ReadBufferFromString buf(s);
-    Float64 v = 0;
-    return tryReadFloatText(v, buf) && buf.eof();
-}
-
-/// True if a setting value is (or, written as a string, encodes) a number. `QueryFuzzer::
-/// fuzzSettingValue` uses this to leave such values untouched, because that is where the
-/// time-duration settings live and `fuzzField` blowing one up hangs the server: a `..._ms` /
-/// `sleep_in_send_data_ms` / `*_interval` count mutated to 1048576, or a `Seconds`-typed
-/// `receive_timeout` / `send_timeout` / `lock_acquire_timeout` / `max_execution_time` mutated to
-/// 1e10, makes the server sleep or block a socket/lock wait uninterruptibly for minutes (ignoring
-/// query cancellation and `max_execution_time`), which the stress-test hung-check reports as a
-/// false "possible deadlock". Recognising durations by name is fragile (e.g.
-/// `..._timeout_milliseconds`), but they are all numeric, so skipping numeric values covers the
-/// whole class. Both integer and `Float64` forms occur -- `SettingFieldSeconds` parses via
-/// `fieldToNumber<Float64>`, so `max_execution_time = 30.5` arrives as `Float64` -- and
-/// `ParserSetQuery` preserves the literal type, so `receive_timeout = '10'` arrives as a String
-/// Field that `fuzzField`'s string mutations (`str + str`) would turn into `'1010'`; hence numbers,
-/// floats and numeric strings are all skipped. Enum/free-form strings -- the interesting ones for
-/// parse/apply coverage -- are still fuzzed.
-bool isNumericSettingValue(const Field & f)
-{
-    switch (f.getType())
-    {
-        case Field::Types::Int64:
-        case Field::Types::UInt64:
-        case Field::Types::Int128:
-        case Field::Types::UInt128:
-        case Field::Types::Int256:
-        case Field::Types::UInt256:
-        case Field::Types::Float64:
-        case Field::Types::Decimal32:
-        case Field::Types::Decimal64:
-        case Field::Types::Decimal128:
-        case Field::Types::Decimal256:
-            return true;
-        case Field::Types::String:
-            return isNumericLikeString(f.safeGet<std::string>());
-        default:
-            return false;
-    }
+    static const std::unordered_set<String> time_duration_settings = {
+        /// `Seconds`
+        "connect_timeout", "distributed_replica_error_half_life", "http_connection_timeout",
+        "http_headers_read_timeout", "http_receive_timeout", "http_send_timeout",
+        "iceberg_compaction_data_cleanup", "iceberg_compaction_delay_bias", "lock_acquire_timeout",
+        "max_estimated_execution_time", "max_execution_time", "max_execution_time_leaf",
+        "query_cache_ttl", "receive_timeout", "send_timeout", "tcp_keep_alive_timeout",
+        "timeout_before_checking_execution_speed", "wait_for_async_insert_timeout",
+        "wait_for_window_view_fire_signal_timeout", "window_view_clean_interval",
+        "window_view_heartbeat_interval",
+        /// `Milliseconds`
+        "async_insert_busy_timeout_max_ms", "async_insert_busy_timeout_min_ms",
+        "async_insert_poll_timeout_ms", "connection_pool_max_wait_ms",
+        "connect_timeout_with_failover_ms", "connect_timeout_with_failover_secure_ms",
+        "distributed_background_insert_max_sleep_time_ms", "distributed_background_insert_sleep_time_ms",
+        "handshake_timeout_ms", "hedged_connection_timeout_ms", "insert_quorum_timeout",
+        "kafka_max_wait_ms", "log_queries_min_query_duration_ms", "low_priority_query_wait_time_ms",
+        "parallel_replicas_connect_timeout_ms", "query_cache_min_query_duration", "queue_max_wait_ms",
+        "rabbitmq_max_wait_ms", "read_backoff_min_interval_between_events_ms", "read_backoff_min_latency_ms",
+        "receive_data_timeout_ms", "replace_running_query_max_wait_ms", "sleep_after_receiving_query_ms",
+        "sleep_in_send_data_ms", "sleep_in_send_tables_status_ms",
+        "storage_system_stack_trace_pipe_read_timeout_ms", "stream_flush_interval_ms", "stream_poll_timeout_ms",
+        /// durations declared as `UInt64` that also sleep/wait in the execution path
+        "function_sleep_max_microseconds_per_block", "merge_tree_storage_snapshot_sleep_ms",
+        "memory_usage_overcommit_max_wait_microseconds",
+        "filesystem_cache_reserve_space_wait_lock_timeout_milliseconds",
+        "temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds",
+    };
+    return time_duration_settings.contains(name);
 }
 
 }
@@ -689,10 +676,13 @@ Field QueryFuzzer::fuzzField(Field field)
     return field;
 }
 
-void QueryFuzzer::fuzzSettingValue(Field & value)
+void QueryFuzzer::fuzzSettingValue(const String & name, Field & value)
 {
-    if (!isNumericSettingValue(value))
-        value = fuzzField(value);
+    /// Leave time-duration settings untouched so the fuzzer cannot turn a timeout/sleep/interval
+    /// into a multi-minute server hang (see isTimeDurationSetting).
+    if (isTimeDurationSetting(name))
+        return;
+    value = fuzzField(value);
 }
 
 ASTPtr QueryFuzzer::getRandomColumnLike()
@@ -1401,7 +1391,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         {
             for (auto & change : create.dictionary->dict_settings->changes)
                 if (fuzz_rand() % 5 == 0)
-                    fuzzSettingValue(change.value);
+                    fuzzSettingValue(change.name, change.value);
         }
     }
 
@@ -4733,12 +4723,10 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
     }
     else if (auto * set = typeid_cast<ASTSetQuery *>(ast.get()))
     {
-        /// Fuzz existing setting values. `fuzzSettingValue` leaves numeric-valued settings as
-        /// written by the query so time durations (timeouts, sleeps, intervals) are not blown up
-        /// into a multi-minute hang; see `fuzzSettingValue` / `isNumericSettingValue`.
+        /// Fuzz existing setting values
         for (auto & c : set->changes)
             if (fuzz_rand() % 50 == 0)
-                fuzzSettingValue(c.value);
+                fuzzSettingValue(c.name, c.value);
     }
     else if (auto * param = typeid_cast<ASTQueryParameter *>(ast.get()))
     {
@@ -4940,7 +4928,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                     if (auto * aset = alter_cmd->settings_changes->as<ASTSetQuery>())
                         for (auto & c : aset->changes)
                             if (fuzz_rand() % 50 == 0)
-                                fuzzSettingValue(c.value);
+                                fuzzSettingValue(c.name, c.value);
                 break;
             case ASTAlterCommand::RESET_SETTING:
                 /// Occasionally drop a setting name from the reset list
@@ -5660,7 +5648,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             create_nc->if_not_exists = !create_nc->if_not_exists;
         for (auto & change : create_nc->changes)
             if (fuzz_rand() % 5 == 0)
-                fuzzSettingValue(change.value);
+                fuzzSettingValue(change.name, change.value);
     }
     else if (auto * alter_nc = typeid_cast<ASTAlterNamedCollectionQuery *>(ast.get()))
     {
@@ -5668,7 +5656,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             alter_nc->if_exists = !alter_nc->if_exists;
         for (auto & change : alter_nc->changes)
             if (fuzz_rand() % 5 == 0)
-                fuzzSettingValue(change.value);
+                fuzzSettingValue(change.name, change.value);
     }
     else if (auto * drop_nc = typeid_cast<ASTDropNamedCollectionQuery *>(ast.get()))
     {
