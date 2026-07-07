@@ -13,10 +13,12 @@ namespace DB::ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 using namespace DB;
 namespace Messaging = DB::PostgreSQLProtocol::Messaging;
+namespace PreparedStatements = DB::PostgreSQLProtocol::PostgresPreparedStatements;
 
 namespace
 {
@@ -263,6 +265,91 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         putInt16(bytes, -1); /// negative format-code count
         EXPECT_TRUE(deserializeThrows(bytes, ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT));
     }
+}
+
+namespace
+{
+
+/// Drive Parse -> Bind -> Execute through the PreparedStatemetsManager and return
+/// the SQL body that gets executed. `oids` are the declared parameter type OIDs
+/// from the Parse message; `values` are the text-format Bind values (nullopt is a
+/// SQL NULL). This mirrors what PostgreSQLHandler does for the extended protocol.
+String bindAndGetStatement(
+    const String & body,
+    const std::vector<Int32> & oids,
+    const std::vector<std::optional<String>> & values)
+{
+    PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+
+    ASTPreparedStatement statement;
+    statement.function_name = "s";
+    statement.function_body = body;
+    for (Int32 oid : oids)
+        statement.parameter_types.push_back(oid);
+    manager.addStatement(&statement);
+
+    auto bind = std::make_unique<Messaging::BindQuery>();
+    bind->function_name = "s";
+    for (const auto & value : values)
+        bind->parameters.push_back(value);
+    manager.attachBindQuery(std::move(bind));
+
+    return manager.getStatmentFromBind();
+}
+
+}
+
+TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
+{
+    /// A parameter declared with a numeric OID (int4 = 23) is emitted as a bare
+    /// numeric literal, so `SELECT $1 + 1` and `LIMIT $1` keep working instead of
+    /// being coerced to a String literal.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT 41 + 1");
+    EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {23}, {{"10"}}), "SELECT * FROM t LIMIT 10");
+
+    /// int8, float8 and numeric OIDs behave the same.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {20}, {{"9223372036854775807"}}), "SELECT 9223372036854775807");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"3.14"}}), "SELECT 3.14");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT -2.5e-3");
+
+    /// A parameter with no declared type (OID 0) or a text OID (25 = text) stays a
+    /// quoted+escaped string literal.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"41"}}), "SELECT '41'");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {25}, {{"hi"}}), "SELECT 'hi'");
+
+    /// A NULL parameter is the SQL keyword NULL regardless of declared type.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {std::nullopt}), "SELECT NULL");
+}
+
+TEST(PostgreSQLProtocol, BindRejectsInjectionInNumericParameter)
+{
+    /// Emitting a numeric parameter unquoted is only safe because the value is
+    /// validated to contain numeric characters only. An injection payload
+    /// declared as a numeric type is rejected, never spliced into the body.
+    auto throwsBadArgument = [](const String & value)
+    {
+        try
+        {
+            bindAndGetStatement("SELECT $1", {23}, {{value}});
+            return false;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+            return e.code() == ErrorCodes::BAD_ARGUMENTS;
+        }
+    };
+
+    EXPECT_TRUE(throwsBadArgument("1 UNION ALL SELECT secret FROM s"));
+    EXPECT_TRUE(throwsBadArgument("1); DROP TABLE t; --"));
+    EXPECT_TRUE(throwsBadArgument("1'"));
+    EXPECT_TRUE(throwsBadArgument(""));
+    EXPECT_TRUE(throwsBadArgument("0x10"));
+
+    /// The same payload declared as text (OID 0) is safely quoted, not rejected.
+    EXPECT_EQ(
+        bindAndGetStatement("SELECT $1", {0}, {{"1 UNION ALL SELECT secret FROM s"}}),
+        "SELECT '1 UNION ALL SELECT secret FROM s'");
 }
 
 TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)

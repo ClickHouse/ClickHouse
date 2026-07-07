@@ -722,6 +722,12 @@ public:
     String function_name;
     String sql_query;
     Int16 num_params{};
+    /// Declared parameter type OIDs from the Parse message, in order. Clients
+    /// send these so a bound value keeps its declared type; we use them to emit
+    /// a numeric parameter as a bare literal instead of a quoted string (so e.g.
+    /// `SELECT $1 + 1` and `LIMIT $1` keep working). An OID of 0 means the type
+    /// is unspecified and the value is treated as text.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -730,9 +736,16 @@ public:
         readNullTerminated(function_name, in);
         readNullTerminated(sql_query, in);
         readBinaryBigEndian(num_params, in);
+        if (num_params < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong parameter count {} in Parse message, it must not be negative", num_params);
+        parameter_types.reserve(num_params);
         Int32 oid_param = 0;
         for (int i = 0; i < num_params; ++i)
+        {
             readBinaryBigEndian(oid_param, in);
+            parameter_types.push_back(oid_param);
+        }
     }
 
     MessageType getMessageType() const override
@@ -1743,12 +1756,17 @@ public:
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
-        statements[statement->function_name] = statement->function_body;
+        statements[statement->function_name] = PreparedStatement{statement->function_body, statement->parameter_types};
     }
 
     String getStatement(ASTExecute * execute)
     {
-        return getStatement(execute->function_name, execute->arguments);
+        /// The simple PREPARE/EXECUTE path has no declared parameter types; the
+        /// arguments are already formatted as SQL literals by the parser.
+        auto it = statements.find(execute->function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
+        return substitute(it->second.body, execute->arguments);
     }
 
     void deleteStatement(const String & function_name)
@@ -1792,24 +1810,39 @@ public:
         if (!bind_query)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
+        auto it = statements.find(bind_query->function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
+        const auto & parameter_types = it->second.parameter_types;
+
         /// Bind parameters arrive as untyped text from the wire. Turn each into a
-        /// safe SQL literal before it is spliced into the statement body: a value
-        /// becomes a quoted+escaped string literal, the NULL sentinel becomes the
-        /// SQL keyword NULL. Without this, a parameter such as
-        /// `x' UNION ALL SELECT ...` would be injected verbatim.
+        /// safe SQL literal before it is spliced into the statement body. The NULL
+        /// sentinel becomes the SQL keyword NULL. For a value we use the declared
+        /// parameter type OID from the Parse message: a numeric type is emitted as
+        /// a bare numeric literal (so `SELECT $1 + 1` and `LIMIT $1` keep their
+        /// declared type), everything else as a quoted+escaped string literal.
+        /// Both forms are injection-safe: a string is escaped, a numeric literal is
+        /// validated to contain only numeric characters and rejected otherwise, so
+        /// a parameter such as `x' UNION ALL SELECT ...` can never break out.
         VectorWithMemoryTracking<String> arguments;
         arguments.reserve(bind_query->parameters.size());
-        for (const auto & parameter : bind_query->parameters)
+        for (size_t i = 0; i < bind_query->parameters.size(); ++i)
         {
-            if (parameter.has_value())
-                arguments.push_back(quoteString(*parameter));
-            else
+            const auto & parameter = bind_query->parameters[i];
+            if (!parameter.has_value())
+            {
                 arguments.emplace_back("NULL");
+                continue;
+            }
+            /// A parameter without a declared type (OID 0 or none) is treated as text.
+            const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
+            if (isNumericTypeOID(oid))
+                arguments.push_back(formatNumericParameter(*parameter));
+            else
+                arguments.push_back(quoteString(*parameter));
         }
 
-        auto result = getStatement(bind_query->function_name, arguments);
-
-        return result;
+        return substitute(it->second.body, arguments);
     }
 
     void resetBindQuery()
@@ -1823,28 +1856,72 @@ public:
     }
 
 private:
-    UnorderedMapWithMemoryTracking<String, String> statements;
+    struct PreparedStatement
+    {
+        String body;
+        /// Declared parameter type OIDs from the Parse message (empty for the
+        /// simple PREPARE/EXECUTE path). Used to format Bind values by type.
+        VectorWithMemoryTracking<Int32> parameter_types;
+    };
+
+    UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
+    /// PostgreSQL type OIDs for the numeric types we emit as bare literals. These
+    /// are stable, well-known values from the PostgreSQL catalog (pg_type). Any
+    /// other OID (including 0 = unspecified) is treated as text and quoted.
+    static bool isNumericTypeOID(Int32 oid)
+    {
+        switch (oid)
+        {
+            case 20:   /// int8
+            case 21:   /// int2
+            case 23:   /// int4
+            case 26:   /// oid
+            case 700:  /// float4
+            case 701:  /// float8
+            case 1700: /// numeric
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// Formats a numeric-typed Bind parameter as a bare SQL literal. The value is
+    /// validated to contain only characters that can appear in a numeric literal
+    /// (digits, sign, decimal point, exponent). This is what makes emitting it
+    /// unquoted safe: a crafted payload such as `1 UNION ALL SELECT ...` contains
+    /// spaces/letters and is rejected instead of being spliced into the body.
+    static String formatNumericParameter(const String & value)
+    {
+        if (value.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Empty value for a numeric prepared-statement parameter");
+        for (char c : value)
+        {
+            const bool is_numeric_char =
+                (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E';
+            if (!is_numeric_char)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
+        }
+        return value;
+    }
+
     /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
     /// arguments. Each argument MUST already be a safe SQL fragment (a quoted
-    /// literal, a number, or NULL); callers are responsible for that (the EXECUTE
-    /// path uses FieldVisitorToString, the Bind path quoteString).
+    /// literal, a validated number, or NULL); callers are responsible for that
+    /// (the EXECUTE path uses FieldVisitorToString, the Bind path quoteString or
+    /// formatNumericParameter).
     ///
     /// Substitution runs over lexer tokens: a `$N` is replaced only where it is a
     /// real token, never inside a string literal, quoted identifier, comment or
     /// heredoc (there a quoted argument has no literal meaning and could break
     /// out of the surrounding context), and a whole token must match so `$1` is
     /// not taken for the prefix of `$10`.
-    String getStatement(const String & function_name, const VectorWithMemoryTracking<String> & arguments)
+    static String substitute(const String & body, const VectorWithMemoryTracking<String> & arguments)
     {
-        auto it = statements.find(function_name);
-        if (it == statements.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
-
-        const String & body = it->second;
-
         String result;
         result.reserve(body.size());
         Lexer lexer(body.data(), body.data() + body.size());

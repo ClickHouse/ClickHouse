@@ -14,6 +14,9 @@ public:
 
     String function_name;
     String function_body;
+    /// Declared parameter type OIDs for the extended (Bind) protocol path, in
+    /// order. Empty for the simple PREPARE/EXECUTE path, which has no OIDs.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     String getID(char) const override { return "PreparedStatement"; }
 

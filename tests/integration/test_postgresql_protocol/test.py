@@ -455,6 +455,61 @@ def test_bind_binary_format_rejected(started_cluster):
     ch.close()
 
 
+def test_bind_preserves_numeric_parameter_types(started_cluster):
+    # The Parse message declares a type OID per parameter. A numeric OID (int4,
+    # int8, float8, ...) must be emitted as a bare numeric literal, not coerced
+    # to a String literal, so a typed bind such as `SELECT $1 + 1` or `LIMIT $1`
+    # keeps working. Force-quoting every value (the earlier injection fix) broke
+    # this; here we drive libpq's typed exec_params and assert the declared type
+    # is preserved end to end.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    pg = ch.pgconn
+
+    # int4 OID = 23. `SELECT $1 + 1` must arithmetically add, not concatenate or
+    # error: a String-coerced `'41' + 1` would not yield 42.
+    res_add = pg.exec_params(b"SELECT $1 + 1", [b"41"], [23], [0], 0)
+    assert res_add.status == psycopg.pq.ExecStatus.TUPLES_OK, res_add.error_message
+    assert res_add.get_value(0, 0) == b"42"
+
+    # `LIMIT $1` requires a numeric literal; a quoted string is rejected by
+    # ClickHouse. With type preservation the bound int4 value works as a LIMIT.
+    setup = ch.cursor()
+    setup.execute("DROP TABLE IF EXISTS bind_num_t;")
+    setup.execute("CREATE TABLE bind_num_t (x Int32) ENGINE = Memory;")
+    setup.execute("INSERT INTO bind_num_t VALUES (1), (2), (3), (4), (5);")
+
+    res_limit = pg.exec_params(
+        b"SELECT count() FROM (SELECT x FROM bind_num_t ORDER BY x LIMIT $1)",
+        [b"2"],
+        [23],
+        [0],
+        0,
+    )
+    assert res_limit.status == psycopg.pq.ExecStatus.TUPLES_OK, (
+        res_limit.error_message
+    )
+    assert res_limit.get_value(0, 0) == b"2"
+
+    # A value declared numeric but carrying an injection payload is rejected
+    # (only numeric characters are allowed in the unquoted literal), so type
+    # preservation does not reopen the injection hole.
+    res_inj = pg.exec_params(
+        b"SELECT $1", [b"1 UNION ALL SELECT 42"], [23], [0], 0
+    )
+    assert res_inj.status == psycopg.pq.ExecStatus.FATAL_ERROR
+    assert b"numeric prepared-statement parameter" in res_inj.error_message
+
+    setup.execute("DROP TABLE bind_num_t;")
+    ch.close()
+
+
 def test_execute_no_sql_injection(started_cluster):
     # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
     # prepared statement body by $N substitution, so a string argument must be
