@@ -256,7 +256,7 @@ size_t StoredBlock::allocatedBytes() const
     size_t row_nums = blockRows();
     if (row_nums == 0)
         return 0;
-    
+
     size_t allocated_bytes = 0;
     if (hasRowStore())
         allocated_bytes = row_store->allocatedBytes();

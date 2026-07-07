@@ -1171,7 +1171,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader & right_table_expression_header,
     const JoinAlgorithmParams & params)
 {
-    /// Only enable hash table payload row-major transformation if the join produces more rows than row_store_ratio * build_size. 
+    /// Only enable hash table payload row-major transformation if the join produces more rows than row_store_ratio * build_size.
     const double row_store_ratio = params.min_rows_ratio_for_hash_join_row_store;
     const bool enable_row_store = row_store_ratio == 0.0 || (params.rhs_size_estimation && params.result_rows_estimation
             && static_cast<double>(*params.result_rows_estimation) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio);

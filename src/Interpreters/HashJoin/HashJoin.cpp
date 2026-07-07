@@ -734,7 +734,7 @@ void HashJoin::initRowStore(const Block & block)
         data->row_store_state = RowStoreState::Disabled;
         return;
     }
-    
+
     /// Extract columns suitable for row store.
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
     const auto & columns = block_to_save.getColumns();
@@ -1656,7 +1656,7 @@ struct CollectorNonJoined
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
             {
-                const UInt64 ref_word = *it;                
+                const UInt64 ref_word = *it;
                 collect_row(refWordBlockNo(ref_word), refWordRowNo(ref_word));
             }
         }

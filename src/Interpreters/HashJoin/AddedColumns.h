@@ -260,7 +260,7 @@ public:
                 }
                 else
                     columnar_columns_count = saved_block_sample.columns();
-                
+
                 join.getJoinedData()->stored_columns_index->resolveEmitColumns(
                     columnar_columns_count,
                     columnar_positions,
