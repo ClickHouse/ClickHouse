@@ -383,11 +383,29 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     /// 3. push filter/expression out of JOIN (from pre-filter)
     auto fix_predicate_for_join_logical_step = [&](ActionsDAG filter_dag, const ActionsDAG & side_dag)
     {
-        filter_dag = ActionsDAG::merge(side_dag.clone(), std::move(filter_dag));
+        /// Snapshot ARRAY_JOIN nodes from the side (pre-join) DAG so we can drop them
+        /// after the merge: `removeUnusedActions` would keep them via its row-changing
+        /// carve-out, but they are re-evaluated by `JoinStepLogical`'s per-side Pre Join
+        /// Actions above, causing duplicate row expansion. Clone `side_dag` into a named
+        /// local and snapshot from the clone (not from `side_dag`): `merge` splices the
+        /// clone's nodes into `filter_dag`, and `list::splice` keeps their addresses valid.
+        auto side_dag_clone = side_dag.clone();
+        std::unordered_set<const ActionsDAG::Node *> array_joins_from_pre_filter;
+        for (const auto & node : side_dag_clone.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::ARRAY_JOIN)
+                array_joins_from_pre_filter.insert(&node);
+        }
+
+        filter_dag = ActionsDAG::merge(std::move(side_dag_clone), std::move(filter_dag));
         auto & outputs = filter_dag.getOutputs();
         outputs.resize(1);
         outputs.insert(outputs.end(), filter_dag.getInputs().begin(), filter_dag.getInputs().end());
         filter_dag.removeUnusedActions();
+
+        if (!array_joins_from_pre_filter.empty())
+            filter_dag.removeNodes(array_joins_from_pre_filter);
+
         return filter_dag;
     };
 
