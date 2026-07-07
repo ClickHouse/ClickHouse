@@ -3621,10 +3621,111 @@ public:
             return {};
     }
 
-    /// getReturnTypeImpl is intentionally not overridden: every conversion name is authoritative,
-    /// so the base IFunction::getReturnTypeImpl applies the declarative signature. These functions
-    /// use the default useDefaultImplementationForNulls, so the framework propagates a Nullable
-    /// argument around the signature; the `OrNull` result nullability is baked into the signature.
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        /// The toX*OrZero / toX*OrNull / parse*BestEffort* names are authoritative: their declarative
+        /// signature drives the result type (the framework propagates a Nullable argument around it;
+        /// `OrNull` bakes the Nullable into the signature). This template is ALSO instantiated with
+        /// `FunctionCastName` by the CAST implementation for the String -> Nullable(T) conversion —
+        /// that name carries no signature, so keep the legacy computation for it.
+        if constexpr (requires { Name::authoritative; })
+            return IFunction::getReturnTypeImpl(arguments);
+
+        DataTypePtr res;
+
+        if (isDateTime64<Name, ToDataType>(arguments) || isTime64<Name, ToDataType>(arguments))
+        {
+            const auto required = FunctionArgumentDescriptors{
+                {"string", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"}
+            };
+            const auto precision_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"}
+            };
+            const auto precision_with_timezone_opt = FunctionArgumentDescriptors{
+                {"precision", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8"},
+                {"timezone", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), isColumnConst, "const String or FixedString"}
+            };
+
+            if (isTime64<Name, ToDataType>(arguments))
+                validateFunctionArguments(*this, arguments, required, precision_opt);
+            else
+                validateFunctionArguments(*this, arguments, required, precision_with_timezone_opt);
+
+            UInt64 scale = (to_datetime64 || to_time64) ? DataTypeDateTime64::default_scale : 0;
+            if (arguments.size() > 1)
+                scale = extractToDecimalScale(arguments[1]);
+
+            const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
+
+            if (isTime64<Name, ToDataType>(arguments))
+                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+            else
+                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+        }
+        else
+        {
+            if ((arguments.size() != 1 && arguments.size() != 2) || (to_decimal && arguments.size() != 2))
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Number of arguments for function {} doesn't match: passed {}, should be 1 or 2. "
+                    "Second argument only make sense for DateTime (time zone, optional) and Decimal (scale).",
+                    getName(), arguments.size());
+
+            if (!isStringOrFixedString(arguments[0].type))
+            {
+                if (this->getName().contains("OrZero") || this->getName().contains("OrNull"))
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}. "
+                            "Conversion functions with postfix 'OrZero' or 'OrNull' should take String argument",
+                            arguments[0].type->getName(), getName());
+                else
+                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of first argument of function {}",
+                            arguments[0].type->getName(), getName());
+            }
+
+            if (arguments.size() == 2)
+            {
+                if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                {
+                    if (!isString(arguments[1].type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
+                }
+                else if constexpr (to_decimal)
+                {
+                    if (!isInteger(arguments[1].type))
+                        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of 2nd argument of function {}",
+                            arguments[1].type->getName(), getName());
+                    if (!arguments[1].column)
+                        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must be constant", getName());
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Number of arguments for function {} doesn't match: passed {}, should be 1. "
+                        "Second argument makes sense only for DateTime and Decimal.",
+                        getName(), arguments.size());
+                }
+            }
+
+            if constexpr (std::is_same_v<ToDataType, DataTypeDateTime>)
+                res = std::make_shared<DataTypeDateTime>(extractTimeZoneNameFromFunctionArguments(arguments, 1, 0, false));
+            else if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: DataTypeDateTime64 is not expected here.", getName());
+            else if constexpr (to_decimal)
+            {
+                UInt64 scale = extractToDecimalScale(arguments[1]);
+                res = createDecimalMaxPrecision<typename ToDataType::FieldType>(scale);
+                if (!res)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected behavior for function {}: createDecimalMaxPrecision didn't return any value.", getName());
+            }
+            else
+                res = std::make_shared<ToDataType>();
+        }
+
+        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
+            res = std::make_shared<DataTypeNullable>(res);
+
+        return res;
+    }
 
     template <typename ConvertToDataType>
     ColumnPtr executeInternal(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, UInt32 scale) const
