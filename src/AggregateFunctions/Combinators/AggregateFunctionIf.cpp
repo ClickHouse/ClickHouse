@@ -1,8 +1,10 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionIf.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
@@ -15,6 +17,28 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
+
+static DataTypePtr getNormalizedStateTypeWithoutIfFilter(const AggregateFunctionPtr & nested_function, const DataTypes & arguments)
+{
+    DataTypes normalized_arguments;
+    normalized_arguments.reserve(arguments.size() - 1);
+    for (size_t i = 0; i + 1 < arguments.size(); ++i)
+        normalized_arguments.emplace_back(arguments[i]->getNormalizedType());
+
+    const auto nested_normalized_state = nested_function->getNormalizedStateType();
+    const auto & nested_aggregate_state = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
+
+    AggregateFunctionProperties properties;
+    return std::make_shared<DataTypeAggregateFunction>(
+        AggregateFunctionFactory::instance().get(
+            nested_aggregate_state.getFunctionName(),
+            NullsAction::EMPTY,
+            normalized_arguments,
+            nested_aggregate_state.getParameters(),
+            properties),
+        normalized_arguments,
+        nested_aggregate_state.getParameters());
 }
 
 class AggregateFunctionCombinatorIf final : public IAggregateFunctionCombinator
@@ -98,6 +122,11 @@ public:
     String getName() const override
     {
         return name;
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return getNormalizedStateTypeWithoutIfFilter(this->nested_function, this->argument_types);
     }
 
     AggregateFunctionIfNullUnary(const String & name_, AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
@@ -262,6 +291,11 @@ public:
     String getName() const override
     {
         return Base::getName();
+    }
+
+    DataTypePtr getNormalizedStateType() const override
+    {
+        return getNormalizedStateTypeWithoutIfFilter(this->nested_function, this->argument_types);
     }
 
     AggregateFunctionIfNullVariadic(AggregateFunctionPtr nested_function_, const DataTypes & arguments, const Array & params)
