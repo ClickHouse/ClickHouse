@@ -1023,6 +1023,19 @@ private:
                 col = &const_col->getDataColumn();
                 materialized_const = true;
             }
+            // Any argument reaching this point is not a wire-preserved constant (that case
+            // already `continue`d above); its contribution is purely a function of how many
+            // rows are actually being sized, so it is exactly 0 when row_count == 0. This
+            // matters because both call sites above also call this function with row_count = 0
+            // specifically to get the fixed reservation of preserved-const arguments alone —
+            // without this early exit, the String/Array/Tuple/Map/LowCardinality/Variant
+            // branches below would still charge their real (non-row-scaled) data — chars,
+            // dictionary bytes, sub-column bytes — regardless of row_count, turning ordinary
+            // large non-const arguments into false "preserved constant arguments alone
+            // require ..." exceptions instead of letting them go through the normal
+            // per-row splitting path.
+            if (row_count == 0)
+                continue;
             // Declared Nullable(String)/Nullable(Array)/Nullable(Tuple) arguments carry a
             // real ColumnNullable at runtime; unwrap it so the String/Array/Tuple branches
             // below actually match instead of silently falling to the flat 256-byte guess,
