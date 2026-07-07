@@ -11,6 +11,9 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -1007,6 +1010,12 @@ private:
                         total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
                     else if (typeid_cast<const ColumnArray *>(data_col) || typeid_cast<const ColumnTuple *>(data_col))
                         total += ColumnarV1::complexDataSize(*data_col, 1) + null_map_bytes;
+                    else if (const auto * const_map = typeid_cast<const ColumnMap *>(data_col))
+                        total += ColumnarV1::complexDataSize(const_map->getNestedColumn(), 1) + null_map_bytes;
+                    else if (const auto * const_lc = typeid_cast<const ColumnLowCardinality *>(data_col))
+                        total += estimateComplexRowBytes(*const_lc->getDictionary().getNestedColumn(), const_lc->getIndexes().getUInt(0)) + null_map_bytes;
+                    else if (const auto * const_var = typeid_cast<const ColumnVariant *>(data_col))
+                        total += estimateVariantRowBytes(*const_var, 0) + null_map_bytes;
                     else
                         total += 256 + null_map_bytes;
                     continue;
@@ -1042,8 +1051,16 @@ private:
                 total += (materialized_const
                     ? ColumnarV1::complexDataSize(*col, 1) * row_count
                     : ColumnarV1::complexDataSize(*col, static_cast<uint32_t>(row_count))) + null_map_bytes;
+            else if (const auto * map_col = typeid_cast<const ColumnMap *>(col))
+                total += (materialized_const
+                    ? ColumnarV1::complexDataSize(map_col->getNestedColumn(), 1) * row_count
+                    : ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(row_count))) + null_map_bytes;
+            else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
+                total += estimateLowCardTotalBytes(*lc_col, row_count, materialized_const) + null_map_bytes;
+            else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
+                total += estimateVariantTotalBytes(*var_col, row_count, materialized_const) + null_map_bytes;
             else
-                total += 256 * row_count + null_map_bytes; // conservative fallback (e.g. Variant, LowCardinality)
+                total += 256 * row_count + null_map_bytes; // conservative fallback
         }
         return total;
     }
@@ -1055,6 +1072,13 @@ private:
     /// is priced precisely instead of falling back to a flat 256-byte guess.
     static size_t estimateComplexRowBytes(const IColumn & col, size_t row_index)
     {
+        if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
+            return estimateComplexRowBytes(map_col->getNestedColumn(), row_index);
+        if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
+            // Nested LowCardinality still materializes to its resolved dictionary value on
+            // the wire (unlike top-level, which is directly encoded), so its per-row cost is
+            // that value's own size, not the compact index width.
+            return estimateComplexRowBytes(*lc_col->getDictionary().getNestedColumn(), lc_col->getIndexes().getUInt(row_index));
         if (const auto * s = typeid_cast<const ColumnString *>(&col))
             return s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t);
         if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
@@ -1077,7 +1101,63 @@ private:
         }
         if (col.valuesHaveFixedSize())
             return col.sizeOfValueIfFixed();
-        return 256; // conservative fallback (e.g. Variant, LowCardinality)
+        return 256; // conservative fallback
+    }
+
+    /// O(1) aggregate byte size of one non-string, non-fixed-width sub-column value (used to
+    /// size a Variant alternative's whole contribution below without a per-row scan).
+    static size_t estimateAggregateColumnBytes(const IColumn & col)
+    {
+        if (const auto * s = typeid_cast<const ColumnString *>(&col))
+            return s->getChars().size() + (col.size() + 1) * sizeof(uint64_t);
+        if (col.valuesHaveFixedSize())
+            return col.sizeOfValueIfFixed() * col.size();
+        return 256 * col.size(); // conservative fallback (e.g. nested Array/Tuple/LowCardinality)
+    }
+
+    /// Top-level LowCardinality is directly wire-encoded (dictionary + compact index array,
+    /// COL_LOWCARD), unlike nested LowCardinality which still materializes; this mirrors that
+    /// exact layout in O(1) instead of falling back to a flat per-row guess.
+    static size_t estimateLowCardTotalBytes(const ColumnLowCardinality & lc, size_t row_count, bool materialized_const)
+    {
+        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
+        constexpr size_t header_bytes = 4 + 4 + 40; // dict_row_count + index_elem_width/pad + embedded ColDescriptor
+        if (materialized_const)
+            // A materializing format expands the single constant value row_count times; the
+            // dictionary then holds just that one distinct value, and the index array is
+            // row_count entries all pointing at it.
+            return lc.getIndexes().sizeOfValueIfFixed() * row_count + estimateComplexRowBytes(dict_col, lc.getIndexes().getUInt(0)) + header_bytes;
+        return lc.getIndexes().sizeOfValueIfFixed() * row_count + estimateAggregateColumnBytes(dict_col) + header_bytes;
+    }
+
+    /// Top-level Variant only (nested Variant is validator-rejected, structurally unreachable);
+    /// mirrors COL_VARIANT's wire layout (discriminators + row offsets + per-alternative data).
+    static size_t estimateVariantTotalBytes(const ColumnVariant & var, size_t row_count, bool materialized_const)
+    {
+        size_t num_variants = var.getNumVariants();
+        size_t header_bytes = 4 + num_variants * (4 + 40); // sub_rows + embedded ColDescriptor per alternative
+        if (materialized_const)
+            return 1 + 4 + estimateVariantRowBytes(var, 0) * row_count + header_bytes;
+        size_t sub_bytes = 0;
+        for (size_t local = 0; local < num_variants; ++local)
+        {
+            const IColumn & sub = var.getVariantByLocalDiscriminator(local);
+            if (!sub.empty())
+                sub_bytes += estimateAggregateColumnBytes(sub);
+        }
+        return row_count /* discriminators */ + row_count * 4 /* row offsets */ + header_bytes + sub_bytes;
+    }
+
+    /// Precise per-row Variant cost: locate the row's active alternative and size just that
+    /// one value, rather than the flat 256-byte guess.
+    static size_t estimateVariantRowBytes(const ColumnVariant & var, size_t row_index)
+    {
+        auto global_discr = var.globalDiscriminatorAt(row_index);
+        if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
+            return 0;
+        const IColumn & sub = var.getVariantByGlobalDiscriminator(global_discr);
+        size_t sub_row = var.getOffsets()[row_index];
+        return estimateComplexRowBytes(sub, sub_row);
     }
 
     /// Estimate the serialized byte size of a single row across all argument columns.
@@ -1117,8 +1197,11 @@ private:
                 total += s->getOffsets()[row_index] - (row_index > 0 ? s->getOffsets()[row_index - 1] : 0) + sizeof(uint64_t) + null_map_bytes;
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
-            else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col))
+            else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col)
+                    || typeid_cast<const ColumnMap *>(col) || typeid_cast<const ColumnLowCardinality *>(col))
                 total += estimateComplexRowBytes(*col, row_index) + null_map_bytes;
+            else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
+                total += estimateVariantRowBytes(*var_col, row_index) + null_map_bytes;
             else
                 total += 256 + null_map_bytes; // conservative fallback
         }
