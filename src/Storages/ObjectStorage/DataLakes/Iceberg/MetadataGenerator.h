@@ -39,7 +39,11 @@ public:
         Int64 added_delete_files,
         Int64 num_deleted_rows,
         std::optional<Int64> user_defined_snapshot_id = std::nullopt,
-        std::optional<Int64> user_defined_timestamp = std::nullopt);
+        std::optional<Int64> user_defined_timestamp = std::nullopt,
+        /// Compaction replays a filtered history where a record's parent may be a
+        /// legitimately skipped snapshot; everything else must fail-close on a parent
+        /// snapshot that cannot be found in `snapshots`.
+        bool tolerate_missing_parent_snapshot = false);
 
     void generateAddColumnMetadata(const String & column_name, DataTypePtr type);
     void generateDropColumnMetadata(const String & column_name);

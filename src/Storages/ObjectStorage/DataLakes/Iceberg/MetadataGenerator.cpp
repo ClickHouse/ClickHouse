@@ -122,28 +122,17 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     Int64 added_delete_files,
     Int64 num_deleted_rows,
     std::optional<Int64> user_defined_snapshot_id,
-    std::optional<Int64> user_defined_timestamp)
+    std::optional<Int64> user_defined_timestamp,
+    bool tolerate_missing_parent_snapshot)
 {
     int format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
 
     /// These arrays are optional per the Iceberg spec, so external metadata may omit them.
     /// Seed an empty one (as Array::Ptr so getArray/extract see the right type tag) before use.
-    for (const auto * field : {Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
+    /// A live parent snapshot missing from `snapshots` is rejected below, after the lookup.
+    for (const auto * field : {Iceberg::f_snapshots, Iceberg::f_metadata_log, Iceberg::f_snapshot_log})
         if (!metadata_object->has(field))
             metadata_object->set(field, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-
-    /// `snapshots` may only be seeded when the table has no current snapshot: with a live
-    /// parent snapshot the commit relies on finding its manifest list in `snapshots`, and an
-    /// empty list would silently unlink all previously committed data instead of failing.
-    if (!metadata_object->has(Iceberg::f_snapshots))
-    {
-        if (parent_snapshot_id >= 0)
-            throw Exception(
-                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-                "Metadata has a current snapshot with id {} but no `snapshots` list",
-                parent_snapshot_id);
-        metadata_object->set(Iceberg::f_snapshots, Poco::JSON::Array::Ptr(new Poco::JSON::Array));
-    }
 
     Poco::JSON::Object::Ptr new_snapshot = new Poco::JSON::Object;
     if (format_version > 1)
@@ -165,6 +154,18 @@ MetadataGenerator::NextMetadataResult MetadataGenerator::generateNextMetadata(
     metadata_object->set(Iceberg::f_last_updated_ms, timestamp);
 
     auto parent_snapshot = getParentSnapshot(parent_snapshot_id);
+
+    /// The commit preserves the previous table contents by locating the parent snapshot's
+    /// manifest list in `snapshots` (and sums the totals from its summary). Committing with
+    /// an unresolvable live parent would silently unlink all previously committed data, so
+    /// fail-close on such self-contradictory metadata (missing or pruned `snapshots` entry).
+    /// Compaction replays a filtered history and opts out (see the header comment).
+    if (parent_snapshot_id >= 0 && !parent_snapshot && !tolerate_missing_parent_snapshot)
+        throw Exception(
+            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+            "Metadata has a current snapshot with id {} but the `snapshots` list does not contain it",
+            parent_snapshot_id);
+
     Poco::JSON::Object::Ptr summary = new Poco::JSON::Object;
     summary->set(Iceberg::f_operation, num_deleted_rows == 0 ? Iceberg::f_append : Iceberg::f_overwrite);
     summary->set(Iceberg::f_added_data_files, std::to_string(added_files));
