@@ -733,6 +733,19 @@ public:
                 value = static_cast<time_t>(std::min(raw, UInt64(0xFFFFFFFF)));
             }
         }
+        else if (insert_settings.allow_type_conversion && element.isDouble() && !format_settings.read_datetime_number_as_raw_value)
+        {
+            /// An unquoted fractional number is a Unix timestamp truncated to whole seconds, consistent with the
+            /// row input serializer, `CAST` and `toDateTime`. With `read_datetime_number_as_raw_value` (i.e. the
+            /// pre-26.7 behavior) a fractional `DateTime` number is rejected, as the row serializer's legacy path did.
+            double number = element.getDouble();
+            if (number < 0)
+            {
+                error = fmt::format("cannot convert negative value {} to DateTime", number);
+                return false;
+            }
+            value = static_cast<time_t>(std::min(number, static_cast<double>(0xFFFFFFFF)));
+        }
         else
         {
             error = fmt::format("cannot read DateTime value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
@@ -930,16 +943,26 @@ public:
             if (!insert_settings.allow_type_conversion)
                 return false;
 
+            /// An unquoted number is a Unix timestamp in seconds (with optional sub-second precision), scaled to
+            /// the column precision, consistent with the row input serializer, `CAST` and `toDateTime64`. With
+            /// `read_datetime_number_as_raw_value` (i.e. the pre-26.7 behavior) an integer is instead the raw
+            /// scaled value (ticks); a fractional number was always the number of seconds.
             switch (element.type())
             {
                 case ElementType::DOUBLE:
                     value = convertToDecimal<DataTypeNumber<Float64>, DataTypeDecimal<DateTime64>>(element.getDouble(), scale);
                     break;
                 case ElementType::UINT64:
-                    value.value = element.getUInt64();
+                    if (format_settings.read_datetime_number_as_raw_value)
+                        value.value = element.getUInt64();
+                    else
+                        value = convertToDecimal<DataTypeNumber<UInt64>, DataTypeDecimal<DateTime64>>(element.getUInt64(), scale);
                     break;
                 case ElementType::INT64:
-                    value.value = element.getInt64();
+                    if (format_settings.read_datetime_number_as_raw_value)
+                        value.value = element.getInt64();
+                    else
+                        value = convertToDecimal<DataTypeNumber<Int64>, DataTypeDecimal<DateTime64>>(element.getInt64(), scale);
                     break;
                 default:
                     error = fmt::format("cannot read DateTime64 value from JSON element: {}", jsonElementToString<JSONParser>(element, format_settings));
