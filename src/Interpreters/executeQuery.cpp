@@ -25,6 +25,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -119,6 +120,8 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event ASTFuzzerSkippedBackupRestore;
+    extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -442,6 +445,7 @@ QueryLogElement logQueryStart(
     const QueryPipeline & pipeline,
     const IInterpreter * interpreter,
     bool internal,
+    bool log_as_internal,
     const String & query_database,
     const String & query_table,
     bool async_insert)
@@ -465,7 +469,7 @@ QueryLogElement logQueryStart(
 
     elem.client_info = context->getClientInfo();
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     if (auto txn = context->getCurrentTransaction())
         elem.tid = txn->tid;
@@ -650,6 +654,7 @@ static void logQueryFinishImpl(
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
     bool internal,
+    bool log_as_internal,
     std::chrono::system_clock::time_point time)
 {
     const Settings & settings = context->getSettingsRef();
@@ -710,7 +715,7 @@ static void logQueryFinishImpl(
 
         elem.query_result_cache_usage = query_result_cache_usage;
 
-        elem.is_internal = internal;
+        elem.is_internal = log_as_internal;
 
         if (log_queries && elem.type >= settings[Setting::log_queries_min_type]
             && static_cast<Int64>(elem.query_duration_ms) >= settings[Setting::log_queries_min_query_duration_ms].totalMilliseconds())
@@ -762,11 +767,12 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal)
+    bool internal,
+    bool log_as_internal)
 {
     const auto time_now = std::chrono::system_clock::now();
     auto query_pipeline_finalized_info = finalizeQueryPipelineBeforeLogging(std::move(query_pipeline), query_result_cache_usage, pulling_pipeline);
-    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, time_now);
+    logQueryFinishImpl(elem, context, query_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, time_now);
 }
 
 /// Bump the FailedQuery / FailedInsertQuery / FailedSelectQuery family of ProfileEvents.
@@ -804,6 +810,7 @@ void logQueryException(
     const ASTPtr & query_ast,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
+    bool log_as_internal,
     bool log_error)
 {
     const Settings & settings = context->getSettingsRef();
@@ -840,7 +847,7 @@ void logQueryException(
 
     elem.query_result_cache_usage = QueryResultCacheUsage::None;
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     if (settings[Setting::calculate_text_stack_trace] && log_error)
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
@@ -871,7 +878,8 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal)
+    bool internal,
+    bool log_as_internal)
 {
     auto query_end_time = std::chrono::system_clock::now();
 
@@ -930,7 +938,7 @@ void logExceptionBeforeStart(
     if (settings[Setting::calculate_text_stack_trace])
         elem.stack_trace = getExceptionStackTraceString(std::current_exception());
 
-    elem.is_internal = internal;
+    elem.is_internal = log_as_internal;
 
     bool log_error = elem.exception_code != ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT && elem.exception_code !=  ErrorCodes::QUERY_WAS_CANCELLED;
     logException(context, elem, log_error);
@@ -1133,7 +1141,13 @@ static BlockIO executeQueryImpl(
     HTTPContinueCallback http_continue_callback,
     QueryResultDetails & result_details)
 {
+    if (flags.internal)
+        context->getClientInfo().is_internal = true;
+
+    /// Gates concurrency limits, throttling, query-size limit, logging.
     const bool internal = flags.internal;
+    /// Can be spoofed as it comes from the wire.
+    const bool log_as_internal = context->getClientInfo().is_internal;
 
     /// query_span is a special span, when this function exits, it's lifetime is not ended, but ends when the query finishes.
     /// Some internal queries might call this function recursively by setting 'internal' parameter to 'true',
@@ -1434,7 +1448,7 @@ static BlockIO executeQueryImpl(
         logQuery(query_for_logging, context, internal, stage);
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
         throw;
     }
 
@@ -1956,6 +1970,7 @@ static BlockIO executeQueryImpl(
                 pipeline,
                 interpreter.get(),
                 internal,
+                log_as_internal,
                 query_database,
                 query_table,
                 async_insert);
@@ -1977,12 +1992,13 @@ static BlockIO executeQueryImpl(
                                     out_ast,
                                     query_result_cache_usage,
                                     internal,
+                                    log_as_internal,
                                     implicit_tcl_executor,
                                     // Need to be cached, since will be changed after complete()
                                     pulling_pipeline = pipeline.pulling(),
                                     query_span](const QueryPipelineFinalizedInfo & query_pipeline_finalized_info, std::chrono::system_clock::time_point finish_time) mutable
             {
-                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, finish_time);
+                logQueryFinishImpl(elem, context, out_ast, query_pipeline_finalized_info, pulling_pipeline, query_span, query_result_cache_usage, internal, log_as_internal, finish_time);
 
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1991,7 +2007,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, log_as_internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -2009,7 +2025,7 @@ static BlockIO executeQueryImpl(
                         my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
-                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
+                logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_as_internal, log_error);
             };
 
             res.finalize_query_pipeline = std::move(finish_callback_finalize_pipeline);
@@ -2028,7 +2044,7 @@ static BlockIO executeQueryImpl(
             txn->onException();
         }
 
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, context, out_ast, query_span, start_watch.elapsedMilliseconds(), internal, log_as_internal);
 
         throw;
     }
@@ -2067,6 +2083,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
 {
     if (!any_query && !isReadOnlyQuery(ast))
         return;
+
+    /// Do not fuzz while an internal replicated-DDL execution is in flight on `context`.
+    /// DatabaseReplicatedDDLWorker re-executes a committed DDL entry whose serialized settings still
+    /// carry ast_fuzzer_runs, so the fuzzer would fire again on the entry's live, single-shot
+    /// ZooKeeperMetadataTransaction. A fuzzed follow-up DDL then either adds ops to the already-executed
+    /// txn (ZooKeeperMetadataTransaction::addOp throws "Cannot add ZooKeeper operation because query is
+    /// executed") or, because is_replicated_database_internal makes shouldReplicateQuery() route it to a
+    /// local commit, reaches DatabaseReplicated::commit* with no txn while the DDL worker is active and
+    /// trips the `!ddl_worker->isCurrentlyActive() || txn` assertion. Both are LOGICAL_ERRORs that abort
+    /// debug/sanitizer builds. The initiating client query is fuzzed normally; only this redundant
+    /// re-fuzz during log replay is skipped.
+    if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
 
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
@@ -2117,6 +2149,19 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
+        /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
+        /// `executeQuery` immediately while `BackupsWorker` keeps the query context alive and its
+        /// background workers read it via `Context::createCopy` under the shared `Context::mutex`.
+        /// The per-iteration cleanup below would then mutate that escaped context without holding
+        /// the mutex, reintroducing the very `merge_tree_transaction` data race this code avoids.
+        /// Checked first (before the depth/format/length guards below), and counted, so the skip
+        /// is attributable to the query type alone regardless of those other early-continue paths.
+        if (fuzzed_ast->as<ASTBackupQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedBackupRestore);
+            continue;
+        }
+
         /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
         try
         {
@@ -2154,10 +2199,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
         /// Declare contexts outside try block so we can reset transactions on all paths.
         /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
         /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2177,6 +2218,16 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
+            /// Reset the transaction (if any) on the fuzz session context to isolate
+            /// fuzzed queries from the caller's transaction state. The transaction pointer
+            /// was copied as a shared_ptr in the copy constructor (see `InterpreterTransactionControlQuery::executeBegin`
+            /// which stores it in both session and query contexts).
+            /// We clear it on the copy, not on the parent `context`: mutating the caller's
+            /// `merge_tree_transaction` races with concurrent readers of the same `Context`
+            /// (e.g. `RESTORE ASYNC` background workers calling `Context::createCopy` under
+            /// the shared `Context::mutex`), and it also has the surprising side effect of
+            /// silently clearing the user's active transaction on the caller session.
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
@@ -2640,10 +2691,6 @@ void executeQuery(
         /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
         /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
         /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-        ///
-        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
-        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
-        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
