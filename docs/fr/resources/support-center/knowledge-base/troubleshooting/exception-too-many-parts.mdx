@@ -1,0 +1,45 @@
+---
+title: "Résoudre l’erreur « Too many parts » dans ClickHouse"
+description: "Découvrez comment résoudre l’erreur « Too many parts » dans ClickHouse en optimisant le rythme des insertions, en configurant les paramètres MergeTree et en gérant efficacement les partitions."
+date: 2023-03-20
+tags: ['Erreurs et exceptions']
+keywords: ['Too many parts']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dbexception-too-many-parts-252-merges-are-processing-significantly-slower-than-inserts">
+  ## DB::Exception : Too many parts (Erreur : 252). Les fusions s’effectuent nettement plus lentement que les insertions
+</div>
+
+Vous avez atteint le paramètre `parts_to_throw_insert` dans une table MergeTree.
+
+Vous pouvez surveiller le nombre de parts actives d’une table donnée avec :
+
+```sql
+select count(*) from system.parts where table = '<table_name>' and active == 1
+```
+
+La principale exigence concernant les insertions dans ClickHouse : vous ne devez jamais envoyer trop d’instructions `INSERT` par seconde. L’idéal est de faire une insertion par seconde, ou toutes les quelques secondes.
+
+Vous pouvez donc insérer 100K lignes par seconde, mais uniquement avec une seule grosse instruction `INSERT` en bloc. Lorsque vous envoyez des centaines / milliers d’instructions d’insertion par seconde vers une table *MergeTree, vous finirez toujours par obtenir des erreurs, et cela ne peut pas être corrigé en ajustant quelques paramètres.
+
+Si vous ne pouvez pas regrouper de nombreuses insertions en une seule grosse instruction `INSERT` en bloc en amont, vous devez alors créer une table Buffer avant la table *MergeTree.
+
+1. Chaque insertion crée un dossier dans `/var/lib/clickhouse/.../table_name/`. À l’intérieur de ce dossier, il y a 2 fichiers pour chaque colonne : un avec les données (compressées), le second avec l’index. Les données sont physiquement triées par clé primaire à l’intérieur de ces fichiers. Ces dossiers sont appelés des &#39;**parts**&#39;.
+
+2. ClickHouse fusionne ces petites parts en parts plus grandes en arrière-plan. Il choisit les parts à fusionner selon certaines règles. Après la fusion de deux parts (ou plus), une part plus grande est créée et les anciennes parts sont mises en file d’attente pour être supprimées. Les paramètres que vous listez permettent d’affiner les règles de fusion des parts. L’objectif du processus de fusion est de ne laisser qu’une grosse part pour chaque partition (ou quelques grosses parts par partition qui ne valent pas la peine d’être fusionnées parce qu’elles sont trop grandes). Veuillez également consulter ce [commentaire](https://github.com/yandex/ClickHouse/issues/1661#issuecomment-352739726).
+
+3. Si vous créez de nouvelles parts trop vite (par exemple en effectuant beaucoup de petites insertions) et que ClickHouse n’est pas capable de les fusionner assez rapidement (autrement dit, si de nouvelles parts arrivent plus vite que ClickHouse ne peut les fusionner), vous obtenez alors l’exception &#39;Merges are processing significantly slower than inserts&#39;. Vous pouvez essayer d’augmenter la limite, mais vous risquez alors de vous retrouver avec des problèmes de système de fichiers causés par un trop grand nombre de fichiers / répertoires (comme la limite d’inodes).
+
+4. Si vous insérez dans beaucoup de partitions à la fois, le problème est multiplié par le nombre de partitions affectées par l’insertion.
+
+5. Vous pouvez essayer d’ajuster le comportement de ClickHouse avec l’un des paramètres listés, ou avec max&#95;insert&#95;block&#95;size / max&#95;block&#95;size / insert&#95;format&#95;max&#95;block&#95;size / max&#95;client&#95;network&#95;bandwidth. Mais : la meilleure solution consiste simplement à insérer les données au rythme attendu. Le rythme attendu est le suivant : **une insertion toutes les 1-2 s, chaque insertion contenant 10K-500K lignes de données**.
+
+6. La solution appropriée pour résoudre &quot;Merges are processing significantly slower than inserts&quot; consiste donc à ajuster le nombre d’insertions par seconde et le nombre de lignes dans chaque insertion. Utilisez des insertions par lot pour regrouper de petites insertions en une plus grande si les données arrivent ligne par ligne. Limitez le débit des très grosses insertions si vous avez trop de données à insérer d’un coup. Ne modifiez pas les mécanismes internes de ClickHouse, sauf si vous comprenez vraiment bien ce que cela implique.
+
+7. Si vos données arrivent à un rythme supérieur à 500K lignes par seconde, vous avez très probablement besoin de plus de serveurs dans le cluster pour absorber ce trafic, et non d’un ajustement des paramètres.
+
+8. La vitesse des fusions en arrière-plan dépend généralement de la vitesse du stockage, des paramètres de compression utilisés, de l’option MergeTree (l’algorithme de fusion — fusion simple / agrégation / sommation / collapsing, etc.) et de la clé de tri utilisée.

@@ -1,0 +1,80 @@
+---
+sidebarTitle: 'Scheduled scaling'
+slug: /cloud/features/autoscaling/scheduled-scaling
+description: 'Article sur la fonctionnalité Scheduled Scaling de ClickHouse Cloud'
+keywords: ['scheduled scaling']
+title: 'Scheduled scaling'
+doc_type: 'guide'
+---
+
+import PrivatePreviewBadge from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+Les services ClickHouse Cloud s’adaptent automatiquement en fonction de l’utilisation du CPU et de la mémoire, mais de nombreuses charges de travail suivent des schémas prévisibles : pics quotidiens d’ingestion, traitements par lots exécutés la nuit ou trafic en forte baisse le week-end. Pour ces cas d’usage, Scheduled Scaling vous permet de définir précisément quand votre service doit augmenter ou réduire sa capacité, indépendamment des métriques en temps réel.
+
+Avec Scheduled Scaling, vous configurez directement dans la console ClickHouse Cloud un ensemble de règles basées sur le temps. Chaque règle spécifie une heure, une récurrence (quotidienne, hebdomadaire ou personnalisée) et la taille cible — soit le nombre de réplicas (horizontal), soit le palier mémoire (vertical). À l’heure planifiée, ClickHouse Cloud applique automatiquement le changement afin que votre service soit correctement dimensionné avant l’arrivée de la demande, plutôt que de réagir après coup.
+
+Cela se distingue de l’autoscaling basé sur les métriques, qui réagit dynamiquement à la pression sur le CPU et la mémoire. Scheduled Scaling est déterministe : vous savez exactement quand la mise à l’échelle aura lieu et à quelle taille. Les deux approches sont complémentaires — un service peut avoir un calendrier de mise à l’échelle de référence tout en bénéficiant de l’autoscaling dans cette plage si les charges de travail fluctuent de manière inattendue.
+
+Scheduled Scaling est actuellement disponible en **Private Preview**. Pour l’activer pour votre organisation, contactez l’équipe de support ClickHouse.
+
+<div id="setting-up-a-scaling-schedule">
+  ## Configurer une planification de mise à l’échelle
+</div>
+
+Pour configurer une planification, accédez à votre service dans la console ClickHouse Cloud, puis ouvrez les paramètres. Sélectionnez ensuite **Schedule Override** et ajoutez une nouvelle règle.
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="Interface des planifications de mise à l’échelle dans la console ClickHouse Cloud, avec des règles de mise à l’échelle définies selon l’heure" border />
+
+<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuration d’une règle de mise à l’échelle planifiée dans la console ClickHouse Cloud" border />
+
+Chaque règle nécessite :
+
+* **Heure :** heure à laquelle l’action de mise à l’échelle doit avoir lieu (dans votre fuseau horaire local)
+* **Récurrence :** fréquence de répétition de la règle (par ex. chaque jour ouvré, chaque dimanche)
+* **Taille cible :** nombre de réplicas ou quantité de mémoire à atteindre
+
+Plusieurs règles peuvent être combinées pour former une planification hebdomadaire complète. Par exemple, vous pouvez passer à 5 réplicas chaque jour ouvré à 6 h, puis revenir à 2 réplicas à 20 h.
+
+<div id="use-cases">
+  ## Cas d’usage
+</div>
+
+**Charges de travail batch et ETL :** augmentez la capacité avant l’exécution d’une tâche d’ingestion nocturne, puis réduisez-la une fois celle-ci terminée, afin d’éviter le surprovisionnement pendant les heures creuses de la journée.
+
+**Schémas de trafic prévisibles :** les services avec des heures de pointe régulières (par ex. un trafic de requêtes pendant les heures ouvrées) peuvent être mis à l’échelle à l’avance pour absorber la charge avant qu’elle n’arrive, plutôt que d’attendre que l’autoscaling réagisse.
+
+**Réduction de capacité le week-end :** réduisez le nombre de réplicas ou le palier mémoire le week-end lorsque la demande est plus faible, puis rétablissez la capacité avant le pic du lundi matin.
+
+**Contrôle des coûts :** pour les équipes qui gèrent les dépenses ClickHouse Cloud, des réductions de capacité planifiées pendant les périodes connues de faible utilisation peuvent réduire sensiblement la consommation de ressources sans aucune intervention manuelle.
+
+<Note>
+  Une action de Scheduled Scaling et une recommandation d’autoscaling concurrente peuvent interagir — la planification prévaut au moment du déclenchement.
+</Note>
+
+<div id="handling-bursty-workloads">
+  ## Gérer les pics de charge
+</div>
+
+Si vous anticipez un pic de charge, vous pouvez utiliser la
+[ClickHouse Cloud API](/fr/products/cloud/features/admin-features/api/api-overview) pour
+augmenter préventivement la capacité de votre service afin d’absorber ce pic, puis la réduire une fois
+que la demande retombe.
+
+Pour connaître le nombre actuel de cœurs de CPU et la quantité de mémoire utilisés pour
+chacun de vos réplicas, vous pouvez exécuter la requête ci-dessous :
+
+```sql
+SELECT *
+FROM clusterAllReplicas('default', view(
+    SELECT
+        hostname() AS server,
+        anyIf(value, metric = 'CGroupMaxCPU') AS cpu_cores,
+        formatReadableSize(anyIf(value, metric = 'CGroupMemoryTotal')) AS memory
+    FROM system.asynchronous_metrics
+))
+ORDER BY server ASC
+SETTINGS skip_unavailable_shards = 1
+```

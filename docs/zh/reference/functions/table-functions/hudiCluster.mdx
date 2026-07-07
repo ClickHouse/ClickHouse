@@ -1,0 +1,57 @@
+---
+description: '这是对 hudi 表函数的扩展。允许在指定集群中使用多个节点并行处理
+  Amazon S3 中 Apache Hudi 表中的文件。'
+sidebarTitle: 'hudiCluster'
+slug: /sql-reference/table-functions/hudiCluster
+title: 'hudiCluster 表函数'
+doc_type: 'reference'
+---
+
+这是对 [hudi](/zh/reference/functions/table-functions/hudi) 表函数的扩展。
+
+它允许在指定集群中使用多个节点并行处理 Amazon S3 中 Apache [Hudi](https://hudi.apache.org/) 表中的文件。在发起节点上，它会与集群中的所有节点建立连接，并动态分发每个文件。在工作节点上，它会向发起节点请求下一个要处理的任务并进行处理。该过程会不断重复，直到所有任务完成。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| Argument                                     | Description                                                                                                                                                                                                                   |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`                               | 用于构建远程和本地服务器地址集合及连接参数的 集群 名称。                                                                                                                                                                                                 |
+| `url`                                        | 包含 S3 中现有 Hudi 表路径的 bucket URL。                                                                                                                                                                                               |
+| `aws_access_key_id`, `aws_secret_access_key` | [AWS](https://aws.amazon.com/) 账户用户的长期凭据。您可以使用它们对请求进行身份验证。这些参数为可选项。如果未指定凭据，则使用 ClickHouse 配置中的凭据。更多信息，请参见 [Using S3 for Data Storage](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)。 |
+| `format`                                     | 文件的 [format](/zh/reference/formats/index)。                                                                                                                                                                                       |
+| `structure`                                  | 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。                                                                                                                                                       |
+| `compression`                                | 此参数为可选项。支持的值：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认情况下，会根据文件扩展名自动检测压缩格式。                                                                                                                                        |
+| `extra_credentials`                          | 此参数为可选项。用于在 ClickHouse Cloud 中传递 role-based access 所需的 `role_arn`。配置步骤请参见 [Secure S3](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)。                                                                        |
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个具有指定结构的表，用于从 S3 中指定 Hudi 表所在的集群读取数据。
+
+<div id="virtual-columns">
+  ## 虚拟列
+</div>
+
+* `_path` — 文件路径。类型：`LowCardinality(String)`。
+* `_file` — 文件名。类型：`LowCardinality(String)`。
+* `_size` — 文件大小 (以字节为单位) 。类型：`Nullable(UInt64)`。如果文件大小未知，则值为 `NULL`。
+* `_time` — 文件的最后修改时间。类型：`Nullable(DateTime)`。如果时间未知，则值为 `NULL`。
+* `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。如果 ETag 未知，则值为 `NULL`。
+
+<div id="related">
+  ## 相关
+</div>
+
+* [Hudi 引擎](/zh/reference/engines/table-engines/integrations/hudi)
+* [Hudi 表函数](/zh/reference/functions/table-functions/hudi)

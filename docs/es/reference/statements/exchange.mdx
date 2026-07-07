@@ -1,0 +1,110 @@
+---
+description: 'Documentación de la sentencia EXCHANGE'
+sidebarTitle: 'EXCHANGE'
+slug: /sql-reference/statements/exchange
+title: 'Sentencia EXCHANGE'
+doc_type: 'reference'
+---
+
+Intercambia de forma atómica los nombres de dos tablas o diccionarios.
+Esta tarea también puede realizarse con una consulta [`RENAME`](/es/reference/statements/rename) usando un nombre temporal, pero en ese caso la operación no es atómica.
+
+<Note>
+  La consulta `EXCHANGE` solo es compatible con los motores de base de datos [`Atomic`](/es/reference/engines/database-engines/atomic) y [`Shared`](/es/products/cloud/features/infrastructure/shared-catalog#shared-database-engine).
+</Note>
+
+**Sintaxis**
+
+```sql
+EXCHANGE TABLES|DICTIONARIES [db0.]name_A AND [db1.]name_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-tables">
+  ## EXCHANGE TABLES
+</div>
+
+Intercambia los nombres de dos tablas.
+
+**Sintaxis**
+
+```sql
+EXCHANGE TABLES [db0.]table_A AND [db1.]table_B [ON CLUSTER cluster]
+```
+
+<div id="exchange-multiple-tables">
+  ### EXCHANGE DE VARIAS TABLAS
+</div>
+
+Puede intercambiar varios pares de tablas en una sola consulta separándolos con comas.
+
+<Note>
+  Al intercambiar varios pares de tablas, los intercambios se realizan **de forma secuencial, no atómica**. Si se produce un error durante la operación, es posible que algunos pares de tablas se hayan intercambiado y otros no.
+</Note>
+
+**Ejemplo**
+
+```sql title="Query"
+-- Crear tablas
+CREATE TABLE a (a UInt8) ENGINE=Memory;
+CREATE TABLE b (b UInt8) ENGINE=Memory;
+CREATE TABLE c (c UInt8) ENGINE=Memory;
+CREATE TABLE d (d UInt8) ENGINE=Memory;
+
+-- Intercambiar dos pares de tablas en una sola consulta
+EXCHANGE TABLES a AND b, c AND d;
+
+SHOW TABLE a;
+SHOW TABLE b;
+SHOW TABLE c;
+SHOW TABLE d;
+```
+
+```sql title="Response"
+-- Ahora la tabla 'a' tiene la estructura de 'b', y la tabla 'b' tiene la estructura de 'a'
+┌─statement──────────────┐
+│ CREATE TABLE default.a↴│
+│↳(                     ↴│
+│↳    `b` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.b↴│
+│↳(                     ↴│
+│↳    `a` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+
+-- Ahora la tabla 'c' tiene la estructura de 'd', y la tabla 'd' tiene la estructura de 'c'
+┌─statement──────────────┐
+│ CREATE TABLE default.c↴│
+│↳(                     ↴│
+│↳    `d` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+┌─statement──────────────┐
+│ CREATE TABLE default.d↴│
+│↳(                     ↴│
+│↳    `c` UInt8         ↴│
+│↳)                     ↴│
+│↳ENGINE = Memory        │
+└────────────────────────┘
+```
+
+<div id="exchange-dictionaries">
+  ## EXCHANGE DICTIONARIES
+</div>
+
+Intercambia los nombres de dos diccionarios.
+
+**Sintaxis**
+
+```sql
+EXCHANGE DICTIONARIES [db0.]dict_A AND [db1.]dict_B [ON CLUSTER cluster]
+```
+
+**Véase también**
+
+* [Diccionarios](/es/reference/statements/create/dictionary)
