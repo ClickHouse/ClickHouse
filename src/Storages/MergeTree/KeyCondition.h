@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include <absl/container/inlined_vector.h>
+
 #include <Core/SortDescription.h>
 #include <Core/Range.h>
 
@@ -119,6 +121,20 @@ public:
         const ColumnIndexToBloomFilter & column_index_to_column_bf = {},
         const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn = nullptr) const;
 
+    /// State reused by repeated calls of the sparse `checkInRange` over the mark ranges of one part.
+    /// Must not be shared between parts or threads.
+    struct SparseCheckScratch
+    {
+        bool initialized = false;
+        std::vector<int> key_col_to_sparse_pos;
+        Hyperrectangle sparse_key_ranges;
+        /// Empty when no RPN element is range-invariant: then nothing is captured or replayed.
+        std::vector<UInt8> rpn_element_is_range_invariant;
+        std::vector<BoolMask> rpn_element_result;
+        bool rpn_element_results_filled = false;
+        absl::InlinedVector<BoolMask, 16> rpn_stack;
+    };
+
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
     /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
@@ -126,7 +142,8 @@ public:
     BoolMask checkInHyperrectangle(
         const std::vector<int> & key_col_to_sparse_pos,
         const Hyperrectangle & sparse_hyperrectangle,
-        const DataTypes & sparse_data_types) const;
+        const DataTypes & sparse_data_types,
+        SparseCheckScratch & scratch) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
     /// left_key and right_key must contain all fields in the sort_descr in the appropriate order.
@@ -166,7 +183,8 @@ public:
         const DataTypes & sparse_data_types,
         const std::vector<UInt8> & equal_boundaries_mask,
         BoolMask initial_mask,
-        const Hyperrectangle * key_bounds = nullptr) const;
+        const Hyperrectangle * key_bounds,
+        SparseCheckScratch & scratch) const;
 
     /// Same as checkInRange, but calculate only may_be_true component of a result.
     /// This is more efficient than checkInRange(...).can_be_true.

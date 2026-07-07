@@ -1,0 +1,24 @@
+-- results are identical with and without the trimmed index
+8	321
+8	321
+28	1610
+28	1610
+9972	495127
+9972	495127
+-- the short-circuit does not change the selected granules
+Parts: 1 | Granules: 625
+PrimaryKey
+Parts: 1/1
+Granules: 625/625
+Search Algorithm: generic exclusion search
+-- leading-key filters still prune
+1	45
+1	45
+Parts: 1 | Granules: 1
+Parts: 1/1
+Granules: 1/625
+-- short-circuit fires exactly for trailing-key filters on the trimmed index
+1eq	1
+2in	1
+3notin	1
+4lead	0

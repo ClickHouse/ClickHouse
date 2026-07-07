@@ -4665,7 +4665,8 @@ BoolMask KeyCondition::checkInRange(
     const DataTypes & sparse_data_types,
     const std::vector<UInt8> & equal_boundaries_mask,
     BoolMask initial_mask,
-    const Hyperrectangle * key_bounds) const
+    const Hyperrectangle * key_bounds,
+    SparseCheckScratch & scratch) const
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
@@ -4678,53 +4679,85 @@ BoolMask KeyCondition::checkInRange(
 
     const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
 
-    /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates: they take their range from `key_bounds`
-    /// here, once per call, and do not participate in the hyperrectangle enumeration. The enumerated columns
-    /// are overwritten by `forAnySparseHyperrectangle` before every callback.
-    const size_t mapping_size = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
-    chassert(!key_bounds || key_bounds->size() >= mapping_size);
-    chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
-
-    Hyperrectangle sparse_key_ranges;
-    sparse_key_ranges.reserve(sparse_keys_size);
-    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+    if (!scratch.initialized)
     {
-        chassert(sparse_pos < sparse_data_types.size());
-        size_t key_index = sparse_key_indices[sparse_pos];
-        if (key_index >= enumerated_key_prefix_size)
-            sparse_key_ranges.emplace_back((*key_bounds)[key_index]);
+        scratch.initialized = true;
+
+        const size_t mapping_size
+            = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
+        chassert(!key_bounds || key_bounds->size() >= mapping_size);
+        chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
+
+        /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates taking their range
+        /// from `key_bounds`; the enumerated ones are overwritten by `forAnySparseHyperrectangle` before every
+        /// callback, so the working hyperrectangle can be reused across calls as is.
+        scratch.sparse_key_ranges.reserve(sparse_keys_size);
+        for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        {
+            chassert(sparse_pos < sparse_data_types.size());
+            size_t key_index = sparse_key_indices[sparse_pos];
+            if (key_index >= enumerated_key_prefix_size)
+                scratch.sparse_key_ranges.emplace_back((*key_bounds)[key_index]);
+            else
+                scratch.sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
+        }
+
+        /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
+        scratch.key_col_to_sparse_pos.assign(mapping_size, -1);
+        for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
+        {
+            size_t key_index = sparse_key_indices[sparse_pos];
+            chassert(key_index < mapping_size);
+            chassert(scratch.key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
+
+            scratch.key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
+        }
+
+        /// An RPN element none of whose key columns is an enumerated sparse coordinate sees the same
+        /// coordinate ranges in every call sharing this scratch, so its result is evaluated once and reused.
+        /// FUNCTION_POINT_IN_POLYGON is excluded because its evaluation `continue`s past the capture point
+        /// in checkInHyperrectangle.
+        scratch.rpn_element_is_range_invariant.assign(rpn.size(), 0);
+        bool has_range_invariant_elements = false;
+        for (size_t i = 0; i < rpn.size(); ++i)
+        {
+            const auto & element = rpn[i];
+            if (element.function == RPNElement::FUNCTION_AND || element.function == RPNElement::FUNCTION_OR
+                || element.function == RPNElement::FUNCTION_NOT || element.function == RPNElement::FUNCTION_POINT_IN_POLYGON)
+                continue;
+
+            bool depends_on_per_mark_values = false;
+            for (size_t key_column : element.key_columns)
+                if (key_column < enumerated_key_prefix_size && scratch.key_col_to_sparse_pos[key_column] != -1)
+                    depends_on_per_mark_values = true;
+
+            scratch.rpn_element_is_range_invariant[i] = !depends_on_per_mark_values;
+            has_range_invariant_elements |= !depends_on_per_mark_values;
+        }
+
+        if (has_range_invariant_elements)
+            scratch.rpn_element_result.resize(rpn.size());
         else
-            sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
-    }
-
-    /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
-    std::vector<int> key_col_to_sparse_pos(mapping_size, -1);
-    for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
-    {
-        size_t key_index = sparse_key_indices[sparse_pos];
-        chassert(key_index < mapping_size);
-        chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
-
-        key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
+            scratch.rpn_element_is_range_invariant.clear();
     }
 
     return forAnySparseHyperrectangle(
         sparse_key_indices,
-        key_col_to_sparse_pos,
+        scratch.key_col_to_sparse_pos,
         sparse_left_keys,
         sparse_right_keys,
         equal_boundaries_mask,
         /*full_key_size*/ num_key_columns,
         /*left_bounded*/ true,
         /*right_bounded*/ true,
-        sparse_key_ranges,
+        scratch.sparse_key_ranges,
         sparse_data_types,
         /*prefix_size*/ 0,
         initial_mask,
         key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
-            return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
+            return checkInHyperrectangle(scratch.key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types, scratch);
         });
 }
 
@@ -5643,9 +5676,17 @@ BoolMask KeyCondition::checkInHyperrectangle(
 BoolMask KeyCondition::checkInHyperrectangle(
     const std::vector<int> & key_col_to_sparse_pos,
     const Hyperrectangle & sparse_hyperrectangle,
-    const DataTypes & sparse_data_types) const
+    const DataTypes & sparse_data_types,
+    SparseCheckScratch & scratch) const
 {
-    std::vector<BoolMask> rpn_stack;
+    auto & rpn_stack = scratch.rpn_stack;
+    rpn_stack.clear();
+
+    /// Range-invariant RPN element results are captured on the first full evaluation and replayed afterwards.
+    const bool replay_invariant_results = scratch.rpn_element_results_filled;
+    const bool capture_invariant_results
+        = !scratch.rpn_element_results_filled && !scratch.rpn_element_is_range_invariant.empty();
+    [[maybe_unused]] size_t num_captured_results = 0;
 
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -5662,8 +5703,15 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    for (const auto & element : rpn)
+    for (size_t element_index = 0; element_index < rpn.size(); ++element_index)
     {
+        const auto & element = rpn[element_index];
+
+        if (replay_invariant_results && scratch.rpn_element_is_range_invariant[element_index])
+        {
+            rpn_stack.emplace_back(scratch.rpn_element_result[element_index]);
+            continue;
+        }
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -5687,7 +5735,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             }
             else
             {
-                Range key_range = sparse_hyperrectangle[sparse_pos];
+                const Range & key_range = sparse_hyperrectangle[sparse_pos];
 
                 /// The case when the column is wrapped in a chain of possibly monotonic functions.
                 if (!element.monotonic_functions_chain.empty())
@@ -5705,10 +5753,10 @@ BoolMask KeyCondition::checkInHyperrectangle(
                     }
                     else
                     {
-                        key_range = *new_range;
+                        const Range & mapped_range = *new_range;
 
-                        bool intersects = element.range.intersectsRange(key_range);
-                        bool contains   = element.range.containsRange(key_range);
+                        bool intersects = element.range.intersectsRange(mapped_range);
+                        bool contains   = element.range.containsRange(mapped_range);
 
                         /// NaN doesn't satisfy any comparison condition in SQL (e.g., NaN > 0 is false/NULL).
                         /// In ClickHouse sort order, NaN has a defined position (after +inf), so Range-based
@@ -5717,12 +5765,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
                         ///   so no comparison condition can be true.
                         /// - If only right bound is NaN: the range extends into NaN territory,
                         ///   so it cannot be fully contained (NaN values don't satisfy the condition).
-                        if (unlikely(key_range.left.isNaN()))
+                        if (unlikely(mapped_range.left.isNaN()))
                         {
                             intersects = false;
                             contains = false;
                         }
-                        else if (unlikely(key_range.right.isNaN()))
+                        else if (unlikely(mapped_range.right.isNaN()))
                         {
                             contains = false;
                         }
@@ -6117,6 +6165,22 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
         }
 
+        if (capture_invariant_results && scratch.rpn_element_is_range_invariant[element_index])
+        {
+            scratch.rpn_element_result[element_index] = rpn_stack.back();
+            ++num_captured_results;
+        }
+    }
+
+    if (capture_invariant_results)
+    {
+        /// An element whose evaluation `continue`s past the capture point (like FUNCTION_POINT_IN_POLYGON)
+        /// must be excluded from `rpn_element_is_range_invariant`, or replay would return an unfilled result.
+        chassert(
+            num_captured_results
+            == static_cast<size_t>(std::count(
+                scratch.rpn_element_is_range_invariant.begin(), scratch.rpn_element_is_range_invariant.end(), 1)));
+        scratch.rpn_element_results_filled = true;
     }
 
     if (rpn_stack.size() != 1)

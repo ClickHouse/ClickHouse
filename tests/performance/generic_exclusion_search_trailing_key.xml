@@ -1,0 +1,28 @@
+<test>
+    <!-- A point filter on a trailing primary key column that was trimmed from the
+         in-memory index (the leading column is unique per mark, so the default
+         primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns drops it).
+         The generic exclusion search cannot prune any granule here; the index
+         analysis must recognize that and short-circuit instead of walking marks. -->
+    <create_query>
+        CREATE TABLE t_trailing_key (match_id UInt64, account_id UInt32, v UInt32)
+        ENGINE = MergeTree ORDER BY (match_id, account_id)
+        SETTINGS index_granularity = 64, index_granularity_bytes = 0
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_trailing_key
+        SELECT number, cityHash64(number) % 2000000, cityHash64(number, 1) % 1000
+        FROM numbers_mt(20000000)
+        SETTINGS max_insert_threads = 8
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE t_trailing_key FINAL</fill_query>
+
+    <query>EXPLAIN indexes = 1 SELECT count() FROM t_trailing_key WHERE account_id = 12345</query>
+    <query>SELECT sum(v) FROM t_trailing_key WHERE account_id IN (12345, 54321, 111111) SETTINGS max_threads = 8</query>
+    <!-- The loaded leading key column forces the exclusion walk to actually run; the trailing-column
+         atom is range-invariant and must be evaluated once per part, not per granule. -->
+    <query>EXPLAIN indexes = 1 SELECT count() FROM t_trailing_key WHERE account_id = 12345 AND match_id > 1000</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_trailing_key</drop_query>
+</test>

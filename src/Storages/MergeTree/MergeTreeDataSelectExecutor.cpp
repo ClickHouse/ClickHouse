@@ -71,6 +71,7 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event IndexGenericExclusionSearchShortCircuit;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
 }
 
@@ -1930,6 +1931,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    KeyCondition::SparseCheckScratch sparse_check_scratch;
+
     auto check_in_range = [&](const MarkRange & range, BoolMask initial_mask = {})
     {
         auto check_key_condition = [&]() -> BoolMask
@@ -2002,7 +2005,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     sparse_key_types,
                     equal_boundaries_mask,
                     initial_mask,
-                    &index_bounds);
+                    &index_bounds,
+                    sparse_check_scratch);
             }
 
             if (range.end == marks_count)
@@ -2108,6 +2112,49 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
+        /// Shared by the exclusion walk and the short-circuit so that both produce identical ranges.
+        auto append_glued = [min_marks_for_seek](MarkRanges & out, const MarkRange & range)
+        {
+            if (out.empty() || range.begin - out.back().end > min_marks_for_seek)
+                out.push_back(range);
+            else
+                out.back().end = range.end;
+        };
+
+        /// If no key column used by the condition has per-mark values in the loaded index (e.g. the filter
+        /// references only trailing key columns trimmed from the in-memory index), every coordinate the
+        /// condition reads is a constant - its partition-minmax bound or the whole universe - so every mark
+        /// range yields the same `BoolMask`. Evaluate the condition once and include or exclude all ranges
+        /// wholesale instead of walking every mark of the part.
+        if (use_sparse_pk_representation && num_sparse_keys_loaded_in_memory == 0 && !part_offset_condition_useful
+            && !total_offset_condition_useful && !part_with_ranges.ranges.empty())
+        {
+            chassert(key_condition_useful);
+
+            BoolMask result = check_in_range(part_with_ranges.ranges.front(), BoolMask());
+            if (result.can_be_true)
+            {
+                /// Reproduce exactly what the exclusion walk below would build.
+                for (const auto & part_range : part_with_ranges.ranges)
+                    append_glued(res, part_range);
+
+                if (exact_ranges && !result.can_be_false)
+                    for (const auto & part_range : part_with_ranges.ranges)
+                        append_glued(*exact_ranges, part_range);
+            }
+
+            res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
+            ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
+            ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchShortCircuit);
+            LOG_TRACE(
+                log,
+                "Generic exclusion search over index for part {} short-circuited: the condition gives (can_be_true: {}, can_be_false: {}) for every mark range",
+                part_name,
+                result.can_be_true,
+                result.can_be_false);
+            return res;
+        }
+
         size_t steps = 0;
 
         for (const auto & part_range : part_with_ranges.ranges)
@@ -2132,18 +2179,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 if (!result.can_be_false || range.end == range.begin + 1)
                 {
                     /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(range);
-                    else
-                        res.back().end = range.end;
+                    append_glued(res, range);
 
                     if (exact_ranges && !result.can_be_false)
-                    {
-                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                            exact_ranges->push_back(range);
-                        else
-                            exact_ranges->back().end = range.end;
-                    }
+                        append_glued(*exact_ranges, range);
                 }
                 else
                 {
