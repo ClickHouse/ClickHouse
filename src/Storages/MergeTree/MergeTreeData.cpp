@@ -5311,7 +5311,10 @@ void MergeTreeData::changeSettings(
                         disk->createDirectories(relative_data_path);
                         disk->createDirectories(fs::path(relative_data_path) / DETACHED_DIR_NAME);
                     }
-                    /// FIXME how would that be done while reloading configuration???
+                    /// FIXME: current update in config reload is done asynchronously, so we can't guarantee that it will
+                    /// initialize new disks before they are actually used
+                    /// so we can't use disks reliably without some kind of authoritative initialization model
+                    /// but this issue is relatively rare
 
                     has_storage_policy_changed = true;
                 }
