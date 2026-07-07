@@ -55,7 +55,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/ProfileEvents.h>
 
 namespace CurrentMetrics
@@ -3074,10 +3073,10 @@ TEST_F(FileCacheTest, UsageMetricsByUser)
     const FileCacheOriginInfo user_disabled("usage_metrics_user_disabled", 1);
     const FileCacheOriginInfo user_setting("usage_metrics_user_setting", 1);
 
-    auto key_metadata_a = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_a"), user_a, &cache_metadata);
-    auto key_metadata_b = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_b"), user_b, &cache_metadata);
-    auto key_metadata_query = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_query"), user_query, &cache_metadata);
-    auto key_metadata_disabled = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_disabled"), user_disabled, &cache_metadata);
+    auto key_metadata_a = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_a"), std::make_shared<const FileCacheOriginInfo>(user_a), &cache_metadata);
+    auto key_metadata_b = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_b"), std::make_shared<const FileCacheOriginInfo>(user_b), &cache_metadata);
+    auto key_metadata_query = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_query"), std::make_shared<const FileCacheOriginInfo>(user_query), &cache_metadata);
+    auto key_metadata_disabled = std::make_shared<KeyMetadata>(FileCacheKey::fromPath("usage_metrics_key_disabled"), std::make_shared<const FileCacheOriginInfo>(user_disabled), &cache_metadata);
 
     CacheStateGuard state_guard;
     CachePriorityGuard cache_guard;

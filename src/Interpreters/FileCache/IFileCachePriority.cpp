@@ -78,7 +78,7 @@ void IFileCachePriority::notifyUsageChange(const KeyMetadataWeakPtr & key_metada
     /// If the metadata has already expired, skip the update instead of throwing: this is also reached from
     /// noexcept paths such as `LRUIterator::invalidateImpl`, and a missed update is harmless for a gauge.
     if (auto locked = key_metadata.lock())
-        on_usage_change_callback(locked->origin.user_id, size_delta, elements_delta);
+        on_usage_change_callback(locked->origin->user_id, size_delta, elements_delta);
 }
 
 void IFileCachePriority::check(const CacheStateGuard::Lock & lock) const
