@@ -241,7 +241,7 @@ jobs:
 """
 
         TEMPLATE_IF_EXPRESSION_ALWAYS = """
-    if: ${{ always() && needs.config_workflow.outputs.pipeline_status != '' }}\
+    if: ${{ !cancelled() && needs.config_workflow.outputs.pipeline_status != '' }}\
 """
 
     def __init__(self):
