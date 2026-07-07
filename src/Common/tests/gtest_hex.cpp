@@ -1,5 +1,6 @@
 #include <Common/Hex.h>
 #include <base/Decimal_fwd.h>
+#include <base/extended_types.h>
 #include <base/types.h>
 #include <city.h>
 
@@ -38,6 +39,42 @@ TEST(HexTest, HexingIntegral)
     u256 = (u256 << 128) | (UInt128{0x0011223344556677} << 64) | 0x8899aabbccddeeff;
     ASSERT_EQ("102030405060708090a0b0c0d0e0f00000112233445566778899aabbccddeeff", hexer<true>(u256));
     ASSERT_EQ("102030405060708090A0B0C0D0E0F00000112233445566778899AABBCCDDEEFF", hexer<false>(u256));
+}
+
+TEST(HexTest, HexingWideInteger512)
+{
+    using UInt512 = wide::integer<512, unsigned>;
+
+    /// Build a 512-bit value from four 128-bit chunks.
+    UInt128 chunk0 = (UInt128{0x0123456789abcdef} << 64) | 0xfedcba9876543210;
+    UInt128 chunk1 = (UInt128{0x1020304050607080} << 64) | 0x90a0b0c0d0e0f000;
+    UInt128 chunk2 = (UInt128{0x0011223344556677} << 64) | 0x8899aabbccddeeff;
+    UInt128 chunk3 = (UInt128{0xdeadbeefcafebabe} << 64) | 0x1337c0deface1234;
+
+    UInt512 val{chunk0};
+    val = (val << 128) | UInt512{chunk1};
+    val = (val << 128) | UInt512{chunk2};
+    val = (val << 128) | UInt512{chunk3};
+
+    std::string expected_lower =
+        "0123456789abcdeffedcba9876543210"
+        "102030405060708090a0b0c0d0e0f000"
+        "00112233445566778899aabbccddeeff"
+        "deadbeefcafebabe1337c0deface1234";
+
+    std::string expected_upper =
+        "0123456789ABCDEFFEDCBA9876543210"
+        "102030405060708090A0B0C0D0E0F000"
+        "00112233445566778899AABBCCDDEEFF"
+        "DEADBEEFCAFEBABE1337C0DEFACE1234";
+
+    ASSERT_EQ(expected_lower, hexer<true>(val));
+    ASSERT_EQ(expected_upper, hexer<false>(val));
+
+    auto decoded = unhexUInt<UInt512>(expected_lower.data());
+    ASSERT_EQ(val, decoded);
+    decoded = unhexUInt<UInt512>(expected_upper.data());
+    ASSERT_EQ(val, decoded);
 }
 
 TEST(HexTest, Hexing)

@@ -171,12 +171,22 @@ namespace impl
                     dst += 2;
                 }
             }
-            else
+            else if constexpr (num_bytes == 8 || num_bytes == 16 || num_bytes == 32)
             {
                 if constexpr (Upper)
                     DB::encodeHexIntUpper(dst, &uint_, num_bytes);
                 else
                     DB::encodeHexIntLower(dst, &uint_, num_bytes);
+            }
+            else
+            {
+                const auto & table = Upper ? hex_byte_to_char_uppercase_table : hex_byte_to_char_lowercase_table;
+                for (int i = static_cast<int>(num_bytes) - 1; i >= 0; --i)
+                {
+                    UInt8 byte = static_cast<UInt8>(uint_ >> (i * 8));
+                    memcpy(dst, &table[static_cast<size_t>(byte) * 2], 2);
+                    dst += 2;
+                }
             }
         }
 
