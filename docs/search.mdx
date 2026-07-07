@@ -1,0 +1,145 @@
+---
+title: "Search"
+description: "Search the ClickHouse documentation."
+---
+
+{/*
+  Custom search box + Google Programmable Search (CSE) in RESULTS-ONLY mode.
+
+  Rather than embedding the combined CSE widget (which renders its own
+  hard-to-style search box and drives the URL with an ugly `#gsc.tab=0&gsc.q=…`
+  hash), we render OUR OWN input — styled like the sidebar search — and a
+  `searchresults-only` CSE element, then run queries via the CSE API
+  (`element.execute(q)`). This is the approach kubernetes.io/search uses.
+
+  - Loader runs in `parsetags: 'explicit'` mode so nothing auto-renders; we
+    render the results element imperatively into a ref'd container (a node React
+    does not manage, so re-renders/hydration can't wipe Google's injected DOM —
+    the same reason the container is created in an effect, not authored in MDX).
+  - The URL is ours: submitting sets `?q=…` via history, and on load we read
+    `?q=` and run it. No `#gsc.*` hash.
+
+  This page is intentionally omitted from navigation.json (reachable at /search,
+  not listed in the sidebar). Styling lives in _site/styles.css (.ch-cse*, .gsc*).
+*/}
+
+export const DocSearch = () => {
+  const CX = 'e11478a2bdeb94dd1';
+  const GNAME = 'chsearch';
+  const resultsRef = useRef(null);
+  const inputRef = useRef(null);
+  const lastQRef = useRef(undefined); // last query handed to the CSE element
+
+  const execute = (q) => {
+    try {
+      const cse = window.google && window.google.search && window.google.search.cse;
+      const el = cse && window.google.search.cse.element.getElement(GNAME);
+      if (el) el.execute(q);
+    } catch (e) { /* noop */ }
+  };
+
+  // Run a query in place: sync the input, and re-execute only when it actually
+  // changed. Dedup means an unchanged `?q=` (or a repeat submit) never rebuilds
+  // the results — it updates rather than destroys.
+  const runQuery = (q) => {
+    if (inputRef.current && inputRef.current.value !== q) inputRef.current.value = q;
+    if (q === lastQRef.current) return;
+    lastQRef.current = q;
+    if (q) execute(q);
+  };
+
+  const syncFromUrl = () => {
+    runQuery((new URLSearchParams(window.location.search).get('q') || '').trim());
+  };
+
+  useEffect(() => {
+    const wrapper = resultsRef.current;
+    if (!wrapper) return;
+
+    // The results container is stashed on window and re-attached to the current
+    // wrapper on every (re)mount. React remounts this component on things like a
+    // theme toggle; if the CSE-rendered results lived in the discarded wrapper
+    // they'd vanish (the CSE element stays bound to the detached node). Keeping
+    // one persistent node and moving it into the live wrapper preserves them.
+    let node = window.__chCseResultsNode;
+    if (!node) {
+      node = document.createElement('div');
+      node.className = 'ch-cse-results';
+      window.__chCseResultsNode = node;
+    }
+    if (node.parentNode !== wrapper) wrapper.appendChild(node);
+
+    const initial = (new URLSearchParams(window.location.search).get('q') || '').trim();
+    if (initial && inputRef.current) inputRef.current.value = initial;
+
+    const boot = () => {
+      const cse = window.google && window.google.search && window.google.search.cse;
+      if (!cse) return;
+      if (!window.google.search.cse.element.getElement(GNAME)) {
+        window.google.search.cse.element.render({
+          div: node,
+          tag: 'searchresults-only',
+          gname: GNAME,
+          attributes: { enableHistory: false },
+        });
+      }
+      runQuery(initial);
+    };
+
+    // Update (don't destroy) the search when the `?q=` param changes via
+    // back/forward or an in-app link to /search?q=… (a full-reload URL edit
+    // remounts and re-boots instead). runQuery dedups, so this is a no-op when
+    // the query is unchanged.
+    window.addEventListener('popstate', syncFromUrl);
+
+    if (!document.getElementById('google-cse-script')) {
+      // Must be set BEFORE the loader runs.
+      window.__gcse = { parsetags: 'explicit', callback: boot };
+      const s = document.createElement('script');
+      s.id = 'google-cse-script';
+      s.async = true;
+      s.src = 'https://cse.google.com/cse.js?cx=' + CX;
+      document.head.appendChild(s);
+    } else if (window.google && window.google.search && window.google.search.cse) {
+      boot(); // loader already ready (remount / SPA return)
+    } else {
+      // Script tag present but still loading — chain onto its callback.
+      const prev = window.__gcse && window.__gcse.callback;
+      window.__gcse = { parsetags: 'explicit', callback: () => { try { prev && prev(); } catch (e) {} boot(); } };
+    }
+
+    return () => window.removeEventListener('popstate', syncFromUrl);
+  }, []);
+
+  const onSubmit = (e) => {
+    e.preventDefault();
+    const q = (inputRef.current ? inputRef.current.value : '').trim();
+    const qs = q ? ('?q=' + encodeURIComponent(q)) : '';
+    const target = window.location.pathname + qs;
+    // pushState (not replace) so each search is a history entry — back/forward
+    // then moves between searches, handled by the popstate listener above.
+    if (target !== window.location.pathname + window.location.search) {
+      window.history.pushState(null, '', target);
+    }
+    runQuery(q);
+  };
+
+  return (
+    <div className="ch-cse">
+      <form className="ch-cse-form" role="search" onSubmit={onSubmit}>
+        <svg className="ch-cse-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle>
+          <path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <input ref={inputRef} className="ch-cse-input" type="text" name="q" placeholder="Search ClickHouse docs..." aria-label="Search documentation" autoComplete="off" spellCheck={false} />
+        <button type="submit" className="ch-cse-enter" aria-label="Search (press Enter)">
+          <span className="ch-cse-enter-label">Enter</span>
+          <span className="ch-cse-enter-key" aria-hidden="true">↵</span>
+        </button>
+      </form>
+      <div ref={resultsRef} />
+    </div>
+  );
+};
+
+<DocSearch />

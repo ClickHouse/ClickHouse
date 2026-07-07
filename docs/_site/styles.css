@@ -2897,3 +2897,271 @@ a.mobile-nav-tabs-item[href$="/products/clickhouse-private"],
 a.mobile-nav-tabs-item[href$="/products/clickhouse-private/index"] {
     display: none !important;
 }
+
+/* ============================================
+   Google Programmable Search (CSE) — /search
+   ============================================
+
+   The CSE widget (search.mdx) ships Google's own dated CSS: a light-grey
+   `.gsc-control-cse` block, a cramped input with an "Enhanced by Google"
+   watermark, and result links that our aggressive `.prose a` overrides turn
+   into underlined yellow/blue. These `.gsc-*` / `.gs-*` classes exist only on
+   the /search page, so scoping the whole restyle to them (rather than a page
+   selector) is safe. Goal: a clean full-width input + a readable results list
+   in the spirit of kubernetes.io/search, in both light and dark mode. All
+   rules use !important and sit at the end of the file so they win over the
+   prose link rules on equal specificity via source order. */
+
+/* — Container reset: drop Google's grey box, border, padding, and font — */
+.gsc-control-cse {
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    font-family: inherit !important;
+    width: 100% !important;
+}
+
+/* — Our own search box (rendered by search.mdx; CSE runs results-only, so it
+   emits no search box of its own). Styled to match the left-sidebar search
+   #search-bar-entry — 4px pill, gray-400/30 ring, left magnifier, text-sm —
+   at full content width like the kubernetes.io reference. */
+.ch-cse { width: 100% !important; }
+.ch-cse-form {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    height: 2.25rem !important;                    /* h-9, like the sidebar search */
+    padding: 0 0.75rem !important;
+    border: 1px solid rgba(156, 163, 175, 0.3) !important;  /* gray-400/30 ring */
+    border-radius: 4px !important;
+    background: #ffffff !important;
+    transition: border-color 0.12s ease !important;
+}
+.ch-cse-form:hover,
+.ch-cse-form:focus-within {
+    border-color: rgba(75, 85, 99, 0.3) !important;         /* gray-600/30 */
+}
+.ch-cse-icon { flex: 0 0 auto !important; color: #374151 !important; } /* gray-700 */
+.ch-cse-input {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    color: #1f1f1c !important;
+    font-size: 0.875rem !important;                /* text-sm */
+    line-height: 1.5 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.ch-cse-input::placeholder { color: #6b7280 !important; }
+/* "Enter ↵" keycap on the right — signals you press Enter to search, and is
+   itself a clickable submit button. */
+.ch-cse-enter {
+    flex: 0 0 auto !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.3rem !important;
+    height: 1.5rem !important;
+    padding: 0 0.45rem !important;
+    border: 1px solid rgba(156, 163, 175, 0.4) !important;
+    border-radius: 4px !important;
+    background: #f3f4f6 !important;
+    color: #6b7280 !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    line-height: 1 !important;
+    white-space: nowrap !important;
+    cursor: pointer !important;
+    transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease !important;
+}
+.ch-cse-enter:hover {
+    background: #e5e7eb !important;
+    border-color: rgba(75, 85, 99, 0.4) !important;
+    color: #374151 !important;
+}
+.ch-cse-enter-key { font-size: 0.85rem !important; line-height: 1 !important; }
+
+.dark .ch-cse-enter,
+:is(.dark) .ch-cse-enter {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.12) !important;
+    color: rgb(190, 190, 190) !important;
+}
+.dark .ch-cse-enter:hover,
+:is(.dark) .ch-cse-enter:hover {
+    background: rgba(255, 255, 255, 0.14) !important;
+    border-color: rgba(255, 255, 255, 0.2) !important;
+    color: #ffffff !important;
+}
+
+/* Gap between the box and the results block. */
+.ch-cse > div:last-child { margin-top: 1.25rem !important; }
+/* results-only mode emits no visible search box, but hide any Google-rendered
+   input box defensively so it can never flash alongside our own. */
+.ch-cse .gsc-search-box,
+.ch-cse .gsc-input-box { display: none !important; }
+
+/* Dark mode — translucent fill + hairline border, like the dark sidebar search. */
+.dark .ch-cse-form,
+:is(.dark) .ch-cse-form {
+    background: rgba(255, 255, 255, 0.06) !important;
+    border-color: rgba(255, 255, 255, 0.07) !important;
+}
+.dark .ch-cse-form:hover,
+.dark .ch-cse-form:focus-within,
+:is(.dark) .ch-cse-form:hover,
+:is(.dark) .ch-cse-form:focus-within {
+    border-color: rgba(255, 255, 255, 0.14) !important;
+}
+.dark .ch-cse-icon, :is(.dark) .ch-cse-icon { color: rgb(206, 206, 206) !important; }
+.dark .ch-cse-input, :is(.dark) .ch-cse-input { color: rgb(206, 206, 206) !important; }
+.dark .ch-cse-input::placeholder,
+:is(.dark) .ch-cse-input::placeholder { color: #9ca3af !important; }
+
+/* — Results toolbar ("About N results", tabs) — */
+.gsc-above-wrapper-area {
+    border-bottom: 1px solid #e5e7eb !important;
+    padding: 0.5rem 0 !important;
+}
+.gsc-result-info {
+    color: #6b7280 !important;
+    padding-left: 0 !important;
+}
+.gsc-tabsArea { border-color: #e5e7eb !important; }
+
+/* — Results list — */
+.gsc-results-wrapper-overlay,
+.gsc-results,
+.gsc-webResult .gsc-result {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+.gsc-webResult .gsc-result {
+    padding: 0.9rem 0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+}
+.gsc-table-result { font-family: inherit !important; }
+
+/* Result title link (beats the .prose a overrides). */
+.gs-webResult .gs-title,
+.gs-webResult a.gs-title,
+.gs-webResult a.gs-title b,
+.gsc-webResult .gs-title a.gs-title {
+    color: #135be6 !important;
+    text-decoration: none !important;
+    font-weight: 600 !important;
+    font-size: 1.05rem !important;
+    height: auto !important;
+}
+.gs-webResult a.gs-title:hover,
+.gsc-webResult .gs-title a.gs-title:hover {
+    text-decoration: underline !important;
+    color: #135be6 !important;
+}
+
+/* Breadcrumb / visible URL — green like the reference. */
+.gsc-url-top,
+.gs-webResult .gs-visibleUrl,
+.gs-webResult .gs-visibleUrl-long,
+.gs-webResult .gs-visibleUrl-short,
+.gs-webResult .gs-visibleUrl-breadcrumb {
+    color: #0b8043 !important;
+    font-size: 0.85rem !important;
+}
+
+/* Snippet body text. */
+.gs-webResult .gs-snippet,
+.gs-snippet,
+.gs-webResult .gs-snippet b {
+    color: #374151 !important;
+    font-size: 0.9rem !important;
+    line-height: 1.5 !important;
+}
+
+/* — Pagination — */
+.gsc-cursor-box {
+    text-align: center !important;
+    margin: 1.5rem 0 !important;
+}
+.gsc-cursor-page {
+    color: #135be6 !important;
+    padding: 0 0.4rem !important;
+    background: transparent !important;
+    text-decoration: none !important;
+}
+.gsc-cursor-current-page {
+    color: #1f1f1c !important;
+    font-weight: 700 !important;
+}
+
+/* — Branding / find-more ("Search 'x' on Google") — keep it inline: Google
+   ships the magnifier svg as display:block, which drops it onto its own line
+   above the text, so force it inline and vertically centred beside the text. */
+.gcsc-find-more-on-google {
+    color: #135be6 !important;
+    text-align: center !important;
+}
+.gcsc-find-more-on-google-magnifier {
+    display: inline-block !important;
+    vertical-align: middle !important;
+    margin-right: 0.35rem !important;
+    fill: #135be6 !important;
+}
+.gcsc-find-more-on-google-text,
+.gcsc-find-more-on-google-query { vertical-align: middle !important; }
+
+/* — Hide ads — */
+.gsc-adBlock,
+.gsc-webResult.gsc-result.gsc-ad,
+.gsc-results .gsc-cursor-box.gs-bidi-start-align.gsc-adBlock {
+    display: none !important;
+}
+
+/* ============================================
+   CSE results — Dark mode
+   ============================================ */
+.dark .gsc-above-wrapper-area,
+:is(.dark) .gsc-above-wrapper-area { border-bottom-color: rgba(255, 255, 255, 0.1) !important; }
+.dark .gsc-result-info,
+:is(.dark) .gsc-result-info { color: #a1a1aa !important; }
+
+.dark .gsc-webResult .gsc-result,
+:is(.dark) .gsc-webResult .gsc-result { border-bottom-color: rgba(255, 255, 255, 0.08) !important; }
+
+/* Titles: ClickHouse yellow (matches docs dark links). */
+.dark .gs-webResult .gs-title,
+.dark .gs-webResult a.gs-title,
+.dark .gs-webResult a.gs-title b,
+.dark .gsc-webResult .gs-title a.gs-title,
+:is(.dark) .gs-webResult a.gs-title,
+:is(.dark) .gsc-webResult .gs-title a.gs-title {
+    color: #FAFF69 !important;
+}
+.dark .gs-webResult a.gs-title:hover,
+:is(.dark) .gsc-webResult .gs-title a.gs-title:hover { color: #FAFF69 !important; }
+
+.dark .gsc-url-top,
+.dark .gs-webResult .gs-visibleUrl,
+.dark .gs-webResult .gs-visibleUrl-long,
+.dark .gs-webResult .gs-visibleUrl-short,
+.dark .gs-webResult .gs-visibleUrl-breadcrumb,
+:is(.dark) .gs-webResult .gs-visibleUrl,
+:is(.dark) .gs-webResult .gs-visibleUrl-long {
+    color: #57bd8a !important;
+}
+.dark .gs-webResult .gs-snippet,
+.dark .gs-snippet,
+.dark .gs-webResult .gs-snippet b,
+:is(.dark) .gs-webResult .gs-snippet,
+:is(.dark) .gs-snippet { color: #d1d5db !important; }
+
+.dark .gsc-cursor-page,
+:is(.dark) .gsc-cursor-page { color: #FAFF69 !important; }
+.dark .gsc-cursor-current-page,
+:is(.dark) .gsc-cursor-current-page { color: #ffffff !important; }
+.dark .gcsc-find-more-on-google,
+:is(.dark) .gcsc-find-more-on-google { color: #FAFF69 !important; }
+.dark .gcsc-find-more-on-google-magnifier,
+:is(.dark) .gcsc-find-more-on-google-magnifier { fill: #FAFF69 !important; }
