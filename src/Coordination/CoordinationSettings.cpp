@@ -68,7 +68,7 @@ namespace ErrorCodes
     DECLARE(UInt64, raft_limits_response_limit, 20, "Total wait time for a response is calculated by multiplying response_limit with heart_beat_interval_ms", 0) \
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
+    DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Deprecated, has no effect. The latest logs cache is bounded by latest_logs_cache_size_threshold alone.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \

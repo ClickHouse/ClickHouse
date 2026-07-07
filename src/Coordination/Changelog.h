@@ -196,7 +196,6 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
-    uint64_t latest_logs_cache_entry_count_threshold = 0;
 };
 
 struct FlushSettings
@@ -380,7 +379,7 @@ private:
 
     struct InMemoryCache
     {
-        explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
+        explicit InMemoryCache(size_t size_threshold_);
 
         void addEntry(uint64_t index, size_t size, LogEntryPtr log_entry);
 
@@ -409,7 +408,6 @@ private:
         size_t max_index_in_cache = 0;
 
         const size_t size_threshold;
-        const size_t count_threshold;
     };
 
     InMemoryCache latest_logs_cache;
