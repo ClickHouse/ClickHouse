@@ -599,8 +599,12 @@ bool ReplicatedMergeTreeSink::writeExistingPart(MergeTreeData::MutableDataPartPt
         }
     };
 
-    bool keep_non_zero_level = storage.merging_params.mode != MergeTreeData::MergingParams::Ordinary;
-    part->info.level = (keep_non_zero_level && part->info.level > 0) ? 1 : 0;
+    /// A part attached from detached/ (or restored from backup) has unknown
+    /// provenance: for a non-Ordinary engine a level > 0 does not guarantee
+    /// unique/collapsed ORDER BY keys, yet FINAL and the PartsSplitter optimization
+    /// treat a lone level > 0 part as already merged and skip the row-collapsing
+    /// transform. Reset to 0 so the destination re-merges it. See issue #109674.
+    part->info.level = 0;
     part->info.mutation = 0;
     part->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
     std::vector<DeduplicationHash> deduplication_hashes;
