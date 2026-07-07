@@ -1,0 +1,139 @@
+---
+slug: /use-cases/observability/clickstack/deployment/all-in-one
+title: 'Tudo em um'
+description: 'Implantação do ClickStack Open Source com Tudo em um - a stack de observabilidade da ClickHouse'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source ', 'observabilidade', 'tudo-em-um', 'implantação']
+---
+
+import JSONSupport from '/snippets/pt-BR/_json_support.mdx';
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Esta imagem Docker completa reúne todos os componentes do ClickStack Open Source:
+
+* **ClickHouse**
+* **HyperDX**
+* **collector do OpenTelemetry (OTel)** (expondo OTLP nas portas `4317` e `4318`)
+* **MongoDB** (para o estado persistente da aplicação)
+
+Esta opção inclui autenticação, permitindo a persistência de dashboards, alertas e pesquisas salvas entre sessões e usuários.
+
+<div id="suitable-for">
+  ### Indicado para
+</div>
+
+* Demos
+* Testes locais do stack completo
+
+<div id="deployment-steps">
+  ## Etapas de implantação
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Implantação com Docker
+
+    O comando a seguir executa um OpenTelemetry collector (nas portas 4317 e 4318) e a interface do HyperDX (na porta 8080).
+
+    ```shell
+    docker run -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Info>
+      **Atualização do nome da imagem**
+
+      As imagens do ClickStack agora são publicadas como `clickhouse/clickstack-*` (anteriormente `docker.hyperdx.io/hyperdx/*`).
+    </Info>
+  </Step>
+
+  <Step>
+    ### Acesse a interface do HyperDX
+
+    Acesse [http://localhost:8080](http://localhost:8080) para abrir a interface do HyperDX.
+
+    Crie um usuário, informando um nome de usuário e uma senha que atendam aos requisitos.
+
+    Ao clicar em `Create`, serão criadas fontes de dados para a instância integrada do ClickHouse.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Interface do HyperDX" size="lg" />
+
+    Para ver um exemplo de uso de outra instância do ClickHouse, consulte [&quot;Usando ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+  </Step>
+
+  <Step>
+    ### Ingestão de dados
+
+    Para ingerir dados, consulte [&quot;Ingerindo dados&quot;](/pt-BR/clickstack/ingesting-data/index).
+  </Step>
+</Steps>
+
+<div id="persisting-data-and-settings">
+  ## Persistência de dados e configurações
+</div>
+
+Para manter os dados e as configurações entre reinicializações do contêiner, você pode modificar o comando docker acima para montar os caminhos `/data/db`, `/var/lib/clickhouse` e `/var/log/clickhouse-server`. Por exemplo:
+
+```shell
+# garantir que os diretórios existam
+mkdir -p .volumes/db .volumes/ch_data .volumes/ch_logs
+# modificar o comando para montar os caminhos
+docker run \
+  -p 8080:8080 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -v "$(pwd)/.volumes/db:/data/db" \
+  -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+  -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+  clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="deploying-to-production">
+  ## Implantação em produção
+</div>
+
+Esta opção não deve ser implantada em produção pelos seguintes motivos:
+
+* **Armazenamento não persistente:** Todos os dados são armazenados usando o sistema de arquivos overlay nativo do Docker. Essa configuração não oferece bom desempenho em escala, e os dados serão perdidos se o contêiner for removido ou reiniciado, a menos que os usuários [montem os caminhos de arquivo necessários](#persisting-data-and-settings).
+* **Falta de isolamento entre componentes:** Todos os componentes são executados em um único contêiner Docker. Isso impede o escalonamento e o monitoramento independentes e aplica globalmente quaisquer limites de `cgroup` a todos os processos. Como resultado, os componentes podem competir por CPU e memória.
+
+<div id="customizing-ports-deploy">
+  ## Personalizando portas
+</div>
+
+Se você precisar personalizar as portas do aplicativo (8080) ou da API (8000) em que o HyperDX Local é executado, será necessário modificar o comando `docker run` para encaminhar as portas corretas e definir algumas variáveis de ambiente.
+
+A personalização das portas do OpenTelemetry pode ser feita simplesmente alterando as flags de encaminhamento de porta. Por exemplo, substituindo `-p 4318:4318` por `-p 4999:4318` para mudar a porta HTTP do OpenTelemetry para 4999.
+
+```shell
+docker run -p 8080:8080 -p 4317:4317 -p 4999:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+<div id="using-clickhouse-cloud">
+  ## Usando ClickHouse Cloud
+</div>
+
+Esta distribuição pode ser usada com o ClickHouse Cloud. Embora a instância local do ClickHouse ainda seja implantada (e ignorada), o OTel collector pode ser configurado para usar uma instância do ClickHouse Cloud definindo as variáveis de ambiente `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER` e `CLICKHOUSE_PASSWORD`.
+
+Por exemplo:
+
+```shell
+export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+
+docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+```
+
+O `CLICKHOUSE_ENDPOINT` deve ser o endpoint HTTPS do ClickHouse Cloud, incluindo a porta `8443`, por exemplo: `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+Após se conectar à interface do HyperDX, navegue até [`Team Settings`](http://localhost:8080/team) e crie uma conexão com seu serviço do ClickHouse Cloud, seguida pelos sources necessários.
+
+<div id="configuring-collector">
+  ## Configurando o OpenTelemetry collector
+</div>
+
+A configuração do OTel collector pode ser alterada, se necessário. Consulte [&quot;Modificando a configuração&quot;](/pt-BR/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
+
+<JSONSupport />

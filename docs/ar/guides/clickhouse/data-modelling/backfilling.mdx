@@ -1,0 +1,720 @@
+---
+slug: /data-modeling/backfilling
+title: 'استكمال البيانات التاريخية'
+description: 'كيفية استخدام استكمال البيانات التاريخية لمجموعات البيانات الكبيرة في ClickHouse'
+keywords: ['العروض المادية', 'استكمال البيانات التاريخية', 'إدراج البيانات', 'تحميل بيانات عالي الاعتمادية']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+سواء كنت جديدًا على ClickHouse أو مسؤولًا عن عملية نشر قائمة، فستحتاج حتمًا إلى تعبئة الجداول ببيانات تاريخية بأثر رجعي. وفي بعض الحالات يكون ذلك بسيطًا نسبيًا، لكنه قد يصبح أكثر تعقيدًا عندما يلزم ملء العروض المادية. يشرح هذا الدليل بعض الآليات اللازمة لهذه المهمة، والتي يمكنك تطبيقها على حالة الاستخدام الخاصة بك.
+
+<Note>
+  يفترض هذا الدليل أن المستخدمين على دراية مسبقًا بمفهوم [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) و[تحميل البيانات باستخدام دوال الجداول مثل S3 وGCS](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse). كما نوصي المستخدمين بقراءة دليلنا حول [تحسين أداء الإدراج من تخزين الكائنات](/ar/integrations/connectors/data-ingestion/AWS/performance)، إذ يمكن تطبيق الإرشادات الواردة فيه على عمليات الإدراج المذكورة في هذا الدليل.
+</Note>
+
+<div id="example-dataset">
+  ## مجموعة بيانات مثال
+</div>
+
+نستخدم في هذا الدليل مجموعة بيانات من PyPI. ويمثّل كل صف في مجموعة البيانات هذه عملية تنزيل لحزمة بايثون باستخدام أداة مثل `pip`.
+
+على سبيل المثال، تغطي المجموعة الفرعية يومًا واحدًا فقط — `2024-12-17` — وهي متاحة للعامة على `https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/`. ويمكنك إجراء استعلام باستخدام:
+
+```sql
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 billion
+└────────────┘
+
+1 row in set. Elapsed: 32.726 sec. Processed 2.04 billion rows, 170.05 KB (62.34 million rows/s., 5.20 KB/s.)
+Peak memory usage: 239.50 MiB.
+```
+
+تحتوي مجموعة البيانات الكاملة لهذه الحاوية على أكثر من 320 غيغابايت من ملفات Parquet. في الأمثلة أدناه، نستهدف عمدًا مجموعات فرعية باستخدام أنماط glob.
+
+نفترض أن المستخدم يستهلك تدفقًا من هذه البيانات، على سبيل المثال من Kafka أو التخزين الكائني، وذلك للبيانات اللاحقة لهذا التاريخ. يوضَّح مخطط هذه البيانات أدناه:
+
+```sql
+DESCRIBE TABLE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/*.parquet')
+FORMAT PrettyCompactNoEscapesMonoBlock
+SETTINGS describe_compact_output = 1
+```
+
+```response
+┌─name───────────────┬─type────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ timestamp │ Nullable(DateTime64(6))                                                                                                                 │
+│ country_code       │ Nullable(String)                                                                                                                        │
+│ url │ Nullable(String)                                                                                                                        │
+│ project            │ Nullable(String)                                                                                                                        │
+│ file │ Tuple(filename Nullable(String), project Nullable(String), version Nullable(String), type Nullable(String))                             │
+│ installer          │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ python             │ Nullable(String)                                                                                                                        │
+│ implementation     │ Tuple(name Nullable(String), version Nullable(String))                                                                                  │
+│ distro             │ Tuple(name Nullable(String), version Nullable(String), id Nullable(String), libc Tuple(lib Nullable(String), version Nullable(String))) │
+│ system │ Tuple(name Nullable(String), release Nullable(String))                                                                                  │
+│ cpu                │ Nullable(String)                                                                                                                        │
+│ openssl_version    │ Nullable(String)                                                                                                                        │
+│ setuptools_version │ Nullable(String)                                                                                                                        │
+│ rustc_version      │ Nullable(String)                                                                                                                        │
+│ tls_protocol       │ Nullable(String)                                                                                                                        │
+│ tls_cipher         │ Nullable(String)                                                                                                                        │
+└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  تتوفر مجموعة بيانات PyPI الكاملة، التي تضم أكثر من 1 تريليون صف، في بيئة العرض التوضيحي العامة لدينا [clickpy.clickhouse.com](https://clickpy.clickhouse.com). ولمزيد من التفاصيل حول مجموعة البيانات هذه، بما في ذلك كيفية استفادة العرض التوضيحي من العروض المادية لتحسين الأداء وكيفية تعبئة البيانات يوميًا، راجع [هنا](https://github.com/ClickHouse/clickpy).
+</Note>
+
+<div id="backfilling-scenarios">
+  ## سيناريوهات استكمال البيانات التاريخية
+</div>
+
+تكون الحاجة إلى استكمال البيانات التاريخية مطلوبة عادةً عند استهلاك تدفق بيانات بدءًا من نقطة زمنية معينة. وتُدرَج هذه البيانات في جداول ClickHouse باستخدام [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view)، التي تُفعَّل على مستوى الكتل عند إدراجها. وقد تقوم هذه العروض بتحويل البيانات قبل الإدراج أو بحساب التجميعات وإرسال النتائج إلى الجداول الهدف لاستخدامها لاحقًا في التطبيقات التابعة.
+
+سنحاول تغطية السيناريوهات التالية:
+
+1. **استكمال البيانات التاريخية مع وجود استيعاب بيانات قائم** - يجري تحميل بيانات جديدة، وتحتاج البيانات التاريخية إلى الاستكمال. وقد جرى تحديد هذه البيانات التاريخية.
+2. **إضافة عروض مادية إلى الجداول الحالية** - يلزم إضافة عروض مادية جديدة إلى إعداد جرى فيه بالفعل ملء البيانات التاريخية، وكانت البيانات تتدفق فيه بالفعل.
+
+نفترض أن استكمال البيانات التاريخية سيتم من تخزين الكائنات. وفي جميع الحالات، نهدف إلى تجنب إيقاف إدراج البيانات مؤقتًا.
+
+نوصي باستكمال البيانات التاريخية من تخزين الكائنات. وينبغي تصدير البيانات إلى Parquet حيثما أمكن لتحقيق أفضل أداء للقراءة والضغط (تقليل نقل البيانات عبر الشبكة). ويُفضَّل عادةً حجم ملف يقارب 150MB، لكن ClickHouse يدعم أكثر من [70 تنسيقًا للملفات](/ar/reference/formats/index) وهو قادر على التعامل مع ملفات بجميع الأحجام.
+
+<div id="using-duplicate-tables-and-views">
+  ## استخدام الجداول المكررة وطرق العرض
+</div>
+
+في جميع السيناريوهات، نعتمد على مفهوم &quot;الجداول والعروض المكررة&quot;. تمثّل هذه الجداول والعروض نسخًا من تلك المستخدمة لبيانات البث المباشر، وتتيح تنفيذ عملية الملء بصورة معزولة مع توفير وسيلة سهلة للاسترداد في حال وقوع أي فشل. على سبيل المثال، لدينا جدول `pypi` الرئيسي والعرض المُجسَّد التاليان، اللذان يحسبان عدد التنزيلات لكل مشروع بايثون:
+
+```sql
+CREATE TABLE pypi
+(
+    `timestamp` DateTime,
+    `country_code` LowCardinality(String),
+    `project` String,
+    `type` LowCardinality(String),
+    `installer` LowCardinality(String),
+    `python_minor` LowCardinality(String),
+    `system` LowCardinality(String),
+    `on` String
+)
+ENGINE = MergeTree
+ORDER BY (project, timestamp)
+
+CREATE TABLE pypi_downloads
+(
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY project
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv TO pypi_downloads
+AS SELECT
+ project,
+    count() AS count
+FROM pypi
+GROUP BY project
+```
+
+نملأ الجدول الرئيسي والعرض المرتبط به بجزء من البيانات:
+
+```sql
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{000..100}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 15.702 sec. Processed 41.23 million rows, 3.94 GB (2.63 million rows/s., 251.01 MB/s.)
+Peak memory usage: 977.49 MiB.
+```
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 20612750 │ -- 20.61 million
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   20612750 │ -- 20.61 million
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 96.15 thousand rows, 769.23 KB (16.53 million rows/s., 132.26 MB/s.)
+Peak memory usage: 682.38 KiB.
+```
+
+لنفترض أننا نريد تحميل مجموعة فرعية أخرى `{101..200}`. وبينما يمكننا الإدراج مباشرةً في `pypi`، يمكننا تنفيذ عملية الملء بالبيانات التاريخية هذه بصورة معزولة عبر إنشاء جداول مكررة.
+
+في حال فشل عملية الإدراج التاريخي، لن تتأثر جداولنا الرئيسية، ويمكننا ببساطة [تطبيق TRUNCATE](/ar/concepts/features/operations/delete/truncate) على الجداول المكررة وإعادة المحاولة.
+
+لإنشاء نسخ جديدة من طرق العرض هذه، يمكننا استخدام جملة `CREATE TABLE AS` مع اللاحقة `_v2`:
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY project
+```
+
+نملأه بالمجموعة الفرعية الثانية ذات الحجم المماثل تقريبًا، ونتحقق من نجاح التحميل.
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 17.545 sec. Processed 40.80 million rows, 3.90 GB (2.33 million rows/s., 222.29 MB/s.)
+Peak memory usage: 991.50 MiB.
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+```response
+┌──count()─┐
+│ 20400020 │ -- 20.40 million
+└──────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads_v2
+```
+
+```response
+┌─sum(count)─┐
+│   20400020 │ -- 20.40 million
+└────────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 95.49 thousand rows, 763.90 KB (14.81 million rows/s., 118.45 MB/s.)
+Peak memory usage: 688.77 KiB.
+```
+
+إذا واجهنا عطلًا في أي مرحلة أثناء عملية التحميل الثانية هذه، فيمكننا ببساطة [truncate](/ar/concepts/features/operations/delete/truncate) جدولَي `pypi_v2` و`pypi_downloads_v2` ثم إعادة تحميل البيانات.
+
+بعد اكتمال تحميل البيانات، يمكننا نقل البيانات من الجداول المنسوخة مؤقتًا إلى الجداول الرئيسية باستخدام عبارة [`ALTER TABLE MOVE PARTITION`](/ar/reference/statements/alter/partition#move-partition-to-table).
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+```
+
+```response
+0 rows in set. Elapsed: 1.401 sec.
+```
+
+```sql
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+```response
+0 rows in set. Elapsed: 0.389 sec.
+```
+
+<Info>
+  **أسماء الأقسام**
+
+  يستخدم استدعاء `MOVE PARTITION` أعلاه اسم القسم `()`. ويمثّل هذا القسم الوحيد لهذا الجدول (غير المُقسَّم). أما بالنسبة إلى الجداول المُقسَّمة، فستحتاج إلى تنفيذ عدة استدعاءات `MOVE PARTITION` — استدعاء واحد لكل قسم. ويمكن معرفة أسماء الأقسام الحالية من جدول [`system.parts`](/ar/reference/system-tables/parts)، على سبيل المثال: `SELECT DISTINCT partition FROM system.parts WHERE (table = 'pypi_v2')`.
+</Info>
+
+يمكننا الآن التأكد من أن `pypi` و`pypi_downloads` يحتويان على البيانات كاملةً. ويمكن حذف `pypi_downloads_v2` و`pypi_v2` بأمان.
+
+```sql
+SELECT count()
+FROM pypi
+```
+
+```response
+┌──count()─┐
+│ 41012770 │ -- 41.01 million
+└──────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+SELECT sum(count)
+FROM pypi_downloads
+```
+
+```response
+┌─sum(count)─┐
+│   41012770 │ -- 41.01 million
+└────────────┘
+
+1 row in set. Elapsed: 0.007 sec. Processed 191.64 thousand rows, 1.53 MB (27.34 million rows/s., 218.74 MB/s.)
+```
+
+```sql
+SELECT count()
+FROM pypi_v2
+```
+
+ومن المهم أن تكون عملية `MOVE PARTITION` خفيفة الوزن (باستغلال الروابط الصلبة) وذرّية في الوقت نفسه، أي إنها إما أن تفشل أو تنجح من دون أي حالة وسيطة.
+
+نستفيد من هذه العملية كثيرًا في سيناريوهات التحميل الاستدراكي أدناه.
+
+لاحظ أن هذه العملية تتطلب من المستخدمين اختيار حجم كل عملية إدراج.
+
+إن عمليات الإدراج الأكبر، أي عددًا أكبر من الصفوف، تعني الحاجة إلى عدد أقل من عمليات `MOVE PARTITION`. ومع ذلك، يجب موازنة ذلك مع كلفة الاسترداد في حال فشل الإدراج، مثلًا بسبب انقطاع الشبكة. ويمكنك استكمال هذه العملية بتجميع الملفات على دفعات لتقليل المخاطر. ويمكن تنفيذ ذلك إما باستخدام استعلامات النطاق مثل `WHERE timestamp BETWEEN 2024-12-17 09:00:00 AND 2024-12-17 10:00:00` أو أنماط glob. على سبيل المثال،
+
+```sql
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{101..200}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{201..300}.parquet')
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-000000000{301..400}.parquet')
+--continued to all files loaded OR MOVE PARTITION call is performed
+```
+
+<Note>
+  يستخدم ClickPipes هذا النهج عند تحميل البيانات من تخزين الكائنات، إذ ينشئ تلقائيًا جداول مكررة للجدول الهدف ولعروضه المادية، ما يجنّب المستخدم الحاجة إلى تنفيذ الخطوات المذكورة أعلاه. ومع استخدام عدة خيوط عاملة، يتعامل كل منها مع مجموعات فرعية مختلفة (عبر glob patterns) وتمتلك جداولها المكررة الخاصة بها، يمكن تحميل البيانات بسرعة مع ضمانات exactly-once semantics. ويمكن للمهتمين الاطلاع على مزيد من التفاصيل [في هذه المدوّنة](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part3).
+</Note>
+
+<div id="scenario-1-backfilling-data-with-existing-data-ingestion">
+  ## السيناريو 1: استكمال البيانات التاريخية مع استمرار إدخال البيانات
+</div>
+
+في هذا السيناريو، نفترض أن البيانات المطلوب استكمالها تاريخيًا ليست موجودة في bucket معزول، ولذلك يلزم تطبيق التصفية. تكون البيانات قيد الإدراج بالفعل، ويمكن تحديد طابع زمني أو عمود ذي قيم متزايدة باستمرار يلزم استكمال البيانات التاريخية انطلاقًا منه.
+
+تتبع هذه العملية الخطوات التالية:
+
+1. حدِّد نقطة التحقق — إما طابعًا زمنيًا أو قيمة عمود يلزم استعادة البيانات التاريخية بدءًا منها.
+2. أنشئ نسخًا مكررة من الجدول الرئيسي والجداول الهدف الخاصة بالعروض المادية.
+3. أنشئ نسخًا من أي عروض مادية تشير إلى الجداول الهدف التي أُنشئت في الخطوة (2).
+4. أدرج البيانات في الجدول الرئيسي المكرر الذي أنشأناه في الخطوة (2).
+5. انقل جميع الأقسام من الجداول المكررة إلى نظيراتها الأصلية. ثم احذف الجداول المكررة.
+
+على سبيل المثال، في بيانات PyPI الخاصة بنا، لنفترض أن لدينا بيانات محمّلة. يمكننا تحديد الحد الأدنى للطابع الزمني، وبالتالي &quot;نقطة التحقق&quot; الخاصة بنا.
+
+```sql
+SELECT min(timestamp)
+FROM pypi
+```
+
+```response
+┌──────min(timestamp)─┐
+│ 2024-12-17 09:00:00 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.163 sec. Processed 1.34 billion rows, 5.37 GB (8.24 billion rows/s., 32.96 GB/s.)
+Peak memory usage: 227.84 MiB.
+```
+
+مما سبق، نعلم أننا بحاجة إلى تحميل البيانات السابقة للتاريخ `2024-12-17 09:00:00`. وباستخدام العملية نفسها المذكورة سابقًا، ننشئ جداول مكررة وطرق عرض، ونحمّل المجموعة الفرعية باستخدام عامل تصفية يعتمد على الطابع الزمني.
+
+```sql
+CREATE TABLE pypi_v2 AS pypi
+
+CREATE TABLE pypi_downloads_v2 AS pypi_downloads
+
+CREATE MATERIALIZED VIEW pypi_downloads_mv_v2 TO pypi_downloads_v2
+AS SELECT project, count() AS count
+FROM pypi_v2
+GROUP BY project
+
+INSERT INTO pypi_v2 SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/2024-12-17/1734393600-*.parquet')
+WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 500.152 sec. Processed 2.74 billion rows, 364.40 GB (5.47 million rows/s., 728.59 MB/s.)
+```
+
+<Note>
+  يمكن أن تكون التصفية حسب أعمدة الطابع الزمني في Parquet فعّالة للغاية. لن يقرأ ClickHouse سوى عمود الطابع الزمني لتحديد نطاقات البيانات الكاملة التي ينبغي تحميلها، مما يقلّل حركة مرور الشبكة إلى الحد الأدنى. ويمكن أيضًا لمحرك الاستعلام في ClickHouse الاستفادة من فهارس Parquet، مثل min-max.
+</Note>
+
+بمجرد اكتمال عملية الإدراج هذه، يمكننا نقل الأقسام المرتبطة.
+
+```sql
+ALTER TABLE pypi_v2 MOVE PARTITION () TO pypi
+
+ALTER TABLE pypi_downloads_v2 MOVE PARTITION () TO pypi_downloads
+```
+
+إذا كانت البيانات التاريخية موجودة في bucket معزول، فلن تكون هناك حاجة إلى عامل تصفية الوقت المذكور أعلاه. وإذا لم يتوفر عمود زمني أو عمود ذو قيم متزايدة باستمرار، فاعزل بياناتك التاريخية.
+
+<Info>
+  **استخدم ClickPipes في ClickHouse Cloud فقط**
+
+  إذا كنت تستخدم ClickHouse Cloud، فمن الأفضل استخدام ClickPipes لاستعادة النسخ الاحتياطية التاريخية إذا كان يمكن عزل البيانات في bucket خاص بها (ولا تكون هناك حاجة إلى عامل تصفية). وإضافةً إلى تقليل زمن التحميل عبر موازاة التحميل باستخدام عدة عمّال، تؤتمت ClickPipes العملية المذكورة أعلاه وتُنشئ جداول مكررة لكل من الجدول الرئيسي والعروض المادية.
+</Info>
+
+<div id="scenario-2-adding-materialized-views-to-existing-tables">
+  ## السيناريو 2: إضافة العروض المادية إلى الجداول الحالية
+</div>
+
+ليس من غير المعتاد أن تحتاج إلى إضافة عروض مادية جديدة إلى إعداد يحتوي بالفعل على كمية كبيرة من البيانات، بينما لا تزال البيانات تُدرج فيه. ويكون وجود `timestamp` أو عمود يزداد بشكل رتيب، بحيث يمكن استخدامه لتحديد نقطة في التدفق، مفيدًا هنا لأنه يجنّب إيقاف إدخال البيانات مؤقتًا. في الأمثلة أدناه، نفترض توفّر هاتين الحالتين، مع تفضيل الأساليب التي تتجنب الإيقاف المؤقت أثناء الإدخال.
+
+<Info>
+  **تجنب POPULATE**
+
+  لا نوصي باستخدام الأمر [`POPULATE`](/ar/reference/statements/create/view#materialized-view) لإجراء التحميل الاستدراكي للعروض المادية إلا مع مجموعات البيانات الصغيرة التي يكون فيها إدخال البيانات متوقفًا مؤقتًا. فقد يفوّت هذا الإجراء صفوفًا أُدرجت في الجدول المصدر، لأن العرض المادي يُنشأ بعد اكتمال `hash` الخاص بعملية populate. إضافةً إلى ذلك، يُنفَّذ هذا الـ populate على جميع البيانات، ويكون عرضةً للانقطاعات أو لحدود الذاكرة عند التعامل مع مجموعات بيانات كبيرة.
+</Info>
+
+<div id="timestamp-or-monotonically-increasing-column-available">
+  ### توفّر طابع زمني أو عمود متزايد رتيبًا
+</div>
+
+في هذه الحالة، نوصي بأن يتضمن العرض المادي الجديد عامل تصفية يقيّد الصفوف لتشمل فقط تلك التي تكون أكبر من وقت اعتباطي في المستقبل. ويمكن بعد ذلك إجراء الاستكمال التاريخي للعرض المادي انطلاقًا من هذا التاريخ باستخدام بيانات تاريخية من الجدول الرئيسي. ويعتمد أسلوب الاستكمال التاريخي على حجم البيانات وتعقيد الاستعلام المرتبط.
+
+يتضمن أبسط نهج لدينا الخطوات التالية:
+
+1. أنشئ العرض المادي مع عامل تصفية لا يأخذ في الاعتبار إلا الصفوف الأكبر من وقت اعتباطي في المستقبل القريب.
+2. شغّل استعلام `INSERT INTO SELECT` يُدرج البيانات في الجدول الهدف للعرض المادي، مع القراءة من الجدول المصدر باستخدام استعلام تجميع المشاهدات.
+
+يمكن تحسين ذلك أكثر لاستهداف مجموعات فرعية من البيانات في الخطوة (2) و/أو استخدام جدول هدف مكرّر للعرض المادي (مع إرفاق الأقسام بالجدول الأصلي بمجرد اكتمال عملية الإدراج) لتسهيل الاسترداد بعد الفشل.
+
+تأمل العرض المادي التالي، الذي يحسب أكثر المشاريع شيوعًا لكل ساعة.
+
+```sql
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+```
+
+في حين يمكننا إضافة الجدول الهدف، فإننا قبل إضافة العرض المتجسد نعدّل عبارة `SELECT` الخاصة به لتتضمن عامل تصفية لا يأخذ في الحسبان إلا الصفوف التي يتجاوز وقتها وقتًا اعتباطيًا في المستقبل القريب — وفي هذه الحالة نفترض أن `2024-12-17 09:00:00` يوافق وقتًا بعد بضع دقائق من الآن.
+
+```sql
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) AS hour,
+ project, count() AS count
+FROM pypi WHERE timestamp >= '2024-12-17 09:00:00'
+GROUP BY hour, project
+```
+
+بمجرد إضافة هذا العرض، يمكننا إجراء تعبئة استعادية لكل بيانات العرض المادي السابقة لهذه البيانات.
+
+وأبسط طريقة لذلك هي تشغيل الاستعلام الخاص بالعرض المادي على الجدول الرئيسي مع عامل تصفية يتجاهل البيانات المضافة حديثًا، ثم إدراج النتائج في الجدول الهدف للعرض عبر `INSERT INTO SELECT`. على سبيل المثال، بالنسبة إلى العرض أعلاه:
+
+```sql
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) AS hour,
+ project,
+    count() AS count
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+GROUP BY
+    hour,
+ project
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 2.830 sec. Processed 798.89 million rows, 17.40 GB (282.28 million rows/s., 6.15 GB/s.)
+Peak memory usage: 543.71 MiB.
+```
+
+<Note>
+  في المثال أعلاه، يكون الجدول الهدف لدينا من نوع [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree). في هذه الحالة، يمكننا ببساطة استخدام استعلام التجميع الأصلي. أما في حالات الاستخدام الأكثر تعقيدًا التي تستفيد من [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، فستستخدم دوال `-State` للتجميعات. ويمكن العثور على مثال على ذلك في [دليل التكامل](/ar/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges) هذا.
+</Note>
+
+في حالتنا، يُعد هذا التجميع خفيفًا نسبيًا، إذ يكتمل في أقل من 3 ثوانٍ ويستخدم أقل من 600MiB من الذاكرة. أما بالنسبة إلى التجميعات الأكثر تعقيدًا أو الأطول تشغيلًا، فيمكنك جعل هذه العملية أكثر متانة باستخدام نهج الجدول المكرر المذكور سابقًا، أي إنشاء جدول هدف ظلّي، مثل `pypi_downloads_per_day_v2`، ثم الإدراج فيه، وإرفاق الأقسام الناتجة عنه بـ `pypi_downloads_per_day`.
+
+غالبًا ما يكون استعلام الـ materialized view أكثر تعقيدًا (وهذا ليس نادرًا، وإلا لما استخدم المستخدمون view أصلًا!) ويستهلك موارد. وفي حالات أندر، قد تتجاوز الموارد المطلوبة لهذا الاستعلام موارد الخادم. وهذا يبرز إحدى مزايا materialized views في ClickHouse — فهي incremental ولا تعالج dataset بالكامل دفعة واحدة!
+
+في هذه الحالة، تتوفر للمستخدمين عدة خيارات:
+
+1. عدّل استعلامك لإجراء `backfill` للنطاقات، مثل `WHERE timestamp BETWEEN 2024-12-17 08:00:00 AND 2024-12-17 09:00:00`، و`WHERE timestamp BETWEEN 2024-12-17 07:00:00 AND 2024-12-17 08:00:00`، وهكذا.
+2. استخدم [محرك الجدول Null](/ar/reference/engines/table-engines/special/null) لتعبئة العرض المادي. يحاكي هذا الأسلوب آلية التعبئة التزايدية المعتادة للعرض المادي، إذ يُنفِّذ استعلامه على كتل من البيانات (بحجم قابل للتهيئة).
+
+يمثل (1) أبسط نهج، وغالبًا ما يكون كافيًا. ولا ندرج أمثلة هنا اختصارًا.
+
+ونستعرض (2) بمزيد من التفصيل أدناه.
+
+<div id="using-a-null-table-engine-for-filling-materialized-views">
+  #### استخدام محرك الجدول Null لتعبئة العروض المادية
+</div>
+
+يوفّر [محرك الجدول Null](/ar/reference/engines/table-engines/special/null) محرك تخزين لا يحتفظ بالبيانات بشكل دائم (يمكن اعتباره نظير `/dev/null` في عالم محركات الجداول). ورغم أن هذا قد يبدو متناقضًا، فإن العروض المادية تظل تُنفَّذ على البيانات التي تُدرج في محرك الجدول هذا. ويتيح ذلك إنشاء العروض المادية من دون الاحتفاظ بالبيانات الأصلية، مما يتجنب عمليات I/O ومتطلبات التخزين المرتبطة بها.
+
+ومن المهم أن أي عروض مادية مرتبطة بمحرك الجدول تظل تُنفَّذ على كتل من البيانات عند إدراجها، ثم ترسل نتائجها إلى الجدول الهدف. وتكون هذه الكتل بحجم قابل للتهيئة. ومع أن الكتل الأكبر قد تكون أكثر كفاءة (وأسرع في المعالجة)، فإنها تستهلك موارد أكثر (وخاصة الذاكرة). ويعني استخدام محرك الجدول هذا أنه يمكننا بناء العرض المادي بشكل تزايدي، أي كتلةً تلو الأخرى، مما يجنّب الحاجة إلى الاحتفاظ بالتجميع بالكامل في الذاكرة.
+
+<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="إلغاء التطبيع في ClickHouse" />
+
+<br />
+
+لننظر في المثال التالي:
+
+```sql
+CREATE TABLE pypi_v2
+(
+    `timestamp` DateTime,
+    `project` String
+)
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv_v2 TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+هنا ننشئ جدول Null، `pypi_v2,` لاستقبال الصفوف التي ستُستخدم في إنشاء العرض المادي. لاحظ كيف نقتصر في المخطط على الأعمدة التي نحتاج إليها فقط. وينفّذ العرض المادي لدينا عملية aggregation على الصفوف المُدرجة في هذا الجدول (بمعدل block واحدة في كل مرة)، ثم يرسل النتائج إلى الجدول الهدف، `pypi_downloads_per_day`.
+
+<Note>
+  استخدمنا `pypi_downloads_per_day` هنا بصفته الجدول الهدف. ولمزيد من المتانة، يمكن للمستخدمين إنشاء جدول مكرّر، `pypi_downloads_per_day_v2`، واستخدامه بصفته الجدول الهدف للعرض، كما هو موضح في الأمثلة السابقة. وبعد اكتمال عملية insert، يمكن بعد ذلك نقل partitionات `pypi_downloads_per_day_v2` إلى `pypi_downloads_per_day.` ويتيح ذلك إمكانية recovery إذا فشلت عملية insert بسبب مشكلات في الذاكرة أو انقطاعات في server، أي يمكننا ببساطة تنفيذ TRUNCATE لـ `pypi_downloads_per_day_v2`، وضبط Settings، ثم إعادة المحاولة.
+</Note>
+
+ولملء هذا العرض المادي، نُدرج ببساطة البيانات ذات الصلة اللازمة لإجراء backfill في `pypi_v2` من `pypi.`
+
+```sql
+INSERT INTO pypi_v2 SELECT timestamp, project FROM pypi WHERE timestamp < '2024-12-17 09:00:00'
+```
+
+```response
+0 rows in set. Elapsed: 27.325 sec. Processed 1.50 billion rows, 33.48 GB (54.73 million rows/s., 1.23 GB/s.)
+Peak memory usage: 639.47 MiB.
+```
+
+لاحظ أن استهلاك الذاكرة هنا هو `639.47 MiB`.
+
+<div id="tuning-performance--resources">
+  ##### ضبط الأداء والموارد
+</div>
+
+ستحدد عدة عوامل الأداء والموارد المستخدمة في السيناريو أعلاه. قبل الشروع في الضبط، نوصي القراء بالاطلاع على آليات الإدراج الموثقة بالتفصيل في قسم [استخدام الخيوط للقراءات](/ar/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) من [دليل تحسين أداء الإدراج والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). وخلاصة القول:
+
+* **توازي القراءة** - عدد الخيوط المستخدمة للقراءة. يتم التحكم فيه عبر [`max_threads`](/ar/reference/settings/session-settings#max_threads). في ClickHouse Cloud، يتحدد ذلك بحسب حجم المثيل، ويكون افتراضيًا مساويًا لعدد وحدات vCPU. قد تؤدي زيادة هذه القيمة إلى تحسين أداء القراءة على حساب زيادة استخدام الذاكرة.
+* **توازي الإدراج** - عدد خيوط الإدراج المستخدمة لتنفيذ الإدراج. يتم التحكم فيه عبر [`max_insert_threads`](/ar/reference/settings/session-settings#max_insert_threads). **ملاحظة**: هذه القيمة مقيّدة بالحد `max_threads`، لذا فإن توازي الإدراج الفعلي هو `min(max_insert_threads, max_threads)`. في ClickHouse Cloud، يتحدد ذلك بحسب حجم المثيل (بين 2 و4)، ويتم ضبطه على 1 في OSS. قد تؤدي زيادة هذه القيمة إلى تحسين الأداء على حساب زيادة استخدام الذاكرة.
+* **حجم كتلة الإدراج** - تتم معالجة البيانات في حلقة، حيث يتم سحبها وتحليلها وتشكيلها في كتل إدراج داخل الذاكرة استنادًا إلى [مفتاح التقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ثم تُفرز هذه الكتل وتُحسَّن وتُضغط وتُكتب إلى التخزين على شكل [أجزاء بيانات](/ar/concepts/core-concepts/parts) جديدة. يؤثر حجم كتلة الإدراج، الذي تتحكم فيه الإعدادات [`min_insert_block_size_rows`](/ar/reference/settings/session-settings#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings#min_insert_block_size_bytes) (غير مضغوط)، في استخدام الذاكرة وعمليات I/O على القرص. تستخدم الكتل الأكبر ذاكرة أكثر، لكنها تنشئ أجزاءً أقل، مما يقلل من I/O وعمليات الدمج في الخلفية. تمثل هذه الإعدادات حدودًا دنيا (وأيهما يتم بلوغه أولًا يؤدي إلى تنفيذ عملية flush).
+* **حجم كتلة العرض المادي** - بالإضافة إلى الآليات المذكورة أعلاه لعملية الإدراج الرئيسية، تُدمج الكتل أيضًا قبل الإدراج في العروض المادية لتكون المعالجة أكثر كفاءة. يتحدد حجم هذه الكتل بواسطة الإعدادات [`min_insert_block_size_bytes_for_materialized_views`](/ar/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) و[`min_insert_block_size_rows_for_materialized_views`](/ar/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views). تتيح الكتل الأكبر معالجة أكثر كفاءة على حساب زيادة استخدام الذاكرة. افتراضيًا، تعود هذه الإعدادات إلى قيم إعدادات الجدول المصدر [`min_insert_block_size_rows`](/ar/reference/settings/session-settings#min_insert_block_size_rows) و[`min_insert_block_size_bytes`](/ar/reference/settings/session-settings#min_insert_block_size_bytes)، على التوالي.
+
+<Note>
+  **نصيحة لاستعلامات `INSERT SELECT` البسيطة**: بالنسبة إلى الاستعلامات البسيطة من نوع `INSERT INTO t1 SELECT * FROM t2` من دون تحويلات معقدة، فكّر في تفعيل `optimize_trivial_insert_select=1`. يضبط هذا الإعداد (وهو معطّل افتراضيًا منذ الإصدار 24.7) تلقائيًا درجة التوازي في `SELECT` لتتوافق مع `max_insert_threads`، مما يقلّل من استهلاك الموارد وعدد الأجزاء التي يتم إنشاؤها. ويكون هذا مفيدًا بشكل خاص في عمليات الترحيل المجمّعة للبيانات بين الجداول.
+</Note>
+
+لتحسين الأداء، يمكنك اتباع الإرشادات الواردة في قسم [ضبط الخيوط وحجم الكتلة لعمليات الإدراج](/ar/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) من [دليل تحسين أداء الإدراج والقراءة في S3](/ar/integrations/connectors/data-ingestion/AWS/performance). لا يكون من الضروري في معظم الحالات تعديل `min_insert_block_size_bytes_for_materialized_views` و`min_insert_block_size_rows_for_materialized_views` لتحسين الأداء. وإن أُجري تعديل عليهما، فاتبع أفضل الممارسات ذاتها المُشار إليها بشأن `min_insert_block_size_rows` و`min_insert_block_size_bytes`.
+
+لتقليل استهلاك الذاكرة، يمكنك تجربة هذه الإعدادات، مع العلم أن ذلك سيؤدي حتمًا إلى تراجع في الأداء. باستخدام الاستعلام السابق، نستعرض فيما يلي بعض الأمثلة.
+
+يؤدي خفض `max_insert_threads` إلى 1 إلى تقليل الحمل الزائد على الذاكرة.
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1
+```
+
+```response
+0 rows in set. Elapsed: 27.752 sec. Processed 1.50 billion rows, 33.48 GB (53.89 million rows/s., 1.21 GB/s.)
+Peak memory usage: 506.78 MiB.
+```
+
+يمكننا تقليل استهلاك الذاكرة بشكل أكبر عن طريق تخفيض إعداد `max_threads` إلى 1.
+
+```sql
+INSERT INTO pypi_v2
+SELECT timestamp, project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 43.907 sec. Processed 1.50 billion rows, 33.48 GB (34.06 million rows/s., 762.54 MB/s.)
+Peak memory usage: 272.53 MiB.
+```
+
+أخيرًا، يمكننا تقليل استهلاك الذاكرة بدرجة أكبر من خلال ضبط `min_insert_block_size_rows` على 0 (ما يعطّله كعاملٍ مُحدِّد لحجم الـ block) و`min_insert_block_size_bytes` على 10485760 ‏(10MiB).
+
+```sql
+INSERT INTO pypi_v2
+SELECT
+    timestamp,
+ project
+FROM pypi
+WHERE timestamp < '2024-12-17 09:00:00'
+SETTINGS max_insert_threads = 1, max_threads = 1, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 10485760
+```
+
+```response
+0 rows in set. Elapsed: 43.293 sec. Processed 1.50 billion rows, 33.48 GB (34.54 million rows/s., 773.36 MB/s.)
+Peak memory usage: 218.64 MiB.
+```
+
+أخيرًا، تجدر الإشارة إلى أن تقليل أحجام الكتل يؤدي إلى زيادة عدد الأجزاء ويفرض ضغطًا أكبر على عمليات الدمج. وكما نوقش [هنا](/ar/integrations/connectors/data-ingestion/AWS/performance#be-aware-of-merges)، ينبغي تعديل هذه الإعدادات بحذر.
+
+<div id="no-timestamp-or-monotonically-increasing-column">
+  ### لا يوجد عمود `timestamp` أو عمود متزايد باطراد
+</div>
+
+تعتمد العمليات المذكورة أعلاه على توفّر عمود `timestamp` لدى المستخدم أو عمود متزايد باطراد. وفي بعض الحالات، لا يكون ذلك متاحًا ببساطة. في هذه الحالة، نوصي بالعملية التالية، التي تستفيد من كثير من الخطوات الموضّحة سابقًا، لكنها تتطلب من المستخدمين إيقاف الاستيعاب مؤقتًا.
+
+1. أوقف عمليات الإدراج في جدولك الرئيسي مؤقتًا.
+2. أنشئ نسخة مكررة من جدولك الهدف الرئيسي باستخدام صيغة `CREATE AS`.
+3. أرفق الأقسام من الجدول الهدف الأصلي بالنسخة المكررة باستخدام [`ALTER TABLE ATTACH`](/ar/reference/statements/alter/partition#attach-partitionpart). **ملاحظة:** تختلف عملية الإرفاق هذه عن عملية النقل المستخدمة سابقًا. ومع أنها تعتمد على الروابط الصلبة، فإن البيانات في الجدول الأصلي تظل محفوظة.
+4. أنشئ عروضًا مادية جديدة.
+5. استأنف عمليات الإدراج. **ملاحظة:** لن تُحدِّث عمليات الإدراج إلا الجدول الهدف، وليس النسخة المكررة، التي لن تشير إلا إلى البيانات الأصلية.
+6. نفّذ إعادة تحميل البيانات التاريخية للعرض المادي، مع تطبيق العملية نفسها المستخدمة أعلاه على البيانات التي تحتوي على `timestamp`، باستخدام الجدول المكرر بوصفه المصدر.
+
+انظر إلى المثال التالي باستخدام PyPI والعرض المادي الجديد السابق `pypi_downloads_per_day` (وسنفترض أننا لا نستطيع استخدام `timestamp`):
+
+```sql
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 billion
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- (1) Pause inserts
+-- (2) Create a duplicate of our target table
+
+CREATE TABLE pypi_v2 AS pypi
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 billion
+└────────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+-- (3) Attach partitions from the original target table to the duplicate.
+
+ALTER TABLE pypi_v2
+ (ATTACH PARTITION tuple() FROM pypi)
+
+-- (4) Create our new materialized views
+
+CREATE TABLE pypi_downloads_per_day
+(
+    `hour` DateTime,
+    `project` String,
+    `count` Int64
+)
+ENGINE = SummingMergeTree
+ORDER BY (project, hour)
+
+CREATE MATERIALIZED VIEW pypi_downloads_per_day_mv TO pypi_downloads_per_day
+AS SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi
+GROUP BY
+    hour,
+ project
+
+-- (4) Restart inserts. We replicate here by inserting a single row.
+
+INSERT INTO pypi SELECT *
+FROM pypi
+LIMIT 1
+
+SELECT count() FROM pypi
+```
+
+```response
+┌────count()─┐
+│ 2039988138 │ -- 2.04 billion
+└────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+```sql
+-- notice how pypi_v2 contains same number of rows as before
+
+SELECT count() FROM pypi_v2
+```
+
+```response
+┌────count()─┐
+│ 2039988137 │ -- 2.04 billion
+└────────────┘
+```
+
+```sql
+-- (5) Backfill the view using the backup pypi_v2
+
+INSERT INTO pypi_downloads_per_day SELECT
+ toStartOfHour(timestamp) as hour,
+ project,
+    count() AS count
+FROM pypi_v2
+GROUP BY
+    hour,
+ project
+```
+
+```response
+0 rows in set. Elapsed: 3.719 sec. Processed 2.04 billion rows, 47.15 GB (548.57 million rows/s., 12.68 GB/s.)
+```
+
+```sql
+DROP TABLE pypi_v2;
+```
+
+في الخطوة قبل الأخيرة، نُجري تحميلًا رجعيًا للبيانات إلى `pypi_downloads_per_day` باستخدام نهج `INSERT INTO SELECT` البسيط الذي شرحناه [سابقًا](#timestamp-or-monotonically-increasing-column-available). ويمكن أيضًا تحسين ذلك باستخدام نهج جدول Null الموثّق [أعلاه](#using-a-null-table-engine-for-filling-materialized-views)، مع إمكانية استخدام جدول مطابق اختياريًا لزيادة المتانة.
+
+ومع أن هذه العملية تتطلب بالفعل إيقاف عمليات الإدراج مؤقتًا، فإن الخطوات الوسيطة يمكن عادةً إنجازها بسرعة، مما يحدّ إلى أدنى حد من أي انقطاع في البيانات.

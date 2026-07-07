@@ -1,0 +1,164 @@
+---
+sidebarTitle: '数据加密'
+slug: /cloud/security/cmek
+title: '数据加密'
+description: '了解有关 ClickHouse Cloud 数据加密的更多信息'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', '加密', 'CMEK', 'KMS 密钥轮询器']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="storage-encryption">
+  ## 存储级加密
+</div>
+
+ClickHouse Cloud 默认启用静态加密，使用由云提供商管理的 AES 256 密钥。更多信息，请参阅：
+
+* [AWS S3 的服务器端加密](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingServerSideEncryption.html)
+* [GCP 默认静态加密](https://cloud.google.com/docs/security/encryption/default-encryption)
+* [Azure 静态数据存储加密](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
+
+<div id="database-encryption">
+  ## 数据库级别加密
+</div>
+
+<EnterprisePlanFeatureBadge feature="增强加密" />
+
+静态数据默认使用由云提供商管理的 AES 256 密钥加密。客户可以启用透明数据加密 (TDE) ，为服务数据提供额外保护，或者提供自己的密钥，为其服务实施客户管理的加密密钥 (CMEK) 。
+
+增强加密目前适用于 AWS 和 GCP 服务。Azure 即将推出。
+
+<div id="transparent-data-encryption-tde">
+  ### 透明数据加密 (TDE)
+</div>
+
+TDE 必须在创建服务时启用。现有服务无法在创建后再加密。一旦启用 TDE，就无法禁用。服务中的所有数据都将始终保持加密状态。如果您想在启用后禁用 TDE，则必须创建一个新服务，并将数据迁移到该服务中。
+
+1. 选择 `Create new service`
+2. 为服务命名
+3. 选择 AWS 或 GCP 作为云提供商，并从下拉菜单中选择所需的区域
+4. 点击 Enterprise 功能的下拉菜单，然后切换启用透明数据加密 (TDE)
+5. 点击 Create service
+
+<div id="customer-managed-encryption-keys-cmek">
+  ### 客户管理的加密密钥 (CMEK)
+</div>
+
+<Warning>
+  删除用于加密 ClickHouse Cloud 服务的 KMS 密钥会导致您的 ClickHouse 服务停止，其数据以及现有备份都将无法找回。为防止在轮换密钥时意外丢失数据，建议在删除旧 KMS 密钥前先保留一段时间。
+</Warning>
+
+服务一旦启用 TDE 加密，客户即可通过更新密钥来启用 CMEK。更新 TDE 设置后，服务会自动重启。在此过程中，旧 KMS 密钥会先解密数据加密密钥 (DEK)，再由新 KMS 密钥对 DEK 重新加密。这样可确保服务重启后，后续加密操作将使用新的 KMS 密钥。该过程可能需要几分钟。
+
+<Accordion title="使用 AWS KMS 启用 CMEK">
+  1. 在 ClickHouse Cloud 中，选择已加密的服务
+
+  2. 点击左侧的 Settings
+
+  3. 在页面底部，展开 Network security 信息
+
+  4. 复制 Encryption role ID (AWS) 或 Encryption Service Account (GCP) - 您将在后续步骤中用到它
+
+  5. [为 AWS 创建 KMS 密钥](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+
+  6. 点击该密钥
+
+  7. 按如下方式更新 AWS 密钥策略：
+
+     ```json
+     {
+         "Sid": "Allow ClickHouse Access",
+         "Effect": "Allow",
+         "Principal": {
+             "AWS": [ "Encryption role ID " ]
+         },
+         "Action": [
+             "kms:Encrypt",
+             "kms:Decrypt",
+             "kms:ReEncrypt*",
+             "kms:DescribeKey"
+         ],
+         "Resource": "*"
+     }
+     ```
+
+  8. 保存 Key policy
+
+  9. 复制 Key ARN
+
+  10. 返回 ClickHouse Cloud，将 Key ARN 粘贴到 Service Settings 的 Transparent Data Encryption 部分
+
+  11. 保存更改
+</Accordion>
+
+<Accordion title="使用 GCP KMS 启用 CMEK">
+  1. 在 ClickHouse Cloud 中，选择已加密的服务
+  2. 点击左侧的 Settings
+  3. 在页面底部，展开 Network security 信息
+  4. 复制 Encryption Service Account (GCP) - 您将在后续步骤中用到它
+  5. [为 GCP 创建 KMS 密钥](https://cloud.google.com/kms/docs/create-key)
+  6. 点击该密钥
+  7. 向上面第 4 步复制的 GCP Encryption Service Account 授予以下权限。
+     * Cloud KMS CryptoKey Encrypter/Decrypter
+     * Cloud KMS Viewer
+  8. 保存 Key permission
+  9. 复制 Key Resource Path
+  10. 返回 ClickHouse Cloud，将 Key Resource Path 粘贴到 Service Settings 的 Transparent Data Encryption 部分
+  11. 保存更改
+</Accordion>
+
+<Accordion title="使用 Azure KMS 启用 CMEK">
+  1. 在 ClickHouse Cloud 中，选择已加密的服务
+  2. 点击左侧的 `Settings`
+  3. 在页面底部展开 `Network security information`
+  4. 复制 `Cross Tenant App Client ID`，你将在下一步中用到它
+  5. 登录你的 Azure 订阅，并通过 Azure CLI 使用以下命令创建新的服务主体；将 `{azure_cross_tenant_app_client_id}` 替换为你在上一步复制的值
+     `az ad sp create --id {azure_cross_tenant_app_client_id}`
+  6. 复制新创建的服务主体的 `Name`，你将在后续步骤中用到它
+  7. [创建 Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+  8. [在 Azure 中创建 Key Vault 密钥](https://learn.microsoft.com/en-us/azure/key-vault/keys/quick-create-portal)
+  9. 在 Key Vault 密钥页面，点击左侧的 `Access control (IAM)`
+  10. 在顶部菜单中选择 `Role assignments`
+  11. 点击 `Add`，然后在顶部菜单中点击 `Add role assignment`
+  12. 选择 `Key Vault Crypto User` 角色，然后点击 `Next`
+  13. 在 `Add role assignment` 页面保留默认选项，然后点击 `+Select members`
+  14. 粘贴你在步骤 6 中复制的服务主体名称 (以 CH-TDE 开头) ，选择该服务主体并点击 `Select`
+  15. 点击 `Next`，然后点击 `Review + assign`
+  16. 返回 Azure Key Vault，复制以下值：
+      * 在 `Overview` 页面复制 Vault URI
+      * 在 `Overview` 页面复制 Directory ID
+      * 在 `Keys` 页面复制密钥 `Name`
+  17. 返回 ClickHouse Cloud 中的服务设置，将步骤 16 中的值粘贴到以下字段：
+      * Key ID &gt; 粘贴密钥 `Name`
+      * Key Vault URI &gt; 粘贴 Vault URI
+      * Key Tenant ID &gt; 粘贴 Directory ID
+  18. 点击 Rotate KMS，等待几分钟；此操作会触发滚动重启。随后确认服务已正常运行
+</Accordion>
+
+<div id="key-rotation">
+  #### 密钥轮换
+</div>
+
+设置好 CMEK 后，按照上文中创建新 KMS 密钥并授予权限的步骤轮换密钥。返回服务设置页面，粘贴新的 ARN (AWS) 、Key Resource Path (GCP) 或 Key Name (Azure) ，然后保存设置。服务将重启以应用新密钥。
+
+<div id="kms-key-poller">
+  #### KMS 密钥轮询器
+</div>
+
+使用 CMEK 时，系统会每 10 分钟检查一次所提供的 KMS 密钥是否有效。如果无法访问 KMS 密钥，ClickHouse 服务将停止。要恢复服务，请按照本指南中的步骤重新恢复对 KMS 密钥的访问权限，然后重启服务。
+
+<div id="backup-and-restore">
+  ### 备份与恢复
+</div>
+
+备份会使用与关联服务相同的密钥进行加密。恢复加密备份时，会创建一个加密实例，并使用与原始实例相同的 KMS 密钥。如有需要，你可以在恢复后轮换 KMS 密钥；详见[密钥轮换](#key-rotation)。
+
+<div id="performance">
+  ## 性能
+</div>
+
+数据库加密利用 ClickHouse 内置的[数据加密虚拟文件系统功能](/zh/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)对数据进行加密和保护。此功能使用的算法为 `AES_256_CTR`，预计会带来 5–15% 的性能开销，具体取决于工作负载：
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="CMEK 性能开销" />

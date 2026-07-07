@@ -1,0 +1,502 @@
+---
+title: 'إدارة البيانات'
+description: 'إدارة البيانات الخاصة بـ observability'
+slug: /observability/managing-data
+keywords: ['observability', 'السجلات', 'التتبعات', 'المقاييس', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تتضمن عمليات نشر ClickHouse لأغراض Observability دائمًا مجموعات بيانات كبيرة تحتاج إلى إدارة. ويوفّر ClickHouse عددًا من الميزات التي تساعد على إدارة البيانات.
+
+<Tip>
+  **يأتي ClickStack بمخطط افتراضي مُحسَّن**
+
+  **يوفّر ClickStack مخططات جاهزة للسجلات والتتبعات والمقاييس** تتضمن أحدث ميزات ClickHouse (فهارس نصية للبحث النصي الكامل والبحث في مفاتيح map، وأعمدة materialized ومصفوفات ALIAS للتصفية بالقراءة المباشرة، وعمليات lookup للصفوف حسب رقم block)، وقد خضعت لاختبارات benchmark لتقديم أداء قوي جاهزًا للاستخدام لأعباء عمل التسجيل والتتبعات. استخدمها كنقطة مرجعية لتصميمك الخاص.
+
+  * DDL canonical: [الجداول والمخططات المستخدمة في ClickStack](/ar/clickstack/ingesting-data/schemas).
+  * وصفات التحسين: [ضبط أداء ClickStack](/ar/clickstack/managing/performance-tuning). تنطبق كثير من التوصيات الواردة في تلك الصفحة (الأعمدة materialized، وفهارس التخطي، واختيار المفتاح الأساسي، وprojections، والعروض materialized) مباشرةً على إعداد تبنيه بنفسك.
+</Tip>
+
+<div id="partitions">
+  ## التقسيمات
+</div>
+
+يتيح التقسيم في ClickHouse فصل البيانات منطقيًا على القرص وفقًا لعمود أو تعبير SQL. ومن خلال هذا الفصل المنطقي للبيانات، يمكن التعامل مع كل قسم على حدة، مثل حذفه. ويتيح لك ذلك نقل الأقسام، وبالتالي المجموعات الفرعية، بين طبقات التخزين بكفاءة استنادًا إلى الوقت أو [انتهاء صلاحية البيانات/الحذف بكفاءة من cluster](/ar/reference/statements/alter/partition).
+
+يُحدَّد التقسيم في الجدول عند تعريفه لأول مرة عبر عبارة `PARTITION BY`. ويمكن أن تتضمن هذه العبارة تعبير SQL على أي عمود أو أعمدة، وتحدِّد نتائج هذا التعبير القسم الذي يُرسَل إليه الصف.
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="التقسيمات" size="md" />
+
+ترتبط أجزاء البيانات منطقيًا (من خلال بادئة مشتركة لاسم المجلد) بكل قسم على القرص، ويمكن الاستعلام عنها بشكل منفصل. في المثال أدناه، يُقسِّم مخطط `otel_logs` الافتراضي البيانات حسب اليوم باستخدام التعبير `toDate(Timestamp)`. وعند إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف ويُوجَّه إلى القسم الناتج إذا كان موجودًا (وإذا كان هذا الصف هو الأول لذلك اليوم، فسيُنشأ القسم).
+
+```sql
+CREATE TABLE default.otel_logs
+(
+...
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+يمكن تنفيذ [عدد من العمليات](/ar/reference/statements/alter/partition) على الأقسام، بما في ذلك [النسخ الاحتياطية](/ar/reference/statements/alter/partition#freeze-partition)، و[معالجة الأعمدة](/ar/reference/statements/alter/partition#clear-column-in-partition)، وعمليات التغيير التي [تعدّل](/ar/reference/statements/alter/partition#update-in-partition)/[تحذف](/ar/reference/statements/alter/partition#delete-in-partition) البيانات صفًا بصف) و[مسح الفهارس (مثل الفهارس الثانوية)](/ar/reference/statements/alter/partition#clear-index-in-partition).
+
+على سبيل المثال، لنفترض أن جدول `otel_logs` لدينا مُقسَّم حسب اليوم. وإذا جرى ملؤه بمجموعة بيانات السجلات المنظَّمة، فسيحتوي على بيانات تمتد لعدة أيام:
+
+```sql
+SELECT Timestamp::Date AS day,
+         count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-26 │ 1986456 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
+Peak memory usage: 4.41 MiB.
+```
+
+يمكن العثور على التقسيمات الحالية باستخدام استعلام بسيط على أحد جداول النظام:
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'otel_logs'
+```
+
+```response
+┌─partition──┐
+│ 2019-01-22 │
+│ 2019-01-23 │
+│ 2019-01-24 │
+│ 2019-01-25 │
+│ 2019-01-26 │
+└────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+قد يكون لدينا جدول آخر، `otel_logs_archive`، نستخدمه لتخزين البيانات الأقدم. ويمكن نقل البيانات إلى هذا الجدول بكفاءة على مستوى الأقسام (إذ إن هذا مجرد تغيير في البيانات الوصفية).
+
+```sql
+CREATE TABLE otel_logs_archive AS otel_logs
+--move data to archive table
+ALTER TABLE otel_logs
+        (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
+--confirm data has been moved
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
+Peak memory usage: 4.40 MiB.
+```
+
+```sql
+SELECT Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs_archive
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-26 │ 1986456 │
+└────────────┴─────────┘
+
+1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+Peak memory usage: 4.99 MiB.
+```
+
+وهذا بخلاف التقنيات الأخرى التي تتطلب استخدام `INSERT INTO SELECT` وإعادة كتابة البيانات في الجدول الهدف الجديد.
+
+<Info>
+  **نقل الأقسام**
+
+  يتطلب [نقل الأقسام بين الجداول](/ar/reference/statements/alter/partition#move-partition-to-table) استيفاء عدة شروط، من أبرزها أن تتطابق الجداول في البنية ومفتاح التقسيم والمفتاح الأساسي والفهارس/الإسقاطات. ويمكن العثور [هنا](/ar/reference/statements/alter/partition#how-to-set-partition-expression) على ملاحظات مفصلة حول كيفية تحديد الأقسام في `ALTER` DDL.
+</Info>
+
+وعلاوة على ذلك، يمكن حذف البيانات بكفاءة بحسب القسم. وهذا أكثر كفاءةً بكثير من حيث استهلاك الموارد من التقنيات البديلة (mutations أو lightweight deletes)، لذا يُفضَّل اعتماده.
+
+```sql
+ALTER TABLE otel_logs
+        (DROP PARTITION tuple('2019-01-25'))
+
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 4667954 │
+│ 2019-01-23 │ 4653388 │
+│ 2019-01-24 │ 3792510 │
+└────────────┴─────────┘
+```
+
+<Note>
+  تُستغل هذه الميزة بواسطة TTL عند استخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts). راجع [إدارة البيانات باستخدام TTL](#data-management-with-ttl-time-to-live) لمزيد من التفاصيل.
+</Note>
+
+<div id="applications">
+  ### التطبيقات
+</div>
+
+يوضح ما سبق كيف يمكن نقل البيانات ومعالجتها بكفاءة على مستوى الأقسام. عمليًا، من المرجّح أنك ستستخدم عمليات الأقسام في حالات استخدام Observability غالبًا ضمن سيناريوهين:
+
+* **المعماريات متعددة الطبقات** - نقل البيانات بين طبقات التخزين (راجع [طبقات التخزين](#storage-tiers))، مما يتيح بناء معماريات ساخنة-باردة.
+* **الحذف الفعّال** - عند وصول البيانات إلى قيمة TTL محددة (راجع [إدارة البيانات باستخدام TTL](#data-management-with-ttl-time-to-live))
+
+نستعرض كلاهما بالتفصيل أدناه.
+
+<div id="query-performance">
+  ### أداء الاستعلامات
+</div>
+
+مع أن التقسيمات قد تساعد في تحسين أداء الاستعلامات، فإن ذلك يعتمد بدرجة كبيرة على أنماط الوصول. فإذا كانت الاستعلامات تستهدف عددًا قليلًا فقط من التقسيمات (ويُفضَّل أن يكون قسمًا واحدًا)، فقد يتحسن الأداء. ويكون هذا مفيدًا عادةً فقط إذا لم يكن مفتاح القسم ضمن المفتاح الأساسي وكنت تُجري التصفية بناءً عليه. أما الاستعلامات التي تحتاج إلى شمول عدد كبير من التقسيمات، فقد يكون أداؤها أسوأ مما لو لم يُستخدم التقسيم أصلًا (إذ قد يكون هناك عدد أكبر من الأجزاء). كما أن فائدة استهداف قسم واحد ستكون أقل وضوحًا، أو قد تنعدم تمامًا، إذا كان مفتاح القسم مكوّنًا مبكرًا بالفعل في المفتاح الأساسي. ويمكن أيضًا استخدام التقسيم [لتحسين استعلامات GROUP BY](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key) إذا كانت القيم في كل قسم فريدة. ومع ذلك، وبوجه عام، ينبغي التأكد أولًا من تحسين المفتاح الأساسي، وعدم اللجوء إلى التقسيم كتقنية لتحسين الاستعلامات إلا في حالات استثنائية تكون فيها أنماط الوصول موجَّهة إلى مجموعة فرعية محددة ويمكن التنبؤ بها من البيانات، مثل التقسيم حسب اليوم عندما تكون معظم الاستعلامات على اليوم الأخير. راجع [هنا](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4) للاطلاع على مثال على هذا السلوك.
+
+<div id="data-management-with-ttl-time-to-live">
+  ## إدارة البيانات باستخدام TTL (Time-to-live)
+</div>
+
+تُعد ميزة Time-to-Live (TTL) عنصرًا أساسيًا في حلول Observability المعتمدة على ClickHouse لتحقيق إدارة فعّالة للبيانات والاحتفاظ بها، لا سيما مع التوليد المستمر لكميات هائلة من البيانات. ويؤدي تطبيق TTL في ClickHouse إلى انتهاء صلاحية البيانات الأقدم وحذفها تلقائيًا، بما يضمن الاستخدام الأمثل للتخزين والحفاظ على الأداء من دون تدخل يدوي. وتُعد هذه الإمكانية ضرورية للحفاظ على قاعدة بيانات خفيفة، وخفض تكاليف التخزين، والإبقاء على الاستعلامات سريعة وفعّالة عبر التركيز على البيانات الأحدث والأكثر صلة. كما تساعد على الامتثال لسياسات الاحتفاظ بالبيانات من خلال إدارة دورة حياة البيانات بصورة منهجية، مما يعزز الاستدامة العامة لحل Observability وقابليته للتوسع.
+
+يمكن تحديد TTL إما على مستوى الجدول أو على مستوى العمود في ClickHouse.
+
+<div id="table-level-ttl">
+  ### TTL على مستوى الجدول
+</div>
+
+يتضمن المخطط الافتراضي لكلٍّ من السجلات والتتبعات قيمة TTL بحيث تنتهي صلاحية البيانات بعد فترة محددة. ويُحدَّد ذلك في ClickHouse exporter تحت المفتاح `ttl`، على سبيل المثال.
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+تدعم هذه الصياغة حاليًا [صياغة Duration في Golang](https://pkg.go.dev/time#ParseDuration). **نوصي باستخدام `h` والتأكد من أن ذلك يتوافق مع فترة التقسيم. على سبيل المثال، إذا كان التقسيم حسب اليوم، فتأكد من أن القيمة تمثل مضاعفات الأيام، مثل 24h و48h و72h.** وسيضمن ذلك تلقائيًا إضافة عبارة TTL إلى الجدول، على سبيل المثال إذا كانت `ttl: 96h`.
+
+```sql
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+TTL toDateTime(Timestamp) + toIntervalDay(4)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+بشكل افتراضي، تُزال البيانات التي انتهت صلاحية TTL الخاصة بها عندما يقوم ClickHouse [بدمج أجزاء البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage). وعندما يكتشف ClickHouse أن البيانات انتهت صلاحيتها، فإنه يُجري عملية دمج خارج الجدول الزمني.
+
+<Info>
+  **TTLs المجدولة**
+
+  لا تُطبَّق TTLs فورًا، بل وفق جدول زمني كما ذُكر أعلاه. يحدّد إعداد جدول MergeTree `merge_with_ttl_timeout` الحد الأدنى للتأخير، بالثواني، قبل تكرار عملية دمج مع delete TTL. القيمة الافتراضية هي 14400 ثانية (4 ساعات). لكن هذا مجرد الحد الأدنى للتأخير؛ فقد يستغرق الأمر وقتًا أطول قبل أن يتم تشغيل عملية دمج TTL. وإذا كانت القيمة منخفضة جدًا، فسيؤدي ذلك إلى تنفيذ العديد من عمليات الدمج خارج الجدول الزمني، ما قد يستهلك قدرًا كبيرًا من الموارد. ويمكن فرض انتهاء TTL باستخدام الأمر `ALTER TABLE my_table MATERIALIZE TTL`.
+</Info>
+
+**مهم: نوصي باستخدام الإعداد [`ttl_only_drop_parts=1`](/ar/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (المطبّق بواسطة المخطط الافتراضي). عند تمكين هذا الإعداد، يحذف ClickHouse جزءًا كاملًا عندما تكون جميع الصفوف فيه منتهية الصلاحية. إن حذف الأجزاء كاملةً بدلًا من التنظيف الجزئي للصفوف التي انتهت صلاحية TTL الخاصة بها (وهو ما يتم عبر عمليات mutation كثيفة الاستهلاك للموارد عندما تكون قيمة `ttl_only_drop_parts=0`) يتيح استخدام قيم `merge_with_ttl_timeout` أقصر وتقليل التأثير في أداء النظام. وإذا كانت البيانات مُقسّمة وفق الوحدة نفسها التي تُطبَّق عندها صلاحية TTL، مثل اليوم، فستحتوي الأجزاء بطبيعتها على بيانات من interval المحدد فقط. وهذا يضمن إمكانية تطبيق `ttl_only_drop_parts=1` بكفاءة.
+
+<div id="column-level-ttl">
+  ### TTL على مستوى العمود
+</div>
+
+ينتهي المثال أعلاه صلاحية البيانات على مستوى الجدول. ويمكنك أيضًا إنهاء صلاحية البيانات على مستوى العمود. ومع تقادم البيانات، يمكن استخدام ذلك لحذف الأعمدة التي لا تبرر قيمتها في التحقيقات تكلفة الموارد الإضافية اللازمة للاحتفاظ بها. على سبيل المثال، نوصي بالاحتفاظ بالعمود `Body` تحسبًا لإضافة بيانات وصفية ديناميكية جديدة لم تُستخرج عند وقت الإدراج، مثل وسم Kubernetes جديد. وبعد فترة، مثل شهر واحد، قد يتضح أن هذه البيانات الوصفية الإضافية غير مفيدة، ما يقلل جدوى الاحتفاظ بالعمود `Body`.
+
+فيما يلي، نوضح كيف يمكن حذف العمود `Body` بعد 30 يومًا.
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+        ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  يتطلّب تحديد TTL على مستوى العمود من المستخدمين تعريف المخطط الخاص بهم بأنفسهم. ولا يمكن تحديده في OTel collector.
+</Note>
+
+<div id="recompressing-data">
+  ## إعادة ضغط البيانات
+</div>
+
+مع أننا نوصي عادةً باستخدام `ZSTD(1)` لمجموعات بيانات observability، يمكنك تجربة خوارزميات ضغط مختلفة أو مستويات ضغط أعلى مثل `ZSTD(3)`. وإلى جانب إمكانية تحديد ذلك عند إنشاء المخطط، يمكن أيضًا ضبط إعدادات الضغط بحيث تتغير بعد فترة زمنية محددة. وقد يكون هذا مناسبًا إذا كان `codec` أو خوارزمية الضغط يحسّن الضغط لكنه يؤدي إلى تراجع في أداء الاستعلام. قد تكون هذه المفاضلة مقبولة للبيانات الأقدم، التي يقل الاستعلام عنها، لكنها قد لا تكون مناسبة للبيانات الحديثة، التي تُستخدَم بوتيرة أكبر في عمليات التحقيق.
+
+يوضح المثال أدناه ذلك، حيث نضغط البيانات باستخدام `ZSTD(3)` بعد 4 أيام بدلًا من حذفها.
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
+```
+
+<Info>
+  **قيِّم الأداء**
+
+  نوصي المستخدمين دائمًا بتقييم أثر مستويات الضغط وخوارزمياته المختلفة على كلٍّ من أداء الإدراج وأداء الاستعلام. على سبيل المثال، قد تكون codecs من نوع delta مفيدة في ضغط الطوابع الزمنية. ومع ذلك، إذا كانت هذه جزءًا من المفتاح الأساسي، فقد يتراجع أداء التصفية.
+</Info>
+
+يمكن العثور على مزيد من التفاصيل والأمثلة حول تهيئة TTL [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes). ويمكن العثور على أمثلة، مثل كيفية إضافة إعدادات TTL للجداول والأعمدة وتعديلها، [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl). ولمعرفة كيف تُمكّن إعدادات TTL طبقات تخزين متدرجة، مثل معماريات الساخن-الدافئ، راجع [طبقات التخزين](#storage-tiers).
+
+<div id="storage-tiers">
+  ## طبقات التخزين
+</div>
+
+في ClickHouse، يمكنك إنشاء طبقات تخزين على أقراص مختلفة، مثل تخزين البيانات الحديثة/الساخنة على SSD والبيانات الأقدم على تخزين مدعوم بـ S3. تتيح هذه المعمارية استخدام وسائط تخزين أقل تكلفة للبيانات الأقدم، والتي يمكن أن تكون لها اتفاقيات مستوى الخدمة الخاصة بالاستعلامات أعلى نظرًا لقلة استخدامها في التحقيقات.
+
+<Info>
+  **غير ذي صلة بـ ClickHouse Cloud**
+
+  يستخدم ClickHouse Cloud نسخة واحدة من البيانات مخزنة على S3، مع ذواكر تخزين مؤقت على العقد مدعومة بـ SSD. لذلك، لا تكون طبقات التخزين مطلوبة في ClickHouse Cloud.
+</Info>
+
+يتطلب إنشاء طبقات التخزين من المستخدمين أولًا إنشاء أقراص، ثم تُستخدم هذه الأقراص لوضع سياسات التخزين، مع وحدات تخزين يمكن تحديدها أثناء إنشاء الجدول. ويمكن نقل البيانات تلقائيًا بين الأقراص استنادًا إلى معدلات الامتلاء، وأحجام الأجزاء، وأولويات وحدات التخزين. يمكن العثور على مزيد من التفاصيل [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
+
+ومع أنه يمكن نقل البيانات يدويًا بين الأقراص باستخدام الأمر `ALTER TABLE MOVE PARTITION`، فإنه يمكن أيضًا التحكم في نقل البيانات بين وحدات التخزين باستخدام TTLs. يمكن العثور على مثال كامل [هنا](/ar/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture).
+
+<div id="managing-schema-changes">
+  ## إدارة تغييرات المخططات
+</div>
+
+من المحتم أن تتغير مخططات السجلات والتتبعات على مدى عمر النظام، مثلًا عندما يراقب المستخدمون أنظمة جديدة لها بيانات وصفية أو تسميات جراب مختلفة. ومن خلال إنتاج البيانات باستخدام مخطط OTel، مع الاحتفاظ ببيانات الأحداث الأصلية بصيغة منظَّمة، ستكون مخططات ClickHouse أكثر قدرة على التكيف مع هذه التغييرات. ومع ذلك، مع توفر بيانات وصفية جديدة وتغير أنماط وصول الاستعلامات، ستحتاج إلى تحديث المخططات لتعكس هذه المستجدات.
+
+ولتجنب فترة التوقف أثناء تغييرات المخططات، تتوفر للمستخدمين عدة خيارات نعرضها أدناه.
+
+<div id="use-default-values">
+  ### استخدام القيم الافتراضية
+</div>
+
+يمكن إضافة الأعمدة إلى المخطط باستخدام [قيم `DEFAULT`](/ar/reference/statements/create/table#default). ستُستخدم القيمة الافتراضية المحددة إذا لم تُحدَّد أثناء INSERT.
+
+يمكن إجراء تغييرات على المخطط قبل تعديل أي منطق تحويل في العرض المادي أو تهيئة OTel collector، ما يؤدي إلى إرسال هذه الأعمدة الجديدة.
+
+بمجرد تغيير المخطط، يمكنك إعادة تهيئة OTel collectors. على افتراض أن المستخدمين يتبعون العملية الموصى بها الموضحة في [&quot;استخراج البنية باستخدام SQL&quot;](/ar/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)، حيث ترسل OTel collectors بياناتها إلى محرك الجدول Null، ويتولى عرض مادي استخراج المخطط المستهدف وإرسال النتائج إلى الجدول المستهدف للتخزين، يمكن تعديل العرض باستخدام صيغة [`ALTER TABLE ... MODIFY QUERY` syntax](/ar/reference/statements/alter/view). لنفترض أن لدينا أدناه الجدول المستهدف مع العرض المادي المقابل له (المشابه لما استُخدم في &quot;استخراج البنية باستخدام SQL&quot;) لاستخراج المخطط المستهدف من السجلات المهيكلة الخاصة بـ OTel:
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+لنفترض أننا نريد استخراج عمود جديد `Size` من `LogAttributes`. يمكننا إضافة ذلك إلى المخطط باستخدام `ALTER TABLE`، مع تحديد القيمة الافتراضية:
+
+```sql
+ALTER TABLE otel_logs_v2
+        (ADD COLUMN `Size` UInt64 DEFAULT JSONExtractUInt(Body, 'size'))
+```
+
+في المثال أعلاه، نحدّد القيمة الافتراضية على أنها المفتاح `size` في `LogAttributes` (وستكون هذه القيمة 0 إذا لم يكن موجودًا). وهذا يعني أن الاستعلامات التي تصل إلى هذا العمود في الصفوف التي لم تُدرَج فيها هذه القيمة ستحتاج إلى الوصول إلى `Map`، وبالتالي ستكون أبطأ. ويمكننا أيضًا بسهولة تحديدها كثابت، مثل 0، مما يقلّل تكلفة الاستعلامات اللاحقة على الصفوف التي لا تحتوي على هذه القيمة. ويُظهر الاستعلام عن هذا الجدول أن القيمة قد مُلئت من `Map` كما هو متوقع:
+
+```sql
+SELECT Size
+FROM otel_logs_v2
+LIMIT 5
+```
+
+```response
+┌──Size─┐
+│ 30577 │
+│  5667 │
+│  5379 │
+│  1696 │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.012 sec.
+```
+
+لضمان إدراج هذه القيمة في كل البيانات المستقبلية، يمكننا تعديل العرض المادي باستخدام صيغة `ALTER TABLE` كما هو موضح أدناه:
+
+```sql
+ALTER TABLE otel_logs_mv
+        MODIFY QUERY
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300,                 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+ستتضمن الصفوف اللاحقة عمود `Size` يُعبَّأ عند الإدراج.
+
+<div id="create-new-tables">
+  ### إنشاء جداول جديدة
+</div>
+
+كبديل للعملية المذكورة أعلاه، يمكنك ببساطة إنشاء الجدول المستهدف الجديد باستخدام المخطط الجديد. بعد ذلك، يمكن تعديل أي materialized views لاستخدام الجدول الجديد باستخدام `ALTER TABLE MODIFY QUERY.` المذكور أعلاه. وبهذا النهج، يمكنك إصدار نسخ من جداولك، مثل `otel_logs_v3`.
+
+يترك هذا النهج المستخدمين أمام عدة جداول للاستعلام عنها. وللاستعلام عبر عدة جداول، يمكنك استخدام [الدالة `merge`](/ar/reference/functions/table-functions/merge)، التي تقبل أنماط wildcard لاسم الجدول. نوضح ذلك أدناه من خلال الاستعلام عن الإصدارين v2 وv3 من جدول `otel_logs`:
+
+```sql
+SELECT Status, count() AS c
+FROM merge('otel_logs_v[2|3]')
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.137 sec. Processed 41.46 million rows, 82.92 MB (302.43 million rows/s., 604.85 MB/s.)
+```
+
+إذا أراد المستخدمون تجنب استخدام الدالة `merge` وتوفير جدول للمستخدمين النهائيين يجمع بين عدة جداول، فيمكن استخدام [محرك جدول Merge](/ar/reference/engines/table-engines/special/merge). نوضح ذلك أدناه:
+
+```sql
+CREATE TABLE otel_logs_merged
+ENGINE = Merge('default', 'otel_logs_v[2|3]')
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
+```
+
+يمكن تحديث ذلك كلما أُضيف جدول جديد باستخدام صياغة `EXCHANGE` للجدول. على سبيل المثال، لإضافة جدول بالإصدار v4، يمكننا إنشاء جدول جديد واستبداله ذرّيًا بالإصدار السابق.
+
+```sql
+CREATE TABLE otel_logs_merged_temp
+ENGINE = Merge('default', 'otel_logs_v[2|3|4]')
+
+EXCHANGE TABLE otel_logs_merged_temp AND otel_logs_merged
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 39259996 │
+│   304  │  1378564 │
+│   302  │   820118 │
+│   404  │   429220 │
+│   301  │   276960 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.068 sec. Processed 42.46 million rows, 84.92 MB (620.45 million rows/s., 1.24 GB/s.)
+```

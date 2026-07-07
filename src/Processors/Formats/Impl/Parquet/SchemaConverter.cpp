@@ -910,7 +910,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
         return;
     }
 
@@ -918,7 +918,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
     }
 

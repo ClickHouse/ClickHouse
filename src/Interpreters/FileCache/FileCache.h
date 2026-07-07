@@ -229,6 +229,8 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
+    size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -275,15 +277,17 @@ public:
     FileCacheRocksDBIndexPtr getRocksDBIndex() const { return rocksdb_index; }
 #endif
 
-    static void onSegmentEvicted(const FileSegment & segment);
-    static void onSegmentEvictedInTheBackground(const FileSegment & segment);
-
 private:
+    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> reserve_granularity;
     std::atomic<size_t> background_download_max_file_segment_size;
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
@@ -308,6 +312,8 @@ private:
     const double split_cache_ratio;
 
     const bool skip_cache_on_disk_failure;
+    std::atomic<bool> expose_eviction_metrics;
+    std::atomic<bool> expose_eviction_metrics_per_user;
 
     String name;
     LoggerPtr log;

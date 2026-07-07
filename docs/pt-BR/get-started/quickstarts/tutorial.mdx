@@ -1,0 +1,530 @@
+---
+slug: /tutorial
+sidebarTitle: 'Tutorial avançado'
+title: 'Tutorial avançado'
+description: 'Aprenda a fazer a ingestão e consultar dados no ClickHouse usando um conjunto de dados de exemplo de táxis da cidade de Nova York.'
+keywords: ['clickhouse', 'instalar', 'tutorial', 'dicionário', 'dicionários', 'exemplo', 'avançado', 'taxi', 'new york', 'nyc']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+<div id="overview">
+  ## Visão geral
+</div>
+
+Aprenda a fazer a ingestão e consultar dados no ClickHouse usando o conjunto de dados de exemplo dos táxis da cidade de Nova York.
+
+<div id="prerequisites">
+  ### Pré-requisitos
+</div>
+
+Você precisa ter acesso a um serviço do ClickHouse em execução para concluir este tutorial. Para obter instruções, consulte o guia [Quick Start](/pt-BR/get-started/setup/install).
+
+<Steps>
+  <Step>
+    ## Crie uma nova tabela
+
+    O dataset de corridas de táxi da cidade de Nova York contém detalhes sobre milhões de corridas, com colunas como valor da gorjeta, pedágios, tipo de pagamento e muito mais. Crie uma tabela para armazenar esses dados.
+
+    1. Conecte-se ao SQL Console:
+       * No ClickHouse Cloud, selecione um serviço no menu suspenso e depois **SQL Console** no menu de navegação à esquerda.
+       * No ClickHouse autogerenciado, conecte-se ao SQL Console em `https://_hostname_:8443/play`. Consulte o administrador do ClickHouse para obter os detalhes.
+
+    2. Crie a tabela `trips` a seguir no banco de dados `default`:
+       ```sql
+       CREATE TABLE trips
+       (
+           `trip_id` UInt32,
+           `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+           `pickup_date` Date,
+           `pickup_datetime` DateTime,
+           `dropoff_date` Date,
+           `dropoff_datetime` DateTime,
+           `store_and_fwd_flag` UInt8,
+           `rate_code_id` UInt8,
+           `pickup_longitude` Float64,
+           `pickup_latitude` Float64,
+           `dropoff_longitude` Float64,
+           `dropoff_latitude` Float64,
+           `passenger_count` UInt8,
+           `trip_distance` Float64,
+           `fare_amount` Float32,
+           `extra` Float32,
+           `mta_tax` Float32,
+           `tip_amount` Float32,
+           `tolls_amount` Float32,
+           `ehail_fee` Float32,
+           `improvement_surcharge` Float32,
+           `total_amount` Float32,
+           `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+           `trip_type` UInt8,
+           `pickup` FixedString(25),
+           `dropoff` FixedString(25),
+           `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+           `pickup_nyct2010_gid` Int8,
+           `pickup_ctlabel` Float32,
+           `pickup_borocode` Int8,
+           `pickup_ct2010` String,
+           `pickup_boroct2010` String,
+           `pickup_cdeligibil` String,
+           `pickup_ntacode` FixedString(4),
+           `pickup_ntaname` String,
+           `pickup_puma` UInt16,
+           `dropoff_nyct2010_gid` UInt8,
+           `dropoff_ctlabel` Float32,
+           `dropoff_borocode` UInt8,
+           `dropoff_ct2010` String,
+           `dropoff_boroct2010` String,
+           `dropoff_cdeligibil` String,
+           `dropoff_ntacode` FixedString(4),
+           `dropoff_ntaname` String,
+           `dropoff_puma` UInt16
+       )
+       ENGINE = MergeTree
+       PARTITION BY toYYYYMM(pickup_date)
+       ORDER BY pickup_datetime;
+       ```
+  </Step>
+
+  <Step>
+    ## Adicione o conjunto de dados
+
+    Agora que você criou a tabela, adicione os dados de táxi da cidade de Nova York a partir de arquivos CSV no S3.
+
+    1. O comando a seguir insere ~2.000.000 de linhas na sua tabela `trips` a partir de dois arquivos diferentes no S3: `trips_1.tsv.gz` e `trips_2.tsv.gz`:
+
+       ```sql
+       INSERT INTO trips
+       SELECT * FROM s3(
+           'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+           'TabSeparatedWithNames', "
+           `trip_id` UInt32,
+           `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+           `pickup_date` Date,
+           `pickup_datetime` DateTime,
+           `dropoff_date` Date,
+           `dropoff_datetime` DateTime,
+           `store_and_fwd_flag` UInt8,
+           `rate_code_id` UInt8,
+           `pickup_longitude` Float64,
+           `pickup_latitude` Float64,
+           `dropoff_longitude` Float64,
+           `dropoff_latitude` Float64,
+           `passenger_count` UInt8,
+           `trip_distance` Float64,
+           `fare_amount` Float32,
+           `extra` Float32,
+           `mta_tax` Float32,
+           `tip_amount` Float32,
+           `tolls_amount` Float32,
+           `ehail_fee` Float32,
+           `improvement_surcharge` Float32,
+           `total_amount` Float32,
+           `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+           `trip_type` UInt8,
+           `pickup` FixedString(25),
+           `dropoff` FixedString(25),
+           `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+           `pickup_nyct2010_gid` Int8,
+           `pickup_ctlabel` Float32,
+           `pickup_borocode` Int8,
+           `pickup_ct2010` String,
+           `pickup_boroct2010` String,
+           `pickup_cdeligibil` String,
+           `pickup_ntacode` FixedString(4),
+           `pickup_ntaname` String,
+           `pickup_puma` UInt16,
+           `dropoff_nyct2010_gid` UInt8,
+           `dropoff_ctlabel` Float32,
+           `dropoff_borocode` UInt8,
+           `dropoff_ct2010` String,
+           `dropoff_boroct2010` String,
+           `dropoff_cdeligibil` String,
+           `dropoff_ntacode` FixedString(4),
+           `dropoff_ntaname` String,
+           `dropoff_puma` UInt16
+       ") SETTINGS input_format_try_infer_datetimes = 0
+       ```
+
+    2. Aguarde a conclusão do `INSERT`. O download dos 150 MB de dados pode levar um instante.
+
+    3. Quando a inserção terminar, verifique se funcionou:
+
+       ```sql
+       SELECT count() FROM trips
+       ```
+
+       Esta consulta deve retornar 1.999.657 linhas.
+  </Step>
+
+  <Step>
+    ## Analisar os dados
+
+    Execute algumas consultas para analisar os dados. Explore os exemplos a seguir ou experimente sua própria consulta SQL.
+
+    * Calcule o valor médio das gorjetas:
+
+      ```sql
+      SELECT round(avg(tip_amount), 2) FROM trips
+      ```
+
+      <Accordion title="Saída esperada">
+        <p>
+          ```response
+          ┌─round(avg(tip_amount), 2)─┐
+          │                      1.68 │
+          └───────────────────────────┘
+          ```
+        </p>
+      </Accordion>
+
+    * Calcule o custo médio com base no número de passageiros:
+
+      ```sql
+      SELECT
+          passenger_count,
+          ceil(avg(total_amount),2) AS average_total_amount
+      FROM trips
+      GROUP BY passenger_count
+      ```
+
+      <Accordion title="Saída esperada">
+        <p>
+          O `passenger_count` vai de 0 a 9:
+
+          ```response
+          ┌─passenger_count─┬─average_total_amount─┐
+          │               0 │                22.69 │
+          │               1 │                15.97 │
+          │               2 │                17.15 │
+          │               3 │                16.76 │
+          │               4 │                17.33 │
+          │               5 │                16.35 │
+          │               6 │                16.04 │
+          │               7 │                 59.8 │
+          │               8 │                36.41 │
+          │               9 │                 9.81 │
+          └─────────────────┴──────────────────────┘
+          ```
+        </p>
+      </Accordion>
+
+    * Calcule o número diário de coletas por bairro:
+
+      ```sql
+      SELECT
+          pickup_date,
+          pickup_ntaname,
+          SUM(1) AS number_of_trips
+      FROM trips
+      GROUP BY pickup_date, pickup_ntaname
+      ORDER BY pickup_date ASC
+      ```
+
+      <Accordion title="Saída esperada">
+        <p>
+          ```response
+          ┌─pickup_date─┬─pickup_ntaname───────────────────────────────────────────┬─number_of_trips─┐
+          │  2015-07-01 │ Brooklyn Heights-Cobble Hill                             │              13 │
+          │  2015-07-01 │ Old Astoria                                              │               5 │
+          │  2015-07-01 │ Flushing                                                 │               1 │
+          │  2015-07-01 │ Yorkville                                                │             378 │
+          │  2015-07-01 │ Gramercy                                                 │             344 │
+          │  2015-07-01 │ Fordham South                                            │               2 │
+          │  2015-07-01 │ SoHo-TriBeCa-Civic Center-Little Italy                   │             621 │
+          │  2015-07-01 │ Park Slope-Gowanus                                       │              29 │
+          │  2015-07-01 │ Bushwick South                                           │               5 │
+          ```
+        </p>
+      </Accordion>
+
+    * Calcule a duração de cada viagem em minutos e, em seguida, agrupe os resultados pela duração da viagem:
+
+      ```sql
+      SELECT
+          avg(tip_amount) AS avg_tip,
+          avg(fare_amount) AS avg_fare,
+          avg(passenger_count) AS avg_passenger,
+          count() AS count,
+          truncate(date_diff('second', pickup_datetime, dropoff_datetime)/60) as trip_minutes
+      FROM trips
+      WHERE trip_minutes > 0
+      GROUP BY trip_minutes
+      ORDER BY trip_minutes DESC
+      ```
+
+      <Accordion title="Saída esperada">
+        <p>
+          ```response
+          ┌──────────────avg_tip─┬───────────avg_fare─┬──────avg_passenger─┬──count─┬─trip_minutes─┐
+          │   1.9600000381469727 │                  8 │                  1 │      1 │        27511 │
+          │                    0 │                 12 │                  2 │      1 │        27500 │
+          │    0.542166673981895 │ 19.716666666666665 │ 1.9166666666666667 │     60 │         1439 │
+          │    0.902499997522682 │ 11.270625001192093 │            1.95625 │    160 │         1438 │
+          │   0.9715789457909146 │ 13.646616541353383 │ 2.0526315789473686 │    133 │         1437 │
+          │   0.9682692398245518 │ 14.134615384615385 │  2.076923076923077 │    104 │         1436 │
+          │   1.1022105210705808 │ 13.778947368421052 │  2.042105263157895 │     95 │         1435 │
+          ```
+        </p>
+      </Accordion>
+
+    * Mostre o número de embarques em cada bairro, detalhado por hora do dia:
+
+      ```sql
+      SELECT
+          pickup_ntaname,
+          toHour(pickup_datetime) as pickup_hour,
+          SUM(1) AS pickups
+      FROM trips
+      WHERE pickup_ntaname != ''
+      GROUP BY pickup_ntaname, pickup_hour
+      ORDER BY pickup_ntaname, pickup_hour
+      ```
+
+      <Accordion title="Saída esperada">
+        <p>
+          ```response
+          ┌─pickup_ntaname───────────────────────────────────────────┬─pickup_hour─┬─pickups─┐
+          │ Airport                                                  │           0 │    3509 │
+          │ Airport                                                  │           1 │    1184 │
+          │ Airport                                                  │           2 │     401 │
+          │ Airport                                                  │           3 │     152 │
+          │ Airport                                                  │           4 │     213 │
+          │ Airport                                                  │           5 │     955 │
+          │ Airport                                                  │           6 │    2161 │
+          │ Airport                                                  │           7 │    3013 │
+          │ Airport                                                  │           8 │    3601 │
+          │ Airport                                                  │           9 │    3792 │
+          │ Airport                                                  │          10 │    4546 │
+          │ Airport                                                  │          11 │    4659 │
+          │ Airport                                                  │          12 │    4621 │
+          │ Airport                                                  │          13 │    5348 │
+          │ Airport                                                  │          14 │    5889 │
+          │ Airport                                                  │          15 │    6505 │
+          │ Airport                                                  │          16 │    6119 │
+          │ Airport                                                  │          17 │    6341 │
+          │ Airport                                                  │          18 │    6173 │
+          │ Airport                                                  │          19 │    6329 │
+          │ Airport                                                  │          20 │    6271 │
+          │ Airport                                                  │          21 │    6649 │
+          │ Airport                                                  │          22 │    6356 │
+          │ Airport                                                  │          23 │    6016 │
+          │ Allerton-Pelham Gardens                                  │           4 │       1 │
+          │ Allerton-Pelham Gardens                                  │           6 │       1 │
+          │ Allerton-Pelham Gardens                                  │           7 │       1 │
+          │ Allerton-Pelham Gardens                                  │           9 │       5 │
+          │ Allerton-Pelham Gardens                                  │          10 │       3 │
+          │ Allerton-Pelham Gardens                                  │          15 │       1 │
+          │ Allerton-Pelham Gardens                                  │          20 │       2 │
+          │ Allerton-Pelham Gardens                                  │          23 │       1 │
+          │ Annadale-Huguenot-Prince's Bay-Eltingville               │          23 │       1 │
+          │ Arden Heights                                            │          11 │       1 │
+          ```
+        </p>
+      </Accordion>
+
+    7. Recupere  corridas com destino aos aeroportos LaGuardia ou JFK:
+
+       ```sql
+       SELECT
+           pickup_datetime,
+           dropoff_datetime,
+           total_amount,
+           pickup_nyct2010_gid,
+           dropoff_nyct2010_gid,
+           CASE
+               WHEN dropoff_nyct2010_gid = 138 THEN 'LGA'
+               WHEN dropoff_nyct2010_gid = 132 THEN 'JFK'
+           END AS airport_code,
+           EXTRACT(YEAR FROM pickup_datetime) AS year,
+           EXTRACT(DAY FROM pickup_datetime) AS day,
+           EXTRACT(HOUR FROM pickup_datetime) AS hour
+       FROM trips
+       WHERE dropoff_nyct2010_gid IN (132, 138)
+       ORDER BY pickup_datetime
+       ```
+
+       <Accordion title="Resultado esperado">
+         <p>
+           ```response
+           ┌─────pickup_datetime─┬────dropoff_datetime─┬─total_amount─┬─pickup_nyct2010_gid─┬─dropoff_nyct2010_gid─┬─airport_code─┬─year─┬─day─┬─hour─┐
+           │ 2015-07-01 00:04:14 │ 2015-07-01 00:15:29 │         13.3 │                 -34 │                  132 │ JFK          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:09:42 │ 2015-07-01 00:12:55 │          6.8 │                  50 │                  138 │ LGA          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:23:04 │ 2015-07-01 00:24:39 │          4.8 │                -125 │                  132 │ JFK          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:27:51 │ 2015-07-01 00:39:02 │        14.72 │                -101 │                  138 │ LGA          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:32:03 │ 2015-07-01 00:55:39 │        39.34 │                  48 │                  138 │ LGA          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:34:12 │ 2015-07-01 00:40:48 │         9.95 │                 -93 │                  132 │ JFK          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:38:26 │ 2015-07-01 00:49:00 │         13.3 │                 -11 │                  138 │ LGA          │ 2015 │   1 │    0 │
+           │ 2015-07-01 00:41:48 │ 2015-07-01 00:44:45 │          6.3 │                 -94 │                  132 │ JFK          │ 2015 │   1 │    0 │
+           │ 2015-07-01 01:06:18 │ 2015-07-01 01:14:43 │        11.76 │                  37 │                  132 │ JFK          │ 2015 │   1 │    1 │
+           ```
+         </p>
+       </Accordion>
+  </Step>
+
+  <Step>
+    ## Criar um dicionário
+
+    Um dicionário é um mapeamento de pares chave-valor armazenado em memória. Para mais detalhes, consulte [Dictionaries](/pt-BR/reference/statements/create/dictionary)
+
+    Crie um Dicionário associado a uma tabela no seu serviço ClickHouse.
+    A tabela e o Dicionário são baseados em um arquivo CSV que contém uma linha para cada bairro da cidade de Nova York.
+
+    Os bairros são mapeados para os nomes dos cinco distritos da cidade de Nova York (Bronx, Brooklyn, Manhattan, Queens e Staten Island), bem como para o Aeroporto de Newark (EWR).
+
+    Aqui está um trecho do arquivo CSV que você está usando, em formato de tabela. A coluna `LocationID` no arquivo corresponde às colunas `pickup_nyct2010_gid` e `dropoff_nyct2010_gid` na sua tabela `trips`:
+
+    | LocationID | Distrito      | Zona                    | zona&#95;de&#95;serviço |
+    | ---------- | ------------- | ----------------------- | ----------------------- |
+    | 1          | EWR           | Aeroporto de Newark     | EWR                     |
+    | 2          | Queens        | Jamaica Bay             | Zona dos distritos      |
+    | 3          | Bronx         | Allerton/Pelham Gardens | Zona dos distritos      |
+    | 4          | Manhattan     | Alphabet City           | Zona amarela            |
+    | 5          | Staten Island | Arden Heights           | Zona do distrito        |
+
+    1. Execute o comando SQL a seguir, que cria um Dicionário chamado `taxi_zone_dictionary` e o preenche com os dados do arquivo CSV no S3. A URL do arquivo é `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv`.
+
+    ```sql
+    CREATE DICTIONARY taxi_zone_dictionary
+    (
+      `LocationID` UInt16 DEFAULT 0,
+      `Borough` String,
+      `Zone` String,
+      `service_zone` String
+    )
+    PRIMARY KEY LocationID
+    SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
+    LIFETIME(MIN 0 MAX 0)
+    LAYOUT(HASHED_ARRAY())
+    ```
+
+    <Note>
+      Definir `LIFETIME` como 0 desativa as atualizações automáticas para evitar tráfego desnecessário para o nosso bucket do S3. Em outros casos, talvez seja necessário configurá-lo de outra forma. Para mais detalhes, consulte [Atualização dos dados do Dicionário com LIFETIME](/pt-BR/reference/statements/create/dictionary/lifetime).
+    </Note>
+
+    3. Verifique se deu certo. O comando a seguir deve retornar 265 linhas, ou uma linha para cada bairro:
+       ```sql
+       SELECT * FROM taxi_zone_dictionary
+       ```
+
+    4. Use a função `dictGet` ([ou suas variações](/pt-BR/reference/functions/regular-functions/ext-dict-functions)) para obter um valor de um dicionário. Informe o nome do dicionário, o valor desejado e a chave (que, no nosso exemplo, é a coluna `LocationID` de `taxi_zone_dictionary`).
+
+       Por exemplo, a consulta a seguir retorna o `Borough` cujo `LocationID` é 132, que corresponde ao aeroporto JFK):
+
+       ```sql
+       SELECT dictGet('taxi_zone_dictionary', 'Borough', 132)
+       ```
+
+       JFK fica em Queens. Observe que o tempo para recuperar o valor é praticamente 0:
+
+       ```response
+       ┌─dictGet('taxi_zone_dictionary', 'Borough', 132)─┐
+       │ Queens                                          │
+       └─────────────────────────────────────────────────┘
+
+       1 rows in set. Elapsed: 0.004 sec.
+       ```
+
+    5. Use a função `dictHas` para verificar se uma chave está presente no dicionário. Por exemplo, a consulta a seguir retorna `1` (que significa &quot;true&quot; no ClickHouse):
+       ```sql
+       SELECT dictHas('taxi_zone_dictionary', 132)
+       ```
+
+    6. A consulta a seguir retorna 0 porque 4567 não corresponde a nenhum valor de `LocationID` no dicionário:
+       ```sql
+       SELECT dictHas('taxi_zone_dictionary', 4567)
+       ```
+
+    7. Use a função `dictGet` para obter o nome de um borough em uma consulta. Por exemplo:
+
+       ```sql
+       SELECT
+           count(1) AS total,
+           dictGetOrDefault('taxi_zone_dictionary','Borough', toUInt64(pickup_nyct2010_gid), 'Unknown') AS borough_name
+       FROM trips
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY borough_name
+       ORDER BY total DESC
+       ```
+
+       Esta consulta totaliza o número de corridas de táxi por distrito que terminam no aeroporto LaGuardia ou no JFK. O resultado é semelhante ao seguinte, e observe que há várias corridas em que o bairro de embarque é desconhecido:
+
+       ```response
+       ┌─total─┬─borough_name──┐
+       │ 23683 │ Unknown       │
+       │  7053 │ Manhattan     │
+       │  6828 │ Brooklyn      │
+       │  4458 │ Queens        │
+       │  2670 │ Bronx         │
+       │   554 │ Staten Island │
+       │    53 │ EWR           │
+       └───────┴───────────────┘
+
+       7 rows in set. Elapsed: 0.019 sec. Processed 2.00 million rows, 4.00 MB (105.70 million rows/s., 211.40 MB/s.)
+       ```
+  </Step>
+
+  <Step>
+    ## Faça um join
+
+    Escreva algumas consultas que façam o join do `taxi_zone_dictionary` com a tabela `trips`.
+
+    1. Comece com um `JOIN` simples que funciona de maneira semelhante à consulta anterior sobre aeroportos:
+
+       ```sql
+       SELECT
+           count(1) AS total,
+           Borough
+       FROM trips
+       JOIN taxi_zone_dictionary ON toUInt64(trips.pickup_nyct2010_gid) = taxi_zone_dictionary.LocationID
+       WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+       GROUP BY Borough
+       ORDER BY total DESC
+       ```
+
+       A resposta é idêntica à consulta `dictGet`:
+
+       ```response
+       ┌─total─┬─Borough───────┐
+       │  7053 │ Manhattan     │
+       │  6828 │ Brooklyn      │
+       │  4458 │ Queens        │
+       │  2670 │ Bronx         │
+       │   554 │ Staten Island │
+       │    53 │ EWR           │
+       └───────┴───────────────┘
+
+       6 rows in set. Elapsed: 0.034 sec. Processed 2.00 million rows, 4.00 MB (59.14 million rows/s., 118.29 MB/s.)
+       ```
+
+    <Note>
+      Observe que a saída da consulta `JOIN` acima é a mesma da consulta anterior, que usou `dictGetOrDefault` (exceto porque os valores `Unknown` não estão incluídos). Nos bastidores, o ClickHouse está chamando a função `dictGet` para o dicionário `taxi_zone_dictionary`, mas a sintaxe `JOIN` é mais familiar para desenvolvedores SQL.
+    </Note>
+
+    2. Esta consulta retorna as 1000 viagens com o maior valor de gorjeta e, em seguida, faz um inner join de cada linha com o dicionário:
+       ```sql
+       SELECT *
+       FROM trips
+       JOIN taxi_zone_dictionary
+           ON trips.dropoff_nyct2010_gid = taxi_zone_dictionary.LocationID
+       WHERE tip_amount > 0
+       ORDER BY tip_amount DESC
+       LIMIT 1000
+       ```
+
+    <Note>
+      Em geral, evitamos usar `SELECT *` com frequência no ClickHouse. Recupere apenas as colunas de que você realmente precisa.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+Saiba mais sobre o ClickHouse com a documentação a seguir:
+
+* [Introdução aos índices primários no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes): Saiba como o ClickHouse usa índices primários esparsos para localizar dados relevantes com eficiência durante as consultas.
+* [Integre uma fonte de dados externa](/pt-BR/integrations/home): Confira as opções de integração de fontes de dados, incluindo arquivos, Kafka, PostgreSQL, pipelines de dados e muito mais.
+* [Visualize dados no ClickHouse](/pt-BR/integrations/connectors/data-visualization/index): Conecte sua ferramenta de UI/BI preferida ao ClickHouse.
+* [Referência SQL](/pt-BR/reference/home): Navegue pelas funções SQL disponíveis no ClickHouse para transformar, processar e analisar dados.
