@@ -26,7 +26,7 @@
 #include <Common/logger_useful.h>
 
 #include <algorithm>
-#include <limits>
+#include <cmath>
 
 
 /// See https://fmt.dev/latest/api.html#formatting-user-defined-types
@@ -88,10 +88,13 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
 
-    using ValueType = typename ColumnType::ValueType;
+    // NativeType<> is to get the underlying integer type for Decimal columns,
+    // which have value type Decimal<>.
+    using ValueType = NativeType<typename ColumnType::ValueType>;
     // Note that the storage type of offset returned by get<> is different, so
-    // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
+    // we need to specify the type explicitly. In case of Decimals, this becomes
+    // a series of even three casts: DecimalField<Decimal<int>> to Decimal<int> to int.
+    const ValueType offset = static_cast<typename ColumnType::ValueType>(_offset.safeGet<typename ColumnType::ValueType>());
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -263,6 +266,9 @@ APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
 \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal64>) \
+\
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
 \
@@ -364,6 +370,14 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         // Convert the offsets to the ORDER BY column type. We can't just check
         // that the type matches, because e.g. the int literals are always
         // (U)Int64, but the column might be Int8 and so on.
+        // Also reject invalid values here (negative or NaN): the comparison
+        // functions downstream assume a valid nonnegative offset. A Float
+        // ORDER BY column can carry a NaN offset, which is not ordered, so
+        // check it explicitly instead of relying on comparison semantics.
+        auto is_nan_offset = [](const Field & offset)
+        {
+            return offset.getType() == Field::Types::Float64 && std::isnan(offset.safeGet<Float64>());
+        };
         if (window_description.frame.begin_type
             == WindowFrame::BoundaryType::Offset)
         {
@@ -371,7 +385,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.begin_offset,
                 *entry.type);
 
-            if (accurateLess(window_description.frame.begin_offset, Field(0)))
+            if (is_nan_offset(window_description.frame.begin_offset)
+                || accurateLess(window_description.frame.begin_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
@@ -385,7 +400,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
                 window_description.frame.end_offset,
                 *entry.type);
 
-            if (accurateLess(window_description.frame.end_offset, Field(0)))
+            if (is_nan_offset(window_description.frame.end_offset)
+                || accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be nonnegative, {} given",
