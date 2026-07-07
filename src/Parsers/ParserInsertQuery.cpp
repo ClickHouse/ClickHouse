@@ -6,6 +6,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
@@ -86,6 +87,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr settings_ast;
     ASTPtr source_select_settings_ast;
     ASTPtr source_select_settings_runtime_ast;
+    ASTPtr source_select_settings_global_ast;
     ASTPtr returning_select;
     ASTPtr partition_by_expr;
     ASTPtr compression;
@@ -350,12 +352,59 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (select)
     {
+        auto merge_settings_ast = [](ASTPtr & target_settings_ast, const ASTPtr & source_settings_ast)
+        {
+            if (!source_settings_ast)
+                return;
+
+            if (!target_settings_ast)
+            {
+                target_settings_ast = source_settings_ast->clone();
+                return;
+            }
+
+            auto & source_settings = source_settings_ast->as<ASTSetQuery &>();
+            auto & target_settings = target_settings_ast->as<ASTSetQuery &>();
+            std::unordered_set<String> target_setting_names;
+            target_setting_names.reserve(target_settings.changes.size() + target_settings.default_settings.size());
+
+            for (const auto & change : target_settings.changes)
+                target_setting_names.insert(change.name);
+            for (const auto & default_setting : target_settings.default_settings)
+                target_setting_names.insert(default_setting);
+
+            for (const auto & change : source_settings.changes)
+            {
+                if (!target_setting_names.contains(change.name))
+                {
+                    target_settings.changes.push_back(change);
+                    target_setting_names.insert(change.name);
+                }
+            }
+
+            for (const auto & default_setting : source_settings.default_settings)
+            {
+                if (!target_setting_names.contains(default_setting))
+                {
+                    target_settings.default_settings.push_back(default_setting);
+                    target_setting_names.insert(default_setting);
+                }
+            }
+        };
+
         /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS.
         /// When RETURNING is present, keep source-SELECT settings in `source_select_settings_ast` so they can be
         /// applied for the source phase but excluded from RETURNING planning/limits.
         ASTPtr & source_settings_target = returning_select ? source_select_settings_runtime_ast : settings_ast;
         InsertQuerySettingsPushDownVisitor::Data visitor_data{source_settings_target};
         InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+
+        if (returning_select)
+        {
+            if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
+                merge_settings_ast(source_select_settings_global_ast, query_with_output->settings_ast);
+            merge_settings_ast(source_select_settings_global_ast, source_select_settings_ast);
+        }
 
     }
 
@@ -435,6 +484,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->settings_ast = settings_ast;
     query->source_select_settings_ast = source_select_settings_ast;
     query->source_select_settings_runtime_ast = source_select_settings_runtime_ast;
+    query->source_select_settings_global_ast = source_select_settings_global_ast;
     query->data = data != end ? data : nullptr;
     query->end = data ? end : nullptr;
 

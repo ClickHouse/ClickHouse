@@ -87,6 +87,16 @@ RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
 
 SELECT count() FROM t_ret_settings;
 
+-- Nested source settings must stay local to nested source subqueries and not leak to outer source expressions.
+SELECT 'nested source settings do not affect outer source expressions';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+FROM (SELECT 1 SETTINGS custom_insert_source = 'x')
+RETURNING (SELECT count() FROM t_ret_settings);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
 -- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
 SELECT 'source default settings merged with trailing settings';
 TRUNCATE TABLE t_ret_settings;

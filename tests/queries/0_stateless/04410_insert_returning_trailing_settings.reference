@@ -43,6 +43,9 @@ unset
 nested source custom setting does not leak into returning
 unset
 1
+nested source settings do not affect outer source expressions
+1
+0
 source default settings merged with trailing settings
 3
 3

@@ -308,6 +308,19 @@ static void rejectUnsupportedSourceInsertReturningSettings(const ASTPtr & source
     }
 }
 
+static void collectSourceSettingsNames(const ASTPtr & source_select_settings_ast, std::unordered_set<String> & out_names)
+{
+    if (!source_select_settings_ast)
+        return;
+
+    const auto & source_settings = source_select_settings_ast->as<ASTSetQuery &>();
+    out_names.reserve(out_names.size() + source_settings.changes.size() + source_settings.default_settings.size());
+    for (const auto & change : source_settings.changes)
+        out_names.insert(change.name);
+    for (const auto & default_setting : source_settings.default_settings)
+        out_names.insert(default_setting);
+}
+
 
 /// Log query into text log (not into system table).
 static void logQuery(const String & query, ContextPtr context, bool internal, QueryProcessingStage::Enum stage)
@@ -1563,32 +1576,25 @@ static BlockIO executeQueryImpl(
             {
                 rejectUnsupportedSourceInsertReturningSettings(insert_query->source_select_settings_runtime_ast);
                 Settings settings_before_source = context->getSettingsRef();
-                InterpreterSetQuery(insert_query->source_select_settings_runtime_ast, context)
-                    .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+                if (insert_query->source_select_settings_global_ast)
+                {
+                    InterpreterSetQuery(insert_query->source_select_settings_global_ast, context)
+                        .executeForCurrentContext(/* ignore_setting_constraints= */ false);
+                }
 
-                const auto & settings_after_source = context->getSettingsRef();
                 auto restore_ast = make_intrusive<ASTSetQuery>();
                 restore_ast->is_standalone = false;
 
                 std::unordered_set<String> all_setting_names;
-                for (std::string_view setting_name : settings_before_source.getAllRegisteredNames())
-                    all_setting_names.emplace(setting_name);
-                for (std::string_view setting_name : settings_after_source.getAllRegisteredNames())
-                    all_setting_names.emplace(setting_name);
+                collectSourceSettingsNames(insert_query->source_select_settings_runtime_ast, all_setting_names);
 
                 for (const auto & setting_name : all_setting_names)
                 {
                     Field value_before;
-                    Field value_after;
                     const bool has_before = settings_before_source.tryGet(setting_name, value_before);
-                    const bool has_after = settings_after_source.tryGet(setting_name, value_after);
-
                     if (has_before)
-                    {
-                        if (!has_after || value_before != value_after)
-                            restore_ast->changes.emplace_back(setting_name, std::move(value_before));
-                    }
-                    else if (has_after)
+                        restore_ast->changes.emplace_back(setting_name, std::move(value_before));
+                    else
                         restore_ast->default_settings.emplace_back(setting_name);
                 }
 

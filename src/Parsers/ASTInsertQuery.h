@@ -32,6 +32,9 @@ public:
     /// Contains source SELECT settings (parsed before RETURNING) plus optional trailing source settings
     /// parsed after RETURNING. Not serialized.
     ASTPtr source_select_settings_runtime_ast;
+    /// Runtime-only top-level source settings applied on the outer INSERT context before source query execution.
+    /// Nested source subquery settings are intentionally excluded and remain local to nested interpreters.
+    ASTPtr source_select_settings_global_ast;
     /// Runtime-only snapshot of query settings that must be restored before planning RETURNING.
     /// Filled in `executeQueryImpl` after source-only settings are applied.
     ASTPtr source_select_settings_restore_ast;
@@ -77,6 +80,7 @@ public:
         if (settings_ast) { res->settings_ast = settings_ast->clone(); res->children.push_back(res->settings_ast); }
         if (source_select_settings_ast) { res->source_select_settings_ast = source_select_settings_ast->clone(); res->children.push_back(res->source_select_settings_ast); }
         if (source_select_settings_runtime_ast) { res->source_select_settings_runtime_ast = source_select_settings_runtime_ast->clone(); }
+        if (source_select_settings_global_ast) { res->source_select_settings_global_ast = source_select_settings_global_ast->clone(); }
         if (source_select_settings_restore_ast) { res->source_select_settings_restore_ast = source_select_settings_restore_ast->clone(); }
         if (select) { res->select = select->clone(); res->children.push_back(res->select); }
         if (returning_select) { res->returning_select = returning_select->clone(); res->children.push_back(res->returning_select); }
