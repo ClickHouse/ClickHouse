@@ -10,6 +10,8 @@ Scenario:
      the leader via log_entries_ext.
   5. Wait for node 3 to become a connected follower.
   6. Assert that node 3 can read back all the znodes written in step 3.
+  7. Assert via `pfev` that the read-ahead machinery actually fired during
+     catch-up, so a silent fallback to direct reads can't pass this test.
 """
 
 import pytest
@@ -118,3 +120,14 @@ def test_readahead_catchup(started_cluster):
     finally:
         zk3.stop()
         zk3.close()
+
+    # --- Step 4: confirm read-ahead actually engaged on the leader ---
+    profile_events = keeper_utils.get_profile_events(cluster, leader)
+    assert profile_events.get("KeeperLogsReadAheadFillDecodedEntries", 0) > 0, (
+        "Expected KeeperLogsReadAheadFillDecodedEntries > 0 on the leader "
+        f"after catch-up, got profile events: {profile_events}"
+    )
+    assert profile_events.get("KeeperLogsReadAheadCursorsInstalled", 0) > 0, (
+        "Expected KeeperLogsReadAheadCursorsInstalled > 0 on the leader "
+        f"after catch-up, got profile events: {profile_events}"
+    )

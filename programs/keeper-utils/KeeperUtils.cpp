@@ -337,6 +337,7 @@ void spliceChangelogFile(const std::string & source_path, const std::string & de
         dest_desc->from_log_index = start_index;
         dest_desc->to_log_index = end_index - 1; // end_index is exclusive
         dest_desc->extension = source_desc->extension;
+        dest_desc->is_compressed = source_desc->is_compressed;
         dest_desc->disk = std::make_shared<DiskLocal>("LogDisk", dest_dir_path.string());
 
         // Write the spliced changelog

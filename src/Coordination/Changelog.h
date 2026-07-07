@@ -3,6 +3,7 @@
 #include <libnuraft/ptr.hxx>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ConcurrentBoundedQueue.h>
+#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <chrono>
@@ -11,6 +12,7 @@
 #include <map>
 #include <mutex>
 #include <optional>
+#include <shared_mutex>
 #include <variant>
 #include <unordered_map>
 #include <unordered_set>
@@ -90,12 +92,19 @@ struct ChangelogFileDescription
     uint64_t to_log_index{};
     std::string extension;
 
+    /// True when this file's records are `zstd`-compressed. Recorded positions are offsets into the
+    /// *decompressed* stream, so plan-based/direct read paths reject such files instead of seeking
+    /// the raw bytes and decoding garbage. Startup replay is unaffected: it always decompresses.
+    bool is_compressed = false;
+
     DiskPtr disk;
     std::string path;
 
     bool broken_at_end = false;
 
-    std::mutex file_mutex;
+    /// Guards disk/path/removed_from_disk. Readers take the shared lock and run concurrently;
+    /// removal/move take the exclusive lock and wait for in-flight reads before mutating/deleting.
+    DB::SharedMutex file_mutex;
 
     bool marked_as_deleted = false;
 
@@ -137,16 +146,26 @@ struct ChangelogFileDescription
     /// How many entries should be stored in this log
     uint64_t expectedEntriesCountInLog() const { return to_log_index - from_log_index + 1; }
 
+    /// For pure reads of fields written only under withWriteLock. Never blocks concurrently with
+    /// other withReadLock calls on the same file.
     template <typename TFunction>
-    decltype(auto) withLock(TFunction && fn)
+    decltype(auto) withReadLock(TFunction && fn)
     {
-        std::lock_guard lock(file_mutex);
+        std::shared_lock lock(file_mutex);
+        return fn();
+    }
+
+    /// For mutations of the file's identity or existence: removal, move, rotation.
+    template <typename TFunction>
+    decltype(auto) withWriteLock(TFunction && fn)
+    {
+        std::unique_lock lock(file_mutex);
         return fn();
     }
 
     std::string getPathSafe()
     {
-        std::lock_guard lock(file_mutex);
+        std::shared_lock lock(file_mutex);
         return path;
     }
 
@@ -178,8 +197,6 @@ struct LogFileSettings
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
     uint64_t latest_logs_cache_entry_count_threshold = 0;
-    uint64_t commit_logs_cache_size_threshold = 0;
-    uint64_t commit_logs_cache_entry_count_threshold = 0;
 };
 
 struct FlushSettings
@@ -219,9 +236,43 @@ struct LogReadPlan
     uint64_t start_index = 0;
     size_t requested_entry_count = 0; /// = end - start; a reservation hint, not a positional anchor
     bool logs_compacted = false;      /// true => log compacted below requested start; caller gets nullptr
+
+    /// Snapshot of LogEntryStorage::truncation_epoch taken while building this plan. A mismatch
+    /// against currentTruncationEpoch at execution time means a concurrent writeAt truncated and
+    /// rewrote entries this plan references; the executor must discard rather than serve it.
+    uint64_t epoch = 0;
 };
 
 using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
+
+/// Settings for the decoded changelog read-ahead engine. One shared reader/fill implementation
+/// (ReadAheadReader) backs two independent consumers: peer catch-up read-ahead, gated by `enabled`
+/// and using window_bytes/max_peer_readers/eviction_timeout_ms/pool_threads; and commit read-ahead,
+/// always-on and gated independently by `commit_window_bytes` (0 disables it).
+struct ReadAheadSettings
+{
+    /// Gates peer read-ahead only; commit read-ahead is controlled solely by commit_window_bytes.
+    bool enabled = false;
+    uint64_t window_bytes = 64 * 1024 * 1024; /// peer read-ahead per-reader byte budget
+    uint64_t max_peer_readers = 8;
+    uint64_t eviction_timeout_ms = 30000;
+    uint64_t pool_threads = 0; /// 0 = derived from max_peer_readers
+    uint64_t serve_wait_timeout_ms = 200; /// shared bound on the serve-side wait for peer and commit reads alike
+    uint64_t chunk_size = 16; /// shared fill chunk size for peer and commit readers alike
+    /// Maximum bytes of decoded entries buffered ahead of the commit thread. 0 disables commit
+    /// read-ahead entirely, independent of `enabled`. Deliberately defaults to inert here (unlike
+    /// the coordination setting's 500 MiB default) so tests building a log store directly opt in.
+    uint64_t commit_window_bytes = 0;
+};
+
+/// If `pool_threads` is pinned below `max_peer_readers`, every pool thread can end up permanently
+/// pinned to a per-reader fill task, starving further readers indefinitely. Throws BAD_ARGUMENTS.
+void validateReadAheadSettings(const ReadAheadSettings & settings);
+
+/// Decoded-entry read-ahead reader state, shared between the serve path and the fill task. One
+/// instance backs either a follower's catch-up stream or, via LogEntryStorage::COMMIT_READER_ID,
+/// the commit reader. Full definition in Changelog.cpp.
+struct ReadAheadReader;
 
 /**
   * Storage for storing and handling deserialized entries from disk.
@@ -233,35 +284,18 @@ using IndexToLogEntry = std::unordered_map<uint64_t, LogEntryPtr>;
   * suffix), bounded by latest_logs_cache_size_threshold; once persisted, its location is recorded
   * (logs_location) and the entry may be evicted.
   *
-  * Replication is served by per-peer read-ahead readers (per_peer_readers): each follower gets a
+  * Replication is served by per-peer read-ahead readers (peer_readers): each follower gets a
   * dedicated reader decoding entries ahead of the requested range.
   *
   * Committing is served by a single always-on commit read-ahead reader (commit_reader), built on
   * the same machinery but exempt from peer capacity limits and idle eviction, with its window sized
-  * by commit_logs_cache_size_threshold. Lookup order: in-memory hits -> commit reader fast-path pop
-  * -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as fallback.
+  * by ReadAheadSettings::commit_window_bytes. Lookup order: in-memory hits -> commit reader fast-path
+  * pop -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as fallback.
   *
   * Both planners derive fill cursors from per-file valid-run metadata (ChangelogFileDescription::
   * valid_runs, appendRunCursors), bounding every cursor to a single run of current records. This
   * covers the active file's flushed prefix too.
   */
-
-/// Settings for the per-peer decoded changelog read-ahead subsystem.
-struct ReadAheadSettings
-{
-    bool enabled = false;
-    uint64_t window_bytes = 64 * 1024 * 1024;
-    uint64_t max_peer_readers = 8;
-    uint64_t eviction_timeout_ms = 30000;
-    uint64_t pool_threads = 0; /// 0 = derived from max_peer_readers
-    uint64_t serve_wait_timeout_ms = 50;
-    uint64_t chunk_size = 16;
-};
-
-/// Read-ahead state for one follower peer. Shared between the serve path and the fill task.
-/// Full definition in Changelog.cpp — only the forward declaration is needed by the header.
-struct PerPeerReader;
-
 struct LogEntryStorage
 {
     LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_);
@@ -301,12 +335,15 @@ struct LogEntryStorage
     /// Returns a plan with read_ahead_window set if read-ahead is active, absent to fall back to executeReadPlan.
     LogReadPlan getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes, uint64_t retained_start) const;
 
-    /// Serve a read-ahead request for peer_id. Must be called without changelog_lock.
+    /// Serve a read-ahead request for reader_id. Must be called without changelog_lock.
     /// Returns nullptr on compaction or snapshot fallback.
-    /// TSA: takes per_peer_readers_mutex briefly then releases; fill/serve coordination under PerPeerReader::deque_mutex.
-    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
+    /// TSA: takes readers_mutex briefly then releases; fill/serve coordination under ReadAheadReader::deque_mutex.
+    LogEntriesPtr serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
     bool isReadAheadEnabled() const { return readahead_settings.enabled; }
+
+    /// Current truncation-epoch snapshot (see LogReadPlan::epoch). Safe to call without changelog_lock.
+    uint64_t currentTruncationEpoch() const { return truncation_epoch.load(); }
 
     /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
     LogEntryPtr getEntryFromMemory(uint64_t index) const;
@@ -334,6 +371,10 @@ struct LogEntryStorage
     /// Test-only: verify valid-run metadata is consistent with logs_location. Must be called while
     /// the instance is quiescent.
     void checkValidRunsConsistency() const;
+
+    /// Test-only: total bytes currently buffered in the given reader's deque (COMMIT_READER_ID for
+    /// the commit reader), or 0 if no such reader exists.
+    size_t getReaderDecodedBytesForTests(int32_t reader_id) const;
 private:
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
@@ -413,53 +454,59 @@ private:
         uint64_t end_limit) const;
 
     /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
-    void retireReaderLocked(int32_t peer_id, const std::shared_ptr<PerPeerReader> & reader) TSA_REQUIRES(per_peer_readers_mutex);
+    /// Taken by value, not by reference into the map, since erasing the entry below would dangle a reference.
+    void retireReaderLocked(int32_t reader_id, std::shared_ptr<ReadAheadReader> reader) TSA_REQUIRES(readers_mutex);
 
-    /// Close and discard all per-peer readers. Called on writeAt to invalidate stale decoded content.
-    void closeAllReadersLocked();
+    /// Close and discard all per-peer readers (and the commit reader). Called on writeAt to invalidate
+    /// stale decoded content.
+    void closeAllReaders(); ///< self-locking (acquires readers_mutex)
 
     /// Lazily create the read-ahead thread pool.
-    void ensureReadAheadPoolLocked() TSA_REQUIRES(per_peer_readers_mutex);
+    void ensureReadAheadPoolLocked() TSA_REQUIRES(readers_mutex);
 
     /// Evict idle readers. Gated by map capacity and a wall-clock interval to avoid scanning on every call.
-    void evictIdleReadersLocked(std::chrono::steady_clock::time_point now) TSA_REQUIRES(per_peer_readers_mutex);
+    void evictIdleReadersLocked(std::chrono::steady_clock::time_point now) TSA_REQUIRES(readers_mutex);
 
-    /// Reap a terminal reader for peer_id (if any), enforce max_peer_readers, and create/schedule a new
+    /// Reap a terminal reader for reader_id (if any), enforce max_peer_readers, and create/schedule a new
     /// reader. Returns nullptr when at capacity (caller should fall back to direct read).
-    std::shared_ptr<PerPeerReader> acquireReaderLocked(int32_t peer_id, const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
-        TSA_REQUIRES(per_peer_readers_mutex);
+    std::shared_ptr<ReadAheadReader> acquireReaderLocked(int32_t reader_id, const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
+        TSA_REQUIRES(readers_mutex);
 
     /// Create a fresh reader and schedule its fill task. Returns nullptr if the pool is unavailable
     /// (post-shutdown). Shared by per-peer and commit-reader acquisition; does not touch the maps.
-    std::shared_ptr<PerPeerReader> makeReaderLocked(uint64_t start_index, size_t budget_bytes, std::chrono::steady_clock::time_point now)
-        TSA_REQUIRES(per_peer_readers_mutex);
+    std::shared_ptr<ReadAheadReader> makeReaderLocked(uint64_t start_index, size_t budget_bytes, std::chrono::steady_clock::time_point now)
+        TSA_REQUIRES(readers_mutex);
 
     /// Install the new plan into an existing reader (rewind if non-sequential, push fill cursors).
     /// Caller holds reader.deque_mutex.
-    void installPlanLocked(PerPeerReader & reader, const LogReadPlan & plan);
+    void installPlanLocked(ReadAheadReader & reader, const LogReadPlan & plan);
 
     /// Serve items from reader's deque, falling back to direct read for any tail that is not available.
-    LogEntriesPtr drainReader(int32_t peer_id, const std::shared_ptr<PerPeerReader> & reader, const LogReadPlan & plan);
+    LogEntriesPtr drainReader(int32_t reader_id, const std::shared_ptr<ReadAheadReader> & reader, const LogReadPlan & plan);
 
     /// Background fill task for one peer reader.
-    void fillTask(std::shared_ptr<PerPeerReader> reader) const;
+    void fillTask(std::shared_ptr<ReadAheadReader> reader) const;
+
+    /// Bumped at the top of cleanAfter (writeAt truncation), before any mutation; not bumped by
+    /// cleanUpTo (compaction), which is already fenced by removed_from_disk. See LogReadPlan::epoch.
+    std::atomic<uint64_t> truncation_epoch{0};
 
     ReadAheadSettings readahead_settings;
-    mutable std::mutex per_peer_readers_mutex;
-    std::unordered_map<int32_t, std::shared_ptr<PerPeerReader>> per_peer_readers TSA_GUARDED_BY(per_peer_readers_mutex);
-    std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(per_peer_readers_mutex);
-    std::chrono::steady_clock::time_point last_eviction_scan TSA_GUARDED_BY(per_peer_readers_mutex);
+    mutable std::mutex readers_mutex;
+    std::unordered_map<int32_t, std::shared_ptr<ReadAheadReader>> peer_readers TSA_GUARDED_BY(readers_mutex);
+    std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(readers_mutex);
+    std::chrono::steady_clock::time_point last_eviction_scan TSA_GUARDED_BY(readers_mutex);
 
-    /// Sentinel peer id for the commit reader (logging + drainReader retire routing).
+    /// Sentinel reader id for the commit reader (logging + drainReader retire routing).
     static constexpr int32_t COMMIT_READER_ID = -2;
-    /// Always-on reader feeding the NuRaft commit loop; owned separately from per_peer_readers,
+    /// Always-on reader feeding the NuRaft commit loop; owned separately from peer_readers,
     /// exempt from max_peer_readers capacity and idle eviction.
-    std::shared_ptr<PerPeerReader> commit_reader TSA_GUARDED_BY(per_peer_readers_mutex);
+    std::shared_ptr<ReadAheadReader> commit_reader TSA_GUARDED_BY(readers_mutex);
     size_t commit_readahead_window_bytes = 0;
 
-    std::shared_ptr<PerPeerReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
-        TSA_REQUIRES(per_peer_readers_mutex);
-    void retireCommitReaderLocked() TSA_REQUIRES(per_peer_readers_mutex);
+    std::shared_ptr<ReadAheadReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
+        TSA_REQUIRES(readers_mutex);
+    void retireCommitReaderLocked() TSA_REQUIRES(readers_mutex);
 };
 
 /// Simplest changelog with files rotation.
@@ -508,7 +555,7 @@ public:
     /// Must be called under changelog_lock.
     LogReadPlan getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes) const;
     /// Must be called without changelog_lock.
-    LogEntriesPtr serveReadAhead(int32_t peer_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
+    LogEntriesPtr serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
     bool isReadAheadEnabled() const;
 
     /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
@@ -520,6 +567,9 @@ public:
     /// Serve a commit read: install cursors, bounded wait, blocking fallback read. Called without
     /// changelog_lock; returns nullptr only if the entry is genuinely gone.
     LogEntryPtr serveCommitEntry(uint64_t index, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
+
+    /// Current truncation-epoch snapshot (see LogReadPlan::epoch). Safe to call without changelog_lock.
+    uint64_t currentTruncationEpoch() const;
 
     /// Return entry at position index
     LogEntryPtr entryAt(uint64_t index) const;
@@ -556,6 +606,9 @@ public:
 
     /// Test-only: forwards to LogEntryStorage::checkValidRunsConsistency.
     void checkValidRunsConsistencyForTests() const { entry_storage.checkValidRunsConsistency(); }
+
+    /// Test-only: forwards to LogEntryStorage::getReaderDecodedBytesForTests.
+    size_t getReaderDecodedBytesForTests(int32_t reader_id) const { return entry_storage.getReaderDecodedBytesForTests(reader_id); }
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 

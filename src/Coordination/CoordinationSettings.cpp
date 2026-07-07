@@ -69,8 +69,8 @@ namespace ErrorCodes
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
     DECLARE(UInt64, latest_logs_cache_size_threshold, 1_GiB, "Maximum total size of in-memory cache of latest log entries.", 0) \
     DECLARE(UInt64, latest_logs_cache_entry_count_threshold, 200'000, "Maximum number of entries in in-memory cache of latest log entries.", 0) \
-    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread by the changelog read-ahead reader. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
-    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. The commit read-ahead reader is bounded by commit_logs_cache_size_threshold alone; unlike the bounded LRU-style cache this setting used to size, a sequentially-drained decoded window gains nothing from an entry-count bound.", 0) \
+    DECLARE(UInt64, commit_logs_cache_size_threshold, 500_MiB, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
+    DECLARE(UInt64, commit_logs_cache_entry_count_threshold, 100'000, "Deprecated, has no effect. Use log_readahead_commit_window_bytes instead.", SettingsTierType::OBSOLETE) \
     DECLARE(UInt64, disk_move_retries_wait_ms, 1000, "How long to wait between retries after a failure which happened while a file was being moved between disks.", 0) \
     DECLARE(UInt64, disk_move_retries_during_init, 100, "The amount of retries after a failure which happened while a file was being moved between disks during initialization.", 0) \
     DECLARE(UInt64, log_slow_total_threshold_ms, 5000, "Requests for which the total latency is larger than this settings will be logged", 0) \
@@ -96,13 +96,14 @@ namespace ErrorCodes
     DECLARE(UInt64, nuraft_max_bytes_in_flight_in_stream, 32 * 1024 * 1024, "Maximum bytes of in-flight data per follower when streaming mode is enabled. Acts as a data volume throttle. Only effective when nuraft_streaming_mode is true.", 0) \
     DECLARE(UInt64, nuraft_max_uncommitted_log_entries, 100000, "Maximum number of uncommitted NuRaft log entries on the leader before rejecting new client requests. 0 disables the limit.", 0) \
     DECLARE(UInt64, nuraft_append_entries_backward_probe_throttle_threshold, 5, "Number of consecutive backward log-match probes after which NuRaft limits append entries payloads to one log entry. 0 disables the throttle.", 0) \
-    DECLARE(Bool, keeper_log_readahead_enabled, false, "Enable per-peer decoded read-ahead for changelog catch-up reads. Off by default.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_window_bytes, 64 * 1024 * 1024, "Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader is evicted. Worst case is approximately twice this value due to the scan gate interval.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
-    DECLARE(UInt64, keeper_log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
+    DECLARE(Bool, log_readahead_enabled, false, "Enable per-peer decoded read-ahead for changelog catch-up reads. Off by default.", 0) \
+    DECLARE(UInt64, log_readahead_window_bytes, 64 * 1024 * 1024, "Maximum bytes of decoded entries buffered per peer reader. Should be at least as large as a typical append-entries batch.", 0) \
+    DECLARE(UInt64, log_readahead_max_peer_readers, 8, "Maximum number of concurrent per-peer read-ahead readers.", 0) \
+    DECLARE(UInt64, log_readahead_eviction_timeout_ms, 30000, "Idle timeout in milliseconds after which an inactive per-peer reader is evicted. Worst case is approximately twice this value due to the scan gate interval.", 0) \
+    DECLARE(UInt64, log_readahead_pool_threads, 0, "Number of threads in the dedicated read-ahead thread pool. 0 = derive from max_peer_readers.", 0) \
+    DECLARE(UInt64, log_readahead_serve_wait_timeout_ms, 200, "Maximum time in milliseconds to wait for the background fill before falling back to a direct read.", 0) \
+    DECLARE(UInt64, log_readahead_chunk_size, 16, "Number of log entries decoded per chunk under file_mutex in the read-ahead fill task. Smaller values improve responsiveness to rewinds at the cost of more lock overhead.", 0) \
+    DECLARE(UInt64, log_readahead_commit_window_bytes, 500_MiB, "Maximum total size of decoded log entries buffered ahead of the commit thread. 0 disables commit read-ahead (commit reads entries from disk one by one).", 0) \
 
 DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, COORDINATION_SETTINGS_SUPPORTED_TYPES)
 

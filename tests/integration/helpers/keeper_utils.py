@@ -322,6 +322,24 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
             client.close()
 
 
+def get_profile_events(cluster, node, port=9181):
+    """Send the `pfev` 4LW command and parse its "<name>\t<value>\t<docs>" lines into a dict."""
+    data = send_4lw_cmd(cluster, node, "pfev", port)
+    result = {}
+    for line in data.strip().split("\n"):
+        if not line:
+            continue
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        name, value = parts[0], parts[1]
+        try:
+            result[name] = int(value)
+        except ValueError:
+            continue
+    return result
+
+
 NOT_SERVING_REQUESTS_ERROR_MSG = "This instance is not currently serving requests"
 
 

@@ -11,7 +11,7 @@
             <session_timeout_ms>10000</session_timeout_ms>
             <!-- Small cache threshold so entries quickly spill to disk log files. -->
             <latest_logs_cache_size_threshold>10000</latest_logs_cache_size_threshold>
-            <commit_logs_cache_size_threshold>10000</commit_logs_cache_size_threshold>
+            <log_readahead_commit_window_bytes>10000</log_readahead_commit_window_bytes>
             <!-- Rotate every 1000 entries to produce multiple sealed files. -->
             <rotate_log_storage_interval>1000</rotate_log_storage_interval>
             <!-- Snapshot rarely so the catching-up follower must replay from log. -->
@@ -19,9 +19,9 @@
             <raft_logs_level>information</raft_logs_level>
             <compress_logs>false</compress_logs>
             <!-- Enable read-ahead for the catch-up path. -->
-            <keeper_log_readahead_enabled>true</keeper_log_readahead_enabled>
-            <keeper_log_readahead_window_bytes>67108864</keeper_log_readahead_window_bytes>
-            <keeper_log_readahead_max_peer_readers>4</keeper_log_readahead_max_peer_readers>
+            <log_readahead_enabled>true</log_readahead_enabled>
+            <log_readahead_window_bytes>67108864</log_readahead_window_bytes>
+            <log_readahead_max_peer_readers>4</log_readahead_max_peer_readers>
         </coordination_settings>
 
         <raft_configuration>
