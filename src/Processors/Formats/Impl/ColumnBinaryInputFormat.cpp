@@ -123,11 +123,7 @@ Chunk ColumnBinaryInputFormat::read()
         std::memcpy(&desc,
                     buf.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
                     sizeof(desc));
-        auto column = ColumnarV1::readColumnFromDesc(buf, desc, num_rows, header_->getByPosition(i).type);
-        // readColumnFromDesc may return a ColumnConst (COL_IS_CONST); StreamingFormatExecutor
-        // later does insertRangeFrom into a concrete destination column, which cannot accept a
-        // ColumnConst source, so normalize here before this column ever reaches a Chunk.
-        result.push_back(IColumn::mutate(column->convertToFullColumnIfConst()));
+        result.push_back(ColumnarV1::readColumnFromDesc(buf, desc, num_rows, header_->getByPosition(i).type));
     }
 
     if (in->eof())

@@ -149,7 +149,13 @@ size_t StreamingFormatExecutor::insertChunk(Chunk chunk, size_t num_bytes)
 
     auto columns = chunk.detachColumns();
     for (size_t i = 0, s = columns.size(); i < s; ++i)
-        result_columns[i]->insertRangeFrom(*columns[i], 0, columns[i]->size());
+    {
+        // A source column may legitimately be a ColumnConst (e.g. ColumnBinary preserves
+        // constness from the wire); insertRangeFrom into a concrete destination column
+        // cannot accept a ColumnConst source, so normalize here regardless of which format
+        // produced the chunk.
+        result_columns[i]->insertRangeFrom(*columns[i]->convertToFullColumnIfConst(), 0, columns[i]->size());
+    }
 
     return chunk_rows;
 }
