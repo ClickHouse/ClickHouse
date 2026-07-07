@@ -69,6 +69,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"precise_float_parsing", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
+            {"max_expanded_join_conditions", 0, 1024, "New setting that bounds the expansion of disjunctive `JOIN ON` expressions (distributing `AND` over `OR`) during general join planning, which could otherwise grow exponentially and exhaust planner CPU and memory. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the expansion was uncapped. Set to `0` to disable the limit."},
         });
 
         addSettingsChanges(settings_changes_history, "26.6",
