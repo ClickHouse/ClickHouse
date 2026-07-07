@@ -1518,6 +1518,7 @@ struct NameToUnixTimestamp
 {
     static constexpr auto name = "toUnixTimestamp";
     static constexpr auto signature = "(Any, [const String]) -> UInt32";
+    static constexpr bool authoritative = true;
 };
 
 enum class BehaviourOnErrorFromString : uint8_t
@@ -2896,27 +2897,46 @@ struct NameToDate32
 struct NameToDateTime
 {
     static constexpr auto name = "toDateTime";
-    static constexpr auto signature = "(Any, [const String]) -> DateTime";
+    /// The second argument is either a timezone (String) or a scale (UInt); with a scale the result
+    /// widens to DateTime64 unless the scale is 0 (see the dateTimeFromScale type function).
+    static constexpr auto signature =
+        "(Any) -> DateTime"
+        " OR (Any, const tz String) -> DateTime(tz)"
+        " OR (Any, const scale NativeUInt) -> dateTimeFromScale(scale)"
+        " OR (Any, const scale NativeUInt, const tz String) -> dateTimeFromScale(scale, tz)";
+    static constexpr bool authoritative = true;
 };
 struct NameToTime
 {
     static constexpr auto name = "toTime";
-    static constexpr auto signature = "(Any, [const String]) -> Time";
+    /// Like toDateTime, but Time/Time64 carry no timezone (a timezone argument is accepted and
+    /// ignored); a scale widens to Time64 unless it is 0 (see the timeFromScale type function).
+    static constexpr auto signature =
+        "(Any) -> Time"
+        " OR (Any, const tz String) -> Time"
+        " OR (Any, const scale NativeUInt) -> timeFromScale(scale)"
+        " OR (Any, const scale NativeUInt, const tz String) -> timeFromScale(scale)";
+    static constexpr bool authoritative = true;
 };
 struct NameToTime64
 {
     static constexpr auto name = "toTime64";
-    static constexpr auto signature = "(Any, const UInt8) -> Time64";
+    static constexpr auto signature = "(Any, const S NativeUInt) -> Time64(S)";
+    static constexpr bool authoritative = true;
 };
 struct NameToDateTime32
 {
     static constexpr auto name = "toDateTime32";
-    static constexpr auto signature = "(Any, [const String]) -> DateTime";
+    static constexpr auto signature = "(Any) -> DateTime OR (Any, const tz String) -> DateTime(tz)";
+    static constexpr bool authoritative = true;
 };
 struct NameToDateTime64
 {
     static constexpr auto name = "toDateTime64";
-    static constexpr auto signature = "(Any, const UInt8) -> DateTime64 OR (Any, const UInt8, const String) -> DateTime64";
+    static constexpr auto signature =
+        "(Any, const S NativeUInt) -> DateTime64(S)"
+        " OR (Any, const S NativeUInt, const tz String) -> DateTime64(S, tz)";
+    static constexpr bool authoritative = true;
 };
 struct NameToString
 {
@@ -2957,7 +2977,8 @@ struct NameToDecimal256
     { \
         static constexpr auto name = "toInterval" #INTERVAL_KIND; \
         static constexpr auto kind = IntervalKind::Kind::INTERVAL_KIND; \
-        static constexpr auto signature = "(NativeNumber) -> Interval" #INTERVAL_KIND; \
+        static constexpr auto signature = "(Integer | Float) -> Interval" #INTERVAL_KIND; \
+        static constexpr bool authoritative = true; \
     };
 
 DEFINE_NAME_TO_INTERVAL(Nanosecond)

@@ -155,6 +155,39 @@ GTEST_TEST(FunctionSignature, DecimalConstValueTypeFunction)
     }
 }
 
+/// The `dateTimeFromScale` / `timeFromScale` type functions used by `toDateTime` / `toTime`: a scale
+/// of 0 collapses to DateTime/Time; a non-zero scale widens to DateTime64/Time64. A timezone (for
+/// DateTime) is carried through.
+GTEST_TEST(FunctionSignature, DateTimeFromScaleTypeFunctions)
+{
+    const auto scale0 = makeConstColumn("UInt8", Field(UInt64(0)));
+    const auto scale3 = makeConstColumn("UInt8", Field(UInt64(3)));
+    const auto utc = makeConstColumn("String", Field(String("UTC")));
+
+    const String dt = "toDateTime(Any, const scale NativeUInt) -> dateTimeFromScale(scale)";
+    EXPECT_EQ(checkSignature(dt, {makeColumn("String"), scale0}), "DateTime");
+    EXPECT_EQ(checkSignature(dt, {makeColumn("String"), scale3}), "DateTime64(3)");
+
+    const String dt_tz = "toDateTime(Any, const scale NativeUInt, const tz String) -> dateTimeFromScale(scale, tz)";
+    EXPECT_EQ(checkSignature(dt_tz, {makeColumn("String"), scale0, utc}), "DateTime('UTC')");
+    EXPECT_EQ(checkSignature(dt_tz, {makeColumn("String"), scale3, utc}), "DateTime64(3, 'UTC')");
+
+    const String tm = "toTime(Any, const scale NativeUInt) -> timeFromScale(scale)";
+    EXPECT_EQ(checkSignature(tm, {makeColumn("String"), scale0}), "Time");
+    EXPECT_EQ(checkSignature(tm, {makeColumn("String"), scale3}), "Time64(3)");
+
+    /// The full toDateTime signature: 2nd arg is either a timezone or a scale.
+    const String full =
+        "(Any) -> DateTime"
+        " OR (Any, const tz String) -> DateTime(tz)"
+        " OR (Any, const scale NativeUInt) -> dateTimeFromScale(scale)"
+        " OR (Any, const scale NativeUInt, const tz String) -> dateTimeFromScale(scale, tz)";
+    EXPECT_EQ(checkSignature(full, {makeColumn("String")}), "DateTime");
+    EXPECT_EQ(checkSignature(full, {makeColumn("String"), utc}), "DateTime('UTC')");
+    EXPECT_EQ(checkSignature(full, {makeColumn("String"), scale3}), "DateTime64(3)");
+    EXPECT_EQ(checkSignature(full, {makeColumn("String"), scale3, utc}), "DateTime64(3, 'UTC')");
+}
+
 GTEST_TEST(FunctionSignature, ConstArguments)
 {
     EXPECT_EQ(

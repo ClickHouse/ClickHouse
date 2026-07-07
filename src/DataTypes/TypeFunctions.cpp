@@ -610,6 +610,56 @@ public:
     std::string name() const override { return "Decimal"; }
 };
 
+/// `dateTimeFromScale(scale, [tz])` — the result type of `toDateTime` when the scale is given as a
+/// const argument: `DateTime(tz)` when the scale is 0 and `DateTime64(scale, tz)` otherwise. This
+/// mirrors the scale==0 collapse in `FunctionConvert` (a zero scale falls back to `DateTime`).
+class TypeFunctionDateTimeFromScale : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty())
+            throwParametricTypeFunctionNeedsValue("dateTimeFromScale", "scale");
+        if (args.size() > 2)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function dateTimeFromScale");
+
+        const UInt32 scale = fieldToScale(args[0].field(), name());
+        if (args.size() == 2)
+        {
+            const String timezone = args[1].field().safeGet<String>();
+            if (scale == 0)
+                return Value(DataTypePtr(std::make_shared<DataTypeDateTime>(timezone)));
+            return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale, timezone)));
+        }
+        if (scale == 0)
+            return Value(DataTypePtr(std::make_shared<DataTypeDateTime>()));
+        return Value(DataTypePtr(std::make_shared<DataTypeDateTime64>(scale)));
+    }
+
+    std::string name() const override { return "dateTimeFromScale"; }
+};
+
+/// `timeFromScale(scale)` — the result type of `toTime` when the scale is given as a const argument:
+/// `Time` when the scale is 0 and `Time64(scale)` otherwise. `Time`/`Time64` carry no time zone.
+class TypeFunctionTimeFromScale : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty())
+            throwParametricTypeFunctionNeedsValue("timeFromScale", "scale");
+        if (args.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function timeFromScale");
+
+        const UInt32 scale = fieldToScale(args[0].field(), name());
+        if (scale == 0)
+            return Value(DataTypePtr(std::make_shared<DataTypeTime>()));
+        return Value(DataTypePtr(std::make_shared<DataTypeTime64>(scale)));
+    }
+
+    std::string name() const override { return "timeFromScale"; }
+};
+
 /// If the type was already Nullable, return it as is.
 class TypeFunctionNullable : public ITypeFunction
 {
@@ -1381,6 +1431,8 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionArraySumResult>();
     factory.registerElement<TypeFunctionArrayDifferenceResult>();
     factory.registerElement<TypeFunctionDecimal>();
+    factory.registerElement<TypeFunctionDateTimeFromScale>();
+    factory.registerElement<TypeFunctionTimeFromScale>();
     factory.registerElement<TypeFunctionTypeFromString>();
     factory.registerElement<TypeFunctionSubcolumnTypeOf>();
     factory.registerElement<TypeFunctionNullable>();
