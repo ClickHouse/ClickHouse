@@ -1,4 +1,6 @@
--- Tags: long, no-fasttest, no-old-analyzer
+-- Tags: long, no-fasttest, no-old-analyzer, no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 
 SET query_plan_join_swap_table = 0;
 -- Distributed aggregation cannot enforce a global max_rows_to_group_by, so pin it to 0.

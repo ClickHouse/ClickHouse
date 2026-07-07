@@ -1,4 +1,6 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin, no-old-analyzer, no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 -- no-old-analyzer: distributed planning requires the analyzer.
 

@@ -1,3 +1,6 @@
+-- Tags: no-flaky-check
+-- no-flaky-check: every distributed-plan statement pays for a full optimizer run and multi-stage
+-- execution, which is ~50x slower in debug builds; the flaky check's repeated runs exceed its budget.
 -- Verifies join order and distributed execution strategies for all TPC-H queries
 -- using SF100 cardinalities injected via `_internal_join_table_stat_hints`.
 
