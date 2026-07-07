@@ -1,12 +1,14 @@
 #include <cstddef>
 #include <vector>
 #include <Storages/MergeTree/IMergeTreeReader.h>
+#include <Storages/MergeTree/MergeTreeReaderBloomSlicedIndex.h>
 #include <Storages/MergeTree/MergeTreeReaderTextIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/IndicesDescription.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
 #include <Common/escapeForFileName.h>
@@ -614,6 +616,12 @@ MergeTreeReaderPtr createMergeTreeReaderIndex(
     {
         auto it = index_granules.find(index.index->index.name);
         return createMergeTreeReaderTextIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
+    }
+
+    if (index.index->index.type == BLOOM_SLICED_INDEX_NAME)
+    {
+        auto it = index_granules.find(index.index->index.name);
+        return createMergeTreeReaderBloomSlicedIndex(main_reader, index, columns_to_read, it != index_granules.end() ? it->second : nullptr);
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot create reader for index with type {}", index.index->index.type);

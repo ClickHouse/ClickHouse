@@ -43,6 +43,7 @@ namespace Setting
     extern const SettingsBool query_plan_convert_join_to_in;
     extern const SettingsBool query_plan_convert_outer_join_to_inner_join;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool query_plan_direct_read_from_bloom_sliced_index;
     extern const SettingsBool query_plan_enable_optimizations;
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
@@ -205,6 +206,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     optimize_projection = from[Setting::optimize_use_projections];
     use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
+    direct_read_from_bloom_sliced_index = from[Setting::query_plan_direct_read_from_bloom_sliced_index] && from[Setting::use_skip_indexes];
     enable_full_text_index = from[Setting::enable_full_text_index];
     read_in_order_through_join = from[Setting::query_plan_read_in_order_through_join];
     correlated_subqueries_use_in_memory_buffer = from[Setting::correlated_subqueries_use_in_memory_buffer]
