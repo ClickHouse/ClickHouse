@@ -186,8 +186,8 @@ void JoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 QueryTreeNodePtr JoinNode::cloneImpl() const
 {
     auto clone = std::make_shared<JoinNode>(
-        static_pointer_cast<ITableExpressionNode>(children[left_table_expression_child_index]),
-        static_pointer_cast<ITableExpressionNode>(children[right_table_expression_child_index]),
+        getLeftTableExpressionNode(),
+        getRightTableExpressionNode(),
         getJoinExpression(),
         locality, strictness, kind, is_using_join_expression);
     clone->is_natural = is_natural;

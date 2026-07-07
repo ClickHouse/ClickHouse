@@ -50,7 +50,7 @@ void ArrayJoinNode::updateTreeHashImpl(HashState & state, CompareOptions) const
 
 QueryTreeNodePtr ArrayJoinNode::cloneImpl() const
 {
-    return std::make_shared<ArrayJoinNode>(static_pointer_cast<ITableExpressionNode>(children[join_expressions_child_index]), getJoinExpressionsNode(), is_left);
+    return std::make_shared<ArrayJoinNode>(getTableExpressionNode(), getJoinExpressionsNode(), is_left);
 }
 
 ASTPtr ArrayJoinNode::toASTImpl(const ConvertToASTOptions & options) const
