@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Web search'
+slug: /cloud/features/ai-ml/agents/builder/web-search
+title: 'Web search'
+description: 'Herramienta externa de búsqueda web para ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Web search']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+Web search permite que un agente obtenga información de la web pública durante una conversación. Úsalo para preguntas cuya respuesta deba estar al día: versiones recientes, documentación alojada fuera de tu servicio o una comprobación rápida en una fuente autorizada.
+
+<div id="enable-it">
+  ## Habilítalo
+</div>
+
+En Agent Builder, habilita **Web Search** en la sección **Capabilities**. Una vez habilitado, el agente decide cuándo realizar una búsqueda en función de la pregunta del usuario y de las instrucciones del agente. La búsqueda se ejecuta, se recopilan los resultados y el contenido más relevante se incorpora de nuevo al contexto del modelo.
+
+<Image img="/images/cloud/agent-builder/web-search/web-search.webp" alt="Panel de Capabilities con la sección Web Search resaltada, que muestra la casilla de verificación de Web Search" size="sm" />
+
+<div id="how-a-search-round-works">
+  ## Cómo funciona una ronda de búsqueda
+</div>
+
+Cada búsqueda se ejecuta en tres etapas, gestionadas por Cloud por ti:
+
+1. **Búsqueda** - la consulta del agente se envía a un proveedor de búsqueda que devuelve URL candidatas.
+2. **Extracción** - se recuperan las páginas relevantes y se extrae el texto útil.
+3. **Reordenación** - un reranker puntúa los resultados para que el modelo vea primero los más útiles.
+
+La respuesta del agente cita las URL que realmente utilizó.
+
+<div id="when-to-use-it">
+  ## Cuándo usarlo
+</div>
+
+* Consulta notas de la versión o registros de cambios que no estén en tu servicio.
+* Verifica un dato con una fuente que el modelo quizá no conozca.
+* Incorpora a la conversación una entrada de blog o documentación pública para analizarla.
+
+Omítelo en preguntas que puedan responderse con tus datos o con el propio conocimiento del modelo. Cada ronda de búsqueda añade latencia.

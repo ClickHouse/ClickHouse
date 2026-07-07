@@ -1263,7 +1263,11 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context
+#if CLICKHOUSE_CLOUD
+        , const EnabledMaskingPoliciesPtr & enabled_masking_policies
+#endif
+        );
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;
@@ -1701,6 +1705,8 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    void checkMinMaxIndexForJSON(const IndexDescription & index) const;
+
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
@@ -1757,6 +1763,7 @@ protected:
     // Partition helpers
     bool canReplacePartition(const DataPartPtr & src_part) const;
     void checkTableCanBeDropped(ContextPtr query_context) const override;
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
 
     /// Tries to drop part in background without any waits or throwing exceptions in case of errors.
     virtual void dropPartNoWaitNoThrow(const String & part_name) = 0;

@@ -265,6 +265,10 @@ private:
 
 ColumnPtr recursiveRemoveSparse(const ColumnPtr & column);
 
+/// Returns true if `recursiveRemoveSparse` would change `column`, i.e. there is a sparse column
+/// either at the top level or nested inside a Tuple or Replicated column. Does not allocate.
+bool recursiveHasSparse(const ColumnPtr & column);
+
 /// Remove all special representations (for now Sparse and Replicated).
 ColumnPtr removeSpecialRepresentations(const ColumnPtr & column);
 
