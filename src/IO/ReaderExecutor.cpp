@@ -515,8 +515,8 @@ void ReaderExecutor::seek(size_t new_position)
     /// the old cursor would, after the jump, leave `ready_bytes` disjoint from the new
     /// cursor (a foreground read below the ahead-bank makes a gappy chain). Drop the plan so
     /// the next launch re-plans + rebuilds `retrieve_status` from the new position. (The
-    /// fast path above keeps the plan only for a forward seek into the in-flight window,
-    /// where the bank stays contiguous.)
+    /// fast path above keeps the plan for any target inside the in-flight window - a
+    /// backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
     read_plan = {};
 
     maybeLaunchAhead();
@@ -2261,12 +2261,9 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
             if (!display.covers(ByteRange{got.offset + data_start_offset, got.size}))
                 st.ready_bytes.append(std::move(collected));
         }
-        /// Launch high-water: the window was ATTEMPTED end to end (committed, refused by the
-        /// cache, or sibling-owned) - the launcher never re-launches it. Job-relative and
-        /// END-based (an inline machine's window starts at the cell floor, so accumulating
-        /// sizes would drift).
-        if (attempted_end > r.range.offset)
-            st.fetched = std::max(st.fetched, attempted_end - r.range.offset);
+        /// The lane's ahead cursor: the window was ATTEMPTED end to end (committed, refused
+        /// by the cache, or sibling-owned) - the launcher never re-launches it.
+        fill_lane.advanceAttempted(attempted_end);
     }
     /// Revoked while still queued: nothing to record - the foreground reads this window instead.
 }
@@ -2382,12 +2379,11 @@ bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
                     sibling_bytes.shift(-static_cast<ssize_t>(data_start_offset));
                 st.ready_bytes.append(std::move(sibling_bytes));
             }
-            /// Launch high-water only to the CONTIGUOUS display frontier: a waited middle that
-            /// returned short leaves a real hole, and marking it attempted would stop the
-            /// background from ever fetching it (the foreground would heal it, but late).
+            /// Advance the ahead cursor only to the CONTIGUOUS display frontier: a waited
+            /// middle that returned short leaves a real hole, and marking it attempted would
+            /// stop the background from ever fetching it (the foreground would heal it, late).
             const size_t contiguous = display.frontier(window);
-            if (contiguous > r.range.offset)
-                st.fetched = std::max(st.fetched, contiguous - r.range.offset);
+            fill_lane.advanceAttempted(contiguous);
             if (contiguous > window.offset)
                 return true;
         }
@@ -2437,10 +2433,9 @@ bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
         const size_t tail = std::max(piece.offset, window.end());
         overread_pending.add(ByteRange{tail, frontier - tail});
     }
-    /// Launch high-water to the window end: attempted, whether the cells took the bytes or the
-    /// overflow bank did - the background never re-launches it.
-    if (window.end() > r.range.offset)
-        st.fetched = std::max(st.fetched, window.end() - r.range.offset);
+    /// The ahead cursor to the window end: attempted, whether the cells took the bytes or
+    /// the overflow bank did - the background never re-launches it.
+    fill_lane.advanceAttempted(window.end());
     /// Progress = this piece landed NEW servable bytes (a coverage DELTA, not the absolute
     /// frontier - a read-through piece's pre-covered head would make the absolute check
     /// vacuously true and starve the escape hatch below) or the display can now serve the
@@ -2558,9 +2553,9 @@ size_t ReaderExecutor::jobFrontier(size_t ri) const
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     /// A bypass job has no cell to derive from: its bank is consumed as it serves, so the
-    /// launch high-water counter is the frontier (until the bank becomes a virtual cell).
+    /// lane's ahead cursor, clamped into the job, is the frontier.
     if (r.into.empty())
-        return r.range.offset + read_plan.retrieve_status[ri].fetched;
+        return std::min(std::max(r.range.offset, fill_lane.attempted_end), r.range.end());
     for (const auto & run : r.fetch_runs)
     {
         const size_t frontier = committedCellPrefixEnd(run);
@@ -2580,7 +2575,7 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
     /// pinned lead every serve window and the launch scan would never retire the job. The
     /// SERVE never uses this - it reads the display, which is the data truth.
     const auto & r = read_plan.schedule.retrieves[ri];
-    return std::max(jobFrontier(ri), r.range.offset + read_plan.retrieve_status[ri].fetched);
+    return std::max(jobFrontier(ri), std::min(std::max(r.range.offset, fill_lane.attempted_end), r.range.end()));
 }
 
 IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
@@ -2991,6 +2986,9 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// schedule-driven processing loop branches on these phases instead of
     /// re-querying the coverage map. `cursor` is 0 from the fresh `ReadPlan` above.
     read_plan.retrieve_status.assign(read_plan.schedule.retrieves.size(), {});
+    /// New plan epoch: the ahead cursor re-derives from the fresh display truth (the seek
+    /// fast path keeps the surviving plan AND the cursor).
+    fill_lane.attempted_end = 0;
 
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
@@ -3131,7 +3129,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     if (!m)
         return;
     /// The global `machine` was just moved out above, so `machineFor` reports no machine for
-    /// this retrieve from here on; the banked `ready_bytes`/`fetched` stay valid - the cursor
+    /// this retrieve from here on; the banked `ready_bytes` stays valid - the cursor
     /// has not moved (`setReadExtent`), or a seek re-plans and rebuilds them (see `seek`).
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})",

@@ -297,6 +297,49 @@ TEST(ReaderExecutor, UnknownSizeLatchedEofStillFetchesBelowEndGaps)
     EXPECT_GT(got.size(), 0u);
 }
 
+/// T4's epoch reset: the lane's ahead cursor (`attempted_end`) is GLOBAL and monotone within
+/// a plan, so a backward seek that rebuilds the plan MUST reset it - a stale cursor above the
+/// new plan's jobs would retire them all for the launch scan and silently kill read-ahead for
+/// the whole post-seek plan (content stays correct: the pump is cursor-blind). The plan
+/// window is shrunk below the pre-seek cursor so the mutant (no reset) is observable.
+TEST(ReaderExecutor, AheadRelaunchesAfterBackwardSeek)
+{
+    const size_t file = 16 * 1024;
+    String content(file, '\0');
+    for (size_t i = 0; i < file; ++i)
+        content[i] = static_cast<char>('A' + i % 26);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1024;
+    executor_options.plan_look_ahead_max_window = 4096;   /// post-seek jobs end BELOW the old cursor
+    executor_options.prefetch_pool = pool;
+    executor_options.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    /// Forward: advance the ahead cursor well past 4096.
+    String head;
+    for (size_t w = 0; w < 8; ++w)
+    {
+        auto chain = executor.readNextWindow();
+        for (const auto & node : chain.getNodes())
+            head.append(node.data(), node.size);
+    }
+    ASSERT_EQ(head, content.substr(0, head.size()));
+    ASSERT_GE(head.size(), 8 * 1024u);
+
+    /// Backward seek out of any in-flight window: the plan rebuilds; the cursor must too.
+    executor.seek(0);
+    auto chain = executor.readNextWindow();
+    ASSERT_EQ(chain.range().offset, 0u);
+    EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
+        << "a stale ahead cursor would retire every post-seek job and kill read-ahead";
+}
+
 TEST(ReaderExecutor, ReadMultiObject)
 {
     auto source = std::make_shared<MemorySourceReader>(

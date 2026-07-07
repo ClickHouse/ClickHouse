@@ -377,13 +377,10 @@ private:
     /// `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
     struct RetrieveStatus
     {
-        /// The launch HIGH-WATER (job-relative): bytes attempted end to end - launched over, or
-        /// served inline past the cursor - whether they committed, were refused by the cache,
-        /// or belong to a sibling's download. LAUNCH POLICY only (`launchProgress`); a
-        /// populatable job's DATA progress is display-derived (`jobFrontier`). For a bypass job
-        /// this is also the bank frontier.
-        size_t fetched = 0;
-        ChainedBuffers ready_bytes;                 /// banked fetched prefix for serve, drained as the cursor advances
+        /// The BANK - the job's only per-job state: bytes no cell could hold (a bypass gap's
+        /// fetch, an overflow of refused writes, sibling-waited chunks), drained as the serve
+        /// consumes. Launch progress is the lane's global `attempted_end` + the display.
+        ChainedBuffers ready_bytes;
     };
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
@@ -856,6 +853,15 @@ private:
         void lend(FetchMachine & m);
         void reclaim(FetchMachine & m);
 
+        /// The AHEAD cursor `F` (T4) - ONE global launch high-water in PHYSICAL offsets:
+        /// everything below it has been attempted by this executor (launched over, served
+        /// inline, or observed covered) whether the bytes committed, were refused, or belong
+        /// to a sibling's download. Launch POLICY only - the serve reads the display. Plan-
+        /// epoch scoped: reset where the job sidecar is rebuilt; the seek fast path keeps it
+        /// with the surviving plan.
+        size_t attempted_end = 0;
+        void advanceAttempted(size_t phys_end) { attempted_end = std::max(attempted_end, phys_end); }
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     private:
         /// The exclusion guard: a same-writer concurrent write means the machine slot's
@@ -880,7 +886,7 @@ private:
     /// works from the same display state, so stopping a piece anywhere IS the migration handoff.
     /// (Within one plan the per-writer committed set is monotone; an eviction is healed at the
     /// next re-plan, whose fresh writers start empty.) A BYPASS job has no cell; its frontier
-    /// is the launch high-water (`RetrieveStatus::fetched`) until the bank is virtualized.
+    /// is the lane's ahead cursor clamped into the job, until the bank is virtualized.
     size_t jobFrontier(size_t ri) const;
     /// The background launch POLICY frontier: `jobFrontier` advanced past bytes already
     /// ATTEMPTED (launched over / served inline) that can never enter this executor's own
