@@ -24,7 +24,10 @@ assert_query_duration() {
         [ "$cnt" -ge 1 ] && break
         sleep 0.5
     done
-    $CLICKHOUSE_CLIENT -q "SELECT 'query_duration', round(query_duration_ms/1000) BETWEEN 1 AND 60 FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$qid' AND type != 'QueryStart'"
+    # Bound in ms without rounding: a max_execution_time=1 cancellation can never
+    # finish before 1000 ms, so a sub-1s duration is a real regression that
+    # round(ms/1000) BETWEEN 1 AND 60 would hide (e.g. 999 rounds to 1).
+    $CLICKHOUSE_CLIENT -q "SELECT 'query_duration', query_duration_ms BETWEEN 1000 AND 60000 FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = '$CLICKHOUSE_DATABASE' AND query_id = '$qid' AND type != 'QueryStart'"
 }
 
 # TCP CLIENT: As of today (02/12/21) uses PullingAsyncPipelineExecutor
