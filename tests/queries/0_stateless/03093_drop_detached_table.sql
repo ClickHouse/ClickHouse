@@ -238,6 +238,19 @@ CREATE TABLE test_memory_db_03093.existing (number UInt64) ENGINE=Memory;
 DROP DETACHED TABLE test_memory_db_03093.existing SYNC; -- { serverError UNKNOWN_TABLE }
 DROP DATABASE test_memory_db_03093;
 
+SELECT 'reviewer-ordinary-detached-unsupported';
+SET allow_deprecated_database_ordinary=1;
+SET force_remove_data_recursively_on_drop=1;
+DROP DATABASE IF EXISTS test_ordinary_db_03093;
+SET force_remove_data_recursively_on_drop=0;
+CREATE DATABASE test_ordinary_db_03093 ENGINE=Ordinary;
+CREATE TABLE test_ordinary_db_03093.existing (number UInt64) ENGINE=MergeTree ORDER BY number;
+DETACH TABLE test_ordinary_db_03093.existing;
+DROP DETACHED TABLE IF EXISTS test_ordinary_db_03093.existing SYNC; -- { serverError NOT_IMPLEMENTED }
+DROP DETACHED TABLE test_ordinary_db_03093.existing SYNC; -- { serverError NOT_IMPLEMENTED }
+ATTACH TABLE test_ordinary_db_03093.existing;
+DROP DATABASE test_ordinary_db_03093;
+
 SELECT 'reviewer-non-table-detached-objects';
 CREATE TABLE test_table_03093_non_table_source (key UInt64, value String)
 ENGINE=MergeTree ORDER BY key;

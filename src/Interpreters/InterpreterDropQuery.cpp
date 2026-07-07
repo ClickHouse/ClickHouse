@@ -422,12 +422,26 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
     if (!actual_database)
     {
-        if (query.if_exists && !table_exists)
+        bool table_detached = false;
+        bool has_detached_table_state = false;
+        if (const auto * database_on_disk = dynamic_cast<const DatabaseOnDisk *>(database.get()))
+        {
+            has_detached_table_state = true;
+            const auto table_metadata_path = database_on_disk->getObjectMetadataPath(table_name);
+            const bool table_detached_in_snapshot = database_on_disk->isTableDetached(table_name);
+            const bool table_metadata_exists = database_on_disk->getDisk()->existsFileOrDirectory(table_metadata_path);
+            table_detached = table_detached_in_snapshot || (!table_exists && table_metadata_exists);
+        }
+
+        if (query.if_exists && !table_exists && !table_detached)
             return {};
-        if (!table_exists)
+        if (!table_exists && !table_detached)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
 
         context_->checkAccess(AccessType::DROP_TABLE, table_id);
+        if (has_detached_table_state)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED, "DROP DETACHED TABLE is not implemented for Database{}", database->getEngineName());
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "DROP DETACHED TABLE is unsupported for Database{}", database->getEngineName());
     }
 

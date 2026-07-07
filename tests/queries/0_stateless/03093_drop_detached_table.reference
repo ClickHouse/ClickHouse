@@ -72,6 +72,7 @@ reviewer-temp-shadow-feature-gate
 reviewer-if-exists-atomic
 0
 reviewer-if-exists-unsupported-db
+reviewer-ordinary-detached-unsupported
 reviewer-non-table-detached-objects
 syntax
 total
