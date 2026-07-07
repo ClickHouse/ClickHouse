@@ -25,7 +25,6 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 
 namespace DB
 {
@@ -276,7 +275,9 @@ public:
     }
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
-    std::vector<StoragePtr> getTablesForNewDisksOnConfigChange();
+    void prepareNewDisksOnConfigChange(
+        const StoragePolicySelectorPtr & old_storage_policy_selector,
+        const StoragePolicySelectorPtr & new_storage_policy_selector);
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

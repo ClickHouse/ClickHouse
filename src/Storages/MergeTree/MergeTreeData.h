@@ -1457,11 +1457,9 @@ public:
     UInt64 estimateNumberOfRowsToRead(
         ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
-    std::vector<DiskPtr> getNewDisksOnConfigChangeWithLock(
+    void prepareNewDisksOnConfigChange(
         const StoragePolicySelectorPtr & old_storage_policy_selector,
-        const StoragePolicySelectorPtr & new_storage_policy_selector,
-        const std::lock_guard<std::mutex> & storage_policies_lock) const override;
-    void prepareNewDiskOnConfigChange(const DiskPtr & new_disk) const override;
+        const StoragePolicySelectorPtr & new_storage_policy_selector) const override;
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
@@ -1543,6 +1541,7 @@ private:
     std::optional<String> getFormatVersionErrorOnNewDisk(const NewDiskPathSnapshot & snapshot) const;
     std::optional<String> getUnsafeNewDiskTablePathContentReason(const NewDiskPathSnapshot & snapshot) const;
     void assertNewDiskDoesNotContainTableData(const DiskPtr & disk) const;
+    void initializeNewDiskOnConfigChange(const DiskPtr & disk) const;
 
     struct NamesAndTypesListHash
     {

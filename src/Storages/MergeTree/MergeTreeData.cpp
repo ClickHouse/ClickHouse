@@ -5328,6 +5328,23 @@ void MergeTreeData::assertNewDiskDoesNotContainTableData(const DiskPtr & disk) c
             ErrorCodes::BAD_ARGUMENTS, "New storage policy contains disks which already contain data for this table path: {}", *reason);
 }
 
+void MergeTreeData::initializeNewDiskOnConfigChange(const DiskPtr & disk) const
+{
+    assertNewDiskDoesNotContainTableData(disk);
+
+    disk->createDirectories(relative_data_path);
+    disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
+
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+    auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+    writeIntText(format_version.toUnderType(), *buf);
+    buf->finalize();
+    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+        buf->sync();
+
+    assertNewDiskDoesNotContainTableData(disk);
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -11385,16 +11402,14 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     storage.currently_emerging_big_parts.erase(emerging_part_name);
 }
 
-std::vector<DiskPtr> MergeTreeData::getNewDisksOnConfigChangeWithLock(
+void MergeTreeData::prepareNewDisksOnConfigChange(
     const StoragePolicySelectorPtr & old_storage_policy_selector,
-    const StoragePolicySelectorPtr & new_storage_policy_selector,
-    const std::lock_guard<std::mutex> & /*storage_policies_lock*/) const
+    const StoragePolicySelectorPtr & new_storage_policy_selector) const
 {
-    std::vector<DiskPtr> new_disks;
     auto old_storage_policy = getStoragePolicyFromSelector(old_storage_policy_selector);
     auto new_storage_policy = getStoragePolicyFromSelector(new_storage_policy_selector);
     if (!old_storage_policy || !new_storage_policy || old_storage_policy == new_storage_policy)
-        return new_disks;
+        return;
 
     std::unordered_set<String> old_disk_names;
     for (const auto & disk : old_storage_policy->getDisks())
@@ -11403,27 +11418,8 @@ std::vector<DiskPtr> MergeTreeData::getNewDisksOnConfigChangeWithLock(
     for (const auto & disk : new_storage_policy->getDisks())
     {
         if (!old_disk_names.contains(disk->getName()) && !disk->isBroken() && !disk->isReadOnly())
-            new_disks.push_back(disk);
+            initializeNewDiskOnConfigChange(disk);
     }
-
-    return new_disks;
-}
-
-void MergeTreeData::prepareNewDiskOnConfigChange(const DiskPtr & new_disk) const
-{
-    assertNewDiskDoesNotContainTableData(new_disk);
-
-    new_disk->createDirectories(relative_data_path);
-    new_disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-
-    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
-    auto buf = new_disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
-    writeIntText(format_version.toUnderType(), *buf);
-    buf->finalize();
-    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-        buf->sync();
-
-    assertNewDiskDoesNotContainTableData(new_disk);
 }
 
 bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
@@ -11434,7 +11430,7 @@ bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_ad
         auto disk = storage_policy->tryGetDiskByName(name);
         /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
         if (disk && !disk->isBroken() && !disk->isReadOnly())
-            prepareNewDiskOnConfigChange(disk);
+            initializeNewDiskOnConfigChange(disk);
     }
     return true;
 }
