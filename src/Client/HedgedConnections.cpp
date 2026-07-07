@@ -297,7 +297,12 @@ void HedgedConnections::sendCancel()
     /// QueryPipeline will be called and the initial thread could be already
     /// destroyed (especially when the system is under pressure).
     if (hedged_connections_factory.hasEventsInProcess())
+    {
+        if (hedged_connections_factory.numberOfProcessingReplicas() > 0)
+            epoll.remove(hedged_connections_factory.getFileDescriptor());
+
         hedged_connections_factory.stopChoosingReplicas();
+    }
 
     cancelled = true;
 
