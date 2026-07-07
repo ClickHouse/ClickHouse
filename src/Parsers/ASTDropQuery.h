@@ -56,6 +56,16 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
 
+    /// `getID` only distinguishes the `kind` (DROP / DETACH / TRUNCATE) and the database / table
+    /// names; the flags and selectors that decide what is actually dropped -- `is_view`,
+    /// `is_dictionary`, `if_exists`, `if_empty`, `has_all`, `has_tables`, the `like` pattern with its
+    /// `not_like` / `case_insensitive_like` modifiers, `sync`, `permanently`, `TEMPORARY` and the
+    /// `ON CLUSTER` name -- are plain members, not part of `children`. Without folding them into the
+    /// hash, `DROP VIEW v` and `DROP TABLE v` (or `DROP TABLE t` and `DETACH TABLE t PERMANENTLY`)
+    /// would share one tree hash. The rewrite-rule matcher treats an equal tree hash as semantic
+    /// equality, so a rule template for one `DROP` would over-match an unrelated `DROP`.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams & params) const override
     {
         return removeOnCluster<ASTDropQuery>(clone(), params.default_database);

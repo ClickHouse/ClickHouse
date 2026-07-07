@@ -2,6 +2,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -32,6 +33,32 @@ ASTPtr ASTDropQuery::clone() const
     cloneOutputOptions(*res);
     cloneTableOptions(*res);
     return res;
+}
+
+void ASTDropQuery::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic flags and selectors that decide what is dropped and how, and that live
+    /// outside `children` (the `database` / `table` identifiers and the `database_and_tables` list
+    /// are part of `children` and are hashed through the child recursion, so they are not repeated
+    /// here). See the header comment for why the rewrite-rule matcher needs this. Each field is
+    /// produced by the formatter, so it survives the format -> parse round-trip that the debug-build
+    /// AST consistency check requires -- or is never set by the parser (`no_ddl_lock`).
+    hash_state.update(kind);
+    hash_state.update(if_exists);
+    hash_state.update(if_empty);
+    hash_state.update(no_ddl_lock);
+    hash_state.update(has_all);
+    hash_state.update(has_tables);
+    hash_state.update(like);
+    hash_state.update(not_like);
+    hash_state.update(case_insensitive_like);
+    hash_state.update(is_dictionary);
+    hash_state.update(is_view);
+    hash_state.update(sync);
+    hash_state.update(permanently);
+    hash_state.update(isTemporary());
+    hash_state.update(cluster);
 }
 
 void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -106,7 +133,10 @@ void ASTDropQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & se
         table->format(ostr, settings, state, frame);
     }
 
-    if (!like.empty())
+    /// Emit the clause whenever a LIKE was present, even for an empty pattern, so that the
+    /// `not_like` / `case_insensitive_like` flags (now folded into the tree hash) survive the
+    /// format -> parse round-trip that the debug-build AST consistency check requires.
+    if (!like.empty() || not_like || case_insensitive_like)
     {
         ostr
             << (not_like ? " NOT" : "")
