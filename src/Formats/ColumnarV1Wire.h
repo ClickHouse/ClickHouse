@@ -996,6 +996,13 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_FIXEDN type width mismatch: declared type has {} bytes, wire has {}",
                     base_type->getSizeOfValueInMemory(), elem_size);
         }
+        // rows_to_dec == 0: no width to divide by, but a malformed frame could still
+        // declare a non-zero data_size here; without rejecting that, the memcpy below
+        // would write desc.data_size bytes into a zero-sized allocation.
+        else if (desc.data_size != 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXEDN data_size {} must be 0 for an empty column",
+                desc.data_size);
         auto inner = base_type->createColumn();
         inner->insertManyDefaults(rows_to_dec);
         if (desc.data_size != 0)
@@ -1110,8 +1117,28 @@ inline MutableColumnPtr readColumnFromDesc(
 
             ColDescriptor inner_desc{};
             std::memcpy(&inner_desc, record_ptr + 4u, COLUMNAR_DESC_BYTES);
-            // null_offset was repurposed by the writer to carry this sub-column's row count.
+            // null_offset was repurposed by the writer to carry this sub-column's row count
+            // (not a real offset — Variant sub-columns are always written with is_nullable=
+            // false, so nothing ever reads null_offset as an offset for them). offsets_offset
+            // and data_offset+data_size are real byte ranges though, and otherwise-untrusted
+            // (guest/network-controlled): without confining them to this COL_VARIANT's own
+            // [data_offset, data_offset+data_size) region, a malformed frame could point one
+            // alternative's sub-column at bytes belonging to a sibling top-level column or
+            // the frame header and still decode "successfully".
             uint32_t sub_rows = static_cast<uint32_t>(inner_desc.null_offset);
+            uint64_t sub_region_end = desc.data_offset + desc.data_size;
+            if (inner_desc.offsets_offset != 0
+                && (inner_desc.offsets_offset < desc.data_offset || inner_desc.offsets_offset > sub_region_end))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_VARIANT sub-variant offsets_offset {} outside variant data region [{}, {})",
+                    inner_desc.offsets_offset, desc.data_offset, sub_region_end);
+            if (inner_desc.data_offset < desc.data_offset
+                || inner_desc.data_offset > sub_region_end
+                || inner_desc.data_size > sub_region_end - inner_desc.data_offset)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_VARIANT sub-variant data range [{}, {}) outside variant data region [{}, {})",
+                    inner_desc.data_offset, inner_desc.data_offset + inner_desc.data_size,
+                    desc.data_offset, sub_region_end);
             sub_by_global[global_d] = {inner_desc, sub_rows};
             sub_present[global_d] = true;
             record_ptr += record_bytes;
