@@ -522,6 +522,7 @@ def test_table_functions():
         f"odbc(named_collection_1, connection_settings = 'DSN=mydb;Uid=user;Pwd={password}')",
         f"jdbc(named_collection_1, datasource = 'jdbc://user:{password}@localhost:5432/mydb')",
         f"odbc(named_collection_1, connection_settings = 'odbc://user:{password}@localhost:5432/mydb')",
+        f"deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')",
     ]
 
     def make_test_case(i):
@@ -616,6 +617,7 @@ def test_table_functions():
             "CREATE TABLE tablefunc51 (`x` int) AS odbc(named_collection_1, connection_settings = '[HIDDEN]')",
             "CREATE TABLE tablefunc52 (`x` int) AS jdbc(named_collection_1, datasource = 'jdbc://user:[HIDDEN]@localhost:5432/mydb')",
             "CREATE TABLE tablefunc53 (`x` int) AS odbc(named_collection_1, connection_settings = 'odbc://user:[HIDDEN]@localhost:5432/mydb')",
+            "CREATE TABLE tablefunc54 (`x` int) AS deltaLakeS3('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')",
         ],
         must_not_contain=[password],
     )
