@@ -1,0 +1,35 @@
+<test>
+    <!-- Benchmark for the `parallel_full_sorting_merge` join algorithm added in
+         https://github.com/ClickHouse/ClickHouse/pull/109005. It shards a full
+         sorting merge join by the hash of the join keys into independent
+         per-shard merge joins that run in parallel (up to `max_threads`), keeping
+         the low, streaming memory of a merge join.
+
+         The tables use `ORDER BY tuple()` so neither side is already sorted by
+         the join key: the pre-join sort is therefore a full parallel sort that
+         is scattered into shards, which is exactly the path this algorithm
+         optimizes (an input already sorted by the join key would be read in
+         order and is handled by the separate primary-key-ranges path instead).
+
+         `full_sorting_merge` (single merge) and `parallel_hash` are included on
+         the same data as a reference, mirroring the benchmark in the PR. Each
+         query carries `join_algorithm` in its own `SETTINGS` clause rather than
+         a test-wide `<settings>` block, so the query using the new value is run
+         only on the new server (as a "partial" query) instead of failing the
+         precondition on a server that does not have the value yet. -->
+
+    <create_query>CREATE TABLE pfsm_left (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_right (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+
+    <fill_query>INSERT INTO pfsm_left SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_right SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_right FINAL</fill_query>
+
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <drop_query>DROP TABLE IF EXISTS pfsm_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_right</drop_query>
+</test>
