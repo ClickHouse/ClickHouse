@@ -137,6 +137,22 @@ GTEST_TEST(FunctionSignature, DecimalConstValueTypeFunction)
         checkSignature("toDecimal32(Any, const S UInt8) -> Decimal(9, S)",
             {makeColumn("Float64"), makeColumn("UInt8")}),
         ::testing::StartsWith("FAIL:"));
+
+    /// On the types-only fallback the scale value is unavailable; the Decimal type function must
+    /// report this cleanly as ILLEGAL_COLUMN (not LOGICAL_ERROR), like the other parametric ones.
+    {
+        FunctionSignature checker("toDecimal32(Any, const S NativeUInt) -> Decimal(9, S)");
+        String reason;
+        try
+        {
+            checker.check({makeColumn("Float64"), makeColumn("UInt8")}, reason, /*types_only=*/ true);
+            FAIL() << "expected an exception";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_COLUMN) << e.message();
+        }
+    }
 }
 
 GTEST_TEST(FunctionSignature, ConstArguments)

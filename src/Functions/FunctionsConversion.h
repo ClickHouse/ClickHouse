@@ -2885,11 +2885,13 @@ struct NameToDate
 {
     static constexpr auto name = "toDate";
     static constexpr auto signature = "(Any, [const String]) -> Date";
+    static constexpr bool authoritative = true;
 };
 struct NameToDate32
 {
     static constexpr auto name = "toDate32";
     static constexpr auto signature = "(Any, [const String]) -> Date32";
+    static constexpr bool authoritative = true;
 };
 struct NameToDateTime
 {
@@ -2919,27 +2921,34 @@ struct NameToDateTime64
 struct NameToString
 {
     static constexpr auto name = "toString";
-    static constexpr auto signature = "(Any, [const String]) -> String";
+    /// The optional timezone argument is accepted only when the value is a DateTime/DateTime64
+    /// (it is ignored for the result type, which is always String).
+    static constexpr auto signature = "(DateTime | DateTime64, [String]) -> String OR (Any) -> String";
+    static constexpr bool authoritative = true;
 };
 struct NameToDecimal32
 {
     static constexpr auto name = "toDecimal32";
-    static constexpr auto signature = "(Any, const UInt8) -> Decimal32";
+    static constexpr auto signature = "(Any, const S NativeUInt) -> Decimal(9, S)";
+    static constexpr bool authoritative = true;
 };
 struct NameToDecimal64
 {
     static constexpr auto name = "toDecimal64";
-    static constexpr auto signature = "(Any, const UInt8) -> Decimal64";
+    static constexpr auto signature = "(Any, const S NativeUInt) -> Decimal(18, S)";
+    static constexpr bool authoritative = true;
 };
 struct NameToDecimal128
 {
     static constexpr auto name = "toDecimal128";
-    static constexpr auto signature = "(Any, const UInt8) -> Decimal128";
+    static constexpr auto signature = "(Any, const S NativeUInt) -> Decimal(38, S)";
+    static constexpr bool authoritative = true;
 };
 struct NameToDecimal256
 {
     static constexpr auto name = "toDecimal256";
-    static constexpr auto signature = "(Any, const UInt8) -> Decimal256";
+    static constexpr auto signature = "(Any, const S NativeUInt) -> Decimal(76, S)";
+    static constexpr bool authoritative = true;
 };
 
 

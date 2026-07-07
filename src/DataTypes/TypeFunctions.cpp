@@ -596,10 +596,14 @@ class TypeFunctionDecimal : public ITypeFunction
 public:
     Value apply(const Values & args) const override
     {
+        /// The scale comes from a const argument; on the types-only fallback its value is
+        /// unavailable, so only the precision literal reaches us — report that cleanly.
+        if (args.size() < 2)
+            throwParametricTypeFunctionNeedsValue("Decimal", "scale");
         if (args.size() != 2)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function Decimal");
-        const UInt64 precision = args[0].field().safeGet<UInt64>();
-        const UInt64 scale = args[1].field().safeGet<UInt64>();
+        const UInt64 precision = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), args[0].field());
+        const UInt64 scale = applyVisitor(FieldVisitorConvertToNumber<UInt64>(), args[1].field());
         return Value(createDecimal<DataTypeDecimal>(precision, scale));
     }
 
