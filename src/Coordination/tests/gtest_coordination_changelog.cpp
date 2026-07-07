@@ -8,9 +8,13 @@
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 
+#include <Poco/AutoPtr.h>
+#include <Poco/Util/XMLConfiguration.h>
+
 #include <atomic>
 #include <barrier>
 #include <future>
+#include <sstream>
 #include <thread>
 
 
@@ -26,6 +30,12 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+}
+
+namespace CoordinationSetting
+{
+    extern const CoordinationSettingsUInt64 log_readahead_commit_window_bytes;
 }
 }
 
@@ -37,6 +47,7 @@ namespace ProfileEvents
     extern const Event KeeperLogsReadAheadScheduleRejected;
     extern const Event KeeperLogsReadAheadReadersCreated;
     extern const Event KeeperLogsReadAheadTimeoutFallbacks;
+    extern const Event KeeperLogsReadAheadPlanEpochMismatches;
     extern const Event KeeperLogsEntryReadFromCommitReadAhead;
     extern const Event KeeperLogsEntryReadFromLatestCache;
 }
@@ -106,6 +117,56 @@ TEST(ReadAheadSettingsValidation, RejectsPoolThreadsBelowMaxPeerReaders)
     // 0 means "derive from max_peer_readers" and is always accepted.
     settings.pool_threads = 0;
     EXPECT_NO_THROW(DB::validateReadAheadSettings(settings));
+}
+
+// commit_logs_cache_size_threshold is OBSOLETE but must map onto log_readahead_commit_window_bytes
+// when the latter isn't itself set.
+TEST(CoordinationSettingsLoadFromConfig, MapsObsoleteCommitLogsCacheSizeThreshold)
+{
+    const auto load = [](const std::string & xml)
+    {
+        std::istringstream xml_stream(xml); // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+        Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(xml_stream);
+        DB::CoordinationSettings settings;
+        settings.loadFromConfig("keeper_server.coordination_settings", *config);
+        return settings;
+    };
+
+    // (a) Only the old setting set, to 0.
+    {
+        auto settings = load(R"END(<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <commit_logs_cache_size_threshold>0</commit_logs_cache_size_threshold>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>)END");
+        EXPECT_EQ(settings[DB::CoordinationSetting::log_readahead_commit_window_bytes], 0u);
+    }
+
+    // (b) Both set: new wins.
+    {
+        auto settings = load(R"END(<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+            <commit_logs_cache_size_threshold>0</commit_logs_cache_size_threshold>
+            <log_readahead_commit_window_bytes>1048576</log_readahead_commit_window_bytes>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>)END");
+        EXPECT_EQ(settings[DB::CoordinationSetting::log_readahead_commit_window_bytes], 1048576u);
+    }
+
+    // (c) Neither set: default.
+    {
+        auto settings = load(R"END(<clickhouse>
+    <keeper_server>
+        <coordination_settings>
+        </coordination_settings>
+    </keeper_server>
+</clickhouse>)END");
+        EXPECT_EQ(settings[DB::CoordinationSetting::log_readahead_commit_window_bytes], 500ull * 1024 * 1024);
+    }
 }
 
 TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
@@ -2394,6 +2455,8 @@ namespace FailPoints
     extern const char keeper_changelog_readahead_fill_wedge[];
     extern const char keeper_changelog_readahead_serve_wait[];
     extern const char keeper_changelog_readahead_park_armed[];
+    extern const char keeper_changelog_readahead_pre_drain[];
+    extern const char keeper_changelog_readahead_fill_exception[];
 }
 }
 
@@ -3945,6 +4008,73 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
     EXPECT_LE(decoded_total, 6u) << "The fill must not have re-decoded the already-served range [1, 5]";
 }
 
+// A fill-task exception must not poison the shared read-ahead pool: the reader transitions to Error,
+// wakes the blocked serve immediately, and a later serve recreates a fresh reader.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadFillExceptionRecovers)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Read-ahead engine mechanics are independent of compression; body always uses "
+                        "compress_logs=false.";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    constexpr uint64_t total = 10;
+
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 1000,
+        .latest_logs_cache_size_threshold = 1,
+    };
+    const DB::ReadAheadSettings readahead_settings{
+        .enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 5000, .chunk_size = 1, .commit_window_bytes = 1};
+
+    // Write+close, then re-derive from disk so entries aren't in latest_logs_cache.
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        writer.init(0, 0);
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = getLogEntry("readahead_fill_exception", i);
+            writer.append(entry);
+        }
+        writer.end_of_append_batch(0, 0);
+        waitDurableLogs(writer);
+    }
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.init(0, 0);
+
+    constexpr int32_t peer_id = 3;
+
+    const uint64_t fallbacks_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks];
+    const uint64_t created_baseline = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadReadersCreated];
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_exception);
+
+    auto first_batch = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, peer_id);
+
+    ASSERT_NE(first_batch, nullptr);
+    ASSERT_EQ(first_batch->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*first_batch)[i]->get_term(), static_cast<uint64_t>(i + 1));
+
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks], fallbacks_baseline)
+        << "Must wake via the reader's Error state, not the serve_wait timeout";
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_fill_exception);
+
+    auto second_batch = changelog.log_entries_ext(6, 11, /*batch_size_hint_in_bytes=*/0, peer_id);
+    ASSERT_NE(second_batch, nullptr);
+    ASSERT_EQ(second_batch->size(), 5u);
+    for (size_t i = 0; i < 5; ++i)
+        EXPECT_EQ((*second_batch)[i]->get_term(), static_cast<uint64_t>(i + 6));
+
+    EXPECT_GE(ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadReadersCreated] - created_baseline, 2u)
+        << "The Error reader must have been retired and a fresh one created";
+}
+
 // A wedged fill task keeps occupying its pool thread even after its reader is logically retired, since
 // the OS thread hasn't returned to the pool yet. makeReaderLocked must trySchedule (fail fast) rather
 // than block under readers_mutex, and the caller must degrade to a direct read instead of hanging.
@@ -4722,6 +4852,295 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadLowWaterWakeup)
     EXPECT_GT(fill_decoded_after_drain, fill_decoded_before_drain)
         << "Low-water wakeup must let the parked fill resume decoding past the first park, rather than "
            "falling back to a direct read after a serve-wait timeout";
+}
+
+// A write_at landing between the pre-drain epoch check and the drain must not let a closed reader's
+// buffered leftover deque serve pre-truncation content; the post-drain re-check must discard it.
+TYPED_TEST(CoordinationChangelogTest, ReadAheadPeerPostDrainEpochRace)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    const std::string payload = "post_drain_epoch_race";
+    const size_t entry_size = getLogEntry(payload, 1)->get_buf().size();
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        // Budget covers exactly 6 entries, so serve #1 parks the fill leaving [2, 6] as leftover.
+        DB::ReadAheadSettings{
+            .enabled = true, .window_bytes = entry_size * 6, .max_peer_readers = 8, .serve_wait_timeout_ms = 5000, .chunk_size = 1},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (uint64_t i = 1; i <= 10; ++i)
+    {
+        auto entry = getLogEntry(payload, i);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+    // Second end_of_append_batch applies the locations registered during the wait above (see
+    // ReadAheadWriteAtInvalidation), so max_index_with_location actually reaches 10 here.
+    changelog.end_of_append_batch(0, 0);
+
+    constexpr int32_t peer_id = 9;
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
+    std::promise<DB::LogEntriesPtr> first_promise;
+    std::thread first_reader([&]
+    {
+        first_promise.set_value(changelog.log_entries_ext(1, 2, /*batch_size_hint_in_bytes=*/0, peer_id));
+    });
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_park_armed);
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_park_armed);
+    auto first_batch = first_promise.get_future().get();
+    first_reader.join();
+    ASSERT_NE(first_batch, nullptr);
+    ASSERT_EQ(first_batch->size(), 1u);
+
+    // [2, 5) is fully satisfiable from serve #1's leftover, so no further fill is needed here.
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_readahead_pre_drain);
+
+    std::promise<DB::LogEntriesPtr> second_promise;
+    std::thread second_reader([&]
+    {
+        second_promise.set_value(changelog.log_entries_ext(2, 5, /*batch_size_hint_in_bytes=*/0, peer_id));
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_readahead_pre_drain);
+
+    const uint64_t mismatches_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadPlanEpochMismatches];
+
+    auto rewrite_entry = getLogEntry("post_drain_epoch_race_rewrite_3", 999);
+    changelog.write_at(3, rewrite_entry);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_readahead_pre_drain);
+    second_reader.join();
+
+    auto second_batch = second_promise.get_future().get();
+    EXPECT_EQ(second_batch, nullptr) << "Closed reader's pre-truncation leftover must not be served";
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadPlanEpochMismatches], mismatches_before);
+
+    auto follow_up = changelog.log_entries_ext(2, 4, /*batch_size_hint_in_bytes=*/0, peer_id);
+    ASSERT_NE(follow_up, nullptr);
+    ASSERT_EQ(follow_up->size(), 2u);
+    EXPECT_EQ((*follow_up)[0]->get_term(), 2u);
+    EXPECT_EQ((*follow_up)[1]->get_term(), 999u) << "Must observe the rewritten term";
+}
+
+// A peer reader idle after disk catch-up must be evicted even once follow-up requests are served
+// purely from latest_logs_cache (never re-entering the reader-acquisition path).
+TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCatchup)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    constexpr uint64_t total = 100;
+    constexpr uint64_t cached_tail = 20;
+    const std::string payload = "peer_idle_evict_pad_entry";
+    const uint64_t threshold = cached_tail * payload.size();
+
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .latest_logs_cache_size_threshold = threshold,
+    };
+    const DB::ReadAheadSettings readahead_settings{
+        .enabled = true,
+        .window_bytes = 64 * 1024 * 1024,
+        .max_peer_readers = 8,
+        .eviction_timeout_ms = 0,
+        .serve_wait_timeout_ms = 5000,
+        .commit_window_bytes = 1,
+    };
+
+    // Fresh instance's init-read path deterministically pins the cache boundary.
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        writer.init(0, 0);
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = getLogEntry(payload, i);
+            writer.append(entry);
+        }
+        writer.end_of_append_batch(0, 0);
+        waitDurableLogs(writer);
+    }
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.init(0, 0);
+
+    constexpr int32_t peer_id = 4;
+
+    auto disk_batch = changelog.log_entries_ext(1, 6, /*batch_size_hint_in_bytes=*/0, peer_id);
+    ASSERT_NE(disk_batch, nullptr);
+    ASSERT_EQ(disk_batch->size(), 5u);
+
+    const uint64_t created_before_hit = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadReadersCreated];
+
+    // Entirely within the cached tail: serveReadAhead takes the cache-hit early return.
+    auto cache_hit
+        = changelog.log_entries_ext(total - cached_tail + 1, total - cached_tail + 2, /*batch_size_hint_in_bytes=*/0, peer_id);
+    ASSERT_NE(cache_hit, nullptr);
+    ASSERT_EQ(cache_hit->size(), 1u);
+
+    EXPECT_EQ(changelog.getReaderDecodedBytesForTests(peer_id), 0u) << "The idle peer reader must be evicted";
+
+    auto disk_batch2 = changelog.log_entries_ext(6, 11, /*batch_size_hint_in_bytes=*/0, peer_id);
+    ASSERT_NE(disk_batch2, nullptr);
+    ASSERT_EQ(disk_batch2->size(), 5u);
+
+    const uint64_t created_after_hit = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadReadersCreated];
+    EXPECT_GT(created_after_hit, created_before_hit) << "The evicted reader must have been recreated";
+}
+
+// The commit reader is exempt from capacity limits but not idle eviction; refreshCache is the only
+// scan opportunity when serveReadAhead never runs (single-node/write-only).
+TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefreshCache)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    constexpr uint64_t total = 100;
+    constexpr uint64_t cached_tail = 20;
+    const std::string payload = "commit_idle_evict_pad_entry";
+    const uint64_t threshold = cached_tail * payload.size();
+
+    const DB::LogFileSettings settings{
+        .force_sync = false,
+        .compress_logs = false,
+        .rotate_interval = 10,
+        .latest_logs_cache_size_threshold = threshold,
+    };
+    const DB::ReadAheadSettings readahead_settings{
+        .enabled = false, .eviction_timeout_ms = 0, .serve_wait_timeout_ms = 5000, .commit_window_bytes = 64 * 1024 * 1024};
+
+    {
+        DB::KeeperLogStore writer(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+        writer.init(0, 0);
+        for (uint64_t i = 1; i <= total; ++i)
+        {
+            auto entry = getLogEntry(payload, i);
+            writer.append(entry);
+        }
+        writer.end_of_append_batch(0, 0);
+        waitDurableLogs(writer);
+    }
+
+    DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.init(0, 0);
+
+    auto entry1 = changelog.entry_at_ext(1, /*for_commit=*/true);
+    ASSERT_NE(entry1, nullptr);
+    EXPECT_EQ(entry1->get_term(), 1u);
+    ASSERT_TRUE(changelog.hasCommitReaderForTests());
+
+    // Hand off to the latest cache; the commit reader is now idle.
+    for (uint64_t i = total - cached_tail + 1; i <= total; ++i)
+    {
+        auto entry = changelog.entry_at_ext(i, /*for_commit=*/true);
+        ASSERT_NE(entry, nullptr);
+        EXPECT_EQ(entry->get_term(), i);
+    }
+
+    changelog.flush();
+
+    EXPECT_FALSE(changelog.hasCommitReaderForTests()) << "The idle commit reader must be retired";
+
+    auto entry2 = changelog.entry_at_ext(2, /*for_commit=*/true);
+    ASSERT_NE(entry2, nullptr);
+    EXPECT_EQ(entry2->get_term(), 2u);
+    EXPECT_TRUE(changelog.hasCommitReaderForTests());
+}
+
+// log_entries contractually never returns nullptr; on a concurrent write_at it must throw instead.
+TYPED_TEST(CoordinationChangelogTest, LogEntriesThrowsOnConcurrentTruncation)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    DB::KeeperLogStore changelog(
+        DB::LogFileSettings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 100,
+            .latest_logs_cache_size_threshold = 1,
+        },
+        DB::FlushSettings(),
+        DB::ReadAheadSettings{},
+        this->keeper_context);
+    changelog.init(0, 0);
+
+    for (uint64_t i = 1; i <= 10; ++i)
+    {
+        auto entry = getLogEntry("log_entries_epoch_race_" + std::to_string(i), i);
+        changelog.append(entry);
+    }
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    std::promise<void> reader_done;
+    std::exception_ptr reader_exception;
+    std::thread reader([&]
+    {
+        try
+        {
+            changelog.log_entries(1, 6);
+        }
+        catch (...)
+        {
+            reader_exception = std::current_exception();
+        }
+        reader_done.set_value();
+    });
+
+    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
+
+    auto rewrite_entry = getLogEntry("log_entries_epoch_race_rewrite_3", 999);
+    changelog.write_at(3, rewrite_entry);
+    changelog.end_of_append_batch(0, 0);
+    waitDurableLogs(changelog);
+
+    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
+    reader_done.get_future().wait();
+    reader.join();
+
+    ASSERT_NE(reader_exception, nullptr) << "log_entries must throw rather than return nullptr on a concurrent truncation race";
+    try
+    {
+        std::rethrow_exception(reader_exception);
+    }
+    catch (const DB::Exception & ex)
+    {
+        EXPECT_EQ(ex.code(), DB::ErrorCodes::LOGICAL_ERROR) << ex.message();
+    }
+    catch (...)
+    {
+        FAIL() << "Expected a DB::Exception";
+    }
 }
 
 #endif

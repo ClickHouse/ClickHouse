@@ -21,6 +21,7 @@
 #include <boost/algorithm/string/trim.hpp>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
@@ -66,6 +67,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
+    extern const int FAULT_INJECTED;
 }
 
 namespace FailPoints
@@ -75,6 +77,8 @@ namespace FailPoints
     extern const char keeper_changelog_readahead_fill_wedge[];
     extern const char keeper_changelog_readahead_serve_wait[];
     extern const char keeper_changelog_readahead_park_armed[];
+    extern const char keeper_changelog_readahead_pre_drain[];
+    extern const char keeper_changelog_readahead_fill_exception[];
 }
 
 namespace
@@ -774,8 +778,7 @@ LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAhead
     : latest_logs_cache(log_settings.latest_logs_cache_size_threshold)
     , keeper_context(std::move(keeper_context_))
     , log(getLogger("Changelog"))
-    , readahead_settings(readahead_settings_)
-    , commit_readahead_window_bytes(readahead_settings_.commit_window_bytes)
+    , readahead_settings(std::move(readahead_settings_))
 {
 }
 
@@ -917,10 +920,7 @@ bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) co
     if (hasUnlimitedSpace() || empty())
         return true;
 
-    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
-        return false;
-
-    return true;
+    return cache_size + log_entry_size <= size_threshold;
 }
 
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
@@ -1258,6 +1258,10 @@ void LogEntryStorage::addLogLocations(std::vector<std::pair<uint64_t, LogLocatio
 
 void LogEntryStorage::refreshCache()
 {
+    // The only scan opportunity for deployments where serveReadAhead never runs (single-node,
+    // write-only, or peer read-ahead disabled).
+    maybeEvictIdleReaders();
+
     /// if we have unlimited space in latest logs cache we don't need log location
     if (latest_logs_cache.hasUnlimitedSpace())
         return;
@@ -1283,7 +1287,7 @@ void LogEntryStorage::refreshCache()
 
     const auto latest_log_cache_over_size_threshold = [&]
     {
-        return latest_logs_cache.size_threshold != 0 && latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
+        return latest_logs_cache.cache_size > latest_logs_cache.size_threshold;
     };
 
     while (latest_logs_cache.numberOfEntries() > 1 && latest_logs_cache.min_index_in_cache <= max_index_with_location
@@ -1521,6 +1525,7 @@ struct ReadAheadReader
     std::string opened_path;
     std::optional<LogReadPlan::FileSpan> resume_cursor;
 
+    /// Guarded by LogEntryStorage::readers_mutex, not deque_mutex.
     std::chrono::steady_clock::time_point last_access;
 
     // === Lifecycle helpers (deque_mutex held by caller unless noted) ===
@@ -1535,9 +1540,20 @@ struct ReadAheadReader
     /// Exclusive upper bound of indices the fill will produce unaided (pending cursors > resume > deque > front).
     uint64_t fillCoverageEndLocked() const TSA_REQUIRES(deque_mutex);
 
+    // === Park/wake hysteresis (deque_mutex held by caller) ===
+    // Fill parks at the full budget, wakes at half (hysteresis); all pop sites must agree on this.
+    size_t lowWaterMarkLocked() const TSA_REQUIRES(deque_mutex) { return window_budget_bytes / 2; }
+    /// Whether a pop from bytes_before crossed the low-water mark. Compare against decoded_bytes
+    /// *before* the pop(s), not after.
+    bool crossedLowWaterLocked(size_t bytes_before) const TSA_REQUIRES(deque_mutex)
+    {
+        return bytes_before > lowWaterMarkLocked() && decoded_bytes <= lowWaterMarkLocked();
+    }
+
     // === Fill cursor helpers (deque_mutex held by caller) ===
     void setResumeCursorLocked(const ChangelogFileDescriptionPtr & file_description, size_t position, uint64_t first_index, size_t count)
         TSA_REQUIRES(deque_mutex);
+    /// Unlike resetToIndexLocked, also resets held_buf; only ever called from the fill task itself.
     void resetFillCursorLocked() TSA_REQUIRES(deque_mutex);
 
     // === Held-buffer helpers (fill task only, no lock required) ===
@@ -1950,8 +1966,8 @@ CursorOutcome fillFromCursor(
         // Failpoint: wedge the fill for testing.
         FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_fill_wedge);
 
-        // Park at the full budget, but wake only at the budget/2 low-water mark (hysteresis) so the
-        // fill doesn't re-park immediately after a single popped entry.
+        // Park at the full budget, but wake only at the low-water mark (hysteresis) so the fill
+        // doesn't re-park immediately after a single popped entry.
         size_t headroom_bytes = 0;
         {
             std::unique_lock dq_lock(reader.deque_mutex);
@@ -1963,7 +1979,7 @@ CursorOutcome fillFromCursor(
                     [&] TSA_NO_THREAD_SAFETY_ANALYSIS
                     {
                         return reader.state != ReaderState::Running || reader.generation != local_generation
-                            || reader.decoded_bytes <= reader.window_budget_bytes / 2;
+                            || reader.decoded_bytes <= reader.lowWaterMarkLocked();
                     });
                 if (reader.state != ReaderState::Running)
                     return CursorOutcome::Terminal;
@@ -2109,8 +2125,8 @@ LogReadPlan LogEntryStorage::getReadAheadPlan(uint64_t start, uint64_t end, int6
     if (plan.logs_compacted)
         return plan;
 
-    const bool can_use_readahead
-        = readahead_settings.window_bytes != 0 && readahead_settings.max_peer_readers != 0 && readahead_settings.chunk_size != 0;
+    const bool can_use_readahead = readahead_settings.enabled && readahead_settings.window_bytes != 0
+        && readahead_settings.max_peer_readers != 0 && readahead_settings.chunk_size != 0;
     if (!can_use_readahead)
         return plan;
 
@@ -2178,7 +2194,7 @@ LogReadPlan LogEntryStorage::getCommitReadPlan(uint64_t index, uint64_t retained
             .file_description = base_loc.file_description, .position = base_loc.position, .first_index = index, .count = 1});
 
     const bool can_use_commit_readahead
-        = commit_readahead_window_bytes != 0 && readahead_settings.chunk_size != 0 && !latest_logs_cache.hasUnlimitedSpace();
+        = readahead_settings.commit_window_bytes != 0 && readahead_settings.chunk_size != 0 && !latest_logs_cache.hasUnlimitedSpace();
     if (!can_use_commit_readahead)
         return plan;
 
@@ -2204,6 +2220,7 @@ LogReadPlan LogEntryStorage::getCommitReadPlan(uint64_t index, uint64_t retained
 /// being retired and recreated.
 /// Exits when state transitions out of Running.
 void LogEntryStorage::fillTask(std::shared_ptr<ReadAheadReader> reader) const
+try
 {
     while (true)
     {
@@ -2218,6 +2235,11 @@ void LogEntryStorage::fillTask(std::shared_ptr<ReadAheadReader> reader) const
             reader->waitForCursor(local_generation);
             continue;
         }
+
+        fiu_do_on(FailPoints::keeper_changelog_readahead_fill_exception,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "keeper_changelog_readahead_fill_exception");
+        });
 
         if (ensureOpenAt(*reader, *current_cursor, log) != OpenResult::Ready)
             return;
@@ -2243,6 +2265,14 @@ void LogEntryStorage::fillTask(std::shared_ptr<ReadAheadReader> reader) const
         }
     }
 }
+catch (...)
+{
+    // Block MEMORY_LIMIT_EXCEEDED so the cleanup below can't itself throw under memory pressure.
+    LockMemoryExceptionInThread blocker{VariableContext::Global};
+    tryLogCurrentException(log, "Read-ahead fill task failed");
+    std::lock_guard dq_lock(reader->deque_mutex);
+    reader->setReaderStateLocked(ReaderState::Error);
+}
 
 void LogEntryStorage::ensureReadAheadPoolLocked()
 {
@@ -2267,7 +2297,8 @@ void LogEntryStorage::ensureReadAheadPoolLocked()
         CurrentMetrics::KeeperChangelogReadAheadThreadsScheduled,
         threads,
         threads,
-        readahead_settings.max_peer_readers + 1);
+        readahead_settings.max_peer_readers + 1,
+        /*shutdown_on_exception_=*/false); /// a failed fill must not disable read-ahead process-wide
 }
 
 void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_point now)
@@ -2278,9 +2309,11 @@ void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_poi
     // suppresses the scan; terminal reaping in acquireReaderLocked covers the per-peer case.
     const bool at_capacity = peer_readers.size() >= readahead_settings.max_peer_readers;
     const auto gate_interval = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
-    if (!at_capacity && (now - last_eviction_scan) < gate_interval)
+    const auto last_scan = std::chrono::steady_clock::time_point(
+        std::chrono::steady_clock::duration(last_eviction_scan_ticks.load(std::memory_order_relaxed)));
+    if (!at_capacity && (now - last_scan) < gate_interval)
         return;
-    last_eviction_scan = now;
+    last_eviction_scan_ticks.store(now.time_since_epoch().count(), std::memory_order_relaxed);
 
     const auto eviction_timeout = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
     for (auto it = peer_readers.begin(); it != peer_readers.end();)
@@ -2300,6 +2333,27 @@ void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_poi
             ++it;
         }
     }
+
+    // The commit reader is exempt from capacity pressure but not from idle eviction.
+    if (commit_reader && (now - commit_reader->last_access > eviction_timeout))
+    {
+        LOG_DEBUG(log, "Evicting idle commit read-ahead reader");
+        retireCommitReaderLocked();
+    }
+}
+
+void LogEntryStorage::maybeEvictIdleReaders()
+{
+    // Skip taking readers_mutex entirely when clearly inside the gate interval.
+    const auto now = std::chrono::steady_clock::now();
+    const auto gate_interval = std::chrono::milliseconds(readahead_settings.eviction_timeout_ms);
+    const auto last_scan = std::chrono::steady_clock::time_point(
+        std::chrono::steady_clock::duration(last_eviction_scan_ticks.load(std::memory_order_relaxed)));
+    if ((now - last_scan) < gate_interval)
+        return;
+
+    std::lock_guard map_lock(readers_mutex);
+    evictIdleReadersLocked(now);
 }
 
 /// Whether `reader` is unusable for any new plan: any non-Running state. A reader parked with
@@ -2536,7 +2590,6 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t reader_id, const std::shared_
                         // Pop the whole contiguous available prefix under one deque_mutex hold
                         // instead of reacquiring per entry; notify once, after releasing the lock.
                         const size_t bytes_before_pop = reader->decoded_bytes;
-                        const size_t half_budget = reader->window_budget_bytes / 2;
                         size_t popped = 0;
                         while (consumed < run.count && !reader->decoded_entries.empty()
                                && reader->decoded_front_index == run.first_index + consumed)
@@ -2548,7 +2601,7 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t reader_id, const std::shared_
                             ++popped;
                         }
                         current_index = run.first_index + consumed;
-                        const bool crossed_low_water = popped > 0 && bytes_before_pop > half_budget && reader->decoded_bytes <= half_budget;
+                        const bool crossed_low_water = popped > 0 && reader->crossedLowWaterLocked(bytes_before_pop);
                         dq_lock.unlock();
                         if (crossed_low_water)
                             reader->fill_serve_cv.notify_one();
@@ -2612,6 +2665,10 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t reader_id, const std::shared_
 /// PRECONDITION: called WITHOUT changelog_lock.
 LogEntriesPtr LogEntryStorage::serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS
 {
+    // Ahead of the cache-hit early return below, which otherwise skips eviction entirely once all
+    // peers are caught up to the tip.
+    maybeEvictIdleReaders();
+
     if (!plan.read_ahead_window || plan.logs_compacted)
         return executeReadPlan(plan, 0);
 
@@ -2635,12 +2692,25 @@ LogEntriesPtr LogEntryStorage::serveReadAhead(int32_t reader_id, const LogReadPl
     if (!reader)
         return executeReadPlan(plan, 0);
 
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_readahead_pre_drain);
+
     {
         std::lock_guard dq_lock(reader->deque_mutex);
         installPlanLocked(*reader, plan);
     }
 
-    return drainReader(reader_id, reader, plan);
+    auto served = drainReader(reader_id, reader, plan);
+
+    // The pre-drain check above narrows but doesn't close the race: a write_at can still close/rewrite
+    // readers while the drain was in flight. Peer-only: the commit path already re-checks post-serve
+    // in entry_at_ext with retry semantics.
+    if (served && plan.epoch != truncation_epoch.load())
+    {
+        ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadPlanEpochMismatches);
+        return nullptr;
+    }
+
+    return served;
 }
 
 /// Reuse commit_reader unless terminal (Closed/Compacted/Error), else retire and recreate lazily.
@@ -2652,7 +2722,9 @@ LogEntryStorage::acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono
         retireCommitReaderLocked();
 
     if (!commit_reader)
-        commit_reader = makeReaderLocked(plan.start_index, commit_readahead_window_bytes, now);
+        commit_reader = makeReaderLocked(plan.start_index, readahead_settings.commit_window_bytes, now);
+    else
+        commit_reader->last_access = now;
 
     return commit_reader;
 }
@@ -2674,6 +2746,9 @@ LogEntryPtr LogEntryStorage::tryPopCommitReadAhead(uint64_t index)
     {
         std::lock_guard map_lock(readers_mutex);
         reader = commit_reader;
+        // Refresh last_access: this fast path doesn't otherwise touch readers_mutex.
+        if (reader)
+            reader->last_access = std::chrono::steady_clock::now();
     }
     if (!reader)
         return nullptr;
@@ -2692,9 +2767,8 @@ LogEntryPtr LogEntryStorage::tryPopCommitReadAhead(uint64_t index)
         // NuRaft's commit loop consumes one at a time, so this stays single-pop, but still applies
         // the low-water crossing check, notifying only after releasing deque_mutex.
         const size_t bytes_before_pop = reader->decoded_bytes;
-        const size_t half_budget = reader->window_budget_bytes / 2;
         entry = reader->popFrontLocked();
-        crossed_low_water = bytes_before_pop > half_budget && reader->decoded_bytes <= half_budget;
+        crossed_low_water = reader->crossedLowWaterLocked(bytes_before_pop);
     }
 
     if (crossed_low_water)
@@ -2856,6 +2930,12 @@ size_t LogEntryStorage::getReaderDecodedBytesForTests(int32_t reader_id) const
 
     std::lock_guard dq_lock(reader->deque_mutex);
     return reader->decoded_bytes;
+}
+
+bool LogEntryStorage::hasCommitReaderForTests() const
+{
+    std::lock_guard map_lock(readers_mutex);
+    return commit_reader != nullptr;
 }
 
 void LogEntryStorage::shutdown()
@@ -3745,9 +3825,9 @@ LogEntriesPtr Changelog::serveReadAhead(int32_t reader_id, const LogReadPlan & p
     return entry_storage.serveReadAhead(reader_id, plan);
 }
 
-bool Changelog::isReadAheadEnabled() const
+bool Changelog::isPeerReadAheadEnabled() const
 {
-    return entry_storage.isReadAheadEnabled();
+    return entry_storage.isPeerReadAheadEnabled();
 }
 
 LogEntryPtr Changelog::entryFromMemory(uint64_t index) const
@@ -4093,15 +4173,13 @@ std::vector<KeeperChangelogStatus> Changelog::getChangelogsStatus() const
             last_entry_index = to_log_index;
         }
 
-        const bool is_compressed = description->extension.ends_with("zstd");
-
         result.push_back(KeeperChangelogStatus{
             .from_log_index = description->from_log_index,
             .to_log_index = to_log_index,
             .last_entry_index = last_entry_index,
             .path = std::move(path),
             .disk = std::move(disk),
-            .is_compressed = is_compressed,
+            .is_compressed = description->is_compressed,
             .active = active,
             .is_broken = description->broken_at_end,
         });

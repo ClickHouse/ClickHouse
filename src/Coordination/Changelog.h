@@ -287,9 +287,10 @@ struct ReadAheadReader;
   * dedicated reader decoding entries ahead of the requested range.
   *
   * Committing is served by a single always-on commit read-ahead reader (commit_reader), built on
-  * the same machinery but exempt from peer capacity limits and idle eviction, with its window sized
-  * by ReadAheadSettings::commit_window_bytes. Lookup order: in-memory hits -> commit reader fast-path
-  * pop -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as fallback.
+  * the same machinery but exempt from peer capacity limits (not from idle eviction), with its window
+  * sized by ReadAheadSettings::commit_window_bytes. Lookup order: in-memory hits -> commit reader
+  * fast-path pop -> on miss, build a plan and bounded-wait for the reader -> blocking direct read as
+  * fallback.
   *
   * Both planners derive fill cursors from per-file valid-run metadata (ChangelogFileDescription::
   * valid_runs, appendRunCursors), bounding every cursor to a single run of current records. This
@@ -339,7 +340,7 @@ struct LogEntryStorage
     /// TSA: takes readers_mutex briefly then releases; fill/serve coordination under ReadAheadReader::deque_mutex.
     LogEntriesPtr serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
 
-    bool isReadAheadEnabled() const { return readahead_settings.enabled; }
+    bool isPeerReadAheadEnabled() const { return readahead_settings.enabled; }
 
     /// Current truncation-epoch snapshot (see LogReadPlan::epoch). Safe to call without changelog_lock.
     uint64_t currentTruncationEpoch() const { return truncation_epoch.load(); }
@@ -374,6 +375,9 @@ struct LogEntryStorage
     /// Test-only: total bytes currently buffered in the given reader's deque (COMMIT_READER_ID for
     /// the commit reader), or 0 if no such reader exists.
     size_t getReaderDecodedBytesForTests(int32_t reader_id) const;
+
+    /// Test-only: whether the commit reader currently exists.
+    bool hasCommitReaderForTests() const;
 private:
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
@@ -462,8 +466,12 @@ private:
     /// Lazily create the read-ahead thread pool.
     void ensureReadAheadPoolLocked() TSA_REQUIRES(readers_mutex);
 
-    /// Evict idle readers. Gated by map capacity and a wall-clock interval to avoid scanning on every call.
+    /// Evict idle readers (peer readers and, once past eviction_timeout, the commit reader too).
+    /// Gated by map capacity and a wall-clock interval to avoid scanning on every call.
     void evictIdleReadersLocked(std::chrono::steady_clock::time_point now) TSA_REQUIRES(readers_mutex);
+
+    /// Self-locking wrapper for callers that don't already hold readers_mutex.
+    void maybeEvictIdleReaders();
 
     /// Reap a terminal reader for reader_id (if any), enforce max_peer_readers, and create/schedule a new
     /// reader. Returns nullptr when at capacity (caller should fall back to direct read).
@@ -482,7 +490,7 @@ private:
     /// Serve items from reader's deque, falling back to direct read for any tail that is not available.
     LogEntriesPtr drainReader(int32_t reader_id, const std::shared_ptr<ReadAheadReader> & reader, const LogReadPlan & plan);
 
-    /// Background fill task for one peer reader.
+    /// Background fill task for one read-ahead reader (peer or commit).
     void fillTask(std::shared_ptr<ReadAheadReader> reader) const;
 
     /// Bumped at the top of cleanAfter (writeAt truncation), before any mutation; not bumped by
@@ -493,14 +501,15 @@ private:
     mutable std::mutex readers_mutex;
     std::unordered_map<int32_t, std::shared_ptr<ReadAheadReader>> peer_readers TSA_GUARDED_BY(readers_mutex);
     std::unique_ptr<ThreadPool> readahead_pool TSA_GUARDED_BY(readers_mutex);
-    std::chrono::steady_clock::time_point last_eviction_scan TSA_GUARDED_BY(readers_mutex);
+    /// Written under readers_mutex; read via relaxed load by maybeEvictIdleReaders' fast-path gate.
+    /// Stores the raw tick count since std::atomic<time_point> would need an internal lock.
+    std::atomic<std::chrono::steady_clock::rep> last_eviction_scan_ticks{0};
 
     /// Sentinel reader id for the commit reader (logging + drainReader retire routing).
     static constexpr int32_t COMMIT_READER_ID = -2;
-    /// Always-on reader feeding the NuRaft commit loop; owned separately from peer_readers,
-    /// exempt from max_peer_readers capacity and idle eviction.
+    /// Always-on reader feeding the NuRaft commit loop; owned separately from peer_readers, exempt from
+    /// max_peer_readers capacity but not from idle eviction.
     std::shared_ptr<ReadAheadReader> commit_reader TSA_GUARDED_BY(readers_mutex);
-    size_t commit_readahead_window_bytes = 0;
 
     std::shared_ptr<ReadAheadReader> acquireCommitReaderLocked(const LogReadPlan & plan, std::chrono::steady_clock::time_point now)
         TSA_REQUIRES(readers_mutex);
@@ -554,7 +563,7 @@ public:
     LogReadPlan getReadAheadPlan(uint64_t start, uint64_t end, int64_t max_size_bytes) const;
     /// Must be called without changelog_lock.
     LogEntriesPtr serveReadAhead(int32_t reader_id, const LogReadPlan & plan) TSA_NO_THREAD_SAFETY_ANALYSIS;
-    bool isReadAheadEnabled() const;
+    bool isPeerReadAheadEnabled() const;
 
     /// In-memory hits only (no disk IO, no mutation). Caller holds changelog_lock (shared).
     LogEntryPtr entryFromMemory(uint64_t index) const;
@@ -607,6 +616,9 @@ public:
 
     /// Test-only: forwards to LogEntryStorage::getReaderDecodedBytesForTests.
     size_t getReaderDecodedBytesForTests(int32_t reader_id) const { return entry_storage.getReaderDecodedBytesForTests(reader_id); }
+
+    /// Test-only: forwards to LogEntryStorage::hasCommitReaderForTests.
+    bool hasCommitReaderForTests() const { return entry_storage.hasCommitReaderForTests(); }
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 

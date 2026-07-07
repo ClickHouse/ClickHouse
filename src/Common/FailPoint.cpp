@@ -233,6 +233,8 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_fill_wedge) \
     PAUSEABLE(keeper_changelog_readahead_serve_wait) \
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
+    PAUSEABLE(keeper_changelog_readahead_pre_drain) \
+    REGULAR(keeper_changelog_readahead_fill_exception) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw)
 

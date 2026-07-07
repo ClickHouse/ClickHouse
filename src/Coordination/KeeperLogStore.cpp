@@ -18,6 +18,11 @@ namespace FailPoints
 {
     extern const char keeper_changelog_read_plan_resolved[];
 }
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 }
 
 namespace DB
@@ -82,7 +87,12 @@ nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>> KeeperLogStore::log_ent
         ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
         plan = changelog.getReadPlan(start, end, /*max_size_bytes=*/0);
     }
-    return changelog.executeReadPlan(plan);
+    FailPointInjection::pauseFailPoint(FailPoints::keeper_changelog_read_plan_resolved);
+    auto entries = changelog.executeReadPlan(plan);
+    if (!entries)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Log entries [{}, {}) unavailable due to concurrent truncation or compaction", start, end);
+    return entries;
 }
 
 nuraft::ptr<std::vector<nuraft::ptr<nuraft::log_entry>>>
@@ -101,7 +111,7 @@ KeeperLogStore::log_entries_ext(uint64_t start, uint64_t end, int64_t batch_size
 
     try
     {
-        if (peer_id != NO_PEER_ID && changelog.isReadAheadEnabled())
+        if (peer_id != NO_PEER_ID && changelog.isPeerReadAheadEnabled())
         {
             auto plan = build_plan_under_lock([&] TSA_NO_THREAD_SAFETY_ANALYSIS
                                               { return changelog.getReadAheadPlan(start, end, batch_size_hint_in_bytes); });
@@ -260,6 +270,18 @@ std::vector<KeeperChangelogStatus> KeeperLogStore::getChangelogsStatus() const
 {
     ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
     return changelog.getChangelogsStatus();
+}
+
+size_t KeeperLogStore::getReaderDecodedBytesForTests(int32_t reader_id) const
+{
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    return changelog.getReaderDecodedBytesForTests(reader_id);
+}
+
+bool KeeperLogStore::hasCommitReaderForTests() const
+{
+    ProfiledSharedLock lock(changelog_lock, ProfileEvents::KeeperChangelogLockWaitMicroseconds);
+    return changelog.hasCommitReaderForTests();
 }
 
 }

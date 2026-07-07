@@ -89,6 +89,12 @@ public:
 
     std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
 
+    /// Test-only: forwards to Changelog::getReaderDecodedBytesForTests.
+    size_t getReaderDecodedBytesForTests(int32_t reader_id) const;
+
+    /// Test-only: forwards to Changelog::hasCommitReaderForTests.
+    bool hasCommitReaderForTests() const;
+
 private:
     mutable SharedMutex changelog_lock;
     LoggerPtr log;
