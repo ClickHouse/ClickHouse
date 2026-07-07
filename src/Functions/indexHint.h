@@ -1,4 +1,5 @@
 #pragma once
+#include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>

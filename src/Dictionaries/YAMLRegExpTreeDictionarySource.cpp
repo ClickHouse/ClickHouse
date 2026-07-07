@@ -101,7 +101,14 @@ void registerDictionarySourceYAMLRegExpTree(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource(kYAMLRegExpTree, create_table_source);
+    factory.registerSource(kYAMLRegExpTree, create_table_source, Documentation{
+        .description = "Loads a regexp-tree dictionary (the `regexp_tree` layout) from a YAML file describing the tree of regular expressions and their attributes. When created from a DDL query, the file path must be inside the `user_files` directory."
+#if !USE_YAML_CPP
+            " Currently unavailable, because this ClickHouse build does not include YAML support."
+#endif
+        ,
+        .syntax = "SOURCE(YAMLRegExpTree(PATH '/path/to/file.yaml'))",
+        .related = {}});
 }
 
 }

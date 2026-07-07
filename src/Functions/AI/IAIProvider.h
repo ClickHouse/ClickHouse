@@ -1,13 +1,32 @@
 #pragma once
 
+#include <Common/Exception.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Core/Types.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Poco/JSON/Object.h>
+#include <Poco/Net/HTTPResponse.h>
 #include <memory>
 
 namespace DB
 {
+
+class AIProviderHTTPException : public Exception
+{
+public:
+    AIProviderHTTPException(Poco::Net::HTTPResponse::HTTPStatus http_status_, PreformattedMessage msg);
+
+    AIProviderHTTPException * clone() const override { return new AIProviderHTTPException(*this); }
+    void rethrow() const override { throw *this; } /// NOLINT(cert-err60-cpp)
+
+    Poco::Net::HTTPResponse::HTTPStatus getHTTPStatus() const { return http_status; }
+
+private:
+    Poco::Net::HTTPResponse::HTTPStatus http_status;
+
+    const char * name() const noexcept override { return "DB::AIProviderHTTPException"; }
+    const char * className() const noexcept override { return "DB::AIProviderHTTPException"; }
+};
 
 /** Parameters for a single AI chat completion request.
   *

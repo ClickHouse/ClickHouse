@@ -80,6 +80,8 @@ public:
 
     void getKeeperLogInfo(KeeperLogInfo & log_info) const;
 
+    std::vector<KeeperChangelogStatus> getChangelogsStatus() const;
+
 private:
     mutable SharedMutex changelog_lock;
     LoggerPtr log;

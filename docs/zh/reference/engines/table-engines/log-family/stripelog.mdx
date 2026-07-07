@@ -1,0 +1,105 @@
+---
+description: 'StripeLog 表引擎的文档'
+slug: /engines/table-engines/log-family/stripelog
+toc_priority: 32
+toc_title: 'StripeLog'
+title: 'StripeLog 表引擎'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+该引擎属于日志引擎家族。有关日志引擎的通用属性及其差异，请参阅 [Log Engine Family](/zh/reference/engines/table-engines/log-family/index) 一文。
+
+当你需要写入大量数据量较小的表 (少于 100 万行) 时，请使用此引擎。例如，此表可用于存储待转换的传入数据批次，适用于需要对这些批次进行原子处理的场景。ClickHouse server 可以支持 10 万个此类表实例。当需要大量表时，相比 [Log](/zh/reference/engines/table-engines/log-family/log)，应优先选择此表引擎，但代价是读取效率会有所降低。
+
+<div id="table_engines-stripelog-creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = StripeLog
+```
+
+请参阅 [CREATE TABLE](/zh/reference/statements/create/table) 查询的详细说明。
+
+<div id="table_engines-stripelog-writing-the-data">
+  ## 写入数据
+</div>
+
+`StripeLog` 引擎将所有列都存储在同一个文件中。对于每个 `INSERT` 查询，ClickHouse 都会将数据块追加到表文件末尾，并按列逐个写入。
+
+对于每个表，ClickHouse 会写入以下文件：
+
+* `data.bin` — 数据文件。
+* `index.mrk` — 标记文件。标记包含每个已插入数据块中各列的偏移量。
+
+`StripeLog` 引擎不支持 `ALTER UPDATE` 和 `ALTER DELETE` 操作。
+
+<div id="table_engines-stripelog-reading-the-data">
+  ## 读取数据
+</div>
+
+标记文件使 ClickHouse 能够并行读取数据。这意味着 `SELECT` 查询返回的行顺序不可预测。使用 `ORDER BY` 子句对行进行排序。
+
+<div id="table_engines-stripelog-example-of-use">
+  ## 使用示例
+</div>
+
+创建表：
+
+```sql
+CREATE TABLE stripe_log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = StripeLog
+```
+
+插入数据：
+
+```sql
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+我们使用了两个 `INSERT` 查询，在 `data.bin` 文件中创建了两个数据块。
+
+ClickHouse 在查询数据时会使用多个线程。每个线程都会读取一个单独的数据块，并在完成后独立返回结果行。因此，在大多数情况下，输出中这些行块的顺序与它们在输入中的顺序并不一致。例如：
+
+```sql
+SELECT * FROM stripe_log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+结果排序 (默认按升序) ：
+
+```sql
+SELECT * FROM stripe_log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

@@ -24,7 +24,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <thread> /// thread::sleep for retry backoff
+#include <exception>
+#include <thread>
 
 namespace ProfileEvents
 {
@@ -55,7 +56,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -217,6 +217,11 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
+                /// Check quotas before every request.
+                /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+                if (quota.checkQuotas())
+                    break;
+
                 try
                 {
                     /// update api_calls/quotas before call so failed calls are still added to total
@@ -228,21 +233,14 @@ public:
                     batch_ok = true;
                     break;
                 }
-                catch (const Exception & e)
+                catch (...)
                 {
-                    if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                    if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
                     {
                         std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
                         continue;
                     }
 
-                    if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
-                        break;
-
-                    throw;
-                }
-                catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-                {
                     if (!throw_on_error) /// just skip to next batch, this batch's rows will be filled with empty arrays
                         break;
 

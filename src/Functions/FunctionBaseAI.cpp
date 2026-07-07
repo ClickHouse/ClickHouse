@@ -3,6 +3,9 @@
 #include <Access/ContextAccess.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
+#include <Common/NetException.h>
+#include <Poco/Net/NetException.h>
+#include <exception>
 #include <thread>
 #include <Common/logger_useful.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
@@ -14,8 +17,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/HTTPCommon.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+
 namespace ProfileEvents
 {
     extern const Event AIInputTokens;
@@ -44,7 +49,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
-    extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -113,6 +117,45 @@ UInt64 FunctionBaseAI::computeRetryBackoffMs(UInt64 initial_delay_ms, UInt64 att
     for (UInt64 i = 0; i < attempt && delay_ms < max_retry_delay_ms; ++i)
         delay_ms = std::min(delay_ms * 2, max_retry_delay_ms);
     return delay_ms;
+}
+
+bool FunctionBaseAI::isRetriableProviderError(std::exception_ptr exception)
+{
+    try
+    {
+        std::rethrow_exception(exception);
+    }
+    catch (const AIProviderHTTPException & exception)
+    {
+        return isRetriableHTTPError(exception.getHTTPStatus());
+    }
+    catch (const NetException &)
+    {
+        /// ClickHouse-level network error (e.g. a DNS failure raised by the HTTP connection pool).
+        return true;
+    }
+    catch (const Poco::Net::NetException &)
+    {
+        /// Connection refused/reset, TLS connect failure, or an unreachable advertised address.
+        return true;
+    }
+    catch (const Poco::TimeoutException &)
+    {
+        /// Connect or receive timeout.
+        return true;
+    }
+    catch (const Poco::IOException & exception)
+    {
+        /// Write-side transient I/O failure, e.g. a broken pipe (`EPIPE`) when the peer resets the
+        /// connection mid-request. Out-of-file-descriptors (`EMFILE`) is not retriable.
+        return exception.code() != POCO_EMFILE;
+    }
+    catch (...)
+    {
+        /// Ok: any other exception is a deterministic and non-retrieable error, e.g. a malformed
+        /// provider response, bad configuration, JSON parse failure, etc.
+        return false;
+    }
 }
 
 FunctionBaseAI::ResolvedConfig FunctionBaseAI::resolveConfig(const ColumnsWithTypeAndName & arguments) const
@@ -225,6 +268,11 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
         for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
         {
+            /// Check quotas before every request.
+            /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+            if (quota.checkQuotas())
+                break;
+
             try
             {
                 AIRequest ai_request;
@@ -249,21 +297,14 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
                 success = true;
                 break;
             }
-            catch (const Exception & e)
+            catch (...)
             {
-                if (attempt < max_retries && e.code() == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+                if (attempt < max_retries && isRetriableProviderError(std::current_exception()))
                 {
                     std::this_thread::sleep_for(std::chrono::milliseconds(computeRetryBackoffMs(retry_delay_ms, attempt)));
                     continue;
                 }
 
-                if (!throw_on_error)
-                    break;
-
-                throw;
-            }
-            catch (...) /// Handle non-DB exceptions (e.g. Poco network/JSON errors) for throw_on_error semantics
-            {
                 if (!throw_on_error)
                     break;
 

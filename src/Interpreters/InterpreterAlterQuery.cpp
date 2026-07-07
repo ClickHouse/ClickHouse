@@ -71,7 +71,7 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
-    extern const int TABLE_IS_READ_ONLY;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
     extern const int UNKNOWN_DATABASE;
@@ -159,8 +159,9 @@ CommandSegments parseAlterCommandSegments(const ASTAlterQuery & alter, const Sto
             if (!session_tz.empty())
             {
                 auto source_alter = mutation_command->ast();
+                auto metadata_snapshot = table->getInMemoryMetadataPtr(context, true);
                 auto tz_rewritten_ast = rewriteDateTimeLiteralsWithTimezone(
-                    *source_alter, table->getInMemoryMetadataPtr(context, true)->columns, session_tz);
+                    *source_alter, metadata_snapshot->columns, session_tz);
                 if (tz_rewritten_ast)
                 {
                     auto * tz_alter_command = tz_rewritten_ast->as<ASTAlterCommand>();
@@ -450,7 +451,7 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     if (table->isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_READ_ONLY, "Table is read-only");
+        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is read-only");
 
 #if CLICKHOUSE_CLOUD
     if (alter.isUnlockSnapshot())
@@ -490,7 +491,6 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
 {
     BlockIO res;
     getContext()->checkAccess(getRequiredAccess());
-    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
     AlterCommands alter_commands;
 
     for (const auto & child : alter.command_list->children)
@@ -509,10 +509,14 @@ BlockIO InterpreterAlterQuery::executeToDatabase(const ASTAlterQuery & alter)
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 
+    auto ddl_guard = (!alter.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(alter.getDatabase(), "", nullptr) : nullptr);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(alter.getDatabase());
+
 #if CLICKHOUSE_CLOUD
     bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(database->getEngineName());
     if (managed_by_shared_catalog && !getContext()->getClientInfo().is_shared_catalog_internal)
     {
+        ddl_guard.reset();
         return SharedDatabaseCatalog::instance().tryExecuteDDLQuery(query_ptr, getContext());
     }
 #endif
@@ -669,6 +673,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::DROP_CONSTRAINT:
         {
             required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
+            break;
+        }
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
+        {
+            required_access.emplace_back(AccessType::ALTER_MODIFY_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::ADD_PROJECTION:

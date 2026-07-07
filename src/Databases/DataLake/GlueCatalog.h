@@ -33,7 +33,8 @@ public:
         const String & endpoint,
         DB::ContextPtr context_,
         const CatalogSettings & settings_,
-        DB::ASTPtr table_engine_definition_);
+        DB::ASTPtr table_engine_definition_,
+        bool allow_server_credentials_in_user_queries_);
 
     ~GlueCatalog() override;
 
@@ -67,6 +68,14 @@ public:
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
+
     void dropTable(const String & namespace_name, const String & table_name) const override;
 
     /// Returns a callback that re-vends fresh AWS credentials from the configured

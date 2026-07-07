@@ -1,0 +1,634 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/otel-collector
+description: 'ClickStack용 OpenTelemetry collector - ClickHouse 관측성 스택'
+sidebarTitle: 'OpenTelemetry collector'
+title: 'ClickStack OpenTelemetry collector'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', 'OpenTelemetry collector', 'ClickHouse 관측성', 'OTel collector 구성', 'OpenTelemetry ClickHouse']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ExtendingConfig from '/snippets/ko/_extending_config.mdx';
+
+<Tip>
+  **OTel FYI를 사용해 보세요 - OTel collector 문서를 더 쉽게 이해할 수 있습니다**
+
+  [OTel FYI](https://otel.fyi)는 수신기, processor, exporter, pipeline을 다루는 명확하고 간결한 OpenTelemetry collector 문서를 제공합니다. ClickStack OTel collector를 구성할 때 유용한 참고 자료입니다.
+</Tip>
+
+이 페이지에서는 공식 ClickStack OpenTelemetry(OTel) collector 구성에 관한 자세한 내용을 설명합니다.
+
+<div id="collector-roles">
+  ## Collector 역할
+</div>
+
+OpenTelemetry collector는 두 가지 주요 역할로 배포할 수 있습니다.
+
+* **Agent** - Agent 인스턴스는 서버나 Kubernetes 노드 같은 에지에서 데이터를 수집하거나, OpenTelemetry SDK로 계측된 애플리케이션으로부터 이벤트를 직접 수신합니다. 후자의 경우 Agent 인스턴스는 애플리케이션과 함께 또는 애플리케이션과 동일한 호스트(예: 사이드카 또는 데몬셋)에서 실행됩니다. Agent는 데이터를 직접 ClickHouse로 보내거나 gateway 인스턴스로 보낼 수 있습니다. 전자의 방식은 [Agent 배포 패턴](https://opentelemetry.io/docs/collector/deployment/agent/)이라고 합니다.
+
+* **Gateway** - Gateway 인스턴스는 독립적으로 실행되는 서비스를 제공합니다(예: Kubernetes의 배포). 일반적으로 클러스터, 데이터 센터 또는 리전 단위로 배포됩니다. 이 인스턴스는 단일 OTLP endpoint를 통해 애플리케이션(또는 agent 역할을 하는 다른 collector)으로부터 이벤트를 수신합니다. 일반적으로 여러 gateway 인스턴스를 배포하고, 기본 제공 로드 밸런서를 사용해 이들 사이에 부하를 분산합니다. 모든 agent와 애플리케이션이 이 단일 endpoint로 신호를 보내는 경우, 이를 흔히 [Gateway 배포 패턴](https://opentelemetry.io/docs/collector/deployment/gateway/)이라고 합니다.
+
+**중요: ClickStack의 기본 배포판에 포함된 경우를 포함해 collector는 아래에 설명된 [gateway 역할](#collector-roles)을 전제로 하며, agent 또는 SDK로부터 데이터를 수신합니다.**
+
+agent 역할로 OTel collector를 배포하는 사용자는 일반적으로 ClickStack 버전이 아니라 [collector의 기본 contrib 배포판](https://github.com/open-telemetry/opentelemetry-collector-contrib)을 사용합니다. 또한 [Fluentd](https://www.fluentd.org/) 및 [Vector](https://vector.dev/)와 같은 다른 OTLP 호환 기술을 자유롭게 사용할 수도 있습니다.
+
+<div id="configuring-the-collector">
+  ## collector 배포
+</div>
+
+<br />
+
+<Tabs>
+  <Tab title="관리형 ClickStack">
+    Managed ClickStack로 전송할 때는 가능하면 gateway 역할에 [공식 ClickStack 배포판의 collector](/ko/clickstack/deployment/hyperdx-only#otel-collector)를 사용하시기를 권장합니다. 직접 구성한 collector를 사용하는 경우, [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 포함되어 있는지 확인하십시오.
+
+    collector는 Helm(Kubernetes 환경 권장) 또는 Docker를 통해 배포할 수 있습니다. 공식 [ClickStack Helm 차트](https://github.com/ClickHouse/ClickStack-helm-charts)는 업스트림 [OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts)를 서브차트로 내장하고 있으며, ClickStack 배포판 이미지가 사전 구성되어 있습니다. HyperDX를 포함한 전체 스택을 설치하려면 [ClickStack Helm 배포 가이드](/ko/clickstack/deployment/helm)를 참조하십시오. 독립형(standalone) collector만 배포하는 경우에는 아래와 같이 업스트림 차트를 ClickStack 이미지와 함께 직접 사용할 수 있습니다.
+
+    <Tabs>
+      <Tab title="Helm">
+        OpenTelemetry의 업스트림 Helm 리포지토리를 추가합니다:
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        ClickStack 이미지와 Managed ClickStack 자격 증명을 구성하는 `values.yaml`을 생성합니다:
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "https://your-instance.clickhouse.cloud:8443"
+          - name: CLICKHOUSE_USER
+            value: "default"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+        ```
+
+        차트를 설치합니다:
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        프로덕션 배포에서는 값을 직접 넣는 대신 `CLICKHOUSE_PASSWORD`를 Kubernetes 시크릿에 저장하고 `extraEnvsFrom`을 통해 참조하는 것을 권장합니다.
+      </Tab>
+
+      <Tab title="Docker">
+        standalone 모드로 ClickStack 배포판의 OTel connector를 배포하려면 다음 docker 명령을 실행합니다:
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **이미지 이름 업데이트**
+
+          이제 ClickStack 이미지는 `clickhouse/clickstack-*` 이름으로 게시됩니다(이전: `docker.hyperdx.io/hyperdx/*`).
+        </Info>
+      </Tab>
+    </Tabs>
+
+    대상 ClickHouse 인스턴스는 환경 변수 `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`를 통해 구성됩니다. `CLICKHOUSE_ENDPOINT`에는 프로토콜과 포트를 포함한 전체 ClickHouse Cloud HTTP 엔드포인트를 지정해야 합니다(예시: `https://99rr6dm6v3.us-central1.gcp.clickhouse.cloud:8443`).
+
+    Managed ClickStack 자격 증명을 확인하는 방법에 대한 자세한 내용은 [여기](/ko/products/cloud/guides/sql-console/connection-details)를 참조하십시오.
+
+    <Info>
+      **운영 환경 사용자**
+
+      운영 환경에서는 [적절한 자격 증명](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)을 갖춘 사용자를 사용해야 합니다.
+    </Info>
+
+    ### 구성 수정
+
+    #### Managed ClickStack 인스턴스 설정
+
+    OpenTelemetry collector는 환경 변수 `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`를 통해 Managed ClickStack 인스턴스를 사용하도록 구성할 수 있습니다. 이 변수들을 설정하는 방법은 배포 방식에 따라 다릅니다:
+
+    <Tabs>
+      <Tab title="Helm">
+        `values.yaml`의 `extraEnvs`에서 관련 항목을 재정의한 다음, 릴리스를 업그레이드합니다:
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        OpenTelemetry collector가 포함된 모든 Docker 이미지는 환경 변수를 통해 구성할 수 있습니다. 예를 들어 all-in-one 이미지는 다음과 같습니다:
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    Docker Compose를 사용하는 경우 위와 동일한 환경 변수를 사용하여 collector 구성을 수정하십시오:
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          CUSTOM_OTELCOL_CONFIG_FILE: '/etc/otelcol-contrib/custom.config.yaml'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        volumes:
+          - ./custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+
+  <Tab title="오픈 소스 ClickStack">
+    독립형(standalone) 배포 환경에서 자체 OpenTelemetry collector를 직접 관리하는 경우(예: HyperDX 전용 배포판 사용 시), gateway 역할에는 가능하면 [공식 ClickStack collector 배포판](/ko/clickstack/deployment/hyperdx-only#otel-collector) 사용을 권장합니다. 자체 collector를 사용하기로 결정한 경우에는 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)가 포함되어 있는지 반드시 확인하십시오.
+
+    collector는 Helm(Kubernetes 환경 권장) 또는 Docker를 통해 배포할 수 있습니다. 공식 [ClickStack Helm 차트](https://github.com/ClickHouse/ClickStack-helm-charts)는 업스트림 [OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts)를 서브차트로 내장하고, 공유 `clickstack-config` ConfigMap 및 `clickstack-secret` 시크릿을 통해 OpAMP endpoint, ClickStack 이미지, HyperDX API Key를 자동으로 연결합니다. HyperDX를 포함한 전체 스택을 설치하려면 [ClickStack Helm 배포 가이드](/ko/clickstack/deployment/helm)를 참조하십시오. 기존 HyperDX에 연결하는 독립형 collector를 배포하는 경우에는 아래와 같이 업스트림 차트를 ClickStack 이미지와 함께 직접 사용할 수 있습니다.
+
+    <Tabs>
+      <Tab title="Helm">
+        업스트림 OpenTelemetry helm 리포지토리를 추가합니다:
+
+        ```shell
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+        helm repo update
+        ```
+
+        ClickStack 이미지, ClickHouse 자격 증명, HyperDX 배포의 OpAMP 엔드포인트를 구성하는 `values.yaml`을 생성합니다:
+
+        ```yaml
+        # values.yaml
+        mode: deployment
+
+        image:
+          repository: docker.clickhouse.com/clickhouse/clickstack-otel-collector
+          tag: "2.19.0"
+
+        ports:
+          otlp:
+            enabled: true
+          otlp-http:
+            enabled: true
+
+        extraEnvs:
+          - name: CLICKHOUSE_ENDPOINT
+            value: "tcp://clickhouse.your-namespace.svc.cluster.local:9000?dial_timeout=10s"
+          - name: CLICKHOUSE_USER
+            value: "otelcollector"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<password>"
+          - name: OPAMP_SERVER_URL
+            value: "http://hyperdx.your-namespace.svc.cluster.local:4320"
+          - name: HYPERDX_API_KEY
+            value: "<your-ingestion-api-key>"
+        ```
+
+        chart를 설치합니다:
+
+        ```shell
+        helm install clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        `OPAMP_SERVER_URL`은 HyperDX 서비스로 확인되어야 합니다. HyperDX와 collector가 같은 cluster에서 실행되는 경우 cluster 내부 서비스 DNS 이름(예: `http://hyperdx.your-namespace.svc.cluster.local:4320`)을 사용하십시오. HyperDX는 기본적으로 포트 `4320`의 `/v1/opamp`에서 OpAMP API를 노출합니다.
+
+        프로덕션 배포에서는 값을 직접 인라인으로 지정하는 대신 `CLICKHOUSE_PASSWORD`와 `HYPERDX_API_KEY`를 Kubernetes 시크릿에 저장하고 `extraEnvsFrom`을 통해 참조하는 것을 권장합니다.
+      </Tab>
+
+      <Tab title="Docker">
+        standalone 모드로 ClickStack 배포판의 OTel connector를 배포하려면 다음 docker 명령을 실행합니다:
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+
+        <Info>
+          **이미지 이름 업데이트**
+
+          이제 ClickStack 이미지는 `clickhouse/clickstack-*`로 게시됩니다(이전: `docker.hyperdx.io/hyperdx/*`).
+        </Info>
+
+        `OPAMP_SERVER_URL`은 HyperDX 배포를 가리켜야 합니다. 예를 들어 `http://localhost:4320`을 사용할 수 있습니다. HyperDX는 기본적으로 포트 `4320`의 `/v1/opamp`에서 OpAMP(Open Agent Management Protocol) server를 노출합니다. HyperDX를 실행하는 container에서 이 포트를 반드시 노출하십시오(예: `-p 4320:4320` 사용).
+
+        <Info>
+          **OpAMP 포트 노출 및 연결**
+
+          collector가 OpAMP 포트에 연결하려면 HyperDX container에서 해당 포트를 노출해야 합니다(예: `-p 4320:4320`). 로컬 테스트의 경우 OSX 사용자는 `OPAMP_SERVER_URL=http://host.docker.internal:4320`로 설정할 수 있습니다. Linux 사용자는 `--network=host`로 collector container를 시작할 수 있습니다.
+        </Info>
+      </Tab>
+    </Tabs>
+
+    대상 ClickHouse 인스턴스는 환경 변수 `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`를 통해 구성됩니다. `CLICKHOUSE_ENDPOINT`에는 프로토콜과 포트를 포함한 전체 ClickHouse HTTP 엔드포인트를 지정해야 합니다(예: `http://localhost:8123`).
+
+    **이 환경 변수들은 커넥터가 포함된 모든 Docker 배포판에서 사용할 수 있습니다.**
+
+    <Info>
+      **운영 환경 사용자**
+
+      운영 환경에서는 [적절한 자격 증명](/ko/clickstack/ingesting-data/collector#creating-an-ingestion-user)을 갖춘 사용자를 사용해야 합니다.
+    </Info>
+
+    ### 구성 수정
+
+    #### ClickHouse 인스턴스 설정
+
+    OpenTelemetry collector는 환경 변수 `OPAMP_SERVER_URL`, `CLICKHOUSE_ENDPOINT`, `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD`를 통해 ClickHouse 인스턴스를 사용하도록 구성할 수 있습니다. 이 변수들을 설정하는 방법은 배포 방식에 따라 다릅니다.
+
+    <Tabs>
+      <Tab title="Helm">
+        `values.yaml`의 `extraEnvs` 아래에서 관련 항목을 재정의한 다음, 릴리스를 업그레이드합니다:
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OPAMP_SERVER_URL
+            value: "<OPAMP_SERVER_URL>"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        OpenTelemetry collector가 포함된 모든 Docker 이미지는 환경 변수를 통해 구성할 수 있습니다. 예를 들어 all-in-one 이미지는 다음과 같습니다:
+
+        ```shell
+        export OPAMP_SERVER_URL=<OPAMP_SERVER_URL>
+        export CLICKHOUSE_ENDPOINT=<HTTPS ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        ```
+
+        ```shell
+        docker run -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    <ExtendingConfig />
+
+    #### Docker Compose
+
+    Docker Compose를 사용하는 경우 위와 동일한 환경 변수를 사용하여 collector 구성을 수정하십시오:
+
+    ```yaml
+      otel-collector:
+        image: hyperdx/hyperdx-otel-collector
+        environment:
+          CLICKHOUSE_ENDPOINT: 'https://mxl4k3ul6a.us-east-2.aws.clickhouse-staging.com:8443'
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          CLICKHOUSE_USER: 'default'
+          CLICKHOUSE_PASSWORD: 'password'
+          OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+        ports:
+          - '13133:13133' # health_check extension
+          - '24225:24225' # fluentd receiver
+          - '4317:4317' # OTLP gRPC receiver
+          - '4318:4318' # OTLP http receiver
+          - '8888:8888' # metrics extension
+        restart: always
+        networks:
+          - internal
+    ```
+  </Tab>
+</Tabs>
+
+<div id="securing-the-collector">
+  ## collector 보안 설정
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    기본적으로 ClickStack OpenTelemetry collector는 Open Source 배포판이 아닌 환경에 배포할 경우 보안이 적용되지 않으며, 해당 OTLP 포트에서는 인증이 필요하지 않습니다.
+
+    수집을 보호하려면 collector를 배포할 때 `OTLP_AUTH_TOKEN` 환경 변수를 사용해 인증 토큰을 지정하십시오. 설정 방법은 배포 방식에 따라 다릅니다.
+
+    <Tabs>
+      <Tab title="Helm">
+        `values.yaml`의 `extraEnvs`에 `OTLP_AUTH_TOKEN`을 추가한 다음 release를 업그레이드하십시오.
+
+        ```yaml
+        # values.yaml
+        extraEnvs:
+          - name: OTLP_AUTH_TOKEN
+            value: "a_very_secure_string"
+          - name: CLICKHOUSE_ENDPOINT
+            value: "<HTTPS_ENDPOINT>"
+          - name: CLICKHOUSE_USER
+            value: "<CLICKHOUSE_USER>"
+          - name: CLICKHOUSE_PASSWORD
+            value: "<CLICKHOUSE_PASSWORD>"
+        ```
+
+        ```shell
+        helm upgrade clickstack-otel-collector open-telemetry/opentelemetry-collector -f values.yaml
+        ```
+
+        프로덕션 배포에서는 `OTLP_AUTH_TOKEN`과 `CLICKHOUSE_PASSWORD`를 Kubernetes 시크릿에 저장하고 `extraEnvsFrom`을 통해 참조하는 것을 권장합니다.
+      </Tab>
+
+      <Tab title="Docker">
+        ```sh
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=<CLICKHOUSE_USER>
+        export CLICKHOUSE_PASSWORD=<CLICKHOUSE_PASSWORD>
+        export OTLP_AUTH_TOKEN="a_very_secure_string"
+
+        docker run \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+      </Tab>
+    </Tabs>
+
+    추가로 다음 사항을 권장합니다.
+
+    * collector가 HTTPS를 통해 ClickHouse와 통신하도록 구성합니다.
+    * 수집 전용 사용자를 제한된 권한으로 생성하십시오. 자세한 내용은 아래를 참조하십시오.
+    * SDK/agent와 collector 간 통신이 암호화되도록 OTLP endpoint에 TLS를 활성화합니다. 이는 [사용자 지정 collector 구성](#extending-collector-config)을 통해 설정할 수 있습니다.
+
+    ### 수집 사용자 생성
+
+    Managed ClickStack로 수집할 때는 OTel collector 전용 데이터베이스와 사용자를 생성하는 것이 좋습니다. 이 사용자에게는 [ClickStack가 생성하여 사용하는 테이블](/ko/clickstack/ingesting-data/schemas)을 생성하고 데이터를 삽입할 수 있는 권한이 있어야 합니다.
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    이는 collector가 데이터베이스 `otel`을 사용하도록 구성되어 있다고 가정합니다. 이 설정은 환경 변수 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`로 제어할 수 있습니다. [다른 환경 변수와 마찬가지로](#modifying-otel-collector-configuration) 이 값을 collector에 전달하십시오.
+  </Tab>
+
+  <Tab title="오픈 소스 ClickStack">
+    ClickStack 배포판의 OpenTelemetry collector에는 OpAMP(Open Agent Management Protocol) 지원이 기본으로 포함되어 있으며, 이를 사용해 OTLP 엔드포인트를 안전하게 구성하고 관리합니다. 시작 시에는 `OPAMP_SERVER_URL` 환경 변수를 반드시 지정해야 합니다. 이 변수는 `/v1/opamp`에서 OpAMP API를 호스팅하는 HyperDX 앱을 가리켜야 합니다.
+
+    이 통합을 통해 HyperDX 앱 배포 시 자동 생성되는 수집 API key로 OTLP 엔드포인트를 보호할 수 있습니다. collector로 전송되는 모든 텔레메트리 데이터에는 인증을 위해 이 API key가 포함되어야 합니다. 해당 key는 HyperDX 앱의 `Team Settings → API Keys`에서 확인할 수 있습니다.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+
+    배포를 더욱 안전하게 보호하려면 다음을 권장합니다.
+
+    * collector가 HTTPS를 통해 ClickHouse와 통신하도록 구성합니다.
+    * 권한이 제한된 수집 전용 사용자를 생성합니다. 자세한 내용은 아래를 참조하십시오.
+    * OTLP 엔드포인트에 TLS를 활성화하여 SDKs/agents와 collector 간 통신이 암호화되도록 합니다. 이는 [사용자 지정 collector 구성](#extending-collector-config)을 통해 설정할 수 있습니다.
+
+    ### 수집 사용자 생성
+
+    ClickHouse로 수집하기 위해 OTel collector 전용 데이터베이스와 사용자를 생성하는 것을 권장합니다. 이 사용자에게는 [ClickStack이 생성하고 사용하는 테이블](/ko/clickstack/ingesting-data/schemas)을 생성하고 해당 테이블에 삽입할 수 있는 권한이 있어야 합니다.
+
+    ```sql
+    CREATE DATABASE otel;
+    CREATE USER hyperdx_ingest IDENTIFIED WITH sha256_password BY 'ClickH0u3eRocks123!';
+    GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON otel.* TO hyperdx_ingest;
+    ```
+
+    이는 collector가 데이터베이스 `otel`을 사용하도록 구성되어 있다고 가정한 내용입니다. 이 설정은 환경 변수 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`로 제어할 수 있습니다. [다른 환경 변수와 마찬가지로](#modifying-otel-collector-configuration) 이 값을 collector를 호스팅하는 이미지에 전달하십시오.
+  </Tab>
+</Tabs>
+
+<div id="processing-filtering-transforming-enriching">
+  ## 처리 - 필터링, 변환 및 보강
+</div>
+
+사용자는 수집 과정에서 이벤트 메시지를 필터링, 변환, 보강해야 하는 경우가 거의 항상 있습니다. ClickStack connector의 구성은 수정할 수 없으므로, 추가적인 이벤트 필터링 및 처리가 필요한 경우에는 다음 중 하나를 권장합니다.
+
+* 필터링 및 처리를 수행하는 자체 OTel collector를 배포하고, 이벤트를 OTLP를 통해 ClickStack collector로 보내 ClickHouse에 수집되도록 합니다.
+* 자체 OTel collector를 배포하고, ClickHouse exporter를 사용해 이벤트를 ClickHouse로 직접 전송합니다.
+
+OTel collector로 처리를 수행하는 경우에는 변환 작업을 gateway 인스턴스에서 수행하고, agent 인스턴스에서 수행하는 작업은 최소화하는 것을 권장합니다. 이렇게 하면 서버에서 실행되는 엣지 agent에 필요한 리소스를 가능한 한 적게 유지할 수 있습니다. 일반적으로는 불필요한 네트워크 사용을 줄이기 위한 필터링, timestamp 설정(연산자를 통해), 그리고 agent에서 Context가 필요한 보강만 수행하는 경우가 많습니다. 예를 들어 gateway 인스턴스가 다른 Kubernetes cluster에 있는 경우, k8s 보강은 agent에서 수행해야 합니다.
+
+OpenTelemetry는 다음과 같은 처리 및 필터링 기능을 지원하며, 이를 활용할 수 있습니다.
+
+* **프로세서** - 프로세서는 [수신기에서 수집한 데이터를 수정하거나 변환한 후](https://opentelemetry.io/docs/collector/transforming-telemetry/) exporter로 전송합니다. 프로세서는 collector 구성의 `processors` 섹션에 설정된 순서대로 적용됩니다. 이는 선택 사항이지만, 일반적으로는 [최소한의 프로세서 집합을 권장](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor#recommended-processors)합니다. ClickHouse와 함께 OTel collector를 사용할 때는 프로세서를 다음 항목으로 제한하는 것을 권장합니다.
+
+* [memory&#95;limiter](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/memorylimiterprocessor/README.md)는 collector에서 메모리 부족 상황이 발생하지 않도록 하는 데 사용됩니다. 권장 사항은 [리소스 추정](#estimating-resources)을 참조하십시오.
+
+* Context를 기반으로 보강을 수행하는 프로세서. 예를 들어 [Kubernetes Attributes Processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/k8sattributesprocessor)는 k8s 메타데이터를 사용해 스팬, 메트릭, 로그의 리소스 속성을 자동으로 설정할 수 있으며, 예를 들어 이벤트에 소스 파드 ID를 추가해 보강할 수 있습니다.
+
+* trace에 필요한 경우 [tail 또는 head 샘플링](https://opentelemetry.io/docs/concepts/sampling/)
+
+* [기본 필터링](https://opentelemetry.io/docs/collector/transforming-telemetry/) - 연산자로 처리할 수 없는 경우, 필요하지 않은 이벤트를 삭제합니다(아래 참조).
+
+* [배칭](https://github.com/open-telemetry/opentelemetry-collector/tree/main/processor/batchprocessor) - 데이터가 배치 단위로 전송되도록 보장하기 위해 ClickHouse와 함께 사용할 때 필수적입니다. [&quot;삽입 최적화&quot;](#optimizing-inserts)를 참조하십시오.
+
+* **연산자** - [연산자](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md)는 수신기에서 사용할 수 있는 가장 기본적인 처리 단위를 제공합니다. 기본적인 파싱이 지원되므로 Severity 및 Timestamp와 같은 필드를 설정할 수 있습니다. 여기에서는 JSON 및 regex 파싱과 함께 이벤트 필터링 및 기본 변환도 지원됩니다. 이벤트 필터링은 여기에서 수행할 것을 권장합니다.
+
+연산자나 [transform processors](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/processor/transformprocessor/README.md)를 사용해 과도한 이벤트 처리를 수행하는 것은 피하는 것이 좋습니다. 특히 JSON 파싱은 상당한 메모리 및 CPU 오버헤드를 유발할 수 있습니다. 몇 가지 예외를 제외하면 ClickHouse에서 삽입 시점에 materialized view와 컬럼을 사용해 모든 처리를 수행할 수 있습니다. 대표적인 예외는 Context를 인식하는 보강으로, 예를 들어 k8s 메타데이터를 추가하는 경우입니다. 자세한 내용은 [SQL로 구조 추출하기](/ko/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)를 참조하십시오.
+
+<div id="example-processing">
+  ### 예시
+</div>
+
+다음 구성은 이 [비구조화 로그 파일](https://datasets-documentation.s3.eu-west-3.amazonaws.com/http_logs/access-unstructured.log.gz)을 수집하는 구성을 보여줍니다. 이 구성은 데이터를 ClickStack gateway로 전송하는 agent 역할의 collector에서 사용할 수 있습니다.
+
+로그 줄에서 구조를 추출(`regex_parser`)하고 이벤트를 필터링하는 데 연산자를 사용하며, 이벤트를 batch로 묶고 메모리 사용량을 제한하는 processor도 함께 사용한다는 점에 유의하십시오.
+
+```yaml file=code_snippets/ClickStack/config-unstructured-logs-with-processor.yaml
+receivers:
+  filelog:
+    include:
+      - /opt/data/logs/access-unstructured.log
+    start_at: beginning
+    operators:
+      - type: regex_parser
+        regex: '^(?P<ip>[\d.]+)\s+-\s+-\s+\[(?P<timestamp>[^\]]+)\]\s+"(?P<method>[A-Z]+)\s+(?P<url>[^\s]+)\s+HTTP/[^\s]+"\s+(?P<status>\d+)\s+(?P<size>\d+)\s+"(?P<referrer>[^"]*)"\s+"(?P<user_agent>[^"]*)"'
+        timestamp:
+          parse_from: attributes.timestamp
+          layout: '%d/%b/%Y:%H:%M:%S %z'
+          #22/Jan/2019:03:56:14 +0330
+processors:
+  batch:
+    timeout: 1s
+    send_batch_size: 10000
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 2048
+    spike_limit_mib: 256
+exporters:
+  # HTTP 설정
+  otlphttp/hdx:
+    endpoint: 'http://localhost:4318'
+    headers:
+      authorization: <YOUR_INGESTION_API_KEY>
+    compression: gzip
+
+  # gRPC 설정 (대안)
+  otlp/hdx:
+    endpoint: 'localhost:4317'
+    headers:
+      authorization: <YOUR_API_INGESTION_KEY>
+    compression: gzip
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:9888 # 동일 호스트에서 2개의 collector가 실행되므로 수정됨
+  pipelines:
+    logs:
+      receivers: [filelog]
+      processors: [batch]
+      exporters: [otlphttp/hdx]
+
+```
+
+모든 OTLP 통신에는 [수집 API key가 포함된 authorization header](#securing-the-collector)가 필요합니다.
+
+더 고급 구성이 필요하다면 [OpenTelemetry collector 문서](https://opentelemetry.io/docs/collector/)를 참조하십시오.
+
+<div id="optimizing-inserts">
+  ## 삽입 최적화
+</div>
+
+강한 일관성 보장을 유지하면서 높은 삽입 성능을 얻으려면 ClickStack collector를 통해 관측성 데이터를 ClickHouse에 삽입할 때 몇 가지 간단한 규칙을 따라야 합니다. OTel collector를 올바르게 구성하면 다음 규칙도 어렵지 않게 따를 수 있습니다. 또한 이렇게 하면 ClickHouse를 처음 사용하는 사용자가 흔히 겪는 [일반적인 문제](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse)도 피할 수 있습니다.
+
+<div id="batching">
+  ### 배칭
+</div>
+
+기본적으로 ClickHouse로 전송되는 각 삽입마다, ClickHouse는 삽입된 데이터와 함께 저장해야 하는 기타 메타데이터를 포함하는 스토리지 part를 즉시 생성합니다. 따라서 각각 적은 양의 데이터를 담은 삽입을 많이 보내는 것보다, 각각 더 많은 데이터를 담은 삽입을 더 적게 보내는 편이 필요한 쓰기 횟수를 줄이는 데 도움이 됩니다. 한 번에 최소 1,000개 행 이상을 포함하는 비교적 큰 batch 단위로 데이터를 삽입하는 것을 권장합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)를 참조하십시오.
+
+기본적으로 ClickHouse에 대한 삽입은 동기식이며, 동일한 삽입에 대해서는 멱등성이 보장됩니다. MergeTree engine 계열의 테이블에서는 ClickHouse가 기본적으로 [삽입 시 중복 제거](https://clickhouse.com/blog/common-getting-started-issues-with-clickhouse#5-deduplication-at-insert-time)를 자동으로 수행합니다. 즉, 다음과 같은 경우에도 삽입을 안전하게 처리할 수 있습니다.
+
+* (1) 데이터를 수신하는 노드에 문제가 생기면 삽입 쿼리가 timeout되거나(또는 더 구체적인 오류가 반환되거나) 확인 응답을 받지 못합니다.
+* (2) 데이터가 노드에 기록되었지만 네트워크 중단으로 인해 확인 응답을 쿼리 전송자에게 반환할 수 없는 경우, 전송자는 timeout 또는 네트워크 오류를 받게 됩니다.
+
+collector 관점에서는 (1)과 (2)를 구분하기 어려울 수 있습니다. 그러나 두 경우 모두 확인되지 않은 삽입은 즉시 재시도하면 됩니다. 재시도한 삽입 쿼리에 동일한 데이터가 동일한 순서로 포함되어 있기만 하면, 원래의(확인되지 않은) 삽입이 성공한 경우 ClickHouse가 재시도된 삽입을 자동으로 무시합니다.
+
+이 때문에 ClickStack 배포판의 OTel collector는 [batch processor](https://github.com/open-telemetry/opentelemetry-collector/blob/main/processor/batchprocessor/README.md)를 사용합니다. 이렇게 하면 위 요구 사항을 충족하는 일관된 행 batch로 삽입이 전송됩니다. collector에 고처리량(초당 이벤트)이 예상되고 각 삽입에서 최소 10,000개의 이벤트를 보낼 수 있다면, 일반적으로 파이프라인에서 필요한 배칭은 이것만으로 충분합니다. 메모리가 허용한다면 최대 100,000까지 사용할 수 있습니다. 이 경우 collector는 batch processor의 `timeout`에 도달하기 전에 batch를 플러시하므로, 파이프라인의 종단 간 지연 시간은 낮게 유지되고 batch 크기도 일관되게 유지됩니다.
+
+<div id="use-asynchronous-inserts">
+  ### 비동기 삽입 사용
+</div>
+
+일반적으로 collector의 처리량이 낮은데도 데이터가 최소한의 end-to-end 지연 시간 내에 ClickHouse에 도달해야 한다면, 더 작은 배치를 전송할 수밖에 없습니다. 이 경우 `timeout`이 만료되면 batch processor가 작은 배치를 전송합니다. 이로 인해 문제가 발생할 수 있으며, 이런 경우 비동기 삽입이 필요합니다. 다만 Gateway 역할을 하는 ClickStack collector로 데이터를 전송하는 경우에는 이 문제가 드뭅니다. 이들이 집계기 역할을 하며 이 문제를 완화하기 때문입니다. 자세한 내용은 [Collector roles](#collector-roles)를 참조하십시오.
+
+큰 배치를 보장할 수 없다면 [Asynchronous Inserts](/ko/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)를 사용해 ClickHouse에 배칭을 맡길 수 있습니다. 비동기 삽입을 사용하면 데이터는 먼저 버퍼에 삽입되고, 이후 나중에 또는 비동기적으로 데이터베이스 저장소에 기록됩니다.
+
+<Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md" />
+
+[비동기 삽입을 활성화하면](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), ClickHouse가 ① 삽입 쿼리를 수신할 때 해당 쿼리의 데이터는 ② 즉시 인메모리 버퍼에 먼저 기록됩니다. 이후 ③ 다음 버퍼 플러시가 발생하면 버퍼의 데이터가 [정렬되어](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) 파트로 데이터베이스 저장소에 기록됩니다. 데이터는 데이터베이스 저장소로 플러시되기 전까지 쿼리로 검색할 수 없으며, 버퍼 플러시는 [구성할 수 있습니다](/ko/concepts/features/operations/insert/asyncinserts).
+
+collector에 비동기 삽입을 활성화하려면 connection string에 `async_insert=1`을 추가하십시오. 전달 보장을 위해 `wait_for_async_insert=1`(기본값)을 사용하는 것을 권장합니다. 자세한 내용은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)를 참조하십시오.
+
+async insert의 데이터는 ClickHouse 버퍼가 플러시되면 삽입됩니다. 이는 [`async_insert_max_data_size`](/ko/reference/settings/session-settings#async_insert_max_data_size)를 초과한 후 또는 첫 번째 INSERT 쿼리 이후 [`async_insert_busy_timeout_ms`](/ko/reference/settings/session-settings#async_insert_max_data_size)밀리초가 지나면 발생합니다. `async_insert_stale_timeout_ms`가 0이 아닌 값으로 설정된 경우, 마지막 쿼리 이후 `async_insert_stale_timeout_ms milliseconds`가 지나면 데이터가 삽입됩니다. 이러한 설정을 조정해 파이프라인의 end-to-end 지연 시간을 제어할 수 있습니다. 버퍼 플러시를 조정하는 데 사용할 수 있는 추가 설정은 [여기](/ko/reference/settings/session-settings#async_insert)에 설명되어 있습니다. 일반적으로는 기본값이 적절합니다.
+
+<Info>
+  **적응형 비동기 삽입 고려**
+
+  사용 중인 agent 수가 적고 처리량은 낮지만 엄격한 end-to-end 지연 시간 요구 사항이 있는 경우, [adaptive asynchronous inserts](https://clickhouse.com/blog/clickhouse-release-24-02#adaptive-asynchronous-inserts)가 유용할 수 있습니다. 일반적으로 이는 ClickHouse에서 볼 수 있는 고처리량 관측성 사용 사례에는 적합하지 않습니다.
+</Info>
+
+마지막으로, ClickHouse에 대한 동기 삽입과 관련된 이전 중복 제거 동작은 비동기 삽입을 사용할 때 기본적으로 활성화되지 않습니다. 필요한 경우 [`async_insert_deduplicate`](/ko/reference/settings/session-settings#async_insert_deduplicate) 설정을 참조하십시오.
+
+이 기능 구성에 대한 자세한 내용은 이 [docs page](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts) 또는 심층 설명이 담긴 [blog post](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
+
+<div id="scaling">
+  ## 스케일링
+</div>
+
+ClickStack OTel collector는 gateway 인스턴스로 작동합니다. 자세한 내용은 [Collector roles](#collector-roles)를 참조하십시오. gateway 인스턴스는 일반적으로 데이터 센터 또는 리전별로 배치되는 독립 실행형 서비스를 제공합니다. 단일 OTLP endpoint를 통해 애플리케이션(또는 agent 역할의 다른 collector)에서 이벤트를 수신합니다. 일반적으로 여러 collector 인스턴스를 배포하고, 기본 제공 로드 밸런서를 사용해 이들 간에 부하를 분산합니다.
+
+<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="gateway를 사용한 스케일링" size="lg" />
+
+이 아키텍처의 목적은 계산 집약적인 처리를 agent에서 분리해 agent의 리소스 사용량을 최소화하는 것입니다. 이러한 ClickStack gateway는 그렇지 않으면 agent가 수행해야 하는 변환 작업을 처리할 수 있습니다. 또한 많은 agent의 이벤트를 집계하여 ClickHouse에 큰 배치를 전송함으로써 효율적인 삽입이 가능해집니다. 이러한 gateway collector는 더 많은 agent와 SDK source가 추가되고 이벤트 처리량이 증가함에 따라 쉽게 스케일링할 수 있습니다.
+
+<div id="adding-kafka">
+  ### Kafka 추가
+</div>
+
+위 아키텍처에서는 메시지 큐로 Kafka를 사용하지 않는다는 점을 알 수 있습니다.
+
+메시지 버퍼로 Kafka 큐를 사용하는 방식은 로깅 아키텍처에서 널리 쓰이는 설계 패턴이며, ELK 스택을 통해 대중화되었습니다. 여기에는 몇 가지 장점이 있습니다. 가장 큰 장점은 더 강력한 메시지 전달 보장을 제공하고 백프레셔를 처리하는 데 도움이 된다는 점입니다. 메시지는 수집 agent에서 Kafka로 전송되어 디스크에 기록됩니다. 이론적으로 클러스터형 Kafka 인스턴스는 고처리량 메시지 버퍼를 제공해야 합니다. 메시지를 파싱하고 처리하는 것보다 데이터를 디스크에 순차적으로 기록할 때 계산 오버헤드가 더 적기 때문입니다. 예를 들어 Elastic에서는 토큰화와 인덱싱에 상당한 오버헤드가 발생합니다. 또한 데이터를 agent에서 분리하면 원본에서 로그 로테이션이 발생해 메시지가 손실될 위험도 줄일 수 있습니다. 마지막으로 일부 사용 사례에서는 메시지 재생과 리전 간 복제 기능도 매력적일 수 있습니다.
+
+하지만 ClickHouse는 보통 수준의 하드웨어에서도 초당 수백만 행을 삽입할 수 있을 만큼 매우 빠르게 데이터를 처리합니다. ClickHouse에서 백프레셔가 발생하는 경우는 드뭅니다. Kafka 큐를 도입하면 아키텍처 복잡성과 비용만 늘어나는 경우가 많습니다. 로그에는 은행 거래나 기타 미션 크리티컬 데이터와 같은 수준의 전달 보장이 필요하지 않다는 원칙을 받아들일 수 있다면, Kafka의 복잡성은 피하는 것이 좋습니다.
+
+반면 높은 전달 보장이나 데이터 재생 기능(잠재적으로 여러 소스로의 재생)이 필요하다면, Kafka는 아키텍처에 유용하게 추가할 수 있는 요소입니다.
+
+<Image img="/images/use-cases/observability/observability-8.webp" alt="Kafka 추가" size="lg" />
+
+이 경우 OTel agent는 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md)를 통해 Kafka로 데이터를 보내도록 구성할 수 있습니다. 반대로 Gateway 인스턴스는 [Kafka 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md)를 사용해 메시지를 소비합니다. 자세한 내용은 Confluent 및 OTel 문서를 참조하십시오.
+
+<Info>
+  **OTel collector 구성**
+
+  ClickStack OpenTelemetry collector 배포판은 [사용자 지정 collector 구성](#extending-collector-config)을 사용해 Kafka와 함께 구성할 수 있습니다.
+</Info>
+
+<div id="estimating-resources">
+  ## 리소스 추정
+</div>
+
+OTel collector의 리소스 요구 사항은 이벤트 처리량, 메시지 크기, 그리고 수행되는 처리 작업의 양에 따라 달라집니다. OpenTelemetry 프로젝트에서는 리소스 요구 사항을 추정하는 데 사용할 수 있는 [벤치마크](https://opentelemetry.io/docs/collector/benchmarks/)를 제공합니다.
+
+[저희 경험상](https://clickhouse.com/blog/building-a-logging-platform-with-clickhouse-and-saving-millions-over-datadog#architectural-overview), 3개의 코어와 12GB RAM을 갖춘 ClickStack gateway 인스턴스는 초당 약 60k 이벤트를 처리할 수 있습니다. 이는 필드 이름만 변경하고 정규식은 사용하지 않는 최소한의 처리 파이프라인을 가정한 수치입니다.
+
+이벤트를 gateway로 전송하고 이벤트에 timestamp만 설정하는 agent 인스턴스의 경우, 예상 초당 로그 수를 기준으로 크기를 산정할 것을 권장합니다. 다음은 시작점으로 사용할 수 있는 대략적인 수치입니다.
+
+| 로깅 속도      | collector agent에 필요한 리소스 |
+| ---------- | ------------------------ |
+| 1k/second  | 0.2CPU, 0.2GiB           |
+| 5k/second  | 0.5 CPU, 0.5GiB          |
+| 10k/second | 1 CPU, 1GiB              |
+
+<div id="schema-choice">
+  ## 스키마 선택: Map vs JSON
+</div>
+
+ClickStack collector는 기본적으로 속성을 `Map(LowCardinality(String), String)` 컬럼에 저장하는 테이블을 생성합니다. 이는 관측성 워크로드에 권장되는 스키마입니다. `JSON` 타입 스키마는 속성 키 집합이 작고 안정적인 워크로드에서 평가할 수 있도록 베타로 제공됩니다.
+
+전체 비교, 각각이 적합한 경우, JSON 타입 스키마를 활성화하는 데 필요한 환경 변수, 그리고 마이그레이션 절차는 [Map vs JSON 타입](/ko/clickstack/ingesting-data/schema/map-vs-json)을 참조하십시오.

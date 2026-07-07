@@ -292,7 +292,7 @@ def test_close_all_prepared_statements():
 
     # Create 2 in session 1, 1 in session 2 (limit is 3 total per user).
     stmt_s1_a = client1.prepare("SELECT 1")
-    stmt_s1_b = client1.prepare("SELECT 2")
+    client1.prepare("SELECT 2")
     stmt_s2 = client2.prepare("SELECT 3")
 
     # Limit reached — 4th should fail from either session.

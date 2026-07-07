@@ -1,0 +1,191 @@
+---
+description: 'Permite realizar consultas `SELECT` e `INSERT` sobre datos almacenados
+  en un servidor MySQL remoto.'
+sidebarTitle: 'mysql'
+slug: /sql-reference/table-functions/mysql
+title: 'mysql'
+doc_type: 'reference'
+---
+
+Permite realizar consultas `SELECT` e `INSERT` sobre datos almacenados en un servidor MySQL remoto.
+
+<div id="syntax">
+  ## Sintaxis
+</div>
+
+```sql
+mysql({host:port, database, table, user, password[, replace_query, on_duplicate_clause] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento             | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port`           | Dirección del servidor MySQL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `database`            | Nombre de la base de datos remota.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `table`               | Nombre de la tabla remota.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `user`                | Usuario de MySQL.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `password`            | Contraseña del usuario.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `replace_query`       | Indicador que convierte las consultas `INSERT INTO` en `REPLACE INTO`. Posibles valores:<br />    - `0` - La consulta se ejecuta como `INSERT INTO`.<br />    - `1` - La consulta se ejecuta como `REPLACE INTO`.                                                                                                                                                                                                                                                                                                                        |
+| `on_duplicate_clause` | La expresión `ON DUPLICATE KEY on_duplicate_clause` que se añade a la consulta `INSERT`. Solo puede especificarse con `replace_query = 0` (si se pasan simultáneamente `replace_query = 1` y `on_duplicate_clause`, ClickHouse genera una excepción).<br />    Ejemplo: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1;`<br />    Aquí, `on_duplicate_clause` es `UPDATE c2 = c2 + 1`. Consulta la documentación de MySQL para ver qué `on_duplicate_clause` puedes usar con la cláusula `ON DUPLICATE KEY`. |
+
+Los argumentos también pueden pasarse mediante [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción.
+
+Las cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, se ejecutan actualmente en el servidor MySQL.
+
+El resto de las condiciones y la restricción de muestreo `LIMIT` se ejecutan en ClickHouse solo después de que termina la consulta a MySQL.
+
+Admite varias réplicas, que deben indicarse con `|`. Por ejemplo:
+
+```sql
+SELECT name FROM mysql(`mysql{1|2|3}:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+o
+
+```sql
+SELECT name FROM mysql(`mysql1:3306|mysql2:3306|mysql3:3306`, 'mysql_database', 'mysql_table', 'user', 'password');
+```
+
+<div id="returned_value">
+  ## Valor devuelto
+</div>
+
+Un objeto de tabla con las mismas columnas que la tabla original de MySQL.
+
+<Note>
+  Algunos tipos de datos de MySQL pueden asignarse a distintos tipos de ClickHouse; esto se resuelve mediante la configuración a nivel de consulta [mysql&#95;datatypes&#95;support&#95;level](/es/reference/settings/session-settings#mysql_datatypes_support_level)
+</Note>
+
+<Note>
+  En la consulta `INSERT`, para distinguir la función de tabla `mysql(...)` del nombre de tabla con la lista de nombres de columnas, debe usar las palabras clave `FUNCTION` o `TABLE FUNCTION`. Vea los ejemplos a continuación.
+</Note>
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+Tabla en MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `float` FLOAT NOT NULL,
+    ->   PRIMARY KEY (`int_id`));
+
+mysql> INSERT INTO test (`int_id`, `float`) VALUES (1,2);
+
+mysql> SELECT * FROM test;
++--------+-------+
+| int_id | float |
++--------+-------+
+|      1 |     2 |
++--------+-------+
+```
+
+Selección de datos de ClickHouse:
+
+```sql
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+O bien, usando [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = 'localhost',
+        port = 3306,
+        database = 'test',
+        user = 'bayonet',
+        password = '123';
+SELECT * FROM mysql(creds, table='test');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     2 │
+└────────┴───────┘
+```
+
+<div id="enable-compression">
+  ### `enable_compression`
+</div>
+
+Habilita la compresión para la conexión mediante el protocolo MySQL.
+
+Valor predeterminado: `false`.
+
+Esta configuración se aplica a:
+
+* la función de tabla `mysql`;
+* el motor de tabla `MySQL`;
+* el engine de base de datos `MySQL`;
+* las colecciones con nombre usadas por las integraciones de MySQL.
+
+Cuando está habilitada, ClickHouse solicita compresión para la conexión.
+
+Ejemplo:
+
+```sql
+SELECT *
+FROM mysql(
+    'mysql80:3306',
+    'clickhouse',
+    'test_table',
+    'root',
+    'password',
+    SETTINGS enable_compression = 1
+);
+```
+
+Reemplazo e inserción:
+
+```sql
+INSERT INTO FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 1) (int_id, float) VALUES (1, 3);
+INSERT INTO TABLE FUNCTION mysql('localhost:3306', 'test', 'test', 'bayonet', '123', 0, 'UPDATE int_id = int_id + 1') (int_id, float) VALUES (1, 4);
+SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123');
+```
+
+```text
+┌─int_id─┬─float─┐
+│      1 │     3 │
+│      2 │     4 │
+└────────┴───────┘
+```
+
+Copiar datos desde una tabla de MySQL a una tabla de ClickHouse:
+
+```sql
+CREATE TABLE mysql_copy
+(
+   `id` UInt64,
+   `datetime` DateTime('UTC'),
+   `description` String,
+)
+ENGINE = MergeTree
+ORDER BY (id,datetime);
+
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password');
+```
+
+O, si copias solo un lote incremental desde MySQL tomando como referencia el id máximo actual:
+
+```sql
+INSERT INTO mysql_copy
+SELECT * FROM mysql('host:port', 'database', 'table', 'user', 'password')
+WHERE id > (SELECT max(id) FROM mysql_copy);
+```
+
+<div id="related">
+  ## Relacionado
+</div>
+
+* [El motor de tabla «MySQL»](/es/reference/engines/table-engines/integrations/mysql)
+* [Uso de MySQL como fuente de diccionario](/es/reference/statements/create/dictionary/sources/mysql)
+* [mysql&#95;datatypes&#95;support&#95;level](/es/reference/settings/session-settings#mysql_datatypes_support_level)
+* [mysql&#95;map&#95;fixed&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/es/reference/settings/session-settings#mysql_map_fixed_string_to_text_in_show_columns)
+* [mysql&#95;map&#95;string&#95;to&#95;text&#95;in&#95;show&#95;columns](/es/reference/settings/session-settings#mysql_map_string_to_text_in_show_columns)
+* [mysql&#95;max&#95;rows&#95;to&#95;insert](/es/reference/settings/session-settings#mysql_max_rows_to_insert)
