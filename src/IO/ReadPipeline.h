@@ -23,7 +23,6 @@ class FilesystemReadPrefetchesLog;
 class PageCache;
 class IAsynchronousReader;
 class IBackup;
-class LongConnectionLimit;
 struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -162,10 +161,6 @@ public:
     /// read from the encryption header. It must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
-    /// Let the `ReaderExecutor` path reuse held source connections, bounded by this limit
-    /// (the executor takes the stateless one-shot path when it is unset).
-    void needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit);
-
     /// -- Build the final ReadBuffer chain --
     /// Uses the ReadSettings stored in the source stage.
     std::unique_ptr<ReadBufferFromFileBase> build() const;
@@ -228,7 +223,6 @@ private:
 
     std::optional<SourceStage> source;
     bool gather = false;
-    std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<FilesystemCacheStage> filesystem_caches;
     std::optional<MemoryCacheStage> memory_cache;
     std::optional<DistributedCacheStage> distributed_cache;

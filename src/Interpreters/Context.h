@@ -195,7 +195,6 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
-class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -1181,10 +1180,6 @@ public:
 
     AsyncLoader & getAsyncLoader() const;
 
-    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
-    /// reuse (lazily created from `max_remote_read_connections`).
-    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
-
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
@@ -2003,7 +1998,6 @@ public:
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
-    void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;
