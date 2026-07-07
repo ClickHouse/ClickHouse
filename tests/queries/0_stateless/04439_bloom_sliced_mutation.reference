@@ -1,0 +1,18 @@
+-- hint used before mutation
+1
+1
+-- hint disabled while mutation of the indexed column is pending
+2
+7
+42
+0
+-- correct results after the mutation is applied, index rebuilt, hint enabled
+2
+7
+42
+1
+-- hint still used after MATERIALIZE INDEX
+2
+7
+42
+1

@@ -1,0 +1,22 @@
+-- wide part, ALTER UPDATE of the indexed column: updated row is found
+7
+42
+7
+42
+1
+-- the rebuilt index prunes granules and the hint is active
+1
+1
+-- wide part, unrelated mutation: index stays consistent
+7
+42
+1
+-- compact part, ALTER UPDATE of the indexed column: updated row is found, part is consistent
+7
+42
+1
+-- the rebuilt index prunes granules
+1
+-- compact part, lightweight delete: results correct, part is consistent
+7
+1

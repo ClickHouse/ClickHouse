@@ -1,0 +1,7 @@
+-- part built with inferred minimum hash count is readable
+1
+1
+-- fixed-hash inference: correct results and pruning
+1
+42
+1

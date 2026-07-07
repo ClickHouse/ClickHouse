@@ -1,0 +1,20 @@
+-- hasToken must not lose matches, hint on and off
+1
+1
+1
+-- LIKE must not lose matches, hint on and off
+1
+1
+1
+-- case-sensitive predicates engage the index (tombstone open fallback), hint on and off
+1
+1
+1
+1
+-- case-insensitive predicates must not lose matches
+1
+1
+1
+-- case-insensitive predicates keep the case-fold gate: the index is not used at all
+0
+0

@@ -1,0 +1,16 @@
+-- variable hash syntax and correctness
+bloom_sliced	100000000	text
+1
+1
+32
+0
+-- default frequency-conscious hashes
+1
+32
+0
+1
+-- negative: min_hashes must not exceed hashes
+-- false-positive-rate inference
+1
+0
+-- negative: invalid false_positive_rate
