@@ -224,6 +224,10 @@
     M(MergesThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_merges_bandwidth_for_server' throttling.", ValueType::Microseconds) \
     M(MutationsThrottlerBytes, "Bytes passed through 'max_mutations_bandwidth_for_server' throttler.", ValueType::Bytes) \
     M(MutationsThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_mutations_bandwidth_for_server' throttling.", ValueType::Microseconds) \
+    M(UserThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_user' throttler.", ValueType::Bytes) \
+    M(UserThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_user' throttling.", ValueType::Microseconds) \
+    M(AllUsersThrottlerBytes, "Bytes passed through 'max_network_bandwidth_for_all_users' throttler.", ValueType::Bytes) \
+    M(AllUsersThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_network_bandwidth_for_all_users' throttling.", ValueType::Microseconds) \
     M(QueryRemoteReadThrottlerBytes, "Bytes passed through 'max_remote_read_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteReadThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_read_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
