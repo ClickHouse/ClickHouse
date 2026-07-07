@@ -267,6 +267,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
 
                 io.pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
                 io.pipeline.setQuota(subquery_context->getQuota());
+                io.pipeline.setNormalizedQueryHash(subquery_context->getNormalizedQueryHash());
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;

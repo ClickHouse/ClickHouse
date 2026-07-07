@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'MCP 服务器'
+slug: /cloud/features/ai-ml/agents/builder/mcp-servers
+title: 'MCP 服务器'
+description: '将第三方 MCP 服务器连接到 ClickHouse 智能体'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', 'MCP', 'Model Context Protocol']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+Model Context Protocol (MCP) 是一种开放标准，用于向 AI 模型提供工具和数据源。将 MCP Server 连接到 ClickHouse 智能体 后，agent 就可以访问该 server 所公开的任何能力——无论是问题跟踪系统、可观测性 backend、内部 API、第三方 SaaS，还是任何其他带有 MCP 端点的服务。
+
+<div id="attach-an-mcp-server">
+  ## 添加 MCP 服务器
+</div>
+
+在智能体构建器中，打开 **MCP 服务器** 部分并点击 **Add server**。输入该 server 的 URL 和身份验证设置，然后选择希望此 agent 使用的该 server 工具。保存 agent。
+
+你可以为一个 agent 添加多个 server。agent 调用的每个工具都会记录在会话中，以便用户查看 agent 执行了哪些操作。
+
+<div id="transport">
+  ## 传输
+</div>
+
+ClickHouse 智能体采用 Streamable HTTP——这是适用于生产环境的 MCP 传输方式。你连接的服务器必须能让 ClickHouse Cloud 通过 HTTP(S) 访问。
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+MCP 服务器可能会要求提供凭据。ClickHouse 智能体支持：
+
+* **Bearer 令牌** 和其他静态请求头 - 即你在配置服务器时提供的固定值。
+* **OAuth 2.0** - 交互式流程。首次由你 (或任何有访问权限的用户) 调用服务器上的工具时，浏览器会打开登录窗口；令牌会自动管理和刷新。
+* **按用户区分的凭据** - 服务器配置中的变量会从调用用户的 profile 中替换，因此每个用户都会使用自己的身份进行身份验证，而不是共用一个服务账号。
+
+用户提供的凭据会加密存储，并且仅限输入这些凭据的用户使用。某个用户的凭据绝不会出现在另一位用户的智能体运行中。
+
+<div id="limits">
+  ## 限制
+</div>
+
+单次 agent 运行最多可引用 50 个不同的 MCP 服务器目标，并且每个请求最多可包含 100 个扩展工具配置。如需更多，应拆分为[子智能体](/zh/products/cloud/features/ai-ml/agents/builder/subagents)。

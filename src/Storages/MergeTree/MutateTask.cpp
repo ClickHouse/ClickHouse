@@ -2106,25 +2106,6 @@ private:
         /// inherit data for every contained index, including ones we're about to drop or that
         /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
         /// the writer rebuilds skp_idx.packed from scratch.
-        const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage());
-        auto is_in_packed_archive = [&](const IMergeTreeIndex & index)
-        {
-            if (!source_disk_storage)
-                return false;
-            /// Match the partial-mutation detector: enumerate the index's substreams (text
-            /// indices have .dct/.pst suffixes alongside the base; bloom-family and minmax
-            /// just have the base substream). Probing only ".idx" / ".idx2" misses the side
-            /// streams and would treat a mixed-layout text index as not in the archive,
-            /// losing its packed side streams during a full rewrite.
-            const String file_name = index.getFileName();
-            for (const auto & sub : index.getSubstreams())
-            {
-                if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
-                    return true;
-            }
-            return false;
-        };
-
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -2136,12 +2117,18 @@ private:
 
             auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
 
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
+            /// aggregate them and there is nothing to hardlink.
+            if (index_ptr->isInert())
+                continue;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
-                || is_in_packed_archive(*index_ptr);
+                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
 
             if (need_recalculate)
             {
@@ -3083,6 +3070,12 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             bool inserted = false;
             auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
 
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
+            /// otherwise the mutation loops forever failing to build the index.
+            if (index_ptr->isInert())
+                continue;
+
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
             else
@@ -3104,19 +3097,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
     /// new index that isn't packed) leaves the archive untouched.
     const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
-
-    auto index_is_in_archive = [&](const IMergeTreeIndex & idx) -> bool
-    {
-        if (!source_disk_storage)
-            return false;
-        const auto file_name = idx.getFileName();
-        for (const auto & sub : idx.getSubstreams())
-        {
-            if (source_disk_storage->isFileInPackedSkipIndicesArchive(file_name + sub.suffix + sub.extension))
-                return true;
-        }
-        return false;
-    };
 
     if (source_disk_storage)
     {
@@ -3166,7 +3146,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
-                if (index_is_in_archive(*idx)) { archive_dirty = true; break; }
+                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
 
         if (archive_dirty)
         {
@@ -3248,7 +3228,11 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
+#if CLICKHOUSE_CLOUD
+        , nullptr
+#endif
+    );
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.

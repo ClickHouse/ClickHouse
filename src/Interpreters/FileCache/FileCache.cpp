@@ -95,6 +95,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 max_elements;
     extern const FileCacheSettingsUInt64 max_file_segment_size;
     extern const FileCacheSettingsUInt64 boundary_alignment;
+    extern const FileCacheSettingsUInt64 reserve_granularity;
     extern const FileCacheSettingsFileCachePolicy cache_policy;
     extern const FileCacheSettingsDouble slru_size_ratio;
     extern const FileCacheSettingsDouble check_cache_probability;
@@ -270,6 +271,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     : max_file_segment_size(settings[FileCacheSetting::max_file_segment_size])
     , bypass_cache_threshold(settings[FileCacheSetting::enable_bypass_cache_with_threshold] ? settings[FileCacheSetting::bypass_cache_threshold] : 0)
     , boundary_alignment(settings[FileCacheSetting::boundary_alignment])
+    , reserve_granularity(settings[FileCacheSetting::reserve_granularity])
     , background_download_max_file_segment_size(settings[FileCacheSetting::background_download_max_file_segment_size])
     , load_metadata_threads(settings[FileCacheSetting::load_metadata_threads])
     , load_metadata_asynchronously(settings[FileCacheSetting::load_metadata_asynchronously])
@@ -2590,6 +2592,17 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
                 new_settings[FileCacheSetting::background_download_max_file_segment_size].value);
 
         actual_settings[FileCacheSetting::background_download_max_file_segment_size] = new_settings[FileCacheSetting::background_download_max_file_segment_size];
+    }
+
+    if (new_settings[FileCacheSetting::reserve_granularity] != actual_settings[FileCacheSetting::reserve_granularity])
+    {
+        reserve_granularity.store(new_settings[FileCacheSetting::reserve_granularity], std::memory_order_relaxed);
+
+        LOG_INFO(log, "Changed reserve_granularity from {} to {}",
+                actual_settings[FileCacheSetting::reserve_granularity].value,
+                new_settings[FileCacheSetting::reserve_granularity].value);
+
+        actual_settings[FileCacheSetting::reserve_granularity] = new_settings[FileCacheSetting::reserve_granularity];
     }
 
     {

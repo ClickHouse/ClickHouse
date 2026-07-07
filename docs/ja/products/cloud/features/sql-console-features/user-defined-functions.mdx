@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'ユーザー定義関数'
+slug: /cloud/features/user-defined-functions
+title: 'Cloud のユーザー定義関数'
+description: 'Cloud で独自の実行可能 Python 関数を追加する'
+doc_type: 'guide'
+keywords: ['user defined function', 'UDF']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+ユーザー定義関数 (UDF) を使用すると、ClickHouse に標準で用意されている 1,000 種類を超える [関数](/ja/reference/functions/regular-functions/regular-functions-index) だけでは対応できない処理を追加できます。
+
+ClickHouse Cloud では、ユーザー定義関数を作成する方法が 2 つあります。
+
+1. SQL を使用する
+2. UI と独自のコードを使用する (公開ベータ)
+
+<div id="sql-udfs">
+  ## SQL ユーザー定義関数
+</div>
+
+SQL UDF は、ラムダ式を使って [`CREATE FUNCTION`](/ja/reference/statements/create/function) ステートメントで作成できます。
+
+この例では、シンプルな実行可能ユーザー定義関数 `isBusinessHours` を作成します。
+この関数は、特定のタイムスタンプが通常の営業時間内かどうかを確認し、該当すれば true、そうでなければ false を返します。
+
+1. Cloud Console にログインし、SQL コンソールを開きます
+2. 次の SQL クエリを入力して `isBusinessHours` 関数を作成します:
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. 新しく作成したUDFをテストするには、以下を実行します。
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+次の結果が返されるはずです:
+
+```response
+1   0
+```
+
+4. `DROP FUNCTION` コマンドを使って、先ほど作成した UDF を削除できます。
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **重要**
+
+  ClickHouse Cloud の UDFs は、**ユーザーレベルの設定を継承しません**。デフォルトのシステム設定で実行されます。
+</Warning>
+
+これは、次のことを意味します。
+
+* セッションレベルの設定 (`SET` ステートメントで設定したもの) は、UDF の実行コンテキストには引き継がれません
+* ユーザープロファイルの設定は UDFs に継承されません
+* クエリレベルの設定は UDF の実行中には適用されません
+
+<div id="ui-udfs">
+  ## UI で作成するユーザー定義関数
+</div>
+
+<BetaBadge />
+
+ClickHouse Cloud では、UI からユーザー定義関数を作成できます。
+
+この例では、特定の `timestamp` が通常の営業時間内かどうかを判定する、前回と同じシンプルな実行可能ユーザー定義関数 `isBusinessHours` を作成します。
+前回は SQL を使って作成しましたが、今回は Python で実装し、UI から設定します。
+
+<Steps>
+  <Step>
+    ### Python ファイルを作成する
+
+    ローカルで新しいファイル `main.py` を作成します。
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    Python スクリプトでサードパーティ製パッケージをインポートする場合は、それらを `requirements.txt` ファイルに記載すれば、ClickHouse Cloud がインストールしてくれます。代わりに依存関係を ZIP に直接含めることもできますが、その場合は両方の CPU アーキテクチャ向けにキャッシュ済みのパッケージを含める必要があるため、`requirements.txt` を使うほうが簡単です。たとえば、次のようになります。
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      ClickHouse Cloud では、次の手順で UI からアップロードする zip ファイル内に `main.py` が含まれていることを想定しています。
+      別のファイル名にすると、エラーが発生します。
+    </Note>
+  </Step>
+
+  <Step>
+    ### 依存関係パッケージとローカルファイルをまとめる
+
+    依存関係パッケージや追加のローカルファイル (wheel ファイル、設定ファイル、データファイルなど) を含めるには、`main.py` と `requirements.txt` と同じディレクトリに配置します。ZIP アーカイブを作成する際は、すべてのファイルを含めてください。
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    Python コードでは、`os.path.dirname(os.path.abspath(__file__))` を使って、ローカルにバンドルされた path のベース directory を参照できます。これにより、ZIP アーカイブ内で `main.py` が配置されている directory の絶対 path が返され、バンドルされたほかのファイルにアクセスできるようになります。
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    これは、次のような場合に便利です:
+
+    * UDF に含まれている構成ファイルにアクセスする
+    * カスタム依存関係の wheel パッケージを読み込む
+    * 追加のスクリプトやデータファイルを参照する
+
+    次に、ファイルを ZIP アーカイブに圧縮します:
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **シンボリックリンクは使用できません**
+
+      ClickHouse Cloud では、シンボリックリンクを含む UDF アーカイブは受け付けられません。ZIP バンドルには通常のファイルとディレクトリだけを含めてください。シンボリックリンクを含むアップロードは検証に通りません。
+    </Warning>
+  </Step>
+
+  <Step>
+    ### UI で UDF を作成する
+
+    1. Cloud コンソールのホームページで、左下のメニューにある組織名をクリックします。
+    2. メニューから **ユーザー定義関数** を選択します。
+    3. ユーザー定義関数ページで **UDF を設定** をクリックします。画面右側に設定パネルが開きます。
+    4. 関数名を入力します。この例では `isBusinessHours` を使用します。
+    5. 関数タイプとして **Executable pool** または **Executable** を選択します。
+       * **Executable pool**: 永続的なプロセスのプールが維持され、読み取り時にはそのプールからプロセスが割り当てられます。
+       * **Executable**: スクリプトはクエリごとに実行されます。
+    6. この例では、デフォルト設定を使用します。設定パラメーターの一覧については、[Executable user-defined functions](/ja/reference/functions/regular-functions/udf#executable-user-defined-functions) を参照してください。
+    7. **ファイルを参照** をクリックして、このチュートリアルの冒頭で作成した `.zip` ファイルをアップロードします。
+    8. 新しい引数を追加します。この例では、型 `DateTime` の引数 `timestamp` を追加します。
+    9. 戻り値の型を選択します。この例では `Bool` を選択します。
+    10. **UDF を作成** をクリックします。現在のビルドステータスを示すダイアログが表示されます。
+        * 問題がある場合、ステータスは **error** に変わります。
+        * 問題がなければ、ステータスは **building** から **provisioning** に進みます。プロビジョニングを完了するには、サービスが稼働中である必要があります。サービスがアイドル状態の場合は、サービス名の横にある **UDF details** パネルで **Wake Up Service** をクリックします。
+        * 完了すると、ステータスは **deployed** に変わります。
+  </Step>
+
+  <Step>
+    ### UDFをテストする
+
+    1. ページ左上の **Settings - return to your service view** をクリックして、**SQL Console** のホーム画面に戻ります
+    2. 左側のメニューで **SQL Console** をクリックします
+    3. 次のクエリを入力します:
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    以下の結果が表示されるはずです。
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step>
+    ### 新しいバージョンを作成する
+
+    UDF のコードを変更するには、新しいバージョンを作成します。**Edit** パネルで管理できるのは、UDF をどのサービスに割り当てるかだけです。そこでファイルをアップロードしても、デプロイ済みのコードは置き換えられません。
+
+    1. Cloud Console のホーム画面で、左下のメニューにある組織名をクリックします。
+    2. メニューから **User-defined functions** を選択します。
+    3. `isBusinessHours` UDF の **Actions** にある 3 点メニューを選択し、**Create new version** をクリックします
+    4. 変更したコードを含む zip をアップロードするか、設定を変更してから **Create new version** をクリックします
+
+    これで、UI から最初のユーザー定義関数を追加し、それが実行されることを確認し、必要に応じて新しいバージョンを作成する方法も確認できました。
+  </Step>
+</Steps>

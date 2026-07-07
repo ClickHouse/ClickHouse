@@ -34,13 +34,14 @@ extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
-UInt128 SerializationQBit::getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+UInt128 SerializationQBit::getHash(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_)
 {
     SipHash hash;
     hash.update("QBit");
     hash.update(nested_->getHash());
     hash.update(element_size_);
     hash.update(dimension_);
+    hash.update(stride_);
     return hash.get128();
 }
 
@@ -174,22 +175,30 @@ void SerializationQBit::serializeFloatsFromQBitTuple(const Tuple & tuple, WriteB
 
     constexpr size_t bits = sizeof(Word) * 8;
     const auto untranspose = resolveUntransposeBitPlane<Word>();
-    const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
+    const size_t num_strides = getNumStrides();
+    const size_t slice_size = DataTypeQBit::bitsToBytes(stride);
     const size_t slice_size_bits = slice_size * 8;
-    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
-    for (size_t bit = 0; bit < bits; ++bit)
+    /// One float per original dimension. Each stride group is untransposed independently into its own slice.
+    std::vector<FloatType> result(dimension, FloatType{});
+    std::vector<FloatType> dst(slice_size_bits);
+
+    for (size_t group = 0; group < num_strides; ++group)
     {
-        const String & fixed_string = tuple[bit].safeGet<String>();
-        const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
-        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-        untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        std::fill(dst.begin(), dst.end(), FloatType{});
+        for (size_t bit = 0; bit < bits; ++bit)
+        {
+            const String & fixed_string = tuple[group * element_size + bit].safeGet<String>();
+            const UInt8 * src = reinterpret_cast<const UInt8 *>(fixed_string.data());
+            const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
+            untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        }
+        /// Copy this group's `stride` real dims into the output. Trailing padded floats (when stride % 8 != 0) are dropped.
+        std::copy(dst.begin(), dst.begin() + stride, result.begin() + group * stride);
     }
 
-    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
-    dst.resize(dimension);
-    writeVarUInt(dst.size(), ostr);
-    for (const auto & element : dst)
+    writeVarUInt(result.size(), ostr);
+    for (const auto & element : result)
         writeBinaryLittleEndian(element, ostr);
 }
 
@@ -202,12 +211,13 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
         uint8_t,
         std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
 
-    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
+    const size_t num_planes = element_size * getNumStrides();
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(stride);
     const size_t total_bits = bytes_per_fixedstring * 8;
 
-    std::vector<std::string> planes(element_size, std::string(bytes_per_fixedstring, '\0'));
-    std::vector<char *> plane_ptrs(element_size);
-    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
+    std::vector<std::string> planes(num_planes, std::string(bytes_per_fixedstring, '\0'));
+    std::vector<char *> plane_ptrs(num_planes);
+    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
         plane_ptrs[col_idx] = reinterpret_cast<char *>(planes[col_idx].data());
 
     Word w;
@@ -217,13 +227,16 @@ Tuple SerializationQBit::deserializeFloatsToQBitTuple(ReadBuffer & istr) const
     {
         readBinaryLittleEndian(v, istr);
         std::memcpy(&w, &v, sizeof(Word));
-        transposeBits<Word>(w, i, total_bits, plane_ptrs.data());
+        /// Dimension `i` belongs to stride group `i / stride`; transpose it into that group's element_size bit planes.
+        const size_t group = i / stride;
+        const size_t local_i = i - group * stride;
+        transposeBits<Word>(w, local_i, total_bits, plane_ptrs.data() + group * element_size);
     }
 
     Tuple tuple_elements;
-    tuple_elements.reserve(element_size);
+    tuple_elements.reserve(num_planes);
 
-    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
+    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
         tuple_elements.push_back(Field(std::move(planes[col_idx])));
 
     return tuple_elements;
@@ -240,21 +253,29 @@ void SerializationQBit::serializeFloatsFromQBit(const IColumn & column, size_t r
 
     constexpr size_t bits = sizeof(Word) * 8;
     const auto untranspose = resolveUntransposeBitPlane<Word>();
-    const size_t slice_size = DataTypeQBit::bitsToBytes(dimension);
+    const size_t num_strides = getNumStrides();
+    const size_t slice_size = DataTypeQBit::bitsToBytes(stride);
     const size_t slice_size_bits = slice_size * 8;
-    std::vector<FloatType> dst(slice_size_bits, FloatType{});
 
-    for (size_t bit = 0; bit < bits; ++bit)
+    /// One float per original dimension. Each stride group is untransposed independently into its own slice.
+    std::vector<FloatType> result(dimension, FloatType{});
+    std::vector<FloatType> dst(slice_size_bits);
+
+    for (size_t group = 0; group < num_strides; ++group)
     {
-        const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, bit));
-        const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
-        const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
-        untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        std::fill(dst.begin(), dst.end(), FloatType{});
+        for (size_t bit = 0; bit < bits; ++bit)
+        {
+            const auto & fs = assert_cast<const ColumnFixedString &>(extractElementColumn(column, group * element_size + bit));
+            const UInt8 * src = reinterpret_cast<const UInt8 *>(fs.getChars().data()) + row_num * slice_size;
+            const Word mask = static_cast<Word>(Word(1) << (bits - 1 - bit));
+            untranspose(src, reinterpret_cast<Word *>(dst.data()), slice_size_bits, mask);
+        }
+        /// Copy this group's `stride` real dims into the output. Trailing padded floats (when stride % 8 != 0) are dropped.
+        std::copy(dst.begin(), dst.begin() + stride, result.begin() + group * stride);
     }
 
-    /// We untransposed QBit and might have trailing zero floats at the tail if dimension % 8 != 0. Remove them
-    dst.resize(dimension);
-    write_func(dst);
+    write_func(result);
 }
 
 template <typename FloatType, typename ReadFunc>
@@ -266,12 +287,13 @@ void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_
         uint8_t,
         std::conditional_t<sizeof(FloatType) == 2, UInt16, std::conditional_t<sizeof(FloatType) == 4, UInt32, UInt64>>>;
 
-    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(dimension);
+    const size_t num_planes = element_size * getNumStrides();
+    const size_t bytes_per_fixedstring = DataTypeQBit::bitsToBytes(stride);
     const size_t total_bits = bytes_per_fixedstring * 8;
 
     /// Insert 0 in each FixedString column and prepare pointers to the newly inserted rows to directly write into them during transposition
-    std::vector<char *> column_data_ptrs(element_size);
-    for (size_t col_idx = 0; col_idx < element_size; ++col_idx)
+    std::vector<char *> column_data_ptrs(num_planes);
+    for (size_t col_idx = 0; col_idx < num_planes; ++col_idx)
     {
         auto & fixed_string_column = assert_cast<ColumnFixedString &>(extractElementColumn(column, col_idx));
         fixed_string_column.insertDefault();
@@ -287,7 +309,10 @@ void SerializationQBit::deserializeFloatsToQBit(IColumn & column, ReadFunc read_
         Word word_value;
         std::memcpy(&word_value, &value, sizeof(Word));
 
-        transposeBits<Word>(word_value, i, total_bits, column_data_ptrs.data());
+        /// Dimension `i` belongs to stride group `i / stride`; transpose it into that group's element_size bit planes.
+        const size_t group = i / stride;
+        const size_t local_i = i - group * stride;
+        transposeBits<Word>(word_value, local_i, total_bits, column_data_ptrs.data() + group * element_size);
     }
 }
 
@@ -296,9 +321,13 @@ void SerializationQBit::serializeBinary(const Field & field, WriteBuffer & ostr,
     /// Tuple<String, ..., String>
     const Tuple & tuple = field.safeGet<Tuple>();
 
-    if (tuple.size() != element_size)
+    const size_t num_planes = element_size * getNumStrides();
+    if (tuple.size() != num_planes)
         throw Exception(
-            ErrorCodes::SERIALIZATION_ERROR, "QBit tuple size {} doesn't match expected element_size {}", tuple.size(), element_size);
+            ErrorCodes::SERIALIZATION_ERROR,
+            "QBit tuple size {} doesn't match expected number of bit planes {}",
+            tuple.size(),
+            num_planes);
 
     dispatchByElementSize([&]<typename FloatType>() { serializeFloatsFromQBitTuple<FloatType>(tuple, ostr); });
 }
@@ -335,7 +364,7 @@ void SerializationQBit::deserializeBinary(IColumn & column, ReadBuffer & istr, c
         return true;
     };
 
-    addElementSafe<void>(element_size, column, deserialize);
+    addElementSafe<void>(element_size * getNumStrides(), column, deserialize);
 }
 
 void SerializationQBit::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const
@@ -386,7 +415,7 @@ void SerializationQBit::deserializeText(IColumn & column, ReadBuffer & istr, con
         return true;
     };
 
-    addElementSafe<void>(element_size, column, deserialize);
+    addElementSafe<void>(element_size * getNumStrides(), column, deserialize);
 }
 
 void SerializationQBit::enumerateStreams(
@@ -623,12 +652,13 @@ SerializationQBit::UntransposeBitPlaneFn<T> SerializationQBit::resolveUntranspos
 }
 // clang-format on
 
-SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_)
+SerializationPtr SerializationQBit::create(const SerializationPtr & nested_, size_t element_size_, size_t dimension_, size_t stride_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_));
+        return std::shared_ptr<ISerialization>(new SerializationQBit(nested_, element_size_, dimension_, stride_));
     return ISerialization::pooled(
-        getHash(nested_, element_size_, dimension_), [&] { return new SerializationQBit(nested_, element_size_, dimension_); });
+        getHash(nested_, element_size_, dimension_, stride_),
+        [&] { return new SerializationQBit(nested_, element_size_, dimension_, stride_); });
 }
 
 
