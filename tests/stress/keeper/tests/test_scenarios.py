@@ -208,6 +208,11 @@ def _build_bench_step(scenario, nodes, ctx, replay_path=""):
         # workload YAML's `concurrency`; KEEPER_BENCH_CLIENTS still wins over both.
         if scenario_wl.get("clients") is not None:
             wl["clients"] = int(scenario_wl["clients"])
+        # Optional per-scenario worker count decoupling load-generation threads from
+        # the session count (each worker picks a random session per request).  Needed
+        # for very high session counts where one worker per session is infeasible.
+        if scenario_wl.get("concurrency") is not None:
+            wl["concurrency"] = int(scenario_wl["concurrency"])
     
     # If no workload defined anywhere, use default
     if not wl:
@@ -833,6 +838,7 @@ def test_scenario(scenario, cluster_factory, request, run_meta):
             duration_s=scenario.get("duration"),
             replay_path=wl.get("replay"),
             clients=wl.get("clients"),
+            concurrency=wl.get("concurrency"),
         )
         
         fault_runner = None

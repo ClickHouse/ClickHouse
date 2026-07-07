@@ -177,20 +177,32 @@ To add a read-heavy or write-heavy variant:
 
 `scenarios/registry_saturation.yaml` probes session/watch limits of a
 resource-constrained keeper serving a service-discovery registry. The workload
-(`workloads/registry_watch.yaml`) models the classic ZooKeeper registry pattern:
-many clients each hold one session with a children-watch on a shared registry
-path (`/registry/servers`), re-list it whenever it changes, and read every
-member entry; membership churn fires the children-watch on every watcher
-simultaneously. `workloads/registry_fanout.yaml` is the fan-out variant where
-all sessions watch the same path and a low-rate writer fires ~sessions-count
-watch events per mutation.
+(`workloads/registry_watch.yaml`) statistically approximates the classic
+ZooKeeper registry pattern: many clients each hold one session with a
+children-watch armed on a shared registry path (`/registry/servers`) and read
+member entries, while membership churn fires the children-watch on every
+watcher simultaneously. keeper-bench generates requests independently rather
+than reacting to watch events, so a steady dominant list weight stands in for
+the clients' re-list + watch re-arm reaction; watch registrations, fan-out
+deliveries, and re-arm traffic still scale with the session count.
+`workloads/registry_fanout.yaml` is the fan-out variant where all sessions
+keep a children-watch on the same path and a low-rate writer fires
+~sessions-count watch events per mutation.
 
 Scenarios:
 
-- `registry-sat-c500` / `-c1000` / `-c2000` / `-c4000` — session ladder; same
-  mix, only the session count rises. Upper rungs use relaxed gates on purpose:
-  they are for observing where degradation starts (`mntr` session/watch counts,
-  container CPU/memory, p99), not a hard pass/fail.
+- `registry-sat-c500` / `-c1000` / `-c2000` / `-c4000` / `-c12000` — session
+  ladder; same mix, only the session count rises. Upper rungs use relaxed gates
+  on purpose: they are for observing where degradation starts (`mntr`
+  session/watch counts, container CPU/memory, p99), not a hard pass/fail. The
+  c12000 rung decouples load generation from the session count
+  (`workload.concurrency: 120` workers over 12000 sessions) and raises the
+  node-side connection limits (`opts.max_connections` / `opts.pids_limit`).
+  Above 4000 sessions the harness transparently splits the run across several
+  bench subprocesses (a single keeper-bench process tops out near 5000
+  sessions: each session holds two threads on its 10000-thread global pool);
+  shard 0 owns the setup tree, the rest join after it is created, and the
+  merged summary sums counters/rates and takes the max of latency percentiles.
 - `registry-watch-fanout` — fan-out latency and watch-queue behavior at 1000
   watching sessions.
 - `registry-expiry-storm` — runs only with faults enabled: `cpu_hog` on all
@@ -212,15 +224,31 @@ pytest -p no:cacheprovider --durations=0 -vv -s \
 Notes:
 
 - Each bench session is one TCP connection from the host, so check
-  `ulimit -n` before the higher rungs (c2000 needs >2k spare fds, c4000 >4k).
+  `ulimit -n` before the higher rungs (c2000 needs >2k spare fds, c4000 >4k,
+  c12000 >12k). Each session also runs two client threads on the bench host
+  (send + receive), so c12000 needs ~25k threads' worth of headroom — checking
+  `ulimit -u` is not enough on systemd hosts, where the per-user/scope
+  `TasksMax` (`systemctl show user-<uid>.slice -p TasksMax`) is usually the
+  binding limit. Serial per-shard session setup takes minutes at tens of
+  sessions per second (the harness scales the bench subprocess timeout with
+  the session count).
 - **Per-scenario knobs** used by these scenarios (available to any scenario):
   - `workload.clients` — overrides the workload YAML's `concurrency`
     (sessions + bench concurrency). Priority: `KEEPER_BENCH_CLIENTS` env >
     `workload.clients` > workload YAML `concurrency`.
+  - `workload.concurrency` — decouples bench worker threads from the session
+    count: sessions stay `workload.clients`, while this many workers generate
+    load, each picking a random session per request. Without it, one worker per
+    session is spawned, which is infeasible at very high session counts.
   - `opts.cpu_limit` / `opts.mem_limit` — Docker resource limits for the
     keeper containers (default backend only), to emulate small/constrained
     keeper deployments. Defaults from the integration helper are
     `cpus: 5` / `mem_limit: 12g`; the registry scenarios pin `4` / `4g`.
+  - `opts.max_connections` — keeper server connection cap (top-level
+    `<max_connections>`, default 4096). One session = one connection = one
+    server thread, so high-session rungs must raise it.
+  - `opts.pids_limit` — container pid/thread cap (integration default 5000);
+    must also rise with per-node connection counts.
 
 ## Early comparison: Default vs RocksDB
 

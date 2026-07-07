@@ -357,7 +357,7 @@ def _write_keeper_config(conf_dir, name, full_xml):
     return cfg_path
 
 
-def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_xml):
+def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_xml, max_connections=None):
     """Build complete XML config for a single Keeper node."""
     path_block = (
         "<log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>"
@@ -366,9 +366,18 @@ def _build_node_config_xml(server_id, peers_xml, coord_settings, feature_flags_x
     keeper_server = _keeper_server_xml(
         server_id, peers_xml, path_block, _http_control_xml(), coord_settings, feature_flags_xml
     )
+    # max_connections caps the server connection thread pool (default 4096); one client
+    # session = one connection = one server thread, so session-saturation scenarios with
+    # tens of thousands of sessions per node must raise it (opts: max_connections).
+    max_conn_xml = (
+        f"<max_connections>{int(max_connections)}</max_connections>"
+        if max_connections is not None
+        else ""
+    )
     return (
         "<clickhouse>"
         + keeper_server
+        + max_conn_xml
         + _prometheus_xml()
         + _listen_hosts_xml()
         + "</clickhouse>"
@@ -525,14 +534,19 @@ class ClusterBuilder:
             overrides_xml=opts.get("coord_overrides_xml"),
         )
 
-        # Optional per-scenario container resource limits (opts: cpu_limit / mem_limit),
-        # e.g. to emulate small/constrained keeper deployments.  Defaults come from
-        # the integration helper (cpus: 5, mem_limit: 12g) when unset.
+        # Optional per-scenario container resource limits (opts: cpu_limit / mem_limit /
+        # pids_limit), e.g. to emulate small/constrained keeper deployments.  Defaults
+        # come from the integration helper (cpus: 5, mem_limit: 12g, pids_limit: 5000)
+        # when unset.  pids_limit matters for very high session counts: each client
+        # connection holds a server thread, so tens of thousands of sessions per node
+        # exceed the 5000-pid default.
         resource_kwargs = {}
         if opts.get("cpu_limit") is not None:
             resource_kwargs["cpu_limit"] = opts["cpu_limit"]
         if opts.get("mem_limit") is not None:
             resource_kwargs["mem_limit"] = opts["mem_limit"]
+        if opts.get("pids_limit") is not None:
+            resource_kwargs["pids_limit"] = int(opts["pids_limit"])
         if resource_kwargs:
             print(f"[keeper][cluster] node resource limits: {resource_kwargs}")
 
@@ -544,7 +558,11 @@ class ClusterBuilder:
         nodes = []
         for server_id, name in enumerate(names, start=start_sid):
             full_xml = _build_node_config_xml(
-                server_id, peers_xml, coord_settings, feature_flags_xml
+                server_id,
+                peers_xml,
+                coord_settings,
+                feature_flags_xml,
+                max_connections=opts.get("max_connections"),
             )
             cfg_path = _write_keeper_config(self.conf_dir, name, full_xml)
             nodes.append(

@@ -3,20 +3,26 @@ version: 1
 # How many sessions and watches can a resource-constrained keeper sustain when
 # serving a service-discovery registry, and what degrades first?
 #
-# The workload models the classic ZooKeeper registry pattern: N clients each
-# hold one session with a children-watch on a shared registry path, re-list it
-# on every change, and read the member entries; membership churn fires the
-# children-watch on every watcher simultaneously (see workloads/registry_watch.yaml).
+# The workload statistically approximates the classic ZooKeeper registry
+# pattern: N clients each hold one session with a children-watch on a shared
+# registry path and read the member entries; membership churn fires the
+# children-watch on every watcher simultaneously, and a steady list weight
+# stands in for the clients' re-list + watch re-arm reaction (keeper-bench
+# generates requests independently rather than reactively; see
+# workloads/registry_watch.yaml).
 #
 # All scenarios pin keeper containers to a small deployment shape
 # (opts: cpu_limit 4 / mem_limit 4g) so the results answer "what fits on a
 # constrained keeper" rather than "what fits on the CI host".
 #
-# The session ladder (c500 → c4000) keeps the workload mix constant and raises
-# only workload.clients (sessions + concurrency).  Gates get progressively
-# looser at higher rungs on purpose: the upper rungs are for observing where
-# degradation starts (mntr session/watch counts, container CPU/memory, p99),
-# not for a hard pass/fail.
+# The session ladder (c500 → c12000) keeps the workload mix constant and raises
+# only workload.clients (sessions; also the worker count unless
+# workload.concurrency decouples them, as the c12000 rung does).  Gates get
+# progressively looser at higher rungs on purpose: the upper rungs are for
+# observing where degradation starts (mntr session/watch counts, container
+# CPU/memory, p99), not for a hard pass/fail.  Above 4000 sessions the harness
+# transparently shards the bench across multiple subprocesses (see
+# workloads/keeper_bench.py).
 #
 # These scenarios are on-demand (not part of the nightly scenario files); run
 # them with KEEPER_SCENARIO_FILES=registry_saturation.yaml or -k '<id>'.
@@ -124,6 +130,35 @@ scenarios:
     max_ratio: 0.3
   - type: p99_le
     max_ms: 30000
+  - type: watch_delta_within
+  - type: no_watcher_hotspot
+  - type: log_sanity_ok
+  - type: print_summary
+  - type: mntr_print
+- id: registry-sat-c12000
+  name: Registry saturation (12000 sessions)
+  description: Registry watch mix with 12000 sessions across 3 nodes (4k per node), run as 3 sharded bench processes with 120 decoupled workers total (workload.concurrency). Ladder rung 5; purely observational. Bench host needs ~25k threads (2 per session, mind systemd TasksMax as well as ulimit -u) and >12k fds. Nodes need max_connections and pids_limit raised (one connection = one server thread) and more memory than the lower rungs — thousands of server threads plus session/watch tracking OOM a 4g node. At 8k connections per node (24000 sessions) this hardware profile saturates outright — four-letter-word probes stop answering and error rates explode — so this rung sits just below that knee.
+  duration: 600
+  workload:
+    config: workloads/registry_watch.yaml
+    clients: 12000
+    concurrency: 120
+  opts:
+    cpu_limit: 4
+    mem_limit: 12g
+    pids_limit: 30000
+    max_connections: 20000
+  pre:
+  - kind: ensure_paths
+    'on': leader
+    paths:
+    - /registry
+    - /registry/servers
+  faults: []
+  gates:
+  - type: single_leader
+  - type: error_rate_le
+    max_ratio: 0.5
   - type: watch_delta_within
   - type: no_watcher_hotspot
   - type: log_sanity_ok

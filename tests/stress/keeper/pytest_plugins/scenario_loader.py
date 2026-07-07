@@ -54,6 +54,11 @@ def validate_scenario(s):
                     int(wl.get("clients"))
                 except Exception:
                     errs.append("workload_clients_not_int")
+            if "concurrency" in wl:
+                try:
+                    int(wl.get("concurrency"))
+                except Exception:
+                    errs.append("workload_concurrency_not_int")
 
     return errs
 
