@@ -869,8 +869,8 @@ TEST_F(ReaderExecutorMetric, ReverseSequential)
 /// Real thread pool + real FileCache (fs tier): the worker fills the fill-ahead lead on ANOTHER
 /// thread, committing window-sized tiles while HOLDING the segment downloader across tiles, and
 /// the serve reads the committed prefix live (the progressive run-ahead of stage 2b-3). The other
-/// tests use an inline pool, so this cross-thread streaming path - `DiskCacheWriter::writeStreaming`
-/// + `FileSegment::notifyDownloadProgress` + the frontier wait - is exercised ONLY here. The lead
+/// tests use an inline pool, so this cross-thread streaming path - tile writes under a
+/// window-long `claim` + `FileSegment::notifyDownloadProgress` + the frontier wait - is exercised ONLY here. The lead
 /// spans several segments, so each segment is filled by multiple tile writes with the downloader
 /// held. Asserts the cold sequential read streams the correct bytes, and that the cold pass
 /// populated the cache (the warm re-read is served without touching the source - proving the

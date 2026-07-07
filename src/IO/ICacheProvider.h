@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <base/types.h>
 
+#include <functional>
 #include <memory>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -66,17 +67,11 @@ public:
 
     /// Store the portion of `data` within `range()` minus `committed()`.
     /// Returns the bytes that newly landed; 0 for bytes outside the range,
-    /// already committed, a lost downloader race, reservation failure or
+    /// already committed, an unclaimed cell, reservation failure or
     /// bypass - NEVER throws on those, degrades to a partial or zero return.
+    /// On tiers that coordinate downloaders (the disk cache) a write lands only
+    /// into cells covered by an open `claim` of the calling thread.
     virtual size_t write(ChainedBuffers data) = 0;
-
-    /// Like `write`, but the caller is STREAMING a segment progressively across several calls
-    /// and stays its downloader: advance the committed prefix and wake any reader waiting on it,
-    /// but do NOT relinquish the downloader role between calls. The caller MUST finalize with
-    /// `releaseElectedDownloaders` (or let the held-buffer teardown complete it). Default: the
-    /// same as `write` - tiers that do not stream a partial prefix (page cache) or do not
-    /// coordinate downloaders just commit per call.
-    virtual size_t writeStreaming(ChainedBuffers data) { return write(std::move(data)); }
 
     /// Serve an already-committed sub-range from this buffer's own held
     /// segments/cells, without a source round-trip.
@@ -85,23 +80,65 @@ public:
     /// One sibling-led sub-range to serve from cache (the writer that owns it + the sub-range).
     struct SiblingLed { CacheWriter * writer = nullptr; ByteRange sub; };
 
-    /// Per-segment download arbitration for concurrent populate. For each cache segment
-    /// overlapping `range`, try to become its downloader: segments THIS caller wins are
-    /// appended to `led` (the caller must fetch+write them on this thread); segments a
-    /// sibling already leads (or already downloaded) are appended to `sibling_led`. Does
-    /// NOT wait. Default: treat the whole range as led (no coordination, e.g. page cache).
-    virtual void electDownloaders(ByteRange range,
-        VectorWithMemoryTracking<ByteRange> & led,
-        VectorWithMemoryTracking<SiblingLed> & /*sibling_led*/)
-    { led.push_back(range); }
+    /// The result of `claim`: the downloader roles the calling thread holds over one window,
+    /// plus the window's decomposition into runs to fetch (`to_fetch` - roles won, or
+    /// uncoordinated bytes) and runs a sibling leads (`sibling_led` - already cached, or
+    /// being downloaded by another reader; serve them from cache after). Move-only RAII:
+    /// roles are thread-affine (the downloader id is the caller id), so the token must be
+    /// created, written through, and destroyed on ONE thread; the destructor
+    /// completes-and-releases exactly the roles this claim NEWLY won - a nested claim over
+    /// cells the thread already leads (a tile write inside a window-long claim) releases
+    /// nothing of the outer claim's. Exceptions in the release are swallowed and logged.
+    class FillClaim
+    {
+    public:
+        FillClaim() = default;
+        FillClaim(FillClaim && other) noexcept
+            : to_fetch(std::move(other.to_fetch))
+            , sibling_led(std::move(other.sibling_led))
+            , release(std::exchange(other.release, nullptr))
+        {
+        }
+        FillClaim & operator=(FillClaim && other) noexcept
+        {
+            if (this != &other)
+            {
+                reset();
+                to_fetch = std::move(other.to_fetch);
+                sibling_led = std::move(other.sibling_led);
+                release = std::exchange(other.release, nullptr);
+            }
+            return *this;
+        }
+        FillClaim(const FillClaim &) = delete;
+        FillClaim & operator=(const FillClaim &) = delete;
+        ~FillClaim() { reset(); }
 
-    /// Complete (reset the downloader of) any segment THIS thread still leads from a prior
-    /// `electDownloaders` but did not complete via `write()` - e.g. a prefetch interrupted
-    /// before its fetch reached the segment. MUST run on the electing (downloader) thread,
-    /// before the writer is handed to a teardown on another thread: a leaked DOWNLOADING
-    /// segment trips the holder dtor's `chassert(!is_last_holder)`, and `complete()` from a
-    /// foreign thread cannot reset it. Default no-op (e.g. page cache does not elect).
-    virtual void releaseElectedDownloaders() {}
+        void reset() noexcept
+        {
+            if (auto r = std::exchange(release, nullptr))
+                r();
+        }
+
+        VectorWithMemoryTracking<ByteRange> to_fetch;
+        VectorWithMemoryTracking<SiblingLed> sibling_led;
+        /// Completes-and-releases the newly-won roles; noexcept by construction (the
+        /// provider wraps its body in try/catch). Empty when nothing was won.
+        std::function<void()> release;
+    };
+
+    /// Acquire the downloader roles for the cache cells overlapping `window` (clamped
+    /// internally). The ONLY role-acquisition site: `write` never adopts a role, even one a
+    /// sibling freed mid-window - a freed cell is picked up by the NEXT claim, which keeps
+    /// "which roles does this thread hold" answerable from the live claims alone. Does NOT
+    /// wait. Default: the whole window is to-fetch, nothing to release (no coordination,
+    /// e.g. page cache).
+    virtual FillClaim claim(ByteRange window)
+    {
+        FillClaim c;
+        c.to_fetch.push_back(window);
+        return c;
+    }
 
     /// Wait until `sub`'s bytes are committed by the sibling downloader, then serve them
     /// from this writer's own held segments (cache file). Default: plain read (no wait).

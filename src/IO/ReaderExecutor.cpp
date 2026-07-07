@@ -714,10 +714,11 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
             {
                 if (!m.writer)
                     continue;
+                auto fill_claim = m.writer->claim(header_range);
                 stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(stats, Stats::CachePopulateMicroseconds);
                 stats.add(Stats::BytesPushedToCacheSync,
-                    fill_lane.write(*m.writer, fetched.slice(header_range), /*streaming=*/false));
+                    fill_lane.write(*m.writer, fetched.slice(header_range)));
             }
         }
     }
@@ -1061,14 +1062,26 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     const ByteRange window = m.physical_window;
     const MemoryPressureLevel level = m.pressure_snapshot;
 
-    /// Elect the FileCache downloader over the window's fill-target writers (recorded at
-    /// launch). Segments WE win (`led_misses`) this worker fetches+writes inline below - it is
-    /// the downloader, so it must complete them on THIS thread. Segments a sibling already
-    /// leads go to `sibling_led`: the worker SKIPS them (the foreground, seeing `m.contended`,
+    /// `m.fetched` hands the accumulated bytes to the collect whatever way this scope exits
+    /// (a cancel mid-loop, an EOF short, a source exception). Declared BEFORE the claims so
+    /// the claims' destructors - the downloader release - run FIRST on scope exit: the
+    /// collect must never observe bytes whose segments this thread still holds DOWNLOADING.
+    ChainedBuffers led_bytes;
+    SCOPE_EXIT_SAFE({ m.fetched = std::move(led_bytes); });
+
+    /// Claim the FileCache downloader roles over the window's fill-target writers (recorded
+    /// at launch). Runs WE win (`to_fetch`) this worker fetches+writes inline below while the
+    /// claims stay open - it is the downloader, on THIS thread. Runs a sibling already leads
+    /// go to `sibling_led`: the worker SKIPS them (the foreground, seeing `m.contended`,
     /// revokes to the sync path at collect, which serves them from the sibling's fill), which
-    /// dedups concurrent cold populate - each segment is fetched once across executors.
+    /// dedups concurrent cold populate - each segment is fetched once across executors. The
+    /// claims' destructors complete-and-release exactly the roles won here, so an interrupted
+    /// fetch can never leak a segment DOWNLOADING (which would abort the writer's holder dtor
+    /// on `chassert(!is_last_holder)` - the foreground teardown cannot reset a foreign
+    /// downloader).
     VectorWithMemoryTracking<ByteRange> led_misses;
     VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
+    VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
     for (const auto & view : m.writer_views)
     {
         if (!view.writer)
@@ -1077,7 +1090,12 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         const size_t hi = std::min(window.end(), view.writer->range().end());
         if (lo >= hi)
             continue;
-        view.writer->electDownloaders(ByteRange{lo, hi - lo}, led_misses, sibling_led);
+        auto fill_claim = view.writer->claim(ByteRange{lo, hi - lo});
+        for (const auto & r : fill_claim.to_fetch)
+            led_misses.push_back(r);
+        for (const auto & sl : fill_claim.sibling_led)
+            sibling_led.push_back(sl);
+        claims.push_back(std::move(fill_claim));
     }
     /// Record contention for the collect side (the led set itself stays worker-local: the
     /// foreground only needs to know WHETHER a sibling lead exists, to revoke to the sync path).
@@ -1086,9 +1104,9 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// "Stop at the first loss" (inline serve only): bound the fetch at the first sibling-led
     /// segment so this thread fetches just the contiguous LED PREFIX `[window.offset, fetch_bound)`.
     /// The serve reads that prefix (we are its downloader, so it is committed to our cells) as a
-    /// short window; the caller's next read resolves the sibling boundary (elect/wait). A led
-    /// segment past the boundary was elected above but is NOT fetched here - the SCOPE_EXIT below
-    /// resets its downloader. A pool worker leaves `fetch_bound` at the window end (it fetches the
+    /// short window; the caller's next read resolves the sibling boundary (claim/wait). A led
+    /// segment past the boundary was claimed above but is NOT fetched here - its claim's
+    /// destructor resets the downloader. A pool worker leaves `fetch_bound` at the window end (it fetches the
     /// whole led set and revokes on contention at collect), keeping its read-ahead behavior.
     size_t fetch_bound = window.end();
     if (m.inline_serve)
@@ -1116,28 +1134,10 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
         non_led.add(g);
     VectorWithMemoryTracking<ByteRange> led_disjoint = non_led.subtract(window);
 
-    /// Fetch the led runs on this worker thread via the machine's own connection, then write+
-    /// complete them inline (we are the downloader). A sibling-led hole between two led runs
-    /// breaks the connection - correct, those bytes are not ours to fetch.
+    /// Fetch the led runs on this worker thread via the machine's own connection, then write
+    /// them inline (we hold the claims). A sibling-led hole between two led runs breaks the
+    /// connection - correct, those bytes are not ours to fetch.
     ///
-    /// EVERY elected segment is DOWNLOADING until `write` completes it (writing the fetched
-    /// bytes, or RESETTING the downloader of an uncovered one); leaving one DOWNLOADING aborts
-    /// the writer's holder dtor (`chassert(!is_last_holder)`). The fetch can exit early - a
-    /// cancel mid-loop, an EOF short, or a source exception - so run the completion from a SCOPE
-    /// guard over ALL writer views, with a `nullptr` interrupt so it never stops half-done.
-    ChainedBuffers led_bytes;
-    SCOPE_EXIT_SAFE({
-        /// The per-tile `pushChainToWriters` below already committed the fetched bytes; here we
-        /// only finish the segments. `pushChainToWriters` completes a segment once its bytes are
-        /// written; a segment the interrupted/EOF fetch never reached keeps its elected segment
-        /// DOWNLOADING. We are the downloader (this worker thread), so reset those - the
-        /// foreground that tears the plan down cannot (cross-thread `complete()` won't reset a
-        /// foreign downloader), and a leaked DOWNLOADING segment aborts the writer's holder dtor.
-        for (const auto & view : m.writer_views)
-            if (view.writer)
-                view.writer->releaseElectedDownloaders();
-        m.fetched = std::move(led_bytes);
-    });
     /// Fill the LEAD progressively: the BACKGROUND run-ahead tiles each led run into window-sized
     /// pieces and COMMITS each as it lands (`pushChainToWriters` per tile), so a concurrent
     /// foreground serve sees the committed prefix grow and reads it while this worker keeps fetching
@@ -1160,7 +1160,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
             ChainedBuffers run = fetchGapsFromSource(piece, /*from_prefetch=*/true, m.reached_eof, level,
                 m.extent_snapshot, m.inline_serve ? &fill_lane.conn : &m.long_conn, &m,
                 /*may_open_long=*/m.inline_serve, m.stats);
-            pushChainToWriters(m.writer_views, piece, run, m.stats, /*streaming=*/true);
+            pushChainToWriters(m.writer_views, piece, run, m.stats);
             led_bytes.append(std::move(run));
             if (m.interrupt_requested.load(std::memory_order_relaxed))
                 break;  /// stop-short on cancel; the scope guard still finishes every elected segment
@@ -1378,7 +1378,7 @@ bool ReaderExecutor::isScheduledFillTarget(ByteRange window, size_t entry, ByteR
 }
 
 void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-    Stats & out_stats, bool streaming)
+    Stats & out_stats)
 {
     chassert(writer);
     /// Clamp the write target to the window's served portion and the buffer's own
@@ -1389,6 +1389,14 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
     const size_t hi = std::min(writer->range().end(), window.end());
     if (lo >= hi)
         return;
+
+    /// Claim the target cells for the duration of this call - `claim` is the sole
+    /// role-acquisition site, a write never adopts a role. Under a machine's window-long
+    /// claim (the per-tile commits) this nested claim wins nothing new and its destructor
+    /// releases nothing of the machine's; on the claimless paths (the put step at collect,
+    /// handed fills, the header populate) it holds the roles for exactly this write. Cells
+    /// claimed by a sibling refuse the bytes, as before.
+    auto fill_claim = writer->claim(ByteRange{lo, hi - lo});
 
     /// Write only the sub-ranges the chain actually COVERS. Under per-segment downloader
     /// coordination the assembled chain holds only the bytes THIS thread fetched (its led
@@ -1408,13 +1416,13 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(Stats::BytesPushedToCacheSync, fill_lane.write(*writer, std::move(slice), streaming));
+        out_stats.add(Stats::BytesPushedToCacheSync, fill_lane.write(*writer, std::move(slice)));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
 }
 
-size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && slice, bool streaming)
+size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && slice)
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     {
@@ -1428,9 +1436,7 @@ size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && s
         std::erase(active_writers, &writer);
     });
 #endif
-    /// Streaming keeps the segment's downloader across tiles so a reader can consume the
-    /// committed prefix while this worker fills more (see `CacheWriter::writeStreaming`).
-    return streaming ? writer.writeStreaming(std::move(slice)) : writer.write(std::move(slice));
+    return writer.write(std::move(slice));
 }
 
 void ReaderExecutor::FillLane::lend(FetchMachine & m)
@@ -1452,10 +1458,10 @@ void ReaderExecutor::FillLane::reclaim(FetchMachine & m)
 }
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-    const ChainedBuffers & chain, Stats & out_stats, bool streaming)
+    const ChainedBuffers & chain, Stats & out_stats)
 {
     for (const auto & view : views)
-        writeSliceToWriter(view.writer, window, chain, out_stats, streaming);
+        writeSliceToWriter(view.writer, window, chain, out_stats);
 }
 
 void ReaderExecutor::recreditCommittedPrefixes(
@@ -2070,7 +2076,8 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                     continue;
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-                const size_t written = fill_lane.write(*w.writer, std::move(slice), /*streaming=*/false);
+                auto handed_claim = w.writer->claim(ByteRange{lo, hi - lo});
+                const size_t written = fill_lane.write(*w.writer, std::move(slice));
                 if (r.source == PlanSchedule::Source::HandedChain)
                 {
                     out_stats.add(Stats::BytesPromoted, written);

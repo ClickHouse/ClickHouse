@@ -641,16 +641,14 @@ private:
     /// schedule-filtered) writer. `interrupt` (nullable) is polled between
     /// writers - the put step's stop point; remaining writers are left untouched
     /// for the caller's abandon path.
-    /// `streaming`: the worker is filling the lead progressively and stays the segments'
-    /// downloader across tiles - write via `CacheWriter::writeStreaming` (wake prefix readers,
-    /// keep the downloader) instead of completing per write.
     void pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
-        const ChainedBuffers & chain, Stats & out_stats, bool streaming = false);
+        const ChainedBuffers & chain, Stats & out_stats);
 
     /// Write `chain ∩ writer-range ∩ window` into ONE writer (the body of the
-    /// loops above).
+    /// loops above). Takes its own scoped `claim` over the target - a no-op-release
+    /// nested claim when the calling worker already holds the cells' roles.
     void writeSliceToWriter(CacheWriter * writer, ByteRange window, const ChainedBuffers & chain,
-        Stats & out_stats, bool streaming = false);
+        Stats & out_stats);
 
     /// Whether the plan schedule designates `(entry, cell)` a fill target for a
     /// retrieve overlapping `window`. A cell holding the request is a target in
@@ -877,10 +875,10 @@ private:
     class FillLane
     {
     public:
-        /// Land `slice` into `writer` (streaming keeps the segment's downloader across
-        /// tiles); returns the bytes the writer took. The sole caller of the writer's
-        /// write verbs.
-        size_t write(CacheWriter & writer, ChainedBuffers && slice, bool streaming);
+        /// Land `slice` into `writer`; returns the bytes the writer took. The sole
+        /// caller of the writer's write verb. Downloader roles are the caller's open
+        /// `claim`s' business - the write itself never touches them.
+        size_t write(CacheWriter & writer, ChainedBuffers && slice);
 
         /// Source-side ownership (T2). The lane holds THE long connection and the in-flight
         /// segment pin. A POOL piece borrows the connection for its flight (`lend`/`reclaim`

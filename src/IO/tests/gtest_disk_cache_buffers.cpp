@@ -60,6 +60,15 @@ ChainedBuffers makeChain(size_t offset, size_t size, char byte)
     return r;
 }
 
+/// Write under the production contract: a `claim` over the target must be open -
+/// `claim` is the sole role-acquisition site, `write` never adopts a role. Claim the
+/// writer's whole range for the duration of one write, as the executor's sync paths do.
+size_t claimedWrite(CacheWriter & writer, ChainedBuffers chain)
+{
+    auto fill_claim = writer.claim(writer.range());
+    return writer.write(std::move(chain));
+}
+
 /// Flatten a chain's bytes (in logical order) into a string for comparison.
 std::string flatten(const ChainedBuffers & r)
 {
@@ -173,14 +182,14 @@ TEST_F(DiskCacheBuffers, WriteAcrossWindowsThenHit)
     const size_t half = kSegmentSize / 2;
 
     // First window: [0, half) of 'A'.
-    size_t n1 = writer.write(makeChain(0, half, 'A'));
+    size_t n1 = claimedWrite(writer, makeChain(0, half, 'A'));
     EXPECT_EQ(n1, half);
     EXPECT_FALSE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, half}).empty());
     EXPECT_FALSE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
 
     // Second window: [half, segment) of 'B' — appends from the grown cwo.
-    size_t n2 = writer.write(makeChain(half, kSegmentSize - half, 'B'));
+    size_t n2 = claimedWrite(writer, makeChain(half, kSegmentSize - half, 'B'));
     EXPECT_EQ(n2, kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
@@ -227,17 +236,17 @@ TEST_F(DiskCacheBuffers, IdempotentReWriteReturnsZero)
     ASSERT_EQ(misses.size(), 1u);
     auto & writer = *misses[0].writer;
 
-    size_t n1 = writer.write(makeChain(0, kSegmentSize, 'X'));
+    size_t n1 = claimedWrite(writer, makeChain(0, kSegmentSize, 'X'));
     EXPECT_EQ(n1, kSegmentSize);
     EXPECT_TRUE(writer.complete());
 
     // Re-write the same range: append-only at a now-exhausted cwo → 0 bytes.
-    size_t n2 = writer.write(makeChain(0, kSegmentSize, 'Y'));
+    size_t n2 = claimedWrite(writer, makeChain(0, kSegmentSize, 'Y'));
     EXPECT_EQ(n2, 0u);
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
 
     // Overlapping re-write also lands nothing new.
-    size_t n3 = writer.write(makeChain(0, kSegmentSize / 2, 'Z'));
+    size_t n3 = claimedWrite(writer, makeChain(0, kSegmentSize / 2, 'Z'));
     EXPECT_EQ(n3, 0u);
 }
 
@@ -256,7 +265,7 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     const size_t quarter = kSegmentSize / 4;
 
     // Data starts at `quarter` while cwo is still 0 → nothing contiguous lands.
-    size_t n0 = writer.write(makeChain(quarter, quarter, 'G'));
+    size_t n0 = claimedWrite(writer, makeChain(quarter, quarter, 'G'));
     EXPECT_EQ(n0, 0u);
     EXPECT_FALSE(writer.complete());
     // The WHOLE segment is still uncommitted: the single uncovered sub-range
@@ -265,12 +274,12 @@ TEST_F(DiskCacheBuffers, GapAtFrontWritesOnlyContiguousPrefix)
     EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
 
     // Now write the front prefix; it lands and advances cwo.
-    size_t n1 = writer.write(makeChain(0, quarter, 'H'));
+    size_t n1 = claimedWrite(writer, makeChain(0, quarter, 'H'));
     EXPECT_EQ(n1, quarter);
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, quarter}).empty());
 
     // The earlier gap can now be filled contiguously.
-    size_t n2 = writer.write(makeChain(quarter, kSegmentSize - quarter, 'I'));
+    size_t n2 = claimedWrite(writer, makeChain(quarter, kSegmentSize - quarter, 'I'));
     EXPECT_EQ(n2, kSegmentSize - quarter);
     EXPECT_TRUE(writer.complete());
 }
@@ -308,7 +317,7 @@ TEST_F(DiskCacheBuffers, PlanResidencyViewIsReadOnly)
     ASSERT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize}).size(), 1u);
     EXPECT_EQ(writer.committed().subtract(ByteRange{0, kSegmentSize})[0].size, kSegmentSize);
     // It is genuinely empty: a full write succeeds entirely.
-    EXPECT_EQ(writer.write(makeChain(0, kSegmentSize, 'D')), kSegmentSize);
+    EXPECT_EQ(claimedWrite(writer, makeChain(0, kSegmentSize, 'D')), kSegmentSize);
 }
 
 
@@ -347,7 +356,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 
     // Partially fill so a committed prefix exists and the segment stays PARTIAL.
     const size_t half = kSegmentSize / 2;
-    ASSERT_EQ(writer.write(makeChain(0, half, 'P')), half);
+    ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'P')), half);
 
     // At-boundary frontier (== range().left) → cwo > left holds, so a pin at the
     // segment start is valid; a pin at the committed frontier is also valid since
@@ -364,7 +373,7 @@ TEST_F(DiskCacheBuffers, PinFrontier)
 
     // The pin is a FileSegmentPtr aliased as void; releasing it must not break the
     // buffer. Keep it while completing the fill.
-    ASSERT_EQ(writer.write(makeChain(half, kSegmentSize - half, 'Q')), kSegmentSize - half);
+    ASSERT_EQ(claimedWrite(writer, makeChain(half, kSegmentSize - half, 'Q')), kSegmentSize - half);
     EXPECT_TRUE(writer.complete());
     pin_start.reset();
     pin_mid.reset();
@@ -394,7 +403,7 @@ TEST_F(DiskCacheBuffers, ReadableGrowsWithPartialWrite)
     auto & writer = *misses[0].writer;
 
     const size_t quarter = kSegmentSize / 4;     // sub-segment partial fill
-    ASSERT_EQ(writer.write(makeChain(0, quarter, 'R')), quarter);
+    ASSERT_EQ(claimedWrite(writer, makeChain(0, quarter, 'R')), quarter);
 
     // A view over the same range reports the committed prefix as a hit; its read
     // buffer's readable() reflects the partial cwo.
@@ -437,14 +446,14 @@ TEST_F(DiskCacheBuffers, WriteAcrossTwoSegments)
     EXPECT_FALSE(writer.complete());
 
     // First segment only: complete() stays false; committed() spans just segment 0.
-    size_t n1 = writer.write(makeChain(0, kSegmentSize, 'A'));
+    size_t n1 = claimedWrite(writer, makeChain(0, kSegmentSize, 'A'));
     EXPECT_EQ(n1, kSegmentSize);
     EXPECT_FALSE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, kSegmentSize}).empty());
     EXPECT_FALSE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
 
     // Second segment: crosses the boundary, completes the buffer.
-    size_t n2 = writer.write(makeChain(kSegmentSize, kSegmentSize, 'B'));
+    size_t n2 = claimedWrite(writer, makeChain(kSegmentSize, kSegmentSize, 'B'));
     EXPECT_EQ(n2, kSegmentSize);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{0, 2 * kSegmentSize}).empty());
@@ -494,7 +503,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
     EXPECT_EQ(writer.range().size, kSegmentSize);
 
     // Write at the FILE-LEVEL offset; the file-level committed interval lands.
-    size_t n = writer.write(makeChain(kSegmentSize, kSegmentSize, 'F'));
+    size_t n = claimedWrite(writer, makeChain(kSegmentSize, kSegmentSize, 'F'));
     EXPECT_EQ(n, kSegmentSize);
     EXPECT_TRUE(writer.complete());
     EXPECT_TRUE(writer.committed().subtract(ByteRange{kSegmentSize, kSegmentSize}).empty());
@@ -524,7 +533,7 @@ TEST_F(DiskCacheBuffers, WriteWithObjectFileOffset)
         object2, object_file_offset, {ByteRange{kSegmentSize, kSegmentSize}});
     ASSERT_EQ(misses2.size(), 1u);
     ASSERT_NE(misses2[0].writer, nullptr);
-    ASSERT_EQ(misses2[0].writer->write(makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
+    ASSERT_EQ(claimedWrite(*misses2[0].writer, makeChain(kSegmentSize, kSegmentSize, 'G')), kSegmentSize);
     misses2.clear();
 
     auto view2 = provider->planResidencyView(
@@ -555,7 +564,7 @@ TEST_F(DiskCacheBuffers, PartialFillFinalizationShrinks)
     auto & writer = *misses[0].writer;
 
     const size_t half = kSegmentSize / 2;
-    ASSERT_EQ(writer.write(makeChain(0, half, 'S')), half);
+    ASSERT_EQ(claimedWrite(writer, makeChain(0, half, 'S')), half);
     EXPECT_FALSE(writer.complete());
 
     // Drop the writer → the held holder finalizes the partial segment as the last
@@ -596,7 +605,7 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
     {
         auto misses = provider->openWriteBuffers(object, 0, {ByteRange{0, kSegmentSize}});
         ASSERT_EQ(misses.size(), 1u);
-        ASSERT_EQ(misses[0].writer->write(makeChain(0, kSegmentSize, 'K')), kSegmentSize);
+        ASSERT_EQ(claimedWrite(*misses[0].writer, makeChain(0, kSegmentSize, 'K')), kSegmentSize);
     }
 
     auto view = provider->planResidencyView(object, 0, ByteRange{0, kSegmentSize});
@@ -613,19 +622,19 @@ TEST_F(DiskCacheBuffers, DeferredBumpOnViewDestroyDoesNotThrow)
 
 /// Regression for the `chassert(!is_last_holder)` abort (seen in
 /// test_reader_executor_metric, reached via `ReaderExecutor::seek` tearing down the read
-/// plan on a thread other than the one that elected). A prefetch worker elects a cold
-/// segment - `electDownloaders` moves it to DOWNLOADING, downloader = the worker thread -
-/// but the fetch that would complete it via `write()` is interrupted before reaching this
-/// writer, so no `write()` runs for it. `coordinatedPrefetch`'s SCOPE_EXIT must then call
-/// `releaseElectedDownloaders()` (on the worker = downloader thread) to reset the segment;
-/// otherwise it stays DOWNLOADING and, when the foreground tears the plan down on another
-/// thread, `~FileSegmentsHolder` -> `FileSegment::complete` cannot reset the foreign
-/// downloader and aborts on `chassert(!is_last_holder)` as the sole remaining holder.
+/// plan on a thread other than the one that claimed). A prefetch worker claims a cold
+/// segment - `claim` moves it to DOWNLOADING, downloader = the worker thread - but the
+/// fetch that would fill it via `write()` is interrupted before reaching this writer, so
+/// no `write()` runs for it. The claim's destructor (on the worker = downloader thread)
+/// must reset the segment; otherwise it stays DOWNLOADING and, when the foreground tears
+/// the plan down on another thread, `~FileSegmentsHolder` -> `FileSegment::complete`
+/// cannot reset the foreign downloader and aborts on `chassert(!is_last_holder)` as the
+/// sole remaining holder.
 ///
-/// This models that path: elect + `releaseElectedDownloaders()` on a worker thread (no
-/// `write()`), then destroy the writer on a different (foreground) thread. Without
-/// `releaseElectedDownloaders` resetting the segment, `misses.clear()` aborts.
-TEST_F(DiskCacheBuffers, ReleaseElectedDownloadersMakesForeignThreadTeardownSafe)
+/// This models that path: claim-and-drop on a worker thread (no `write()`), then destroy
+/// the writer on a different (foreground) thread. Without the claim's release resetting
+/// the segment, `misses.clear()` aborts.
+TEST_F(DiskCacheBuffers, ClaimReleaseMakesForeignThreadTeardownSafe)
 {
     auto provider = makeProvider();
     auto object = makeObject("obj_elect", kSegmentSize);
@@ -636,18 +645,50 @@ TEST_F(DiskCacheBuffers, ReleaseElectedDownloadersMakesForeignThreadTeardownSafe
 
     std::thread worker([&]
     {
-        VectorWithMemoryTracking<ByteRange> led;
-        VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
-        misses[0].writer->electDownloaders(ByteRange{0, kSegmentSize}, led, sibling_led);
-        ASSERT_FALSE(led.empty()) << "the cold segment is led (downloader role won)";
-        /// The fetch never reached this writer (interrupted); the worker must still reset
-        /// the segment it elected before exiting - what the SCOPE_EXIT does in production.
-        misses[0].writer->releaseElectedDownloaders();
+        auto fill_claim = misses[0].writer->claim(ByteRange{0, kSegmentSize});
+        ASSERT_FALSE(fill_claim.to_fetch.empty()) << "the cold segment is led (downloader role won)";
+        /// The fetch never reached this writer (interrupted); the claim going out of
+        /// scope resets the segment - what the claims' lifetime does in production.
     });
     worker.join();
 
-    /// Tear down on THIS (foreign) thread. The segment was reset by the worker, so the
-    /// holder dtor finalizes it cleanly instead of aborting on `chassert(!is_last_holder)`.
+    /// Tear down on THIS (foreign) thread. The segment was reset by the worker's claim,
+    /// so the holder dtor finalizes it cleanly instead of aborting on `chassert(!is_last_holder)`.
     misses.clear();
     SUCCEED();
+}
+
+/// The claim-scoped release: a nested claim over segments this thread ALREADY leads (a
+/// tile write inside a window-long claim) must release NOTHING of the outer claim's - its
+/// destructor completes only roles it newly won. The outer claim must survive the nested
+/// one and still own the role (`write` under it keeps landing bytes); only the outer
+/// claim's drop releases the segment.
+TEST_F(DiskCacheBuffers, NestedClaimDoesNotReleaseOuterRoles)
+{
+    auto provider = makeProvider();
+    auto object = makeObject("obj_nested", kSegmentSize);
+
+    auto misses = provider->openWriteBuffers(object, /*object_file_offset=*/0, {ByteRange{0, kSegmentSize}});
+    ASSERT_EQ(misses.size(), 1u);
+    ASSERT_NE(misses[0].writer, nullptr);
+    auto & writer = *misses[0].writer;
+
+    auto outer = writer.claim(ByteRange{0, kSegmentSize});
+    ASSERT_FALSE(outer.to_fetch.empty());
+
+    {
+        auto nested = writer.claim(ByteRange{0, kSegmentSize});
+        /// Already ours: the nested claim still reports the run to-fetch (the caller may
+        /// write through it), but wins no new role.
+        ASSERT_FALSE(nested.to_fetch.empty());
+    }   /// nested drop must NOT release the outer role
+
+    /// The role survived the nested drop: a write under the outer claim still lands.
+    String payload(kSegmentSize / 2, 'x');
+    ChainedBuffers chain;
+    auto block = std::make_shared<OwnedChainedBuffer>(payload.size());
+    memcpy(block->data(), payload.data(), payload.size());
+    chain.append(ChainedBufferNode{block, 0, payload.size(), 0});
+    EXPECT_EQ(writer.write(std::move(chain)), payload.size())
+        << "the outer claim's role must survive the nested claim's drop";
 }

@@ -292,16 +292,6 @@ bool DiskCacheWriter::complete() const
 
 size_t DiskCacheWriter::write(ChainedBuffers data)
 {
-    return writeImpl(std::move(data), /*streaming=*/false);
-}
-
-size_t DiskCacheWriter::writeStreaming(ChainedBuffers data)
-{
-    return writeImpl(std::move(data), /*streaming=*/true);
-}
-
-size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
-{
     if (cache_settings.read_if_exists_otherwise_bypass)
         return 0;
     if (!holder)
@@ -318,8 +308,7 @@ size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
     /// Iterate the HELD holder's segments overlapping the still-uncommitted part,
     /// appending append-only at each segment's live `cwo`, but never popping the
     /// segment from the holder (this buffer must keep it appendable across
-    /// windows). NEVER throws on the soft skips (detached / wrong state / lost
-    /// race / no-op).
+    /// windows). NEVER throws on the soft skips (detached / unclaimed / no-op).
     size_t bytes_written = 0;
     for (const auto & segment_ptr : *holder)
     {
@@ -334,46 +323,26 @@ size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
         if (segment.isDetached())
             continue;
 
-        /// Elect first, then decide. `getOrSetDownloader` returns US for an EMPTY/
-        /// PARTIALLY_DOWNLOADED segment we win here, OR for one this thread already
-        /// pre-elected in `electDownloaders` (state DOWNLOADING, downloader == us); it
-        /// returns a sibling id / `notAllowed:` (DOWNLOADED or sibling-DOWNLOADING)
-        /// otherwise. An `state()==EMPTY||PARTIALLY` pre-guard would wrongly skip a
-        /// segment THIS thread had already moved to DOWNLOADING via `electDownloaders`,
-        /// leaving its fetched bytes unwritten (re-fetched every window) and the segment
-        /// DOWNLOADING (the holder dtor then aborts).
-        const auto downloader_id = segment.getOrSetDownloader();
+        /// `claim` is the sole role-acquisition site: only segments this thread claimed
+        /// accept bytes. A role a sibling freed mid-window is NOT adopted here - the next
+        /// claim takes it - so the roles this thread holds always equal its open claims'
+        /// won sets, and the claims' destructors are the complete release story.
         if (!segment.isDownloader())
         {
-            LOG_TRACE(log, "DiskCacheWriter::write: not downloader for [{}, {}], downloader={}",
-                seg_range.left, seg_range.right, downloader_id);
+            LOG_TRACE(log, "DiskCacheWriter::write: segment [{}, {}] not claimed by this thread, skipping",
+                seg_range.left, seg_range.right);
             continue;
         }
-
-        /// Release the downloader on ANY exit from this iteration. The normal and
-        /// soft-skip paths call `completePartAndResetDownloader` explicitly below
-        /// (so this is then a no-op); but the LOGICAL_ERROR throw and any allocation
-        /// failure would otherwise leave the segment DOWNLOADING — and since this
-        /// buffer is the sole holder, the holder dtor's `complete` would trip
-        /// `chassert(!is_last_holder)` / leak the segment. SAFE: swallow on unwind.
-        /// Streaming holds the downloader across tiles (see `writeStreaming`); the caller's
-        /// `releaseElectedDownloaders` resets every still-held segment, including on an exception
-        /// unwind, so the per-iteration reset is skipped here for the streaming path.
-        SCOPE_EXIT_SAFE({ if (!streaming && segment.isDownloader()) segment.completePartAndResetDownloader(); });
 
         /// Append-only: start at the live `cwo`.
         const size_t write_offset = segment.getCurrentWriteOffset();
         const size_t seg_end = seg_range.right + 1;
         const size_t write_end_max = std::min<size_t>(seg_end, miss_obj_end);
         if (write_offset >= write_end_max || write_offset < miss_obj_off)
-        {
-            if (!streaming)
-                segment.completePartAndResetDownloader();
             continue;
-        }
 
-        /// A gap inside `data` caps the write; the segment stays
-        /// PARTIALLY_DOWNLOADED for continuation in a later window.
+        /// A gap inside `data` caps the write; the segment stays claimed (partial) for
+        /// continuation in a later call under the same claim.
         const ByteRange target{write_offset, write_end_max - write_offset};
         size_t contiguous = target.size;
         if (auto data_gaps = data.gaps(target); !data_gaps.empty())
@@ -382,11 +351,7 @@ size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
             contiguous = (first_gap_offset > write_offset) ? (first_gap_offset - write_offset) : 0;
         }
         if (contiguous == 0)
-        {
-            if (!streaming)
-                segment.completePartAndResetDownloader();
             continue;
-        }
 
         /// Validate + flatten before `reserve`: an exception after `reserve`
         /// (which sets `queue_iterator`) trips the framework's
@@ -410,20 +375,14 @@ size_t DiskCacheWriter::writeImpl(ChainedBuffers data, bool streaming)
         {
             LOG_TRACE(log, "DiskCacheWriter::write: reserve failed for [{}, {}]: {}",
                 seg_range.left, seg_range.right, failure_reason);
-            if (!streaming)
-                segment.completePartAndResetDownloader();
             continue;
         }
 
         const bool written_ok = tryWriteToSegment(segment, flat_buf.data(), contiguous, write_offset);
-        /// NEVER completeAndPopFront: keep the segment in our holder, appendable next window.
-        /// Non-streaming releases the downloader and leaves the segment PARTIALLY_DOWNLOADED;
-        /// streaming KEEPS the downloader (it fills more tiles of this segment) and only wakes
-        /// readers waiting on the prefix, finalizing later via `releaseElectedDownloaders`.
-        if (streaming)
-            segment.notifyDownloadProgress();
-        else
-            segment.completePartAndResetDownloader();
+        /// NEVER completeAndPopFront: keep the segment in our holder, appendable next call.
+        /// The downloader role stays with the open claim (its destructor finalizes); only
+        /// wake the readers waiting on the committed prefix.
+        segment.notifyDownloadProgress();
 
         if (!written_ok)
             continue;
@@ -457,23 +416,27 @@ ChainedBuffers DiskCacheWriter::read(ByteRange sub)
     return result;
 }
 
-void DiskCacheWriter::electDownloaders(
-    ByteRange range,
-    VectorWithMemoryTracking<ByteRange> & led,
-    VectorWithMemoryTracking<SiblingLed> & sibling_led)
+CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 {
-    /// `range` is FILE-space, within `range()`. For each held segment overlapping it in
-    /// file space, try to win the downloader role: a DOWNLOADED segment is already cached
-    /// (serve from cache, the later wait returns immediately); for an undownloaded segment,
-    /// `getOrSetDownloader` either makes us the downloader (we lead: fetch+write it on this
-    /// thread later) or a sibling already leads (serve from cache after). The downloader
-    /// role we win is held until `write()` re-acquires it and completes the segment.
+    /// `window` is FILE-space, clamped per segment. For each held segment overlapping it:
+    /// a DOWNLOADED segment is already cached (`sibling_led`: serve from cache, a wait on
+    /// it returns immediately); for an undownloaded one, `getOrSetDownloader` either makes
+    /// us the downloader (`to_fetch`: fetch+write it on this thread while the claim is open)
+    /// or a sibling leads it (`sibling_led`). Only roles NEWLY won here enter the claim's
+    /// release set: a nested claim over segments this thread already leads (a tile write
+    /// inside a window-long claim) must not release the outer claim's roles. The release
+    /// completes-and-resets exactly those segments - a claim whose fetch never reached a
+    /// segment would otherwise leak it DOWNLOADING, and the foreground teardown cannot reset
+    /// a foreign (this worker's) downloader, aborting the holder dtor on
+    /// `chassert(!is_last_holder)`.
+    FillClaim c;
     if (!holder)
     {
-        led.push_back(range);
-        return;
+        c.to_fetch.push_back(window);
+        return c;
     }
 
+    auto won = std::make_shared<VectorWithMemoryTracking<FileSegmentPtr>>();
     for (const auto & segment_ptr : *holder)
     {
         FileSegment & segment = *segment_ptr;
@@ -481,8 +444,8 @@ void DiskCacheWriter::electDownloaders(
         const size_t seg_file_lo = seg_range.left + object_file_offset;
         const size_t seg_file_hi = seg_range.right + 1 + object_file_offset;
 
-        const size_t lo = std::max(range.offset, seg_file_lo);
-        const size_t hi = std::min(range.end(), seg_file_hi);
+        const size_t lo = std::max(window.offset, seg_file_lo);
+        const size_t hi = std::min(window.end(), seg_file_hi);
         if (lo >= hi)
             continue;
         if (segment.isDetached())
@@ -490,36 +453,47 @@ void DiskCacheWriter::electDownloaders(
 
         if (segment.state() == FileSegmentState::DOWNLOADED)
         {
-            sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+            c.sibling_led.push_back({this, ByteRange{lo, hi - lo}});
             continue;
         }
 
-        segment.getOrSetDownloader();
+        const bool already_mine = segment.isDownloader();
+        if (!already_mine)
+            segment.getOrSetDownloader();
         if (segment.isDownloader())
-            led.push_back(ByteRange{lo, hi - lo});
+        {
+            c.to_fetch.push_back(ByteRange{lo, hi - lo});
+            if (!already_mine)
+                won->push_back(segment_ptr);
+        }
         else
-            sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+        {
+            c.sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+        }
     }
-}
 
-void DiskCacheWriter::releaseElectedDownloaders()
-{
-    /// `electDownloaders` moved segments we won to DOWNLOADING, expecting a later `write()`
-    /// to complete them. A `write()` over any covered range completes EVERY segment in this
-    /// writer's range (its per-segment guard), but a writer with NO fetched bytes - the
-    /// prefetch fetch was interrupted before reaching it - never gets a `write()` call, so
-    /// its elected segment stays DOWNLOADING. Reset the downloader of any such segment here,
-    /// on the (downloader) electing thread; `complete()` from the foreground teardown thread
-    /// cannot reset a foreign downloader, so the holder dtor would otherwise abort on
-    /// `chassert(!is_last_holder)`. Mirrors the per-segment `SCOPE_EXIT_SAFE` in `write()`.
-    if (!holder)
-        return;
-    for (const auto & segment_ptr : *holder)
+    if (!won->empty())
     {
-        FileSegment & segment = *segment_ptr;
-        if (!segment.isDetached() && segment.isDownloader())
-            segment.completePartAndResetDownloader();
+        /// Captures the segments (shared refs into the cache), not the writer: the release
+        /// stays valid however long the claim is held. Never throws - a failed completion
+        /// must not mask the fetch path's own error.
+        c.release = [won, logger = log]() noexcept
+        {
+            for (const auto & segment_ptr : *won)
+            {
+                try
+                {
+                    if (!segment_ptr->isDetached() && segment_ptr->isDownloader())
+                        segment_ptr->completePartAndResetDownloader();
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(logger, "Failed to release a claimed cache segment");
+                }
+            }
+        };
     }
+    return c;
 }
 
 ChainedBuffers DiskCacheWriter::waitAndReadSiblingLed(ByteRange sub)
@@ -577,12 +551,12 @@ CacheWriter::CacheSegmentPin DiskCacheWriter::pin(size_t frontier) const
         if (!seg_range.contains(frontier_obj))
             continue;
 
-        /// A DOWNLOADING segment is pinnable too: the streaming write path holds the
-        /// downloader role across tiles and releases it only after the collect, so the
-        /// pin decision can race the release - the same partial segment shows as
-        /// DOWNLOADING or PARTIALLY_DOWNLOADED depending on thread timing. The pin is
-        /// a plain holder reference; taken while still DOWNLOADING it protects the
-        /// partial across the following plan rebuild with no unprotected gap.
+        /// A DOWNLOADING segment is pinnable too: a claim holds the downloader role for
+        /// its whole lifetime and releases it only after the collect, so the pin decision
+        /// can race the release - the same partial segment shows as DOWNLOADING or
+        /// PARTIALLY_DOWNLOADED depending on thread timing. The pin is a plain holder
+        /// reference; taken while still DOWNLOADING it protects the partial across the
+        /// following plan rebuild with no unprotected gap.
         const auto state = segment->state();
         const bool partial = state == FileSegmentState::DOWNLOADING
                           || state == FileSegmentState::PARTIALLY_DOWNLOADED

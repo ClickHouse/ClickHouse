@@ -4274,7 +4274,7 @@ namespace
 {
 
 /// A source whose buffer opens fine but throws on the first read. It drives the
-/// executor's foreground inline-write path past `electDownloaders` (-> the miss segment
+/// executor's foreground inline-write path past `claim` (-> the miss segment
 /// becomes DOWNLOADING) and then throws inside `fetch_into`, before any write completes
 /// the segment -- the exact window the L1 guard must cover.
 class ThrowOnReadBuffer : public ReadBufferFromFileBase
