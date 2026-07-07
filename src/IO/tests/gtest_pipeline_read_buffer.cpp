@@ -173,6 +173,35 @@ TEST(PipelineReadBuffer, InBufferSeekIsServedWithoutRefetch)
     EXPECT_EQ(counting->opens, 1u);
 }
 
+TEST(PipelineReadBuffer, SaveUpToPositionOnDrainedBufferIsSafe)
+{
+    /// Regression for a UBSan abort: after EOF the buffer detaches its base pointers
+    /// (`detachBuffer`), so `position()` is nullptr. The format segmentation engines
+    /// (`fileSegmentationEngineCSVImpl` on an `s3(...)` CSV read via parallel parsing)
+    /// then call `loadAtPosition` -> `saveUpToPosition` on it with previously saved
+    /// bytes in `memory`, and the zero-size tail copy must not pass the null pointer
+    /// to memcpy (undefined behavior even with size 0).
+    String content = "abc";
+    auto source = std::make_shared<MemorySourceReader>(content);
+    StoredObjects objects;
+    objects.emplace_back("test", "", content.size());
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8;
+    auto executor = std::make_unique<ReaderExecutor>(
+        source, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
+    PipelineReadBuffer buf(std::move(executor));
+
+    String all;
+    readStringUntilEOF(all, buf);
+    EXPECT_EQ(all, content);
+    EXPECT_TRUE(buf.eof());
+
+    Memory<> memory(4);                     /// old_bytes > 0: the branch that reached memcpy
+    char * current = buf.position();
+    EXPECT_FALSE(loadAtPosition(buf, memory, current));
+    EXPECT_EQ(current, buf.position());
+}
+
 TEST(PipelineReadBuffer, GetPosition)
 {
     String content(100, 'X');
