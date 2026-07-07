@@ -15,7 +15,8 @@ public:
     JoinLazyColumnsStep(
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
-        LazyMaterializingRowsPtr lazy_materializing_rows_);
+        LazyMaterializingRowsPtr lazy_materializing_rows_,
+        bool preserve_output_order_ = true);
     ~JoinLazyColumnsStep() override;
 
     String getName() const override { return "JoinLazyColumnsStep"; }
@@ -32,6 +33,7 @@ protected:
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
     bool pass_through = false;
+    bool preserve_output_order;
 };
 
 }

@@ -60,6 +60,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool any_join_distinct_right_table_keys;
+    extern const SettingsBool allow_experimental_shuffle_query;
     extern const SettingsJoinStrictness join_default_strictness;
     extern const SettingsBool enable_order_by_all;
     extern const SettingsUInt64 limit;
@@ -76,6 +77,7 @@ namespace ErrorCodes
     extern const int EXPECTED_ALL_OR_ANY;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int SUPPORT_IS_DISABLED;
     extern const int UNKNOWN_QUERY_PARAMETER;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
@@ -312,6 +314,7 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     }
 
     const auto enable_order_by_all = updated_context->getSettingsRef()[Setting::enable_order_by_all];
+    const auto allow_experimental_shuffle_query = updated_context->getSettingsRef()[Setting::allow_experimental_shuffle_query];
 
     auto current_query_tree = std::make_shared<QueryNode>(std::move(updated_context), std::move(settings_changes));
 
@@ -322,6 +325,12 @@ QueryTreeNodePtr QueryTreeBuilder::buildSelectExpression(
     current_query_tree->setIsRecursiveWith(select_query_typed.recursive_with);
     current_query_tree->setIsDistinct(select_query_typed.distinct);
     current_query_tree->setIsLimitWithTies(select_query_typed.limit_with_ties);
+    if (select_query_typed.limit_shuffle)
+    {
+        if (!allow_experimental_shuffle_query)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE is disabled (turn on setting `allow_experimental_shuffle_query`)");
+        current_query_tree->setIsLimitShuffle(true);
+    }
     current_query_tree->setIsGroupByWithTotals(select_query_typed.group_by_with_totals);
     current_query_tree->setIsGroupByWithCube(select_query_typed.group_by_with_cube);
     current_query_tree->setIsGroupByWithRollup(select_query_typed.group_by_with_rollup);

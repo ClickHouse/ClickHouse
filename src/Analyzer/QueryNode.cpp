@@ -196,6 +196,12 @@ void QueryNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, s
     if (is_limit_with_ties)
         buffer << ", is_limit_with_ties: " << is_limit_with_ties;
 
+    if (is_limit_shuffle)
+        buffer << ", is_limit_shuffle: " << is_limit_shuffle;
+
+    if (is_limit_shuffle_for_unordered_output)
+        buffer << ", is_limit_shuffle_for_unordered_output: " << is_limit_shuffle_for_unordered_output;
+
     if (is_group_by_with_totals)
         buffer << ", is_group_by_with_totals: " << is_group_by_with_totals;
 
@@ -354,6 +360,8 @@ bool QueryNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions options) 
         is_recursive_with == rhs_typed.is_recursive_with &&
         is_distinct == rhs_typed.is_distinct &&
         is_limit_with_ties == rhs_typed.is_limit_with_ties &&
+        is_limit_shuffle == rhs_typed.is_limit_shuffle &&
+        is_limit_shuffle_for_unordered_output == rhs_typed.is_limit_shuffle_for_unordered_output &&
         is_group_by_with_totals == rhs_typed.is_group_by_with_totals &&
         is_group_by_with_rollup == rhs_typed.is_group_by_with_rollup &&
         is_group_by_with_cube == rhs_typed.is_group_by_with_cube &&
@@ -401,6 +409,8 @@ void QueryNode::updateTreeHashImpl(HashState & state, CompareOptions options) co
     state.update(is_recursive_with);
     state.update(is_distinct);
     state.update(is_limit_with_ties);
+    state.update(is_limit_shuffle);
+    state.update(is_limit_shuffle_for_unordered_output);
     state.update(is_group_by_with_totals);
     state.update(is_group_by_with_rollup);
     state.update(is_group_by_with_cube);
@@ -432,6 +442,8 @@ QueryTreeNodePtr QueryNode::cloneImpl() const
     result_query_node->is_recursive_with = is_recursive_with;
     result_query_node->is_distinct = is_distinct;
     result_query_node->is_limit_with_ties = is_limit_with_ties;
+    result_query_node->is_limit_shuffle = is_limit_shuffle;
+    result_query_node->is_limit_shuffle_for_unordered_output = is_limit_shuffle_for_unordered_output;
     result_query_node->is_group_by_with_totals = is_group_by_with_totals;
     result_query_node->is_group_by_with_rollup = is_group_by_with_rollup;
     result_query_node->is_group_by_with_cube = is_group_by_with_cube;
@@ -454,6 +466,7 @@ ASTPtr QueryNode::toASTImpl(const ConvertToASTOptions & options) const
     select_query->recursive_with = is_recursive_with && hasWith();
     select_query->distinct = is_distinct;
     select_query->limit_with_ties = is_limit_with_ties;
+    select_query->limit_shuffle = is_limit_shuffle;
     select_query->group_by_with_totals = is_group_by_with_totals;
     select_query->group_by_with_rollup = is_group_by_with_rollup;
     select_query->group_by_with_cube = is_group_by_with_cube;

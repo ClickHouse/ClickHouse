@@ -200,6 +200,28 @@ public:
         is_limit_with_ties = is_limit_with_ties_value;
     }
 
+    /// Returns true if query node has LIMIT SHUFFLE, false otherwise
+    bool isLimitShuffle() const
+    {
+        return is_limit_shuffle;
+    }
+
+    /// Set query node LIMIT SHUFFLE value
+    void setIsLimitShuffle(bool is_limit_shuffle_value)
+    {
+        is_limit_shuffle = is_limit_shuffle_value;
+    }
+
+    bool isLimitShuffleForUnorderedOutput() const
+    {
+        return is_limit_shuffle_for_unordered_output;
+    }
+
+    void setIsLimitShuffleForUnorderedOutput(bool is_limit_shuffle_for_unordered_output_value)
+    {
+        is_limit_shuffle_for_unordered_output = is_limit_shuffle_for_unordered_output_value;
+    }
+
     /// Returns true, if query node has GROUP BY WITH TOTALS, false otherwise
     bool isGroupByWithTotals() const
     {
@@ -700,6 +722,8 @@ private:
     bool is_recursive_with = false;
     bool is_distinct = false;
     bool is_limit_with_ties = false;
+    bool is_limit_shuffle = false;
+    bool is_limit_shuffle_for_unordered_output = false;
     bool is_group_by_with_totals = false;
     bool is_group_by_with_rollup = false;
     bool is_group_by_with_cube = false;

@@ -45,6 +45,7 @@
 #include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Formats/FormatFactory.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
@@ -136,10 +137,28 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int LOGICAL_ERROR;
     extern const int TOO_DEEP_RECURSION;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
 {
+bool hasLimitShuffle(const ASTPtr & ast)
+{
+    if (!ast)
+        return false;
+
+    if (const auto * select = ast->as<ASTSelectQuery>(); select && select->limit_shuffle)
+        return true;
+
+    for (const auto & child : ast->children)
+    {
+        if (hasLimitShuffle(child))
+            return true;
+    }
+
+    return false;
+}
+
 /// Cap `min_insert_block_size_bytes` by a fraction of the server-wide memory hard limit so
 /// squashing does not accumulate more data than the host can hold. Shared between direct
 /// INSERT and materialized-view pipelines so the cap is applied symmetrically.
@@ -666,6 +685,9 @@ private:
         }
         else
         {
+            if (hasLimitShuffle(select_query))
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for LIMIT SHUFFLE in materialized view queries requires the query analyzer");
+
             InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }

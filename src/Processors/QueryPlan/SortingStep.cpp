@@ -43,6 +43,11 @@ namespace ProfileEvents
 namespace DB
 {
 
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsBool sorting_allow_unordered_output;
+}
+
 /// MergingSortedTransform supposed to consume virtual row
 /// When there is no merging (only one stream) and virtual row conversions are enabled, we need to remove virtual row before output,
 /// otherwise it can reach downstream steps and cause issues because of conversions are valid only for current step.
@@ -682,6 +687,7 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
 void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
     sort_settings.updatePlanSettings(settings);
+    settings[QueryPlanSerializationSetting::sorting_allow_unordered_output] = allow_unordered_output;
 }
 
 void SortingStep::serialize(Serialization & ctx) const
@@ -718,8 +724,13 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     if (partition_desc_size)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
 
-    return std::make_unique<SortingStep>(
+    auto step = std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));
+
+    if (ctx.settings[QueryPlanSerializationSetting::sorting_allow_unordered_output])
+        step->setAllowUnorderedOutput();
+
+    return step;
 }
 
 void registerSortingStep(QueryPlanStepRegistry & registry);

@@ -448,6 +448,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     bool reading_in_order = sorting_step->getType() == SortingStep::Type::FinishSorting;
 
     const auto limit = limit_step->getLimit();
+    const bool allow_unordered_output = sorting_step->allowsUnorderedOutput();
     if (limit == 0 || (max_limit_for_lazy_materialization != 0 && limit > max_limit_for_lazy_materialization))
         return false;
 
@@ -650,7 +651,11 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
     const auto & lhs_plan_header = main_plan.getCurrentHeader();
     const auto & rhs_plan_header = lazy_plan.getCurrentHeader();
 
-    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(lhs_plan_header, rhs_plan_header, lazy_materializing_rows);
+    auto join_lazy_columns = std::make_unique<JoinLazyColumnsStep>(
+        lhs_plan_header,
+        rhs_plan_header,
+        lazy_materializing_rows,
+        !allow_unordered_output);
 
     QueryPlan result_plan;
 

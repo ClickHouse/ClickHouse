@@ -26,7 +26,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [QUALIFY expr]
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
-[LIMIT [n, ]m] [WITH TIES]
+[LIMIT [offset_value, ]n [WITH TIES] | LIMIT n SHUFFLE]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -51,6 +51,7 @@ Specifics of each optional clause are covered in separate sections, which are li
 - [HAVING clause](../../../sql-reference/statements/select/having.md)
 - [QUALIFY clause](../../../sql-reference/statements/select/qualify.md)
 - [LIMIT clause](../../../sql-reference/statements/select/limit.md)
+- [LIMIT SHUFFLE clause](../../../sql-reference/statements/select/limit-shuffle.md)
 - [OFFSET clause](../../../sql-reference/statements/select/offset.md)
 - [UNION clause](../../../sql-reference/statements/select/union.md)
 - [INTERSECT clause](../../../sql-reference/statements/select/intersect.md)

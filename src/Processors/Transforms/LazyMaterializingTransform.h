@@ -35,7 +35,12 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class LazyMaterializingTransform final : public IProcessor
 {
 public:
-    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, LazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    LazyMaterializingTransform(
+        SharedHeader main_header,
+        SharedHeader lazy_header,
+        LazyMaterializingRowsPtr lazy_materializing_rows_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        bool preserve_output_order_);
 
     static Block transformHeader(const Block & main_header, const Block & lazy_header);
 
@@ -65,6 +70,7 @@ private:
     /// with main columns or permuting. Used when main input only has
     /// __global_row_index and output only needs lazy columns.
     bool pass_through = false;
+    bool preserve_output_order;
 
     /// Those functions are called once each after the corresponding port is finished.
     void prepareMainChunk();
