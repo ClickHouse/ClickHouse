@@ -16,7 +16,8 @@ SETTINGS old_parts_lifetime=1, cleanup_delay_period=1, cleanup_delay_period_rand
 
 function thread1()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" --query_id=query1
     done
@@ -24,7 +25,8 @@ function thread1()
 
 function thread2()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT --query="INSERT INTO src SELECT number % 2, toString(number) FROM system.numbers LIMIT 100000" --query_id=query2
     done
@@ -32,7 +34,8 @@ function thread2()
 
 function thread3()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT --query="SELECT * FROM src" --query_id=query3 1> /dev/null
     done
@@ -40,7 +43,8 @@ function thread3()
 
 function thread4()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT --query="SELECT * FROM dst" --query_id=query4 1> /dev/null
     done
@@ -48,26 +52,20 @@ function thread4()
 
 function thread5()
 {
-    while true;
+    local TIMELIMIT=$((SECONDS+TIMEOUT))
+    while [ $SECONDS -lt "$TIMELIMIT" ]
     do
         $CLICKHOUSE_CLIENT --query="ALTER TABLE src MOVE PARTITION 1 TO TABLE dst;" --query_id=query5
     done
 }
 
-# https://stackoverflow.com/questions/9954794/execute-a-shell-function-with-timeout
-export -f thread1;
-export -f thread2;
-export -f thread3;
-export -f thread4;
-export -f thread5;
-
 TIMEOUT=20
 
-timeout $TIMEOUT bash -c thread1 2> /dev/null &
-timeout $TIMEOUT bash -c thread2 2> /dev/null &
-timeout $TIMEOUT bash -c thread3 2> /dev/null &
-timeout $TIMEOUT bash -c thread4 2> /dev/null &
-timeout $TIMEOUT bash -c thread5 2> /dev/null &
+thread1 2> /dev/null &
+thread2 2> /dev/null &
+thread3 2> /dev/null &
+thread4 2> /dev/null &
+thread5 2> /dev/null &
 
 wait
 

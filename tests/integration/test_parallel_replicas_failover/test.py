@@ -65,6 +65,7 @@ def test_skip_replicas_without_table(start_cluster):
     for i in range(4):
         expected_result += f"{i}\t1000\n"
 
+    node1.query("SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas");
     log_comment = uuid.uuid4()
     assert (
         node1.query(

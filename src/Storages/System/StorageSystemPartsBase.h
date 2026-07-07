@@ -1,7 +1,6 @@
 #pragma once
 
-#include <Formats/FormatSettings.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
@@ -112,10 +111,10 @@ public:
 
 /** Implements system table 'parts' which allows to get information about data parts for tables of MergeTree family.
   */
-class StorageSystemPartsBase : public IStorage
+class StorageSystemPartsBase : public StorageWithCommonVirtualColumns
 {
 public:
-    void read(
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -125,6 +124,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    static VirtualColumnsDescription createVirtuals();
+
     bool isSystemStorage() const override { return true; }
 
 private:
@@ -132,8 +133,6 @@ private:
 
 protected:
     friend class ReadFromSystemPartsBase;
-
-    const FormatSettings format_settings = {};
 
     StorageSystemPartsBase(const StorageID & table_id_, ColumnsDescription && columns);
 

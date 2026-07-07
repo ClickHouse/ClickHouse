@@ -209,7 +209,7 @@ FROM (
     RIGHT JOIN (SELECT 2 :: UInt32 as a) t2
     USING (a)
 ) ORDER BY 1;
-2	Nullable(Int64)
+\N	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT t2.*
@@ -355,7 +355,7 @@ FROM (
     USING (a)
 ) ORDER BY 1;
 1	Nullable(Int64)
-2	Nullable(Int64)
+\N	Nullable(Int64)
 SELECT *, * APPLY toTypeName
 FROM (
     SELECT t2.*

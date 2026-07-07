@@ -23,10 +23,10 @@ query_id=$RANDOM
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
 
 $CLICKHOUSE_CLIENT -m --query """
-SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY kek;
+SYSTEM CLEAR FILESYSTEM CACHE '$disk_name' KEY kek;
 """ 2>&1 | grep -q "Invalid cache key hex: kek" && echo "OK" || echo "FAIL"
 
-${CLICKHOUSE_CLIENT} -q " system flush logs"
+${CLICKHOUSE_CLIENT} -q " system flush logs filesystem_cache_log"
 
 key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
@@ -41,7 +41,7 @@ SELECT count() FROM system.filesystem_cache WHERE key = '$key' AND file_segment_
 """
 
 $CLICKHOUSE_CLIENT -m --query """
-SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY $key OFFSET $offset;
+SYSTEM CLEAR FILESYSTEM CACHE '$disk_name' KEY $key OFFSET $offset;
 """
 
 $CLICKHOUSE_CLIENT -m --query """
@@ -52,7 +52,7 @@ query_id=$RANDOM$RANDOM
 
 $CLICKHOUSE_CLIENT --query_id "$query_id" --query "SELECT * FROM test FORMAT Null SETTINGS enable_filesystem_cache_log = 1"
 
-${CLICKHOUSE_CLIENT} -q " system flush logs"
+${CLICKHOUSE_CLIENT} -q " system flush logs filesystem_cache_log"
 
 key=$($CLICKHOUSE_CLIENT -m --query """
 SELECT key FROM system.filesystem_cache_log WHERE query_id = '$query_id' ORDER BY size DESC LIMIT 1;
@@ -63,7 +63,7 @@ SELECT count() FROM system.filesystem_cache WHERE key = '$key';
 """
 
 $CLICKHOUSE_CLIENT -m --query """
-SYSTEM DROP FILESYSTEM CACHE '$disk_name' KEY $key
+SYSTEM CLEAR FILESYSTEM CACHE '$disk_name' KEY $key
 """
 
 $CLICKHOUSE_CLIENT -m --query """

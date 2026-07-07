@@ -1,0 +1,52 @@
+data with patches applied
+0	100
+1	1
+2	102
+3	3
+4	104
+5	5
+6	106
+7	7
+8	108
+9	9
+10	110
+11	11
+12	112
+13	13
+14	114
+15	15
+16	116
+17	17
+18	118
+19	19
+parts before dry run
+all_1_1_0	10
+all_2_2_0	10
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_4_4_0_3	10
+parts after dry run with patches
+all_1_1_0	10
+all_2_2_0	10
+patch-3e1a7650697c132eb044cc6f1d82bc92-all_4_4_0_3	10
+data after dry run
+0	100
+1	1
+2	102
+3	3
+4	104
+5	5
+6	106
+7	7
+8	108
+9	9
+10	110
+11	11
+12	112
+13	13
+14	114
+15	15
+16	116
+17	17
+18	118
+19	19
+profile events patch parts
+OPTIMIZE TABLE t_dry_run_patches DRY RUN PARTS \'all_1_1_0\', \'all_2_2_0\';	Optimize	1	20	2	20	2

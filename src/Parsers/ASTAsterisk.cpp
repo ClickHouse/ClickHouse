@@ -7,7 +7,7 @@ namespace DB
 
 ASTPtr ASTAsterisk::clone() const
 {
-    auto clone = std::make_shared<ASTAsterisk>(*this);
+    auto clone = make_intrusive<ASTAsterisk>(*this);
     clone->children.clear();
 
     if (expression) { clone->expression = expression->clone(); clone->children.push_back(clone->expression); }
@@ -31,7 +31,7 @@ void ASTAsterisk::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
 {
     if (expression)
     {
-        expression->formatImpl(ostr, settings, state, frame);
+        expression->format(ostr, settings, state, frame);
         ostr << ".";
     }
 
@@ -39,7 +39,7 @@ void ASTAsterisk::formatImpl(WriteBuffer & ostr, const FormatSettings & settings
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 

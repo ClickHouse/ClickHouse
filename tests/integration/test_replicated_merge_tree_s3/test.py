@@ -47,15 +47,20 @@ FILES_OVERHEAD = 1
 FILES_OVERHEAD_PER_COLUMN = 2  # Data and mark files
 FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC = 1
 FILES_OVERHEAD_METADATA_VERSION = 1
+FILES_OVERHEAD_COLUMNS_SUBSTREAMS = 1
 FILES_OVERHEAD_PER_PART_WIDE = (
     FILES_OVERHEAD_PER_COLUMN * 3
     + 2
     + 6
     + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
     + FILES_OVERHEAD_METADATA_VERSION
+    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 FILES_OVERHEAD_PER_PART_COMPACT = (
-    10 + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC + FILES_OVERHEAD_METADATA_VERSION
+    10
+    + FILES_OVERHEAD_DEFAULT_COMPRESSION_CODEC
+    + FILES_OVERHEAD_METADATA_VERSION
+    + FILES_OVERHEAD_COLUMNS_SUBSTREAMS
 )
 
 
@@ -135,15 +140,18 @@ def drop_table(cluster):
 def test_insert_select_replicated(cluster, min_rows_for_wide_part, files_per_part):
     create_table(
         cluster,
-        additional_settings={"min_rows_for_wide_part": min_rows_for_wide_part},
+        additional_settings={
+            "min_rows_for_wide_part": min_rows_for_wide_part,
+            "write_marks_for_substreams_in_compact_parts": 1,
+        },
     )
 
     insert(cluster, node_idxs=[1, 2, 3], verify=True)
 
     minio = cluster.minio_client
-    assert len(
-        list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
-    ) == 3 * (FILES_OVERHEAD + files_per_part * 3)
+    files = list(minio.list_objects(cluster.minio_bucket, "data/", recursive=True))
+    print("List of files:", files)
+    assert len(files) == 3 * (FILES_OVERHEAD + files_per_part * 3)
 
 
 def test_drop_cache_on_cluster(cluster):

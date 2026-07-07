@@ -84,12 +84,12 @@ def test_simple_select(started_cluster):
     response = TSV.toMat(
         node.query(
             f"""
-            SELECT 
-                key, value 
-            FROM 
-                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
-            WHERE 
-                key='0' 
+            SELECT
+                key, value
+            FROM
+                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10)
+            WHERE
+                key='0'
             FORMAT TSV
             """
         )
@@ -101,12 +101,12 @@ def test_simple_select(started_cluster):
     response = TSV.toMat(
         node.query(
             f"""
-            SELECT 
-                * 
-            FROM 
-                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10) 
-            ORDER BY 
-                key 
+            SELECT
+                *
+            FROM
+                redis('{address}', 'key', 'key String, value String', 0, 'clickhouse', 10)
+            ORDER BY
+                key
             FORMAT TSV
             """
         )
@@ -126,10 +126,10 @@ def test_create_table(started_cluster):
 
     node.query(
         f"""
-        SELECT 
+        SELECT
             *
-        FROM 
-            redis('{address}', 'k', 'k String, v UInt32', 0, 'clickhouse', 10) 
+        FROM
+            redis('{address}', 'k', 'k String, v UInt32', 0, 'clickhouse', 10)
         """
     )
 
@@ -137,10 +137,10 @@ def test_create_table(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node.query(
             f"""
-            SELECT 
+            SELECT
                 *
-            FROM 
-                redis('{address}', 'k', 'k not_exist_type, v String', 0, 'clickhouse', 10) 
+            FROM
+                redis('{address}', 'k', 'k not_exist_type, v String', 0, 'clickhouse', 10)
             """
         )
 
@@ -148,10 +148,10 @@ def test_create_table(started_cluster):
     with pytest.raises(QueryRuntimeException):
         node.query(
             f"""
-            SELECT 
+            SELECT
                 *
-            FROM 
-                redis('{address}', 'not_exist_key', 'k not_exist_type, v String', 0, 'clickhouse', 10) 
+            FROM
+                redis('{address}', 'not_exist_key', 'k not_exist_type, v String', 0, 'clickhouse', 10)
             """
         )
 
@@ -206,7 +206,7 @@ def test_data_type(started_cluster):
 
     # datetime
     client.flushall()
-    # clickhouse store datatime as uint32 in internal
+    # clickhouse store datetime as uint32 in internal
     dt = datetime.datetime(2023, 6, 1, 0, 0, 0)
     seconds_since_epoch = dt.timestamp()
     value = serialize_binary_for_uint32(int(seconds_since_epoch))

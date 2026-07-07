@@ -1,13 +1,12 @@
-import math
 import os
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.dictionary import Dictionary, DictionaryStructure, Field, Layout, Row
 from helpers.external_sources import SourceMongoURI
+from helpers.config_cluster import mongo_pass
 
-from .common import *
+from .common import SimpleLayoutTester
 
 test_name = "mongo_uri"
 
@@ -31,7 +30,7 @@ def source(secure_connection, cluster):
         "mongo_secure" if secure_connection else "mongo1",
         27017,
         "root",
-        "clickhouse",
+        mongo_pass,
         secure=secure_connection,
     )
 
@@ -55,7 +54,7 @@ def main_config(secure_connection):
 def started_cluster(secure_connection, cluster, main_config, simple_tester):
     dictionaries = simple_tester.list_dictionaries()
 
-    node = cluster.add_instance(
+    cluster.add_instance(
         "uri_node",
         main_configs=main_config,
         dictionaries=dictionaries,

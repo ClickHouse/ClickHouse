@@ -28,6 +28,9 @@ struct RocksDBSettings
     void applyChanges(const SettingsChanges & changes);
     void loadFromQuery(const ASTStorage & storage_def);
 
+    static bool hasBuiltin(std::string_view name);
+    static void checkCanSet(std::string_view name, const Field & value);
+
 private:
     std::unique_ptr<RocksDBSettingsImpl> impl;
 };

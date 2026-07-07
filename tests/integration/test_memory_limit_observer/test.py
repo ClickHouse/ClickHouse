@@ -30,7 +30,7 @@ def get_latest_mem_limit():
                 node1.query(
                     """
                         select extract(message, '\\d+\\.\\d+') from system.text_log
-                        where message like '%Setting max_server_memory_usage was set to%' and
+                        where message like '%Changed setting _max_server_memory_usage_ to%' and
                         message not like '%like%' order by event_time desc limit 1
                     """
                 ).strip()
@@ -51,8 +51,8 @@ def test_observe_memory_limit(started_cluster):
         logging.debug(f"get new memory limit {new_max_mem}")
         if new_max_mem > original_max_mem:
             return
-    raise Exception("the memory limit does not increase as expected")
 
+    raise Exception("the memory limit does not increase as expected")
 
 def test_memory_usage_doesnt_include_page_cache_size(started_cluster):
     try:

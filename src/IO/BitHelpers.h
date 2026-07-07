@@ -7,7 +7,6 @@
 #include <Common/Exception.h>
 
 #include <cstring>
-#include <cassert>
 
 
 namespace DB
@@ -68,7 +67,7 @@ public:
         if (bits_count < 8)
             fillBitBuffer();
 
-        return getBitsFromBitBuffer<PEEK>(8);
+        return static_cast<UInt8>(getBitsFromBitBuffer<PEEK>(8));
     }
 
     ALWAYS_INLINE UInt8 readBit()
@@ -106,7 +105,7 @@ private:
     template <GetBitsMode mode>
     UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
     {
-        assert(bits_to_read > 0);
+        chassert(bits_to_read > 0);
 
         // push down the high-bits
         const UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
@@ -177,7 +176,7 @@ public:
     // write `bits_to_write` low-bits of `value` to the buffer
     void writeBits(UInt8 bits_to_write, UInt64 value)
     {
-        assert(bits_to_write > 0);
+        chassert(bits_to_write > 0);
 
         UInt32 capacity = BIT_BUFFER_SIZE - bits_count;
         if (capacity < bits_to_write)

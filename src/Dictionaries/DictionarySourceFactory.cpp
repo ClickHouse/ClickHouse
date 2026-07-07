@@ -1,4 +1,4 @@
-#include "DictionarySourceFactory.h"
+#include <Dictionaries/DictionarySourceFactory.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -7,7 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Poco/Logger.h>
 #include <Common/logger_useful.h>
-#include "DictionaryStructure.h"
+#include <Dictionaries/DictionaryStructure.h>
 
 namespace DB
 {
@@ -69,10 +69,28 @@ DictionarySourceFactory::DictionarySourceFactory() : log(getLogger("DictionarySo
 {
 }
 
-void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source)
+void DictionarySourceFactory::registerSource(const std::string & source_type, Creator create_source, Documentation documentation)
 {
     if (!registered_sources.emplace(source_type, std::move(create_source)).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DictionarySourceFactory: the source name '{}' is not unique", source_type);
+
+    source_documentations.emplace(source_type, std::move(documentation));
+}
+
+Documentation DictionarySourceFactory::getDocumentation(const std::string & source_type) const
+{
+    if (auto it = source_documentations.find(source_type); it != source_documentations.end())
+        return it->second;
+    return {};
+}
+
+std::vector<String> DictionarySourceFactory::getAllRegisteredNames() const // STYLE_CHECK_ALLOW_STD_CONTAINERS
+{
+    std::vector<String> result; // STYLE_CHECK_ALLOW_STD_CONTAINERS
+    result.reserve(registered_sources.size());
+    for (const auto & pair : registered_sources)
+        result.push_back(pair.first);
+    return result;
 }
 
 DictionarySourcePtr DictionarySourceFactory::create(
@@ -99,7 +117,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
     {
         const auto & create_source = found->second;
         auto sample_block = createSampleBlock(dict_struct);
-        return create_source(dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
+        return create_source(name, dict_struct, config, config_prefix, sample_block, global_context, default_database, check_config);
     }
 
     throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,

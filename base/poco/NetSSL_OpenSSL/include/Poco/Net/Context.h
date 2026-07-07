@@ -21,8 +21,6 @@
 #include <cstdlib>
 #include <openssl/ssl.h>
 #include "Poco/AutoPtr.h"
-#include "Poco/Crypto/RSAKey.h"
-#include "Poco/Crypto/X509Certificate.h"
 #include "Poco/Net/NetSSL.h"
 #include "Poco/Net/SocketDefs.h"
 #include "Poco/RefCountedObject.h"
@@ -45,7 +43,7 @@ namespace Net
     /// SSL session caching on the server and client side.
     {
     public:
-        typedef Poco::AutoPtr<Context> Ptr;
+        using Ptr = Poco::AutoPtr<Context>;
 
         enum Usage
         {
@@ -218,32 +216,6 @@ namespace Net
 
         ~Context();
         /// Destroys the Context.
-
-        void useCertificate(const Poco::Crypto::X509Certificate & certificate);
-        /// Sets the certificate to be used by the Context.
-        ///
-        /// To set-up a complete certificate chain, it might be
-        /// necessary to call addChainCertificate() to specify
-        /// additional certificates.
-        ///
-        /// Note that useCertificate() must always be called before
-        /// usePrivateKey().
-
-        void addChainCertificate(const Poco::Crypto::X509Certificate & certificate);
-        /// Adds a certificate for certificate chain validation.
-
-        void addCertificateAuthority(const Poco::Crypto::X509Certificate & certificate);
-        /// Add one trusted certification authority to be used by the Context.
-
-        void usePrivateKey(const Poco::Crypto::RSAKey & key);
-        /// Sets the private key to be used by the Context.
-        ///
-        /// Note that useCertificate() must always be called before
-        /// usePrivateKey().
-        ///
-        /// Note: If the private key is protected by a passphrase, a PrivateKeyPassphraseHandler
-        /// must have been setup with the SSLManager, or the SSLManager's PrivateKeyPassphraseRequired
-        /// event must be handled.
 
         SSL_CTX * sslContext() const;
         /// Returns the underlying OpenSSL SSL Context object.

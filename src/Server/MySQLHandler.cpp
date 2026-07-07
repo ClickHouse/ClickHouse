@@ -1,6 +1,7 @@
-#include "MySQLHandler.h"
+#include <Server/MySQLHandler.h>
 
 #include <optional>
+#include <Access/Common/AccessFlags.h>
 #include <Core/MySQL/Authentication.h>
 #include <Core/MySQL/PacketsConnection.h>
 #include <Core/MySQL/PacketsGeneric.h>
@@ -8,39 +9,48 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
+#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
-#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBuffer.h>
 #include <IO/copyData.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/Context.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/IParser.h>
+#include <Parsers/TokenIterator.h>
 #include <Server/TCPServer.h>
 #include <Storages/IStorage.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
+#include <Common/FieldVisitorToString.h>
+#include <Common/QueryScope.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
+#include <Common/StringUtils.h>
 #include <Common/config_version.h>
 #include <Common/logger_useful.h>
+#include <Common/quoteString.h>
 #include <Common/re2.h>
 #include <Common/setThreadName.h>
 
 #if USE_SSL
-#    include <Poco/Crypto/RSAKey.h>
 #    include <Poco/Net/SSLManager.h>
 #    include <Poco/Net/SecureStreamSocket.h>
-
 #endif
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
@@ -64,6 +74,8 @@ namespace ErrorCodes
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
     extern const int SUPPORT_IS_DISABLED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int OPENSSL_ERROR;
+    extern const int SYNTAX_ERROR;
 }
 
 static const size_t PACKET_HEADER_SIZE = 4;
@@ -87,7 +99,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    assert(expr.ok());
+    chassert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -110,77 +122,186 @@ static String selectEmptyReplacementQuery(const String & query)
     return "select ''";
 }
 
+/// Parse `text` as exactly one string literal (and nothing else) and return its unescaped value.
+/// Returns nullopt if `text` is not a single string literal, so callers can reject client input
+/// instead of concatenating it into a query (which would allow SQL injection over the MySQL wire).
+static std::optional<String> tryParseSingleStringLiteral(const String & text)
+{
+    Tokens tokens(text.data(), text.data() + text.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+    ASTPtr ast;
+    if (!ParserStringLiteral().parse(pos, ast, expected))
+        return std::nullopt;
+    /// Accept one optional trailing ';' then end-of-stream: executeQuery treats ';' as
+    /// end-of-query, so a benign programmatic client may send "SHOW TABLE STATUS LIKE 'x';".
+    /// A second statement after the ';' leaves pos before end -> rejected, so this stays injection-safe.
+    ParserToken(TokenType::Semicolon).ignore(pos, expected);
+    if (!pos->isEnd())
+        return std::nullopt;
+    return ast->as<ASTLiteral &>().value.safeGet<String>();
+}
+
 /// Replace "SHOW TABLE STATUS LIKE 'xx'" into "SELECT ... FROM system.tables WHERE name LIKE 'xx'".
 static String showTableStatusReplacementQuery(const String & query)
 {
     const String prefix = "SHOW TABLE STATUS LIKE ";
-    if (query.size() > prefix.size())
+    String pattern;
+    /// The dispatcher matched the key "SHOW TABLE STATUS LIKE" (22 chars, no separator) but we slice
+    /// at prefix.length() (23, includes the space). Require that separator byte to be whitespace,
+    /// else "SHOW TABLE STATUS LIKEx'a'" would skip the stray byte and be coerced into a lookup.
+    if (query.size() > prefix.size() && isWhitespaceASCII(query[prefix.size() - 1]))
     {
-        String suffix = query.data() + prefix.length();
-        return (
-            "SELECT"
-            " name AS Name,"
-            " engine AS Engine,"
-            " '10' AS Version,"
-            " 'Dynamic' AS Row_format,"
-            " 0 AS Rows,"
-            " 0 AS Avg_row_length,"
-            " 0 AS Data_length,"
-            " 0 AS Max_data_length,"
-            " 0 AS Index_length,"
-            " 0 AS Data_free,"
-            " 'NULL' AS Auto_increment,"
-            " metadata_modification_time AS Create_time,"
-            " metadata_modification_time AS Update_time,"
-            " metadata_modification_time AS Check_time,"
-            " 'utf8_bin' AS Collation,"
-            " 'NULL' AS Checksum,"
-            " '' AS Create_options,"
-            " '' AS Comment"
-            " FROM system.tables"
-            " WHERE name LIKE "
-            + suffix);
+        /// Parse the LIKE argument as a single string literal and re-quote it. The raw client
+        /// suffix must never be concatenated verbatim: that allowed injecting an arbitrary tail
+        /// (e.g. "" UNION SELECT ... FROM system.users) into the generated query. If the suffix
+        /// is not exactly one string literal, match nothing rather than risk injection.
+        if (auto parsed = tryParseSingleStringLiteral(query.data() + prefix.length()))
+            pattern = *parsed;
     }
-    return query;
+    return (
+        "SELECT"
+        " name AS Name,"
+        " engine AS Engine,"
+        " '10' AS Version,"
+        " 'Dynamic' AS Row_format,"
+        " 0 AS Rows,"
+        " 0 AS Avg_row_length,"
+        " 0 AS Data_length,"
+        " 0 AS Max_data_length,"
+        " 0 AS Index_length,"
+        " 0 AS Data_free,"
+        " 'NULL' AS Auto_increment,"
+        " metadata_modification_time AS Create_time,"
+        " metadata_modification_time AS Update_time,"
+        " metadata_modification_time AS Check_time,"
+        " 'utf8_bin' AS Collation,"
+        " 'NULL' AS Checksum,"
+        " '' AS Create_options,"
+        " '' AS Comment"
+        " FROM system.tables"
+        " WHERE name LIKE "
+        + quoteString(pattern));
 }
 
 static std::optional<String> setSettingReplacementQuery(const String & query, const String & mysql_setting, const String & clickhouse_setting)
 {
     const String prefix = "SET " + mysql_setting;
-    // if (query.length() >= prefix.length() && boost::iequals(std::string_view(prefix), std::string_view(query.data(), 3)))
-    if (checkShouldReplaceQuery(query, prefix))
-        return "SET " + clickhouse_setting + String(query.data() + prefix.length());
-    return std::nullopt;
+    if (!checkShouldReplaceQuery(query, prefix))
+        return std::nullopt;
+
+    /// checkShouldReplaceQuery is only a byte-prefix check, so it also matches a longer variable
+    /// that merely starts with the mapped name (e.g. "SET SQL_SELECT_LIMITED=1" matches the
+    /// "SET SQL_SELECT_LIMIT" prefix). Require a word boundary after the name: the next character
+    /// must not continue an identifier. Otherwise this is a different variable, so leave the query
+    /// untranslated (it passes through and errors safely as an unknown setting) instead of resetting
+    /// the unrelated mapped setting below.
+    if (query.length() > prefix.length() && isWordCharASCII(query[prefix.length()]))
+        return std::nullopt;
+
+    /// Parse the "= <value>" tail and re-serialize the value rather than concatenating the raw
+    /// client suffix. Concatenation let a client smuggle a tail into the generated query
+    /// (e.g. "SET SQL_SELECT_LIMIT=1, max_threads=42" became "SET limit=1, max_threads=42").
+    /// Only translate when the full tail is exactly "= <literal|DEFAULT>" with an optional single
+    /// trailing ';' (executeQuery treats ';' as end-of-query, so a benign programmatic client may
+    /// send "SET SQL_SELECT_LIMIT=2;"). Anything else (a malformed value, or an injected tail such
+    /// as ", max_threads=42" or a second statement after ';') is rejected: throw instead of
+    /// silently resetting the mapped setting to DEFAULT, which would change the caller's session
+    /// state on a malformed input and report success.
+    const String tail = query.data() + prefix.length();
+    Tokens tokens(tail.data(), tail.data() + tail.size(), DBMS_DEFAULT_MAX_QUERY_SIZE);
+    IParser::Pos pos(tokens, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    Expected expected;
+
+    if (!ParserToken(TokenType::Equals).ignore(pos, expected))
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected '=' after '{}'", prefix);
+
+    String value;
+    ASTPtr ast;
+    if (ParserKeyword(Keyword::DEFAULT).ignore(pos, expected))
+        value = "DEFAULT";
+    else if (ParserLiteral().parse(pos, ast, expected))
+        value = applyVisitor(FieldVisitorToString(), ast->as<ASTLiteral &>().value);
+    else
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Expected a single value after '{} ='", prefix);
+
+    ParserToken(TokenType::Semicolon).ignore(pos, expected);
+    if (!pos->isEnd())
+        throw Exception(ErrorCodes::SYNTAX_ERROR, "Unexpected trailing tokens after '{} = <value>'", prefix);
+
+    return "SET " + clickhouse_setting + " = " + value;
 }
 
 /// Replace "KILL QUERY [connection_id]" into "KILL QUERY WHERE query_id LIKE 'mysql:[connection_id]:xxx'".
 static String killConnectionIdReplacementQuery(const String & query)
 {
     const String prefix = "KILL QUERY ";
-    if (query.size() > prefix.size())
+    /// The dispatcher matched the key "KILL QUERY" (10 chars, no separator) but we slice at
+    /// prefix.length() (11, includes the space). Require that separator byte to be whitespace,
+    /// else "KILL QUERY;12"/"KILL QUERYx12" would skip the stray byte and be coerced into a cancel.
+    if (query.size() > prefix.size() && isWhitespaceASCII(query[prefix.size() - 1]))
     {
         String suffix = query.data() + prefix.length();
-        static const re2::RE2 expr("^[0-9]");
-        if (re2::RE2::FullMatch(suffix, expr))
+        /// Capture the digits of the connection id and accept one optional trailing ';' plus
+        /// surrounding whitespace: "^[0-9]" accepted only a single digit and silently dropped every
+        /// multi-digit id (e.g. "KILL QUERY 12"), and a benign programmatic client may send
+        /// "KILL QUERY 12;" (executeQuery treats ';' as end-of-query). Only the captured digits are
+        /// substituted, so any other tail (a non-numeric id, or a second statement after ';') fails
+        /// the match and stays injection-safe.
+        static const re2::RE2 expr(R"(^\s*([0-9]+)\s*;?\s*$)");
+        String connection_id_str;
+        if (re2::RE2::FullMatch(suffix, expr, &connection_id_str))
         {
-            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", suffix);
+            String replacement = fmt::format("KILL QUERY WHERE query_id LIKE 'mysql:{}:%'", connection_id_str);
             return replacement;
         }
     }
     return query;
 }
 
+/// Replace "SHOW COLLATIONS" into empty response.
+static String showCollationsReplacementQuery(const String & /*query*/)
+{
+    return "SELECT 1 LIMIT 0";
+}
+
+
+/** MySQL returns this error code, HY000, so should we.
+  *
+  * These error codes represent the worst legacy practices in software engineering from 1970s
+  * (fixed-size fields, short variable names, cryptic abbreviations, lack of documentation, made-up alphabets)
+  * We should never ever fall into these practices, and having this compatibility error code is probably the only exception.
+  *
+  * You might be wondering, why it is HY000, and more precisely, what do the letters H and Y mean?
+  * The history does not know. The best answer I found is:
+  * https://dba.stackexchange.com/questions/241506/what-does-hy-stand-for-in-error-code
+  * Also, https://en.wikipedia.org/wiki/SQLSTATE
+  *
+  * Apparently, they decide to allocate alphanumeric characters for some meaning,
+  * then split their range (0..9A..Z) to some intervals for the system, user, and other categories,
+  * and the letter H appeared to be the first in some category.
+  *
+  * Also, the letter Y is chosen, because it is the highest, but someone afraid to took letter Z,
+  * and decided that the second highest letter is good enough.
+  *
+  * This will forever remind us about the mistakes made by previous generations of software engineers.
+  */
+static constexpr const char * mysql_error_code = "HY000";
+
+
 MySQLHandler::MySQLHandler(
     IServer & server_,
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
-    bool ssl_enabled, uint32_t connection_id_,
+    bool ssl_enabled, bool secure_required_,
+     uint32_t connection_id_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
     : Poco::Net::TCPServerConnection(socket_)
     , server(server_)
     , tcp_server(tcp_server_)
     , log(getLogger("MySQLHandler"))
+    , secure_required(secure_required_)
     , connection_id(connection_id_)
     , auth_plugin(new MySQLProtocol::Authentication::Native41())
     , read_event(read_event_)
@@ -195,6 +316,7 @@ MySQLHandler::MySQLHandler(
     queries_replacements.emplace("KILL QUERY", killConnectionIdReplacementQuery);
     queries_replacements.emplace("SHOW TABLE STATUS LIKE", showTableStatusReplacementQuery);
     queries_replacements.emplace("SHOW VARIABLES", selectEmptyReplacementQuery);
+    queries_replacements.emplace("SHOW COLLATION", showCollationsReplacementQuery);
     settings_replacements.emplace("SQL_SELECT_LIMIT", "limit");
     settings_replacements.emplace("NET_WRITE_TIMEOUT", "send_timeout");
     settings_replacements.emplace("NET_READ_TIMEOUT", "receive_timeout");
@@ -204,7 +326,7 @@ MySQLHandler::~MySQLHandler() = default;
 
 void MySQLHandler::run()
 {
-    setThreadName("MySQLHandler");
+    DB::setThreadName(ThreadName::MYSQL_HANDLER);
 
     session = std::make_unique<Session>(server.context(), ClientInfo::Interface::MYSQL);
     SCOPE_EXIT({ session.reset(); });
@@ -245,6 +367,9 @@ void MySQLHandler::run()
         if (!(client_capabilities & CLIENT_PROTOCOL_41))
             throw Exception(ErrorCodes::MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES, "Required capability: CLIENT_PROTOCOL_41.");
 
+        if (secure_required && !(client_capabilities & CLIENT_SSL))
+            throw Exception(ErrorCodes::OPENSSL_ERROR, "SSL connection required.");
+
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
 
         try
@@ -257,7 +382,7 @@ void MySQLHandler::run()
         catch (const Exception & exc)
         {
             log->log(exc);
-            packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+            packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         }
 
         OKPacket ok_packet(0, handshake_response.capability_flags, 0, 0, 0);
@@ -282,6 +407,7 @@ void MySQLHandler::run()
 
             if (!tcp_server.isOpen())
                 return;
+
             try
             {
                 switch (command)
@@ -321,7 +447,7 @@ void MySQLHandler::run()
             catch (...)
             {
                 tryLogCurrentException(log, "MySQLHandler: Cannot read packet: ");
-                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), "00000", getCurrentExceptionMessage(false)));
+                packet_endpoint->sendPacket(ERRPacket(getCurrentExceptionCode(), mysql_error_code, getCurrentExceptionMessage(false)));
             }
         }
     }
@@ -340,14 +466,14 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     size_t packet_size = PACKET_HEADER_SIZE + SSL_REQUEST_PAYLOAD_SIZE;
 
     /// Buffer for SSLRequest or part of HandshakeResponse.
-    char buf[packet_size];
+    std::vector<char> buf(packet_size);
     size_t pos = 0;
 
     /// Reads at least count and at most packet_size bytes.
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            int ret = socket().receiveBytes(buf + pos, static_cast<uint32_t>(packet_size - pos));
+            int ret = socket().receiveBytes(buf.data() + pos, static_cast<uint32_t>(packet_size - pos));
             if (ret == 0)
             {
                 throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all data. Bytes read: {}. Bytes expected: 3", std::to_string(pos));
@@ -357,19 +483,19 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     };
     read_bytes(3); /// We can find out whether it is SSLRequest of HandshakeResponse by first 3 bytes.
 
-    size_t payload_size = unalignedLoad<uint32_t>(buf) & 0xFFFFFFu;
+    size_t payload_size = unalignedLoad<uint32_t>(buf.data()) & 0xFFFFFFu;
     LOG_TRACE(log, "payload size: {}", payload_size);
 
     if (payload_size == SSL_REQUEST_PAYLOAD_SIZE)
     {
-        finishHandshakeSSL(packet_size, buf, pos, read_bytes, packet);
+        finishHandshakeSSL(packet_size, buf.data(), pos, read_bytes, packet);
     }
     else
     {
         /// Reading rest of HandshakeResponse.
         packet_size = PACKET_HEADER_SIZE + payload_size;
         WriteBufferFromOwnString buf_for_handshake_response;
-        buf_for_handshake_response.write(buf, pos);
+        buf_for_handshake_response.write(buf.data(), pos);
         copyData(*packet_endpoint->in, buf_for_handshake_response, packet_size - pos);
         ReadBufferFromString payload(buf_for_handshake_response.str());
         payload.ignore(PACKET_HEADER_SIZE);
@@ -400,7 +526,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     catch (const Exception & exc)
     {
         LOG_ERROR(log, "Authentication for user {} failed.", user_name);
-        packet_endpoint->sendPacket(ERRPacket(exc.code(), "00000", exc.message()));
+        packet_endpoint->sendPacket(ERRPacket(exc.code(), mysql_error_code, exc.message()));
         throw;
     }
     LOG_DEBUG(log, "Authentication for user {} succeeded.", user_name);
@@ -411,6 +537,8 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
+    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
     session->sessionContext()->setCurrentDatabase(database);
     packet_endpoint->sendPacket(OKPacket(0, client_capabilities, 0, 0, 1));
 }
@@ -421,8 +549,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
     String database = session_context->getCurrentDatabase();
+    /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
+    /// Check before getTable() so this command does not become a table-existence oracle.
+    session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);
     StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
-    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr();
+    auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
         ColumnDefinition column_definition(
@@ -483,16 +614,19 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173. Can be removed when the analyzer is on by default.
+        /// --- Workaround for Bug 56173.
         auto settings = query_context->getSettingsCopy();
-        settings[Setting::prefer_column_name_to_alias] = true;
-        query_context->setSettings(settings);
+        if (!settings[Setting::allow_experimental_analyzer])
+        {
+            settings[Setting::prefer_column_name_to_alias] = true;
+            query_context->setSettings(settings);
+        }
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);
         socket().setSendTimeout(settings[Setting::send_timeout]);
 
-        CurrentThread::QueryScope query_scope{query_context};
+        QueryScope query_scope = QueryScope::create(query_context);
 
         std::atomic<size_t> affected_rows {0};
         auto prev = query_context->getProgressCallback();
@@ -524,10 +658,10 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         if (should_replace)
         {
             ReadBufferFromString replacement(replacement_query);
-            executeQuery(replacement, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(replacement, *out, query_context, set_result_details, QueryFlags{}, format_settings);
         }
         else
-            executeQuery(payload, *out, false, query_context, set_result_details, QueryFlags{}, format_settings);
+            executeQuery(payload, *out, query_context, set_result_details, QueryFlags{}, format_settings);
 
 
         if (!with_output)
@@ -549,7 +683,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id;
+    uint32_t statement_id = 0;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -561,7 +695,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id;
+    uint32_t statement_id = 0;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html
@@ -638,19 +772,18 @@ MySQLHandlerSSL::MySQLHandlerSSL(
     TCPServer & tcp_server_,
     const Poco::Net::StreamSocket & socket_,
     bool ssl_enabled,
+    bool secure_required_,
     uint32_t connection_id_,
-    RSA & public_key_,
-    RSA & private_key_,
+    KeyPair & private_key_,
     const ProfileEvents::Event & read_event_,
     const ProfileEvents::Event & write_event_)
-    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, connection_id_, read_event_, write_event_)
-    , public_key(public_key_)
+    : MySQLHandler(server_, tcp_server_, socket_, ssl_enabled, secure_required_, connection_id_, read_event_, write_event_)
     , private_key(private_key_)
 {}
 
 void MySQLHandlerSSL::authPluginSSL()
 {
-    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(public_key, private_key, log);
+    auth_plugin = std::make_unique<MySQLProtocol::Authentication::Sha256Password>(private_key, log);
 }
 
 void MySQLHandlerSSL::finishHandshakeSSL(

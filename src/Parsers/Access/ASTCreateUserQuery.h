@@ -3,7 +3,6 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTDatabaseOrNone.h>
-#include <Access/Common/AuthenticationType.h>
 #include <Access/Common/AllowedClientHosts.h>
 
 
@@ -52,30 +51,34 @@ public:
     bool add_identified_with = false;
     bool replace_authentication_methods = false;
 
-    std::shared_ptr<ASTUserNamesWithHost> names;
+    boost::intrusive_ptr<ASTUserNamesWithHost> names;
     std::optional<String> new_name;
     String storage_name;
 
-    std::vector<std::shared_ptr<ASTAuthenticationData>> authentication_methods;
+    std::vector<boost::intrusive_ptr<ASTAuthenticationData>> authentication_methods;
 
     std::optional<AllowedClientHosts> hosts;
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::shared_ptr<ASTRolesOrUsersSet> default_roles;
-    std::shared_ptr<ASTSettingsProfileElements> settings;
-    std::shared_ptr<ASTAlterSettingsProfileElements> alter_settings;
-    std::shared_ptr<ASTRolesOrUsersSet> grantees;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> roles;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> default_roles;
+    boost::intrusive_ptr<ASTSettingsProfileElements> settings;
+    boost::intrusive_ptr<ASTAlterSettingsProfileElements> alter_settings;
+    boost::intrusive_ptr<ASTRolesOrUsersSet> grantees;
 
-    std::shared_ptr<ASTDatabaseOrNone> default_database;
+    boost::intrusive_ptr<ASTDatabaseOrNone> default_database;
 
     ASTPtr global_valid_until;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
     ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
+
 }

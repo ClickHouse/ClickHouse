@@ -3,13 +3,30 @@
 #include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/IdentifierNode.h>
 
 
 namespace DB
 {
 
-class FunctionTreeNode : public AbstractFunction
+template <typename FunctionNodeType>
+inline String getFunctionNameImpl(const FunctionNodeType *);
+
+template <>
+inline String getFunctionNameImpl<FunctionNode>(const FunctionNode * function)
+{
+    return function->getFunctionName();
+}
+
+template <>
+inline String getFunctionNameImpl<TableFunctionNode>(const TableFunctionNode * function)
+{
+    return function->getTableFunctionName();
+}
+
+template <typename FunctionNodeType>
+class FunctionTreeNodeImpl : public AbstractFunction
 {
 public:
     class ArgumentTreeNode : public Argument
@@ -19,7 +36,7 @@ public:
         std::unique_ptr<AbstractFunction> getFunction() const override
         {
             if (const auto * f = argument->as<FunctionNode>())
-                return std::make_unique<FunctionTreeNode>(*f);
+                return std::make_unique<FunctionTreeNodeImpl<FunctionNode>>(*f);
             return nullptr;
         }
         bool isIdentifier() const override { return argument->as<IdentifierNode>(); }
@@ -60,24 +77,24 @@ public:
         const QueryTreeNodes * arguments = nullptr;
     };
 
-    explicit FunctionTreeNode(const FunctionNode & function_) : function(&function_)
+    explicit FunctionTreeNodeImpl(const FunctionNodeType & function_) : function(&function_)
     {
         if (const auto & nodes = function->getArguments().getNodes(); !nodes.empty())
             arguments = std::make_unique<ArgumentsTreeNode>(&nodes);
     }
-    String name() const override { return function->getFunctionName(); }
+    String name() const override { return getFunctionNameImpl(function); }
 private:
-    const FunctionNode * function = nullptr;
+    const FunctionNodeType * function = nullptr;
 };
-
 
 /// Finds arguments of a specified function which should not be displayed for most users for security reasons.
 /// That involves passwords and secret keys.
-class FunctionSecretArgumentsFinderTreeNode : public FunctionSecretArgumentsFinder
+template <typename FunctionNodeType>
+class FunctionSecretArgumentsFinderTreeNodeImpl : public FunctionSecretArgumentsFinder
 {
 public:
-    explicit FunctionSecretArgumentsFinderTreeNode(const FunctionNode & function_)
-        : FunctionSecretArgumentsFinder(std::make_unique<FunctionTreeNode>(function_))
+    explicit FunctionSecretArgumentsFinderTreeNodeImpl(const FunctionNodeType & function_)
+        : FunctionSecretArgumentsFinder(std::make_unique<FunctionTreeNodeImpl<FunctionNodeType>>(function_))
     {
         if (!function->hasArguments())
             return;
@@ -87,5 +104,9 @@ public:
 
     FunctionSecretArgumentsFinder::Result getResult() const { return result; }
 };
+
+
+using FunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<FunctionNode>;
+using TableFunctionSecretArgumentsFinderTreeNode = FunctionSecretArgumentsFinderTreeNodeImpl<TableFunctionNode>;
 
 }

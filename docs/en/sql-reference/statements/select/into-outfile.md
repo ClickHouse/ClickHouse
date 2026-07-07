@@ -1,9 +1,10 @@
 ---
-slug: /en/sql-reference/statements/select/into-outfile
-sidebar_label: INTO OUTFILE
+description: 'Documentation for INTO OUTFILE Clause'
+sidebar_label: 'INTO OUTFILE'
+slug: /sql-reference/statements/select/into-outfile
+title: 'INTO OUTFILE Clause'
+doc_type: 'reference'
 ---
-
-# INTO OUTFILE Clause
 
 `INTO OUTFILE` clause redirects the result of a `SELECT` query to a file on the **client** side.
 
@@ -19,9 +20,9 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 `level` is a numeric literal. Positive integers in following ranges are supported: `1-12` for `lz4` type, `1-22` for `zstd` type and `1-9` for other compression types.
 
-## Implementation Details
+## Implementation Details {#implementation-details}
 
-- This functionality is available in the [command-line client](../../../interfaces/cli.md) and [clickhouse-local](../../../operations/utilities/clickhouse-local.md). Thus a query sent via [HTTP interface](../../../interfaces/http.md) will fail.
+- This functionality is available in the [command-line client](../../../interfaces/client.md) and [clickhouse-local](../../../operations/utilities/clickhouse-local.md). Thus a query sent via [HTTP interface](/interfaces/http) will fail.
 - The query will fail if a file with the same file name already exists.
 - The default [output format](../../../interfaces/formats.md) is `TabSeparated` (like in the command-line client batch mode). Use [FORMAT](format.md) clause to change it.
 - If `AND STDOUT` is mentioned in the query then the output that is written to the file is also displayed on standard output. If used with compression, the plaintext is displayed on standard output.
@@ -30,15 +31,13 @@ SELECT <expr_list> INTO OUTFILE file_name [AND STDOUT] [APPEND | TRUNCATE] [COMP
 
 **Example**
 
-Execute the following query using [command-line client](../../../interfaces/cli.md):
+Execute the following query using [command-line client](../../../interfaces/client.md):
 
-```bash
+```bash title="Query"
 clickhouse-client --query="SELECT 1,'ABC' INTO OUTFILE 'select.gz' FORMAT CSV;"
 zcat select.gz 
 ```
 
-Result:
-
-```text
+```text title="Response"
 1,"ABC"
 ```

@@ -1,5 +1,6 @@
 #include <IO/LimitSeekableReadBuffer.h>
 
+#include <Common/Exception.h>
 
 namespace DB
 {
@@ -80,7 +81,7 @@ bool LimitSeekableReadBuffer::nextImpl()
 
 off_t LimitSeekableReadBuffer::seek(off_t off, int whence)
 {
-    off_t new_position;
+    off_t new_position = 0;
     off_t current_position = getPosition();
     if (whence == SEEK_SET)
         new_position = off;
@@ -93,7 +94,11 @@ off_t LimitSeekableReadBuffer::seek(off_t off, int whence)
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "Seek shift out of bounds");
 
     off_t position_change = new_position - current_position;
-    if ((buffer().begin() <= pos + position_change) && (pos + position_change <= buffer().end()))
+    /// Check whether the new position is still inside the working buffer using integer arithmetic
+    /// on pointer differences. Computing `pos + position_change` directly is undefined behavior
+    /// when `pos` is null (e.g. when the inner buffer hasn't been materialized yet) or when
+    /// `position_change` is large enough that the resulting pointer escapes the allocation.
+    if (working_buffer.begin() - pos <= position_change && position_change <= working_buffer.end() - pos)
     {
         /// Position is still inside the buffer.
         pos += position_change;

@@ -19,7 +19,7 @@ bool ParserKQLTable ::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     std::transform(table_name_upcase.begin(), table_name_upcase.end(), table_name_upcase.begin(), toupper);
 
-    if (sql_keywords.find(table_name_upcase) != sql_keywords.end())
+    if (sql_keywords.contains(table_name_upcase))
         return false;
 
     if (!ParserTablesInSelectQuery().parse(pos, tables, expected))

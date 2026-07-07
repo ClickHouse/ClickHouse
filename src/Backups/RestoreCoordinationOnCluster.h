@@ -30,13 +30,21 @@ public:
 
     ~RestoreCoordinationOnCluster() override;
 
+    void startup() override;
+
     void setRestoreQueryIsSentToOtherHosts() override;
     bool isRestoreQuerySentToOtherHosts() const override;
     Strings setStage(const String & new_stage, const String & message, bool sync) override;
-    bool setError(std::exception_ptr exception, bool throw_if_error) override;
-    bool waitOtherHostsFinish(bool throw_if_error) const override;
-    bool finish(bool throw_if_error) override;
-    bool cleanup(bool throw_if_error) override;
+    void setError(std::exception_ptr exception, bool throw_if_error) override;
+    bool isErrorSet() const override;
+    void waitOtherHostsFinish(bool throw_if_error) const override;
+    void finish(bool throw_if_error) override;
+    bool finished() const override;
+    bool allHostsFinished() const override;
+    void cleanup(bool throw_if_error) override;
+
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    bool acquireCreatingSharedDatabase(const String & database_name) override;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) override;
@@ -75,7 +83,8 @@ private:
     const Strings all_hosts_without_initiator;
     const String current_host;
     const size_t current_host_index;
-    LoggerPtr const log;
+    const QueryStatusPtr process_list_element;
+    const LoggerPtr log;
 
     /// The order is important: `stage_sync` must be initialized after `with_retries` and `cleaner`.
     const WithRetries with_retries;

@@ -1,18 +1,32 @@
+#include <Backups/BackupSettings.h>
+#include <Backups/RestoreSettings.h>
+#include <Core/Settings.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterSetQuery.h>
-#include <Parsers/ASTSelectQuery.h>
-#include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
-
+#include <Parsers/ASTSetQuery.h>
+#include <Storages/MemorySettings.h>
+#include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
 
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsDefaultTableEngine default_table_engine;
+    extern const SettingsDefaultTableEngine default_temporary_table_engine;
+}
 
 BlockIO InterpreterSetQuery::execute()
 {
@@ -49,19 +63,119 @@ static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & sel
         InterpreterSetQuery(last_select->settings(), context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 }
 
+namespace
+{
+/// For `CREATE TABLE dst AS src [storage_clauses]` without an explicit ENGINE, the engine is inherited from the
+/// source table `src` (see `InterpreterCreateQuery::setEngine`). Resolve that engine's name so the SETTINGS clause
+/// is split (engine settings vs query settings) against the engine the table will actually have, rather than the
+/// default one: otherwise an engine-specific setting of the inherited engine (for example `join_use_nulls` for a
+/// `Join` source) would be misclassified as a query setting, hoisted into the context, and dropped from the
+/// persisted table definition. Returns nullopt when the source cannot be inspected or has no engine of its own
+/// (for example a table function source); the caller then falls back to the default engine, which matches what
+/// `setEngine` does in those cases.
+std::optional<String> getInheritedEngineName(const ASTCreateQuery & create, ContextMutablePtr context)
+{
+    if (create.as_table.empty())
+        return {};
+
+    auto database = DatabaseCatalog::instance().tryGetDatabase(context->resolveDatabase(create.as_database));
+    if (!database)
+        return {};
+
+    auto as_create_ptr = database->tryGetCreateTableQuery(create.as_table, context);
+    if (!as_create_ptr)
+        return {};
+
+    const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
+
+    /// For a materialized view source the engine and keys live in the inner storage definition.
+    const ASTStorage * as_storage = as_create.is_materialized_view ? as_create.getTargetInnerEngine(ViewTarget::To) : as_create.storage;
+    if (as_storage && as_storage->engine)
+        return as_storage->engine->name;
+
+    return {};
+}
+
+std::optional<String> getTableStorageName(const ASTCreateQuery & create, ContextMutablePtr context)
+{
+    if ((create.database && !create.table) || create.isView())
+        return {};
+    if (create.storage->engine)
+        return create.storage->engine->name;
+
+    /// Temporary tables never inherit the source engine: `InterpreterCreateQuery::setEngine` resolves their
+    /// engine to `default_temporary_table_engine` regardless of the `AS` source. Mirror that here so the SETTINGS
+    /// clause is split against the engine the temporary table will actually have, instead of the inherited source
+    /// engine. Otherwise an engine-specific setting of the source (for example `join_use_nulls` for a `Join` source)
+    /// would be kept in the storage definition and then rejected by the actual engine (for example `Memory`).
+    if (create.isTemporary())
+    {
+        auto default_temporary_engine = context->getSettingsRef()[Setting::default_temporary_table_engine];
+        if (default_temporary_engine == DefaultTableEngine::None)
+            return {};
+        return default_temporary_engine.toString();
+    }
+
+    if (auto inherited_engine = getInheritedEngineName(create, context))
+        return inherited_engine;
+
+    auto default_engine = context->getSettingsRef()[Setting::default_table_engine];
+    if (default_engine == DefaultTableEngine::None)
+        return {};
+    return default_engine.toString();
+}
+}
+
+
 void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMutablePtr context_)
 {
     if (!ast)
         return;
 
     /// First apply the outermost settings. Then they could be overridden by deeper settings.
-    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+    if (const auto * query_with_output = dynamic_cast<ASTQueryWithOutput *>(ast.get()))
     {
         if (query_with_output->settings_ast)
             InterpreterSetQuery(query_with_output->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
 
-        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query && create_query->select)
-            applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+        if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query)
+        {
+            std::optional<String> storage_name;
+            if (create_query->select)
+                applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
+            else if (
+                !create_query->settings_ast && create_query->storage && create_query->storage->settings
+                && context_->getApplicationType() != Context::ApplicationType::CLIENT
+                && (storage_name = getTableStorageName(*create_query, context_)))
+            {
+                /// If we parsed one set of settings we don't know if it was the engine settings or the query settings
+                /// We also want to allow users to mix them (so they don't need to declare SETTINGS engine_setting=0 SETTINGS query_setting=0
+                /// So what we are going to do now is to check if each setting belongs to the engine or not, and if it doesn't
+                /// then move it to the context
+
+                const Settings & context_settings = context_->getSettingsRef();
+                ASTSetQuery * engine_settings = create_query->storage->settings;
+                auto const & features = StorageFactory::instance().getStorageFeatures(*storage_name);
+                chassert(!features.supports_settings || features.has_builtin_setting_fn != nullptr);
+                for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
+                {
+                    String & name = it->name;
+                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
+                    {
+                        context_->checkSettingsConstraints(*it, SettingSource::QUERY);
+                        context_->setSetting(name, it->value);
+                        it = engine_settings->changes.erase(it);
+                    }
+                    else
+                    {
+                        it++;
+                    }
+                }
+
+                if (engine_settings->changes.empty())
+                    create_query->storage->reset(create_query->storage->settings);
+            }
+        }
     }
 
     if (const auto * select_query = ast->as<ASTSelectQuery>())
@@ -86,8 +200,39 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
         if (insert_query->settings_ast)
             InterpreterSetQuery(insert_query->settings_ast, context_).executeForCurrentContext(/* ignore_setting_constraints= */ false);
     }
+    else if (const auto * backup_query = ast->as<ASTBackupQuery>())
+    {
+        /// `BACKUP`/`RESTORE` queries store their settings in `ASTBackupQuery::settings`
+        /// (not `settings_ast`), so they are not handled by the `settings_ast` branch
+        /// above. We apply only the core query settings here, before `ProcessList::insert`,
+        /// so that the `ProcessListElement` and `CancellationChecker` see the correct
+        /// limits from the start. `BACKUP`/`RESTORE`-specific settings (`async`, `password`, etc.)
+        /// are filtered out and are not applied to the context.
+        ///
+        /// We deliberately use the lightweight `extractCoreSettingsFromQuery` helpers
+        /// here rather than `fromBackupQuery`/`fromRestoreQuery`, because this code path
+        /// also runs on the client side (`ClientBase::processOrdinaryQuery`) BEFORE
+        /// `ReplaceQueryParameterVisitor` has substituted query parameters in the AST.
+        /// `BackupInfo::fromAST` (called from `fromBackupQuery` for `base_backup_name`)
+        /// only accepts `ASTLiteral` arguments and would throw `BAD_ARGUMENTS` on an
+        /// `ASTQueryParameter`. The lightweight helpers do not look at `base_backup_name`
+        /// at all, so they work with parameterized queries. See issue #103324.
+        if (backup_query->settings)
+        {
+            SettingsChanges core_settings = (backup_query->kind == ASTBackupQuery::Kind::BACKUP)
+                ? BackupSettings::extractCoreSettingsFromQuery(*backup_query)
+                : RestoreSettings::extractCoreSettingsFromQuery(*backup_query);
+
+            if (!core_settings.empty())
+            {
+                context_->checkSettingsConstraints(core_settings, SettingSource::QUERY);
+                context_->applySettingsChanges(core_settings);
+            }
+        }
+    }
 }
 
+void registerInterpreterSetQuery(InterpreterFactory & factory);
 void registerInterpreterSetQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

@@ -5,6 +5,7 @@
 
 #include <Common/NetException.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Core/Settings.h>
@@ -26,18 +27,24 @@ namespace ErrorCodes
 
 RemoteInserter::RemoteInserter(
     Connection & connection_,
-    const ConnectionTimeouts & timeouts,
+    const ConnectionTimeouts & timeouts_,
     const String & query_,
     const Settings & settings_,
     const ClientInfo & client_info_)
-    : connection(connection_)
+    : insert_settings(settings_)
+    , client_info(client_info_)
+    , timeouts(timeouts_)
+    , connection(connection_)
     , query(query_)
     , server_revision(connection.getServerRevision(timeouts))
+{}
+
+void RemoteInserter::initialize()
 {
-    ClientInfo modified_client_info = client_info_;
+    ClientInfo modified_client_info = client_info;
     modified_client_info.query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
 
-    Settings settings = settings_;
+    Settings settings = insert_settings;
     /// With current protocol it is impossible to avoid deadlock in case of send_logs_level!=none.
     ///
     /// RemoteInserter send Data blocks/packets to the remote shard,
@@ -84,6 +91,10 @@ RemoteInserter::RemoteInserter(
         {
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
+        }
+        else if (Protocol::Server::Progress == packet.type)
+        {
+            /// Progress packets are ignored
         }
         else
             throw NetException(
@@ -134,9 +145,13 @@ void RemoteInserter::onFinish()
 
         if (Protocol::Server::EndOfStream == packet.type)
             break;
+
         if (Protocol::Server::Exception == packet.type)
             packet.exception->rethrow();
-        else if (Protocol::Server::Log == packet.type || Protocol::Server::TimezoneUpdate == packet.type)
+        else if (Protocol::Server::Log == packet.type ||
+            Protocol::Server::Progress == packet.type ||
+            Protocol::Server::ProfileEvents == packet.type ||
+            Protocol::Server::TimezoneUpdate == packet.type)
         {
             // Do nothing
         }

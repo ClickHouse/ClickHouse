@@ -1,0 +1,70 @@
+---
+slug: '/examples/aggregate-function-combinators/groupArrayResample'
+title: 'groupArrayResample'
+description: 'Ejemplo de uso del combinador Resample con groupArray'
+keywords: ['groupArray', 'Resample', 'combinador', 'ejemplos', 'groupArrayResample']
+sidebarTitle: 'groupArrayResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+El
+combinador [`Resample`](/es/reference/functions/aggregate-functions/combinators#-resample) puede aplicarse a la función de agregación [`groupArray`](/es/reference/functions/aggregate-functions/sum) para
+dividir el rango de una columna clave especificada en un número fijo de intervalos (`N`)
+y construir el array resultante seleccionando un valor representativo
+(correspondiente a la clave mínima) de los puntos de datos que caen en cada intervalo.
+Crea una vista submuestreada de los datos en lugar de recopilar todos los valores.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Veamos un ejemplo. Crearemos una tabla con `name`, `age` y
+`wage` de los empleados, e insertaremos algunos datos en ella:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Obtengamos los nombres de las personas cuyas edades están en los intervalos `[30,60)`
+y `[60,75)`. Como usamos una representación entera para la edad, obtenemos edades en los
+intervalos `[30, 59]` y `[60,74]`.
+
+Para agrupar nombres en un Array, usamos la función de agregación `groupArray`.
+Recibe un argumento. En nuestro caso, es la columna de nombre. La función `groupArrayResample`
+debe usar la columna de edad para agrupar los nombres por edad. Para definir los
+intervalos necesarios, pasamos `30`, `75`, `30` como argumentos a la función `groupArrayResample`:
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM employee_data
+```
+
+```response
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Véase también
+</div>
+
+* [`groupArray`](/es/reference/functions/aggregate-functions/groupArray)
+* [`Combinador Resample`](/es/reference/functions/aggregate-functions/combinators#-resample)

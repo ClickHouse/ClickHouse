@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+// This schema intentionally has NO Envelope message.
+// It is used to test that ProtobufList behaves consistently when also used with Protobuf format.
+
+message NumberAndSquare {
+  uint32 number = 1;
+  uint64 square = 2;
+};

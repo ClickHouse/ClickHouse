@@ -1,7 +1,10 @@
 #pragma once
 
 #include <Common/AsynchronousMetrics.h>
+#include <IO/ReadBufferFromFile.h>
 #include <Interpreters/Context_fwd.h>
+
+#include <optional>
 
 
 namespace DB
@@ -36,9 +39,42 @@ private:
         size_t detached_by_user;
     };
 
-    DetachedPartsStats detached_parts_stats{};
+    struct MutationStats
+    {
+        /// For keeping track of the number of pending mutations that are over the maximum execution time
+        /// which is controlled by the max_pending_mutations_execution_time_to_warn setting.
+        size_t pending_mutations_over_execution_time;
+        size_t pending_mutations;
+    };
 
-    void updateDetachedPartsStats();
+    struct ThreadStackStats
+    {
+        /// Whether at least one successful /proc/self/smaps sample has been
+        /// collected. Until then the values are meaningless and the metrics
+        /// are not emitted, so an environment where smaps cannot be read does
+        /// not report a fake zero stack footprint.
+        bool available = false;
+        UInt64 count = 0;
+        UInt64 resident_bytes = 0;
+        UInt64 virtual_bytes = 0;
+    };
+
+    DetachedPartsStats detached_parts_stats{};
+    MutationStats mutation_stats{};
+    ThreadStackStats thread_stack_stats{};
+
+    /// /proc/self/smaps is walked at the slower heavy-metrics cadence rather
+    /// than on every scrape, because it can be expensive on servers with many
+    /// VMAs: the kernel walks page tables for every mapping to compute Rss,
+    /// Pss, etc. Kept here (not in the base class) so the cost is gated.
+    std::optional<ReadBufferFromFilePRead> vm_smaps;
+
+    /// Previous values for the ReaderExecutorModeledCostMsPerRequestedMiB interval delta.
+    UInt64 prev_reader_executor_cost_us = 0;
+    UInt64 prev_reader_executor_requested_bytes = 0;
+
+    void updateMutationAndDetachedPartsStats();
+    void updateThreadStackStats();
     void updateHeavyMetricsIfNeeded(TimePoint current_time, TimePoint update_time, bool force_update, bool first_run, AsynchronousMetricValues & new_values);
 };
 

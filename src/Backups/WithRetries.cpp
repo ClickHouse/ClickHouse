@@ -20,9 +20,10 @@ WithRetries::RetriesControlHolder::RetriesControlHolder(const WithRetries * pare
            : (kind == kErrorHandling)  ? parent->settings.max_retries_while_handling_error
                                        : parent->settings.max_retries,
            parent->settings.retry_initial_backoff_ms.count(),
-           parent->settings.retry_max_backoff_ms.count())
+           parent->settings.retry_max_backoff_ms.count(),
+           (kind == kErrorHandling) ? nullptr : parent->process_list_element)
     /// We don't use process_list_element while handling an error because the error handling can't be cancellable.
-    , retries_ctl(name, parent->log, info, (kind == kErrorHandling) ? nullptr : parent->process_list_element)
+    , retries_ctl(name, parent->log, info)
     , faulty_zookeeper(parent->getFaultyZooKeeper())
 {}
 

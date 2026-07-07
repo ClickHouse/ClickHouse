@@ -1,7 +1,4 @@
-#include <Server/HTTP/authenticateUserByHTTP.h>
-
 #include <Access/Authentication.h>
-#include <Access/Common/SSLCertificateSubjects.h>
 #include <Access/Credentials.h>
 #include <Access/ExternalAuthenticators.h>
 #include <Common/Base64.h>
@@ -15,8 +12,10 @@
 
 #include <Poco/Net/HTTPBasicCredentials.h>
 
+#include <optional>
+
 #if USE_SSL
-#include <Poco/Net/X509Certificate.h>
+#    include <Common/Crypto/X509Certificate.h>
 #endif
 
 
@@ -41,14 +40,32 @@ namespace
     }
 
     /// Checks that a specified user name is not empty, and throws an exception if it's empty.
-    void checkUserNameNotEmpty(const String & user_name, std::string_view method)
+    void checkUserNameNotEmptyAndServerHasEnoughMemory(const String & user_name, std::string_view method, const ContextPtr & context)
     {
+        auto users_to_ignore_early_memory_limit_check = context->getUsersToIgnoreEarlyMemoryLimitCheck();
+        if (!(users_to_ignore_early_memory_limit_check && users_to_ignore_early_memory_limit_check->contains(user_name)))
+        {
+            LOG_TEST(getLogger("authenticateUserByHTTP"), "Checking memory limit for user: {}", user_name);
+            CurrentMemoryTracker::check();
+        }
+        else
+            LOG_TEST(getLogger("authenticateUserByHTTP"), "Skipping memory limit check for user: {}", user_name);
+
         if (user_name.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Got an empty user name from {}", method);
     }
 }
 
 
+bool authenticateUserByHTTP(
+    const HTTPServerRequest & request,
+    const HTMLForm & params,
+    HTTPServerResponse & response,
+    Session & session,
+    std::unique_ptr<Credentials> & request_credentials,
+    const HTTPHandlerConnectionConfig & connection_config,
+    ContextPtr global_context,
+    LoggerPtr log);
 bool authenticateUserByHTTP(
     const HTTPServerRequest & request,
     const HTMLForm & params,
@@ -77,21 +94,57 @@ bool authenticateUserByHTTP(
 
     /// User name and password can be passed using HTTP Basic auth or query parameters
     /// (both methods are insecure).
-    bool has_http_credentials = request.hasCredentials();
     bool has_credentials_in_query_params = params.has("user") || params.has("password");
 
+    /// Whether the request carries an `Authorization` header that should be treated as
+    /// credentials. The sentinel value `never` (which `play.html` sets on the requests it can
+    /// add headers to) disables it.
+    bool has_authorization_header = request.hasCredentials() && request.get("Authorization") != "never";
+
+    /// Credentials passed in the URL query parameters take precedence over the HTTP
+    /// `Authorization` header: when both are present, the header is ignored instead of
+    /// rejecting the request for mixing authentication methods.
+    ///
+    /// This is needed because once a browser has remembered HTTP Basic credentials for an
+    /// origin, it attaches the `Authorization` header to every subsequent request to that
+    /// origin automatically - including requests that the application has no way to add or
+    /// remove headers from, such as a form submission or a download navigation. The Web UI
+    /// (`play.html`) authenticates by putting the user name and password into the URL query
+    /// parameters, so without this precedence such a request would carry both the remembered
+    /// header and the parameters and be rejected. (The special value `Authorization: never`
+    /// also suppresses the header, but it can only be set from a scripted request such as
+    /// `fetch` or `XHR`, not from a plain navigation.)
+    ///
+    /// This precedence applies only to the default authentication path. When the handler has
+    /// its own configured credentials, an `Authorization` header is still rejected as a mix of
+    /// authentication methods, regardless of the query parameters (see below).
+    bool has_http_credentials = has_authorization_header && !has_credentials_in_query_params;
+
     std::string spnego_challenge;
-    SSLCertificateSubjects certificate_subjects;
+#if USE_SSL
+    X509Certificate::Subjects certificate_subjects;
+
+    /// Capture the TLS client certificate (if the client presented one) regardless of the selected
+    /// authentication method, so that session_log records it even when the connection authenticates
+    /// by another method (headers, basic, query parameters, config) or the login fails.
+    /// Mirrors the native protocol path in TCPHandler::receiveHello.
+    std::optional<X509Certificate> peer_certificate;
+    if (request.havePeerCertificate())
+    {
+        peer_certificate = request.peerCertificate();
+        session.setClientCertificate(*peer_certificate);
+    }
+#endif
 
     if (config_credentials)
     {
-        checkUserNameNotEmpty(config_credentials->getUserName(), "config authentication");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(config_credentials->getUserName(), "config authentication", global_context);
     }
     if (has_ssl_certificate_auth)
     {
 #if USE_SSL
         /// For SSL certificate authentication we extract the user name from the "X-ClickHouse-User" HTTP header.
-        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -103,20 +156,21 @@ bool authenticateUserByHTTP(
         if (has_credentials_in_query_params)
             throwMultipleAuthenticationMethods("SSL certificate authentication", "authentication via parameters");
 
-        if (request.havePeerCertificate())
-            certificate_subjects = extractSSLCertificateSubjects(request.peerCertificate());
+        if (peer_certificate)
+            certificate_subjects = peer_certificate->extractAllSubjects();
 
         if (certificate_subjects.empty())
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                             "Invalid authentication: SSL certificate authentication requires nonempty certificate's Common Name or Subject Alternative Name");
 #else
+        UNUSED(log);
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "SSL certificate authentication disabled because ClickHouse was built without SSL library");
 #endif
     }
     else if (has_auth_headers)
     {
-        checkUserNameNotEmpty(user, "X-ClickHouse HTTP headers");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "X-ClickHouse HTTP headers", global_context);
 
         /// It is prohibited to mix different authorization schemes.
         if (has_config_credentials)
@@ -129,10 +183,10 @@ bool authenticateUserByHTTP(
     else if (has_http_credentials)
     {
         /// It is prohibited to mix different authorization schemes.
+        /// (Authentication via query parameters takes precedence over the `Authorization`
+        /// header and is handled above by excluding it from `has_http_credentials`.)
         if (has_config_credentials)
             throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
-        if (has_credentials_in_query_params)
-            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication via parameters");
 
         std::string scheme;
         std::string auth_info;
@@ -143,7 +197,7 @@ bool authenticateUserByHTTP(
             Poco::Net::HTTPBasicCredentials credentials(auth_info);
             user = credentials.getUsername();
             password = credentials.getPassword();
-            checkUserNameNotEmpty(user, "Authorization HTTP header");
+            checkUserNameNotEmptyAndServerHasEnoughMemory(user, "Authorization HTTP header", global_context);
         }
         else if (Poco::icompare(scheme, "Negotiate") == 0)
         {
@@ -159,13 +213,25 @@ bool authenticateUserByHTTP(
     }
     else
     {
+        /// Authentication via the URL query parameters (or, if absent, the 'default' user).
+        /// The query parameters take precedence over the `Authorization` header (which was
+        /// excluded from `has_http_credentials` above), but mixing the header with credentials
+        /// configured for the handler is still rejected, as for every other method.
+        if (has_config_credentials && has_authorization_header)
+            throwMultipleAuthenticationMethods("Authorization HTTP header", "authentication set in config");
+
         /// If the user name is not set we assume it's the 'default' user.
         user = params.get("user", "default");
         password = params.get("password", "");
-        checkUserNameNotEmpty(user, "authentication via parameters");
+        checkUserNameNotEmptyAndServerHasEnoughMemory(user, "authentication via parameters", global_context);
     }
 
-    if (!certificate_subjects.empty())
+    if (has_config_credentials)
+    {
+        current_credentials = std::make_unique<AlwaysAllowCredentials>(*config_credentials);
+    }
+#if USE_SSL
+    else if (!certificate_subjects.empty())
     {
         chassert(!user.empty());
         if (!current_credentials)
@@ -188,7 +254,6 @@ bool authenticateUserByHTTP(
 #pragma clang diagnostic ignored "-Wunreachable-code"
         const auto spnego_response = base64Encode(gss_acceptor_context->processToken(base64Decode(spnego_challenge), log));
 #pragma clang diagnostic pop
-
         if (!spnego_response.empty())
             response.set("WWW-Authenticate", "Negotiate " + spnego_response);
 
@@ -204,10 +269,7 @@ bool authenticateUserByHTTP(
             return false;
         }
     }
-    else if (has_config_credentials)
-    {
-        current_credentials = std::make_unique<BasicCredentials>(*config_credentials);
-    }
+#endif
     else // I.e., now using user name and password strings ("Basic").
     {
         if (!current_credentials)
@@ -216,6 +278,9 @@ bool authenticateUserByHTTP(
         auto * basic_credentials = dynamic_cast<BasicCredentials *>(current_credentials.get());
         if (!basic_credentials)
             throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Invalid authentication: expected 'Basic' HTTP Authorization scheme");
+
+        if (request.get("Authorization", "") != "never")
+            basic_credentials->enableInteractiveBasicAuthenticationInTheBrowser();
 
         chassert(!user.empty());
         basic_credentials->setUserName(user);
@@ -239,11 +304,11 @@ bool authenticateUserByHTTP(
 
     /// Extract the last entry from comma separated list of forwarded_for addresses.
     /// Only the last proxy can be trusted (if any).
-    String forwarded_address = session.getClientInfo().getLastForwardedFor();
+    auto forwarded_address = session.getClientInfo().getLastForwardedFor();
     try
     {
-        if (!forwarded_address.empty() && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
-            session.authenticate(*current_credentials, Poco::Net::SocketAddress(forwarded_address, request.clientAddress().port()));
+        if (forwarded_address && global_context->getConfigRef().getBool("auth_use_forwarded_address", false))
+            session.authenticate(*current_credentials, *forwarded_address, request.clientAddress());
         else
             session.authenticate(*current_credentials, request.clientAddress());
     }

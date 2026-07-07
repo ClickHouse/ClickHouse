@@ -1,7 +1,7 @@
-#include "StorageSystemLicenses.h"
-
-#include <algorithm>
+#include <Columns/IColumn.h>
+#include <Storages/System/SystemTableSourceRegistry.h>
 #include <DataTypes/DataTypeString.h>
+#include <Storages/System/StorageSystemLicenses.h>
 
 
 extern const char * library_licenses[];
@@ -30,3 +30,6 @@ void StorageSystemLicenses::fillData(MutableColumns & res_columns, ContextPtr, c
     }
 }
 }
+
+/// Register the source file of this system table for `system.documentation`.
+namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemLicenses) }

@@ -1,7 +1,6 @@
 #include <Backups/RestoreCoordinationLocal.h>
 
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/formatAST.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/logger_useful.h>
 
@@ -21,6 +20,12 @@ RestoreCoordinationLocal::~RestoreCoordinationLocal() = default;
 ZooKeeperRetriesInfo RestoreCoordinationLocal::getOnClusterInitializationKeeperRetriesInfo() const
 {
     return {};
+}
+
+bool RestoreCoordinationLocal::acquireCreatingSharedDatabase(const String & database_name)
+{
+    std::lock_guard lock{mutex};
+    return acquired_shared_databases.emplace(database_name).second;
 }
 
 bool RestoreCoordinationLocal::acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name)
@@ -53,7 +58,7 @@ bool RestoreCoordinationLocal::acquireInsertingDataForKeeperMap(const String & r
 
 void RestoreCoordinationLocal::generateUUIDForTable(ASTCreateQuery & create_query)
 {
-    String query_str = serializeAST(create_query);
+    String query_str = create_query.formatWithSecretsOneLine();
 
     auto find_in_map = [&]() TSA_REQUIRES(mutex)
     {

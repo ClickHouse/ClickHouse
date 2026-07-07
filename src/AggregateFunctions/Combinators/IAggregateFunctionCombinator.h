@@ -39,6 +39,16 @@ public:
      */
     virtual bool supportsNesting() const { return false; }
 
+    /** Does this combinator transform argument types (like Merge, Array) rather than just adding logic?
+      *
+      * If true, the combinator expects arguments to be of specific types (e.g., Merge expects AggregateFunction type)
+      * and the asterisk in count(*) should NOT be removed because it refers to an actual column.
+      *
+      * If false (default), the combinator preserves the original aggregate function semantics,
+      * and asterisk in count(*) can be safely removed.
+      */
+    virtual bool transformsArgumentTypes() const { return false; }
+
     /** From the arguments for combined function (ex: UInt64, UInt8 for sumIf),
       *  get the arguments for nested function (ex: UInt64 for sum).
       * If arguments are not suitable for combined function, throw an exception.

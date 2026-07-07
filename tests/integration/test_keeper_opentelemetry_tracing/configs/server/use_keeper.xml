@@ -1,0 +1,9 @@
+<clickhouse>
+    <zookeeper>
+        <node index="1">
+            <host>clickHouseKeeper2</host>
+            <port>9181</port>
+        </node>
+        <pass_opentelemetry_tracing_context>1</pass_opentelemetry_tracing_context>
+    </zookeeper>
+</clickhouse>

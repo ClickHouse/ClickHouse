@@ -12,8 +12,10 @@ namespace DB
 class WorkloadEntityDiskStorage : public WorkloadEntityStorageBase
 {
 public:
-    WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_);
-    void loadEntities() override;
+    WorkloadEntityDiskStorage(const ContextPtr & global_context_, const String & dir_path_, std::unique_ptr<IWorkloadEntityStorage> next_storage_ = {});
+    void loadEntities(const Poco::Util::AbstractConfiguration & config) override;
+
+    std::string_view getName() const override { return "disk"; }
 
 private:
     OperationResult storeEntityImpl(

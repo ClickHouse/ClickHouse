@@ -143,8 +143,8 @@ SELECT y from merge(currentDatabase(), 02763_merge)
 SELECT *
 SELECT x, lc
 SELECT *
-1	11	111	111	42
-1	11	111	111	42
+1	11	111	111
+1	11	111	111
 SELECT x, lc
 1	111
 1	111
@@ -293,8 +293,8 @@ SELECT y from merge(currentDatabase(), 02763_merge)
 SELECT *
 SELECT x, lc
 SELECT *
-1	11	111	111	42
-1	11	111	111	42
+1	11	111	111
+1	11	111	111
 SELECT x, lc
 1	111
 1	111

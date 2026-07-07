@@ -1,18 +1,11 @@
 #!/usr/bin/env python3
 
-import os
-import random
-import socket
-import string
 import threading
-import time
-from io import StringIO
 
 import pytest
 
 import helpers.keeper_utils as keeper_utils
 from helpers.cluster import ClickHouseCluster
-from helpers.network import PartitionManager
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -37,11 +30,6 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
-
-
-def close_keeper_socket(cli):
-    if cli is not None:
-        cli.close()
 
 
 def test_aggressive_mntr(started_cluster):

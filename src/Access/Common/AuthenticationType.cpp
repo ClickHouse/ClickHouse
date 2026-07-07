@@ -27,6 +27,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
             static const auto info = make_info(Keyword::NO_PASSWORD);
             return info;
         }
+        case AuthenticationType::NO_AUTHENTICATION:
+        {
+            static const auto info = make_info(Keyword::NO_AUTHENTICATION);
+            return info;
+        }
         case AuthenticationType::PLAINTEXT_PASSWORD:
         {
             static const auto info = make_info(Keyword::PLAINTEXT_PASSWORD, true);
@@ -35,6 +40,11 @@ const AuthenticationTypeInfo & AuthenticationTypeInfo::get(AuthenticationType ty
         case AuthenticationType::SHA256_PASSWORD:
         {
             static const auto info = make_info(Keyword::SHA256_PASSWORD, true);
+            return info;
+        }
+        case AuthenticationType::SCRAM_SHA256_PASSWORD:
+        {
+            static const auto info = make_info(Keyword::SCRAM_SHA256_PASSWORD, true);
             return info;
         }
         case AuthenticationType::DOUBLE_SHA1_PASSWORD:

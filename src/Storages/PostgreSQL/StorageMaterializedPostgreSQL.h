@@ -3,7 +3,7 @@
 #include "config.h"
 
 #if USE_LIBPQXX
-#include "PostgreSQLReplicationHandler.h"
+#include <Storages/PostgreSQL/PostgreSQLReplicationHandler.h>
 
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -89,6 +89,11 @@ public:
     /// Used only for single MaterializedPostgreSQL storage.
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    /// Forward the size guard onto the nested table that `dropInnerTableIfAny` will
+    /// actually drop, so `CREATE OR REPLACE` cannot delete an over-limit nested table
+    /// that plain `DROP TABLE` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     bool needRewriteQueryWithFinal(const Names & column_names) const override;
 
     void read(
@@ -101,6 +106,15 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
+    /// Back up / restore the data of the underlying nested ReplacingMergeTree table.
+    void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+    void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
+
+    /// `backupData` delegates to the nested ReplacingMergeTree, which supports per-partition backups, so mirror
+    /// its capability here. Otherwise `BackupEntriesCollector` would reject `BACKUP TABLE ... PARTITIONS` before
+    /// the delegation can run, because `IStorage::supportsBackupPartition` defaults to `false`.
+    bool supportsBackupPartition() const override;
+
     /// This method is called only from MateriaizePostgreSQL database engine, because it needs to maintain
     /// an invariant: a table exists only if its nested table exists. This atomic variable is set to _true_
     /// only once - when nested table is successfully created and is never changed afterwards.
@@ -110,7 +124,7 @@ public:
 
     ASTPtr getCreateNestedTableQuery(PostgreSQLTableStructurePtr table_structure, const ASTTableOverride * table_override);
 
-    std::shared_ptr<ASTExpressionList> getColumnsExpressionList(
+    boost::intrusive_ptr<ASTExpressionList> getColumnsExpressionList(
         const NamesAndTypesList & columns, std::unordered_map<std::string, ASTPtr> defaults = {}) const;
 
     StoragePtr getNested() const;
@@ -122,7 +136,7 @@ public:
     /// temporary nested, which will be created shortly after.
     StoragePtr createTemporary() const;
 
-    ContextPtr getNestedTableContext() const { return nested_context; }
+    ContextMutablePtr getNestedTableContext() const { return nested_context; }
 
     StorageID getNestedStorageID() const;
 
@@ -133,12 +147,10 @@ public:
     bool supportsFinal() const override { return true; }
 
 private:
-    static std::shared_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
+    static boost::intrusive_ptr<ASTColumnDeclaration> getMaterializedColumnsDeclaration(
             String name, String type, UInt64 default_value);
 
     static VirtualColumnsDescription createVirtuals();
-
-    ASTPtr getColumnDeclaration(const DataTypePtr & data_type) const;
 
     String getNestedTableName() const;
 

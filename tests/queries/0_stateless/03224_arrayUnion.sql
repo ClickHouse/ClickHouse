@@ -55,3 +55,33 @@ SELECT length(arrayUnion(range(1, 100000), range(9999, 200000)));
 select '-------';
 --bigger number of arguments
 SELECT arraySort(arrayUnion([1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10], [1, 11], [1, 12], [1, 13], [1, 14], [1, 15], [1, 16], [1, 17], [1, 18], [1, 19]));
+
+-- Table with batch inserts
+DROP TABLE IF EXISTS test_array_union;
+CREATE TABLE test_array_union
+(
+    `id` Int8,
+    `properties` Array(String),
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8192;
+
+INSERT INTO test_array_union
+VALUES
+(1, ['1']),
+(2, ['2']),
+(3, ['3']),
+(4, ['4']),
+(5, ['5']),
+(6, ['6']),
+(7, ['7']),
+(8, ['8']),
+(9, ['9']),
+(10, ['10']);
+
+SELECT
+	ta.id AS id,
+    ta.properties AS properties,
+	arrayUnion(ta.properties) AS propertiesUnion
+FROM test_array_union ta;

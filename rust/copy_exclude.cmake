@@ -1,2 +1,0 @@
-file(COPY "${FROM}" DESTINATION "${TO}"
-    PATTERN target EXCLUDE)

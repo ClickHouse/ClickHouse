@@ -1,8 +1,8 @@
-#include <Columns/Collator.h>
 #include <Common/quoteString.h>
 #include <Parsers/ASTTTLElement.h>
+#include <Parsers/ASTWithAlias.h>
 #include <IO/Operators.h>
-#include <base/EnumReflection.h>
+
 
 namespace DB
 {
@@ -14,7 +14,7 @@ namespace ErrorCodes
 
 ASTPtr ASTTTLElement::clone() const
 {
-    auto clone = std::make_shared<ASTTTLElement>(*this);
+    auto clone = make_intrusive<ASTTTLElement>(*this);
     clone->children.clear();
     clone->ttl_expr_pos = -1;
     clone->where_expr_pos = -1;
@@ -32,7 +32,11 @@ ASTPtr ASTTTLElement::clone() const
 
 void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ttl()->formatImpl(ostr, settings, state, frame);
+    auto ttl_expr = ttl();
+    auto nested_frame = frame;
+    if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(ttl_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+        nested_frame.need_parens = true;
+    ttl_expr->format(ostr, settings, state, nested_frame);
     if (mode == TTLMode::MOVE)
     {
         if (destination_type == DataDestinationType::DISK)
@@ -52,38 +56,41 @@ void ASTTTLElement::formatImpl(WriteBuffer & ostr, const FormatSettings & settin
     else if (mode == TTLMode::GROUP_BY)
     {
         ostr << " GROUP BY ";
-        for (const auto * it = group_by_key.begin(); it != group_by_key.end(); ++it)
+        for (auto it = group_by_key.begin(); it != group_by_key.end(); ++it)
         {
             if (it != group_by_key.begin())
                 ostr << ", ";
-            (*it)->formatImpl(ostr, settings, state, frame);
+            (*it)->format(ostr, settings, state, frame);
         }
 
         if (!group_by_assignments.empty())
         {
             ostr << " SET ";
-            for (const auto * it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
+            for (auto it = group_by_assignments.begin(); it != group_by_assignments.end(); ++it)
             {
                 if (it != group_by_assignments.begin())
                     ostr << ", ";
-                (*it)->formatImpl(ostr, settings, state, frame);
+                (*it)->format(ostr, settings, state, frame);
             }
         }
     }
     else if (mode == TTLMode::RECOMPRESS)
     {
         ostr << " RECOMPRESS ";
-        recompression_codec->formatImpl(ostr, settings, state, frame);
+        recompression_codec->format(ostr, settings, state, frame);
     }
     else if (mode == TTLMode::DELETE)
     {
         /// It would be better to output "DELETE" here but that will break compatibility with earlier versions.
     }
 
-    if (where())
+    if (auto where_expr = where())
     {
         ostr << " WHERE ";
-        where()->formatImpl(ostr, settings, state, frame);
+        auto where_frame = frame;
+        if (auto * ast_alias = dynamic_cast<ASTWithAlias *>(where_expr.get()); ast_alias && !ast_alias->tryGetAlias().empty())
+            where_frame.need_parens = true;
+        where_expr->format(ostr, settings, state, where_frame);
     }
 }
 

@@ -59,6 +59,8 @@ CalendarTimeInterval::Intervals CalendarTimeInterval::toIntervals() const
     };
     greedy(months, {{IntervalKind::Kind::Year, 12}, {IntervalKind::Kind::Month, 1}});
     greedy(seconds, {{IntervalKind::Kind::Week, 3600*24*7}, {IntervalKind::Kind::Day, 3600*24}, {IntervalKind::Kind::Hour, 3600}, {IntervalKind::Kind::Minute, 60}, {IntervalKind::Kind::Second, 1}});
+    if (res.empty())
+        res.emplace_back(IntervalKind::Kind::Second, 0);
     return res;
 }
 

@@ -1,10 +1,11 @@
 #include <Parsers/ASTCollation.h>
+#include <Parsers/IAST_fwd.h>
 
 namespace DB
 {
     ASTPtr ASTCollation::clone() const
     {
-        auto res = std::make_shared<ASTCollation>(*this);
+        auto res = make_intrusive<ASTCollation>(*this);
         res->collation = collation->clone();
         return res;
     }
@@ -12,7 +13,7 @@ namespace DB
     void ASTCollation::formatImpl(WriteBuffer & ostr, const FormatSettings &s, FormatState &state, FormatStateStacked frame) const
     {
         if (collation)
-            collation->formatImpl(ostr, s, state, frame);
+            collation->format(ostr, s, state, frame);
     }
 
 }

@@ -11,7 +11,6 @@
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
@@ -218,7 +217,7 @@ namespace
         if (!ParserIdentifierWithOptionalParameters{}.parse(pos, backup_name, expected))
             return false;
 
-        backup_name->as<ASTFunction &>().kind = ASTFunction::Kind::BACKUP_NAME;
+        backup_name->as<ASTFunction &>().setKind(ASTFunction::Kind::BACKUP_NAME);
         return true;
     }
 
@@ -234,7 +233,20 @@ namespace
 
     bool parseClusterHostIDs(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
     {
-        return ParserArray{}.parse(pos, cluster_host_ids, expected);
+        /// Accept both [...] and array(...) syntax for formatting roundtrip consistency.
+        if (ParserArray{}.parse(pos, cluster_host_ids, expected))
+            return true;
+
+        ASTPtr tmp;
+        if (!ParserFunction{}.parse(pos, tmp, expected))
+            return false;
+
+        auto * func = tmp->as<ASTFunction>();
+        if (!func || func->name != "array")
+            return false;
+
+        cluster_host_ids = std::move(tmp);
+        return true;
     }
 
     bool parseClusterHostIDsSetting(IParser::Pos & pos, Expected & expected, ASTPtr & cluster_host_ids)
@@ -282,7 +294,7 @@ namespace
             ASTPtr res_settings;
             if (!settings_changes.empty())
             {
-                auto settings_changes_ast = std::make_shared<ASTSetQuery>();
+                auto settings_changes_ast = make_intrusive<ASTSetQuery>();
                 settings_changes_ast->changes = std::move(settings_changes);
                 settings_changes_ast->is_standalone = false;
                 res_settings = settings_changes_ast;
@@ -297,7 +309,7 @@ namespace
 
     bool parseSyncOrAsync(IParser::Pos & pos, Expected & expected, ASTPtr & settings)
     {
-        bool async;
+        bool async = false;
         if (ParserKeyword(Keyword::ASYNC).ignore(pos, expected))
             async = true;
         else if (ParserKeyword(Keyword::SYNC).ignore(pos, expected))
@@ -314,7 +326,7 @@ namespace
         std::erase_if(changes, [](const SettingChange & change) { return change.name == "async"; }); // NOLINT
         changes.emplace_back("async", async);
 
-        auto new_settings = std::make_shared<ASTSetQuery>();
+        auto new_settings = make_intrusive<ASTSetQuery>();
         new_settings->changes = std::move(changes);
         new_settings->is_standalone = false;
         settings = new_settings;
@@ -333,7 +345,7 @@ namespace
 
 bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    Kind kind;
+    Kind kind = {};
     if (ParserKeyword(Keyword::BACKUP).ignore(pos, expected))
         kind = Kind::BACKUP;
     else if (ParserKeyword(Keyword::RESTORE).ignore(pos, expected))
@@ -341,8 +353,14 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    ASTPtr base_snapshot_name = nullptr;
     std::vector<Element> elements;
-    if (!parseElements(pos, expected, elements))
+    if (kind == Kind::BACKUP && ParserKeyword(Keyword::FROM_SNAPSHOT).ignore(pos, expected))
+    {
+        if (!parseBackupName(pos, expected, base_snapshot_name))
+            return false;
+    }
+    else if (!parseElements(pos, expected, elements))
         return false;
 
     String cluster;
@@ -361,7 +379,7 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     parseSettings(pos, expected, settings, base_backup_name, cluster_host_ids);
     parseSyncOrAsync(pos, expected, settings);
 
-    auto query = std::make_shared<ASTBackupQuery>();
+    auto query = make_intrusive<ASTBackupQuery>();
     node = query;
 
     query->kind = kind;
@@ -376,6 +394,9 @@ bool ParserBackupQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (base_backup_name)
         query->set(query->base_backup_name, base_backup_name);
+
+    if (base_snapshot_name)
+        query->set(query->base_snapshot_name, base_snapshot_name);
 
     return true;
 }

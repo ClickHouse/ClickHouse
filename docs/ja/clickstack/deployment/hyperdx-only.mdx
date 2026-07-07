@@ -1,0 +1,88 @@
+---
+slug: /use-cases/observability/clickstack/deployment/hyperdx-only
+title: 'HyperDX のみ'
+description: 'HyperDX のみをデプロイする'
+doc_type: 'guide'
+keywords: ['HyperDX 単体デプロイ', 'HyperDX と ClickHouse の連携', 'HyperDX のみをデプロイ', 'HyperDX の Docker インストール', 'ClickHouse 向け可視化ツール']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import JSONSupport from '/snippets/ja/_json_support.mdx';
+
+このオプションは、オブザーバビリティデータやイベントデータがすでに格納されている稼働中の ClickHouse インスタンスがある場合を想定したものです。
+
+HyperDX はスタックの他の部分とは独立して使用でき、OpenTelemetry (OTel) だけでなく、任意のデータスキーマに対応しています。そのため、すでに ClickHouse 上に構築されているカスタムのオブザーバビリティパイプラインに適しています。
+
+すべての機能を利用するには、ダッシュボード、保存済み検索、ユーザー設定、アラートなどのアプリケーション状態を保存するための MongoDB インスタンスを用意する必要があります。
+
+このモードでは、データインジェストは完全にユーザー側で行います。独自にホストした OpenTelemetry collector、クライアントライブラリからの直接インジェスト、ClickHouse ネイティブのテーブルエンジン (Kafka や S3 など) 、ETL パイプライン、または ClickPipes のようなマネージドインジェストサービスを使用して、ClickHouse にデータを取り込むことができます。このアプローチは最大限の柔軟性を提供し、すでに ClickHouse を運用していて、その上に HyperDX を重ねて可視化、検索、アラート機能を追加したいチームに適しています。
+
+<div id="suitable-for">
+  ### 適したケース
+</div>
+
+* 既存のClickHouseユーザー
+* カスタムのイベントパイプライン
+
+<div id="deployment-steps">
+  ## デプロイ手順
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Docker でデプロイ
+
+    必要に応じて `YOUR_MONGODB_URI` を変更して、次のコマンドを実行します。
+
+    ```shell
+    docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
+    ```
+  </Step>
+
+  <Step>
+    ### HyperDX UI を開く
+
+    HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
+
+    要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
+
+    `Create` をクリックすると、接続情報の入力を求められます。
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+  </Step>
+
+  <Step>
+    ### 接続情報を入力
+
+    使用する外部 ClickHouse クラスター (例: ClickHouse Cloud) に接続します。
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX Login" size="md" />
+
+    ログソースの作成を求められた場合は、すべてのデフォルト値をそのまま使用し、`Table` フィールドに `otel_logs` を入力します。その他の設定は自動検出されるため、`Save New Source` をクリックできます。
+
+    <Info>
+      **ログソースの作成**
+
+      ログソースを作成するには、ClickHouse にテーブルが存在している必要があります。まだデータがない場合は、テーブルを作成するために ClickStack OpenTelemetry collector をデプロイすることをお勧めします。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="using-docker-compose">
+  ## Docker Compose を使用する
+</div>
+
+[Docker Compose 設定](/ja/clickstack/deployment/docker-compose) を変更することで、このガイドと同じ構成にできます。その際は、マニフェストから OTel collector と ClickHouse インスタンスを削除してください。
+
+<div id="otel-collector">
+  ## ClickStack OpenTelemetry collector
+</div>
+
+スタック内の他のコンポーネントとは独立して独自の OpenTelemetry collector を運用している場合でも、collector には ClickStack 版を使用することを推奨します。これにより、デフォルトのスキーマが使用され、インジェストに関するベストプラクティスが適用されます。
+
+スタンドアロンの collector のデプロイと設定の詳細については、[「OpenTelemetry を使用した取り込み」](/ja/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)を参照してください。
+
+<JSONSupport />

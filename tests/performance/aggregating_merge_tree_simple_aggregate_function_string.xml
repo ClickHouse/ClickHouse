@@ -13,7 +13,7 @@
         SETTINGS max_insert_threads = 16
     </create_query>
 
-    <fill_query>OPTIMIZE TABLE bench</fill_query>
+    <fill_query>OPTIMIZE TABLE bench FINAL</fill_query>
 
     <query>
         SELECT *

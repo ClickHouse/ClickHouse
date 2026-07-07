@@ -1,0 +1,36 @@
+--- minmax on sorted column ---
+  status:       applicable
+  skip_ratio:   99.0%
+  source:           empirical
+  sampled_marks:    100 / 100
+--- bloom_filter on uniform column ---
+  status:       applicable
+  skip_ratio:   0.0%
+  source:           empirical
+  sampled_marks:    100 / 100
+--- minmax range query ---
+  skip_ratio:   90.0%
+  sampled_marks:    100 / 100
+--- set index on sorted column ---
+  skip_ratio:   99.0%
+  source:           empirical
+  sampled_marks:    100 / 100
+--- index granularity 5 ---
+  skip_ratio:   95.0%
+  sampled_marks:    100 / 100
+--- empirical respects PK pruning ---
+  skip_ratio:   100.0%
+  sampled_marks:    50 / 100
+--- empirical with existing real index ---
+  skip_ratio:   100.0%
+  sampled_marks:    1 / 100
+--- proof: only baseline granules materialized ---
+  skip_ratio:   100.0%
+  source:           empirical
+  sampled_marks:    50 / 100
+--- non-uniform marks + PK pruning ---
+  status:       applicable
+  source:           empirical
+--- empirical on sparse-serialized column ---
+  status:       applicable
+  source:           empirical

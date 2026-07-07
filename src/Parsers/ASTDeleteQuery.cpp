@@ -1,5 +1,5 @@
 #include <Parsers/ASTDeleteQuery.h>
-#include <Common/quoteString.h>
+
 
 namespace DB
 {
@@ -11,8 +11,14 @@ String ASTDeleteQuery::getID(char delim) const
 
 ASTPtr ASTDeleteQuery::clone() const
 {
-    auto res = std::make_shared<ASTDeleteQuery>(*this);
+    auto res = make_intrusive<ASTDeleteQuery>(*this);
     res->children.clear();
+
+    if (partition)
+    {
+        res->partition = partition->clone();
+        res->children.push_back(res->partition);
+    }
 
     if (predicate)
     {
@@ -32,27 +38,27 @@ ASTPtr ASTDeleteQuery::clone() const
 
 void ASTDeleteQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "DELETE FROM " << (settings.hilite ? hilite_none : "");
+    ostr << "DELETE FROM ";
 
     if (database)
     {
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
         ostr << '.';
     }
 
     chassert(table);
-    table->formatImpl(ostr, settings, state, frame);
+    table->format(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " IN PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(ostr, settings, state, frame);
+        ostr << " IN PARTITION ";
+        partition->format(ostr, settings, state, frame);
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << " WHERE " << (settings.hilite ? hilite_none : "");
-    predicate->formatImpl(ostr, settings, state, frame);
+    ostr << " WHERE ";
+    predicate->format(ostr, settings, state, frame);
 }
 
 }

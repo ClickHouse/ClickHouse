@@ -14,6 +14,7 @@
 </div>
 
 ## How To Install (Linux, macOS, FreeBSD)
+
 ```
 curl https://clickhouse.com/ | sh
 ```
@@ -22,9 +23,10 @@ curl https://clickhouse.com/ | sh
 
 * [Official website](https://clickhouse.com/) has a quick high-level overview of ClickHouse on the main page.
 * [ClickHouse Cloud](https://clickhouse.cloud) ClickHouse as a service, built by the creators and maintainers.
-* [Tutorial](https://clickhouse.com/docs/en/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
-* [Documentation](https://clickhouse.com/docs/en/) provides more in-depth information.
+* [Tutorial](https://clickhouse.com/docs/getting_started/tutorial/) shows how to set up and query a small ClickHouse cluster.
+* [Documentation](https://clickhouse.com/docs/) provides more in-depth information.
 * [YouTube channel](https://www.youtube.com/c/ClickHouseDB) has a lot of content about ClickHouse in video format.
+* [ClickHouse Theater](https://presentations.clickhouse.com/) contains presentations and videos about ClickHouse.
 * [Slack](https://clickhouse.com/slack) and [Telegram](https://telegram.me/clickhouse_en) allow chatting with ClickHouse users in real-time.
 * [Blog](https://clickhouse.com/blog/) contains various ClickHouse-related articles, as well as announcements and reports about events.
 * [Bluesky](https://bsky.app/profile/clickhouse.com) and [X](https://x.com/ClickHouseDB) for short news.
@@ -33,40 +35,48 @@ curl https://clickhouse.com/ | sh
 
 ## Monthly Release & Community Call
 
-Every month we get together with the community (users, contributors, customers, those interested in learning more about ClickHouse) to discuss what is coming in the latest release. If you are interested in sharing what you've built on ClickHouse, let us know.
+Join us for the [ClickHouse **26.5** Release Call](https://clickhouse.com/company/events/v26-5-community-release-call) on May 21, 2026.
 
-* [v24.10 Community Call](https://clickhouse.com/company/events/v24-10-community-release-call) - October 31
+Watch all release presentations and videos at [ClickHouse Theater](https://presentations.clickhouse.com/) and [YouTube Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3jAlSy1JxyP8zluvXaN3nxU).
 
 ## Upcoming Events
 
-Keep an eye out for upcoming meetups and events around the world. Somewhere else you want us to be? Please feel free to reach out to tyler `<at>` clickhouse `<dot>` com. You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
+Keep an eye out for upcoming meetups and events around the world.
+Want to speak? Apply [here](https://forms.gle/3h4XCEENJZ3eaVGy7)
+You can also peruse [ClickHouse Events](https://clickhouse.com/company/news-events) for a list of all upcoming trainings, meetups, speaking engagements, etc.
 
 Upcoming meetups
 
-* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/304382411) - December 9
-* [New York Meetup](https://www.meetup.com/clickhouse-new-york-user-group/events/304268174) - December 9
-* [Kuala Lampur Meetup](https://www.meetup.com/clickhouse-malaysia-meetup-group/events/304576472/) - December 11
-* [San Francisco Meetup](https://www.meetup.com/clickhouse-silicon-valley-meetup-group/events/304286951/) - December 12
-* [Dubai Meetup](https://www.meetup.com/clickhouse-dubai-meetup-group/events/303096989/) - Feb 3
+* [AI Builders Offstage: Docker & ClickHouse](https://paris.aitinkerers.org/p/ait-raise-docker-for-ai)  - July 7th, 2026
+* [AI Builders Night NY](https://luma.com/clickh-lz8k) - July 8th, 2026
+* [Happy Hour Open Source de Montréal](https://luma.com/clickh-o8up) - July 9th, 2026
+* [AI Builders Night SF](https://luma.com/clickh-gz0r)- July 14th, 2026
+* [Bangkok OSS & Data Evening: Queries, Code & Community](https://luma.com/gpzn0n8v) - July 23, 2026 
+* [Data at Scale Amsterdam](https://luma.com/clickh-ha56) - October 14th, 2026
 
-Recently completed meetups
 
-* [Amsterdam Meetup](https://www.meetup.com/clickhouse-netherlands-user-group/events/303638814) - December 3
-* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/303096434) - November 26
-* [Ghent Meetup](https://www.meetup.com/clickhouse-belgium-user-group/events/303049405/) - November 19
-* [Barcelona Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096876/) - November 12
-* [Madrid Meetup](https://www.meetup.com/clickhouse-spain-user-group/events/303096564/) - October 22
-* [Singapore Meetup](https://www.meetup.com/clickhouse-singapore-meetup-group/events/303212064/) - October 3
-* [Jakarta Meetup](https://www.meetup.com/clickhouse-indonesia-user-group/events/303191359/) - October 1
+
+Recent meetups
+* [AI Demo Night SF](https://luma.com/clickh-2crf) - July 1st, 2026
+* [KL Meetup](https://luma.com/clickh-8cfv) - June 26th, 2026 
+* [Seattle Iceberg Meetup](https://luma.com/vwt2i2rs) - June 25th, 2026
+* [NY Happy Hour](https://luma.com/odgqf98e) - June 17th, 2026
+* [ClickHouse Cafe @ Data & AI Summit](https://luma.com/clickh-vrjd) - June 16th, 2026
+* [Paris Meetup](https://www.meetup.com/clickhouse-france-user-group/events/314863232/) - June 11, 2026
+* [Meetup São Paulo](https://luma.com/clickh-87tk) - June 11th, 2026
+* [ClickHouse + Hex AI hackathon](https://luma.com/clickh-2ujv)- June 11th, 2026
+* [LA Happy Hour](https://luma.com/clickh-tshu) - June 10th, 2026
+* [Stockholm Meetup](https://www.meetup.com/clickhouse-stockholm-user-group/events/314862596/) - June 9th, 2026
+* [Toronto Meetup](https://luma.com/d5sytpvo) - June 2nd, 2026
 
 ## Recent Recordings
-* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. Current featuring "Modern SQL in 2023", "Fast, Concurrent, and Consistent Asynchronous INSERTS in ClickHouse", and "Full-Text Indices: Design and Experiments"
-* **Recording available**: [**v24.8 LTS Release Call**](https://www.youtube.com/watch?v=AeLmp2jc51k) All the features of 24.8 LTS, one convenient video! Watch it now!
-  
- ## Interested in joining ClickHouse and making it your full-time job? 
-  
-We are a globally diverse and distributed team, united behind a common goal of creating industry-leading, real-time analytics. Here, you will have an opportunity to solve some of the most cutting-edge technical challenges and have direct ownership of your work and vision. If you are a contributor by nature, a thinker and a doer - we’ll definitely click!
-  
-Check out our **current openings** here: https://clickhouse.com/company/careers 
-  
-Can't find what you are looking for, but want to let us know you are interested in joining ClickHouse? Email careers@clickhouse.com! 
+
+* **Recent Meetup Videos**: [Meetup Playlist](https://www.youtube.com/playlist?list=PL0Z2YDlm0b3iNDUzpY1S3L_iV4nARda_U) Whenever possible recordings of the ClickHouse Community Meetups are edited and presented as individual talks. 
+
+## Interested in joining ClickHouse and making it your full-time job?
+
+ClickHouse is a nice DBMS, and it's a good place to work.
+
+Check out our **current openings** here: https://clickhouse.com/company/careers
+
+Email: careers@clickhouse.com!

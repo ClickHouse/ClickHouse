@@ -1,12 +1,16 @@
 #pragma once
 
-#include <Columns/IColumn.h>
-#include <Columns/ColumnsCommon.h>
-#include <Columns/ColumnsNumber.h>
-
+#include <Columns/IColumn_fwd.h>
+#include <Common/PODArray_fwd.h>
 
 namespace DB
 {
+
+template <class> class ColumnVector;
+using ColumnUInt64 = ColumnVector<UInt64>;
+
+using IColumnFilter = PaddedPODArray<UInt8>;
+bool tryConvertAnyColumnToBool(const IColumn & column, IColumnFilter & res);
 
 /// Support methods for implementation of WHERE, PREWHERE and HAVING.
 
@@ -26,30 +30,33 @@ struct IFilterDescription
     virtual ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const = 0;
     virtual size_t countBytesInFilter() const = 0;
     virtual ~IFilterDescription() = default;
-protected:
 };
 
-/// Obtain a filter from non constant Column, that may have type: UInt8, Nullable(UInt8).
 struct FilterDescription final : public IFilterDescription
 {
-    const IColumn::Filter * data = nullptr; /// Pointer to filter when it is not always true or always false.
-    ColumnPtr data_holder;                  /// If new column was generated, it will be owned by holder.
+    const IColumnFilter * data = nullptr;
+    ColumnPtr data_holder;
 
     explicit FilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override { return column.filter(*data, result_size_hint); }
-    size_t countBytesInFilter() const override { return DB::countBytesInFilter(*data); }
-protected:
+    ColumnPtr filter(const IColumn & column, ssize_t result_size_hint) const override;
+    size_t countBytesInFilter() const override;
+
+    /// Takes a filter column that may be sparse or const or low-cardinality or nullable or wider
+    /// than 8 bits, etc. Returns a ColumnUInt8.
+    static ColumnPtr preprocessFilterColumn(ColumnPtr column);
 };
 
 struct SparseFilterDescription final : public IFilterDescription
 {
     const ColumnUInt64 * filter_indices = nullptr;
+
+    /// Holds offsets for Sparse(Nullable) filter, keeping only non-null and non-zero elements.
+    ColumnPtr valid_offsets;
     explicit SparseFilterDescription(const IColumn & column);
 
-    ColumnPtr filter(const IColumn & column, ssize_t) const override { return column.index(*filter_indices, 0); }
-    size_t countBytesInFilter() const override { return filter_indices->size(); }
-protected:
+    ColumnPtr filter(const IColumn & column, ssize_t) const override;
+    size_t countBytesInFilter() const override;
 };
 
 struct ColumnWithTypeAndName;

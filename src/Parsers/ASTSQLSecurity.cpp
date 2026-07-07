@@ -12,16 +12,16 @@ void ASTSQLSecurity::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
 
     if (definer || is_definer_current_user)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << "DEFINER" << (settings.hilite ? hilite_none : "");
+        ostr << "DEFINER";
         ostr << " = ";
         if (definer)
-            definer->formatImpl(ostr, settings, state, frame);
+            definer->format(ostr, settings, state, frame);
         else
             ostr << "CURRENT_USER";
         ostr << " ";
     }
 
-    ostr << (settings.hilite ? hilite_keyword : "") << "SQL SECURITY" << (settings.hilite ? hilite_none : "");
+    ostr << "SQL SECURITY";
     switch (*type)
     {
         case SQLSecurityType::INVOKER:

@@ -1,3 +1,4 @@
+SET explain_query_plan_default = 'legacy';
 DROP TABLE IF EXISTS t_02809;
 
 CREATE TABLE t_02809(a Int64, b Int64, s String)
@@ -14,6 +15,7 @@ AS SELECT * FROM numbers(10);
 
 
 SET optimize_move_to_prewhere=1;
+SET query_plan_optimize_prewhere = 1;
 
 -- Queries with 'IN'
 SELECT * FROM (EXPLAIN actions=1 SELECT * FROM t_02809 WHERE a IN (SELECT * FROM system.one)) WHERE explain LIKE '%Prewhere filter';

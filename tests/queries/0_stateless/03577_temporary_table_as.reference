@@ -1,0 +1,1 @@
+CREATE TEMPORARY TABLE test3\n(\n    `a` UInt8,\n    `b` String,\n    `c` Nullable(Float32),\n    `date` Date\n)\nENGINE = MergeTree\nPARTITION BY date\nORDER BY (a, b)

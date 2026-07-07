@@ -13,12 +13,12 @@ void ASTQualifiedAsterisk::appendColumnName(WriteBuffer & ostr) const
 
 void ASTQualifiedAsterisk::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    qualifier->formatImpl(ostr, settings, state, frame);
+    qualifier->format(ostr, settings, state, frame);
     ostr << ".*";
 
     if (transformers)
     {
-        transformers->formatImpl(ostr, settings, state, frame);
+        transformers->format(ostr, settings, state, frame);
     }
 }
 

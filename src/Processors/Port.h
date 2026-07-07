@@ -1,12 +1,12 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
-#include <variant>
-#include <cstdint>
 
 #include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
 #include <Common/Exception.h>
@@ -20,12 +20,13 @@ class IProcessor;
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
 
 class Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
     friend class IProcessor;
 
 public:
@@ -60,6 +61,8 @@ protected:
             /// Note: std::variant can be used. But move constructor for it can't be inlined.
             Chunk chunk;
             std::exception_ptr exception;
+
+            bool isEmpty() const { return chunk.empty() && !exception; }
         };
 
     private:
@@ -200,7 +203,7 @@ protected:
         std::atomic<Data *> data;
     };
 
-    Block header;
+    const SharedHeader header;
     std::shared_ptr<State> state;
 
     /// This object is only used for data exchange between port and shared state.
@@ -214,12 +217,17 @@ protected:
 public:
     using Data = State::Data;
 
-    Port(Block header_) : header(std::move(header_)) {} /// NOLINT
-    Port(Block header_, IProcessor * processor_) : header(std::move(header_)), processor(processor_) {}
+
+    Port(SharedHeader header_) : header(std::move(header_)) { } // NOLINT(google-explicit-constructor)
+    Port(Block && header_) : header(std::make_shared<const Block>(std::move(header_))) { } // NOLINT(google-explicit-constructor)
+    Port(const Block & header_) : header(std::make_shared<const Block>(header_)) { } // NOLINT(google-explicit-constructor)
+    Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
+    bool hasUpdateInfo() const { return update_info != nullptr; }
 
-    const Block & getHeader() const { return header; }
+    const Block & getHeader() const { return *header; }
+    const SharedHeader & getSharedHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
 
     void ALWAYS_INLINE assumeConnected() const
@@ -268,6 +276,7 @@ protected:
 class InputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     OutputPort * output_port = nullptr;
@@ -289,7 +298,7 @@ public:
 
         is_finished = flags & State::IS_FINISHED;
 
-        if (unlikely(!data->exception && data->chunk.getNumColumns() != header.columns()))
+        if (unlikely(!data->exception && data->chunk.getNumColumns() != header->columns()))
         {
             auto & chunk = data->chunk;
 
@@ -298,9 +307,9 @@ public:
                 "Invalid number of columns in chunk pulled from OutputPort. Expected {}, found {}\n"
                 "Header: {}\n"
                 "Chunk: {}\n",
-                header.columns(),
+                header->columns(),
                 chunk.getNumColumns(),
-                header.dumpStructure(),
+                header->dumpStructure(),
                 chunk.dumpStructure());
         }
 
@@ -391,6 +400,7 @@ public:
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
+    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     InputPort * input_port = nullptr;
@@ -410,16 +420,16 @@ public:
 
     void ALWAYS_INLINE pushData(Data data_)
     {
-        if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header.columns()))
+        if (unlikely(!data_.exception && data_.chunk.getNumColumns() != header->columns()))
         {
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "Invalid number of columns in chunk pushed to OutputPort. Expected {}, found {}\n"
                 "Header: {}\n"
                 "Chunk: {}\n",
-                header.columns(),
+                header->columns(),
                 data_.chunk.getNumColumns(),
-                header.dumpStructure(),
+                header->dumpStructure(),
                 data_.chunk.dumpStructure());
         }
 
@@ -484,5 +494,6 @@ using OutputPorts = std::list<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);
+void disconnect(OutputPort & output, InputPort & input);
 
 }

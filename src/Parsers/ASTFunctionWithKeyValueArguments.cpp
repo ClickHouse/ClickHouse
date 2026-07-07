@@ -16,7 +16,7 @@ String ASTPair::getID(char) const
 
 ASTPtr ASTPair::clone() const
 {
-    auto res = std::make_shared<ASTPair>(*this);
+    auto res = make_intrusive<ASTPair>(*this);
     res->children.clear();
     res->set(res->second, second->clone());
     return res;
@@ -25,10 +25,10 @@ ASTPtr ASTPair::clone() const
 
 void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(first) << " " << (settings.hilite ? hilite_none : "");
+    ostr << Poco::toUpper(first) << " ";
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << "(";
+        ostr << "(";
 
     if (!settings.show_secrets && (first == "password"))
     {
@@ -42,26 +42,24 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         WriteBufferFromOwnString temp_buf;
         FormatSettings tmp_settings(settings.one_line);
         FormatState tmp_state;
-        second->formatImpl(temp_buf, tmp_settings, tmp_state, frame);
+        second->format(temp_buf, tmp_settings, tmp_state, frame);
 
         maskURIPassword(&temp_buf.str());
         ostr << temp_buf.str();
     }
     else
     {
-        second->formatImpl(ostr, settings, state, frame);
+        second->format(ostr, settings, state, frame);
     }
 
     if (second_with_brackets)
-        ostr << (settings.hilite ? hilite_keyword : "") << ")";
-
-    ostr << (settings.hilite ? hilite_none : "");
+        ostr << ")";
 }
 
 
 bool ASTPair::hasSecretParts() const
 {
-    return first == "password";
+    return (first == "password") || second->hasSecretParts();
 }
 
 
@@ -82,7 +80,7 @@ String ASTFunctionWithKeyValueArguments::getID(char delim) const
 
 ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 {
-    auto res = std::make_shared<ASTFunctionWithKeyValueArguments>(*this);
+    auto res = make_intrusive<ASTFunctionWithKeyValueArguments>(*this);
     res->children.clear();
 
     if (elements)
@@ -97,10 +95,9 @@ ASTPtr ASTFunctionWithKeyValueArguments::clone() const
 
 void ASTFunctionWithKeyValueArguments::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << Poco::toUpper(name) << (settings.hilite ? hilite_none : "") << (has_brackets ? "(" : "");
-    elements->formatImpl(ostr, settings, state, frame);
+    ostr << Poco::toUpper(name) << (has_brackets ? "(" : "");
+    elements->format(ostr, settings, state, frame);
     ostr << (has_brackets ? ")" : "");
-    ostr << (settings.hilite ? hilite_none : "");
 }
 
 

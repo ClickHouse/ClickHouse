@@ -8,6 +8,9 @@
 #include <Columns/ColumnString.h>
 #include <Interpreters/Context.h>
 #include <base/scope_guard.h>
+#include <Common/thread_local_rng.h>
+#include <Common/ErrnoException.h>
+#include <Common/VectorWithMemoryTracking.h>
 
 #include <thread>
 #include <memory>
@@ -32,11 +35,8 @@ namespace ErrorCodes
 
 
 /// Various illegal actions to test diagnostic features of ClickHouse itself. Should not be enabled in production builds.
-class FunctionTrap : public IFunction
+class FunctionTrap final : public IFunction, private WithContext
 {
-private:
-    ContextPtr context;
-
 public:
     static constexpr auto name = "trap";
     static FunctionPtr create(ContextPtr context)
@@ -44,7 +44,7 @@ public:
         return std::make_shared<FunctionTrap>(context);
     }
 
-    FunctionTrap(ContextPtr context_) : context(context_) {}
+    explicit FunctionTrap(ContextPtr context_) : WithContext(context_) {}
 
     String getName() const override
     {
@@ -135,11 +135,11 @@ public:
             }
             else if (mode == "throw exception")
             {
-                std::vector<int>().at(0);
+                VectorWithMemoryTracking<int>().at(0);
             }
             else if (mode == "access context")
             {
-                (void)context->getCurrentQueryId();
+                (void)getContext()->getCurrentQueryId();
             }
             else if (mode == "stack overflow")
             {
@@ -152,7 +152,7 @@ public:
             }
             else if (mode == "mmap many")
             {
-                std::vector<void *> maps;
+                VectorWithMemoryTracking<void *> maps;
                 SCOPE_EXIT(
                 {
                     //for (void * map : maps)

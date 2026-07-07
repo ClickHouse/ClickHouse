@@ -1,8 +1,0 @@
-position: 1
-label: 'Getting Started'
-collapsible: true
-collapsed: true
-link:
-  type: generated-index
-  title: Getting Started
-  slug: /en/getting-started

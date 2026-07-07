@@ -37,8 +37,12 @@ function thread_query()
     while [ $SECONDS -lt "$TIMELIMIT" ] && [ $it -lt 2000 ];
     do
         it=$((it+1))
+
+        # TODO(ab): Buffer engine cannot safely apply optimize_functions_to_subcolumns
+        # after the underlying storage column type has changed with implicit conversion.
+        # In this case, subcolumn reads will fall back to default values.
         $CLICKHOUSE_CLIENT --ignore-error -q "
-            SELECT sum(length(s)) FROM buffer_00763_1;
+            SELECT sum(length(s)) FROM buffer_00763_1 SETTINGS optimize_functions_to_subcolumns = 0;
         " 2>&1 | grep -vP '(^3$|^Received exception from server|^Code: 473)'
     done
 }

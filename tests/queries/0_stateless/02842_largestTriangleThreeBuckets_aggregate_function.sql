@@ -61,4 +61,6 @@ SELECT
   point_x - neighbor(point_x, -1) AS point_x_diff_with_previous_row
 FROM largestTriangleTreeBucketsBucketSizeTest LIMIT 990, 10;
 
+SELECT largestTriangleThreeBuckets(1)(0, '1900-01-01 00:00:00'::DateTime64);
+
 DROP TABLE largestTriangleTreeBucketsBucketSizeTest;

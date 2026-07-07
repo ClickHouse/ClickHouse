@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Analyzer/QueryNode.h>
 #include <Core/SortDescription.h>
-
-#include <Planner/PlannerContext.h>
-
 #include <Interpreters/WindowDescription.h>
+#include <Planner/PlannerContext.h>
 
 namespace DB
 {

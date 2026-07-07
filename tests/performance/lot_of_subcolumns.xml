@@ -17,7 +17,7 @@
     <fill_query>INSERT INTO lot_of_arrays(id) SELECT number FROM numbers(1000)</fill_query>
     <fill_query>OPTIMIZE TABLE lot_of_arrays FINAL</fill_query>
 
-    <query short="1">SELECT nested.arr0 FROM lot_of_arrays WHERE id > 10 FORMAT Null</query>
+    <query>SELECT nested.arr0 FROM lot_of_arrays WHERE id > 10 FORMAT Null</query>
 
     <drop_query>DROP TABLE IF EXISTS lot_of_arrays</drop_query>
 </test>

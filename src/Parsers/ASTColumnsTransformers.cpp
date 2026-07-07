@@ -1,5 +1,5 @@
 #include <map>
-#include "ASTColumnsTransformers.h"
+#include <Parsers/ASTColumnsTransformers.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -25,7 +25,7 @@ void ASTColumnsTransformerList::formatImpl(WriteBuffer & ostr, const FormatSetti
     for (const auto & child : children)
     {
         ostr << ' ';
-        child->formatImpl(ostr, settings, state, frame);
+        child->format(ostr, settings, state, frame);
     }
 }
 
@@ -47,14 +47,14 @@ void IASTColumnsTransformer::transform(const ASTPtr & transformer, ASTs & nodes)
 
 void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "APPLY" << (settings.hilite ? hilite_none : "") << " ";
+    ostr << "APPLY" << " ";
 
     if (!column_name_prefix.empty())
         ostr << "(";
 
     if (lambda)
     {
-        lambda->formatImpl(ostr, settings, state, frame);
+        lambda->format(ostr, settings, state, frame);
     }
     else
     {
@@ -65,7 +65,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
             auto nested_frame = frame;
             nested_frame.expression_list_prepend_whitespace = false;
             ostr << "(";
-            parameters->formatImpl(ostr, settings, state, nested_frame);
+            parameters->format(ostr, settings, state, nested_frame);
             ostr << ")";
         }
     }
@@ -166,7 +166,7 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 
 void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "EXCEPT" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "EXCEPT" << (is_strict ? " STRICT " : " ");
 
     if (children.size() > 1)
         ostr << "(";
@@ -177,7 +177,7 @@ void ASTColumnsExceptTransformer::formatImpl(WriteBuffer & ostr, const FormatSet
         {
             ostr << ", ";
         }
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 
     if (pattern)
@@ -228,9 +228,14 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     if (!pattern)
     {
         for (const auto & child : children)
-            expected_columns.insert(child->as<const ASTIdentifier &>().name());
+        {
+            if (const auto * identifier = child->as<ASTIdentifier>())
+                expected_columns.insert(identifier->name());
+            else
+                expected_columns.insert(child->getAliasOrColumnName());
+        }
 
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
             if (const auto * id = it->get()->as<ASTIdentifier>())
             {
@@ -249,9 +254,9 @@ void ASTColumnsExceptTransformer::transform(ASTs & nodes) const
     {
         auto regexp = getMatcher();
 
-        for (auto * it = nodes.begin(); it != nodes.end();)
+        for (auto it = nodes.begin(); it != nodes.end();)
         {
-            if (const auto * id = it->get()->as<ASTIdentifier>())
+            if (auto * id = it->get()->as<ASTIdentifier>())
             {
                 if (RE2::PartialMatch(id->shortName(), *regexp))
                 {
@@ -294,15 +299,15 @@ std::shared_ptr<re2::RE2> ASTColumnsExceptTransformer::getMatcher() const
 void ASTColumnsReplaceTransformer::Replacement::formatImpl(
     WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
-    children[0]->formatImpl(ostr, settings, state, frame);
-    ostr << (settings.hilite ? hilite_keyword : "") << " AS " << (settings.hilite ? hilite_none : "") << backQuoteIfNeed(name);
+    children[0]->format(ostr, settings, state, frame);
+    ostr << " AS " << backQuoteIfNeed(name);
 }
 
 void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & ostr) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     children[0]->appendColumnName(ostr);
     writeCString(" AS ", ostr);
@@ -311,7 +316,7 @@ void ASTColumnsReplaceTransformer::Replacement::appendColumnName(WriteBuffer & o
 
 void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
 {
-    assert(children.size() == 1);
+    chassert(children.size() == 1);
 
     hash_state.update(name.size());
     hash_state.update(name);
@@ -321,7 +326,7 @@ void ASTColumnsReplaceTransformer::Replacement::updateTreeHashImpl(SipHash & has
 
 void ASTColumnsReplaceTransformer::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "REPLACE" << (is_strict ? " STRICT " : " ") << (settings.hilite ? hilite_none : "");
+    ostr << "REPLACE" << (is_strict ? " STRICT " : " ");
 
     ostr << "(";
     for (ASTs::const_iterator it = children.begin(); it != children.end(); ++it)
@@ -329,7 +334,7 @@ void ASTColumnsReplaceTransformer::formatImpl(WriteBuffer & ostr, const FormatSe
         if (it != children.begin())
             ostr << ", ";
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
     ostr << ")";
 }
@@ -380,7 +385,7 @@ void ASTColumnsReplaceTransformer::transform(ASTs & nodes) const
     for (const auto & replace_child : children)
     {
         auto & replacement = replace_child->as<Replacement &>();
-        if (replace_map.find(replacement.name) != replace_map.end())
+        if (replace_map.contains(replacement.name))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                             "Expressions in columns transformer REPLACE should not contain the same replacement more than once");
         replace_map.emplace(replacement.name, replacement.children[0]);

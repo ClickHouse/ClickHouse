@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+message StringOrString {
+  oneof string_oneof {
+    string string1 = 1;
+    string string2 = 2;
+  }
+}

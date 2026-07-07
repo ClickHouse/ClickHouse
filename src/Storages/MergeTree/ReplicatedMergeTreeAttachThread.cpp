@@ -3,6 +3,9 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Common/ZooKeeper/IKeeper.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
+#include <Interpreters/Context.h>
+#include <Core/BackgroundSchedulePool.h>
 
 namespace CurrentMetrics
 {
@@ -28,7 +31,7 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
     , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeAttachThread)")
     , log(getLogger(log_name))
 {
-    task = storage.getContext()->getSchedulePool().createTask(log_name, [this] { run(); });
+    task = storage.getContext()->getSchedulePool().createTask(storage.getStorageID(), log_name, [this] { run(); });
     const auto storage_settings = storage.getSettings();
     retry_period = (*storage_settings)[MergeTreeSetting::initialization_retry_period].totalSeconds();
 }
@@ -36,6 +39,11 @@ ReplicatedMergeTreeAttachThread::ReplicatedMergeTreeAttachThread(StorageReplicat
 ReplicatedMergeTreeAttachThread::~ReplicatedMergeTreeAttachThread()
 {
     shutdown();
+}
+
+void ReplicatedMergeTreeAttachThread::start()
+{
+    task->activateAndSchedule();
 }
 
 void ReplicatedMergeTreeAttachThread::shutdown()
@@ -50,6 +58,7 @@ void ReplicatedMergeTreeAttachThread::shutdown()
 void ReplicatedMergeTreeAttachThread::run()
 {
     bool needs_retry{false};
+    auto component_guard = Coordination::setCurrentComponent("ReplicatedMergeTreeAttachThread");
     try
     {
         // we delay the first reconnect if the storage failed to connect to ZK initially
@@ -130,6 +139,21 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     auto zookeeper = storage.getZooKeeper();
     const auto & zookeeper_path = storage.zookeeper_path;
     bool metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    if (!metadata_exists && skip_sanity_checks)
+    {
+        LOG_INFO(log, "Missing metadata in keeper. Force restoring it");
+        try
+        {
+            storage.restoreMetadataInZooKeeper({}, true);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log);
+            return;
+        }
+        metadata_exists = zookeeper->exists(zookeeper_path + "/metadata");
+    }
+
     if (!metadata_exists)
     {
         LOG_WARNING(log, "No metadata in ZooKeeper for {}: table will stay in readonly mode.", zookeeper_path);
@@ -137,7 +161,7 @@ void ReplicatedMergeTreeAttachThread::runImpl()
         return;
     }
 
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr();
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
 
     const auto & replica_path = storage.replica_path;
     /// May it be ZK lost not the whole root, so the upper check passed, but only the /replicas/replica
@@ -166,23 +190,24 @@ void ReplicatedMergeTreeAttachThread::runImpl()
     /// Just in case it was not removed earlier due to connection loss
     zookeeper->tryRemove(replica_path + "/flags/force_restore_data");
 
-    storage.checkTableStructure(replica_path, metadata_snapshot);
+    /// Here `zookeeper_retries_info = {}` because the attach thread has its own retries (see ReplicatedMergeTreeAttachThread::run()).
+    storage.checkTableStructure(replica_path, metadata_snapshot, /* metadata_version = */ nullptr, /* strict_check = */ true, /* zookeeper_retries_info = */ {});
     storage.checkParts(skip_sanity_checks);
 
     /// Temporary directories contain uninitialized results of Merges or Fetches (after forced restart),
     /// don't allow to reinitialize them, delete each of them immediately.
     storage.clearOldTemporaryDirectories(0, {"tmp_", "delete_tmp_", "tmp-fetch_"});
 
-    storage.createNewZooKeeperNodes();
-    storage.syncPinnedPartUUIDs();
+    storage.createNewZooKeeperNodes(/* zookeeper_retries_info = */ {});
+    storage.syncPinnedPartUUIDs(/* zookeeper_retries_info = */ {});
 
     std::lock_guard lock(storage.table_shared_id_mutex);
-    storage.createTableSharedID();
+    storage.createTableSharedID(/* zookeeper_retries_info = */ {});
 };
 
 void ReplicatedMergeTreeAttachThread::finalizeInitialization() TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    storage.startupImpl(/* from_attach_thread */ true);
+    storage.startupImpl(/* from_attach_thread */ true, /* zookeeper_retries_info = */ {});
     storage.initialization_done = true;
     LOG_INFO(log, "Table is initialized");
 }

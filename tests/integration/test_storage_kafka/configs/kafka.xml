@@ -1,4 +1,5 @@
 <clickhouse>
+    <background_message_broker_schedule_pool_size>128</background_message_broker_schedule_pool_size>
     <kafka>
         <!-- Debugging of possible issues, like:
              - https://github.com/edenhill/librdkafka/issues/2077
@@ -24,6 +25,12 @@
             <heartbeat_interval_ms>302</heartbeat_interval_ms>
         </kafka_separate_settings>
         <consumer>
+            <!-- In librdkafka 1.7.0 the default value of session.timeout.ms was changed -->
+            <!-- from 10s to 45s. Let's keep the old behavior for the tests as some of -->
+            <!-- are depending on this timing. It shouldn't cause any issues in normal -->
+            <!-- use, only consumers should be more robust, see KIP-735. -->
+            <session_timeout_ms>10000</session_timeout_ms>
+
             <auto_offset_reset>earliest</auto_offset_reset>
             <kafka_topic>
                 <!-- Setting for topic will be applied only for consumer -->

@@ -20,7 +20,7 @@ expect_after {
     -i $any_spawn_id timeout { exit 1 }
 }
 
-spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_OPT --disable_suggestion --enable-progress-table-toggle=0 --history_file=$history_file"
+spawn bash -c "source $basedir/../shell_config.sh ; \$CLICKHOUSE_CLIENT_BINARY \$CLICKHOUSE_CLIENT_EXPECT_OPT --history_file=$history_file"
 expect ":) "
 
 # Send a command
@@ -36,16 +36,19 @@ send -- "  \\l ;  \\d;  \r"
 expect ":) "
 
 send -- "  \\l  ;\r"
-expect "SHOW DATABASES"
+expect "SHOW"
+expect "DATABASES"
 expect "system"
 expect ":) "
 
 send -- "\\c system;\r"
-#expect "USE system"
+expect "USE"
+expect "system"
 expect ":) "
 
 send -- "  \\d like 'one'\\G\r"
-expect "SHOW TABLES"
+expect "SHOW"
+expect "TABLES"
 expect "Row 1:"
 expect "name: one"
 expect ":) "

@@ -96,8 +96,8 @@ public:
     {
         if constexpr (std::is_same_v<T, String> || std::is_same_v<T, IPv6>)
         {
-            StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+            auto value = columns[0]->getDataAt(row_num);
+            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data(), value.size()));
         }
         else
         {
@@ -129,7 +129,7 @@ public:
         }
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }
@@ -188,7 +188,7 @@ public:
             UniqVariadicHash<is_exact, argument_is_tuple>::apply(num_args, columns, row_num)));
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).set.merge(this->data(rhs).set);
     }

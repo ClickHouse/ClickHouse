@@ -14,7 +14,8 @@ SHOW CREATE dict;
 
 CREATE TABLE table
 (
-    col MATERIALIZED dictGet(currentDatabase() || '.dict', 'value', toUInt32(1))
+    col MATERIALIZED dictGet(currentDatabase() || '.dict', 'value', toUInt32(1)),
+    phys Int
 )
 ENGINE = MergeTree()
 ORDER BY tuple();

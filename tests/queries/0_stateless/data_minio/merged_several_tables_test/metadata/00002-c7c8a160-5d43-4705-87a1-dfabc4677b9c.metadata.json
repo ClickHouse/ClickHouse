@@ -1,0 +1,93 @@
+{
+  "format-version": 2,
+  "table-uuid": "ea8d1178-7756-4b89-b21f-00e9f31fe03e",
+  "location": "s3a://test/merged_several_tables_test",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1743422749547,
+  "last-column-id": 2,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": false,
+          "type": "int"
+        },
+        {
+          "id": 2,
+          "name": "name",
+          "required": false,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": []
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": []
+    }
+  ],
+  "properties": {
+    "owner": "divanik",
+    "option.format-version": "2",
+    "write.parquet.compression-codec": "zstd"
+  },
+  "current-snapshot-id": 1893158857028005124,
+  "refs": {
+    "main": {
+      "snapshot-id": 1893158857028005124,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 1893158857028005124,
+      "timestamp-ms": 1743422749547,
+      "summary": {
+        "operation": "append",
+        "spark.app.id": "local-1743422737373",
+        "added-data-files": "2",
+        "added-records": "2",
+        "added-files-size": "1250",
+        "changed-partition-count": "1",
+        "total-records": "2",
+        "total-files-size": "1250",
+        "total-data-files": "2",
+        "total-delete-files": "0",
+        "total-position-deletes": "0",
+        "total-equality-deletes": "0"
+      },
+      "manifest-list": "s3a://test/merged_several_tables_test/metadata/snap-1893158857028005124-1-5f3bf1e1-6bf9-42de-b42c-932989d02512.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [],
+  "partition-statistics": [],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1743422749547,
+      "snapshot-id": 1893158857028005124
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1743422747608,
+      "metadata-file": "s3a://test/merged_several_tables_test/metadata/00001-aec4e034-3f73-48f7-87ad-51b7b42a8db7.metadata.json"
+    }
+  ]
+}

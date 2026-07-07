@@ -2,13 +2,8 @@
 
 #include <Interpreters/SystemLog.h>
 #include <Common/AsynchronousMetrics.h>
-#include <Common/ProfileEvents.h>
-#include <Common/CurrentMetrics.h>
-#include <Core/NamesAndTypes.h>
 #include <Core/NamesAndAliases.h>
 #include <Storages/ColumnsDescription.h>
-
-#include <ctime>
 
 
 namespace DB
@@ -18,10 +13,10 @@ namespace DB
   */
 struct AsynchronousMetricLogElement
 {
-    UInt16 event_date;
-    time_t event_time;
+    UInt16 event_date{};
+    time_t event_time{};
     std::string metric_name;
-    double value;
+    double value{};
 
     static std::string name() { return "AsynchronousMetricLog"; }
     static ColumnsDescription getColumnsDescription();

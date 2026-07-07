@@ -112,7 +112,7 @@ OPTIMIZE TABLE execute_on_single_replica_r1 FINAL;
 SYSTEM SYNC REPLICA execute_on_single_replica_r1;
 SYSTEM SYNC REPLICA execute_on_single_replica_r2;
 
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS part_log;
 
 SELECT '****************************';
 SELECT '*** part_log';
@@ -121,7 +121,7 @@ SELECT
     arraySort(groupArrayIf(table, event_type = 'MergeParts')) AS mergers,
     arraySort(groupArrayIf(table, event_type = 'DownloadPart')) AS fetchers
 FROM system.part_log
-WHERE (event_time > (now() - 120))
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND (event_time > (now() - 120))
   AND (table LIKE 'execute\\_on\\_single\\_replica\\_r%')
   AND (part_name NOT LIKE '%\\_0')
   AND (database = currentDatabase())

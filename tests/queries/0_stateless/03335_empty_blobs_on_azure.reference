@@ -1,0 +1,14 @@
+0	[]
+all_1_1_0
+Skipped empty blobs after 1 insert:	1
+0	[]
+1	[]
+all_1_1_0
+all_2_2_0
+0	[]
+1	[]
+all_1_2_1
+Backup-restore succeeded
+0	[]
+1	[]
+Skipped empty blobs after 2 inserts and merge:	3

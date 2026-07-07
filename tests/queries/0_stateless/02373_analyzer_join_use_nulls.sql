@@ -6,14 +6,14 @@ CREATE TABLE test_table_join_1
 (
     id UInt64,
     value String
-) ENGINE = TinyLog;
+) ENGINE = MergeTree ORDER BY tuple();
 
 DROP TABLE IF EXISTS test_table_join_2;
 CREATE TABLE test_table_join_2
 (
     id UInt64,
     value String
-) ENGINE = TinyLog;
+) ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO test_table_join_1 VALUES (0, 'Join_1_Value_0');
 INSERT INTO test_table_join_1 VALUES (1, 'Join_1_Value_1');

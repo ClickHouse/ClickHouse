@@ -1,18 +1,16 @@
 #include <IO/Operators.h>
 #include <Parsers/ASTColumnDeclaration.h>
-#include <Parsers/ASTConstraintDeclaration.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
-#include <Parsers/ASTProjectionDeclaration.h>
 #include <Parsers/ASTTableOverrides.h>
+
 
 namespace DB
 {
 
 ASTPtr ASTTableOverride::clone() const
 {
-    auto res = std::make_shared<ASTTableOverride>(*this);
+    auto res = make_intrusive<ASTTableOverride>(*this);
     res->children.clear();
     res->table_name = table_name;
     if (columns)
@@ -26,13 +24,11 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 {
     String nl_or_nothing = settings.one_line ? "" : "\n";
     String nl_or_ws = settings.one_line ? " " : "\n";
-    String hl_keyword = settings.hilite ? hilite_keyword : "";
-    String hl_none = settings.hilite ? hilite_none : "";
 
     if (is_standalone)
     {
-        ostr << hl_keyword << "TABLE OVERRIDE " << hl_none;
-        ASTIdentifier(table_name).formatImpl(ostr, settings, state, frame);
+        ostr << "TABLE OVERRIDE ";
+        ASTIdentifier(table_name).format(ostr, settings, state, frame);
     }
     auto override_frame = frame;
     if (is_standalone)
@@ -46,8 +42,8 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
     {
         FormatStateStacked columns_frame = override_frame;
         columns_frame.expression_list_always_start_on_new_line = true;
-        ostr << indent_str << hl_keyword << "COLUMNS" << hl_none << nl_or_ws << indent_str << "(";
-        columns->formatImpl(ostr, settings, state, columns_frame);
+        ostr << indent_str << "COLUMNS" << nl_or_ws << indent_str << "(";
+        columns->format(ostr, settings, state, columns_frame);
         ostr << nl_or_nothing << indent_str << ")";
         ++override_elems;
     }
@@ -57,10 +53,8 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
         {
             if (elem)
             {
-                ostr << (override_elems++ ? nl_or_ws : "")
-                              << indent_str
-                              << hl_keyword << elem_name << hl_none << ' ';
-                elem->formatImpl(ostr, settings, state, override_frame);
+                ostr << (override_elems++ ? nl_or_ws : "") << indent_str << elem_name << ' ';
+                elem->format(ostr, settings, state, override_frame);
             }
         };
         format_storage_elem(storage->partition_by, "PARTITION BY");
@@ -76,7 +70,7 @@ void ASTTableOverride::formatImpl(WriteBuffer & ostr, const FormatSettings & set
 
 ASTPtr ASTTableOverrideList::clone() const
 {
-    auto res = std::make_shared<ASTTableOverrideList>(*this);
+    auto res = make_intrusive<ASTTableOverrideList>(*this);
     res->cloneChildren();
     return res;
 }
@@ -133,7 +127,7 @@ void ASTTableOverrideList::formatImpl(WriteBuffer & ostr, const FormatSettings &
             ostr << (settings.one_line ? ", " : ",\n");
         }
 
-        (*it)->formatImpl(ostr, settings, state, frame);
+        (*it)->format(ostr, settings, state, frame);
     }
 }
 

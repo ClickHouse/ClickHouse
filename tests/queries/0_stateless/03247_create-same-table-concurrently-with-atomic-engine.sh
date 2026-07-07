@@ -10,7 +10,7 @@ $CLICKHOUSE_CLIENT --query "CREATE DATABASE IF NOT EXISTS ${CLICKHOUSE_DATABASE}
 function create_or_replace_table_thread
 {
     for _ in {1..20}; do
-        $CLICKHOUSE_CLIENT --query "CREATE OR REPLACE TABLE ${CLICKHOUSE_DATABASE}_db.test_table (x Int) ENGINE=Memory" > /dev/null
+        ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -d "CREATE OR REPLACE TABLE ${CLICKHOUSE_DATABASE}_db.test_table (x Int) ENGINE=Memory" > /dev/null
     done
 }
 export -f create_or_replace_table_thread;

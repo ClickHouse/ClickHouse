@@ -1,10 +1,10 @@
 #pragma once
 
-#include <Core/Block.h>
+#include <Core/Block_fwd.h>
 #include <Core/Field.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
+#include <Parsers/IAST_fwd.h>
 
 #include <memory>
 #include <optional>

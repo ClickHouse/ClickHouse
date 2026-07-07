@@ -1,0 +1,269 @@
+---
+slug: /best-practices/use-data-skipping-indices-where-appropriate
+sidebarTitle: 'Index de saut de données'
+title: 'Utiliser les index de saut de données lorsque cela est pertinent'
+description: "Page expliquant comment et quand utiliser les index de saut de données"
+keywords: ['index de saut de données', 'index de saut']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les index de saut de données doivent être envisagés une fois les bonnes pratiques précédentes appliquées, c.-à-d. lorsque les types sont optimisés, qu’une bonne clé primaire a été choisie et que les vues matérialisées ont été exploitées. Si vous découvrez les indices de saut, [ce guide](/fr/concepts/features/performance/skip-indexes/skipping-indexes) constitue un bon point de départ.
+
+Ces types d’indices peuvent être utilisés pour améliorer les performances des requêtes, à condition de les employer avec précaution et d’en comprendre le fonctionnement.
+
+ClickHouse fournit un mécanisme puissant appelé **index de saut de données** qui peut réduire considérablement la quantité de données analysées lors de l’exécution d’une requête — en particulier lorsque la clé primaire n’est d’aucune aide pour une condition de filtrage donnée. Contrairement aux bases de données traditionnelles qui s’appuient sur des index secondaires basés sur les lignes (comme les B-trees), ClickHouse est une base de données en colonnes et ne stocke pas l’emplacement des lignes d’une manière compatible avec ce type de structure. À la place, il utilise des indices de saut, qui lui permettent d’éviter de lire des blocs de données dont il est garanti qu’ils ne correspondent pas aux conditions de filtrage d’une requête.
+
+Les indices de saut fonctionnent en stockant des métadonnées sur des blocs de données — telles que des valeurs min/max, des ensembles de valeurs ou des représentations de filtre de Bloom — puis en utilisant ces métadonnées pendant l’exécution de la requête pour déterminer quels blocs de données peuvent être entièrement ignorés. Ils s’appliquent uniquement à la [famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) des moteurs de table et sont définis à l’aide d’une expression, d’un type d’index, d’un nom et d’une granularité qui définit la taille de chaque bloc indexé. Ces index sont stockés avec les données de la table et sont consultés lorsque le filtre de la requête correspond à l’expression de l’index.
+
+Il existe plusieurs types d’index de saut de données, chacun adapté à différents types de requêtes et de distributions de données :
+
+* **minmax** : suit la valeur minimale et maximale d’une expression par bloc. Idéal pour les requêtes par plage sur des données faiblement triées.
+* **set(N)** : suit un ensemble de valeurs jusqu’à une taille spécifiée N pour chaque bloc. Efficace sur les colonnes à faible cardinalité par bloc.
+* **text** : construit un index inversé sur des données textuelles tokenisées, permettant une recherche en texte intégral efficace et déterministe. Recommandé pour les colonnes contenant du langage naturel ou de grands textes libres, lorsqu’une recherche précise de tokens et une recherche évolutive sur plusieurs termes sont requises, plutôt que des approches approximatives basées sur un filtre de Bloom.
+* **bloom&#95;filter** : détermine de manière probabiliste si une valeur existe dans un bloc, ce qui permet un filtrage approximatif rapide pour l’appartenance à un ensemble. Efficace pour optimiser les requêtes cherchant « une aiguille dans une botte de foin », lorsqu’une correspondance positive est nécessaire.
+* **tokenbf&#95;v1 / ngrambf&#95;v1** : *(Obsolète)* Variantes spécialisées de filtre de Bloom conçues pour rechercher des tokens ou des séquences de caractères dans des chaînes — particulièrement utiles pour les données de logs ou les cas d’usage de recherche textuelle. Obsolète dans les versions de ClickHouse &gt;= 26.2 au profit des index textuels.
+
+Bien que puissants, les indices de saut doivent être utilisés avec précaution. Ils n’apportent un bénéfice que lorsqu’ils permettent d’éliminer un nombre significatif de blocs de données, et peuvent en réalité ajouter une surcharge si la requête ou la structure des données ne s’y prête pas. Si une seule valeur correspondante existe dans un bloc, ce bloc entier doit quand même être lu.
+
+**L’utilisation efficace des indices de saut dépend souvent d’une forte corrélation entre la colonne indexée et la clé primaire de la table, ou d’une insertion des données de manière à regrouper les valeurs similaires.**
+
+En général, les index de saut de données s’appliquent de préférence après s’être assuré d’une bonne conception de la clé primaire et d’une optimisation des types. Ils sont particulièrement utiles pour :
+
+* Les colonnes à forte cardinalité globale mais à faible cardinalité au sein d’un bloc.
+* Les valeurs rares qui sont critiques pour la recherche (p. ex. codes d’erreur, ID spécifiques).
+* Les cas où le filtrage porte sur des colonnes hors clé primaire avec une distribution localisée.
+
+Toujours :
+
+1. Testez les indices de saut sur des données réelles avec des requêtes réalistes. Essayez différents types d’index et différentes valeurs de granularité.
+2. Évaluez leur impact à l’aide d’outils comme send&#95;logs&#95;level=&#39;trace&#39; et `EXPLAIN indexes=1` pour visualiser l’efficacité de l’index.
+3. Évaluez toujours la taille d’un index et la manière dont elle est affectée par la granularité. Réduire la granularité améliore souvent les performances jusqu’à un certain point, en permettant de filtrer davantage de granules et de réduire le volume à analyser. Toutefois, à mesure que la taille de l’index augmente avec une granularité plus faible, les performances peuvent aussi se dégrader. Mesurez les performances et la taille de l’index pour différentes valeurs de granularité. Cela est particulièrement pertinent pour les index de filtre de Bloom.
+
+<p />
+
+**Lorsqu’ils sont utilisés de manière appropriée, les indices de saut peuvent offrir un gain de performances substantiel — utilisés à l’aveugle, ils peuvent ajouter un coût inutile.**
+
+Pour un guide plus détaillé sur les index de saut de données, voir [ici](/fr/reference/statements/alter/skipping-index).
+
+<div id="example">
+  ## Exemple
+</div>
+
+Prenez en compte la table optimisée suivante. Elle contient des données Stack Overflow avec une ligne par post.
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+Cette table est optimisée pour les requêtes qui filtrent et agrègent par type de post et par date. Supposons que nous souhaitions compter le nombre de posts ayant plus de 10 000 000 de vues publiés après 2009.
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.720 sec. Processed 59.55 million rows, 230.23 MB (82.66 million rows/s., 319.56 MB/s.)
+```
+
+Cette requête peut exclure certaines lignes (et granules) grâce à l&#39;index primaire. Cependant, la majorité des lignes doit encore être lue, comme l&#39;indiquent la réponse ci-dessus et la commande `EXPLAIN indexes = 1` suivante :
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+LIMIT 1
+```
+
+```response
+┌─explain──────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                        │
+│   Limit (preliminary LIMIT (without OFFSET))                     │
+│     Aggregating                                                  │
+│       Expression (Before GROUP BY)                               │
+│         Expression                                               │
+│           ReadFromMergeTree (stackoverflow.posts)                │
+│           Indexes:                                               │
+│             MinMax                                               │
+│               Keys:                                              │
+│                 CreationDate                                     │
+│               Condition: (CreationDate in ('1230768000', +Inf))  │
+│               Parts: 123/128                                     │
+│               Granules: 8513/8545                                │
+│             Partition                                            │
+│               Keys:                                              │
+│                 toYear(CreationDate)                             │
+│               Condition: (toYear(CreationDate) in [2009, +Inf))  │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+│             PrimaryKey                                           │
+│               Keys:                                              │
+│                 toDate(CreationDate)                             │
+│               Condition: (toDate(CreationDate) in [14245, +Inf)) │
+│               Parts: 123/123                                     │
+│               Granules: 8513/8513                                │
+└──────────────────────────────────────────────────────────────────┘
+
+25 rows in set. Elapsed: 0.070 sec.
+```
+
+Une analyse simple montre que `ViewCount` est corrélé à `CreationDate` (une clé primaire), comme on pourrait s&#39;y attendre — plus un post existe depuis longtemps, plus il a eu l&#39;occasion d&#39;être consulté.
+
+```sql
+SELECT toDate(CreationDate) AS day, avg(ViewCount) AS view_count FROM stackoverflow.posts WHERE day > '2009-01-01'  GROUP BY day
+```
+
+C&#39;est donc un choix logique pour un index de saut de données. Étant donné qu&#39;il s&#39;agit d&#39;un type numérique, un index MinMax est pertinent. Nous ajoutons un index à l’aide des commandes `ALTER TABLE` suivantes — nous l’ajoutons d’abord, puis nous le &quot;matérialisons&quot;.
+
+```sql
+ALTER TABLE stackoverflow.posts
+  (ADD INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1);
+
+ALTER TABLE stackoverflow.posts MATERIALIZE INDEX view_count_idx;
+```
+
+Cet index aurait également pu être ajouté lors de la création initiale de la table. Voici le schéma avec l’index minmax défini dans le DDL :
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+  `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+  `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime64(3, 'UTC'),
+  `Score` Int32,
+  `ViewCount` UInt32 CODEC(Delta(4), ZSTD(1)),
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime64(3, 'UTC') CODEC(Delta(8), ZSTD(1)),
+  `LastActivityDate` DateTime64(3, 'UTC'),
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16 CODEC(Delta(2), ZSTD(1)),
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense` LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime64(3, 'UTC'),
+  `ClosedDate` DateTime64(3, 'UTC'),
+  INDEX view_count_idx ViewCount TYPE minmax GRANULARITY 1 --index here
+)
+ENGINE = MergeTree
+PARTITION BY toYear(CreationDate)
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+L’animation suivante illustre comment est construit notre index minmax de saut de données pour la table d’exemple, en enregistrant les valeurs minimale et maximale de `ViewCount` pour chaque bloc de lignes (granule) de la table :
+
+<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Construction des index de saut de données" />
+
+En répétant la requête précédente, on observe de nettes améliorations des performances. Remarquez la diminution du nombre de lignes analysées :
+
+```sql
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─count()─┐
+│     5   │
+└─────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 39.11 thousand rows, 321.39 KB (3.40 million rows/s., 27.93 MB/s.)
+```
+
+Un `EXPLAIN indexes = 1` permet de confirmer l’utilisation de l’index.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts
+WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
+```
+
+```response
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   Aggregating                                                      │
+│     Expression (Before GROUP BY)                                   │
+│       Expression                                                   │
+│         ReadFromMergeTree (stackoverflow.posts)                    │
+│         Indexes:                                                   │
+│           MinMax                                                   │
+│             Keys:                                                  │
+│               CreationDate                                         │
+│             Condition: (CreationDate in ('1230768000', +Inf))      │
+│             Parts: 123/128                                         │
+│             Granules: 8513/8545                                    │
+│           Partition                                                │
+│             Keys:                                                  │
+│               toYear(CreationDate)                                 │
+│             Condition: (toYear(CreationDate) in [2009, +Inf))      │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               toDate(CreationDate)                                 │
+│             Condition: (toDate(CreationDate) in [14245, +Inf))     │
+│             Parts: 123/123                                         │
+│             Granules: 8513/8513                                    │
+│           Skip                                                     │
+│             Name: view_count_idx                                   │
+│             Description: minmax GRANULARITY 1                      │
+│             Parts: 5/123                                           │
+│             Granules: 23/8513                                      │
+└────────────────────────────────────────────────────────────────────┘
+
+29 rows in set. Elapsed: 0.211 sec.
+```
+
+Nous montrons également une animation illustrant comment l’index de saut minmax écarte tous les blocs de lignes qui ne peuvent pas contenir de résultats correspondant au prédicat `ViewCount` &gt; 10,000,000 dans notre requête d’exemple :
+
+<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Utilisation des index de saut" />
+
+<div id="related-docs">
+  ## Documentation connexe
+</div>
+
+* [Guide des index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Exemples d’index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes-examples)
+* [Gestion des index de saut de données](/fr/reference/statements/alter/skipping-index)
+* [Informations sur la table système](/fr/reference/system-tables/data_skipping_indices)

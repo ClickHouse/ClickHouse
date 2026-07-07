@@ -1,5 +1,0 @@
-[
-  {"name": "Joe", "age": 99, "type": "person"},
-  {"url": "/my.post.MD", "hits": 1263, "type": "post"},
-  {"message": "Warning on disk usage", "type": "log"}
-]

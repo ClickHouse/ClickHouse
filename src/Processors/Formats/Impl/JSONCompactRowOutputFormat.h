@@ -1,15 +1,13 @@
 #pragma once
 
-#include <Core/Block.h>
-#include <IO/WriteBuffer.h>
-#include <IO/WriteBufferValidUTF8.h>
 #include <Processors/Formats/Impl/JSONRowOutputFormat.h>
-
 
 namespace DB
 {
 
+class Block;
 struct FormatSettings;
+class WriteBuffer;
 
 /** The stream for outputting data in the JSONCompact- formats.
   */
@@ -18,7 +16,7 @@ class JSONCompactRowOutputFormat final : public JSONRowOutputFormat
 public:
     JSONCompactRowOutputFormat(
         WriteBuffer & out_,
-        const Block & header,
+        SharedHeader header,
         const FormatSettings & settings_,
         bool yield_strings_);
 

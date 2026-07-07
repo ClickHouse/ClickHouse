@@ -25,6 +25,8 @@
 #include "Poco/NumberFormatter.h"
 #include "Poco/CountingStream.h"
 #include "Poco/RegularExpression.h"
+#include "Poco/Stopwatch.h"
+#include <Poco/Exception.h>
 #include <sstream>
 
 
@@ -259,7 +261,7 @@ void HTTPClientSession::setLastRequest(Poco::Timestamp time)
 }
 
 
-std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
+std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * connect_time, uint64_t * first_byte_time)
 {
 	_pRequestStream = 0;
     _pResponseStream = 0;
@@ -274,10 +276,11 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 		close();
 		_mustReconnect = false;
 	}
+    Stopwatch first_byte_watch;
 	try
 	{
 		if (!connected())
-			reconnect();
+			reconnect(connect_time);
         if (!request.has(HTTPMessage::CONNECTION))
             request.setKeepAlive(keepAlive);
         if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
@@ -292,10 +295,14 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 		_reconnect = keepAlive;
 		_expectResponseBody = request.getMethod() != HTTPRequest::HTTP_HEAD;
 		const std::string& method = request.getMethod();
+        first_byte_watch.restart();
 		if (request.getChunkedTransferEncoding())
 		{
 			HTTPHeaderOutputStream hos(*this);
 			request.write(hos);
+			/// flush header to make sure that it is sent before the body
+			/// if flash is delayed until d-tor of HTTPHeaderOutputStream, then possible exception is muted and lost
+			hos.flush();
 			_pRequestStream = new HTTPChunkedOutputStream(*this);
 		}
 		else if (request.hasContentLength())
@@ -317,11 +324,15 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request)
 			_pRequestStream = new HTTPOutputStream(*this);
 			request.write(*_pRequestStream);
 		}
+        if (first_byte_time)
+            *first_byte_time = first_byte_watch.elapsed();
 		_lastRequest.update();
 		return *_pRequestStream;
 	}
 	catch (Exception&)
 	{
+        if (first_byte_time)
+            *first_byte_time = first_byte_watch.elapsed();
 		close();
 		throw;
 	}
@@ -440,7 +451,7 @@ int HTTPClientSession::write(const char* buffer, std::streamsize length)
 		if (_reconnect)
 		{
 			close();
-			reconnect();
+			reconnect(nullptr);
 			int rc = HTTPSession::write(buffer, length);
 			clearException();
 			_reconnect = false;
@@ -451,18 +462,37 @@ int HTTPClientSession::write(const char* buffer, std::streamsize length)
 }
 
 
-void HTTPClientSession::reconnect()
+void HTTPClientSession::reconnect(uint64_t * connect_time)
 {
-	if (_proxyConfig.host.empty() || bypassProxy())
-	{
-		SocketAddress addr(_resolved_host.empty() ? _host : _resolved_host, _port);
-		connect(addr);
-	}
-	else
-	{
-		SocketAddress addr(_proxyConfig.host, _proxyConfig.port);
-		connect(addr);
-	}
+    Stopwatch connect_watch;
+    try
+    {
+        connect_watch.restart();
+        if (_proxyConfig.host.empty() || bypassProxy())
+        {
+            SocketAddress addr(_resolved_host.empty() ? _host : _resolved_host, _port);
+            connect(addr);
+        }
+        else
+        {
+            SocketAddress addr(_proxyConfig.host, _proxyConfig.port);
+            connect(addr);
+        }
+        if (connect_time)
+            *connect_time = connect_watch.elapsed();
+    }
+    catch (Poco::TimeoutException&)
+    {
+        if (connect_time)
+            *connect_time = getConnectionTimeout().totalMicroseconds();
+        throw;
+    }
+    catch (...)
+    {
+        if (connect_time)
+            *connect_time = connect_watch.elapsed();
+        throw;
+    }
 }
 
 

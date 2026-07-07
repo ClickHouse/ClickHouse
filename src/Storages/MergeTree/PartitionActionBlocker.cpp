@@ -4,6 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 
+#include <shared_mutex>
+
 namespace DB
 {
 

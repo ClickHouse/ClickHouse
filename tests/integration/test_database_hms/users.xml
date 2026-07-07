@@ -1,0 +1,15 @@
+<clickhouse>
+    <users>
+        <default>
+            <profile>default</profile>
+            <password></password>
+        </default>
+    </users>
+    
+    <profiles>
+        <default>
+            <allow_experimental_database_hms_catalog>true</allow_experimental_database_hms_catalog>
+            <allow_experimental_database_iceberg>true</allow_experimental_database_iceberg>
+        </default>
+    </profiles>
+</clickhouse>

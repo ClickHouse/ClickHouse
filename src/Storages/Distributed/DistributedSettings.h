@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 
 namespace Poco::Util
@@ -17,7 +18,8 @@ struct DistributedSettingsImpl;
 #define DISTRIBUTED_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, Milliseconds) \
-    M(CLASS_NAME, UInt64)
+    M(CLASS_NAME, UInt64) \
+    M(CLASS_NAME, SkipUnavailableShardsMode)
 
 DISTRIBUTED_SETTINGS_SUPPORTED_TYPES(DistributedSettings, DECLARE_SETTING_TRAIT)
 
@@ -34,6 +36,8 @@ struct DistributedSettings
 
     void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
     void loadFromQuery(ASTStorage & storage_def);
+
+    static bool hasBuiltin(std::string_view name);
 
 private:
     std::unique_ptr<DistributedSettingsImpl> impl;

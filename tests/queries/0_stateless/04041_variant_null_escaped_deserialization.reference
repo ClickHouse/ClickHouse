@@ -1,0 +1,10 @@
+Variant(UInt64, Int32) with NULL:
+\N	1
+Variant(UInt64, String) with NULL:
+\N	1
+Variant(UInt64, Int32) with value:
+42	Int32
+format() Variant(UInt64, Int32) with NULL:
+\N	1
+42	0
+-1	0

@@ -1,9 +1,12 @@
 #include <Coordination/KeeperAsynchronousMetrics.h>
 
 #include <Coordination/KeeperDispatcher.h>
+#include <Coordination/KeeperStorage.h>
 
 #include <Common/getCurrentProcessFDCount.h>
 #include <Common/getMaxFileDescriptorCount.h>
+#include <Interpreters/AsynchronousMetricLog.h>
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -120,7 +123,7 @@ KeeperAsynchronousMetrics::KeeperAsynchronousMetrics(
     const ProtocolServerMetricsFunc & protocol_server_metrics_func_,
     bool update_jemalloc_epoch_,
     bool update_rss_)
-    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_)
+    : AsynchronousMetrics(update_period_seconds, protocol_server_metrics_func_, update_jemalloc_epoch_, update_rss_, context_)
     , context(std::move(context_))
 {
 }
@@ -140,6 +143,12 @@ void KeeperAsynchronousMetrics::updateImpl(TimePoint /*update_time*/, TimePoint 
             updateKeeperInformation(*keeper_dispatcher, new_values);
     }
 #endif
+}
+
+void KeeperAsynchronousMetrics::logImpl(AsynchronousMetricValues & new_values)
+{
+    if (auto asynchronous_metric_log = context->getAsynchronousMetricLog())
+        asynchronous_metric_log->addValues(new_values);
 }
 
 }

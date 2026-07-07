@@ -1,44 +1,54 @@
 #include <Parsers/ASTOptimizeQuery.h>
-#include <Common/quoteString.h>
 #include <IO/Operators.h>
+
 
 namespace DB
 {
 
 void ASTOptimizeQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
-    ostr << (settings.hilite ? hilite_keyword : "") << "OPTIMIZE TABLE " << (settings.hilite ? hilite_none : "");
+    ostr << "OPTIMIZE TABLE ";
 
     if (database)
     {
-        database->formatImpl(ostr, settings, state, frame);
+        database->format(ostr, settings, state, frame);
         ostr << '.';
     }
 
     chassert(table);
-    table->formatImpl(ostr, settings, state, frame);
+    table->format(ostr, settings, state, frame);
 
     formatOnCluster(ostr, settings);
 
     if (partition)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " PARTITION " << (settings.hilite ? hilite_none : "");
-        partition->formatImpl(ostr, settings, state, frame);
+        ostr << " PARTITION ";
+        partition->format(ostr, settings, state, frame);
+    }
+
+    if (dry_run)
+    {
+        ostr << " DRY RUN";
+        if (parts_list)
+        {
+            ostr << " PARTS ";
+            parts_list->format(ostr, settings, state, frame);
+        }
     }
 
     if (final)
-        ostr << (settings.hilite ? hilite_keyword : "") << " FINAL" << (settings.hilite ? hilite_none : "");
+        ostr << " FINAL";
 
     if (deduplicate)
-        ostr << (settings.hilite ? hilite_keyword : "") << " DEDUPLICATE" << (settings.hilite ? hilite_none : "");
+        ostr << " DEDUPLICATE";
 
     if (cleanup)
-        ostr << (settings.hilite ? hilite_keyword : "") << " CLEANUP" << (settings.hilite ? hilite_none : "");
+        ostr << " CLEANUP";
 
     if (deduplicate_by_columns)
     {
-        ostr << (settings.hilite ? hilite_keyword : "") << " BY " << (settings.hilite ? hilite_none : "");
-        deduplicate_by_columns->formatImpl(ostr, settings, state, frame);
+        ostr << " BY ";
+        deduplicate_by_columns->format(ostr, settings, state, frame);
     }
 }
 

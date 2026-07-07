@@ -3,8 +3,10 @@
   * (by terminating the program immediately).
   */
 
-/// It is only enabled in debug build (its intended use is for CI checks).
-#if !defined(NDEBUG)
+#include <base/sanitizer_defs.h>
+
+/// We check for "harmful" functions if it's a debug build or with a sanitizer.
+#if defined(DEBUG_OR_SANITIZER_BUILD)
 
 #pragma clang diagnostic ignored "-Wincompatible-library-redeclaration"
 
@@ -65,7 +67,6 @@ TRAP(gethostbyaddr)
 TRAP(gethostbyname)
 TRAP(gethostbyname2)
 TRAP(gethostent)
-TRAP(getlogin)
 TRAP(getnetbyaddr)
 TRAP(getnetbyname)
 TRAP(getnetent)
@@ -156,7 +157,9 @@ TRAP(siginterrupt)
 TRAP(sigpause)
 //TRAP(sigprocmask)
 TRAP(sigsuspend)
-TRAP(sleep)
+#if !USE_FUZZING_MODE
+TRAP(sleep) // Used by libFuzzer
+#endif
 TRAP(srand48)
 //TRAP(strerror) // Used by RocksDB and many other libraries, unfortunately.
 //TRAP(strsignal) // This function is imported from Musl and is thread safe.
@@ -291,6 +294,7 @@ TRAP(putenv)
 TRAP(setlogmask)
 TRAP(rand)
 TRAP(getmntent)
+TRAP(getlogin)
 #endif
 
 #endif

@@ -1,5 +1,6 @@
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Port.h>
 
 namespace DB
 {
@@ -12,8 +13,8 @@ namespace ErrorCodes
 
 IMergingTransformBase::IMergingTransformBase(
     size_t num_inputs,
-    const Block & input_header,
-    const Block & output_header,
+    SharedHeader & input_header,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -24,7 +25,12 @@ IMergingTransformBase::IMergingTransformBase(
 {
 }
 
-static InputPorts createPorts(const Blocks & blocks)
+OutputPort & IMergingTransformBase::getOutputPort()
+{
+    return outputs.front();
+}
+
+static InputPorts createPorts(const SharedHeaders & blocks)
 {
     InputPorts ports;
     for (const auto & block : blocks)
@@ -33,8 +39,8 @@ static InputPorts createPorts(const Blocks & blocks)
 }
 
 IMergingTransformBase::IMergingTransformBase(
-    const Blocks & input_headers,
-    const Block & output_header,
+    SharedHeaders & input_headers,
+    SharedHeader & output_header,
     bool have_all_inputs_,
     UInt64 limit_hint_,
     bool always_read_till_end_)
@@ -208,9 +214,19 @@ IProcessor::Status IMergingTransformBase::prepare()
             if (!input.hasData())
                 return Status::NeedData;
 
-            state.input_chunk.set(input.pull());
-            if (!state.input_chunk.chunk.hasRows() && !input.isFinished())
+            state.input_chunk.set(input.pull(/* set_not_needed */ true));
+            const auto & input_chunk = state.input_chunk.chunk;
+
+            bool virtual_row = isVirtualRow(input_chunk);
+            if (!virtual_row && (!limit_hint || input_chunk.getNumRows() < limit_hint || always_read_till_end))
+            {
+                input.setNeeded();
+            }
+            if (!input_chunk.hasRows() && !virtual_row && !input.isFinished())
+            {
+                input.setNeeded();
                 return Status::NeedData;
+            }
 
             state.has_input = true;
         }

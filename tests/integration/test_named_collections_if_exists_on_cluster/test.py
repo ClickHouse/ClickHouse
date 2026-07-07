@@ -95,7 +95,7 @@ def test_create_alter_drop_on_cluster(cluster):
         NODE03: [foobar_final_state],
     }
 
-    q_get_collections = f"select * from {SYSTEM_TABLE} order by name desc format JSON"
+    q_get_collections = f"select name, collection from {SYSTEM_TABLE} order by name desc format JSON"
 
     def check_state():
         for name, node in list(cluster.instances.items()):

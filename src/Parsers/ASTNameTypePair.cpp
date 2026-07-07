@@ -8,7 +8,7 @@ namespace DB
 
 ASTPtr ASTNameTypePair::clone() const
 {
-    auto res = std::make_shared<ASTNameTypePair>(*this);
+    auto res = make_intrusive<ASTNameTypePair>(*this);
     res->children.clear();
 
     if (type)
@@ -24,7 +24,7 @@ ASTPtr ASTNameTypePair::clone() const
 void ASTNameTypePair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
 {
     ostr << backQuoteIfNeed(name) << ' ';
-    type->formatImpl(ostr, settings, state, frame);
+    type->format(ostr, settings, state, frame);
 }
 
 }

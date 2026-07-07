@@ -6,7 +6,7 @@
 
 #include <IO/S3Settings.h>
 #include <Common/threadPoolCallbackRunner.h>
-#include <IO/S3/BlobStorageLogWriter.h>
+#include <Common/BlobStorageLogWriter.h>
 #include <base/types.h>
 #include <functional>
 #include <memory>
@@ -16,8 +16,17 @@ namespace DB
 {
 struct ReadSettings;
 class SeekableReadBuffer;
+class StdStreamFromReadBuffer;
 
 using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
+
+/// Builds the S3 upload request body for the part [offset, offset + size) of the source.
+/// The part is read fully into memory up front, so the returned body has no failable inner
+/// source buffer: the AWS SDK can rewind (clear(); seekg(0)) and resend the body on a retry
+/// without re-reading the source. Used for both PutObject and UploadPart request bodies.
+/// Declared here so unit tests can drive the real request-body construction.
+std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
+    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size);
 
 /// Copies a file from S3 to S3.
 /// The same functionality can be done by using the function copyData() and the classes ReadBufferFromS3 and WriteBufferFromS3
@@ -31,7 +40,7 @@ using CreateReadBuffer = std::function<std::unique_ptr<SeekableReadBuffer>()>;
 ///
 /// read_settings - is used for throttling in case of native copy is not possible
 void copyS3File(
-    const std::shared_ptr<const S3::Client> & src_s3_client,
+    std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
@@ -42,9 +51,9 @@ void copyS3File(
     const S3::S3RequestSettings & settings,
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    bool for_disk_s3 = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    const CreateReadBuffer& fallback_file_reader,
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 /// Copies data from any seekable source to S3.
 /// The same functionality can be done by using the function copyData() and the class WriteBufferFromS3
@@ -60,9 +69,8 @@ void copyDataToS3File(
     const String & dest_key,
     const S3::S3RequestSettings & settings,
     BlobStorageLogWriterPtr blob_storage_log,
-    const std::optional<std::map<String, String>> & object_metadata = std::nullopt,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule_ = {},
-    bool for_disk_s3 = false);
+    ThreadPoolCallbackRunnerUnsafe<void> schedule,
+    const std::optional<ObjectAttributes> & object_metadata = std::nullopt);
 
 }
 

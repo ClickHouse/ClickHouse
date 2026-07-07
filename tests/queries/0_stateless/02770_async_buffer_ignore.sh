@@ -15,15 +15,18 @@ SETTINGS disk = 's3_disk', min_bytes_for_wide_part = 0;
 INSERT INTO test_s3 SELECT number, number FROM numbers(1000000);
 "
 query="SELECT sum(b) FROM test_s3 WHERE a >= 100000 AND a <= 102000"
-query_id=$(${CLICKHOUSE_CLIENT} --query "select queryID() from ($query) limit 1" 2>&1)
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS"
+query_id=$(${CLICKHOUSE_CLIENT} -nm --query "
+SET read_through_distributed_cache=0;
+select queryID() from ($query) limit 1
+" 2>&1)
+${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 ${CLICKHOUSE_CLIENT} -m --query "
 SELECT
     ProfileEvents['S3ReadRequestsCount'],
     ProfileEvents['ReadBufferFromS3Bytes'],
     ProfileEvents['ReadCompressedBytes']
 FROM system.query_log
-WHERE type = 'QueryFinish'
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     AND current_database = currentDatabase()
     AND query_id='$query_id';
 "

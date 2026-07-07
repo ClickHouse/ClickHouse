@@ -1,26 +1,15 @@
 #pragma once
 
 #include <algorithm>
+#include <atomic>
 #include <exception>
 #include <memory>
-#include <cassert>
-#include <cstring>
 
-#include <Common/Exception.h>
-#include <Common/LockMemoryExceptionInThread.h>
 #include <IO/BufferBase.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
-    extern const int CANNOT_WRITE_AFTER_BUFFER_CANCELED;
-    extern const int LOGICAL_ERROR;
-}
-
 
 /** A simple abstract class for buffered data writing (char sequences) somewhere.
   * Unlike std::ostream, it provides access to the internal buffer,
@@ -63,6 +52,7 @@ public:
         try
         {
             nextImpl();
+            ++flush_count;
         }
         catch (CurrentBufferExhausted &)
         {
@@ -97,41 +87,9 @@ public:
             next();
     }
 
-    void write(const char * from, size_t n)
-    {
-        if (finalized)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
+    void write(const char * from, size_t n);
 
-        if (canceled)
-            throw Exception{ErrorCodes::CANNOT_WRITE_AFTER_BUFFER_CANCELED, "Cannot write to canceled buffer"};
-
-        size_t bytes_copied = 0;
-
-        /// Produces endless loop
-        assert(!working_buffer.empty());
-
-        while (bytes_copied < n)
-        {
-            nextIfAtEnd();
-            size_t bytes_to_copy = std::min(static_cast<size_t>(working_buffer.end() - pos), n - bytes_copied);
-            memcpy(pos, from + bytes_copied, bytes_to_copy);
-            pos += bytes_to_copy;
-            bytes_copied += bytes_to_copy;
-        }
-    }
-
-    void write(char x)
-    {
-        if (finalized)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to finalized buffer"};
-
-        if (canceled)
-            throw Exception{ErrorCodes::LOGICAL_ERROR, "Cannot write to canceled buffer"};
-
-        nextIfAtEnd();
-        *pos = x;
-        ++pos;
-    }
+    void write(char x);
 
     /// This method may be called before finalize() to tell there would not be any more data written.
     /// Used does not have to call it, implementation should check it itself if needed.
@@ -148,6 +106,9 @@ public:
 
     bool isFinalized() const { return finalized; }
     bool isCanceled() const { return canceled; }
+
+    /// Get number of times next() has been called (number of flushes)
+    size_t getFlushCount() const { return flush_count.load(std::memory_order_relaxed); }
 
     /// Wait for data to be reliably written. Mainly, call fsync for fd.
     /// May be called after finalize() if needed.
@@ -172,7 +133,6 @@ protected:
     virtual void cancelImpl() noexcept { }
 
     bool finalized = false;
-    bool canceled = false;
 
     /// The number of bytes to preserve from the initial position of `working_buffer`
     /// buffer. Apparently this is an additional out-parameter for nextImpl(),
@@ -183,10 +143,7 @@ private:
     /** Write the data in the buffer (from the beginning of the buffer to the current position).
       * Throw an exception if something is wrong.
       */
-    virtual void nextImpl()
-    {
-        throw Exception(ErrorCodes::CANNOT_WRITE_AFTER_END_OF_BUFFER, "Cannot write after end of buffer.");
-    }
+    virtual void nextImpl();
 
     bool isStackUnwinding() const
     {
@@ -194,6 +151,9 @@ private:
     }
 
     int exception_level = std::uncaught_exceptions();
+
+    /// Number of flushes for debugging/assertions
+    std::atomic<size_t> flush_count = 0;
 };
 
 
@@ -217,11 +177,10 @@ private:
     }
 };
 
-
 // AutoCanceledWriteBuffer cancel the buffer in d-tor when it has not been finalized before d-tor
 // AutoCanceledWriteBuffer could not be inherited.
 // Otherwise cancel method could not call proper cancelImpl ьуерщв because inheritor is destroyed already.
-// But the ussage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
+// But the usage of final inheritance is avoided in favor to keep the possibility to use std::make_shared.
 template<class Base>
 class AutoCanceledWriteBuffer final : public Base
 {
@@ -236,32 +195,4 @@ public:
             this->cancel();
     }
 };
-
-
-/// That class is applied only in 2 folloving cases
-// case 1 - HTTPServerResponse. The external interface HTTPResponse forces that.
-// case 2 - WriteBufferFromVector, WriteBufferFromString. It is safe to make them autofinaliziable.
-// AutoFinalizedWriteBuffer could not be inherited due to a restriction on polymorphics call in d-tor.
-template<class Base>
-class AutoFinalizedWriteBuffer final : public Base
-{
-    static_assert(std::derived_from<Base, WriteBuffer>);
-
-public:
-    using Base::Base;
-
-    ~AutoFinalizedWriteBuffer() override
-    {
-        try
-        {
-            if (!this->finalized && !this->canceled)
-                this->finalize();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    }
-};
-
 }

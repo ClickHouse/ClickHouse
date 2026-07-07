@@ -26,7 +26,12 @@ bool lessOp(A a, B b)
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a < b;
+#pragma clang diagnostic pop
+    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))
@@ -102,7 +107,12 @@ bool equalsOp(A a, B b)
 
     /// float vs float
     if constexpr (is_floating_point<A> && is_floating_point<B>)
+    {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdouble-promotion"
         return a == b;
+#pragma clang diagnostic pop
+    }
 
     /// anything vs NaN
     if (isNaN(a) || isNaN(b))
@@ -208,6 +218,13 @@ template <typename A, typename B> struct EqualsOp
     /// An operation that gives the same result, if arguments are passed in reverse order.
     using SymmetricOp = EqualsOp<B, A>;
 
+    static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
+    static constexpr bool compilable = true;
+};
+
+template <typename A, typename B> struct IsNotDistinctFromOp
+{
+    using SymmetricOp = IsNotDistinctFromOp<B, A>;
     static UInt8 apply(A a, B b) { return accurate::equalsOp(a, b); }
     static constexpr bool compilable = true;
 };

@@ -1,6 +1,12 @@
 <clickhouse>
     <profiles>
         <default>
+            <!-- To verify it works with compatibility values too (as long as they don't change tiers)
+                allow_experimental_reverse_key was introduced as experimental and added to compatibility,
+                but it's disabled in all cases. It has since been made obsolete, which does not affect this test.
+            -->
+            <compatibility>24.10</compatibility>
+
             <allow_experimental_time_series_table>0</allow_experimental_time_series_table>
         </default>
     </profiles>

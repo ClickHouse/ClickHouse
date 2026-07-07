@@ -3,10 +3,7 @@ SELECT
     groupArrayMovingSum(v)
 FROM
 (
-    SELECT
-        k,
-        dt,
-        v
+    SELECT *
     FROM moving_sum_num
     ORDER BY
         k ASC,

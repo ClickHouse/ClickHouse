@@ -21,7 +21,7 @@ TEST(ParserColumn, AllNonGeneratedColumnOption)
     ASTPtr ast = parseQuery(p_column, input.data(), input.data() + input.size(), "", 0, 0, 0);
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->name, "col_01");
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->name, "VARCHAR");
-    EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->arguments->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
+    EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->getArguments()->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
 
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareColumn>()->column_options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["is_null"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 0);
@@ -46,7 +46,7 @@ TEST(ParserColumn, AllGeneratedColumnOption)
     ASTPtr ast = parseQuery(p_column, input.data(), input.data() + input.size(), "", 0, 0, 0);
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->name, "col_01");
     EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->name, "VARCHAR");
-    EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->arguments->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
+    EXPECT_EQ(ast->as<ASTDeclareColumn>()->data_type->as<ASTDataType>()->getArguments()->children[0]->as<ASTLiteral>()->value.safeGet<UInt64>(), 100);
 
     ASTDeclareOptions * declare_options = ast->as<ASTDeclareColumn>()->column_options->as<ASTDeclareOptions>();
     EXPECT_EQ(declare_options->changes["is_null"]->as<ASTLiteral>()->value.safeGet<UInt64>(), 1);

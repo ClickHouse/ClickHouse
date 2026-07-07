@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/ServerSettings.h>
 #include <Server/IServer.h>
 
 #include <Daemon/BaseDaemon.h>
@@ -36,6 +37,7 @@ class Server : public BaseDaemon, public IServer
 public:
     using ServerApplication::run;
 
+    // Please register settings in ServerSettings.cpp instead of accessing the config directly if possible.
     Poco::Util::LayeredConfiguration & config() const override
     {
         return BaseDaemon::config();
@@ -77,7 +79,7 @@ private:
     HTTPContextPtr httpContext() const;
 
     Poco::Net::SocketAddress socketBindListen(
-        const Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         Poco::Net::ServerSocket & socket,
         const std::string & host,
         UInt16 port,
@@ -85,6 +87,7 @@ private:
 
     std::unique_ptr<TCPProtocolStackFactory> buildProtocolStackFromConfig(
         const Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const std::string & protocol,
         Poco::Net::HTTPServerParams::Ptr http_params,
         AsynchronousMetrics & async_metrics,
@@ -102,6 +105,7 @@ private:
 
     void createServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const Strings & listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
@@ -112,6 +116,7 @@ private:
 
     void createInterserverServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         const Strings & interserver_listen_hosts,
         bool listen_try,
         Poco::ThreadPool & server_pool,
@@ -122,6 +127,7 @@ private:
 
     void updateServers(
         Poco::Util::AbstractConfiguration & config,
+        const ServerSettings & server_settings,
         Poco::ThreadPool & server_pool,
         AsynchronousMetrics & async_metrics,
         std::vector<ProtocolServerAdapter> & servers,

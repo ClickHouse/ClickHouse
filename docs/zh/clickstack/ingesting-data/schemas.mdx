@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schemas
+description: 'ClickStack 使用的表和 schema - ClickHouse 可观测性技术栈'
+sidebarTitle: '表和 schema'
+title: 'ClickStack 使用的表和 schema'
+doc_type: 'reference'
+keywords: ['clickstack', 'schema', '数据模型', '表设计', '日志']
+---
+
+import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
+import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
+import OtelMetricsGaugeSchema from '/snippets/zh/clickstack/_schema_otel_metrics_gauge.mdx';
+import OtelMetricsSumSchema from '/snippets/zh/clickstack/_schema_otel_metrics_sum.mdx';
+import OtelMetricsHistogramSchema from '/snippets/zh/clickstack/_schema_otel_metrics_histogram.mdx';
+import OtelMetricsExponentialHistogramSchema from '/snippets/zh/clickstack/_schema_otel_metrics_exponential_histogram.mdx';
+import OtelMetricsSummarySchema from '/snippets/zh/clickstack/_schema_otel_metrics_summary.mdx';
+import HyperdxSessionsSchema from '/snippets/zh/clickstack/_schema_hyperdx_sessions.mdx';
+
+ClickStack 的 OpenTelemetry (OTel) collector 使用 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md) 在 ClickHouse 中创建表并插入数据。
+
+在 `default` 数据库中，系统会为每种数据类型创建以下表。你可以修改承载 OTel collector 的镜像所使用的环境变量 `HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE`，以更改该目标数据库。
+
+<div id="logs">
+  ## 日志
+</div>
+
+<OtelLogsSchema />
+
+<div id="traces">
+  ## 链路追踪
+</div>
+
+<OtelTracesSchema />
+
+<div id="metrics">
+  ## 指标
+</div>
+
+<div id="gauge">
+  ### Gauge 指标
+</div>
+
+<OtelMetricsGaugeSchema />
+
+<div id="sum">
+  ### 总和指标
+</div>
+
+<OtelMetricsSumSchema />
+
+<div id="histogram">
+  ### 直方图指标
+</div>
+
+<OtelMetricsHistogramSchema />
+
+<div id="exponential-histograms">
+  ### 指数直方图
+</div>
+
+<Note>
+  HyperDX 目前尚不支持拉取/显示指数直方图指标。你可以在指标数据源中配置它们，相关支持即将推出。
+</Note>
+
+<OtelMetricsExponentialHistogramSchema />
+
+<div id="summary-table">
+  ### 汇总表
+</div>
+
+<OtelMetricsSummarySchema />
+
+<div id="sessions">
+  ## 会话
+</div>
+
+<HyperdxSessionsSchema />

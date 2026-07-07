@@ -65,7 +65,7 @@ readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags)
     /* I suppose we could alloc on demand in this case (XXX). */
     if (bufsiz == 0) {
         errno = EINVAL;
-        return(NULL);
+        return (char *)NULL;
     }
 
 restart:
@@ -82,7 +82,7 @@ restart:
         (input = output = open(_PATH_TTY, O_RDWR)) == -1) {
         if (flags & RPP_REQUIRE_TTY) {
             errno = ENOTTY;
-            return(NULL);
+            return (char *)NULL;
         }
         input = STDIN_FILENO;
         output = STDERR_FILENO;

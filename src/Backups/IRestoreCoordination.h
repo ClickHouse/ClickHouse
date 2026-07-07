@@ -1,5 +1,6 @@
 #pragma once
 
+#include <exception>
 #include <Core/Types.h>
 
 
@@ -18,6 +19,8 @@ class IRestoreCoordination
 public:
     virtual ~IRestoreCoordination() = default;
 
+    virtual void startup() {}
+
     /// Sets that the restore query was sent to other hosts.
     /// Function waitOtherHostsFinish() will check that to find out if it should really wait or not.
     virtual void setRestoreQueryIsSentToOtherHosts() = 0;
@@ -27,18 +30,29 @@ public:
     virtual Strings setStage(const String & new_stage, const String & message, bool sync) = 0;
 
     /// Lets other hosts know that the current host has encountered an error.
-    /// Returns true if the information is successfully passed so other hosts can read it.
-    virtual bool setError(std::exception_ptr exception, bool throw_if_error) = 0;
+    virtual void setError(std::exception_ptr exception, bool throw_if_error) = 0;
+
+    /// Returns true if some host (the current host or one of the other hosts) has encountered an error.
+    virtual bool isErrorSet() const = 0;
 
     /// Waits until all the other hosts finish their work.
     /// Stops waiting and throws an exception if another host encounters an error or if some host gets cancelled.
-    virtual bool waitOtherHostsFinish(bool throw_if_error) const = 0;
+    virtual void waitOtherHostsFinish(bool throw_if_error) const = 0;
 
     /// Lets other hosts know that the current host has finished its work.
-    virtual bool finish(bool throw_if_error) = 0;
+    virtual void finish(bool throw_if_error) = 0;
+
+    /// Returns true if this host finished its work (i.e. finish() was called successfully).
+    virtual bool finished() const = 0;
+
+    /// Returns true if all the hosts finished their work.
+    virtual bool allHostsFinished() const = 0;
 
     /// Removes temporary nodes in ZooKeeper.
-    virtual bool cleanup(bool throw_if_error) = 0;
+    virtual void cleanup(bool throw_if_error) = 0;
+
+    /// Starts creating a shared database. Returns false if there is another host which is already creating this database.
+    virtual bool acquireCreatingSharedDatabase(const String & database_name) = 0;
 
     /// Starts creating a table in a replicated database. Returns false if there is another host which is already creating this table.
     virtual bool acquireCreatingTableInReplicatedDatabase(const String & database_zk_path, const String & table_name) = 0;

@@ -1,0 +1,112 @@
+---
+sidebarTitle: 'PlanetScale for Postgres'
+description: '将 PlanetScale for Postgres 设置为 ClickPipes 的源'
+slug: /integrations/clickpipes/postgres/source/planetscale
+title: 'PlanetScale for Postgres 源设置指南'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'PostgreSQL', 'CDC（变更数据捕获）', '数据摄取', '实时同步']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Info>
+  PlanetScale for Postgres 目前正处于[抢先体验阶段](https://planetscale.com/postgres)。
+</Info>
+
+<div id="supported-postgres-versions">
+  ## 支持的 Postgres 版本
+</div>
+
+ClickPipes 支持 Postgres 12 及以上版本。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+1. 要在 Postgres 实例上启用复制，需要确保已设置以下参数：
+
+   ```sql
+   wal_level = logical
+   ```
+
+   要检查这一点，可以运行以下 SQL 命令：
+
+   ```sql
+   SHOW wal_level;
+   ```
+
+   默认情况下，输出应为 `logical`。如果不是，请登录 PlanetScale Console，前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log` 进行修改。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="在 PlanetScale Console 中调整 wal_level" size="md" border />
+
+<Warning>
+  在 PlanetScale Console 中更改此项将触发重启。
+</Warning>
+
+2. 此外，建议将 `max_slot_wal_keep_size` 从默认的 4GB 调大。这同样需要在 PlanetScale Console 中完成：前往 `Cluster configuration->Parameters`，然后向下滚动到 `Write-ahead log`。如需帮助确定新的值，请参阅[此处](/zh/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="在 PlanetScale Console 中调整 max_slot_wal_keep_size" size="md" border />
+
+<div id="creating-a-user-with-permissions-and-publication">
+  ## 创建具有相应权限和 publication 的用户
+</div>
+
+使用默认的 `postgres.<...>` 用户连接到您的 PlanetScale Postgres 实例，并运行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为上一步创建的用户授予 schema 级只读权限。以下示例展示了 `public` schema 的权限。对于每个包含您要复制的表的 schema，都需要重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 为该用户授予复制特权：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用您要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只在 publication 中包含您确实需要的表，以避免额外的性能开销。
+
+<Warning>
+  包含在 publication 中的任何表都必须定义 **主键**，&#95;或者&#95;将其 **副本标识** 配置为 `FULL`。有关如何限定范围的指导，请参阅 [Postgres 常见问题](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 要为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 要为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含由指定表生成的一组变更事件，后续将用于摄取复制流。
+
+<div id="caveats">
+  ## 注意事项
+</div>
+
+1. 要连接到 PlanetScale Postgres，需要在上文创建的用户名后追加当前分支信息。例如，如果创建的用户名称为 `clickpipes_user`，那么在创建 ClickPipe 时填写的实际用户名应为 `clickpipes_user`.`branch`，其中 `branch` 指当前 PlanetScale Postgres [分支](https://planetscale.com/docs/postgres/branching)的 “id”。要快速确认这一点，可以查看你此前用于创建该用户的 `postgres` 用户名，句点后面的部分就是分支 id。
+2. 对于连接到 PlanetScale Postgres 的 CDC (变更数据捕获)  管道，不要使用 `PSBouncer` 端口 (当前为 `6432`) ，必须使用标准端口 `5432`。如果管道仅用于初始加载，则两个端口都可以使用。
+3. 请确保仅连接到主实例，目前[连接到副本实例](https://planetscale.com/docs/postgres/scaling/replicas#how-to-query-postgres-replicas)尚不受支持。
+
+<div id="whats-next">
+  ## 接下来做什么？
+</div>
+
+您现在可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将来自 Postgres 实例的数据摄取到 ClickHouse Cloud。
+请务必记下设置 Postgres 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

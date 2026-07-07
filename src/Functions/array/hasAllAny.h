@@ -1,7 +1,6 @@
 #pragma once
 
 #include <base/range.h>
-#include <base/map.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -9,14 +8,15 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNothing.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnConst.h>
 #include <Interpreters/castColumn.h>
 #include <Common/typeid_cast.h>
+#include <Common/VectorWithMemoryTracking.h>
 
+#include <ranges>
 
 namespace DB
 {
@@ -63,13 +63,14 @@ public:
     {
         size_t num_args = arguments.size();
 
-        DataTypePtr common_type = getLeastSupertype(collections::map(arguments, [](auto & arg) { return arg.type; }));
+        DataTypePtr common_type
+            = getLeastSupertype(DataTypes{std::from_range_t{}, arguments | std::views::transform([](auto & elem) { return elem.type; })});
 
         Columns preprocessed_columns(num_args);
         for (size_t i = 0; i < num_args; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        std::vector<std::unique_ptr<GatherUtils::IArraySource>> sources;
+        VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
 
         for (auto & argument_column : preprocessed_columns)
         {

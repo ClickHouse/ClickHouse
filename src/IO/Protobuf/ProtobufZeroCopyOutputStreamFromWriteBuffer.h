@@ -3,12 +3,13 @@
 #include "config.h"
 #if USE_PROTOBUF
 
+#include <IO/WriteBuffer.h>
+
 #include <google/protobuf/io/zero_copy_stream.h>
 
 
 namespace DB
 {
-class WriteBuffer;
 
 class ProtobufZeroCopyOutputStreamFromWriteBuffer : public google::protobuf::io::ZeroCopyOutputStream
 {

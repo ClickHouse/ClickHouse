@@ -31,7 +31,7 @@ DELETE FROM 02581_trips                        WHERE id IN (SELECT (number*10 + 
 SELECT count(), _part from 02581_trips WHERE description = '' GROUP BY _part ORDER BY _part SETTINGS select_sequential_consistency=1;
 
 SET max_rows_to_read = 0; -- system.text_log can be really big
-SYSTEM FLUSH LOGS;
+SYSTEM FLUSH LOGS text_log;
 -- Check that in every mutation there were parts that built sets (log messages like 'Created Set with 10000000 entries from 10000000 rows in 0.388989187 sec.' )
 -- and parts that shared sets (log messages like 'Got set from cache in 0.388930505 sec.' )
 WITH (
@@ -41,13 +41,13 @@ WITH (
     ) AS table_uuid
 SELECT
     CAST(splitByChar('_', query_id)[5], 'UInt64') AS mutation_version, -- '5521485f-8a40-4aba-87a2-00342c369563::all_3_3_0_6'
-    sum(message LIKE 'Created Set with % entries%') >= 1  AS has_parts_for_which_set_was_built,
-    sum(message LIKE 'Got set from cache%') >= 1 AS has_parts_that_shared_set
+    sum(message_format_string LIKE 'Created Set with % entries%') >= 1  AS has_parts_for_which_set_was_built,
+    sum(message_format_string LIKE 'Got set from cache%') >= 1 AS has_parts_that_shared_set
 FROM system.text_log
 WHERE
     query_id LIKE concat(CAST(table_uuid, 'String'), '::all\\_%')
-    AND (event_date >= yesterday())
-    AND (message LIKE 'Created Set with % entries%' OR message LIKE 'Got set from cache%')
+    AND (event_date >= yesterday() AND event_time >= now() - 600)
+    AND (message_format_string LIKE 'Created Set with % entries%' OR message_format_string LIKE 'Got set from cache%')
 GROUP BY mutation_version ORDER BY mutation_version FORMAT TSVWithNames;
 
 DROP TABLE 02581_trips;

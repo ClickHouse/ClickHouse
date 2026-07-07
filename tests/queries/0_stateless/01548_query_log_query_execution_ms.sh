@@ -16,7 +16,7 @@ function test_query_duration_ms()
         "--format=Null"
     )
     $CLICKHOUSE_CLIENT "${query_opts[@]}" -q "select sleep(0.4)" || exit 1
-    $CLICKHOUSE_CLIENT -q "system flush logs" || exit 1
+    $CLICKHOUSE_CLIENT -q "system flush logs query_log, query_thread_log" || exit 1
 
     $CLICKHOUSE_CLIENT -q "
         select count()

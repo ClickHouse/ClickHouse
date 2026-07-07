@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/Serialization.h>
@@ -12,6 +13,13 @@
 
 namespace DB
 {
+
+namespace QueryPlanSerializationSetting
+{
+    extern const QueryPlanSerializationSettingsOverflowMode distinct_overflow_mode;
+    extern const QueryPlanSerializationSettingsUInt64 max_bytes_in_distinct;
+    extern const QueryPlanSerializationSettingsUInt64 max_rows_in_distinct;
+}
 
 namespace ErrorCodes
 {
@@ -36,7 +44,7 @@ static ITransformingStep::Traits getTraits(bool pre_distinct)
 }
 
 DistinctStep::DistinctStep(
-    const Header & input_header_,
+    const SharedHeader & input_header_,
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
@@ -74,7 +82,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (pre_distinct)
             {
                 pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
@@ -98,7 +106,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
                 if (DistinctSortedTransform::isApplicable(pipeline.getHeader(), distinct_sort_desc, columns))
                 {
                     pipeline.addSimpleTransform(
-                        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                         {
                             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                                 return nullptr;
@@ -112,7 +120,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             else
             {
                 pipeline.addSimpleTransform(
-                    [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+                    [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
                     {
                         if (stream_type != QueryPipelineBuilder::StreamType::Main)
                             return nullptr;
@@ -126,7 +134,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     }
 
     pipeline.addSimpleTransform(
-        [&](const Block & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+        [&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
@@ -137,7 +145,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
 void DistinctStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, ' ');
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix << "Columns: ";
 
     if (columns.empty())
@@ -151,7 +159,7 @@ void DistinctStep::describeActions(FormatSettings & settings) const
                 settings.out << ", ";
             first = false;
 
-            settings.out << column;
+            settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column, settings.pretty_names) : column);
         }
     }
 
@@ -174,9 +182,9 @@ void DistinctStep::updateOutputHeader()
 
 void DistinctStep::serializeSettings(QueryPlanSerializationSettings & settings) const
 {
-    settings.max_rows_in_distinct = set_size_limits.max_rows;
-    settings.max_bytes_in_distinct = set_size_limits.max_bytes;
-    settings.distinct_overflow_mode = set_size_limits.overflow_mode;
+    settings[QueryPlanSerializationSetting::max_rows_in_distinct] = set_size_limits.max_rows;
+    settings[QueryPlanSerializationSetting::max_bytes_in_distinct] = set_size_limits.max_bytes;
+    settings[QueryPlanSerializationSetting::distinct_overflow_mode] = set_size_limits.overflow_mode;
 }
 
 void DistinctStep::serialize(Serialization & ctx) const
@@ -189,35 +197,36 @@ void DistinctStep::serialize(Serialization & ctx) const
         writeStringBinary(column, ctx.out);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
+QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_distinct_)
 {
     if (ctx.input_headers.size() != 1)
         throw Exception(ErrorCodes::INCORRECT_DATA, "DistinctStep must have one input stream");
 
-    size_t columns_size;
+    size_t columns_size = 0;
     readVarUInt(columns_size, ctx.in);
     Names column_names(columns_size);
     for (size_t i = 0; i < columns_size; ++i)
         readStringBinary(column_names[i], ctx.in);
 
     SizeLimits size_limits;
-    size_limits.max_rows = ctx.settings.max_rows_in_distinct;
-    size_limits.max_bytes = ctx.settings.max_bytes_in_distinct;
-    size_limits.overflow_mode = ctx.settings.distinct_overflow_mode;
+    size_limits.max_rows = ctx.settings[QueryPlanSerializationSetting::max_rows_in_distinct];
+    size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
+    size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
 
     return std::make_unique<DistinctStep>(
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
 }
 
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializeNormal(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, false);
 }
-std::unique_ptr<IQueryPlanStep> DistinctStep::deserializePre(Deserialization & ctx)
+QueryPlanStepPtr DistinctStep::deserializePre(Deserialization & ctx)
 {
     return DistinctStep::deserialize(ctx, true);
 }
 
+void registerDistinctStep(QueryPlanStepRegistry & registry);
 void registerDistinctStep(QueryPlanStepRegistry & registry)
 {
     /// Preliminary distinct probably can be a query plan optimization.

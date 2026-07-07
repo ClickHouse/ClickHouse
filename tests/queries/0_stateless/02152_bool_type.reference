@@ -31,7 +31,7 @@ Custom true
 (true)
 Row 1:
 ──────
-CAST('true', 'Bool'): Custom true
+[1mCAST('true', 'Bool'):[0m Custom true
    ┏━━━━━━━━━━━━━━━━━━━━━━┓
    ┃ [1mCAST('true', 'Bool')[0m ┃
    ┡━━━━━━━━━━━━━━━━━━━━━━┩

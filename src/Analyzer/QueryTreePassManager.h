@@ -25,15 +25,15 @@ public:
     void addPass(QueryTreePassPtr pass);
 
     /// Run query tree passes on query tree
-    void run(QueryTreeNodePtr query_tree_node);
+    void run(QueryTreeNodePtr & query_tree_node);
 
     /// Run only query tree passes responsible to name resolution.
-    void runOnlyResolve(QueryTreeNodePtr query_tree_node);
+    void runOnlyResolve(QueryTreeNodePtr & query_tree_node);
 
     /** Run query tree passes on query tree up to up_to_pass_index.
       * Throws exception if up_to_pass_index is greater than passes size.
       */
-    void run(QueryTreeNodePtr query_tree_node, size_t up_to_pass_index);
+    void run(QueryTreeNodePtr & query_tree_node, size_t up_to_pass_index);
 
     /// Dump query tree passes
     void dump(WriteBuffer & buffer);

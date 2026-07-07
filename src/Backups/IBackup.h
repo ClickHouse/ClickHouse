@@ -1,10 +1,13 @@
 #pragma once
 
+#include <ctime>
+#include <map>
+#include <memory>
+#include <optional>
+
 #include <Core/Types.h>
 #include <Disks/WriteMode.h>
 #include <IO/WriteSettings.h>
-#include <memory>
-#include <optional>
 
 
 namespace DB
@@ -15,6 +18,7 @@ struct BackupFileInfo;
 class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 class SeekableReadBuffer;
+class ReadBufferFromFileBase;
 
 /// Represents a backup, i.e. a storage of BackupEntries which can be accessed by their names.
 /// A backup can be either incremental or non-incremental. An incremental backup doesn't store
@@ -32,10 +36,14 @@ public:
     {
         READ,
         WRITE,
+        UNLOCK, /// unlock a lightweight backup
     };
 
     /// Returns whether the backup was opened for reading or writing.
     virtual OpenMode getOpenMode() const = 0;
+
+    /// Settings effectively used by the backup engine's reader/writer (e.g. S3 `allow_native_copy`). Empty if none.
+    virtual std::map<String, String> getEngineSettings() const = 0;
 
     /// Returns the time point when this backup was created.
     virtual time_t getTimestamp() const = 0;
@@ -78,6 +86,9 @@ public:
     /// The following is always true: `getNumReadBytes() <= getTotalSize()`.
     virtual UInt64 getNumReadBytes() const = 0;
 
+    /// Checks if a specified directory exists.
+    virtual bool directoryExists(const String & directory) const = 0;
+
     /// Returns names of entries stored in a specified directory in the backup.
     /// If `directory` is empty or '/' the functions returns entries in the backup's root.
     virtual Strings listFiles(const String & directory, bool recursive) const = 0;
@@ -97,15 +108,15 @@ public:
     virtual UInt64 getFileSize(const String & file_name) const = 0;
 
     /// Returns the checksum of the entry's data.
-    /// This function does the same as `read(file_name)->getCheckum()` but faster.
+    /// This function does the same as `read(file_name)->getChecksum()` but faster.
     virtual UInt128 getFileChecksum(const String & file_name) const = 0;
 
     /// Returns both the size and checksum in one call.
     virtual SizeAndChecksum getFileSizeAndChecksum(const String & file_name) const = 0;
 
     /// Reads an entry from the backup.
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const String & file_name) const = 0;
-    virtual std::unique_ptr<SeekableReadBuffer> readFile(const SizeAndChecksum & size_and_checksum) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) const = 0;
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, const SizeAndChecksum & size_and_checksum) const = 0;
 
     /// Copies a file from the backup to a specified destination disk. Returns the number of bytes written.
     virtual size_t copyFileToDisk(const String & file_name, DiskPtr destination_disk, const String & destination_path, WriteMode write_mode) const = 0;

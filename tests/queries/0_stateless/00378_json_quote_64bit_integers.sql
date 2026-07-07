@@ -1,6 +1,7 @@
 -- Tags: no-fasttest
 
 SET output_format_write_statistics = 0;
+SET output_format_json_pretty_print = 0;
 SET extremes = 1;
 SET enable_analyzer = 1;
 

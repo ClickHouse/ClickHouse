@@ -9,7 +9,7 @@ namespace DB
 
 ASTPtr ASTWindowDefinition::clone() const
 {
-    auto result = std::make_shared<ASTWindowDefinition>();
+    auto result = make_intrusive<ASTWindowDefinition>();
 
     result->parent_window_name = parent_window_name;
 
@@ -79,7 +79,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
 
         ostr << "PARTITION BY ";
-        partition_by->formatImpl(ostr, settings, state, format_frame);
+        partition_by->format(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -92,7 +92,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
 
         ostr << "ORDER BY ";
-        order_by->formatImpl(ostr, settings, state, format_frame);
+        order_by->format(ostr, settings, state, format_frame);
 
         need_space = true;
     }
@@ -102,7 +102,13 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         if (need_space)
             ostr << " ";
 
-        format_frame.need_parens = true;
+        /// The frame offset grammar requires the offset to be wrapped in parentheses
+        /// when it is an aliased expression (e.g. `((1 + 1) AS x) PRECEDING`),
+        /// because `AS` would otherwise terminate the expression parser. Pass
+        /// `need_parens = true` so an aliased offset formats as `(expr AS alias)`
+        /// rather than `(expr) AS alias`, which the parser cannot accept here.
+        FormatStateStacked offset_frame = format_frame;
+        offset_frame.need_parens = true;
 
         if (frame_type == WindowFrame::FrameType::SESSION)
         {
@@ -122,7 +128,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_begin_offset->formatImpl(ostr, settings, state, format_frame);
+            frame_begin_offset->format(ostr, settings, state, offset_frame);
             ostr << " "
                 << (!frame_begin_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -137,7 +143,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         }
         else
         {
-            frame_end_offset->formatImpl(ostr, settings, state, format_frame);
+            frame_end_offset->format(ostr, settings, state, offset_frame);
             ostr << " "
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
         }
@@ -156,7 +162,7 @@ std::string ASTWindowDefinition::getDefaultWindowName() const
 
 ASTPtr ASTWindowListElement::clone() const
 {
-    auto result = std::make_shared<ASTWindowListElement>();
+    auto result = make_intrusive<ASTWindowListElement>();
 
     result->name = name;
     result->definition = definition->clone();
@@ -175,7 +181,7 @@ void ASTWindowListElement::formatImpl(WriteBuffer & ostr, const FormatSettings &
 {
     ostr << backQuoteIfNeed(name);
     ostr << " AS (";
-    definition->formatImpl(ostr, settings, state, frame);
+    definition->format(ostr, settings, state, frame);
     ostr << ")";
 }
 

@@ -10,7 +10,7 @@ namespace DB
  */
 bool ParserJSONPath::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    auto ast_jsonpath = std::make_shared<ASTJSONPath>();
+    auto ast_jsonpath = make_intrusive<ASTJSONPath>();
     ParserJSONPathQuery parser_jsonpath_query;
 
     /// Push back dot AST and brackets AST to query->children
