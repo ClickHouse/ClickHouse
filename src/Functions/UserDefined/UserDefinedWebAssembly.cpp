@@ -1283,10 +1283,15 @@ private:
 
         size_t batch_start = 0;
 
-        // Buffers and ColumnBinary carry a native COL_IS_CONST marker and handle const columns
-        // without materializing them; RowBinary/MsgPack/CSV/etc. need them materialized.
-        const String serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
-        const bool preserve_const = serialization_format == "Buffers" || serialization_format == "ColumnBinary";
+        // Only formats that neither expect materialized columns nor support column-schema
+        // output actually keep ColumnConst compact on the wire (e.g. ColumnBinary's
+        // COL_IS_CONST); Buffers goes through NativeWriter::writeData, which unconditionally
+        // calls convertToFullColumnIfConst() before writing, so it must NOT be treated as
+        // const-preserving here despite exposing a native serialization format. Drive this off
+        // the same format-capability check the constructor already computed
+        // (computePreserveConstColumns) rather than hardcoding format names, so the splitter's
+        // size estimate always matches what the serializer actually does.
+        const bool preserve_const = preserve_const_columns;
 
         auto flush_batch = [&](size_t end_idx)
         {
