@@ -419,6 +419,19 @@ def no_watcher_hotspot(nodes, ctx=None, max_share=0.95, max_path_share=None):
                 )
 
 
+def watch_peak_ge(ctx, min_watches=1):
+    """Assert the in-run peak of cluster-wide watch count reached a minimum."""
+    peak = (ctx or {}).get("watch_peak_total")
+    if peak is None:
+        raise AssertionError(
+            "watch_peak_ge: watch_peak_total missing from context (sampler recorded no in-run peak)"
+        )
+    if float(peak) < float(min_watches):
+        raise AssertionError(
+            f"watch_peak_ge: peak {float(peak):.0f} < {float(min_watches):.0f}"
+        )
+
+
 def ephemerals_gone_within(nodes, max_s=60):
     deadline = time.time() + max(1, int(max_s))
     _warned = False
@@ -636,6 +649,11 @@ def _gate_no_watcher_hotspot(g, nodes, leader, ctx, summary):
     return no_watcher_hotspot(
         nodes, ctx, max_share=_extract_param(g, "max_share", 0.95, float), max_path_share=mps
     )
+
+
+@register_gate("watch_peak_ge")
+def _gate_watch_peak_ge(g, nodes, leader, ctx, summary):
+    return watch_peak_ge(ctx, min_watches=_extract_param(g, "min_watches", 1, float))
 
 
 @register_gate("ephemerals_gone_within")

@@ -83,6 +83,8 @@ def apply_file_defaults_to_scenario(s, defaults):
     sc = copy.deepcopy(s)
     if "topology" not in sc and defaults.get("topology") is not None:
         sc["topology"] = defaults.get("topology")
+    if "backend" not in sc and defaults.get("backend") is not None:
+        sc["backend"] = defaults.get("backend")
     return sc
 
 
@@ -277,7 +279,13 @@ def pytest_generate_tests(metafunc):
 
 
 def expand_matrix_clones(s, backends, topologies):
-    backs = backends or [s.get("backend")]
+    pinned = s.get("backend")
+    if backends and pinned:
+        # A scenario that pins its backend only runs there; the matrix list
+        # cannot widen it (an empty intersection yields no clones).
+        backs = [b for b in backends if b == pinned]
+    else:
+        backs = backends or [pinned]
     topos = topologies or [int(s.get("topology"))]
     clones = []
     for b in backs:

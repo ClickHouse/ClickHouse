@@ -209,6 +209,14 @@ Scenarios:
   nodes starves keeper past the workload's 30 s session timeout, driving mass
   session expiry among watchers, then load returns to normal.
 
+Every registry scenario asserts an in-run floor on the cluster-wide watch
+count (`watch_peak_ge`, fed by the metrics sampler's `mntr` samples).
+Post-run watch counts are not asserted: gates run after the bench, when
+sessions — and every watch they held — are already gone. The scenarios also
+pin `backend: default` — session counts and the cpu/mem/pids/connection
+limits are only meaningful there — so they do not matrix-expand onto other
+backends.
+
 These scenarios are not part of the nightly scenario files; run them on demand:
 
 ```bash

@@ -24,11 +24,31 @@ version: 1
 # transparently shards the bench across multiple subprocesses (see
 # workloads/keeper_bench.py).
 #
+# All scenarios pin backend: default (via defaults below): workload.clients
+# only maps to real sessions on the default backend (the ZooKeeper bench path
+# collapses to a single connection), and the cpu/mem/pids/max_connections opts
+# only shape default-backend containers — on any other backend the same
+# scenario id would run a materially different workload.
+#
+# Watch gating: gates run after the bench, when sessions — and every watch they
+# held — are already gone, so post-run watch counts (deltas, residuals,
+# per-node hotspot shares) carry no signal and are not asserted.  Instead the
+# in-run metrics sampler records the peak cluster-wide zk_watch_count and each
+# scenario asserts a conservative floor on it (watch_peak_ge).  Note the armed
+# population does NOT approach the session count: keeper watches are one-shot,
+# so every churn op fires and clears ALL children-watches on the registry path
+# and a session only re-arms on its next list — the instantaneous armed count
+# is bounded by the list:churn mix ratio (roughly ten lists between fire
+# events), independent of sessions (c500 sampled a peak of 65).  Floors are
+# therefore mix-derived and deliberately loose: they prove the workload really
+# arms watches without flaking on churn timing.
+#
 # These scenarios are on-demand (not part of the nightly scenario files); run
 # them with KEEPER_SCENARIO_FILES=registry_saturation.yaml or -k '<id>'.
 defaults:
   duration: 300
   topology: 3
+  backend: default
 scenarios:
 # ─── Session ladder ───────────────────────────────────────────────────────────
 - id: registry-sat-c500
@@ -51,8 +71,8 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
   - type: p99_le
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor: mean armed ≈ 12 (list:churn 60:5); c500 sampled a peak of 65
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -76,8 +96,8 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
   - type: p99_le
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -103,8 +123,8 @@ scenarios:
     max_ratio: 0.2
   - type: p99_le
     max_ms: 20000
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -130,8 +150,8 @@ scenarios:
     max_ratio: 0.3
   - type: p99_le
     max_ms: 30000
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -159,8 +179,8 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
     max_ratio: 0.5
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -185,8 +205,8 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
   - type: p99_le
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 15  # mix-derived floor: mean armed ≈ 23 (list:create 70:3); watches are one-shot, so armed count never approaches the session count
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -237,8 +257,8 @@ scenarios:
   - type: single_leader
   - type: error_rate_le
     max_ratio: 0.5
-  - type: watch_delta_within
-  - type: no_watcher_hotspot
+  - type: watch_peak_ge
+    min_watches: 10  # mix-derived floor; the pre/post-storm steady state still arms watches
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
