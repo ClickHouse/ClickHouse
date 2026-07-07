@@ -24,8 +24,8 @@
 #include <Core/ServerSettings.h>
 #include <Interpreters/Context.h>
 
-#include <exception>
-#include <thread>
+#include <exception> /// std::current_exception for retry classification
+#include <thread> /// thread::sleep for retry backoff
 
 namespace ProfileEvents
 {
@@ -217,8 +217,9 @@ public:
             bool batch_ok = false;
             for (UInt64 attempt = 0; attempt <= max_retries; ++attempt)
             {
-                /// Check quotas before every request.
-                /// Kept outside the `try` so an exception due to `throw_on_quota_exceeded` is not caught by the retry handler.
+                /// Enforce the API-call quota before every provider request, including retries, so a flaky
+                /// endpoint can't dispatch more than `ai_function_max_api_calls_per_query` requests per query.
+                /// Kept outside the `try` so a `throw_on_quota_exceeded` throw is not caught by the retry handler.
                 if (quota.checkQuotas())
                     break;
 
@@ -235,6 +236,8 @@ public:
                 }
                 catch (...)
                 {
+                    /// Retry transient failures (network errors, provider-side HTTP errors) like the
+                    /// `url` table function does; deterministic errors are surfaced immediately.
                     if (attempt < max_retries && FunctionBaseAI::isRetriableProviderError(std::current_exception()))
                     {
                         std::this_thread::sleep_for(std::chrono::milliseconds(FunctionBaseAI::computeRetryBackoffMs(retry_delay_ms, attempt)));
