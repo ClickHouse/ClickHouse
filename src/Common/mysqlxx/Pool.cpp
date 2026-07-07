@@ -403,14 +403,21 @@ Pool::Connection * Pool::allocConnection(bool dont_throw_if_failed_first_time)
     }
     catch (mysqlxx::ConnectionFailed & e)
     {
-        /// The failure is propagated to the caller, who decides how severe it is.
-        LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        const bool permanent_error = e.errnum() == ER_ACCESS_DENIED_ERROR
+            || e.errnum() == ER_DBACCESS_DENIED_ERROR
+            || e.errnum() == ER_BAD_DB_ERROR;
+
+        /// A transient transport failure is propagated to the caller, who decides how severe
+        /// it is; a permanent misconfiguration (bad credentials, missing database) must stay
+        /// visible as an error even when the caller tolerates the failure (e.g. on ATTACH).
+        if (permanent_error)
+            LOG_ERROR(log, "Failed to connect to MySQL ({}): {}", description, e.what());
+        else
+            LOG_WARNING(log, "Failed to connect to MySQL ({}): {}", description, e.what());
 
         if (!online
             || (!was_successful && !dont_throw_if_failed_first_time)
-            || e.errnum() == ER_ACCESS_DENIED_ERROR
-            || e.errnum() == ER_DBACCESS_DENIED_ERROR
-            || e.errnum() == ER_BAD_DB_ERROR)
+            || permanent_error)
         {
             online = false;
             throw;
