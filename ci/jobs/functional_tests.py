@@ -437,8 +437,13 @@ def main():
             for bt, url in build_urls.items():
                 bt_path = bt_paths[bt]
                 if not info.is_local_run or not Path(bt_path).is_file():
+                    # retries: transient S3 5xx must not abort the job; strict
+                    # still fails closed if the artifact is genuinely missing.
                     Shell.run(
-                        f"wget -nv -O {bt_path} {url}", verbose=True, strict=True
+                        f"wget -nv -O {bt_path} {url}",
+                        verbose=True,
+                        strict=True,
+                        retries=5,
                     )
                     Shell.run(f"chmod +x {bt_path}", verbose=True)
         Shell.run(
