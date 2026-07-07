@@ -42,19 +42,6 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** Bloom filter functions.
-  *
-  * Check if a Bloom filter contains a value:
-  * bloomFilterContains(bloom_filter_state, value) -> UInt8
-  *
-  * The first argument must be of type AggregateFunction(groupBloomFilter, T).
-  * For numeric filters, the second argument may be any compatible numeric type and is accurately
-  * cast to T. Non-representable probe values are treated as definitely absent.
-  *
-  * Returns 1 if the value is probably in the filter, 0 if it is definitely not.
-  * Note: false positives are possible (controlled by false_positive_rate parameter),
-  * but false negatives are not.
-  */
 class FunctionBloomFilterContains : public IFunction
 {
 public:
@@ -122,7 +109,6 @@ public:
 
         WhichDataType which(dispatch_value_type);
 
-        // Integer types
         if (which.isUInt8())
             executeNumericType<UInt8>(casted_arguments, input_rows_count, vec_to);
         else if (which.isUInt16())
@@ -147,12 +133,10 @@ public:
             executeNumericType<Int128>(casted_arguments, input_rows_count, vec_to);
         else if (which.isInt256())
             executeNumericType<Int256>(casted_arguments, input_rows_count, vec_to);
-        // Floating point types
         else if (which.isFloat32())
             executeNumericType<Float32>(casted_arguments, input_rows_count, vec_to);
         else if (which.isFloat64())
             executeNumericType<Float64>(casted_arguments, input_rows_count, vec_to);
-        // Date and time types
         else if (which.isDate())
             executeNumericType<UInt16>(casted_arguments, input_rows_count, vec_to);
         else if (which.isDate32())
@@ -161,18 +145,14 @@ public:
             executeNumericType<UInt32>(casted_arguments, input_rows_count, vec_to);
         else if (which.isDateTime64())
             executeDecimalType<DateTime64>(casted_arguments, input_rows_count, vec_to);
-        // String types
         else if (which.isString() || which.isFixedString())
             executeStringType(casted_arguments, input_rows_count, vec_to);
-        // UUID type
         else if (which.isUUID())
             executeNumericType<UUID>(casted_arguments, input_rows_count, vec_to);
-        // IP address types
         else if (which.isIPv4())
             executeNumericType<IPv4>(casted_arguments, input_rows_count, vec_to);
         else if (which.isIPv6())
             executeNumericType<IPv6>(casted_arguments, input_rows_count, vec_to);
-        // Enum types
         else if (which.isEnum8())
             executeNumericType<Int8>(casted_arguments, input_rows_count, vec_to);
         else if (which.isEnum16())
@@ -182,7 +162,6 @@ public:
                 "Unexpected value type {} for function {}",
                 value_type->getName(), getName());
 
-        /// Non-representable values became NULL during the accurate cast and cannot be in the filter.
         const NullMap & null_map = nullable_value.getNullMapData();
         for (size_t i = 0; i < input_rows_count; ++i)
             if (null_map[i])
@@ -317,7 +296,6 @@ private:
         size_t input_rows_count,
         typename ColumnVector<UInt8>::Container & vec_to) const
     {
-        /// First argument: Bloom filter state (may be const or column)
         const ColumnAggregateFunction * bloom_col = nullptr;
         const ColumnAggregateFunction * bloom_col_const = nullptr;
         bool bloom_is_const = false;
@@ -339,7 +317,6 @@ private:
                 getName(), arguments[0].column->getName());
         }
 
-        /// Second argument: value to check
         const ColumnVector<T> * value_col = checkAndGetColumn<ColumnVector<T>>(arguments[1].column.get());
         if (!value_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -365,7 +342,6 @@ private:
         size_t input_rows_count,
         typename ColumnVector<UInt8>::Container & vec_to) const
     {
-        /// First argument: Bloom filter state
         const ColumnAggregateFunction * bloom_col = nullptr;
         const ColumnAggregateFunction * bloom_col_const = nullptr;
         bool bloom_is_const = false;
@@ -406,7 +382,6 @@ private:
         size_t input_rows_count,
         typename ColumnVector<UInt8>::Container & vec_to) const
     {
-        /// First argument: Bloom filter state (may be const or column)
         const ColumnAggregateFunction * bloom_col = nullptr;
         const ColumnAggregateFunction * bloom_col_const = nullptr;
         bool bloom_is_const = false;
@@ -428,7 +403,6 @@ private:
                 getName(), arguments[0].column->getName());
         }
 
-        /// Second argument: value to check
         const ColumnDecimal<T> * value_col = checkAndGetColumn<ColumnDecimal<T>>(arguments[1].column.get());
         if (!value_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR,

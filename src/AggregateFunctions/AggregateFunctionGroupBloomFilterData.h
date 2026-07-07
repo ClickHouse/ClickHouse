@@ -27,7 +27,6 @@ static constexpr size_t BLOOM_FILTER_DEFAULT_SEED = 0;
 static constexpr double BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.025;
 static constexpr size_t BLOOM_FILTER_DEFAULT_EXPECTED_ELEMENTS = 10000;
 
-/// Maximum allowed Bloom filter size in bytes (256 MB)
 static constexpr size_t BLOOM_FILTER_MAX_SIZE_BYTES = 256 * 1024 * 1024;
 
 static constexpr size_t BLOOM_FILTER_MAX_HASHES = 20;
@@ -96,8 +95,6 @@ struct AggregateFunctionGroupBloomFilterData
 
     AggregateFunctionGroupBloomFilterData() = default;
 
-    /// Store parameters without allocating the bitset.
-    /// The BloomFilter is created lazily on the first call to add().
     void setParameters(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
     {
         filter_size_bytes = filter_size_bytes_;
@@ -183,7 +180,6 @@ struct AggregateFunctionGroupBloomFilterData
         readVarUInt(num_hashes, buf);
         readVarUInt(seed, buf);
 
-        /// Absolute-bounds sanity checks (also protect the standalone / test path).
         if (filter_size_bytes == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "Bloom filter size cannot be zero");
         if (filter_size_bytes > BLOOM_FILTER_MAX_SIZE_BYTES)
@@ -197,7 +193,6 @@ struct AggregateFunctionGroupBloomFilterData
                 "Number of hash functions {} exceeds maximum allowed {}",
                 num_hashes, BLOOM_FILTER_MAX_HASHES);
 
-        /// Validate against the declared AggregateFunction parameters
         if (filter_size_bytes != expected_filter_size_bytes
             || num_hashes != expected_num_hashes
             || seed != expected_seed)
