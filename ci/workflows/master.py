@@ -22,8 +22,16 @@ for artifact in ArtifactConfigs.clickhouse_binaries + ArtifactConfigs.clickhouse
 
 workflow = Workflow.Config(
     name="MasterCI",
-    event=Workflow.Event.PUSH,
-    branches=[BASE_BRANCH, "releases/*", "antalya-*", "stable-*"],
+    event=Workflow.Event.DISPATCH,
+    inputs=[
+        Workflow.Config.InputConfig(
+            name="no_cache",
+            description="Run without cache",
+            is_required=False,
+            input_type="boolean",
+            default_value="false",
+        ),
+    ],
     jobs=[
         # *JobConfigs.tidy_build_arm_jobs,
         *JobConfigs.build_jobs,

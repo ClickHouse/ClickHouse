@@ -144,4 +144,5 @@ class Workflow:
             description: str
             is_required: bool
             default_value: str
+            input_type: str
             options: Optional[List] = None

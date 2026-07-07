@@ -10,8 +10,6 @@ on:
         required: false
         type: boolean
         default: false
-  push:
-    branches: ['antalya', 'releases/*', 'antalya-*', 'stable-*']
 
 env:
   # Force the stdout and stderr streams to be unbuffered
@@ -78,7 +76,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -120,7 +120,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -162,7 +164,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -204,7 +208,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -246,7 +252,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -288,7 +296,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -330,7 +340,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -372,7 +384,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -414,7 +428,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -456,7 +472,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -498,7 +516,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -540,7 +560,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -582,7 +604,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -624,7 +648,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -666,7 +692,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -708,7 +736,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -750,7 +780,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -792,7 +824,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -834,7 +868,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -876,7 +912,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -918,7 +956,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -960,7 +1000,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1002,7 +1044,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1044,7 +1088,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1086,7 +1132,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1128,7 +1176,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1170,7 +1220,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1212,7 +1264,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1254,7 +1308,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1296,7 +1352,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1338,7 +1396,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1380,7 +1440,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1422,7 +1484,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1464,7 +1528,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1506,7 +1572,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1548,7 +1616,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1590,7 +1660,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1632,7 +1704,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1674,7 +1748,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1716,7 +1792,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1758,7 +1836,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1800,7 +1880,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1842,7 +1924,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1884,7 +1968,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1926,7 +2012,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -1968,7 +2056,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2010,7 +2100,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2052,7 +2144,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2094,7 +2188,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2136,7 +2232,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2178,7 +2276,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2220,7 +2320,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2262,7 +2364,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2304,7 +2408,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2346,7 +2452,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2388,7 +2496,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2430,7 +2540,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2472,7 +2584,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2514,7 +2628,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2556,7 +2672,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2598,7 +2716,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2640,7 +2760,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2682,7 +2804,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2724,7 +2848,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2766,7 +2892,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2808,7 +2936,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2850,7 +2980,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2892,7 +3024,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2934,7 +3068,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -2976,7 +3112,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3018,7 +3156,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3060,7 +3200,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3102,7 +3244,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3144,7 +3288,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3186,7 +3332,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3228,7 +3376,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3270,7 +3420,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3312,7 +3464,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3354,7 +3508,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3396,7 +3552,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3438,7 +3596,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3480,7 +3640,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3522,7 +3684,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3564,7 +3728,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3606,7 +3772,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3648,7 +3816,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3690,7 +3860,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3732,7 +3904,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3774,7 +3948,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3816,7 +3992,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3858,7 +4036,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3900,7 +4080,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3942,7 +4124,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -3984,7 +4168,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4026,7 +4212,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4068,7 +4256,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4110,7 +4300,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4152,7 +4344,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4194,7 +4388,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4236,7 +4432,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4278,7 +4476,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4320,7 +4520,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4362,7 +4564,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4404,7 +4608,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4446,7 +4652,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4488,7 +4696,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4530,7 +4740,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4572,7 +4784,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4614,7 +4828,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4656,7 +4872,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4698,7 +4916,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4740,7 +4960,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4782,7 +5004,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4824,7 +5048,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4866,7 +5092,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
@@ -4908,7 +5136,9 @@ jobs:
           mkdir -p ./ci/tmp
           cat > ./ci/tmp/praktika_setup_env.sh << 'ENV_SETUP_SCRIPT_EOF'
           export PYTHONPATH=./ci:.:
-
+          cat > ./ci/tmp/workflow_inputs.json << 'EOF'
+          ${{ toJson(github.event.inputs) }}
+          EOF
           cat > ./ci/tmp/workflow_job.json << 'EOF'
           ${{ toJson(job) }}
           EOF
