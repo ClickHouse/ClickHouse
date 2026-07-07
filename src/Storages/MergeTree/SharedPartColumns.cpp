@@ -151,6 +151,8 @@ SharedPartColumns::SerializationsBuild SharedPartColumns::buildSerializations(co
             }
         }, ISerialization::SubstreamData(serialization));
 
+        /// The group is shared and long-lived: don't keep the growth overshoot of the vector.
+        group->serializations.shrink_to_fit();
         build.groups.push_back(std::move(group));
         build.group_keys.push_back(std::move(key));
         ++position;
@@ -364,12 +366,14 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
                     /// entry and leave this one unshared. Correctness never depends on the hash.
                     return entry;
                 }
-                it->second = entry;
-                return entry;
             }
-            it->second = entry;
-            substream_entries_metric_handle.add(1);
-            return entry;
+            /// The entry is shared and long-lived, but it was built incrementally (e.g. by a part
+            /// writer) and may carry container growth overshoot: intern a compact copy of it.
+            ColumnsSubstreams::ColumnEntryPtr compact = std::make_shared<const ColumnsSubstreams::ColumnEntry>(*entry);
+            it->second = compact;
+            if (inserted)
+                substream_entries_metric_handle.add(1);
+            return compact;
         });
         sweepExpiredEntries(substream_entries_cache, substream_entries_size_after_sweep, substream_entries_metric_handle);
     }

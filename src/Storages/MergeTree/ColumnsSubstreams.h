@@ -95,7 +95,9 @@ private:
 
     std::vector<ColumnEntryPtr> columns_substreams;
     /// Global position of the first substream of each column (prefix sums of the substream counts).
-    std::vector<size_t> first_substream_positions;
+    /// UInt32: this vector exists per data part, and the number of substreams of a part is far
+    /// below the limit.
+    std::vector<UInt32> first_substream_positions;
     size_t total_substreams = 0;
 };
 

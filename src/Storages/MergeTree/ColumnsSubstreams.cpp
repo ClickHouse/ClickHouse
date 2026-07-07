@@ -30,7 +30,7 @@ void ColumnsSubstreams::addColumn(const String & column)
     auto entry = std::make_shared<ColumnEntry>();
     entry->column = column;
     columns_substreams.emplace_back(std::move(entry));
-    first_substream_positions.push_back(total_substreams);
+    first_substream_positions.push_back(static_cast<UInt32>(total_substreams));
 }
 
 void ColumnsSubstreams::addSubstreamToLastColumn(const String & substream)
@@ -162,7 +162,7 @@ ColumnsSubstreams ColumnsSubstreams::merge(const ColumnsSubstreams & left, const
     auto append_entry = [](ColumnsSubstreams & to, const ColumnEntryPtr & entry)
     {
         to.columns_substreams.push_back(entry);
-        to.first_substream_positions.push_back(to.total_substreams);
+        to.first_substream_positions.push_back(static_cast<UInt32>(to.total_substreams));
         to.total_substreams += entry->substreams.size();
     };
 
@@ -229,7 +229,7 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
             entry->substream_to_local_position[entry->substreams[j]] = j;
         }
 
-        first_substream_positions.push_back(total_substreams);
+        first_substream_positions.push_back(static_cast<UInt32>(total_substreams));
         total_substreams += num_substreams;
         columns_substreams.emplace_back(std::move(entry));
     }
