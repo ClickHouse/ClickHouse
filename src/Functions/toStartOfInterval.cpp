@@ -19,6 +19,9 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 
+#include <libdivide-config.h>
+#include <libdivide.h>
+
 namespace DB
 {
 
@@ -224,6 +227,101 @@ private:
         std::unreachable();
     }
 
+    /// Fast path for the interval kinds and time zones where the result is the unix timestamp rounded down to
+    /// a multiple of a whole number of seconds, i.e. where `DateLUTImpl::toStartOfSecondInterval`,
+    /// `toStartOfMinuteInterval` and `toStartOfHour` reduce to `roundDownToMultiple`. The generic loop divides
+    /// every row by a divisor that is only known at query run time, which compiles to a hardware division per
+    /// row. Hoisting the time zone check and the divisor computation out of the loop and dividing via libdivide
+    /// turns the division into multiplication and shifts and lets the loop vectorize (about 5 times faster for
+    /// DateTime arguments). The rounding replicates `roundDownToMultiple` exactly, including the saturation of
+    /// the divisor for extreme interval counts and of the result near the minimum of Int64.
+    template <IntervalKind::Kind unit, typename TimeColumnType, typename ResultContainer>
+    static bool tryExecuteArithmeticRounding(
+        const typename TimeColumnType::Container & time_data,
+        ResultContainer & result_data,
+        Int64 num_units,
+        const DateLUTImpl & time_zone,
+        Int64 scale_multiplier)
+    {
+        Int64 divisor = 0;
+        if constexpr (unit == IntervalKind::Kind::Minute)
+        {
+            if (!time_zone.offsetIsWholeNumberOfMinutesDuringEpoch())
+                return false;
+            /// The same saturation as in `DateLUTImpl::toStartOfMinuteInterval`.
+            UInt64 product = 0;
+            if (unlikely(__builtin_mul_overflow(static_cast<UInt64>(num_units), static_cast<UInt64>(60), &product)
+                         || product > static_cast<UInt64>(std::numeric_limits<Int64>::max())))
+                product = static_cast<UInt64>(std::numeric_limits<Int64>::max());
+            divisor = static_cast<Int64>(product);
+        }
+        else if constexpr (unit == IntervalKind::Kind::Second)
+        {
+            /// The same conditions as in `DateLUTImpl::toStartOfSecondInterval`: an interval of a whole number
+            /// of minutes only requires minute-aligned time zone offsets, an interval of 1 second is the
+            /// identity and has no requirements on the time zone at all.
+            const bool time_zone_is_aligned = num_units % 60 == 0
+                ? time_zone.offsetIsWholeNumberOfMinutesDuringEpoch()
+                : time_zone.offsetIsWholeNumberOfHoursDuringEpoch();
+            if (num_units != 1 && !time_zone_is_aligned)
+                return false;
+            divisor = num_units;
+        }
+        else
+        {
+            static_assert(unit == IntervalKind::Kind::Hour);
+            /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
+            /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
+            if (num_units != 1 || !time_zone.offsetIsWholeNumberOfHoursDuringEpoch())
+                return false;
+            divisor = 3600;
+        }
+
+        const size_t size = time_data.size();
+        using ResultFieldType = typename ResultContainer::value_type;
+
+        if constexpr (std::is_same_v<TimeColumnType, ColumnDateTime>)
+        {
+            /// DateTime values are unsigned and the scale multiplier does not apply to them.
+            if (divisor > std::numeric_limits<UInt32>::max())
+            {
+                for (size_t i = 0; i != size; ++i)
+                    result_data[i] = static_cast<ResultFieldType>(0);
+            }
+            else
+            {
+                const UInt32 d = static_cast<UInt32>(divisor);
+                const libdivide::divider<UInt32, libdivide::BRANCHFULL> divider(d);
+                for (size_t i = 0; i != size; ++i)
+                    result_data[i] = static_cast<ResultFieldType>(time_data[i] / divider * d);
+            }
+        }
+        else
+        {
+            static_assert(std::is_same_v<TimeColumnType, ColumnDateTime64>);
+            const libdivide::divider<Int64, libdivide::BRANCHFULL> scale_divider(scale_multiplier);
+            const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
+            /// There is no 64-bit vector multiply-high instruction, so vectorization would produce slower code.
+#pragma clang loop vectorize(disable)
+            for (size_t i = 0; i != size; ++i)
+            {
+                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                const Int64 rounded_towards_zero = t / divider * divisor;
+                Int64 res;
+                if (t >= 0) [[likely]]
+                    res = rounded_towards_zero;
+                else if (rounded_towards_zero == t)
+                    res = t;
+                else if (unlikely(rounded_towards_zero < std::numeric_limits<Int64>::min() + divisor))
+                    res = rounded_towards_zero;
+                else
+                    res = rounded_towards_zero - divisor;
+                result_data[i] = static_cast<ResultFieldType>(res);
+            }
+        }
+        return true;
+    }
+
     template <typename ResultDataType, typename TimeDataType, typename TimeColumnType, IntervalKind::Kind unit>
     ColumnPtr execute(const TimeDataType &, const TimeColumnType & time_column_type, Int64 num_units, const ColumnWithTypeAndName & origin_column, const DataTypePtr & result_type, const DateLUTImpl & time_zone, UInt16 scale) const
     {
@@ -295,6 +393,13 @@ private:
         }
         else // Overload: Default
         {
+            if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
+                && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
+            {
+                if (tryExecuteArithmeticRounding<unit, TimeColumnType>(time_data, result_data, num_units, time_zone, scale_multiplier))
+                    return result_col;
+            }
+
             for (size_t i = 0; i != size; ++i)
                 result_data[i] = static_cast<typename ResultDataType::FieldType>(ToStartOfInterval<unit>::execute(time_data[i], num_units, time_zone, scale_multiplier));
         }

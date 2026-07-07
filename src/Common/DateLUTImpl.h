@@ -344,6 +344,12 @@ public:
     auto getOffsetAtStartOfEpoch() const { return offset_at_start_of_epoch; }
     auto getTimeOffsetAtStartOfLUT() const { return offset_at_start_of_lut; }
 
+    /// Whether the UTC offset was a whole number of hours/minutes for every day since the Unix epoch.
+    /// When true, `toStartOfHour` / `toStartOf*MinuteInterval` reduce to modular arithmetic
+    /// on the unix timestamp instead of a lookup in the LUT.
+    bool offsetIsWholeNumberOfHoursDuringEpoch() const { return offset_is_whole_number_of_hours_during_epoch; }
+    bool offsetIsWholeNumberOfMinutesDuringEpoch() const { return offset_is_whole_number_of_minutes_during_epoch; }
+
     static constexpr auto getDayNumOffsetEpoch()  { return daynum_offset_epoch; }
 
     /// All functions below are thread-safe; arguments are not checked.
