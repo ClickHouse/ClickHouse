@@ -405,6 +405,7 @@ see ["Understanding ClickHouse data skipping indexes"](/optimize/skipping-indexe
 - [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
+- [`bloom_sliced`](#bloom-sliced) index *(Experimental)*
 - [`vector_similarity`](#vector-similarity) index
 
 #### MinMax skip index {#minmax}
@@ -549,6 +550,58 @@ The sparse grams bloom filter is similar to `ngrambf_v1` but uses [sparse grams 
 sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloom_filter_in_bytes, number_of_hash_functions, random_seed)
 ```
 
+#### Bloom sliced *(Experimental)* {#bloom-sliced}
+
+The `bloom_sliced` index is an experimental, hint-only skip index for tokenized `String`, `FixedString`, `LowCardinality(String)`, and `Nullable(String)` expressions. It stores bit-sliced Bloom signatures for groups of rows and uses them to prune marks for token-search predicates. The index is approximate: it can produce false positives, but it must not produce false negatives. ClickHouse therefore always keeps and rechecks the original predicate after using the index.
+
+Using `bloom_sliced` requires the experimental `allow_experimental_bloom_sliced_index` setting to be enabled.
+
+```text title="Syntax"
+bloom_sliced([tokenizer = ngrams(3),] [preprocessor = lower(column),] [false_positive_rate = 0.05,] [bits = 8192,] [hashes = 4,] [min_hashes = 1,] [rows_per_signature = 16])
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `tokenizer` | Tokenizer used when building row signatures. Defaults to `ngrams(3)`. |
+| `preprocessor` | Optional deterministic string expression applied to the indexed value before tokenization, for example `lower(message)` or `replaceRegexpAll(message, '<timestamp regex>', ' ')`. Query constants are processed with the same expression before tokenization. Arbitrary deterministic expressions are supported: for preprocessors that are not a pure case fold, the index additionally records the raw tokens the preprocessor destroyed in a small per-chunk tombstone Bloom filter, and probes that hit a tombstone automatically fail open instead of pruning, so results stay correct even for queries on removed content. For removal-style preprocessors, prefer a separator replacement string (non-empty, not a token character, for example a single space) over the empty string, so that removals cannot merge neighboring tokens into artifacts. |
+| `false_positive_rate` | Target mark-level false-positive rate used to infer the signature size and hash count from the observed number of distinct tokens per signature in the first part chunk. ClickHouse converts it to a per-signature target using the table `index_granularity` and `rows_per_signature`. Defaults to `0.05`. Ignored when either `bits` or `hashes` is specified. |
+| `bits` | Expert override for the number of bit slices in each signature. If specified, disables false-positive-rate inference. Larger values reduce false positives and increase index size. At most `67108864` (2^26). |
+| `hashes` | Expert override for the number of Bloom hash positions per token. If specified, disables false-positive-rate inference. At most `64`. |
+| `min_hashes` | Minimum number of hash positions for very common tokens when variable hashing is used. Defaults to `1`. |
+| `rows_per_signature` | Number of rows represented by each signature. Defaults to `16`. Higher values reduce index size but make pruning coarser. |
+
+The index is usually created with a large `GRANULARITY` because it is stored for the whole part and `GRANULARITY` is ignored for the on-disk layout.
+
+```sql
+SET allow_experimental_bloom_sliced_index = 1;
+
+CREATE TABLE logs
+(
+    ts DateTime,
+    message String,
+    INDEX msg_bs message TYPE bloom_sliced(
+        tokenizer = ngrams(3),
+        false_positive_rate = 0.05,
+        rows_per_signature = 16
+    ) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY ts;
+```
+
+`bloom_sliced` supports predicates that can be reduced to one or more required tokens for the indexed expression, including `hasToken`, `hasAllTokens`, safe `LIKE` patterns, `startsWith`, `endsWith`, restricted `match`, and single-pattern `multiMatchAny` where available. These case-sensitive predicates can use the index under any deterministic preprocessor: with a lossy (non-case-fold) preprocessor, required tokens are derived from the raw needle and each token is checked against both the main signatures and the per-chunk tombstone Bloom filter of destroyed raw tokens, so a chunk that lost the token fails open (and is rechecked) while other chunks and other tokens keep pruning. `ILIKE` and `hasTokenCaseInsensitive` require a pure `lower`, `lowerUTF8`, `upper`, or `upperUTF8` preprocessor: tombstones do not make case folding sound, so under any other preprocessor case-insensitive predicates fail open entirely. Predicates that cannot be safely tokenized fail open and are evaluated without help from the index. `arrayExists` is not supported.
+
+During reads, ClickHouse can use `bloom_sliced` in two ways:
+
+- standard skip-index mark pruning, visible with `EXPLAIN indexes = 1`;
+- a staged `PREWHERE` hint that reads synthetic `__bloom_sliced_...` virtual columns before the original predicate. This is controlled by `query_plan_direct_read_from_bloom_sliced_index` together with the usual skip-index settings.
+
+The on-disk index uses two files per part: `.idx` for metadata and `.bsb.idx` for raw zstd-compressed slice payloads. Empty and dense slices are represented only in metadata, while selective slices use the `RawZstd` codec for compressed bitsets. When the index has a lossy preprocessor, the metadata additionally stores one tombstone Bloom filter per chunk, sized from the observed number of distinct lost raw tokens for a ~1% false-positive rate (typically a few kilobytes per chunk); case-fold and no-preprocessor indexes store no tombstone data at all.
+
+Use `bloom_sliced` when the main goal is reducing index size compared with per-token postings while retaining useful pruning for token predicates. Benchmarks generally show disk savings as the main benefit; query speed comes from mark pruning and staged hints, while the `text` index remains faster for exact direct full-text reads when its larger on-disk footprint is acceptable. A starting point for large log-like text is `false_positive_rate = 0.05` and `rows_per_signature = 16`; decrease `false_positive_rate`, set manual `bits`, or decrease `rows_per_signature` if false positives are too frequent.
+
+Current limitations include experimental status, no support for negative predicates, no `arrayExists` support, fail-open behavior for unsupported or unsafe patterns, and approximate row filtering inside surviving marks. Future work may add more predicate forms and more adaptive tuning.
+
 ### Text index {#text}
 
 Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
@@ -563,42 +616,44 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
-|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
-| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
-| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
-| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
-| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text | bloom_sliced |
+|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|--------------|
+| [equals (=, ==)](/sql-reference/functions/comparison-functions.md/#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔ | ✗    |
+| [notEquals(!=, &lt;&gt;)](/sql-reference/functions/comparison-functions.md/#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗ | ✗    |
+| [like](/sql-reference/functions/string-search-functions.md/#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔ | ✔    |
+| [notLike](/sql-reference/functions/string-search-functions.md/#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗ | ✗    |
+| [match](/sql-reference/functions/string-search-functions.md/#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔ | ✔    |
+| [startsWith](/sql-reference/functions/string-functions.md/#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔ | ✔    |
+| [endsWith](/sql-reference/functions/string-functions.md/#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔ | ✔    |
+| [multiSearchAny](/sql-reference/functions/string-search-functions.md/#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [multiSearchAnyUTF8](/sql-reference/functions/string-search-functions.md/#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [multiMatchAny](/sql-reference/functions/string-search-functions.md/#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✔    |
+| [in](/sql-reference/functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔ | ✗    |
+| [notIn](/sql-reference/functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗ | ✗    |
+| [less (`<`)](/sql-reference/functions/comparison-functions.md/#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗ | ✗    |
+| [greater (`>`)](/sql-reference/functions/comparison-functions.md/#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗ | ✗    |
+| [lessOrEquals (`<=`)](/sql-reference/functions/comparison-functions.md/#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗ | ✗    |
+| [greaterOrEquals (`>=`)](/sql-reference/functions/comparison-functions.md/#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗ | ✗    |
+| [empty](/sql-reference/functions/array-functions/#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗ | ✗    |
+| [notEmpty](/sql-reference/functions/array-functions/#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗ | ✗    |
+| [has](/sql-reference/functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔ | ✗    |
+| [hasAny](/sql-reference/functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗ | ✗    |
+| [hasAll](/sql-reference/functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗ | ✗    |
+| [hasToken](/sql-reference/functions/string-search-functions.md/#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔ | ✔    |
+| [hasTokenOrNull](/sql-reference/functions/string-search-functions.md/#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔ | ✗    |
+| [hasTokenCaseInsensitive (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗ | ✔    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/sql-reference/functions/string-search-functions.md/#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗ | ✗    |
+| [hasAnyTokens](/sql-reference/functions/string-search-functions.md/#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [hasAllTokens](/sql-reference/functions/string-search-functions.md/#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✔    |
+| [pointInPolygon](/sql-reference/functions/geo/coordinates.md#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗ | ✗    |
+| [mapContains (mapContainsKey)](/sql-reference/functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [mapContainsKeyLike](/sql-reference/functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [mapContainsValue](/sql-reference/functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
+| [mapContainsValueLike](/sql-reference/functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔ | ✗    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
+
+For `bloom_sliced`, `LIKE`, `ILIKE`, `match`, and `multiMatchAny` support is restricted to constant patterns that can be reduced to required tokens by the index tokenizer. Case-sensitive predicates work under any deterministic preprocessor (lossy preprocessors fail open per chunk through tombstone Bloom filters). `ILIKE` and `hasTokenCaseInsensitive` require a pure `lower`, `lowerUTF8`, `upper`, or `upperUTF8` preprocessor on the indexed column. `multiMatchAny` is supported only for a single pattern. Unsupported predicates fail open.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
