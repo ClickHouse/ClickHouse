@@ -26,7 +26,7 @@ public:
     static constexpr auto FILENAME = "source_parts.dat";
 
     SourcePartsSetForPatch() = default;
-    SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_);
+    SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_desc_);
 
     bool empty() const { return min_max_versions_by_part.empty(); }
     UInt64 getMinDataVersion() const { return min_data_version; }
@@ -38,20 +38,14 @@ public:
     UInt8 getFormatVersion() const { return format_version; }
 
     /// The table's sorting key the v2 patch was written with, as a one-line formatted text.
-    const String & getSortingKey() const { return sorting_key; }
+    const String & getSortingKeyDesc() const { return sorting_key_desc; }
 
-    /// Returns a hash of `sorting_key`, used as a cache key.
-    UInt128 getSortingKeyHash() const;
-
-    /// Returns a set with the same format version and sorting key but without source
-    /// parts. Used for empty covering parts in patch partitions, which patch nothing but
-    /// must keep the structure of the partition.
-    SourcePartsSetForPatch cloneEmpty() const { return SourcePartsSetForPatch(format_version, sorting_key); }
+    /// Returns a set with the same format version and sorting key but without source parts.
+    SourcePartsSetForPatch cloneEmpty() const { return SourcePartsSetForPatch(format_version, sorting_key_desc); }
 
     void addSourcePart(const String & name, UInt64 data_version);
 
     /// `effective_sorting_key` is the effective sort-key prefix for `MergeOnKey` patches
-    /// (see `buildPatchSortingKeyDescription`), unused (nullptr) for v1 patches.
     PatchParts getPatchParts(
         const MergeTreePartInfo & original_part,
         const DataPartPtr & patch_part,
@@ -61,11 +55,8 @@ public:
         const Block & block,
         UInt64 data_version,
         UInt8 format_version,
-        String sorting_key);
+        String sorting_key_desc);
 
-    /// Merge patch-on-patch sets. The input parts share the same partition, so their
-    /// `format_version` and `sorting_key` are guaranteed equal (both are covered
-    /// by the partition-id hash); we just copy them from the first part.
     static SourcePartsSetForPatch merge(const DataPartsVector & source_parts);
 
     void writeBinary(WriteBuffer & out) const;
@@ -84,13 +75,9 @@ private:
 
     UInt64 min_data_version = 0;
     UInt64 max_data_version = 0;
-
-    /// Format version of the patch part on disk (see `V1_FORMAT_VERSION` / `V2_FORMAT_VERSION`).
     UInt8 format_version = V1_FORMAT_VERSION;
-
-    /// One-line text of the sorting key the v2 patch was written with, persisted in
-    /// `source_parts.dat` right after `format_version`. Empty and unused for v1 patches.
-    String sorting_key;
+    /// One-line text of the sorting key the v2 patch was written with.
+    String sorting_key_desc;
 };
 
 /// Returns set with source parts with _part column from block and data_version.

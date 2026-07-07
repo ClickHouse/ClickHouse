@@ -143,9 +143,9 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     auto part_identifier = make_intrusive<ASTIdentifier>("_part");
     const auto sorting_key_expr_list = sorting_key.getOriginalExpressionList();
 
-    Names hash_input = patch_part_desc.getNamesOfPhysical();
-    hash_input.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
-    auto columns_hash = getColumnsHash(std::move(hash_input));
+    Names names_for_hash = patch_part_desc.getNamesOfPhysical();
+    names_for_hash.emplace_back(sorting_key_expr_list ? sorting_key_expr_list->formatWithSecretsOneLine() : "");
+    auto columns_hash = getColumnsHash(std::move(names_for_hash));
     auto hash_literal = make_intrusive<ASTLiteral>(std::move(columns_hash));
 
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
@@ -187,27 +187,40 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     return getPatchPartMetadataV2(std::move(patch_part_desc), sorting_key, local_context);
 }
 
+ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key)
+{
+    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
+    chassert(patch_expr_list && patch_expr_list->children.size() >= 2);
+
+    auto table_expr_list = make_intrusive<ASTExpressionList>();
+    table_expr_list->children.reserve(patch_expr_list->children.size() - 2);
+
+    for (size_t i = 0; i < patch_expr_list->children.size() - 2; ++i)
+        table_expr_list->children.push_back(patch_expr_list->children[i]->clone());
+
+    return table_expr_list;
+}
+
 std::shared_ptr<const KeyDescription> buildPatchSortingKeyDescription(
     const KeyDescription & patch_sorting_key,
     const StorageMetadataPtr & main_metadata_snapshot)
 {
+    auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
+    {
+        return lhs->formatWithSecretsOneLine() == rhs->formatWithSecretsOneLine();
+    };
+
     const auto & main_sorting_key = main_metadata_snapshot->getSortingKey();
-
-    /// Get original expressions to preserve DESC entries for reverse flags.
-    const auto patch_expr_list = patch_sorting_key.getOriginalExpressionList();
     const auto main_expr_list = main_sorting_key.getOriginalExpressionList();
+    const auto patch_expr_list = getTableSortingKeyExpressionFromPatch(patch_sorting_key);
 
-    /// The sorting key of a patch part always ends with the `_block_number`, `_block_offset` columns.
-    chassert(patch_expr_list && patch_expr_list->children.size() >= 2);
-    const auto & patch_children = patch_expr_list->children;
-    const size_t patch_key_size = patch_children.size() - 2;
+    const size_t patch_key_size = patch_expr_list->children.size();
     const size_t main_key_size = main_expr_list ? main_expr_list->children.size() : 0;
-
-    size_t prefix_key_size = 0;
     const size_t max_prefix_key_size = std::min(patch_key_size, main_key_size);
 
-    while (prefix_key_size < max_prefix_key_size
-        && patch_children[prefix_key_size]->formatWithSecretsOneLine() == main_expr_list->children[prefix_key_size]->formatWithSecretsOneLine())
+    size_t prefix_key_size = 0;
+
+    while (prefix_key_size < max_prefix_key_size && ast_equals(patch_expr_list->children[prefix_key_size], main_expr_list->children[prefix_key_size]))
         ++prefix_key_size;
 
     if (prefix_key_size == main_key_size)

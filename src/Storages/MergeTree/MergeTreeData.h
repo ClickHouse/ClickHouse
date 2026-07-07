@@ -1428,14 +1428,11 @@ public:
 
     void triggerBackgroundOperations();
 
-    /// Returns the metadata of an existing patch part, rebuilt from the part's columns
-    /// and source-parts set: v1 via `getPatchPartMetadataV1`, v2 via `getPatchPartMetadataV2`
-    /// with the persisted sorting key. Cached by partition id.
+    /// Returns cached metadata snapshot of a patch part that contains the following columns.
     PatchPartMetadata getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
-    /// Returns the effective sorting key for applying a v2 patch part: the longest common
-    /// prefix of the patch's persisted sorting key and the table's current sorting key.
-    /// Cached by the hash of the persisted sorting key text; invalidated on ALTER.
+    /// Returns the effective sorting key for applying a v2 patch part:
+    /// the longest common prefix of the patch's persisted sorting key and the table's current sorting key.
     std::shared_ptr<const KeyDescription> getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const;
 
     static MergingParams getMergingParamsForPatchParts();
@@ -1607,17 +1604,15 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// Cached metadata used to read patch parts, by patch partition id. Patch parts in one
-    /// partition always have the same structure.
+    /// Cached metadata used to read patch parts, by patch partition id.
+    /// Patch parts in one partition always have the same structure.
     mutable std::mutex patch_parts_metadata_mutex;
     mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
 
-    /// Cached effective sorting keys for applying v2 patch parts, by the hash of the patch's
-    /// stored sorting key text (patch parts from different partitions written with the same
-    /// key share an entry). Invalidated on ALTER: the effective key depends on the table's
-    /// current sorting key (see `getPatchPartSortingKey`).
+    /// Cached effective sorting keys for applying v2 patch parts.
+    /// Invalidated on ALTER: the effective key depends on the table's current sorting key.
     mutable std::mutex patch_parts_sorting_keys_mutex;
-    mutable std::unordered_map<UInt128, std::shared_ptr<const KeyDescription>, UInt128Hash> patch_parts_sorting_keys_cache;
+    mutable std::unordered_map<String, std::shared_ptr<const KeyDescription>> patch_parts_sorting_keys_cache;
 
     MergeTreePartsMover parts_mover;
 

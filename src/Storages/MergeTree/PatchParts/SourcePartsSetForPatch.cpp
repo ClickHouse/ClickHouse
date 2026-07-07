@@ -20,18 +20,12 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_)
+SourcePartsSetForPatch::SourcePartsSetForPatch(UInt8 format_version_, String sorting_key_desc_)
     : format_version(format_version_)
-    , sorting_key(std::move(sorting_key_))
+    , sorting_key_desc(std::move(sorting_key_desc_))
 {
-    /// Only v2 carries a sort-key. v1 uses the fixed `(_part, _part_offset)`
-    /// layout handled by `PatchMode::Merge` / `PatchMode::Join`.
-    chassert(format_version == V2_FORMAT_VERSION || sorting_key.empty());
-}
-
-UInt128 SourcePartsSetForPatch::getSortingKeyHash() const
-{
-    return sipHash128(sorting_key.data(), sorting_key.size());
+    if (format_version == V1_FORMAT_VERSION && !sorting_key_desc.empty())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Sorting key description must be empty for v1 patch part. Got: {}", sorting_key_desc);
 }
 
 void SourcePartsSetForPatch::addSourcePart(const String & name, UInt64 data_version)
@@ -193,26 +187,22 @@ SourcePartsSetForPatch SourcePartsSetForPatch::build(
 SourcePartsSetForPatch SourcePartsSetForPatch::merge(const DataPartsVector & source_parts)
 {
     SourcePartsSetForPatch merged_set;
+    if (source_parts.empty())
+        return merged_set;
 
-    bool format_version_set = false;
+    const auto & first_set = source_parts.front()->getSourcePartsSet();
+    merged_set.format_version = first_set.format_version;
+    merged_set.sorting_key_desc = first_set.sorting_key_desc;
+
     for (const auto & part : source_parts)
     {
         const auto & set = part->getSourcePartsSet();
 
-        /// Inputs to a patch-on-patch merge always share the format version and the sort-key
-        /// columns, because both are covered by the partition-id hash. Copy them from the
-        /// first part.
-        if (!format_version_set)
-        {
-            merged_set.format_version = set.format_version;
-            merged_set.sorting_key = set.sorting_key;
-            format_version_set = true;
-        }
-        else
-        {
-            chassert(merged_set.format_version == set.format_version);
-            chassert(merged_set.sorting_key == set.sorting_key);
-        }
+        if (set.format_version != merged_set.format_version)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Format version mismatch in source parts set. Got: {}, expected: {}", static_cast<UInt64>(set.format_version), static_cast<UInt64>(merged_set.format_version));
+
+        if (set.sorting_key_desc != merged_set.sorting_key_desc)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Sorting key description mismatch in source parts set. Got: {}, expected: {}", set.sorting_key_desc, merged_set.sorting_key_desc);
 
         for (const auto & [part_name, min_max] : set.min_max_versions_by_part)
         {
@@ -235,10 +225,10 @@ void SourcePartsSetForPatch::writeBinary(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(format_version, out);
 
-    /// v2 adds the sorting key text right after the version byte, so a patch part stays
-    /// self-describing after the table's sorting key is changed by ALTER.
     if (format_version == V2_FORMAT_VERSION)
-        writeStringBinary(sorting_key, out);
+    {
+        writeStringBinary(sorting_key_desc, out);
+    }
 
     writeBinaryLittleEndian(min_max_versions_by_part.size(), out);
 
@@ -261,7 +251,7 @@ void SourcePartsSetForPatch::readBinary(ReadBuffer & in)
     format_version = version;
 
     if (format_version == V2_FORMAT_VERSION)
-        readStringBinary(sorting_key, in);
+        readStringBinary(sorting_key_desc, in);
 
     UInt64 num_parts = 0;
     readBinaryLittleEndian(num_parts, in);
@@ -290,21 +280,16 @@ SourcePartsSetForPatch buildSourceSetForPatch(
     data_version_column = PartDataVersionColumn::type->createColumnConst(block.rows(), data_version)->convertToFullColumnIfConst();
 
     UInt8 format_version = SourcePartsSetForPatch::V1_FORMAT_VERSION;
-    String sorting_key;
+    String sorting_key_desc;
 
     if (patch_metadata.version == MergeTreePatchPartsVersion::V2)
     {
         format_version = SourcePartsSetForPatch::V2_FORMAT_VERSION;
-
-        /// The sorting key of a v2 patch part is (columns..., _block_number, _block_offset);
-        /// strip the two trailing identity columns to recover the table's sorting key.
-        auto expression_list = patch_metadata.metadata->getSortingKey().getOriginalExpressionList()->clone();
-        chassert(expression_list->children.size() >= 2);
-        expression_list->children.resize(expression_list->children.size() - 2);
-        sorting_key = expression_list->formatWithSecretsOneLine();
+        auto sorting_key_expr_list = getTableSortingKeyExpressionFromPatch(patch_metadata.metadata->getSortingKey());
+        sorting_key_desc = sorting_key_expr_list->formatWithSecretsOneLine();
     }
 
-    return SourcePartsSetForPatch::build(block, data_version, format_version, std::move(sorting_key));
+    return SourcePartsSetForPatch::build(block, data_version, format_version, std::move(sorting_key_desc));
 }
 
 }

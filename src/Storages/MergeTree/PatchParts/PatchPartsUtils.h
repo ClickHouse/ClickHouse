@@ -33,6 +33,9 @@ StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescripti
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
 
+/// Returns the sorting key expression list of the patch part, excluding the trailing identity columns.
+ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key);
+
 /// Builds the effective sorting key for applying a v2 patch part: the longest common prefix
 /// of the patch part's sorting key (excluding the trailing identity columns) and the table's
 /// current sorting key, resolved against the main table's columns. Both the patch part and

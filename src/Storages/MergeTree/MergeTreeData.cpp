@@ -10640,7 +10640,7 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
         case SourcePartsSetForPatch::V2_FORMAT_VERSION:
         {
             patch_metadata.version = MergeTreePatchPartsVersion::V2;
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKey(), local_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyDesc(), local_context);
             break;
         }
         default:
@@ -10652,11 +10652,11 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 
 std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
 {
-    const auto cache_key = patch_part.getSourcePartsSet().getSortingKeyHash();
+    const auto & sorting_key_desc = patch_part.getSourcePartsSet().getSortingKeyDesc();
     auto patch_metadata = getPatchPartMetadata(patch_part, getContext());
 
     std::lock_guard lock(patch_parts_sorting_keys_mutex);
-    auto & sorting_key = patch_parts_sorting_keys_cache[cache_key];
+    auto & sorting_key = patch_parts_sorting_keys_cache[sorting_key_desc];
 
     if (!sorting_key)
     {
