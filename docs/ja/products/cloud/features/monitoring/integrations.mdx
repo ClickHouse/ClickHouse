@@ -1,0 +1,36 @@
+---
+title: 'コミュニティおよびパートナー向けインテグレーション'
+slug: /cloud/monitoring/integrations
+description: 'サードパーティの監視インテグレーションと ClickHouse Cloud の Billing & Usage API'
+keywords: ['クラウド', '監視', 'datadog', 'grafana', 'コミュニティ', '請求', '使用状況 API']
+sidebarTitle: 'インテグレーション'
+doc_type: 'guide'
+---
+
+import CommunityMonitoring from '/snippets/ja/_community_monitoring.mdx';
+
+<div id="direct-datadog">
+  ## Datadog との直接インテグレーション
+</div>
+
+Datadog は、システムテーブルを直接クエリする ClickHouse 監視プラグインをエージェント向けに提供しています。このインテグレーションにより、`clusterAllReplicas` 機能を通じてクラスターを認識した包括的なデータベース監視が可能になります。
+
+<Warning>
+  **ClickHouse Cloud では非推奨**
+
+  システムテーブルをクエリする Datadog エージェントの直接インテグレーションは、コスト最適化のためのアイドル動作と互換性がなく、Cloud のプロキシレイヤーにも運用上の制約があるため、ClickHouse Cloud へのデプロイには推奨されません。
+</Warning>
+
+代わりに、Datadog の [Agent](https://docs.datadoghq.com/agent/?tab=Linux) と [OpenMetrics インテグレーション](https://docs.datadoghq.com/integrations/openmetrics/) を使用して、ClickHouse Cloud の Prometheus エンドポイントからメトリクスを収集してください。この方法であれば、サービスのアイドル動作を尊重しつつ、監視ワークロードと本番ワークロードの運用上の分離を維持できます。設定方法については、[Datadog の Prometheus および OpenMetrics インテグレーション のドキュメント](https://docs.datadoghq.com/integrations/openmetrics/) を参照してください。
+
+Prometheus エンドポイントの設定の詳細については、[Prometheus インテグレーション ページ](/ja/products/cloud/features/monitoring/prometheus#integrating-with-datadog)を参照してください。
+
+<CommunityMonitoring />
+
+<div id="billing-usage-api">
+  ## 請求と使用状況 API
+</div>
+
+Billing &amp; Usage API を使用すると、Cloud 組織の請求および使用状況の記録にプログラム経由でアクセスできます。これは、カスタムのコスト監視ダッシュボードを構築したり、請求データを既存の財務レポートのワークフローに統合したりする場合に役立ちます。
+
+API リファレンスの詳細については、[請求 API ドキュメント](/ja/api-reference/organization/get-list-of-available-organizations#tag/Billing)を参照してください。

@@ -1,0 +1,93 @@
+---
+description: 'TimeSeriesテーブルのデータを使用して、Prometheusクエリを評価します。'
+sidebarTitle: 'prometheusQueryRange'
+slug: /sql-reference/table-functions/prometheusQueryRange
+title: 'prometheusQueryRange'
+doc_type: 'reference'
+---
+
+一定の評価時刻範囲にわたって、TimeSeriesテーブルのデータを使用してPrometheusクエリを評価します。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
+prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_time, step)
+prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
+```
+
+<div id="arguments">
+  ## 引数
+</div>
+
+* `db_name` - TimeSeries テーブルが存在するデータベースの名前。
+* `time_series_table` - TimeSeries テーブルの名前。
+* `promql_query` - [PromQL 構文](https://prometheus.io/docs/prometheus/latest/querying/basics/)で記述されたクエリ。
+* `start_time` - 評価範囲の開始時刻。
+* `end_time` - 評価範囲の終了時刻。
+* `step` - 評価時刻を `start_time` から `end_time` まで (両端を含む) 順に進める際のステップ。
+
+<div id="returned_value">
+  ## 戻り値
+</div>
+
+この関数は、パラメータ `promql_query` に渡されたクエリの結果タイプに応じて、返されるカラムが異なります。
+
+| 結果タイプ  | 結果カラム                                                                                     | 例                                                   |
+| ------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+<div id="supported-promql-features">
+  ## PromQL でサポートされている機能
+</div>
+
+<div id="selectors">
+  ### セレクタ
+</div>
+
+インスタントセレクタ、範囲セレクタ、ラベルマッチャー (`=`, `!=`, `=~`, `!~`) 、`offset` 修飾子、`@` タイムスタンプ修飾子、サブクエリ。
+
+<div id="functions">
+  ### 関数
+</div>
+
+| カテゴリ     | 関数                                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------ |
+| 範囲       | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| 数学       | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
+| 三角関数     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
+| DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| 型        | `scalar`, `vector`                                                                               |
+| ヒストグラム   | `histogram_quantile`                                                                             |
+| その他      | `time`, `pi`                                                                                     |
+
+**注**: `histogram_quantile` は、従来のヒストグラムバケット (`le` ラベルで識別) に対して線形補間を使用します。ネイティブヒストグラムはまだサポートされておらず、`phi` (quantile level) 引数は現時点では定数スカラーである必要があります。`histogram_quantile(time() / 1000, ...)` のようにステップごとに変化する式は受け付けられず、`NOT_IMPLEMENTED` エラーになります。
+
+<div id="operators">
+  ### 演算子
+</div>
+
+`on()`/`ignoring()` および `group_left()`/`group_right()` 修飾子付きの、すべての算術 (`+`, `-`, `*`, `/`, `%`, `^`) 、比較 (オプションの `bool` を付けた `==`, `!=`, `<`, `>`, `<=`, `>=`) 、および論理 (`and`, `or`, `unless`) 二項演算子。
+
+単項演算子 `+` と `-`。
+
+<div id="aggregation-operators">
+  ### 集計演算子
+</div>
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — オプションで `by()` または `without()` 修飾子を指定できます。
+
+現時点では `count_values` はサポートされていません。
+
+<div id="example">
+  ## 例
+</div>
+
+```sql
+SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
+```

@@ -1,0 +1,38 @@
+---
+slug: /cloud/managed-postgres/monitoring/overview
+sidebarTitle: 'Vue d''ensemble'
+title: 'Monitoring de Managed Postgres'
+description: 'Vue d''ensemble des options de monitoring et d''observability pour ClickHouse Managed Postgres'
+keywords: ['managed postgres', 'monitoring', 'observability', 'métriques', 'tableau de bord', 'prometheus', 'Query Insights', 'pg_stat_ch']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-overview-beta" />
+
+Vous pouvez surveiller vos services Managed Postgres à l’aide des
+méthodes suivantes :
+
+| Section                                                                  | Description                                                                                                   | Configuration requise              |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| [Tableau de bord](/fr/products/managed-postgres/monitoring/dashboard)       | Graphiques intégrés de la Cloud Console pour l’utilisation des ressources et l’activité de la database        | Aucune                             |
+| [Query Insights](/fr/products/managed-postgres/monitoring/query-insights)   | Télémétrie par instruction : chaque modèle de requête est classé par impact, avec des compteurs de diagnostic | Aucune                             |
+| [point de terminaison Prometheus](/fr/products/managed-postgres/monitoring/prometheus)  | Récupérez les métriques dans Prometheus, Grafana, Datadog ou tout collector compatible OpenMetrics            | API key + configuration du scraper |
+| [Référence des métriques](/fr/products/managed-postgres/monitoring/metrics) | Liste complète des métriques exposées par l’point de terminaison Prometheus, avec leurs types, labels et significations   | N/A                                |
+
+<div id="quick-start">
+  ## Démarrage rapide
+</div>
+
+Ouvrez la Cloud Console et accédez à l’onglet **Monitoring** de
+n’importe quelle instance Managed Postgres pour voir des graphiques en temps réel du CPU, de la mémoire, des IOPS,
+des connexions, des transactions, du cache hit ratio et des deadlocks. Aucune
+configuration n’est requise.
+
+Pour la télémétrie par query — percentiles de latence, lectures depuis le cache ou le disk,
+spills temporaires, utilisation des workers parallèles et volume de WAL — ouvrez l’onglet
+[Query Insights](/fr/products/managed-postgres/monitoring/query-insights)
+sur la même instance. Pour acheminer les métriques au niveau de l’hôte vers votre propre
+stack d’observability, utilisez le
+[point de terminaison Prometheus](/fr/products/managed-postgres/monitoring/prometheus).

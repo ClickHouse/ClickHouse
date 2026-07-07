@@ -1,0 +1,103 @@
+---
+description: 'ClickHouse の FixedString データ型のドキュメント'
+sidebarTitle: 'FixedString(N)'
+slug: /sql-reference/data-types/fixedstring
+title: 'FixedString(N)'
+doc_type: 'reference'
+---
+
+`N` バイトの固定長文字列です (文字数でもコードポイント数でもありません) 。
+
+`FixedString` 型のカラムを宣言するには、次の構文を使用します。
+
+```sql
+<column_name> FixedString(N)
+```
+
+ここで、`N` は自然数です。
+
+`FixedString` 型は、データの長さが厳密に `N` バイトである場合に効率的です。それ以外の場合は、かえって効率が低下する可能性があります。
+
+`FixedString` 型のカラムに効率よく格納できる値の例:
+
+* IP アドレスのバイナリ表現 (IPv6 の場合は `FixedString(16)`) 。
+* 言語コード (ru&#95;RU、en&#95;US ... ) 。
+* 通貨コード (USD、RUB ... ) 。
+* ハッシュのバイナリ表現 (MD5 の場合は `FixedString(16)`、SHA256 の場合は `FixedString(32)`) 。
+
+UUID 値を格納するには、[UUID](/ja/reference/data-types/uuid) データ型を使用します。
+
+データを挿入する際、ClickHouse は次のように処理します。
+
+* 文字列が `N` バイト未満の場合は、ヌルバイトで補完します。
+* 文字列が `N` バイトを超える場合は、`Too large value for FixedString(N)` 例外をスローします。
+
+単一の `FixedString(2)` カラムを持つ次のテーブルについて考えてみましょう。
+
+```sql
+
+INSERT INTO FixedStringTable VALUES ('a'), ('ab'), ('');
+```
+
+```sql
+SELECT
+    name,
+    toTypeName(name),
+    length(name),
+    empty(name)
+FROM FixedStringTable;
+```
+
+```text
+┌─name─┬─toTypeName(name)─┬─length(name)─┬─empty(name)─┐
+│ a    │ FixedString(2)   │            2 │           0 │
+│ ab   │ FixedString(2)   │            2 │           0 │
+│      │ FixedString(2)   │            2 │           1 │
+└──────┴──────────────────┴──────────────┴─────────────┘
+```
+
+`FixedString(N)` 値の長さは一定であることに注意してください。[length](/ja/reference/functions/regular-functions/array-functions#length) 関数は、`FixedString(N)` の値が null byte のみで埋められている場合でも `N` を返しますが、この場合 [empty](/ja/reference/functions/regular-functions/array-functions#empty) 関数は `1` を返します。
+
+`WHERE` 句でデータを選択すると、条件の指定方法によって結果が異なります。
+
+* 等価演算子 `=` または `==`、あるいは `equals` 関数を使用した場合、ClickHouse は `\0` 文字を *考慮しません*。つまり、クエリ `SELECT * FROM FixedStringTable WHERE name = 'a';` と `SELECT * FROM FixedStringTable WHERE name = 'a\0';` は同じ結果を返します。
+* `LIKE` 句を使用した場合、ClickHouse は `\0` 文字を *考慮します*。そのため、フィルタ条件で `\0` 文字を明示的に指定する必要があることがあります。
+
+```sql
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name = 'a'
+FORMAT JSONStringsEachRow
+
+Query id: c32cec28-bb9e-4650-86ce-d74a1694d79e
+
+{"name":"a\u0000"}
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a'
+FORMAT JSONStringsEachRow
+
+0 rows in set.
+
+SELECT name
+FROM FixedStringTable
+WHERE name LIKE 'a\0'
+FORMAT JSONStringsEachRow
+
+{"name":"a\u0000"}
+```
