@@ -1263,7 +1263,11 @@ public:
     static AlterConversionsPtr getAlterConversionsForPart(
         const MergeTreeDataPartPtr & part,
         const MutationsSnapshotPtr & mutations,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context
+#if CLICKHOUSE_CLOUD
+        , const EnabledMaskingPoliciesPtr & enabled_masking_policies
+#endif
+        );
 
     /// Returns destination disk or volume for the TTL rule according to current storage policy.
     SpacePtr getDestinationForMoveTTL(const TTLDescription & move_ttl) const;

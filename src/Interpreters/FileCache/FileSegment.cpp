@@ -134,8 +134,12 @@ const LoggerPtr & FileSegment::getLog() const
 
 FileSegment::State FileSegment::state() const
 {
-    auto lk = lock();
-    return download_state;
+    /// Read without lock. This is safe because every terminal state is published as the last write
+    /// of its transition: in particular DOWNLOADED is set only after the segment is fully
+    /// finalized (writer flushed and closed, reader released, range/size settled - see
+    /// `setDownloadedUnlocked` and `shrinkFileSegmentToDownloadedSize`). So an observer of a state
+    /// here is guaranteed to also see all the state that belongs to it.
+    return download_state.load();
 }
 
 String FileSegment::getPath() const
@@ -173,8 +177,7 @@ void FileSegment::setDownloadState(State state, const FileSegmentGuard::Lock & l
 
 size_t FileSegment::getReservedSize() const
 {
-    auto lk = lock();
-    return reserved_size;
+    return reserved_size.load();
 }
 
 FileSegment::Priority::IteratorPtr FileSegment::getQueueIterator() const
@@ -222,8 +225,9 @@ size_t FileSegment::getDownloadedSize() const
 
 bool FileSegment::isDownloaded() const
 {
-    auto lk = lock();
-    return download_state == State::DOWNLOADED;
+    /// Read without lock, see the comment in `state`: DOWNLOADED is published last, so observing it here
+    /// implies a fully-downloaded, consistent segment.
+    return download_state.load() == State::DOWNLOADED;
 }
 
 time_t FileSegment::getFinishedDownloadTime() const
@@ -702,16 +706,28 @@ void FileSegment::setDownloadedUnlocked(const FileSegmentGuard::Lock & lock)
     if (download_state == State::DOWNLOADED)
         return;
 
-    download_state = State::DOWNLOADED;
     download_finished_time = timeInSeconds(std::chrono::system_clock::now());
 
     if (download_data && download_data->cache_writer)
-        download_data->cache_writer->finalize();
+    {
+        try
+        {
+            download_data->cache_writer->finalize();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(getLog(), "Failed to finalize cache writer while marking file segment as downloaded");
+            setDownloadFailedUnlocked(lock);
+            return;
+        }
+    }
 
     resetDownloadDataUnlocked(lock);
 
     chassert(downloaded_size > 0);
     chassert(fs::file_size(getPath()) == downloaded_size);
+
+    download_state = State::DOWNLOADED;
 }
 
 void FileSegment::setDownloadFailed()
@@ -818,17 +834,17 @@ void FileSegment::shrinkFileSegmentToDownloadedSize(const LockedKey & locked_key
     LOG_TEST(getLog(),"Shrinking file segment {} -> {} (downloaded size: {})",
              range().size(), result_size, downloaded_size.load());
 
+    segment_range.right = segment_range.left + result_size - 1;
+
     if (downloaded_size == result_size)
     {
-        setDownloadState(State::DOWNLOADED, lock);
         /// Terminal state: free the download-only state so it is not leaked on an
         /// already-cached segment (and to uphold the `!download_data` invariant).
         resetDownloadDataUnlocked(lock);
+        setDownloadState(State::DOWNLOADED, lock);
     }
     else
         setDownloadState(State::PARTIALLY_DOWNLOADED, lock);
-
-    segment_range.right = segment_range.left + result_size - 1;
 }
 
 size_t FileSegment::getSizeForBackgroundDownload() const
@@ -968,7 +984,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1000,7 +1023,14 @@ void FileSegment::complete(const LockedKeyPtr & locked_key, bool allow_backgroun
                     {
                         if (download_data->cache_writer)
                         {
-                            download_data->cache_writer->finalize();
+                            try
+                            {
+                                download_data->cache_writer->finalize();
+                            }
+                            catch (...)
+                            {
+                                tryLogCurrentException(getLog(), "Failed to finalize cache writer on complete");
+                            }
                             download_data->cache_writer.reset();
                         }
                         download_data->remote_file_reader.reset();
@@ -1239,6 +1269,10 @@ FileSegment::Info FileSegment::getInfo(const FileSegmentPtr & file_segment)
 
 bool FileSegment::isDetached() const
 {
+    /// Keep the lock: `complete` uses `isDetached` to confirm a benign concurrent detach when
+    /// `lockKeyMetadata` fails. `setDetachedState` sets DETACHED and resets `key_metadata` under
+    /// the segment lock, so only taking the lock here guarantees we observe DETACHED once the key
+    /// metadata is gone - a bare atomic load could race and turn the detach into a `LOGICAL_ERROR`.
     auto lk = lock();
     return download_state == State::DETACHED;
 }
