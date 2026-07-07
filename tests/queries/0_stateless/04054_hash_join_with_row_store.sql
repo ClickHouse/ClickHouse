@@ -23,8 +23,9 @@ SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET collect_hash_table_stats_during_joins = 0;
- -- Pin minimum join output to build size ratio
-SET min_rows_ratio_for_hash_join_row_store = 2;
+SET query_plan_optimize_join_order_randomize = 0;
+SET use_statistics = 0; -- Disable statistics to force using the hint
+SET min_rows_ratio_for_hash_join_row_store = 2;  -- Pin minimum join output to build size ratio
 
 SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
 SETTINGS min_rows_ratio_for_hash_join_row_store = 0, log_comment = 'rs_always_enabled';
