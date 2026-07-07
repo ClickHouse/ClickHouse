@@ -4,8 +4,6 @@
 #include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
-#include <Common/Exception.h>
-
 namespace DB
 {
 
