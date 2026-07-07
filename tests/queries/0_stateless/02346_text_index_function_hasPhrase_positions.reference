@@ -109,3 +109,6 @@ Parts: 1/4
 Granules: 1024/4096
 Map support
 1
+-- Phrase match across the 32-position group boundary
+[1,2]
+[2]

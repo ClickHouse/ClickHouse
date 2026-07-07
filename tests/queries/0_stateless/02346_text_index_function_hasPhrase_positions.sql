@@ -371,3 +371,25 @@ INSERT INTO tab SELECT 2, map('k1', concat(arrayStringConcat(arrayMap(x -> 'w', 
 SELECT id FROM tab WHERE hasPhrase(m['k2'], 'a b') ORDER BY id;
 
 DROP TABLE tab;
+
+SELECT '-- Phrase match across the 32-position group boundary';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, positions = 1)
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS allow_experimental_text_index_positions = 1;
+
+-- filler tokens put the phrase at positions 31/32, so the match straddles the group boundary
+INSERT INTO tab VALUES (1, 'alpha beta');
+INSERT INTO tab SELECT 2, concat(arrayStringConcat(arrayMap(x -> 'w', range(31)), ' '), ' alpha beta gamma');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'alpha beta');
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'alpha beta gamma');
+
+DROP TABLE tab;

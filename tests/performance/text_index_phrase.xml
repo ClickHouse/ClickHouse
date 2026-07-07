@@ -1,0 +1,42 @@
+<test>
+    <settings>
+        <use_skip_indexes_on_data_read>1</use_skip_indexes_on_data_read>
+        <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
+        <!-- Force the positional intersect path so the perf comparison measures the SIMD intersect. -->
+        <text_index_hint_max_selectivity>1000000</text_index_hint_max_selectivity>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
+        <use_query_condition_cache>0</use_query_condition_cache>
+    </settings>
+
+    <!-- dense vocabulary -> large position lists (block kernel), boundary-crossing matches (carry list) -->
+    <create_query>
+        CREATE TABLE phrase_perf_dense (text String, INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha, positions = 1) GRANULARITY 1000000)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS allow_experimental_text_index_positions = 1
+    </create_query>
+    <!-- sparse vocabulary -> tiny position lists (galloping skip path) -->
+    <create_query>
+        CREATE TABLE phrase_perf_sparse (text String, INDEX idx(text) TYPE text(tokenizer = splitByNonAlpha, positions = 1) GRANULARITY 1000000)
+        ENGINE = MergeTree ORDER BY tuple()
+        SETTINGS allow_experimental_text_index_positions = 1
+    </create_query>
+
+    <fill_query>
+        INSERT INTO phrase_perf_dense SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 64 + x) % 32), range(64)), ' ') FROM numbers(500000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO phrase_perf_sparse SELECT arrayStringConcat(arrayMap(x -> toString(rand(number * 64 + x) % 1000000), range(64)), ' ') FROM numbers(500000)
+    </fill_query>
+    <fill_query>OPTIMIZE TABLE phrase_perf_dense FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE phrase_perf_sparse FINAL</fill_query>
+
+    <query>SELECT count() FROM phrase_perf_dense WHERE hasPhrase(text, '10 20')</query>
+    <query>SELECT count() FROM phrase_perf_dense WHERE hasPhrase(text, '5 6')</query>
+    <query>SELECT count() FROM phrase_perf_dense WHERE hasPhrase(text, '10 20 30')</query>
+    <query>SELECT count() FROM phrase_perf_dense WHERE hasPhrase(text, '1 2 3')</query>
+    <query>SELECT count() FROM phrase_perf_sparse WHERE hasPhrase(text, '123 456')</query>
+    <query>SELECT count() FROM phrase_perf_sparse WHERE hasPhrase(text, '123 456 789')</query>
+
+    <drop_query>DROP TABLE IF EXISTS phrase_perf_dense</drop_query>
+    <drop_query>DROP TABLE IF EXISTS phrase_perf_sparse</drop_query>
+</test>
