@@ -2162,16 +2162,15 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     (*reload_disks_task)->schedule();
 }
 
-void DatabaseCatalog::prepareNewDisksOnConfigChange(
-    const StoragePolicySelectorPtr & old_storage_policy_selector,
-    const StoragePolicySelectorPtr & new_storage_policy_selector)
+void DatabaseCatalog::prepareNewDisksOnConfigChange(const StoragePolicySelectorPtr & new_storage_policy_selector, const Strings & new_added_disks)
 {
+    std::set<String> disks{new_added_disks.begin(), new_added_disks.end()};
     for (auto & database : getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
         auto it = database.second->getTablesIterator(getContext());
         while (it->isValid())
         {
-            it->table()->prepareNewDisksOnConfigChange(old_storage_policy_selector, new_storage_policy_selector);
+            it->table()->prepareNewDisksOnConfigChange(new_storage_policy_selector, disks);
             it->next();
         }
     }
