@@ -229,8 +229,18 @@ public:
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
     String getPathForMetadata(const StorageID & table_id) const;
+    struct DroppedTableCleanupOptions
+    {
+        bool ignore_delay = false;
+        bool drop_as_detached = false;
+        bool cleanup_detached_table_state = false;
+    };
     void enqueueDroppedTableCleanup(
-        StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay = false, bool drop_as_detached = false);
+        StorageID table_id,
+        StoragePtr table,
+        DiskPtr db_disk,
+        String dropped_metadata_path,
+        DroppedTableCleanupOptions options);
     void undropTable(StorageID table_id);
 
     void waitTableFinallyDropped(const UUID & uuid, std::function<void()> throw_if_cancelled = {});
@@ -265,6 +275,7 @@ public:
         String metadata_path;
         time_t drop_time{};
         bool drop_as_detached = false;
+        bool cleanup_detached_table_state = false;
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 

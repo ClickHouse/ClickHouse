@@ -1392,7 +1392,14 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         auto db_disk = elem.second.db_disk;
         auto drop_as_detached = elem.second.drop_as_detached;
         runner.enqueueAndKeepTrack([this, full_path, storage_id, db_disk, drop_as_detached]()
-                                   { this->enqueueDroppedTableCleanup(storage_id, nullptr, db_disk, full_path, false, drop_as_detached); });
+        {
+            this->enqueueDroppedTableCleanup(
+                storage_id,
+                nullptr,
+                db_disk,
+                full_path,
+                DroppedTableCleanupOptions{.drop_as_detached = drop_as_detached});
+        });
     }
     runner.waitForAllToFinishAndRethrowFirstError();
 }
@@ -1423,7 +1430,11 @@ String DatabaseCatalog::getPathForMetadata(const StorageID & table_id) const
 }
 
 void DatabaseCatalog::enqueueDroppedTableCleanup(
-    StorageID table_id, StoragePtr table, DiskPtr db_disk, String dropped_metadata_path, bool ignore_delay, bool drop_as_detached)
+    StorageID table_id,
+    StoragePtr table,
+    DiskPtr db_disk,
+    String dropped_metadata_path,
+    DroppedTableCleanupOptions options)
 {
     chassert(table_id.hasUUID());
     chassert(!table || table->getStorageID().uuid == table_id.uuid);
@@ -1436,7 +1447,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
         chassert(hasUUIDMapping(table_id.uuid));
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
         /// Do not postpone removal of in-memory tables
-        ignore_delay = ignore_delay || !table->storesDataOnDisk();
+        options.ignore_delay = options.ignore_delay || !table->storesDataOnDisk();
         table->is_dropped = true;
     }
     else
@@ -1479,24 +1490,33 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
     }
 
     std::lock_guard lock(tables_marked_dropped_mutex);
-    if (ignore_delay)
+    if (options.ignore_delay)
     {
         /// Insert it before first_async_drop_in_queue, so sync drop queries will have priority over async ones,
         /// but the queue will remain fair for multiple sync drop queries.
         tables_marked_dropped.emplace(
-            first_async_drop_in_queue, TableMarkedAsDropped{table_id, table, db_disk, dropped_metadata_path, drop_time, drop_as_detached});
+            first_async_drop_in_queue,
+            TableMarkedAsDropped{
+                .table_id = table_id,
+                .table = table,
+                .db_disk = db_disk,
+                .metadata_path = dropped_metadata_path,
+                .drop_time = drop_time,
+                .drop_as_detached = options.drop_as_detached,
+                .cleanup_detached_table_state = options.cleanup_detached_table_state});
     }
     else
     {
         tables_marked_dropped.push_back(
             TableMarkedAsDropped{
-                table_id,
-                table,
-                db_disk,
-                dropped_metadata_path,
-                drop_time
+                .table_id = table_id,
+                .table = table,
+                .db_disk = db_disk,
+                .metadata_path = dropped_metadata_path,
+                .drop_time = drop_time
                     + static_cast<time_t>(getContext()->getServerSettings()[ServerSetting::database_atomic_delay_before_drop_table_sec]),
-                drop_as_detached});
+                .drop_as_detached = options.drop_as_detached,
+                .cleanup_detached_table_state = options.cleanup_detached_table_state});
         if (first_async_drop_in_queue == tables_marked_dropped.end())
             --first_async_drop_in_queue;
     }
@@ -1505,7 +1525,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(
 
     /// If list of dropped tables was empty, start a drop task.
     /// If ignore_delay is set, schedule drop task as soon as possible.
-    if (drop_task && (tables_marked_dropped.size() == 1 || ignore_delay))
+    if (drop_task && (tables_marked_dropped.size() == 1 || options.ignore_delay))
         (*drop_task)->schedule();
 }
 
@@ -1819,7 +1839,8 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table)
         disk->removeRecursive(data_path);
     }
 
-    removeDetachedTableInfo(table);
+    if (table.cleanup_detached_table_state)
+        removeDetachedTableInfo(table);
 
     LOG_INFO(log, "Removing metadata {} of dropped table {}", table.metadata_path, table.table_id.getNameForLogs());
     db_disk->removeFileIfExists(fs::path(table.metadata_path));

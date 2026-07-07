@@ -246,7 +246,12 @@ void DatabaseAtomic::dropTableImpl(ContextPtr local_context, const String & tabl
 
     /// Notify DatabaseCatalog that table was dropped. It will remove table data in background.
     /// Cleanup is performed outside of database to allow easily DROP DATABASE without waiting for cleanup to complete.
-    DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, db_disk, table_metadata_path_drop, sync);
+    DatabaseCatalog::instance().enqueueDroppedTableCleanup(
+        table->getStorageID(),
+        table,
+        db_disk,
+        table_metadata_path_drop,
+        {.ignore_delay = sync});
 }
 
 void DatabaseAtomic::dropDetachedTable(
@@ -315,7 +320,11 @@ void DatabaseAtomic::finishDropDetachedTable(
     /// `detached_table` was reconstructed from detached metadata before the metadata move.
     /// Passing it here keeps queue registration from reading the moved metadata file.
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(
-        drop_info.storage_id, detached_table, db_disk, *drop_info.table_metadata_path_drop, sync);
+        drop_info.storage_id,
+        detached_table,
+        db_disk,
+        *drop_info.table_metadata_path_drop,
+        {.ignore_delay = sync, .cleanup_detached_table_state = true});
 
     /// UUID reservation must survive until `dropTableFinally` calls `removeUUIDMappingFinally`.
     /// Before this point, `reservation` destructor restores previous state on exceptions/cancellation.
