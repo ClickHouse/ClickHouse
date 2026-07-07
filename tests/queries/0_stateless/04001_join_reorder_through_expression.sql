@@ -23,6 +23,10 @@ INSERT INTO t3 VALUES (11, 'A'), (21, 'B'), (31, 'C');
 
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy';
+-- `query_plan_optimize_join_order_randomize` injects random cardinalities/NDVs into the cost model
+-- when non-zero, so the chosen join tree becomes non-deterministic. Pin it off so the EXPLAIN output
+-- is stable under CI-randomized settings.
+SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_merge_expression_into_join = 1;
 
 EXPLAIN PLAN keep_logical_steps = 1, description = 0

@@ -48,10 +48,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_reader_executor_log", false, false, "New experimental setting to write one row per ReaderExecutor at destruction into system.reader_executor_log."},
             {"reader_executor_window_size", 8388608, 8388608, "New experimental setting to configure the read-ahead window size of the ReaderExecutor."},
             {"reader_executor_block_size", 1048576, 1048576, "New experimental setting to configure the chained-buffer node / block size of the ReaderExecutor."},
-            {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental setting: forward-gap bound below which the ReaderExecutor bridges/reads through on the open source connection instead of a separate read or reopen."},
-            {"reader_executor_max_tail_for_drain", 524288, 524288, "New experimental setting: drain bound below which the ReaderExecutor reads a dropped long connection out to its right bound so it returns to the pool reusable."},
-            {"reader_executor_use_long_connections", true, true, "New experimental setting to reuse a bounded long source connection across windows in the ReaderExecutor; disabling it forces the stateless one-shot-per-window path."},
             {"reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New experimental setting: fixed plan-window size for the ReaderExecutor (floored at reader_executor_window_size, default one window); raise it to plan further ahead."},
+            {"s3_allow_server_credentials_in_user_queries", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/role_arn-STS/GCP-OAuth-metadata). The previous behavior (allowed) is restored with compatibility settings."},
             {"query_plan_merge_expression_into_join", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."},
             {"skip_unavailable_shards_mode", "unavailable_or_table_missing", "unavailable_or_table_missing", "New setting to control which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled. The default matches the historical behavior: a shard whose table is missing is treated as unavailable."},
             {"use_text_index_tokens_cache", false, true, "Enabled the text index tokens cache globally."},
@@ -69,6 +67,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_url_wildcard_from_index_pages", false, false, "New setting to enable expanding wildcards in the `url` table function by listing HTTP index pages."},
             {"url_wildcard_max_directories_to_read", 100000, 100000, "New setting to limit the number of directories read when expanding wildcards in the `url` table function."},
             {"output_format_csv_header_serialize_tuple_into_separate_columns", false, true, "New setting. When output_format_csv_serialize_tuple_into_separate_columns is enabled, the CSVWithNames/CSVWithNamesAndTypes header now flattens Tuple columns into their leaf fields so the header width matches the data. Set to false to restore the previous single-name header."},
+            {"reader_executor_use_long_connections", false, false, "New experimental ReaderExecutor setting (off by default): reuse a held source connection across sequential windows."},
+            {"reader_executor_min_bytes_for_seek", 2097152, 2097152, "New experimental ReaderExecutor setting: forward-gap bound for bridging on a held source connection."},
+            {"reader_executor_max_tail_for_drain", 524288, 524288, "New experimental ReaderExecutor setting: drain bound for completing a dropped long connection."},
+            {"precise_float_parsing", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."},
             {"optimize_and_compare_chain_max_hash_work", 0, 5'000'000, "New setting that bounds the work of the `optimize_and_compare_chain` optimization (measured in query-tree nodes hashed) so it cannot dominate analysis of queries with very many or very large `AND`-chains of comparisons. The previous value `0` (unlimited) reproduces the pre-26.7 behavior where the optimization was uncapped, so `compatibility` set to an earlier version keeps deriving transitive predicates without a budget. Set to `0` to disable the budget."},
             {"show_remote_databases_in_system_tables", true, true, "New setting to control whether `MySQL` and `PostgreSQL` databases are shown in `system.tables`, `system.columns` and `system.completions`."},
         });
@@ -1289,6 +1291,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
             {"allow_experimental_text_index_positions", false, false, "New setting"},
+            {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

@@ -50,10 +50,10 @@ namespace ProfileEvents
     extern const Event ReaderExecutorMachineInterrupted;
     extern const Event ReaderExecutorPartialCollects;
     extern const Event ReaderExecutorPutFailed;
-    extern const Event LongConnectionOpened;
-    extern const Event LongConnectionHits;
-    extern const Event LongConnectionFallbacks;
-    extern const Event LongConnectionBytes;
+    extern const Event ReaderExecutorLongConnectionOpened;
+    extern const Event ReaderExecutorLongConnectionHits;
+    extern const Event ReaderExecutorLongConnectionFallbacks;
+    extern const Event ReaderExecutorLongConnectionBytes;
     extern const Event ReaderExecutorObservations;
 }
 
@@ -155,10 +155,10 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
         case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
         case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
         case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
-        case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::LongConnectionOpened, value); break;
-        case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::LongConnectionHits, value); break;
-        case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::LongConnectionFallbacks, value); break;
-        case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::LongConnectionBytes, value); break;
+        case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionOpened, value); break;
+        case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionHits, value); break;
+        case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionFallbacks, value); break;
+        case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value); break;
         case Observations:              ProfileEvents::increment(ProfileEvents::ReaderExecutorObservations, value); break;
         case NumCounters:               break;
     }
@@ -267,9 +267,9 @@ ReaderExecutor::ReaderExecutor(
 
     /// Keep the estimator's continuity gap in lockstep with the executor's seek
     /// bound, so a bridged gap feeds the same whether modeled as a read or a seek.
-    ContinuityTracker::Options continuity_options;
-    continuity_options.near_gap = min_bytes_for_seek;
-    continuity_tracker = ContinuityTracker(continuity_options);
+    ReadContinuityTracker::Options continuity_options;
+    continuity_options.bridgeable_gap = min_bytes_for_seek;
+    continuity_tracker = ReadContinuityTracker(continuity_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -292,7 +292,7 @@ ReaderExecutor::~ReaderExecutor()
     /// Never drain here - a source read can throw and this destructor is noexcept.
     if (fill_lane.conn)
     {
-        accountLongDrop(fill_lane.conn, /*at_eof=*/false, stats);
+        accountLongConnectionDrop(fill_lane.conn, /*at_eof=*/false, stats);
         fill_lane.conn.reset();
     }
 
@@ -499,7 +499,7 @@ void ReaderExecutor::seek(size_t new_position)
     const size_t new_physical = new_position + data_start_offset;
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
-    continuity_tracker.onSeek(new_physical);
+    continuity_tracker.recordSeek(new_physical);
     continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
@@ -764,7 +764,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         stats += m->stats;
         if (m->inline_serve && fill_lane.conn)
         {
-            accountLongDrop(fill_lane.conn, /*at_eof=*/false, stats);
+            accountLongConnectionDrop(fill_lane.conn, /*at_eof=*/false, stats);
             fill_lane.conn.reset();
         }
         fill_lane.conn_lent = false;
@@ -824,8 +824,12 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         }
         stats.add(Stats::PartialCollects);
     }
-    else
+    else if (!m->inline_serve)
+    {
+        /// A prefetch hit is a POOL machine's chain served in full; an inline
+        /// (serve-thread) machine is a plain synchronous fetch, not a prefetch.
         stats.add(Stats::PrefetchHits);
+    }
 
     /// Backfill the cache for the fetched window (the worker did none), pin the
     /// in-flight segment at the frontier the fetch actually reached (an interrupted
@@ -1116,7 +1120,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
             pr.object.remote_path, pr.object_offset, pr.size);
 
         /// The ONE connection-policy point: at each OBJECT-piece start, open a long connection
-        /// when it is convenient (`openLongIfWarranted`: the predicted reach warrants one, a
+        /// when it is convenient (`openLongConnectionIfWarranted`: the predicted reach warrants one, a
         /// slot is free, and a held unusable channel is dropped first) - so a run that crosses
         /// an object boundary opens the tail object's connection with ITS own reach. Only in
         /// FOREGROUND context (`may_open_long`: the foreground itself and INLINE machines, which
@@ -1125,7 +1129,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         /// every foreground caller IS `lc` - the old borrow/hand-back dance is gone with the
         /// machine-carried foreground connections.
         if (may_open_long)
-            openLongIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
+            openLongConnectionIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
         /// `getOrSet` that would segment-align a miss runs later, in `assembleAndWriteBack`).
@@ -1355,7 +1359,7 @@ size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && s
 void ReaderExecutor::FillLane::lend(FetchMachine & m)
 {
     chassert(!m.long_conn);
-    m.long_conn = takeLong(conn);
+    m.long_conn = takeLongConnection(conn);
     conn_lent = m.long_conn.has_value();
 }
 
@@ -1363,10 +1367,10 @@ void ReaderExecutor::FillLane::reclaim(FetchMachine & m)
 {
     /// The worker no longer touches the payload (queued-cancel, or the release edge has
     /// passed). The lane cannot hold a second connection meanwhile - opens are refused while
-    /// lent (`shouldOpenLong`) - which is what makes this a move, never an overwrite.
+    /// lent (`shouldOpenLongConnection`) - which is what makes this a move, never an overwrite.
     chassert(!(conn && m.long_conn));
     if (m.long_conn)
-        conn = takeLong(m.long_conn);
+        conn = takeLongConnection(m.long_conn);
     conn_lent = false;
 }
 
@@ -1455,7 +1459,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
     {
         if ((*lc)->servesObject(object.remote_path)
             && (*lc)->canContinue(offset, want, min_bytes_for_seek))
-            return serveFromLong(*lc, offset, std::move(blocks), logical_offset, stop, out_stats);
+            return serveFromLongConnection(*lc, offset, std::move(blocks), logical_offset, stop, out_stats);
         /// The read is forward-continuable from `offset` but CROSSES the channel bound. Serve the
         /// prefix up to `read_until` from the held connection - it drains exactly to its bound and
         /// releases clean - then read the remainder from a fresh GET below (the same request a
@@ -1477,7 +1481,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
                 VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> suffix;
                 for (size_t i = 0; i < blocks.size(); ++i)
                     (i < n ? prefix : suffix).push_back(std::move(blocks[i]));
-                head = serveFromLong(*lc, offset, std::move(prefix), logical_offset, stop, out_stats);
+                head = serveFromLongConnection(*lc, offset, std::move(prefix), logical_offset, stop, out_stats);
                 if (*lc)
                     return head;   /// EOF before the bound: the read ends here
                 logical_offset += prefix_bytes;
@@ -1488,7 +1492,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
             }
         }
         if (!split)
-            dropLong(*lc, out_stats);
+            dropLongConnection(*lc, out_stats);
     }
 
     auto opened = source->open(object);
@@ -1580,7 +1584,13 @@ ChainedBuffers ReaderExecutor::LongConnection::readInto(
             break;
         const size_t got = readIntoBlock(*buffer, block->data(), block->size());
         if (got == 0)
+        {
+            /// `readIntoBlock` returns 0 only at EOF; short of the bound that means an
+            /// unknown-size stream ended - the GET is complete, latch it as exhausted.
+            if (current_position + total_read < read_until)
+                saw_eof = true;
             break;
+        }
         chain.append(ChainedBufferNode{block, 0, got, logical_offset + total_read});
         total_read += got;
     }
@@ -1602,21 +1612,38 @@ size_t ReaderExecutor::LongConnection::skipForward(size_t gap, size_t block_byte
     {
         const size_t got = readIntoBlock(*buffer, scratch->data(), std::min(gap - skipped, scratch_size));
         if (got == 0)
+        {
+            saw_eof = true;
             break;
+        }
         skipped += got;
     }
     current_position += skipped;
     return skipped;
 }
 
-size_t ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes)
+ReaderExecutor::LongConnection::DrainResult
+ReaderExecutor::LongConnection::drainTail(size_t max_tail, size_t block_bytes, LoggerPtr logger) noexcept
 {
-    if (current_position >= read_until)
-        return 0;
+    /// An exhausted stream (at the bound, or EOF on an unknown-size source) has
+    /// nothing left to drain.
+    if (exhausted())
+        return {};
     const size_t tail = read_until - current_position;
     if (tail > max_tail)
-        return 0;
-    return skipForward(tail, block_bytes);
+        return {};
+    /// The drained tail is discarded - it only lets the underlying HTTP connection return to
+    /// the keep-alive pool - so a read error here must not abort an otherwise valid query.
+    /// Swallow it and report the failure; the caller then releases the connection as incomplete.
+    try
+    {
+        return {.bytes = skipForward(tail, block_bytes), .failed = false};
+    }
+    catch (...)
+    {
+        tryLogCurrentException(logger, "Failed to drain a held source connection; releasing it as incomplete");
+        return {.bytes = 0, .failed = true};
+    }
 }
 
 size_t ReaderExecutor::scheduleLookaheadReach(size_t phys_off) const
@@ -1646,16 +1673,16 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
 size_t ReaderExecutor::boundedReach(size_t phys_off) const
 {
     /// The physical reach a long connection opened at `phys_off` actually gets, BEFORE any
-    /// extent floor: the estimator's `predictedReach` clamped to the file end, then clamped
+    /// extent floor: the estimator's `predictedForwardLength` clamped to the file end, then clamped
     /// DOWN at the next WIDE cached run the plan shows - a resident run at/above
     /// `min_bytes_for_seek` before `plan_end`, where the channel must stop (that region is
     /// served from cache / filled down, not over-read; holes strictly below the bound are
     /// bridged by `LongConnection::canContinue` on the open GET). A run cut by the plan
     /// boundary appears short here and is not a real stop, so the trajectory stays free to
     /// extend past the look-ahead. This is the SINGLE reach source shared by the open trigger
-    /// (`shouldOpenLong`) and the channel bound (`longConnectionBound`), so the two can never
+    /// (`shouldOpenLongConnection`) and the channel bound (`longConnectionBound`), so the two can never
     /// disagree on how far the channel reaches. Reads only the tracker scalar + plan geometry.
-    size_t reach = clampReach(continuity_tracker.predictedReach(), phys_off);
+    size_t reach = clampReach(continuity_tracker.predictedForwardLength(), phys_off);
     const auto & geom = read_plan.geometry();
     if (geom)
     {
@@ -1670,7 +1697,7 @@ size_t ReaderExecutor::boundedReach(size_t phys_off) const
     return reach;
 }
 
-bool ReaderExecutor::shouldOpenLong(size_t phys_off) const
+bool ReaderExecutor::shouldOpenLongConnection(size_t phys_off) const
 {
     /// Open a long connection when the estimator's predicted contiguous reach runs past
     /// the current read window - "a connection whose range exceeds the read window is
@@ -1704,9 +1731,9 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     /// stranding the channel before its real end. The object end caps a GET to the single
     /// object it streams.
     ///
-    /// The reach (`boundedReach`: `predictedReach` clamped at the next wide cached run) is the
+    /// The reach (`boundedReach`: `predictedForwardLength` clamped at the next wide cached run) is the
     /// read's forward trajectory, which extrapolates past the current extent. It is the same
-    /// value `shouldOpenLong` triggers on, so the GET drains cleanly at a wide cached run
+    /// value `shouldOpenLongConnection` triggers on, so the GET drains cleanly at a wide cached run
     /// instead of being abandoned mid-run, and the trigger never opens a channel this bound
     /// would clamp back to the extent. Holes strictly below the bound are bridged by
     /// `LongConnection::canContinue` on the open GET.
@@ -1732,7 +1759,7 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
     return phys_bound - object_base;
 }
 
-void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t object_offset,
+void ReaderExecutor::openLongConnectionIfWarranted(const StoredObject & object, size_t object_offset,
     size_t phys_offset, Stats & out_stats)
 {
     /// Drop a held channel that cannot even START serving this fetch - wrong object, backward,
@@ -1746,8 +1773,8 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
     /// preceding blobs' size on a multi-blob file and drop a perfectly continuable channel).
     if (fill_lane.conn && !(fill_lane.conn->servesObject(object.remote_path)
             && fill_lane.conn->canStartServing(object_offset, min_bytes_for_seek)))
-        dropLong(fill_lane.conn, out_stats);
-    if (!shouldOpenLong(phys_offset))
+        dropLongConnection(fill_lane.conn, out_stats);
+    if (!shouldOpenLongConnection(phys_offset))
         return;
     LongConnectionSlot slot = long_connection_limit->tryAcquire(long_connection_limit);
     if (!slot)
@@ -1756,11 +1783,11 @@ void ReaderExecutor::openLongIfWarranted(const StoredObject & object, size_t obj
         out_stats.add(Stats::LongConnectionFallbacks);
         return;
     }
-    openLong(fill_lane.conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
+    openLongConnection(fill_lane.conn, object, object_offset, longConnectionBound(object, object_offset, phys_offset),
         std::move(slot), out_stats);
 }
 
-void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const StoredObject & object,
+void ReaderExecutor::openLongConnection(std::optional<LongConnection> & conn, const StoredObject & object,
     size_t offset, size_t read_end, LongConnectionSlot slot, Stats & out_stats) const
 {
     /// The foreground is the sole opener. Open a bounded GET over [offset, read_end) and
@@ -1783,7 +1810,7 @@ void ReaderExecutor::openLong(std::optional<LongConnection> & conn, const Stored
     out_stats.add(Stats::LongConnectionOpened);
 }
 
-ChainedBuffers ReaderExecutor::serveFromLong(std::optional<LongConnection> & conn, size_t offset,
+ChainedBuffers ReaderExecutor::serveFromLongConnection(std::optional<LongConnection> & conn, size_t offset,
     VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
     const MachineBase * stop, Stats & out_stats) const
 {
@@ -1805,36 +1832,40 @@ ChainedBuffers ReaderExecutor::serveFromLong(std::optional<LongConnection> & con
     return chain;
 }
 
-void ReaderExecutor::dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const
+void ReaderExecutor::dropLongConnection(std::optional<LongConnection> & conn, Stats & out_stats) const
 {
     if (!conn)
         return;
     /// Drain a small tail (at most `max_tail_for_drain`) so the connection returns to
     /// the pool reusable; if it drained but did not reach the bound, it ended short at EOF.
-    const size_t drained = conn->drainTail(max_tail_for_drain, block_size);
-    out_stats.add(Stats::BytesFromSource, drained);
-    out_stats.add(Stats::OverReadBytes, drained);
-    const bool ended_at_eof = drained > 0 && !conn->atBound();
-    accountLongDrop(conn, /*at_eof=*/ended_at_eof, out_stats);
+    /// The drain is best-effort (`drainTail` never throws): a read error leaves the
+    /// connection in an unknown state, so it is always released as incomplete.
+    const auto drain = conn->drainTail(max_tail_for_drain, block_size, log);
+    out_stats.add(Stats::BytesFromSource, drain.bytes);
+    out_stats.add(Stats::OverReadBytes, drain.bytes);
+    if (drain.failed)
+        out_stats.add(Stats::IncompleteConnections);
+    else
+        accountLongConnectionDrop(conn, /*at_eof=*/drain.bytes > 0 && !conn->atBound(), out_stats);
     conn.reset();
 }
 
-void ReaderExecutor::accountLongDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const
+void ReaderExecutor::accountLongConnectionDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const
 {
     /// A connection dropped before it was fully consumed (not read to its bound or to
     /// EOF) is abandoned mid-response, not pool-reusable. One that never transferred
     /// is excluded: its lazy GET never started.
-    if (conn && !(at_eof || conn->atBound()) && conn->everTransferred())
+    if (conn && !(at_eof || conn->exhausted()) && conn->consumedAnyBytes())
         out_stats.add(Stats::IncompleteConnections);
 }
 
 void ReaderExecutor::releaseLongAtBound(std::optional<LongConnection> & conn) const
 {
-    if (conn && conn->atBound())
+    if (conn && conn->exhausted())
         conn.reset();
 }
 
-std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLong(std::optional<LongConnection> & src)
+std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLongConnection(std::optional<LongConnection> & src)
 {
     /// A plain `std::optional` move leaves the source engaged with a moved-from value,
     /// so reset it: the connection must be a single owner.
@@ -2090,11 +2121,11 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     /// The foreground is the sole opener; the aligned window's first physical range gives the
     /// object and its object-local offset. A no-op when not warranted / at capacity / a usable
     /// connection is already held. The channel bound comes from the runtime reach
-    /// (`longConnectionBound`: `predictedReach` clamped at the next wide cached run), the same on
+    /// (`longConnectionBound`: `predictedForwardLength` clamped at the next wide cached run), the same on
     /// the prefetch and foreground paths - the schedule no longer hands down a span.
     auto prefetch_ranges = offset_map.map(window);
     if (!prefetch_ranges.empty())
-        openLongIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
+        openLongConnectionIfWarranted(prefetch_ranges.front().object, prefetch_ranges.front().object_offset,
             window.offset, stats);
     /// A POOL piece borrows the lane's connection for its flight (the worker advances it
     /// on its thread); an INLINE piece runs on the serve thread and reads through the
@@ -2983,7 +3014,7 @@ void ReaderExecutor::feedScheduleToContinuity(const PlanSchedule & schedule)
         const size_t start = std::max(range.offset, continuity_fed_end);
         if (start >= range.end())
             continue;  /// already fed by an earlier (overlapping) plan
-        continuity_tracker.onServe(start, range.end() - start);
+        continuity_tracker.recordReadRange(start, range.end() - start);
         continuity_fed_end = range.end();
     }
 }
@@ -3167,9 +3198,9 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 /// the query-attached reaping thread, so its pool reset/expire events are
                 /// attributed to this query: left to the machine's shared_ptr, the prefetch
                 /// worker can win the last reference and free it after detaching, leaking
-                /// `DiskConnectionsReset` off-query. Never drain (as `dropLong` does) - this
+                /// `DiskConnectionsReset` off-query. Never drain (as `dropLongConnection` does) - this
                 /// is reachable from the noexcept destructor.
-                accountLongDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
+                accountLongConnectionDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
                 m->long_conn.reset();
                 return true;
             }),

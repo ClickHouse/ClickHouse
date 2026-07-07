@@ -44,8 +44,8 @@ $CLICKHOUSE_CLIENT --query "SYSTEM FLUSH LOGS query_log"
 # Disabled -> no long connection opened or served; the executor still ran (one-shots).
 #   expected: 1
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['LongConnectionOpened'] = 0
-       AND ProfileEvents['LongConnectionHits'] = 0
+    SELECT ProfileEvents['ReaderExecutorLongConnectionOpened'] = 0
+       AND ProfileEvents['ReaderExecutorLongConnectionHits'] = 0
        AND ProfileEvents['ReaderExecutorSourceRequests'] > 0
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$OFF_ID'
@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT --query "
 # Enabled -> a long connection is opened.
 #   expected: 1
 $CLICKHOUSE_CLIENT --query "
-    SELECT ProfileEvents['LongConnectionOpened'] > 0
+    SELECT ProfileEvents['ReaderExecutorLongConnectionOpened'] > 0
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$ON_ID'
 "

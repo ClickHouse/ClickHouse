@@ -1404,10 +1404,6 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         if (object_info.metadata->etag.empty())
         {
             LOG_WARNING(log, "Cannot use filesystem cache, no etag specified");
-            /// No cache stage is added in this case, so clear the flag: downstream decisions
-            /// (e.g. whether to issue the initial small-object prefetch) must reflect that the
-            /// read is a plain remote read, not a cached one.
-            use_filesystem_cache = false;
         }
         else
         {
@@ -1463,7 +1459,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
             context_->getFilesystemReadPrefetchesLog());
     }
 
-    if (effective_read_settings.use_reader_executor)
+    if (effective_read_settings.reader_executor.enabled)
     {
         /// Match the legacy async/prefetch stage (installed only for
         /// `RemoteFSReadMethod::threadpool`): attach the prefetch pool only when
@@ -1479,7 +1475,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         /// window) path; `reader_executor_use_long_connections=0` selects it. Gate
         /// it like `DiskObjectStorage::prepareRead` so the setting is honored on the
         /// object-storage table-engine path too.
-        if (effective_read_settings.reader_executor_use_long_connections)
+        if (effective_read_settings.reader_executor.use_long_connections)
             pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
     }
 
@@ -1487,6 +1483,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         log, "Downloading object {} of size {} {} initial prefetch (pipeline: {})",
         object_info.getPath(), object_size, use_prefetch ? "with" : "without",
         pipeline.describe());
+
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential windows
+    /// for direct object-storage reads (s3()/azureBlobStorage() and the object-storage engines),
+    /// mirroring the wiring in DiskObjectStorage::prepareRead for the disk-based path.
+    if (modified_read_settings.reader_executor.enabled && modified_read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(context_->getLongConnectionLimit());
 
     auto impl = pipeline.build();
 
@@ -1497,9 +1499,12 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// range from the prefetched buffer when it is covered (the common case for a fully prefetched
     /// small file) and otherwise drops the prefetch and falls back to a positioned read.
     ///
-    /// Skip it when the filesystem cache is in use: the cache manages its own read-ahead and segment
-    /// ranges, so an extra initial prefetch over it is redundant and interferes with that handling.
-    if (use_prefetch && impl && !use_filesystem_cache)
+    /// The prefetch is issued also when the read goes through the filesystem cache: the cache does
+    /// no read-ahead of its own, and files read via object storage engines (e.g. fresh `S3Queue`
+    /// files) are typically cache misses, so without the prefetch the first read of each small file
+    /// is a synchronous, latency-bound round trip to object storage. The prefetch runs the cache
+    /// miss (and the cache fill) in the background instead.
+    if (use_prefetch && impl)
     {
         impl->setReadUntilEnd();
         impl->prefetch(DEFAULT_PREFETCH_PRIORITY);

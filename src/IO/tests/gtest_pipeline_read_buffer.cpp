@@ -51,6 +51,27 @@ private:
     std::vector<std::filesystem::path> temp_files;
 };
 
+/// Counts `open` calls on a wrapped source - one per source request on the
+/// one-shot read path - so a test can pin that an operation did NOT refetch.
+class CountingSourceReader : public IFileBasedSourceReader
+{
+public:
+    explicit CountingSourceReader(std::shared_ptr<IFileBasedSourceReader> inner_) : inner(std::move(inner_)) {}
+
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override
+    {
+        ++opens;
+        return inner->open(object);
+    }
+
+    String name() const override { return inner->name(); }
+
+    size_t opens = 0;
+
+private:
+    std::shared_ptr<IFileBasedSourceReader> inner;
+};
+
 }
 
 TEST(PipelineReadBuffer, ReadAll)
@@ -115,6 +136,41 @@ TEST(PipelineReadBuffer, Seek)
     String result;
     readStringUntilEOF(result, buf);
     EXPECT_EQ(result, "ABCDEF");
+}
+
+TEST(PipelineReadBuffer, InBufferSeekIsServedWithoutRefetch)
+{
+    /// Regression for `seek` absorbing in-buffer seeks. A seek whose target is already
+    /// inside the working buffer must be served by repositioning `pos`, not by re-seeking
+    /// the executor (which drops the window and refetches). The compressed reader does
+    /// exactly this - over-read a block, then seek back to a mark inside it - and a
+    /// refetch there both wastes a request and, because a held source connection is
+    /// forward-only, breaks long-connection reuse.
+    const size_t size = 64 * 1024;
+    String content(size, 0);
+    for (size_t i = 0; i < size; ++i)
+        content[i] = static_cast<char>('A' + (i % 26));
+    auto counting = std::make_shared<CountingSourceReader>(std::make_shared<MemorySourceReader>(content));
+
+    StoredObjects objects;
+    objects.emplace_back("test", "", size);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 16 * 1024;
+    auto executor = std::make_unique<ReaderExecutor>(
+        counting, objects, VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, executor_options);
+    PipelineReadBuffer buf(std::move(executor));
+
+    /// Fetch one window [0, 16K) and partly consume it: one source open.
+    std::vector<char> head(8 * 1024);
+    buf.readStrict(head.data(), head.size());
+    ASSERT_EQ(counting->opens, 1u);
+
+    /// Seek back to an offset still inside the window and read: served by repositioning.
+    buf.seek(2048, SEEK_SET);
+    char c = 0;
+    buf.readStrict(&c, 1);
+    EXPECT_EQ(c, content[2048]);
+    EXPECT_EQ(counting->opens, 1u);
 }
 
 TEST(PipelineReadBuffer, GetPosition)

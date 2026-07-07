@@ -45,7 +45,7 @@ public:
     }
 
     /// The continuity estimator's predicted reach after the last plan feed.
-    size_t predictedReach() const { return ex.continuity_tracker.predictedReach(); }
+    size_t predictedForwardLength() const { return ex.continuity_tracker.predictedForwardLength(); }
 
     /// Bank injection / inspection (the display's overflow cell). `bankBytes` constructs the
     /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose
@@ -87,7 +87,7 @@ public:
     }
 
     /// Wrappers around the private reach / open-decision math.
-    bool shouldOpenLong(size_t phys_off) const { return ex.shouldOpenLong(phys_off); }
+    bool shouldOpenLongConnection(size_t phys_off) const { return ex.shouldOpenLongConnection(phys_off); }
     size_t clampReach(size_t reach, size_t phys_off) const { return ex.clampReach(reach, phys_off); }
     size_t scheduleLookaheadReach(size_t phys_off) const { return ex.scheduleLookaheadReach(phys_off); }
 
@@ -100,7 +100,7 @@ public:
     /// Drivers that exercise the long-connection mechanics directly. The
     /// `ex.`-qualified calls target `ReaderExecutor`'s private methods, not the
     /// same-named inspector methods.
-    void openLong(size_t phys_offset, size_t reach)
+    void openLongConnection(size_t phys_offset, size_t reach)
     {
         auto ranges = ex.offset_map.map(ByteRange{phys_offset, 1});
         chassert(!ranges.empty());
@@ -111,19 +111,19 @@ public:
         LongConnectionSlot slot = ex.long_connection_limit
             ? ex.long_connection_limit->tryAcquire(ex.long_connection_limit)
             : LongConnectionSlot{};
-        ex.openLong(ex.fill_lane.conn, pr.object, pr.object_offset, read_end, std::move(slot), ex.stats);
+        ex.openLongConnection(ex.fill_lane.conn, pr.object, pr.object_offset, read_end, std::move(slot), ex.stats);
     }
 
-    ChainedBuffers serveFromLong(size_t phys_offset, size_t want)
+    ChainedBuffers serveFromLongConnection(size_t phys_offset, size_t want)
     {
         auto ranges = ex.offset_map.map(ByteRange{phys_offset, want});
         chassert(!ranges.empty());
         const auto & pr = ranges.front();
         auto blocks = ReaderExecutor::allocateBlocks(want, ex.block_size, {});
-        return ex.serveFromLong(ex.fill_lane.conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, ex.stats);
+        return ex.serveFromLongConnection(ex.fill_lane.conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, ex.stats);
     }
 
-    void dropLong() { ex.dropLong(ex.fill_lane.conn, ex.stats); }
+    void dropLongConnection() { ex.dropLongConnection(ex.fill_lane.conn, ex.stats); }
 
 private:
     ReaderExecutor & ex;

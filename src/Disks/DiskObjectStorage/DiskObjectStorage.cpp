@@ -836,6 +836,12 @@ void DiskObjectStorage::prepareRead(
     /// CachedObjectStorage::prepareRead adds needFilesystemCache automatically.
     storage->prepareRead(storage, storage_objects, read_settings, read_hint, pipeline);
 
+    /// Let the experimental ReaderExecutor reuse held source connections across sequential
+    /// windows; independent of the cache / prefetch stages below. A null limit (feature off
+    /// or 0 slots) keeps the stateless one-shot path.
+    if (read_settings.reader_executor.enabled && read_settings.reader_executor.use_long_connections)
+        pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
+
     if (use_distributed_cache)
         pipeline.needDistributedCache();
 
@@ -872,7 +878,7 @@ void DiskObjectStorage::prepareRead(
             global_context->getFilesystemReadPrefetchesLog());
     }
 
-    if (read_settings.use_reader_executor)
+    if (read_settings.reader_executor.enabled)
     {
         /// Match the legacy async/prefetch stage above, which is installed only
         /// for `RemoteFSReadMethod::threadpool`: attach the prefetch pool only when
@@ -889,7 +895,7 @@ void DiskObjectStorage::prepareRead(
         }
         /// Without a buffer limit the executor takes the stateless (one-shot per
         /// window) path; `reader_executor_use_long_connections=0` selects it.
-        if (read_settings.reader_executor_use_long_connections)
+        if (read_settings.reader_executor.use_long_connections)
             pipeline.needLongConnectionLimit(global_context->getLongConnectionLimit());
     }
 }

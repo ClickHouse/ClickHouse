@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <base/unit.h>
 #include <Core/Defines.h>
 #include <IO/DistributedCacheSettings.h>
 #include <IO/ReadMethod.h>
@@ -141,6 +142,25 @@ struct ReadSettings
     bool use_page_cache_for_object_storage = false;
     PageCacheSettings page_cache_settings;
 
+    /// Experimental pipeline read executor. When `enabled`, `ReadPipeline::build` routes supported
+    /// reads through `ReaderExecutor` instead of the legacy matryoshka of read buffers (reading in
+    /// blocks of `buffer_size`). The long-connection knobs apply only on the executor path: reuse a
+    /// held source connection across sequential windows (`use_long_connections`), the forward gap
+    /// bridged on it rather than reopening (`min_bytes_for_seek`), and the tail drained to complete a
+    /// dropped connection (`max_tail_for_drain`).
+    struct ReaderExecutorSettings
+    {
+        bool enabled = false;
+        bool log_enabled = false;
+        size_t window_size = 8 * 1_MiB;
+        size_t block_size = 1_MiB;
+        size_t plan_look_ahead_max_window = 8 * 1_MiB;
+        bool use_long_connections = true;
+        size_t min_bytes_for_seek = 2 * 1_MiB;
+        size_t max_tail_for_drain = 512 * 1_KiB;
+    };
+    ReaderExecutorSettings reader_executor;
+
     /// Bandwidth throttler to use during reading
     ThrottlerPtr remote_throttler;
     ThrottlerPtr local_throttler;
@@ -154,14 +174,6 @@ struct ReadSettings
     DistributedCacheSettings distributed_cache_settings;
 
     /// Use ReaderExecutor-based pipeline instead of matryoshka ReadBuffer assembly.
-    bool use_reader_executor = false;
-    bool enable_reader_executor_log = false;
-    size_t reader_executor_window_size = 8388608;
-    size_t reader_executor_plan_look_ahead_max_window = 8388608;
-    size_t reader_executor_block_size = 1048576;
-    size_t reader_executor_min_bytes_for_seek = 2097152;
-    size_t reader_executor_max_tail_for_drain = 524288;
-    bool reader_executor_use_long_connections = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;
 

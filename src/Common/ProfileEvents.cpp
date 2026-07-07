@@ -44,6 +44,8 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
+    M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -869,8 +871,6 @@ The server successfully detected this situation and will download merged part fr
     M(ReaderExecutorPutFailed, "Number of ReaderExecutor put steps that threw; logged and abandoned, never the query's error - a read must not fail because cache population failed.", ValueType::Number) \
     M(ReaderExecutorObservations, "Number of ReaderExecutor observeAndSchedule (residency-plan rebuild) invocations. The plan is reused across mark-range advances and rebuilds - recreating the held cache readers - only on a want_replan (the cursor leaves plan_start..plan_end); a high count per query means short-lived readers that cannot amortise cache-segment acquisition.", ValueType::Number) \
     M(ReaderExecutorPrefetchWastedSourceBytes, "Source bytes a running ReaderExecutor prefetch materialised into a chain that was then discarded (consumer seeked/closed away) - real wasted bandwidth. Excludes cache puts made in the same window, which persist for later reads.", ValueType::Bytes) \
-    M(LongConnectionSlotAcquired, "Number of times ReaderExecutor acquired a LongConnectionLimit slot to open a long source connection.", ValueType::Number) \
-    M(LongConnectionSlotFailed, "Number of times ReaderExecutor failed to acquire a LongConnectionLimit slot (at capacity), falling back to a one-shot read.", ValueType::Number) \
     \
     M(FilesystemCacheLoadMetadataMicroseconds, "Time spent loading filesystem cache metadata", ValueType::Microseconds) \
     M(FilesystemCacheEvictedBytes, "Number of bytes evicted from filesystem cache", ValueType::Bytes) \
@@ -1537,10 +1537,10 @@ The server successfully detected this situation and will download merged part fr
     M(AIRowsProcessed, "Number of rows that received an AI result.", ValueType::Number) \
     M(AIRowsSkipped, "Number of rows that received a default value due to quota or error.", ValueType::Number) \
     \
-    M(LongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
-    M(LongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
-    M(LongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
-    M(LongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
+    M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS

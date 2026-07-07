@@ -31,12 +31,10 @@ public:
 
     off_t getPosition() override;
 
-    /// External-buffer mode (`set(dest, n); next()`) bypasses `impl` — only
-    /// the outer's `working_buffer` is reset. `nextImpl` then swaps state into
-    /// `impl` and calls `impl->next()`, but `impl` may still have its own
-    /// pending data, tripping `ReadBuffer::next`'s `chassert(!hasPendingData)`.
-    /// Force the fallback `buf.read(dest, n)` path, which drains via
-    /// `eof()→next()` at the outer level and never bypasses `impl`.
+    /// `nextImpl` swaps state into `impl` and calls `impl->next()`, but `impl` may still have its
+    /// own pending data, tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under
+    /// set()+next(). Force the `read(dest, n)` fallback, which drains via `eof() -> next()` at the
+    /// outer level and never bypasses `impl`.
     bool supportsExternalBufferMode() const override { return false; }
 
 private:

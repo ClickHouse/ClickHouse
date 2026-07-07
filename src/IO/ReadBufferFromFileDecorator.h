@@ -22,15 +22,6 @@ public:
 
     bool nextImpl() override;
 
-    /// External-buffer mode (`set(dest, n); next()`) bypasses `impl` — only
-    /// the outer's `working_buffer` is reset by the non-virtual
-    /// `ReadBuffer::set`. The swap-based `nextImpl` then calls `impl->next()`
-    /// while `impl` may still have its own pending data, tripping
-    /// `ReadBuffer::next`'s `chassert(!hasPendingData)`. Force the
-    /// `buf.read(dest, n)` fallback path which drains via `eof()→next()` at
-    /// the outer level. Inherited by `BoundedReadBuffer`.
-    bool supportsExternalBufferMode() const override { return false; }
-
     bool isWithFileSize() const { return dynamic_cast<const WithFileSize *>(impl.get()) != nullptr; }
 
     const ReadBuffer & getWrappedReadBuffer() const { return *impl; }
@@ -39,6 +30,12 @@ public:
 
     std::optional<size_t> tryGetFileSize() override;
     std::optional<Field> getMetadata(const String & name) const override;
+
+    /// The swap-based `nextImpl` calls `impl->next()` while `impl` may still have pending data,
+    /// tripping `ReadBuffer::next`'s `chassert(!hasPendingData)` under set()+next(). Force the
+    /// `read(dest, n)` fallback, which drains via `eof() -> next()` at the outer level. Inherited
+    /// by `BoundedReadBuffer`.
+    bool supportsExternalBufferMode() const override { return false; }
 
 protected:
     std::unique_ptr<SeekableReadBuffer> impl;

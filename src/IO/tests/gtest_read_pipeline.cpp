@@ -313,7 +313,7 @@ try
     std::string data = "actually-not-empty";
 
     ReadSettings rs;
-    rs.use_reader_executor = true;
+    rs.reader_executor.enabled = true;
 
     ReadPipeline pipeline;
     pipeline.setSource(
@@ -344,7 +344,7 @@ try
     std::string data = "executor-path-ok";
 
     ReadSettings rs;
-    rs.use_reader_executor = true;
+    rs.reader_executor.enabled = true;
 
     ReadPipeline pipeline;
     pipeline.setSource(
@@ -375,7 +375,7 @@ try
     /// even though the executor can stream it to EOF. So both probes (and the
     /// file size) must be denied, and the format falls back to streaming.
     ReadSettings rs;
-    rs.use_reader_executor = true;
+    rs.reader_executor.enabled = true;
 
     ReadPipeline pipeline;
     pipeline.setSource(
@@ -404,7 +404,7 @@ try
     std::string data = "known-size-data";
 
     ReadSettings rs;
-    rs.use_reader_executor = true;
+    rs.reader_executor.enabled = true;
 
     ReadPipeline pipeline;
     pipeline.setSource(
@@ -438,7 +438,7 @@ try
     std::string data(4096, 'x');
 
     ReadSettings rs;
-    rs.use_reader_executor = true;
+    rs.reader_executor.enabled = true;
 
     ReadPipeline pipeline;
     pipeline.setSource(

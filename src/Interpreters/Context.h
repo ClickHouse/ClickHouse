@@ -157,7 +157,6 @@ class HypotheticalIndexStore;
 class IAsynchronousReader;
 class IOUringReader;
 class PrefetchThreadPool;
-class LongConnectionLimit;
 struct MergeTreeSettings;
 struct DatabaseReplicatedSettings;
 struct DistributedSettings;
@@ -198,6 +197,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -1183,6 +1183,10 @@ public:
 
     AsyncLoader & getAsyncLoader() const;
 
+    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
+    /// reuse (lazily created from `max_remote_read_connections`).
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
+
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
@@ -1753,6 +1757,20 @@ public:
     ApplicationType getApplicationType() const;
     void setApplicationType(ApplicationType type);
 
+    /// Whether S3 access originating from user SQL must be denied the server's own ambient credentials
+    /// (environment, IMDS/IRSA, ECS, instance profile, SSO, AWS config files, role_arn-based STS, and the
+    /// GCP OAuth metadata service). Explicitly supplied credentials (in the query, or static keys in a
+    /// named collection or the server `<s3>` config) are unaffected.
+    /// True only in clickhouse-server with the `s3_allow_server_credentials_in_user_queries` setting
+    /// disabled (the default). Always false in clickhouse-local, where the user is the operator.
+    bool shouldRestrictUserQueryS3Credentials() const;
+
+    /// Same, but uses an explicitly captured value of `s3_allow_server_credentials_in_user_queries` instead of
+    /// this context's live setting. For callers whose context no longer reflects the creating session -- e.g.
+    /// a cached DataLake catalog that runs against the global context -- so a permissive global/default profile
+    /// cannot override the stricter value that applied when the object was created.
+    bool shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const;
+
     /// Sets default_profile and system_profile, must be called once during the initialization
     void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
     String getDefaultProfileName() const;
@@ -1852,7 +1870,6 @@ public:
 
     IAsynchronousReader & getThreadPoolReader(FilesystemReaderType type) const;
     std::shared_ptr<PrefetchThreadPool> getPrefetchThreadPool() const;
-    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 #if USE_LIBURING
     IOUringReader & getIOUringReader() const;
 #endif
@@ -1990,6 +2007,7 @@ public:
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

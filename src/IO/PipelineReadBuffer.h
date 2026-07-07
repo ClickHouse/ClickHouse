@@ -47,6 +47,12 @@ public:
 private:
     bool nextImpl() override;
 
+    /// Null out the base-class buffer fields (`internal_buffer` / `working_buffer` /
+    /// `pos`). Must run BEFORE any chain operation that can free the node they point
+    /// into (`advance`, rewind, replacement), so no dangling pointers survive in the
+    /// base state even across an EOF or exception exit.
+    void detachBuffer();
+
     std::unique_ptr<ReaderExecutor> executor;
     /// The chain-with-cursor we're currently streaming from. Empty between
     /// windows. `nextImpl` advances it by `working_buffer.size()`,

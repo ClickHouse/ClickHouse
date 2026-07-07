@@ -55,6 +55,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_OPEN_FILE;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 namespace DB::FileCacheSetting
@@ -72,6 +73,8 @@ using namespace DB;
 
 namespace ProfileEvents
 {
+    extern const Event ReaderExecutorLongConnectionOpened;
+    extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorBytesPushedToCacheSync;
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesFromPageCache;
@@ -5410,7 +5413,7 @@ TEST(ReaderExecutor, ScheduleLookaheadReachBridgesSmallCachedRuns)
     EXPECT_EQ(inspect(executor).scheduleLookaheadReach(320 * 1024), file);
 }
 
-TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
+TEST(ReaderExecutor, ReadContinuityTrackerCapturesFullSequentialRead)
 {
     /// Wiring check: a cold sequential read spanning MANY plans must accumulate the
     /// full contiguous read into the continuity estimator. The look-ahead is shrunk
@@ -5449,9 +5452,9 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
             result.append(node.data(), node.size);
         ++n;
         if (n == 1)
-            reach_after_1 = inspect(executor).predictedReach();
+            reach_after_1 = inspect(executor).predictedForwardLength();
         if (n == 3)
-            reach_after_3 = inspect(executor).predictedReach();
+            reach_after_3 = inspect(executor).predictedForwardLength();
     }
 
     EXPECT_EQ(result, content);                          /// full read, no corruption
@@ -5459,7 +5462,7 @@ TEST(ReaderExecutor, ContinuityTrackerCapturesFullSequentialRead)
     EXPECT_EQ(reach_after_3, 3 * seg)
         << "with a one-segment plan the reach tracks the consumed run exactly, so after "
            "three windows it spans three segments, no double-feed/gap";
-    EXPECT_EQ(inspect(executor).predictedReach(), file)
+    EXPECT_EQ(inspect(executor).predictedForwardLength(), file)
         << "the estimator captured the full contiguous read across all plans";
 }
 
@@ -5475,8 +5478,8 @@ String chainBytes(const ChainedBuffers & chain)
 }
 
 /// A plain (unencrypted) single-object executor for exercising the long-connection
-/// mechanics in isolation - the tests drive `openLong*` / `serveFromLong*` /
-/// `dropLong*` directly via the inspector, independent of the read funnel.
+/// mechanics in isolation - the tests drive `openLong*` / `serveFromLongConnection*` /
+/// `dropLongConnection*` directly via the inspector, independent of the read funnel.
 struct LongConnRig
 {
     String content;
@@ -5515,7 +5518,7 @@ TEST(ReaderExecutor, LongConnectionContiguousServeReleasesAtBound)
     LongConnRig rig(size, /*min_bytes_for_seek=*/4096, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
 
-    inspect(ex).openLong(/*phys_offset=*/0, /*reach=*/size);
+    inspect(ex).openLongConnection(/*phys_offset=*/0, /*reach=*/size);
     EXPECT_TRUE(inspect(ex).hasLongConn());
     EXPECT_EQ(inspect(ex).longConnPosition(), 0u);
     EXPECT_EQ(inspect(ex).longConnBound(), size);
@@ -5526,7 +5529,7 @@ TEST(ReaderExecutor, LongConnectionContiguousServeReleasesAtBound)
     size_t pos = 0;
     while (inspect(ex).hasLongConn() && pos < size)
     {
-        ChainedBuffers w = inspect(ex).serveFromLong(pos, block);
+        ChainedBuffers w = inspect(ex).serveFromLongConnection(pos, block);
         ASSERT_GT(w.totalBytes(), 0u);
         got += chainBytes(w);
         pos += w.totalBytes();
@@ -5545,9 +5548,9 @@ TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
     const size_t min_seek = 8192;
     LongConnRig rig(size, min_seek, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
-    inspect(ex).openLong(0, size);
+    inspect(ex).openLongConnection(0, size);
 
-    ChainedBuffers w0 = inspect(ex).serveFromLong(0, block);
+    ChainedBuffers w0 = inspect(ex).serveFromLongConnection(0, block);
     EXPECT_EQ(chainBytes(w0), rig.content.substr(0, block));
     EXPECT_EQ(inspect(ex).longConnPosition(), block);
 
@@ -5559,7 +5562,7 @@ TEST(ReaderExecutor, LongConnectionBridgesSmallForwardGap)
 
     /// Serve across a 2048-byte forward gap -> bridged (frontier jumps past the gap).
     const size_t gap_off = block + 2048;
-    ChainedBuffers w1 = inspect(ex).serveFromLong(gap_off, block);
+    ChainedBuffers w1 = inspect(ex).serveFromLongConnection(gap_off, block);
     EXPECT_EQ(chainBytes(w1), rig.content.substr(gap_off, block));
     EXPECT_EQ(inspect(ex).longConnPosition(), gap_off + block);                /// gap discarded, not re-served
 }
@@ -5570,11 +5573,11 @@ TEST(ReaderExecutor, LongConnectionDropBeforeBoundCountsIncomplete)
     const size_t block = 4096;
     LongConnRig rig(size, 4096, block, /*max_tail_for_drain=*/1024);
     auto & ex = *rig.executor;
-    inspect(ex).openLong(0, size);                         /// bound = 64 KiB
-    inspect(ex).serveFromLong(0, block);                   /// transferred 4 KiB; tail to bound >> drain
+    inspect(ex).openLongConnection(0, size);                         /// bound = 64 KiB
+    inspect(ex).serveFromLongConnection(0, block);                   /// transferred 4 KiB; tail to bound >> drain
     EXPECT_TRUE(inspect(ex).hasLongConn());
 
-    inspect(ex).dropLong();                                /// tail too big to drain -> incomplete
+    inspect(ex).dropLongConnection();                                /// tail too big to drain -> incomplete
     EXPECT_FALSE(inspect(ex).hasLongConn());
     EXPECT_EQ(inspect(ex).incompleteConnections(), 1u);
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);
@@ -5587,15 +5590,282 @@ TEST(ReaderExecutor, LongConnectionDropDrainsSmallTail)
     const size_t drain = 2048;
     LongConnRig rig(size, 4096, block, drain);
     auto & ex = *rig.executor;
-    inspect(ex).openLong(0, /*reach=*/block + 1024);       /// bound = 5120
+    inspect(ex).openLongConnection(0, /*reach=*/block + 1024);       /// bound = 5120
     EXPECT_EQ(inspect(ex).longConnBound(), block + 1024);
-    inspect(ex).serveFromLong(0, block);                   /// position 4096; tail 1024 <= drain
+    inspect(ex).serveFromLongConnection(0, block);                   /// position 4096; tail 1024 <= drain
     EXPECT_TRUE(inspect(ex).hasLongConn());
 
-    inspect(ex).dropLong();                                /// drains the 1 KiB tail to the bound
+    inspect(ex).dropLongConnection();                                /// drains the 1 KiB tail to the bound
     EXPECT_FALSE(inspect(ex).hasLongConn());
     EXPECT_EQ(inspect(ex).incompleteConnections(), 0u);    /// completed -> not incomplete
     EXPECT_EQ(rig.limit->getActiveCount(), 0u);
+}
+
+namespace
+{
+
+/// A source buffer that mimics object storage opened with `use_external_buffer = true`: it owns
+/// no read memory, and `nextImpl` fills the caller's externally `set()` buffer
+/// (`internal_buffer`). This is the path where a raw `read` would refill a stale external
+/// pointer; a local file buffer cannot reproduce it because it falls back to its own memory.
+class ExternalBufferReader : public ReadBufferFromFileBase
+{
+public:
+    explicit ExternalBufferReader(std::shared_ptr<const String> data_)
+        : ReadBufferFromFileBase(/*buf_size=*/0, /*existing_memory=*/nullptr, /*alignment=*/0, data_->size())
+        , data(std::move(data_))
+    {
+    }
+
+    bool nextImpl() override
+    {
+        const size_t n = producible();
+        if (n == 0)
+            return false;
+        memcpy(internal_buffer.begin(), data->data() + file_pos, n);   /// into the external set() buffer
+        working_buffer = Buffer(internal_buffer.begin(), internal_buffer.begin() + n);
+        pos = working_buffer.begin();
+        file_pos += n;
+        return true;
+    }
+
+    off_t seek(off_t off, int) override { file_pos = static_cast<size_t>(off); resetWorkingBuffer(); return off; }
+    off_t getPosition() override { return static_cast<off_t>(file_pos) - static_cast<off_t>(available()); }
+    String getFileName() const override { return "external_mock"; }
+    void setReadUntilPosition(size_t position) override { read_until = position; }
+    void setReadUntilEnd() override { read_until.reset(); }
+    bool supportsRightBoundedReads() const override { return true; }
+    bool supportsExternalBufferMode() const override { return true; }
+
+protected:
+    /// Bytes the next `nextImpl` would produce into the currently `set()` buffer.
+    size_t producible() const
+    {
+        const size_t cap = read_until ? std::min(*read_until, data->size()) : data->size();
+        if (file_pos >= cap || internal_buffer.empty())
+            return 0;
+        return std::min(internal_buffer.size(), cap - file_pos);
+    }
+
+    std::shared_ptr<const String> data;
+    size_t file_pos = 0;
+    std::optional<size_t> read_until;
+};
+
+/// An external-buffer source that throws once it has delivered more than `budget` bytes,
+/// simulating a transient failure / closed stream mid-response. The budget is per buffer
+/// instance, so a freshly opened connection starts over — letting a test fail the drain on a
+/// held connection while a subsequently opened connection reads cleanly.
+class FaultBudgetReader : public ExternalBufferReader
+{
+public:
+    FaultBudgetReader(std::shared_ptr<const String> data_, size_t budget_)
+        : ExternalBufferReader(std::move(data_)), budget(budget_)
+    {
+    }
+
+    bool nextImpl() override
+    {
+        const size_t n = producible();
+        if (delivered + n > budget)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "FaultBudgetReader: injected read failure past budget");
+        delivered += n;
+        return ExternalBufferReader::nextImpl();
+    }
+
+private:
+    size_t budget;
+    size_t delivered = 0;
+};
+
+class ExternalBufferSourceReader : public IFileBasedSourceReader
+{
+public:
+    explicit ExternalBufferSourceReader(std::shared_ptr<const String> data_) : data(std::move(data_)) {}
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        return std::make_unique<ExternalBufferReader>(data);
+    }
+    String name() const override { return "ExternalBufferSourceReader"; }
+
+private:
+    std::shared_ptr<const String> data;
+};
+
+class FaultBudgetSourceReader : public IFileBasedSourceReader
+{
+public:
+    FaultBudgetSourceReader(std::shared_ptr<const String> data_, size_t budget_)
+        : data(std::move(data_)), budget(budget_) {}
+    std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject &) override
+    {
+        return std::make_unique<FaultBudgetReader>(data, budget);
+    }
+    String name() const override { return "FaultBudgetSourceReader"; }
+
+private:
+    std::shared_ptr<const String> data;
+    size_t budget;
+};
+
+std::shared_ptr<String> makePatternContent(size_t size)
+{
+    auto content = std::make_shared<String>(size, '\0');
+    for (size_t i = 0; i < size; ++i)
+        (*content)[i] = static_cast<char>('A' + (i % 26));
+    return content;
+}
+
+}
+
+TEST(ReaderExecutor, LongConnectionBridgeDoesNotClobberServedWindow)
+{
+    /// Regression for the external-buffer discard path: with a source opened in external-buffer
+    /// mode (object storage), the gap bridge (`skipForward`) must read the discarded bytes into
+    /// its own scratch, not through the source's stale external pointer — the last served
+    /// window's block.
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    auto content = makePatternContent(size);
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor::Options opts;
+    opts.window_size = block;
+    opts.block_size = block;
+    opts.min_bytes_for_seek = 8192;
+    opts.max_tail_for_drain = 1024;
+    opts.long_connection_limit = limit;
+    ReaderExecutor ex(std::make_shared<ExternalBufferSourceReader>(content), objects,
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, opts);
+
+    /// Serve one window and hold it; the source's external pointer now dangles into its block.
+    inspect(ex).openLongConnection(0, size);
+    ChainedBuffers held = inspect(ex).serveFromLongConnection(0, block);
+    EXPECT_EQ(chainBytes(held), content->substr(0, block));
+
+    /// A small forward gap on the open connection -> bridged via `skipForward`.
+    const size_t gap_off = block + 2048;
+    ChainedBuffers next = inspect(ex).serveFromLongConnection(gap_off, block);
+    EXPECT_EQ(chainBytes(next), content->substr(gap_off, block));
+
+    /// The held window must be intact — the bridge must not write into its block.
+    EXPECT_EQ(chainBytes(held), content->substr(0, block));
+}
+
+TEST(ReaderExecutor, LongConnectionDrainFailureDoesNotAbortQuery)
+{
+    /// The drain in `dropLongConnection` is best-effort: it completes the held GET on discarded
+    /// tail bytes so the connection returns to the keep-alive pool. If the held response throws
+    /// while draining, the query must NOT fail — the connection is released as incomplete and a
+    /// subsequent read succeeds on a fresh connection. Fails before the fix, when the drain
+    /// exception escaped `dropLongConnection`.
+    const size_t size = 64 * 1024;
+    const size_t block = 4096;
+    auto content = makePatternContent(size);
+
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+    auto limit = std::make_shared<LongConnectionLimit>(4);
+    ReaderExecutor::Options opts;
+    opts.window_size = block;
+    opts.block_size = block;
+    opts.min_bytes_for_seek = 8192;
+    /// The whole tail is within the drain limit, so the drop ATTEMPTS the drain.
+    opts.max_tail_for_drain = size;
+    opts.long_connection_limit = limit;
+    /// The budget covers the one served window (`block`); the drain — which reads the remaining
+    /// tail up to the bound — crosses it and throws. A fresh connection starts over.
+    ReaderExecutor ex(std::make_shared<FaultBudgetSourceReader>(content, /*budget=*/block + block / 2), objects,
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>>{}, opts);
+
+    inspect(ex).openLongConnection(0, size);       /// bound = file end -> a large undrained tail remains
+    ChainedBuffers served = inspect(ex).serveFromLongConnection(0, block);
+    EXPECT_EQ(chainBytes(served), content->substr(0, block));
+
+    /// The drain throws past the budget; the failure is swallowed, the connection is released
+    /// and counted as incomplete.
+    EXPECT_NO_THROW(inspect(ex).dropLongConnection());
+    EXPECT_FALSE(inspect(ex).hasLongConn());
+    EXPECT_EQ(inspect(ex).incompleteConnections(), 1u);
+    EXPECT_EQ(limit->getActiveCount(), 0u);
+
+    /// The required read still succeeds on a freshly opened connection (per-instance budget).
+    inspect(ex).openLongConnection(0, size);
+    ChainedBuffers reread = inspect(ex).serveFromLongConnection(0, block);
+    EXPECT_EQ(chainBytes(reread), content->substr(0, block));
+}
+
+TEST(ReaderExecutor, LongConnectionCapacityZeroAlwaysFallsBack)
+{
+    /// A zero-capacity limit never grants a slot: the structural open rule still fires on a
+    /// sequential scan, and every warranted open must fall back to a one-shot read - counted
+    /// as a fallback, never opening a long connection - while serving every byte correctly.
+    TestThreadGroup tg;
+    const size_t size = 64 * 1024;
+    const size_t window = 4096;
+    auto content = makePatternContent(size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", *content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", size);
+
+    ReaderExecutor::Options opts;
+    opts.window_size = window;
+    opts.block_size = window;
+    opts.min_bytes_for_seek = 8192;
+    opts.long_connection_limit = std::make_shared<LongConnectionLimit>(0);
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    String got;
+    while (true)
+    {
+        auto w = ex.readNextWindow();
+        if (w.empty())
+            break;
+        got += chainBytes(w);
+    }
+
+    EXPECT_EQ(got, *content);                                                       /// one-shots serve everything
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened), 0u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorLongConnectionFallbacks), 1u);    /// wanted long, no slot
+}
+
+TEST(ReaderExecutor, EmptyFileIsImmediateEOF)
+{
+    /// A zero-size known-size object: no source request, no window, immediate EOF.
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", ""}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", 0);
+    ReaderExecutor::Options opts;
+    opts.block_size = 256;
+    ReaderExecutor ex(source, objects, {}, opts);
+
+    EXPECT_EQ(ex.totalSize(), 0u);
+    EXPECT_TRUE(ex.readNextWindow().empty());
+}
+
+TEST(ReaderExecutor, MissingFileWithUnknownSizeThrows)
+{
+    /// `DiskLocal::prepareRead` marks an unstatable file `UnknownSize`; the executor must
+    /// then open it and surface the real error (file does not exist) instead of latching
+    /// EOF and treating it as an empty read.
+    StoredObject missing;
+    missing.remote_path = (std::filesystem::temp_directory_path() / "reader_executor_does_not_exist.bin").string();
+    missing.bytes_size = StoredObject::UnknownSize;
+    auto source = std::make_shared<BufferSourceReader>(
+        [](const StoredObject & obj) -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            return createReadBufferFromFileBase(obj.remote_path, ReadSettings{});
+        },
+        "LocalSource");
+    ReaderExecutor::Options opts;
+    opts.block_size = 256;
+    ReaderExecutor ex(source, StoredObjects{missing}, {}, opts);
+
+    EXPECT_ANY_THROW(ex.readNextWindow());
 }
 
 TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
@@ -5606,7 +5876,7 @@ TEST(ReaderExecutor, LongConnectionClampReachAndShouldOpen)
 
     EXPECT_EQ(inspect(ex).clampReach(/*reach=*/size * 4, /*phys_off=*/1000), size); /// clamped to file end
     EXPECT_EQ(inspect(ex).clampReach(/*reach=*/2000, /*phys_off=*/1000), 3000u);    /// within file, unchanged
-    EXPECT_FALSE(inspect(ex).shouldOpenLong(0));            /// no continuity feed yet -> predicted reach 0, not "long"
+    EXPECT_FALSE(inspect(ex).shouldOpenLongConnection(0));            /// no continuity feed yet -> predicted reach 0, not "long"
 }
 
 TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
@@ -5632,7 +5902,7 @@ TEST(ReaderExecutor, LongConnectionForegroundDrainsWholeFile)
     opts.long_connection_limit = limit;          /// no prefetch pool: pure synchronous reads
     ReaderExecutor ex(source, objects, {}, opts);
 
-    inspect(ex).openLong(0, size);                 /// foreground holds [0, size); one open GET
+    inspect(ex).openLongConnection(0, size);                 /// foreground holds [0, size); one open GET
     EXPECT_EQ(inspect(ex).sourceRequests(), 1u);   /// the open
 
     String got;
@@ -5674,7 +5944,7 @@ TEST(ReaderExecutor, LongConnectionDrainedAcrossPrefetchWindows)
     opts.long_connection_limit = limit;
     ReaderExecutor ex(source, objects, {}, opts);
 
-    inspect(ex).openLong(0, size);
+    inspect(ex).openLongConnection(0, size);
     EXPECT_EQ(inspect(ex).sourceRequests(), 1u);
 
     /// Window 1: foreground drains [0,100), then carries the connection into the prefetch

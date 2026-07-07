@@ -31,7 +31,9 @@ public:
 private:
     friend class LongConnectionLimit;
 
-    explicit LongConnectionSlot(std::shared_ptr<LongConnectionLimit> limit_);
+    /// noexcept: does no allocation (a `shared_ptr` move and an atomic metric bump), so a
+    /// slot can never throw after `tryAcquire` has already claimed the count -- no leak path.
+    explicit LongConnectionSlot(std::shared_ptr<LongConnectionLimit> limit_) noexcept;
 
     void release();
 

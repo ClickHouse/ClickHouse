@@ -326,7 +326,7 @@ const StoredObjects & ReadPipeline::getStoredObjects() const
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(const std::string & query_id) const
 {
     const auto & settings = source->read_settings;
-    if (!settings.use_reader_executor)
+    if (!settings.reader_executor.enabled)
         return nullptr;
 
     /// Distributed cache is not yet wired into the executor — fall back to
@@ -341,7 +341,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     /// Returns nullptr (so the caller falls back to the legacy path) for
     /// source variants the executor does not yet support.
     std::shared_ptr<IFileBasedSourceReader> source_reader;
-    size_t min_bytes_for_seek = settings.reader_executor_min_bytes_for_seek;
+    size_t min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek;
 
     if (const auto * local_src = std::get_if<LocalFileSource>(&source->source))
     {
@@ -441,15 +441,15 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     String log_file_path = source->objects.empty() ? "" : source->objects.front().remote_path;
 
     ReaderExecutor::Options executor_options;
-    executor_options.window_size = settings.reader_executor_window_size;
-    executor_options.plan_look_ahead_max_window = settings.reader_executor_plan_look_ahead_max_window;
+    executor_options.window_size = settings.reader_executor.window_size;
+    executor_options.plan_look_ahead_max_window = settings.reader_executor.plan_look_ahead_max_window;
     executor_options.min_bytes_for_seek = min_bytes_for_seek;
-    executor_options.block_size = settings.reader_executor_block_size;
+    executor_options.block_size = settings.reader_executor.block_size;
     executor_options.log_file_path = std::move(log_file_path);
-    executor_options.max_tail_for_drain = settings.reader_executor_max_tail_for_drain;
+    executor_options.max_tail_for_drain = settings.reader_executor.max_tail_for_drain;
     executor_options.prefetch_pool = prefetch_pool;
     executor_options.long_connection_limit = long_connection_limit;
-    if (settings.enable_reader_executor_log)
+    if (settings.reader_executor.log_enabled)
     {
         if (auto global = Context::getGlobalContextInstance())
             executor_options.reader_executor_log = global->getReaderExecutorLog();

@@ -9,7 +9,7 @@
 #include <IO/CoverageMap.h>
 #include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
-#include <IO/ContinuityTracker.h>
+#include <IO/ReadContinuityTracker.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -99,7 +99,7 @@ public:
     static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
     /// Drain bound: if only a tail of at most this many bytes remains to a long
     /// connection's read bound, drain it so the connection completes pool-reusable
-    /// (see `dropLong`) instead of being abandoned mid-response.
+    /// (see `dropLongConnection`) instead of being abandoned mid-response.
     static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 512 * 1024; /// 512 KiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// The fixed plan window: residency is planned ONCE over this span (plan-then-stream),
@@ -365,32 +365,39 @@ private:
         size_t current_position = 0;
         size_t read_until = 0;
         LongConnectionSlot slot;
+        /// The stream returned EOF before `read_until`. Only reachable on unknown-size
+        /// sources (a known size clamps the bound to the object end): the GET actually
+        /// completed, so the connection is exhausted (not abandoned mid-response) and
+        /// must not count as incomplete on drop.
+        bool saw_eof = false;
 
         /// Read to its bound - fully consumed and pool-reusable.
         bool atBound() const { return current_position >= read_until; }
+        /// Nothing more will come off this stream: read to the bound or ended at EOF.
+        bool exhausted() const { return atBound() || saw_eof; }
         /// At least one byte crossed the wire. The GET is issued lazily, so a
         /// never-read connection returns to the pool untouched and must not count
         /// as incomplete.
-        bool everTransferred() const { return current_position > opened_at; }
+        bool consumedAnyBytes() const { return current_position > opened_at; }
         bool servesObject(const String & path) const { return object_path == path; }
         /// Forward and `[off, off+want)` stays inside the bound. A contiguous read
         /// (`off == current_position`) always continues - it is not a bridge. A
         /// forward HOLE is bridged (over-read on the open GET) only if STRICTLY smaller
-        /// than `near_gap`; a hole of exactly `near_gap` reopens instead - over-reading
+        /// than `bridgeable_gap`; a hole of exactly `bridgeable_gap` reopens instead - over-reading
         /// it costs about as much, and a faster tier holding it fills it down.
-        bool canContinue(size_t off, size_t want, size_t near_gap) const
+        bool canContinue(size_t off, size_t want, size_t bridgeable_gap) const
         {
-            return canStartServing(off, near_gap) && off + want <= read_until;
+            return canStartServing(off, bridgeable_gap) && off + want <= read_until;
         }
 
         /// Whether the channel can START serving at `off` - forward and inside the bound -
         /// even if the read would cross `read_until`. `readFromSource` serves the prefix up to
         /// the bound (the channel then drains clean) and reopens for the remainder, so a held
         /// channel that `canStartServing` must NOT be dropped as un-continuable.
-        bool canStartServing(size_t off, size_t near_gap) const
+        bool canStartServing(size_t off, size_t bridgeable_gap) const
         {
             return off >= current_position
-                && (off == current_position || off - current_position < near_gap)
+                && (off == current_position || off - current_position < bridgeable_gap)
                 && off < read_until;
         }
 
@@ -404,7 +411,16 @@ private:
         size_t skipForward(size_t gap, size_t block_bytes);
         /// If only a tail <= `max_tail` remains to the bound, read it out so the
         /// connection completes. Returns bytes drained.
-        size_t drainTail(size_t max_tail, size_t block_bytes);
+        struct DrainResult
+        {
+            size_t bytes = 0;      /// bytes actually drained
+            bool failed = false;   /// a read error interrupted the drain
+        };
+        /// If only a tail <= `max_tail` remains to the bound, read it out so the connection
+        /// completes (pool-reusable). The drained bytes are discarded (keep-alive only), so a
+        /// read error must not fail the query: it is caught, logged, and reported via
+        /// `DrainResult::failed`. Best-effort - never throws.
+        DrainResult drainTail(size_t max_tail, size_t block_bytes, LoggerPtr log) noexcept;
     };
 
     /// Per-retrieve runtime status for the schedule-driven interpreter: only what CANNOT be
@@ -573,7 +589,7 @@ private:
     /// `lc` (nullable) is the long connection to DRAIN if it can serve a piece - the
     /// worker passes its machine's payload, never the foreground's.
     /// `may_open_long` is the ONE connection-policy point: at each object-piece start, open a
-    /// long connection when convenient (`openLongIfWarranted`) and reuse it for what follows.
+    /// long connection when convenient (`openLongConnectionIfWarranted`) and reuse it for what follows.
     /// True only in FOREGROUND context (the foreground and inline machines, which run on the
     /// serve thread) - a pool worker never opens; it carries what its launch gave it.
     ChainedBuffers fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
@@ -672,8 +688,8 @@ private:
     size_t scheduleLookaheadReach(size_t phys_off) const;
 
     /// The physical reach a long connection opened at `phys_off` actually gets (before any
-    /// extent floor): `predictedReach` clamped to the file end, then clamped DOWN at the next
-    /// wide cached run the plan shows. The single reach source shared by `shouldOpenLong` and
+    /// extent floor): `predictedForwardLength` clamped to the file end, then clamped DOWN at the next
+    /// wide cached run the plan shows. The single reach source shared by `shouldOpenLongConnection` and
     /// `longConnectionBound` so the open trigger and the channel bound never disagree.
     size_t boundedReach(size_t phys_off) const;
 
@@ -682,43 +698,43 @@ private:
     /// where a short connection would stop), a connection slot is configured
     /// (`reader_executor_use_long_connections`), and pressure is not High/Critical (the
     /// open is speculative, like prefetch).
-    bool shouldOpenLong(size_t phys_off) const;
+    bool shouldOpenLongConnection(size_t phys_off) const;
 
     /// The long-connection bound (object-local) for an open at physical `phys_offset`:
     /// the forward reach, floored at the current read extent and capped at the object end,
     /// so a forward run extends the channel past the current right boundary. The reach is the
-    /// `predictedReach` estimate clamped at the next wide cached run the plan shows. See the
+    /// `predictedForwardLength` estimate clamped at the next wide cached run the plan shows. See the
     /// definition.
     size_t longConnectionBound(const StoredObject & object, size_t object_offset, size_t phys_offset) const;
 
-    /// Foreground open hook: when `shouldOpenLong(phys_offset)` and a slot can be
+    /// Foreground open hook: when `shouldOpenLongConnection(phys_offset)` and a slot can be
     /// acquired, open a long connection over `object` (object-local `object_offset`),
     /// bounded at `longConnectionBound`, so the following source read - and the windows
     /// after it - drain it. A no-op when already held / not warranted / at capacity
     /// (then the read falls back to a one-shot).
-    void openLongIfWarranted(const StoredObject & object, size_t object_offset,
+    void openLongConnectionIfWarranted(const StoredObject & object, size_t object_offset,
         size_t phys_offset, Stats & out_stats);
 
     /// Open a bounded GET over `object` for the object-local range `[offset, read_end)`,
     /// taking the already-acquired `slot`; store it in `conn` (its `read_until` bound is
     /// `read_end`). The ONLY place a long connection is opened, and only on the foreground
     /// - a machine never calls this.
-    void openLong(std::optional<LongConnection> & conn, const StoredObject & object,
+    void openLongConnection(std::optional<LongConnection> & conn, const StoredObject & object,
         size_t offset, size_t read_end, LongConnectionSlot slot, Stats & out_stats) const;
 
     /// Serve a read at object-local `offset` from `conn` (caller has checked
     /// `servesObject` + `canContinue`): bridge a forward gap by discarding it
     /// (over-read), `readInto` the blocks, then release the connection at its bound.
-    ChainedBuffers serveFromLong(std::optional<LongConnection> & conn, size_t offset,
+    ChainedBuffers serveFromLongConnection(std::optional<LongConnection> & conn, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks,
         size_t logical_offset, const MachineBase * stop, Stats & out_stats) const;
 
     /// Close `conn`: drain a small tail, account a still-incomplete drop, reset.
-    void dropLong(std::optional<LongConnection> & conn, Stats & out_stats) const;
+    void dropLongConnection(std::optional<LongConnection> & conn, Stats & out_stats) const;
 
-    /// Account an incomplete-connection drop (`everTransferred` and neither at
+    /// Account an incomplete-connection drop (`consumedAnyBytes` and neither at
     /// EOF nor `atBound`) for `conn`.
-    void accountLongDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const;
+    void accountLongConnectionDrop(const std::optional<LongConnection> & conn, bool at_eof, Stats & out_stats) const;
 
     /// Reset `conn` if it reached its bound (a clean pool return).
     void releaseLongAtBound(std::optional<LongConnection> & conn) const;
@@ -727,7 +743,7 @@ private:
     /// move leaves the source ENGAGED (with a moved-from value), so every hand-off goes
     /// through this to keep the connection a single owner (and to stop a moved-from
     /// husk from being seen as a held connection or counted as an incomplete drop).
-    static std::optional<LongConnection> takeLong(std::optional<LongConnection> & src);
+    static std::optional<LongConnection> takeLongConnection(std::optional<LongConnection> & src);
 
     // ─── Deferred puts / promotes ────────────────────────────────────────
 
@@ -863,7 +879,7 @@ private:
         /// segment pin. A POOL piece borrows the connection for its flight (`lend`/`reclaim`
         /// are the only movers); an INLINE piece runs on the serve thread and uses the slot
         /// directly - no borrow. While the connection is LENT the lane refuses to open
-        /// another (`shouldOpenLong`), so a foreground read during a pool flight degrades to
+        /// another (`shouldOpenLongConnection`), so a foreground read during a pool flight degrades to
         /// a one-shot: "the foreground holds no connection mid-flight" is lane state, not a
         /// chassert at every collect site.
         std::optional<LongConnection> conn;
@@ -955,7 +971,7 @@ private:
     /// retrieves, in offset order, only past `continuity_fed_end`) into
     /// `continuity_tracker`, then advance the watermark. A Remote retrieve's range
     /// already spans bridged holes (<= `min_bytes_for_seek`) as over-read, and
-    /// `near_gap == min_bytes_for_seek`, so feeding the range as one read counts
+    /// `bridgeable_gap == min_bytes_for_seek`, so feeding the range as one read counts
     /// that over-read exactly as a read-through would.
     void feedScheduleToContinuity(const PlanSchedule & schedule);
 
@@ -1140,10 +1156,10 @@ private:
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
 
     /// Continuous-read pattern estimator, fed each plan's predicted source reads
-    /// and every seek. Constructed with `near_gap == min_bytes_for_seek` so a
+    /// and every seek. Constructed with `bridgeable_gap == min_bytes_for_seek` so a
     /// bridged gap counts identically whether modeled as a read-through or a seek.
-    /// `predictedReach` sizes the long source connection (see `longConnectionBound`).
-    ContinuityTracker continuity_tracker;
+    /// `predictedForwardLength` sizes the long source connection (see `longConnectionBound`).
+    ReadContinuityTracker continuity_tracker;
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.
     size_t continuity_fed_end = 0;
