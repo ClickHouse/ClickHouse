@@ -152,6 +152,13 @@ const std::unordered_set<String> non_deterministic_functions = {
     "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
     "simpleLinearRegression", "sparkBar", "histogram",
     "retentionState",
+    /// `largestTriangleThreeBuckets` (LTTB) downsamples to a fixed number of
+    /// points; the selection depends on input row order, and with the `Distinct`
+    /// combinator the deduplicated set feeds LTTB in a parallel-merge-dependent
+    /// order, so the result varies run-to-run even at a fixed setting. Any
+    /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
+    /// then legitimately differs from direct evaluation.
+    "largestTriangleThreeBuckets",
     /// Depends on physical data layout, not values.
     "estimateCompressionRatio",
     /// Statistical hypothesis-test / correlation aggregates: they return
