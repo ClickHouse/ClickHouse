@@ -104,13 +104,6 @@ public:
                 argument->getName(),
                 getName());
 
-        const auto normalized_state_type = function->getFunction()->getNormalizedStateType();
-        const auto & normalized_state = assert_cast<const DataTypeAggregateFunction &>(*normalized_state_type);
-
-        if (function->getFunctionName() != normalized_state.getFunctionName()
-            || function->getArgumentsDataTypes().size() != normalized_state.getArgumentsDataTypes().size())
-            return normalized_state.getArgumentsDataTypes();
-
         return function->getArgumentsDataTypes();
     }
 

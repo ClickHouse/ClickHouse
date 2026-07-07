@@ -32,19 +32,3 @@ FROM bloom_filter_nullable_if_amt
 GROUP BY key;
 
 DROP TABLE bloom_filter_nullable_if_amt;
-
-WITH
-    (
-        SELECT groupBloomFilterIfState(CAST(toUInt64(number), 'Nullable(UInt64)'), number % 2 = 0)
-        FROM numbers(10)
-    ) AS bf
-SELECT
-    bloomFilterContains(groupBloomFilterMergeState(bf), toUInt64(2)),
-    bloomFilterContains(groupBloomFilterMergeState(bf), toUInt64(8));
-
-WITH
-    (
-        SELECT groupBloomFilterArrayState(1000)([toUInt64(number)])
-        FROM numbers(10)
-    ) AS bf
-SELECT bloomFilterContains(groupBloomFilterMergeState(1000)(bf), toUInt64(2));
