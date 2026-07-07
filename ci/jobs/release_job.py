@@ -135,6 +135,13 @@ def main():
     # removed by the cleanup step so the private key never persists on a reused
     # runner.
     gnupg_home = None
+    # Per-run DOCKER_CONFIG so every docker invocation (login, buildx, push)
+    # writes auth/state into an isolated directory instead of the runner user's
+    # ~/.docker/config.json; removed by the cleanup step so the robot registry
+    # credentials never persist for a later job on a reused runner.
+    docker_config = tempfile.mkdtemp(prefix="release-docker-")
+    os.chmod(docker_config, 0o700)
+    os.environ["DOCKER_CONFIG"] = docker_config
 
     # Export the robot token once for the whole job (the legacy workflow set it
     # as a job-level `env: GH_TOKEN`). Commands then reference `$GH_TOKEN` instead
@@ -780,6 +787,8 @@ def main():
                 os.remove(path)
         if gnupg_home:
             shutil.rmtree(gnupg_home, ignore_errors=True)
+        if docker_config:
+            shutil.rmtree(docker_config, ignore_errors=True)
 
     results.append(
         Result.from_commands_run(
