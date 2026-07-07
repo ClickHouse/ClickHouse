@@ -110,8 +110,8 @@ TEST(FetchMachineUsage, TakeoverSavesPartialWorkAndResumesLater)
     EXPECT_EQ(m->product, (std::vector<size_t>{0, 1, 2})) << "partial work saved, nothing lost";
     EXPECT_EQ(m->next_tile, 3u);
 
-    /// Re-arm for the continuation (the production recipe, see
-    /// `scheduleCacheFillStep`): clear the consumed takeover flag - the next
+    /// Re-arm for the continuation (a runner capability; production runs the
+    /// put inline at collect): clear the consumed takeover flag - the next
     /// step must not inherit it - and schedule again; the cursor already
     /// points at the first unproduced tile.
     m->interrupt_requested.store(false);
@@ -269,7 +269,8 @@ TEST(FetchMachineUsage, DeferredCancelParksOnSoftListJoinsLater)
 
 TEST(FetchMachineUsage, BarrierThenReArmForThePutStep)
 {
-    /// The two-step machine (`scheduleCacheFillStep`): step one fetches and
+    /// The two-step machine (a runner capability; production runs the put
+    /// inline at collect): step one fetches and
     /// parks at the barrier (AwaitCollect - products ready, executor's move);
     /// the foreground collects, then re-arms the SAME machine with the put
     /// step. Every transition is executor-mediated - a worker never schedules

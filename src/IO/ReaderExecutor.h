@@ -40,12 +40,48 @@ class IFetchMachineRunner;
 class ReaderExecutorInspector;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
-/// through a fastest-first cache chain, falling back to the source. Tuned for
-/// sequential scans: reads the next gap ahead on a `PrefetchThreadPool` and
-/// shrinks its window/block sizes under memory pressure. Owns its cache and
-/// decryption layers, so it is NOT wrapped by the legacy async/decrypt/cache
-/// read buffers. Each source read is a one-shot bounded GET (the HTTP pool
-/// preserves the socket); no GET stream is kept open across windows.
+/// through a fastest-first cache chain, falling back to the source.
+///
+/// THE MODEL - a producer and a consumer over the cache as the pipe:
+///
+///                      lead (clamped, pressure-bounded)
+///                ◄──────────────────────────────►
+///   SOURCE ──► [ FILL LANE ] ──► CACHE CELLS + BANK ──► [ SERVE ] ──► caller
+///               the producer       (the DISPLAY =         the consumer
+///                                   the buffer)
+///
+/// The buffer is POSITIONAL (offset-indexed, not FIFO) and SHARED (sibling
+/// executors read and write the same cells) - which is why seeks, contention,
+/// and warm reads are ordinary cases. Planning happens once per epoch: observe
+/// residency (`CoverageMap`), derive the complete job list (`PlanSchedule`);
+/// execution interprets it.
+///
+/// The PRODUCER is the `FillLane` + the fill flow, ONE body of code with two
+/// anchors: AHEAD (`advanceAhead` - the wake rule and the launch scan at the
+/// lane's `attempted_end` cursor, held by `clampAllowsAhead` at cells awaiting
+/// another job's fill) runs pool pieces; the PUMP (`pump` - anchored at the
+/// consumer's window, may run BEHIND the cursor) heals on the serve thread
+/// whatever the display cannot cover: it waits live writers, runs inline
+/// pieces, and falls to the shared heal verb `bankDirectRead` - one bounded
+/// cache-blind read for state no planned job can produce (a hung sibling
+/// leader; a claimed-but-unreadable frontier, which the serve loop heals
+/// directly). The lane owns everything on the fill side: the long connection
+/// (lent to a pool piece for its flight, opens refused while lent), the
+/// in-flight segment pin, the ahead cursor, and the one gate every cell
+/// write lands through.
+///
+/// The CONSUMER serves windows off the DISPLAY - the one read surface (hit
+/// views + live committed cells + the bank as the overflow holder) - pumping
+/// the producer until the cursor is covered, and hands the served bytes to
+/// the scheduled handed fills (`runHandedFills`, BOTH directions: a served
+/// hit down-fills the cell it completes, served bytes promote up). It opens
+/// no source path of its own - healing runs producer code.
+///
+/// Tuned for sequential scans: one machine (the in-flight PIECE) ahead on a
+/// `PrefetchThreadPool`, window/block sizes shrink under memory pressure.
+/// Owns its cache and decryption layers, so it is NOT wrapped by the legacy
+/// async/decrypt/cache read buffers. Each source read is a bounded GET; the
+/// long connection coalesces them across pieces.
 ///
 /// One instance per column-stream; not thread-safe beyond the machine handoff:
 /// while a fetch machine is in flight the worker exclusively owns the machine
@@ -416,12 +452,12 @@ private:
         size_t cursor = 0;
 
         /// The launch interpreter's authority - the first `schedule.retrieves` index not
-        /// yet launched/exhausted; advanced by `maybeLaunchAhead`. Reset on re-plan.
+        /// yet launched/exhausted; advanced by `advanceAhead`. Reset on re-plan.
         size_t launch_frontier = 0;
 
         /// True iff `schedule.retrieves` contains a `Source::Remote` job. When false
         /// the plan is served entirely from cache tiers, so there is no source
-        /// connection to open and `maybeLaunchAhead` skips its prefetch bookkeeping
+        /// connection to open and `advanceAhead` skips its prefetch bookkeeping
         /// (after its look-ahead re-plan, which still discovers cold beyond the plan).
         bool has_remote_retrieves = false;
 
@@ -442,10 +478,12 @@ private:
         ByteRange range;
     };
 
-    /// The background read-ahead machine: a steppable context. One step today - a
-    /// pure source fetch of the pre-bounded aligned gap window - then the
-    /// `AwaitCollect` barrier; the foreground collects or cancels. Bundles
-    /// EVERYTHING the worker touches, so it never reads a shared `this->` member.
+    /// The model's in-flight PIECE token: a steppable context for one fill piece,
+    /// pool-run (ahead) or serve-thread-run (pump). One step today - elect the
+    /// downloaders, fetch the LED runs of the pre-bounded window, stream them into
+    /// the cells - then the `AwaitCollect` barrier; the foreground collects or
+    /// cancels. Bundles EVERYTHING the worker touches, so it never reads a shared
+    /// `this->` member.
     struct FetchMachine : MachineBase
     {
         /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
@@ -467,7 +505,7 @@ private:
         std::optional<size_t> extent_snapshot;
         /// The schedule retrieve this machine fulfills (index into the launch-time plan's
         /// `schedule.retrieves` / `retrieve_status`). Set at launch; read live by `machineFor`
-        /// (is a machine running for this retrieve) and `reapPutMachine` (marks the retrieve
+        /// (is a machine running for this retrieve) and `foldPutResult` (marks the retrieve
         /// Done). Meaningful only while this machine is the live in-flight handle of that
         /// plan; the re-plan barrier (`chassert(!machine)`) guarantees none straddles a rebuild.
         size_t retrieve_index = 0;
@@ -588,7 +626,7 @@ private:
     /// counter, never `result`. Writes only the writers the plan SCHEDULE
     /// designates as fill targets for this window, so a faster tier never
     /// receives slack bytes (`isScheduledFillTarget`). The SYNCHRONOUS write
-    /// side; a machine collect defers the same work to a put step.
+    /// side; a machine collect runs the same work at collect.
     void pushAssembledToWriteBuffers(ByteRange physical_window, const ChainedBuffers & result, Stats & out_stats);
 
     /// The per-writer-list body shared by the put step and the parked-inline
@@ -716,12 +754,12 @@ private:
     /// Turn a just-collected machine into its cache fill: using the `writer_views` recorded at
     /// launch, hand it the assembled chain and run the fill INLINE on the read thread (a failed
     /// fill logged, never thrown).
-    void schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
+    void runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled);
 
     /// After the inline fill: fold the segment pin and stats in, and mark the retrieve
     /// `Done` once its whole job is fetched (logging a failed step - never the client's
     /// error).
-    void reapPutMachine(FetchMachine & m);
+    void foldPutResult(FetchMachine & m);
 
     /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
     /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
@@ -768,7 +806,7 @@ private:
 
     /// The schedule-driven interpreter: `readNextWindow` runs the schedule's already-planned
     /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`
-    /// dispatches on `steps[cursor]`; `maybeLaunchAhead` launches the schedule's `Remote`
+    /// dispatches on `steps[cursor]`; `advanceAhead` launches the schedule's `Remote`
     /// jobs at a frontier.
     ChainedBuffers interpretStep(size_t position_phys);
     ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys);
@@ -900,13 +938,13 @@ private:
     /// (EOF / nothing schedulable) - the serve then returns the display's servable prefix,
     /// empty meaning end-of-extent. The rare wait-timeout case (a sibling leader hung
     /// mid-download and re-election keeps losing) falls to one cache-blind direct read.
-    bool advanceJobInline(size_t ri, ByteRange window);
+    bool pump(size_t ri, ByteRange window);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes; shifts to logical. The serve tail shared by the hit
     /// step and the banked bypass step.
     ChainedBuffers serveFromDisplay(ByteRange window);
     void collectInFlightInto(size_t ri);
-    void maybeLaunchAhead();
+    void advanceAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the
     /// pool runner and the future inline runner.
     std::function<StepResult()> makeFetchStep(FetchMachine & m);

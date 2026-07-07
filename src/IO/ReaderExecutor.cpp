@@ -474,7 +474,7 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
     if (reached_eof)
         fill_lane.pin.reset();
 
-    maybeLaunchAhead();
+    advanceAhead();
 
     return decryptWindow(std::move(chain));
 }
@@ -519,7 +519,7 @@ void ReaderExecutor::seek(size_t new_position)
     /// backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
     read_plan = {};
 
-    maybeLaunchAhead();
+    advanceAhead();
 }
 
 void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
@@ -836,7 +836,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
             IntervalSet covered_unused;
             assembleAndWriteBack(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
-            schedulePutStep(std::move(m), assembled);
+            runPutStep(std::move(m), assembled);
             return false;
         }
         stats.add(Stats::PartialCollects);
@@ -878,7 +878,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// The write side of this window: the put step fills the writers from the assembled
     /// chain, inline on the read thread. After `finalizeAssembledWindow` - the pin was
     /// just taken from the plan's writers while they were still here.
-    schedulePutStep(std::move(m), result);
+    runPutStep(std::move(m), result);
     if (data_start_offset)
         chain.shift(-static_cast<ssize_t>(data_start_offset));
 
@@ -1286,7 +1286,7 @@ void ReaderExecutor::pushAssembledToWriteBuffers(ByteRange physical_window, cons
     /// (`chassert(writer)`), never the view's null-writer misses (`[CF-mutate]`). `result`
     /// is disjoint, so each slice has at most one node per byte (it may be short at EOF).
     /// This is the SYNCHRONOUS write side (the no-pool/sync paths); a machine collect
-    /// defers the same work to a put step (`schedulePutStep`). Both honour the plan
+    /// runs the same work at collect (`runPutStep`). Both honour the plan
     /// schedule's fill targets, so slack never reaches a faster tier.
     for (size_t i = 0; i < read_plan.bufs.size(); ++i)
         for (auto & w : read_plan.bufs[i].writers)
@@ -1881,7 +1881,7 @@ void ReaderExecutor::collectFillTargets(FetchMachine & m)
     }
 }
 
-void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
+void ReaderExecutor::runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBuffers & assembled)
 {
     /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
     /// window's fill-target writers in the shared `read_plan.bufs`, written in place on THIS
@@ -1892,7 +1892,7 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
     m->fill_chain = assembled;
 
     /// Run the fill inline on the read thread - no deferral. A failed fill is logged in
-    /// `reapPutMachine`, never thrown: a read must not fail because cache population did.
+    /// `foldPutResult`, never thrown: a read must not fail because cache population did.
     try
     {
         const size_t fill_end = m->fill_chain.empty()
@@ -1922,10 +1922,10 @@ void ReaderExecutor::schedulePutStep(std::shared_ptr<FetchMachine> m, const Chai
     {
         m->failure = std::current_exception();
     }
-    reapPutMachine(*m);
+    foldPutResult(*m);
 }
 
-void ReaderExecutor::reapPutMachine(FetchMachine & m)
+void ReaderExecutor::foldPutResult(FetchMachine & m)
 {
     /// The put wrote the shared `read_plan.bufs` writers in place (it held only
     /// non-owning views), so nothing comes home - just fold the pin, stats, and phase.
@@ -2120,7 +2120,7 @@ bool ReaderExecutor::launchMachineForWindow(size_t ri, ByteRange window, IFetchM
     /// Inline (serve-thread) runner -> the fetch stops at the first sibling-led segment.
     m->inline_serve = (&machine_runner == local_runner.get());
     /// Record the fill-target writers now so the step can write its led segments inline during
-    /// the fetch (the collect's `schedulePutStep` reuses these views).
+    /// the fetch (the collect's `runPutStep` reuses these views).
     collectFillTargets(*m);
 
     /// The foreground is the sole opener; the aligned window's first physical range gives the
@@ -2175,7 +2175,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     launchMachineForWindow(ri, ByteRange{base, chunk}, *runner);
 }
 
-void ReaderExecutor::maybeLaunchAhead()
+void ReaderExecutor::advanceAhead()
 {
     if (!prefetch_pool)
         return;
@@ -2319,7 +2319,7 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     return {};
 }
 
-bool ReaderExecutor::advanceJobInline(size_t ri, ByteRange window)
+bool ReaderExecutor::pump(size_t ri, ByteRange window)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
     auto & st = read_plan.retrieve_status[ri];
@@ -2507,7 +2507,7 @@ ChainedBuffers ReaderExecutor::serveRetrieveStep(const PlanSchedule::Step & step
                 break;
             continue;
         }
-        if (!advanceJobInline(ri, window))
+        if (!pump(ri, window))
             break;
     }
     return serveFromDisplay(window);
@@ -2960,7 +2960,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// Describe the plan's work once, here. The request for fill purposes is the
     /// whole plan span from the cursor: everything from `plan_start` forward is
     /// read by the scan (User), so only the alignment slack around it is
-    /// FillOnly. `schedule.retrieves[*].into` then drives `schedulePutStep` so a
+    /// FillOnly. `schedule.retrieves[*].into` then drives `runPutStep` so a
     /// faster tier never receives slack bytes (see `ReadPlan::schedule`).
     /// The User range is the whole extended span: the scan reads through the folded hit
     /// tail as the cursor advances, so the schedule must emit serve steps across

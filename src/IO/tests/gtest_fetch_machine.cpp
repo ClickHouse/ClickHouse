@@ -254,7 +254,7 @@ TEST(FetchMachine, ScheduleDoesNotResetStickyFlags)
     /// The flags are sticky and owner-cleared: neither `schedule` nor the
     /// release resets them. A machine re-armed for a second step clears the
     /// consumed takeover flag itself so the next step does not inherit it
-    /// (see `schedulePutStep`).
+    /// (see `runPutStep`).
     auto pool = std::make_shared<PrefetchThreadPool>(1);
     PoolFetchMachineRunner runner(pool);
 
@@ -329,8 +329,8 @@ TEST(FetchMachine, RevokeIsOneShot)
 
 TEST(FetchMachine, ScheduleAgainAfterPoolFullPark)
 {
-    /// The reschedule ladder (`sweepPutMachines`): a ParkedPoolFull machine is
-    /// still executor-owned and intact, so a later `schedule` simply retries.
+    /// The reschedule ladder: a ParkedPoolFull machine is still executor-owned
+    /// and intact, so a later `schedule` simply retries.
     auto pool = std::make_shared<InlinePool>(/*reject_first=*/1);
     PoolFetchMachineRunner runner(pool);
 
