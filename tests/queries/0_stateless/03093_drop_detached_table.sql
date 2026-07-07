@@ -221,6 +221,7 @@ SELECT count() FROM test_table_03093_shadow;
 SELECT 'reviewer-if-exists-atomic';
 DROP DETACHED TABLE test_table_03093_missing SYNC; -- { serverError UNKNOWN_TABLE }
 DROP DETACHED TABLE IF EXISTS test_table_03093_if_exists_missing SYNC;
+DROP DETACHED TABLE IF EXISTS test_db_03093_missing.test_table_03093_missing SYNC;
 CREATE TABLE test_table_03093_if_exists_attached (number UInt64)
 ENGINE=MergeTree ORDER BY number;
 DROP DETACHED TABLE IF EXISTS
@@ -233,6 +234,7 @@ WHERE database='test_db' AND table='test_table_03093_if_exists_attached';
 
 SELECT 'reviewer-if-exists-unsupported-db';
 CREATE DATABASE test_memory_db_03093 ENGINE=Memory;
+DROP DETACHED TABLE test_memory_db_03093.missing SYNC; -- { serverError UNKNOWN_TABLE }
 DROP DETACHED TABLE IF EXISTS test_memory_db_03093.missing SYNC;
 CREATE TABLE test_memory_db_03093.existing (number UInt64) ENGINE=Memory;
 DROP DETACHED TABLE test_memory_db_03093.existing SYNC; -- { serverError UNKNOWN_TABLE }
@@ -279,6 +281,7 @@ TRUNCATE DETACHED TABLE test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
 DROP DETACHED TABLE IF EMPTY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
 DROP DETACHED VIEW test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
 DROP DETACHED DICTIONARY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
+DROP TEMPORARY DETACHED TABLE test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
 DROP DETACHED TABLE TEMPORARY test_table_03093_syntax; -- { clientError SYNTAX_ERROR }
 DROP DETACHED TABLE test_table_03093_syntax SYNC;
 

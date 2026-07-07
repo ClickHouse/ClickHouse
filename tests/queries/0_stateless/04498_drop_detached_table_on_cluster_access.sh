@@ -27,6 +27,17 @@ query "CREATE TABLE ${TABLE_ACCESS} (number UInt64) ENGINE=MergeTree ORDER BY nu
 query "DETACH TABLE ${TABLE_ACCESS} PERMANENTLY"
 if [[ "$(query "SELECT count() > 0 FROM system.clusters WHERE cluster='test_shard_localhost'")" == "1" ]]
 then
+    gate_error="$(${CLICKHOUSE_CLIENT} \
+        --distributed_ddl_output_mode=none \
+        --multiquery \
+        --query "SET allow_experimental_drop_detached_table=0; DROP DETACHED TABLE ${TABLE_ACCESS} ON CLUSTER test_shard_localhost SYNC" 2>&1 || true)"
+    if [[ "${gate_error}" != *"allow_experimental_drop_detached_table"* ]]
+    then
+        echo "DROP DETACHED TABLE ON CLUSTER ignored disabled feature gate"
+        exit 1
+    fi
+    query "SELECT count() FROM system.detached_tables WHERE database=currentDatabase() AND table='${TABLE_ACCESS}'"
+
     query "CREATE USER ${USER_ACCESS}"
     query "GRANT CLUSTER ON *.* TO ${USER_ACCESS}"
     query "GRANT DROP TABLE ON ${CLICKHOUSE_DATABASE}.${TABLE_ACCESS} TO ${USER_ACCESS}"
@@ -37,6 +48,16 @@ then
         --multiquery \
         --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE ${TABLE_ACCESS} ON CLUSTER test_shard_localhost SYNC"
 else
+    gate_error="$(${CLICKHOUSE_CLIENT} \
+        --multiquery \
+        --query "SET allow_experimental_drop_detached_table=0; DROP DETACHED TABLE ${TABLE_ACCESS} SYNC" 2>&1 || true)"
+    if [[ "${gate_error}" != *"allow_experimental_drop_detached_table"* ]]
+    then
+        echo "DROP DETACHED TABLE ignored disabled feature gate"
+        exit 1
+    fi
+    query "SELECT count() FROM system.detached_tables WHERE database=currentDatabase() AND table='${TABLE_ACCESS}'"
+
     ${CLICKHOUSE_CLIENT} \
         --multiquery \
         --query "SET allow_experimental_drop_detached_table=1; DROP DETACHED TABLE ${TABLE_ACCESS} SYNC"
