@@ -878,10 +878,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     /// (which is locked in shared mode when input streams are created) and when inserting new data
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
-    global_ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
-        global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
-        global_ctx->new_data_part->ttl_infos,
-        global_ctx->time_of_merge);
+    if (global_ctx->projection)
+    {
+        /// When merging existing projection parts, inherit the default codec of the parent part
+        /// they belong to. Choosing it from the projection's own (much smaller) combined size would
+        /// leave a projection of a large (`ZSTD`) parent part on the size-aware `LZ4` - and would
+        /// even downgrade a projection that was already written as `ZSTD` back to `LZ4`. The parent
+        /// resolves its codec before its projections are merged.
+        chassert(global_ctx->parent_part->default_codec);
+        global_ctx->compression_codec = global_ctx->parent_part->default_codec;
+    }
+    else
+    {
+        global_ctx->compression_codec = global_ctx->data->getCompressionCodecForPart(
+            global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
+            global_ctx->new_data_part->ttl_infos,
+            global_ctx->time_of_merge);
+    }
+
+    /// Record the chosen codec on the part so that its projections (merged by the sub-merge above,
+    /// or rebuilt via `writeTempProjectionPart`) inherit the same codec.
+    global_ctx->new_data_part->default_codec = global_ctx->compression_codec;
 
     switch (global_ctx->chosen_merge_algorithm)
     {

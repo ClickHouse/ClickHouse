@@ -2081,6 +2081,9 @@ private:
         /// deadlock is impossible.
         ctx->compression_codec
             = ctx->data->getCompressionCodecForPart(ctx->source_part->getBytesOnDisk(), ctx->source_part->ttl_infos, ctx->time_of_mutation);
+        /// Record the chosen codec on the part so that its projections merged by the sub-merge in
+        /// `MergeTask` (see the projection branch there) inherit the same codec.
+        ctx->new_data_part->default_codec = ctx->compression_codec;
 
         NameSet entries_to_hardlink;
         NameSet removed_indices;
@@ -2616,6 +2619,9 @@ private:
         }
 
         ctx->compression_codec = ctx->source_part->default_codec;
+        /// Record the chosen codec on the part so that its projections merged by the sub-merge in
+        /// `MergeTask` (see the projection branch there) inherit the same codec.
+        ctx->new_data_part->default_codec = ctx->compression_codec;
 
         if (ctx->mutating_pipeline_builder.initialized())
         {
