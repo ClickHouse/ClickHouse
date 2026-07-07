@@ -11,6 +11,7 @@
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
 #if USE_AWS_S3
 #include <IO/S3/URI.h>
+#include <Storages/ObjectStorage/S3/Configuration.h>
 #endif
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -36,6 +37,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 String BackupInfo::toString() const
@@ -403,6 +405,157 @@ namespace
     {
         return (fs::path(base) / path).string();
     }
+
+    void validateStringArgsForNormalizedIdentity(const BackupInfo & info)
+    {
+        for (size_t i = 0; i != info.args.size(); ++i)
+            (void)getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
+    }
+
+    void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, const ContextPtr & context)
+    {
+        const bool has_named_collection = !info.id_arg.empty();
+
+        if (info.backup_engine_name == "S3")
+        {
+            if (has_named_collection)
+            {
+                if (info.args.size() > 1)
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Backup S3 requires 1 or 2 arguments: named_collection, [filename]");
+            }
+            else
+            {
+                if (info.args.size() != 1 && info.args.size() != 3)
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Backup S3 requires 1 or 3 arguments: url, [access_key_id, secret_access_key]");
+
+#if USE_AWS_S3
+                if (info.function_arg)
+                {
+                    if (!context)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Context is required to validate `S3` extra credentials for normalized backup identity");
+
+                    S3::S3AuthSettings auth_settings;
+                    if (!StorageS3Configuration::collectCredentials(info.function_arg->clone(), auth_settings, context))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid argument: {}", info.function_arg->formatForErrorMessage());
+                }
+#endif
+            }
+
+            validateStringArgsForNormalizedIdentity(info);
+            return;
+        }
+
+        if (info.backup_engine_name == "AzureBlobStorage")
+        {
+            if (has_named_collection)
+            {
+                if (info.args.size() > 1)
+                    throw Exception(
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                        "Backup AzureBlobStorage requires 1 or 2 arguments: named_collection, [filename]");
+            }
+            else if (info.args.size() != 3 && info.args.size() != 5)
+            {
+                throw Exception(
+                    ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                    "Backup AzureBlobStorage requires 3 or 5 arguments: connection string>/<url, container, path, "
+                    "[account name], [account key]");
+            }
+
+            validateStringArgsForNormalizedIdentity(info);
+            return;
+        }
+
+        if (info.backup_engine_name == "File")
+        {
+            if (has_named_collection)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup engine 'File' requires its first argument to be a string");
+            if (info.args.size() != 1)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'File' requires 1 argument (path)");
+
+            validateStringArgsForNormalizedIdentity(info);
+            return;
+        }
+
+        if (info.backup_engine_name == "Disk")
+        {
+            if (has_named_collection)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup engine 'Disk' requires its first argument to be a string");
+            if (info.args.size() != 2)
+                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Disk' requires 2 arguments (disk_name, path)");
+
+            validateStringArgsForNormalizedIdentity(info);
+        }
+    }
+
+    String toNormalizedStringImpl(const BackupInfo & info)
+    {
+        String result = info.backup_engine_name + "(";
+        bool first = true;
+        const bool has_named_collection = !info.id_arg.empty();
+
+        if (has_named_collection)
+            appendNormalizedIdentityComponent(result, first, info.id_arg);
+
+        for (size_t i = 0; i < info.args.size(); ++i)
+        {
+            if (isCredentialArgForNormalizedIdentity(info.backup_engine_name, has_named_collection, i))
+                continue;
+
+            appendNormalizedIdentityComponent(
+                result,
+                first,
+                normalizeArgForIdentity(
+                    info.backup_engine_name,
+                    has_named_collection,
+                    i,
+                    getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i)));
+        }
+
+        /// Direct backup engines ignore key-value arguments. Include overrides only
+        /// with named collections, where they can change the effective destination.
+        if (has_named_collection && !info.kv_args.empty())
+        {
+            Strings kv_strings;
+            kv_strings.reserve(info.kv_args.size());
+            for (const auto & kv : info.kv_args)
+            {
+                auto key = getKeyValueArgName(kv);
+                if (!key)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Backup engine '{}' key-value argument {} must have a string key for normalized backup identity",
+                        info.backup_engine_name,
+                        kv->formatForErrorMessage());
+
+                if (isCredentialKeyForNormalizedIdentity(info.backup_engine_name, *key))
+                    continue;
+
+                auto value = getKeyValueArgStringValue(kv);
+                if (!value)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "Backup engine '{}' key-value argument {} must have a string value for normalized backup identity",
+                        info.backup_engine_name,
+                        kv->formatForErrorMessage());
+
+                kv_strings.push_back(*key + "=" + normalizeKeyValueArgForIdentity(info.backup_engine_name, *key, *value));
+            }
+
+            std::sort(kv_strings.begin(), kv_strings.end());
+            for (const auto & kv_str : kv_strings)
+                appendNormalizedIdentityComponent(result, first, kv_str);
+        }
+
+        result += ')';
+        return result;
+    }
 }
 
 ASTPtr BackupInfo::toAST() const
@@ -497,73 +650,18 @@ String BackupInfo::toStringForLogging() const
 
 String BackupInfo::toNormalizedString() const
 {
-    String result = backup_engine_name + "(";
-    bool first = true;
-    const bool has_named_collection = !id_arg.empty();
-
-    if (has_named_collection)
-        appendNormalizedIdentityComponent(result, first, id_arg);
-
-    for (size_t i = 0; i < args.size(); ++i)
-    {
-        if (isCredentialArgForNormalizedIdentity(backup_engine_name, has_named_collection, i))
-            continue;
-
-        appendNormalizedIdentityComponent(
-            result,
-            first,
-            normalizeArgForIdentity(
-                backup_engine_name,
-                has_named_collection,
-                i,
-                getStringArgForNormalizedIdentity(args[i], backup_engine_name, i)));
-    }
-
-    /// Direct backup engines ignore key-value arguments. Include overrides only
-    /// with named collections, where they can change the effective destination.
-    if (has_named_collection && !kv_args.empty())
-    {
-        Strings kv_strings;
-        kv_strings.reserve(kv_args.size());
-        for (const auto & kv : kv_args)
-        {
-            auto key = getKeyValueArgName(kv);
-            if (!key)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Backup engine '{}' key-value argument {} must have a string key for normalized backup identity",
-                    backup_engine_name,
-                    kv->formatForErrorMessage());
-
-            if (isCredentialKeyForNormalizedIdentity(backup_engine_name, *key))
-                continue;
-
-            auto value = getKeyValueArgStringValue(kv);
-            if (!value)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Backup engine '{}' key-value argument {} must have a string value for normalized backup identity",
-                    backup_engine_name,
-                    kv->formatForErrorMessage());
-
-            kv_strings.push_back(*key + "=" + normalizeKeyValueArgForIdentity(backup_engine_name, *key, *value));
-        }
-
-        std::sort(kv_strings.begin(), kv_strings.end());
-        for (const auto & kv_str : kv_strings)
-            appendNormalizedIdentityComponent(result, first, kv_str);
-    }
-
-    result += ')';
-    return result;
+    validateBackupInfoShapeForNormalizedIdentity(*this, nullptr);
+    return toNormalizedStringImpl(*this);
 }
 
 String BackupInfo::toNormalizedString(ContextPtr context) const
 {
     auto normalize_with_context = [&](BackupInfo info)
     {
+        validateBackupInfoShapeForNormalizedIdentity(info, context);
+
         if (!context)
-            return info.toNormalizedString();
+            return toNormalizedStringImpl(info);
 
         if (info.backup_engine_name == "Disk" && info.args.size() == 2)
         {
@@ -573,7 +671,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
             fs::path path = getStringArgForNormalizedIdentity(info.args[1], info.backup_engine_name, 1);
             checkBackupDiskPath(disk_name, disk, path);
             info.args[1] = path.string();
-            return info.toNormalizedString();
+            return toNormalizedStringImpl(info);
         }
 
         if (info.backup_engine_name == "File" && info.args.size() == 1)
@@ -581,7 +679,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
             fs::path path = getStringArgForNormalizedIdentity(info.args[0], info.backup_engine_name, 0);
             checkBackupFilePath(path, context->getConfigRef(), context->getPath());
             info.args[0] = path.string();
-            return info.toNormalizedString();
+            return toNormalizedStringImpl(info);
         }
 
 #if USE_AZURE_BLOB_STORAGE
@@ -611,15 +709,17 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
             info.args.emplace_back(connection_params.getConnectionURL());
             info.args.emplace_back(connection_params.getContainer());
             info.args.emplace_back(blob_path);
-            return info.toNormalizedString();
+            return toNormalizedStringImpl(info);
         }
 #endif
 
-        return info.toNormalizedString();
+        return toNormalizedStringImpl(info);
     };
 
     if (id_arg.empty())
         return normalize_with_context(*this);
+
+    validateBackupInfoShapeForNormalizedIdentity(*this, context);
 
     auto collection = getNamedCollection(context);
     BackupInfo resolved = *this;

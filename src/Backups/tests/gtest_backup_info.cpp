@@ -386,6 +386,44 @@ TEST(BackupInfo, NormalizedStringRejectsUnresolvedNamedCollectionWithoutContext)
     EXPECT_THROW((void)info.toNormalizedString(ContextPtr{}), Exception);
 }
 
+TEST(BackupInfo, NormalizedStringRejectsInvalidBackupEngineShapes)
+{
+    auto context = getContext().context;
+
+    EXPECT_THROW(
+        (void)BackupInfo::fromString("S3('s3://bucket/backup', 'orphan')").toNormalizedString(),
+        Exception);
+    EXPECT_THROW(
+        (void)BackupInfo::fromString("S3('s3://bucket/backup', 1, 2)").toNormalizedString(),
+        Exception);
+
+    auto s3_collection = BackupInfo::fromString("S3(collection, 'a', 'b')");
+    s3_collection.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+    EXPECT_THROW((void)s3_collection.toNormalizedString(context), Exception);
+
+    EXPECT_THROW(
+        (void)BackupInfo::fromString("AzureBlobStorage('url', 'container')").toNormalizedString(),
+        Exception);
+    EXPECT_THROW(
+        (void)BackupInfo::fromString("AzureBlobStorage('url', 'container', 'path', 1, 2)").toNormalizedString(),
+        Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("File(collection, 'path')").toNormalizedString(context), Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("Disk('backups')").toNormalizedString(), Exception);
+}
+
+#if USE_AWS_S3
+TEST(BackupInfo, NormalizedStringValidatesS3ExtraCredentials)
+{
+    auto context = getContext().context;
+    auto valid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(role_arn = 'ROLEARN'))");
+    auto invalid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(unknown = 'UNKNOWN'))");
+
+    EXPECT_NO_THROW((void)valid.toNormalizedString(context));
+    EXPECT_THROW((void)valid.toNormalizedString(), Exception);
+    EXPECT_THROW((void)invalid.toNormalizedString(context), Exception);
+}
+#endif
+
 TEST(BackupInfo, NormalizedStringCanonicalizesDiskPath)
 {
     auto first = BackupInfo::fromString("Disk('backups', 'dir/../backup/')");
