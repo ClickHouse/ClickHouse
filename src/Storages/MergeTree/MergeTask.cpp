@@ -1334,7 +1334,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
     {
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
-            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+            *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(),
+            global_ctx->compression_codec, ++ctx->projection_block_num, global_ctx->context);
 
         tmp_part->finalize();
         tmp_part->part->getDataPartStorage().commitTransaction();
@@ -1376,7 +1377,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
         {
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
-                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(), ++ctx->projection_block_num, global_ctx->context);
+                *global_ctx->data, ctx->log, result, projection, global_ctx->new_data_part.get(),
+                global_ctx->compression_codec, ++ctx->projection_block_num, global_ctx->context);
 
             temp_part->finalize();
             temp_part->part->getDataPartStorage().commitTransaction();

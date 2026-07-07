@@ -1867,6 +1867,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         result,
         projection,
         ctx->new_data_part.get(),
+        ctx->compression_codec,
         ++projection_block_num,
         ctx->context);
 

@@ -989,7 +989,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, log, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1036,6 +1036,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     LoggerPtr log,
     Block block,
     const ProjectionDescription & projection,
+    CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
     bool merge_is_needed)
 {
@@ -1140,7 +1141,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         block = mergeBlock(std::move(block), metadata_snapshot, sort_description, perm_ptr, projection_merging_params);
     }
 
-    auto compression_codec = data.getCompressionCodecForPart(0, {}, time(nullptr));
+    /// The projection inherits the compression codec chosen for its parent part (passed in by the
+    /// caller) instead of always selecting the size-aware default with a part size of `0`, which
+    /// would pin every projection to `LZ4`. This way a projection of a large `ZSTD(3)` part gets the
+    /// better ratio too, while projections of small parts (and freshly inserted parts) stay on `LZ4`.
 
     auto index_granularity_ptr = createMergeTreeIndexGranularity(
         block.rows(),
@@ -1184,6 +1188,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     bool merge_is_needed,
     ContextPtr context)
 {
@@ -1196,7 +1201,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         *data.getSettings());
 
     return writeProjectionPartImpl(
-        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection, std::move(indices), merge_is_needed);
+        projection.name, false /* is_temp */, parent_part, data, log, std::move(block), projection,
+        std::move(compression_codec), std::move(indices), merge_is_needed);
 }
 
 /// This is used for projection materialization process which may contain multiple stages of
@@ -1207,6 +1213,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     Block block,
     const ProjectionDescription & projection,
     IMergeTreeDataPart * parent_part,
+    CompressionCodecPtr compression_codec,
     size_t block_num,
     ContextPtr context)
 {
@@ -1220,7 +1227,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
 
     auto part_name = fmt::format("{}_{}", projection.name, block_num);
     auto new_part = writeProjectionPartImpl(
-        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection, std::move(indices), /*merge_is_needed=*/true);
+        part_name, /*is_temp=*/ true, parent_part, data, log, std::move(block), projection,
+        std::move(compression_codec), std::move(indices), /*merge_is_needed=*/true);
 
     new_part->part->temp_projection_block_number = block_num;
     return new_part;

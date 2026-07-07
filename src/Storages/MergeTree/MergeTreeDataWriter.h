@@ -95,22 +95,27 @@ public:
     }
 
     /// For insertion.
+    /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
+    /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         bool merge_is_needed,
         ContextPtr context);
 
     /// For mutation: MATERIALIZE PROJECTION.
+    /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
+        CompressionCodecPtr compression_codec,
         size_t block_num,
         ContextPtr context);
 
@@ -138,6 +143,7 @@ private:
         LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
+        CompressionCodecPtr compression_codec,
         MergeTreeIndices indices,
         bool merge_is_needed);
 
