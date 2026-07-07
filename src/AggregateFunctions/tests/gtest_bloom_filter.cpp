@@ -10,6 +10,7 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
@@ -316,6 +317,29 @@ TEST(BloomFilterAggregateFunction, EquivalentParametersHaveSameStateRepresentati
 
     const auto different_seed = createGroupBloomFilterAggregate(value_type, {Field(UInt64(4096)), Field(UInt64(5)), Field(UInt64(42))});
     EXPECT_FALSE(direct_without_seed->haveSameStateRepresentation(*different_seed));
+}
+
+TEST(BloomFilterAggregateFunction, EquivalentParametersHaveSameNullableStateRepresentation)
+{
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const auto nullable_value_type = std::make_shared<DataTypeNullable>(value_type);
+
+    const auto nullable_direct_without_seed = createGroupBloomFilterAggregate(
+        nullable_value_type, {Field(UInt64(4096)), Field(UInt64(5))});
+    const auto nullable_direct_with_seed = createGroupBloomFilterAggregate(
+        nullable_value_type, {Field(UInt64(4096)), Field(UInt64(5)), Field(UInt64(0))});
+    EXPECT_TRUE(nullable_direct_without_seed->haveSameStateRepresentation(*nullable_direct_with_seed));
+    EXPECT_TRUE(nullable_direct_without_seed->getNormalizedStateType()->equals(*nullable_direct_with_seed->getNormalizedStateType()));
+
+    const auto nullable_default_parameters = createGroupBloomFilterAggregate(nullable_value_type, {});
+    const auto nullable_explicit_default_parameters = createGroupBloomFilterAggregate(
+        nullable_value_type, {Field(UInt64(10000)), Field(0.025), Field(UInt64(0))});
+    EXPECT_TRUE(nullable_default_parameters->haveSameStateRepresentation(*nullable_explicit_default_parameters));
+    EXPECT_TRUE(nullable_default_parameters->getNormalizedStateType()->equals(*nullable_explicit_default_parameters->getNormalizedStateType()));
+
+    const auto non_nullable_default_parameters = createGroupBloomFilterAggregate(value_type, {});
+    EXPECT_FALSE(non_nullable_default_parameters->haveSameStateRepresentation(*nullable_default_parameters));
+    EXPECT_FALSE(non_nullable_default_parameters->getNormalizedStateType()->equals(*nullable_default_parameters->getNormalizedStateType()));
 }
 
 TEST(BloomFilterContains, WrongNumericBloomColumnThrowsAfterTypeValidation)

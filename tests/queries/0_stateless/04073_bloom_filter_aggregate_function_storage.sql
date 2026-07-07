@@ -63,6 +63,35 @@ SELECT
 FROM bloom_filter_amt
 GROUP BY key;
 
+-- Equivalent parameter spellings must remain compatible through the automatic `Null` wrapper
+-- used for Nullable value types.
+CREATE TABLE bloom_filter_nullable_amt
+(
+    key String,
+    bf AggregateFunction(groupBloomFilter, Nullable(UInt64))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY key;
+
+INSERT INTO bloom_filter_nullable_amt
+SELECT 'k', groupBloomFilterState(CAST(toUInt64(number), 'Nullable(UInt64)'))
+FROM numbers(10);
+
+INSERT INTO bloom_filter_nullable_amt
+SELECT 'k', groupBloomFilterState(10000, 0.025, 0)(CAST(toUInt64(number + 100), 'Nullable(UInt64)'))
+FROM numbers(10);
+
+OPTIMIZE TABLE bloom_filter_nullable_amt FINAL;
+
+SELECT
+    key,
+    bloomFilterContains(groupBloomFilterMergeState(bf), toUInt64(5)) AS has_5,
+    bloomFilterContains(groupBloomFilterMergeState(bf), toUInt64(105)) AS has_105
+FROM bloom_filter_nullable_amt
+GROUP BY key;
+
+DROP TABLE bloom_filter_nullable_amt;
+
 -- Test type compatibility check on INSERT
 -- Table expects AggregateFunction(groupBloomFilter(1000), UInt64)
 -- But we try to insert AggregateFunction(groupBloomFilter(2000), UInt64)
