@@ -7213,9 +7213,14 @@ void Context::setApplicationType(ApplicationType type)
     /// Lock isn't required, you should set it at start
     shared->application_type = type;
 
-    if (type == ApplicationType::LOCAL || type == ApplicationType::SERVER || type == ApplicationType::DISKS)
+    if (type == ApplicationType::LOCAL
+        || type == ApplicationType::SERVER
+        || type == ApplicationType::KEEPER
+        || type == ApplicationType::DISKS)
     {
-        shared->server_settings.loadSettingsFromConfig(Poco::Util::Application::instance().config());
+        /// Use the context's own config when it has been set (e.g. keeper-bench, which runs
+        /// without a Poco::Util::Application), falling back to the global application config.
+        shared->server_settings.loadSettingsFromConfig(getConfigRef());
 
         /// Initialize the max_* mirrors from server_settings
         /// This ensures limits are enforced even when ConfigReloader is not running (e.g., clickhouse-local)
