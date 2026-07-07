@@ -10,6 +10,13 @@ SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_
 -- Override randomized max_threads to avoid timeout on slow builds (ASan)
 SET max_threads=0;
 
+-- Override randomized max_block_size so the output-bytes estimate stays deterministic.
+-- `RuntimeDataflowStatisticsOutputBytes` is accumulated per block (the output columns are
+-- serialized block-by-block with the default codec), so a randomized `max_block_size` shifts
+-- the estimate and can push `query_43`'s `URL` output past the tolerance below. The expected
+-- sizes are calibrated for the default `max_block_size` (65409).
+SET max_block_size=65409;
+
 SELECT COUNT(*) FROM test.hits WHERE AdvEngineID <> 0 FORMAT Null SETTINGS log_comment='query_1';
 
 -- Unsupported at the moment, refer to comments in `RuntimeDataflowStatisticsCacheUpdater::recordAggregationStateSizes`
