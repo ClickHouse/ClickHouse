@@ -422,8 +422,10 @@ Base column types:
 - `2` — `COL_FIXED16` — 2-byte fixed-width scalars (`Int16`, `UInt16`)
 - `3` — `COL_FIXED32` — 4-byte fixed-width scalars (`Int32`, `UInt32`, `Float32`)
 - `4` — `COL_FIXED64` — 8-byte fixed-width scalars (`Int64`, `UInt64`, `Float64`, `DateTime64`)
-- `5` — `COL_COMPLEX` — recursive format for `Array(T)` and `Tuple(T…)`
+- `5` — `COL_COMPLEX` — recursive format for `Array(T)`, `Tuple(T…)`, and `Map(K, V)`
 - `6` — `COL_VARIANT` — discriminated union (`Variant(…)`)
+- `7` — `COL_FIXEDN` — fixed-width scalars of any other width (`UUID`, `IPv6`, `Int128`/`UInt128`, `Int256`/`UInt256`, `Decimal128`/`Decimal256`, …)
+- `8` — `COL_LOWCARD` — top-level `LowCardinality(T)`; dictionary sub-column plus a compact index array (nested `LowCardinality` still materializes to `T` via `COL_COMPLEX`/base types instead)
 
 Modifier flags (OR'd onto the base type):
 
