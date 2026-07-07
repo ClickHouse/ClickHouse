@@ -75,6 +75,8 @@ private:
 struct StorageState;
 
 /// Writes to a series of files and to block cache. Used by flushes and merges.
+/// Output files have `delete_when_destroyed = true`; the caller should set it to false when
+/// publishing a finished file.
 struct SortedRunWriter
 {
     StorageState * storage = nullptr;

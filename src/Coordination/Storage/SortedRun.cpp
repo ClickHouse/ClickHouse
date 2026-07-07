@@ -1,5 +1,6 @@
 #include <Coordination/Storage/SortedRun.h>
 
+#include <Coordination/Storage/BackgroundWork.h>
 #include <Coordination/Storage/BlockCache.h>
 #include <Coordination/Storage/Node.h>
 #include <Coordination/Storage/SortedFile.h>
@@ -98,16 +99,14 @@ SortedRunWriter::SortedRunWriter(SortedRunPtr sorted_run_, StorageState * storag
 
 SortedRunWriter::~SortedRunWriter()
 {
-    if (!storage->memory_only && sorted_run)
+    if (file_writer)
     {
-        if (file_writer)
-        {
-            file_writer->cancel();
-            file_writer.reset();
-        }
-
-        /// TODO: Delete files, catch+log+ignore exceptions.
+        file_writer->cancel();
+        file_writer.reset();
     }
+
+    /// (No explicit cleanup for incomplete files on exception: unpublished files still have
+    ///  delete_when_destroyed == true and enqueue their own deletion in ~SortedFile.)
 }
 
 void SortedRunWriter::appendNode(FullNode & node)
@@ -127,6 +126,10 @@ void SortedRunWriter::appendNode(FullNode & node)
         {
             file->file_path = storage->makeSortedFilePath(
                 sorted_run->min_file_seqno, sorted_run->max_file_seqno, sorted_run->files.size());
+            /// If the flush/merge fails or is cancelled, the file deletes itself.
+            /// The publisher flips this to false.
+            file->delete_when_destroyed = true;
+            file->file_deleter = storage->background->file_delete_queue;
             file_writer = storage->disk->writeFile(
                 file->file_path, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, storage->write_settings);
         }

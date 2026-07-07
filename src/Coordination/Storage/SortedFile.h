@@ -5,10 +5,15 @@
 #include <Common/Arena.h>
 #include <IO/ReadBufferFromFileBase.h>
 
+#include <deque>
+#include <mutex>
 #include <vector>
 
 namespace Coordination::Storage
 {
+
+struct FileDeleteQueue;
+using FileDeleteQueuePtr = std::shared_ptr<FileDeleteQueue>;
 
 /// Immutable file containing sequence of nodes/tombstones sorted by NodePath (depth and path).
 /// Paths don't repeat. File always contains at least 1 block.
@@ -30,6 +35,10 @@ struct SortedFile
     };
 
     String file_path;
+
+    /// If true, destructor will enqueue this file to `file_deleter` to be deleted.
+    bool delete_when_destroyed = false;
+    FileDeleteQueuePtr file_deleter;
 
     /// The file opened for reading. All block loads use positioned reads (readBigAt) on this
     /// buffer, which is thread safe. Null in memory-only mode.
@@ -71,6 +80,9 @@ struct SortedFile
     /// TODO: Bloom filter of nodes with at least one child.
     /// TODO: Consider storing children index.
 
+    /// If delete_when_destroyed, enqueues the file to file_deleter.
+    ~SortedFile();
+
     /// Gets from cache or reads from file. Thread safe.
     BlockPtr getOrLoadBlock(uint32_t block_idx, BlockCache * block_cache) const;
 
@@ -91,5 +103,13 @@ private:
     BlockPtr loadBlock(uint32_t block_idx) const;
 };
 using SortedFilePtr = std::shared_ptr<SortedFile>;
+
+struct FileDeleteQueue
+{
+    std::mutex mutex;
+    std::deque<std::string> paths;
+
+    void enqueueFileToRemove(std::string path);
+};
 
 }

@@ -7,6 +7,7 @@
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
+#include <Disks/IDisk.h>
 
 #include <chrono>
 #include <thread>
@@ -91,10 +92,47 @@ void BackgroundWork::maybeStartMerge()
     merge_requests.release();
 }
 
+bool BackgroundWork::deleteQueuedFiles() const
+{
+    while (true)
+    {
+        std::string path;
+        {
+            std::lock_guard lock(file_delete_queue->mutex);
+            if (file_delete_queue->paths.empty())
+                return true;
+            path = std::move(file_delete_queue->paths.front());
+            file_delete_queue->paths.pop_front();
+        }
+
+        try
+        {
+            /// If-exists because we may be retrying a delete that failed on our side but succeeded
+            /// on the server, or deleting an incomplete file that was never uploaded at all.
+            storage->disk->removeFileIfExists(path);
+        }
+        catch (...)
+        {
+            DB::tryLogCurrentException(storage->log, fmt::format("Failed to delete file {}, will retry", path));
+
+            /// Put it back; the caller will back off and retry.
+            std::lock_guard lock(file_delete_queue->mutex);
+            file_delete_queue->paths.push_back(std::move(path));
+            return false;
+        }
+    }
+}
+
 void BackgroundWork::flushThread()
 {
     while (!shutting_down.load())
     {
+        if (!deleteQueuedFiles())
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
         /// Pick a memtable to flush.
         MemtablePtr memtable;
         {
@@ -172,6 +210,9 @@ void BackgroundWork::flushThread()
                 node_count_delta += file->node_count_delta;
             chassert(memtable->node_count_delta == node_count_delta);
             new_run->node_count_delta = node_count_delta;
+
+            for (const SortedFilePtr & file : new_run->files)
+                file->delete_when_destroyed = false;
         }
         catch (...)
         {
@@ -224,6 +265,12 @@ void BackgroundWork::mergeThread()
 {
     while (!shutting_down.load())
     {
+        if (!deleteQueuedFiles())
+        {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            continue;
+        }
+
         /// Pick files to merge.
         std::vector<SortedRunPtr> input_runs;
         SortedRunPtr output_run;
@@ -349,7 +396,12 @@ void BackgroundWork::mergeThread()
                 }
 
                 if (!output_run->files.empty()) // may be empty if all input nodes cancelled out
+                {
+                    for (const SortedFilePtr & f : output_run->files)
+                        f->delete_when_destroyed = false;
+
                     to_publish.push_back(output_run);
+                }
 
                 if (!is_final)
                 {
@@ -389,11 +441,9 @@ void BackgroundWork::mergeThread()
                 {
                     f->removeFromBlockCache(storage->block_cache.get());
 
-                    if (!storage->memory_only)
-                    {
-                        /// TODO: Arrange for the file to be deleted when its SortedFilePtr refcount
-                        ///       reaches 0.
-                    }
+                    /// The file is no longer visible to new readers; delete it from disk when the
+                    /// last reader lets go of it.
+                    f->delete_when_destroyed = true;
 
                     f.reset();
                 }

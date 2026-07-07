@@ -26,6 +26,12 @@ namespace DB::CoordinationSetting
 namespace Coordination::Storage
 {
 
+SortedFile::~SortedFile()
+{
+    if (delete_when_destroyed && file_deleter)
+        file_deleter->enqueueFileToRemove(std::move(file_path));
+}
+
 BlockPtr SortedFile::getOrLoadBlock(uint32_t block_idx, BlockCache * block_cache) const
 {
     chassert(block_idx < blocks.size());
@@ -114,6 +120,12 @@ BlockPtr SortedFile::loadBlock(uint32_t) const
 {
     /// TODO: Come up with file format and implement. Remember to assign block's compatible_digest = (digest_version == KEEPER_CURRENT_DIGEST_VERSION).
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "Reading blocks from Keeper storage files is not implemented yet");
+}
+
+void FileDeleteQueue::enqueueFileToRemove(std::string path)
+{
+    std::lock_guard lock(mutex);
+    paths.push_back(std::move(path));
 }
 
 }
