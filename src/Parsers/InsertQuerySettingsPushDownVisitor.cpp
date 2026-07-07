@@ -5,6 +5,7 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTQueryWithOutput.h>
 
 #include <algorithm>
 #include <unordered_set>
@@ -12,34 +13,12 @@
 namespace DB
 {
 
-bool InsertQuerySettingsPushDownMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
+namespace
 {
-    if (node->as<ASTSelectQuery>())
-        return true;
-    if (node->as<ASTSelectWithUnionQuery>())
-        return true;
-    if (node->as<ASTSelectIntersectExceptQuery>())
-        return true;
-    if (node->as<ASTSubquery>())
-        return true;
-    if (child->as<ASTSelectQuery>())
-        return true;
-    return false;
-}
-
-void InsertQuerySettingsPushDownMatcher::visit(ASTPtr & ast, Data & data)
+void mergeSettingsAst(ASTPtr & insert_settings_ast, const ASTPtr & select_settings_ast)
 {
-    if (auto * select_query = ast->as<ASTSelectQuery>())
-        visit(*select_query, ast, data);
-}
-
-void InsertQuerySettingsPushDownMatcher::visit(ASTSelectQuery & select_query, ASTPtr &, Data & data)
-{
-    ASTPtr select_settings_ast = select_query.settings();
     if (!select_settings_ast)
         return;
-
-    auto & insert_settings_ast = data.insert_settings_ast;
 
     if (!insert_settings_ast)
     {
@@ -81,6 +60,36 @@ void InsertQuerySettingsPushDownMatcher::visit(ASTSelectQuery & select_query, AS
             insert_setting_names.insert(setting_name);
         }
     }
+}
+}
+
+bool InsertQuerySettingsPushDownMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
+{
+    if (node->as<ASTSelectQuery>())
+        return true;
+    if (node->as<ASTSelectWithUnionQuery>())
+        return true;
+    if (node->as<ASTSelectIntersectExceptQuery>())
+        return true;
+    if (node->as<ASTSubquery>())
+        return true;
+    if (child->as<ASTSelectQuery>())
+        return true;
+    return false;
+}
+
+void InsertQuerySettingsPushDownMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(ast.get()))
+        mergeSettingsAst(data.insert_settings_ast, query_with_output->settings_ast);
+
+    if (auto * select_query = ast->as<ASTSelectQuery>())
+        visit(*select_query, ast, data);
+}
+
+void InsertQuerySettingsPushDownMatcher::visit(ASTSelectQuery & select_query, ASTPtr &, Data & data)
+{
+    mergeSettingsAst(data.insert_settings_ast, select_query.settings());
 }
 
 }
