@@ -11,33 +11,47 @@ enable_language(ASM)
 set(MUSL_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/include")
 file(MAKE_DIRECTORY "${MUSL_GENERATED_DIR}/bits")
 
-# Generate bits/alltypes.h from the arch-specific and generic type definitions.
-add_custom_command(
-    OUTPUT "${MUSL_GENERATED_DIR}/bits/alltypes.h"
+# The bits/alltypes.h and bits/syscall.h headers are produced from the arch-specific templates
+# and must be generated eagerly at configure time (like version.h below), not by a build target.
+# Both cmake/linux/toolchain-*-musl.cmake add ${CMAKE_BINARY_DIR}/contrib/musl-cmake/include to
+# the global compile flags of every C/C++/ASM target via MUSL_INCLUDE_FLAGS. If these headers were
+# produced by a normal build target, only the targets that depend on it (musl, musl-crt1, cxx,
+# cxxabi, unwind) would be ordered after their generation; any other target that transitively
+# includes a musl libc header (e.g. via <stdint.h> or <sys/types.h>) could start compiling before
+# the files exist and fail on a clean parallel build. Generating at configure time makes them
+# unconditionally present before any compilation starts.
+
+# Re-run configure when any generation input changes, e.g. after a musl submodule bump.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${MUSL_SOURCE_DIR}/tools/mkalltypes.sed"
+    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/alltypes.h.in"
+    "${MUSL_SOURCE_DIR}/include/alltypes.h.in"
+    "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in"
+)
+
+# bits/alltypes.h from the arch-specific and generic type definitions.
+execute_process(
     COMMAND sed -f "${MUSL_SOURCE_DIR}/tools/mkalltypes.sed"
             "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/alltypes.h.in"
             "${MUSL_SOURCE_DIR}/include/alltypes.h.in"
-            > "${MUSL_GENERATED_DIR}/bits/alltypes.h"
-    DEPENDS
-        "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/alltypes.h.in"
-        "${MUSL_SOURCE_DIR}/include/alltypes.h.in"
-        "${MUSL_SOURCE_DIR}/tools/mkalltypes.sed"
-    COMMENT "Generating bits/alltypes.h for ${MUSL_ARCH}"
-    VERBATIM
+    OUTPUT_FILE "${MUSL_GENERATED_DIR}/bits/alltypes.h"
+    RESULT_VARIABLE MUSL_ALLTYPES_RESULT
 )
+if (NOT MUSL_ALLTYPES_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate bits/alltypes.h for ${MUSL_ARCH}")
+endif()
 
-# Generate bits/syscall.h: the syscall numbers plus SYS_* aliases.
-add_custom_command(
-    OUTPUT "${MUSL_GENERATED_DIR}/bits/syscall.h"
-    COMMAND cp "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in"
-               "${MUSL_GENERATED_DIR}/bits/syscall.h"
-    COMMAND sed -n -e "s/__NR_/SYS_/p"
-                "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in"
-                >> "${MUSL_GENERATED_DIR}/bits/syscall.h"
-    DEPENDS "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in"
-    COMMENT "Generating bits/syscall.h for ${MUSL_ARCH}"
-    VERBATIM
+# bits/syscall.h: the syscall numbers, followed by the SYS_* aliases derived from them.
+file(READ "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in" MUSL_SYSCALL_NUMBERS)
+execute_process(
+    COMMAND sed -n -e "s/__NR_/SYS_/p" "${MUSL_SOURCE_DIR}/arch/${MUSL_ARCH}/bits/syscall.h.in"
+    OUTPUT_VARIABLE MUSL_SYSCALL_ALIASES
+    RESULT_VARIABLE MUSL_SYSCALL_RESULT
 )
+if (NOT MUSL_SYSCALL_RESULT EQUAL 0)
+    message(FATAL_ERROR "Failed to generate bits/syscall.h for ${MUSL_ARCH}")
+endif()
+file(WRITE "${MUSL_GENERATED_DIR}/bits/syscall.h" "${MUSL_SYSCALL_NUMBERS}${MUSL_SYSCALL_ALIASES}")
 
 # Generate version.h
 execute_process(
