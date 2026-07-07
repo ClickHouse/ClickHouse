@@ -865,6 +865,12 @@ public:
                             "COLUMNAR_V1: returned column structure {} does not match declared type {}",
                             result->dumpStructure(),
                             user_defined_function->getResultType()->getName());
+                    // A ColumnConst batch result must be materialized before it's accumulated:
+                    // ColumnConst::insertRangeFrom only bumps the row count, it doesn't copy in
+                    // the source's actual value, so concatenating a later (possibly different)
+                    // batch into a ColumnConst accumulator would silently keep repeating the
+                    // first batch's value for every row appended afterwards.
+                    result = IColumn::mutate(result->convertToFullColumnIfConst());
                     if (result_column->empty())
                         result_column = result->assumeMutable();
                     else
