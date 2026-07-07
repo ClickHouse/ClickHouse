@@ -863,7 +863,9 @@ def main():
                         test_result.status = Result.Status.ERROR
                         break
 
-                    ft_res_processor_bt = FTResultsProcessor(wd=temp_dir)
+                    ft_res_processor_bt = FTResultsProcessor(
+                        wd=temp_dir, test_options=test_options
+                    )
                     bt_runner_exit_code = run_tests(
                         batch_num=0,
                         batch_total=0,
