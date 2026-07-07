@@ -2162,6 +2162,22 @@ void DatabaseCatalog::triggerReloadDisksTask(const Strings & new_added_disks)
     (*reload_disks_task)->schedule();
 }
 
+std::vector<StoragePtr> DatabaseCatalog::getTablesForNewDisksOnConfigChange()
+{
+    std::vector<StoragePtr> tables;
+    for (auto & database : getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    {
+        auto it = database.second->getTablesIterator(getContext());
+        while (it->isValid())
+        {
+            tables.push_back(it->table());
+            it->next();
+        }
+    }
+
+    return tables;
+}
+
 void DatabaseCatalog::stopReplicatedDDLQueries()
 {
     replicated_ddl_queries_enabled = false;

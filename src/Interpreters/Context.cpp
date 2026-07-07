@@ -6683,7 +6683,10 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
     std::lock_guard update_lock(shared->storage_configuration_update_mutex);
 
     Strings disks_to_reinit;
+    StoragePolicySelectorPtr old_storage_policy_selector;
     StoragePolicySelectorPtr new_storage_policy_selector;
+    std::vector<StoragePtr> tables_for_new_disks;
+    std::vector<std::pair<StoragePtr, std::vector<DiskPtr>>> new_disks_by_table;
 
     {
         std::lock_guard lock(shared->storage_policies_mutex);
@@ -6695,16 +6698,49 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         {
             try
             {
-                new_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                old_storage_policy_selector = shared->merge_tree_storage_policy_selector;
+                new_storage_policy_selector = old_storage_policy_selector->updateFromConfig(
                     config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
             }
             catch (Exception & e)
             {
                 disks_to_reinit.clear();
+                old_storage_policy_selector.reset();
                 new_storage_policy_selector.reset();
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }
+        }
+    }
+
+    if (new_storage_policy_selector)
+    {
+        try
+        {
+            tables_for_new_disks = DatabaseCatalog::instance().getTablesForNewDisksOnConfigChange();
+            {
+                std::lock_guard lock(shared->storage_policies_mutex);
+                for (const auto & table : tables_for_new_disks)
+                {
+                    auto new_disks = table->getNewDisksOnConfigChangeWithLock(old_storage_policy_selector, new_storage_policy_selector, lock);
+                    if (!new_disks.empty())
+                        new_disks_by_table.emplace_back(table, std::move(new_disks));
+                }
+            }
+
+            /// Tables must prepare new disks before new policies are visible, otherwise they can own stale files.
+            for (const auto & [table, new_disks] : new_disks_by_table)
+                for (const auto & disk : new_disks)
+                    table->prepareNewDiskOnConfigChange(disk);
+        }
+        catch (Exception & e)
+        {
+            disks_to_reinit.clear();
+            new_storage_policy_selector.reset();
+            LOG_ERROR(
+                shared->log,
+                "An error has occurred while preparing disks for reloaded storage policies, storage policies were not applied: {}",
+                e.message());
         }
     }
 

@@ -226,8 +226,6 @@ public:
     using PartitionIdToMinBlockPtr = std::shared_ptr<const PartitionIdToMinBlock>;
 
     constexpr static auto FORMAT_VERSION_FILE_NAME = "format_version.txt";
-    constexpr static auto TABLE_IDENTITY_FILE_NAME = "table_identity.json";
-    constexpr static auto TEMPORARY_TABLE_IDENTITY_FILE_NAME = "tmp_table_identity.json";
     constexpr static auto DETACHED_DIR_NAME = "detached";
     constexpr static auto MOVING_DIR_NAME = "moving";
 
@@ -1459,6 +1457,11 @@ public:
     UInt64 estimateNumberOfRowsToRead(
         ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
+    std::vector<DiskPtr> getNewDisksOnConfigChangeWithLock(
+        const StoragePolicySelectorPtr & old_storage_policy_selector,
+        const StoragePolicySelectorPtr & new_storage_policy_selector,
+        const std::lock_guard<std::mutex> & storage_policies_lock) const override;
+    void prepareNewDiskOnConfigChange(const DiskPtr & new_disk) const override;
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
@@ -1491,7 +1494,6 @@ protected:
     /// Relative path data, changes during rename for ordinary databases use
     /// under lockForShare if rename is possible.
     String relative_data_path;
-    bool data_path_initialized = false;
 
 private:
     /// Columns and secondary indices sizes can be calculated lazily.
@@ -1520,7 +1522,6 @@ private:
         String name;
         String full_path;
         bool is_directory = false;
-        bool is_file = false;
     };
 
     struct NewDiskPathSnapshot
@@ -1537,25 +1538,11 @@ private:
         std::vector<NewDiskPathEntry> root_entries;
     };
 
-    StoragePolicyPtr getStoragePolicyNoInitialize() const;
-    void ensureStoragePolicyInitialized(const StoragePolicyPtr & storage_policy) const;
-    void initializeTablePathOnDisk(const DiskPtr & disk, bool validate_as_new_disk) const;
-    bool hasTableIdentityPath(const DiskPtr & disk) const;
-    void validateTableIdentityFile(const DiskPtr & disk) const;
-    void writeTableIdentityFile(const DiskPtr & disk) const;
-    void writeFormatVersionFileIfNeeded(const DiskPtr & disk) const;
+    StoragePolicyPtr getStoragePolicyFromSelector(const StoragePolicySelectorPtr & storage_policy_selector) const;
     NewDiskPathSnapshot makeNewDiskPathSnapshot(const DiskPtr & disk) const;
     std::optional<String> getFormatVersionErrorOnNewDisk(const NewDiskPathSnapshot & snapshot) const;
     std::optional<String> getUnsafeNewDiskTablePathContentReason(const NewDiskPathSnapshot & snapshot) const;
     void assertNewDiskDoesNotContainTableData(const DiskPtr & disk) const;
-
-    struct InitializedStoragePolicyState
-    {
-        StoragePolicyPtr policy;
-        NameSet disk_names;
-    };
-    mutable std::mutex storage_policy_initialization_mutex;
-    mutable std::optional<InitializedStoragePolicyState> initialized_storage_policy TSA_GUARDED_BY(storage_policy_initialization_mutex);
 
     struct NamesAndTypesListHash
     {
