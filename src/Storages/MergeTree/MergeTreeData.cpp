@@ -5230,7 +5230,7 @@ String describeTableIdentityFileError(const String & path, const String & reason
     return fmt::format("Bad table identity file {}: {}", path, reason);
 }
 
-void assertJSONKeySet(const Poco::JSON::Object::Ptr & json, const String & path)
+void assertJsonKeySet(const Poco::JSON::Object::Ptr & json, const String & path)
 {
     std::vector<std::string> names;
     json->getNames(names);
@@ -5252,14 +5252,14 @@ void assertJSONKeySet(const Poco::JSON::Object::Ptr & json, const String & path)
     }
 }
 
-void assertJSONInteger(const Poco::Dynamic::Var & value, const String & path, const String & key)
+void assertJsonInteger(const Poco::Dynamic::Var & value, const String & path, const String & key)
 {
     if (!value.isInteger())
         throw Exception(
             ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, fmt::format("key {} is not an integer", key)));
 }
 
-void assertJSONString(const Poco::Dynamic::Var & value, const String & path, const String & key)
+void assertJsonString(const Poco::Dynamic::Var & value, const String & path, const String & key)
 {
     if (!value.isString())
         throw Exception(ErrorCodes::CORRUPTED_DATA, "{}", describeTableIdentityFileError(path, fmt::format("key {} is not a string", key)));
@@ -5300,10 +5300,10 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad table identity file {}: {}", table_identity_full_path, e.what());
     }
 
-    assertJSONKeySet(json, table_identity_full_path);
+    assertJsonKeySet(json, table_identity_full_path);
 
     const auto version = json->get("version");
-    assertJSONInteger(version, table_identity_full_path, "version");
+    assertJsonInteger(version, table_identity_full_path, "version");
     const auto actual_version = version.convert<Int64>();
     if (actual_version != static_cast<Int64>(TABLE_IDENTITY_VERSION))
         throw Exception(
@@ -5313,10 +5313,7 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
             actual_version,
             TABLE_IDENTITY_VERSION);
 
-    const auto & merge_data_settings = *getSettings();
-    const auto current_uuid = merge_data_settings[MergeTreeSetting::table_disk];
-    const auto & storage_id = getStorageID();
-    const auto expected_uuid = current_uuid ? UUIDHelpers::Nil : storage_id.uuid;
+    const auto expected_uuid = (*getSettings())[MergeTreeSetting::table_disk] ? UUIDHelpers::Nil : getStorageID().uuid;
     const auto table_uuid = json->get("table_uuid");
     if (expected_uuid == UUIDHelpers::Nil)
     {
@@ -5325,7 +5322,7 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
     }
     else
     {
-        assertJSONString(table_uuid, table_identity_full_path, "table_uuid");
+        assertJsonString(table_uuid, table_identity_full_path, "table_uuid");
         const String expected_uuid_string = toString(expected_uuid);
         const String actual_uuid_string = table_uuid.convert<String>();
         if (actual_uuid_string != expected_uuid_string)
@@ -5338,7 +5335,7 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
     }
 
     const auto table_relative_data_path = json->get("relative_data_path");
-    assertJSONString(table_relative_data_path, table_identity_full_path, "relative_data_path");
+    assertJsonString(table_relative_data_path, table_identity_full_path, "relative_data_path");
     if (table_relative_data_path.convert<String>() != relative_data_path)
         throw Exception(
             ErrorCodes::CORRUPTED_DATA,
@@ -5348,7 +5345,7 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
             relative_data_path);
 
     const auto table_format_version = json->get("format_version");
-    assertJSONInteger(table_format_version, table_identity_full_path, "format_version");
+    assertJsonInteger(table_format_version, table_identity_full_path, "format_version");
     const auto actual_format_version = table_format_version.convert<Int64>();
     if (actual_format_version != static_cast<Int64>(format_version.toUnderType()))
         throw Exception(
