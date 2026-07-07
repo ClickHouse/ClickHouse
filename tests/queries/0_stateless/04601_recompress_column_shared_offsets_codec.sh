@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-shared-merge-tree, no-object-storage
+# Tags: no-shared-merge-tree, no-object-storage, no-darwin
 # The shared `Nested` offsets stream is inspected as a raw local part file, so shared MergeTree and
-# object storage (where the data lives remotely) are excluded.
+# object storage (where the data lives remotely) are excluded. On a case-insensitive filesystem
+# (macOS) `replaceFileNameToHashIfNeeded` hashes every stream file name regardless of
+# `replace_long_file_name_to_hash`, so the `n.size0.bin` file cannot be located by name -- excluded
+# via no-darwin.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
