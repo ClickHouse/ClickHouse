@@ -3,6 +3,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 
+#include <Interpreters/HashTablesStatistics.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1058,7 +1059,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        HashJoinStatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,
@@ -1072,7 +1073,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
         if (analyzed_join->allowParallelHashJoin())
             return std::make_shared<ConcurrentHashJoin>(
-                analyzed_join, settings[Setting::max_threads], right_sample_block, StatsCollectingParams{});
+                analyzed_join, settings[Setting::max_threads], right_sample_block, HashJoinStatsCollectingParams{});
         return std::make_shared<HashJoin>(analyzed_join, right_sample_block);
     }
 
@@ -1117,7 +1118,7 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                         settings[Setting::grace_hash_join_initial_buckets],
                         settings[Setting::grace_hash_join_max_buckets],
                         settings[Setting::max_threads],
-                        StatsCollectingParams{});
+                        HashJoinStatsCollectingParams{});
                 else
                     return std::make_shared<SpillingHashJoin>(
                         analyzed_join,

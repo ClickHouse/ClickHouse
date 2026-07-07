@@ -3,6 +3,9 @@ rs_always_enabled	1
 rs_disabled_by_unknown_statistcs	0
 rs_enabled_by_planner	1
 rs_disabled_by_planner	0
+--- Hash table matches feedback loop test ---
+rs_collect_runtime_stats	1
+rs_disabed_by_runtime_stats	0
 --- INNER JOIN ---
 7	2024-01-01 00:00:07	7	0	0	0
 7	2024-01-01 00:00:07	7	\N	5	dup

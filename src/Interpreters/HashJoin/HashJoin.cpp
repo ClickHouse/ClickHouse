@@ -209,7 +209,7 @@ HashJoin::HashJoin(
     size_t reserve_num_,
     const String & instance_id_,
     bool is_concurrent_hash_join_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_)
     : table_join(table_join_)
     , kind(table_join->kind())
     , strictness(table_join->strictness())
@@ -1543,11 +1543,20 @@ HashJoin::~HashJoin()
 
     try
     {
-        if (build_phase_finished && stats_collecting_params.isCollectionAndUseEnabled())
+        if (build_phase_finished)
         {
-            if (const auto ht_size = getTotalRowCount())
-                getHashTablesStatistics<HashJoinEntry>().update(
-                    {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params);
+            if (stats_collecting_params.build.isCollectionAndUseEnabled())
+            {
+                if (const auto ht_size = getTotalRowCount())
+                    getHashTablesStatistics<HashJoinEntry>().update(
+                        {.ht_size = ht_size, .source_rows = data->rows_to_join}, stats_collecting_params.build);
+            }
+
+            if (stats_collecting_params.match.isCollectionAndUseEnabled())
+            {
+                if (const auto matches = getHashTableMatches())
+                    getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = matches}, stats_collecting_params.match);
+            }
         }
     }
     catch (...)

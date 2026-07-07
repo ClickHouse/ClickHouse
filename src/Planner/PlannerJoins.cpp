@@ -39,6 +39,7 @@
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IKeyValueEntity.h>
 #include <Interpreters/JoinSwitcher.h>
 #include <Interpreters/MergeJoin.h>
@@ -1171,10 +1172,27 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     SharedHeader & right_table_expression_header,
     const JoinAlgorithmParams & params)
 {
+    const HashJoinStatsCollectingParams stats_collecting_params{
+        .build = {
+            params.hash_table_key_hash,
+            params.collect_hash_table_stats_during_joins,
+            params.max_entries_for_hash_table_stats,
+            params.max_size_to_preallocate_for_joins},
+        .match = {
+            params.join_output_key_hash,
+            params.collect_hash_table_stats_during_joins,
+            params.max_entries_for_hash_table_stats,
+            params.max_size_to_preallocate_for_joins}};
+
     /// Only enable hash table payload row-major transformation if the join produces more rows than row_store_ratio * build_size.
+    /// Prefer the number of hash table matches observed on a previous run over the optimizer's output estimate.
     const double row_store_ratio = params.min_rows_ratio_for_hash_join_row_store;
-    const bool enable_row_store = row_store_ratio == 0.0 || (params.rhs_size_estimation && params.result_rows_estimation
-            && static_cast<double>(*params.result_rows_estimation) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio);
+    const auto hash_join_match_hint = getHashJoinMatchHint(stats_collecting_params.match);
+    const std::optional<UInt64> row_store_output
+        = hash_join_match_hint ? std::optional<UInt64>(hash_join_match_hint->matches) : params.result_rows_estimation;
+    const bool enable_row_store = row_store_ratio == 0.0
+        || (params.rhs_size_estimation && row_store_output
+            && static_cast<double>(*row_store_output) >= static_cast<double>(*params.rhs_size_estimation) * row_store_ratio);
     table_join->setRowStoreEnabled(enable_row_store);
 
     if (table_join->kind() == JoinKind::Paste)
@@ -1200,12 +1218,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
         algorithm == JoinAlgorithm::PARALLEL_HASH ||
         algorithm == JoinAlgorithm::DEFAULT)
     {
-        StatsCollectingParams stats_collecting_params{
-            params.hash_table_key_hash,
-            params.collect_hash_table_stats_during_joins,
-            params.max_entries_for_hash_table_stats,
-            params.max_size_to_preallocate_for_joins};
-
         if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
             if (table_join->allowParallelHashJoin())
@@ -1242,7 +1254,8 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 || (*params.rhs_size_estimation >= params.parallel_hash_join_threshold);
             if (use_parallel_hash)
             {
-                return std::make_shared<ConcurrentHashJoin>(table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
+                return std::make_shared<ConcurrentHashJoin>(
+                    table_join, params.max_threads, right_table_expression_header, stats_collecting_params);
             }
         }
 
@@ -1278,12 +1291,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
 
     if (algorithm == JoinAlgorithm::AUTO)
     {
-        StatsCollectingParams stats_collecting_params{
-            params.hash_table_key_hash,
-            params.collect_hash_table_stats_during_joins,
-            params.max_entries_for_hash_table_stats,
-            params.max_size_to_preallocate_for_joins};
-
         if (params.max_bytes_before_external_join > 0 && table_join->getTempDataOnDisk() && GraceHashJoin::isSupported(table_join))
         {
             if (table_join->allowParallelHashJoin())
@@ -1328,6 +1335,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(const Context & context)
     collect_hash_table_stats_during_joins = settings[Setting::collect_hash_table_stats_during_joins];
     max_entries_for_hash_table_stats = context.getServerSettings()[ServerSetting::max_entries_for_hash_table_stats];
     hash_table_key_hash = 0;
+    join_output_key_hash = 0;
     parallel_hash_join_threshold = settings[Setting::parallel_hash_join_threshold];
     min_rows_ratio_for_hash_join_row_store = settings[Setting::min_rows_ratio_for_hash_join_row_store];
 
@@ -1349,6 +1357,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     const JoinSettings & join_settings,
     UInt64 max_threads_,
     UInt64 hash_table_key_hash_,
+    UInt64 join_output_key_hash_,
     UInt64 max_entries_for_hash_table_stats_,
     String initial_query_id_,
     std::chrono::milliseconds lock_acquire_timeout_)
@@ -1358,6 +1367,7 @@ JoinAlgorithmParams::JoinAlgorithmParams(
     collect_hash_table_stats_during_joins = join_settings.collect_hash_table_stats_during_joins;
     max_entries_for_hash_table_stats = max_entries_for_hash_table_stats_;
     hash_table_key_hash = hash_table_key_hash_;
+    join_output_key_hash = join_output_key_hash_;
     parallel_hash_join_threshold = join_settings.parallel_hash_join_threshold;
     min_rows_ratio_for_hash_join_row_store = join_settings.min_rows_ratio_for_hash_join_row_store;
 

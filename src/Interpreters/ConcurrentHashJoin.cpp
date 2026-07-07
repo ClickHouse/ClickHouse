@@ -74,9 +74,20 @@ namespace
 
 using BlockHashes = std::vector<UInt64>;
 
-void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & params)
+void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams & build_params, const DB::StatsCollectingParams & match_params)
 {
-    if (!params.isCollectionAndUseEnabled())
+    if (match_params.isCollectionAndUseEnabled())
+    {
+        const auto ht_matches = std::accumulate(
+            hash_joins.begin(),
+            hash_joins.end(),
+            0ull,
+            [](auto acc, const auto & hash_join) { return acc + hash_join->data->getHashTableMatches(); });
+        if (ht_matches)
+            DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = ht_matches}, match_params);
+    }
+
+    if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
         return;
 
     const auto ht_size = hash_joins.at(0)->data->getTotalRowCount();
@@ -89,7 +100,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
         0ull,
         [](auto acc, const auto & hash_join) { return acc + hash_join->data->getJoinedData()->rows_to_join; });
     if (ht_size)
-        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, params);
+        DB::getHashTablesStatistics<DB::HashJoinEntry>().update({.ht_size = ht_size, .source_rows = source_rows}, build_params);
 }
 
 UInt32 toPowerOfTwo(UInt32 x)
@@ -107,11 +118,11 @@ HashJoin::RightTableDataPtr getData(const std::shared_ptr<ConcurrentHashJoin::In
 void reserveSpaceInHashMaps(
     HashJoin & hash_join,
     size_t ind,
-    const StatsCollectingParams & stats_collecting_params,
+    const StatsCollectingParams & build_stats_collecting_params,
     size_t slots,
     size_t external_join_threshold)
 {
-    if (auto hint = getSizeHint(stats_collecting_params))
+    if (auto hint = getSizeHint(build_stats_collecting_params))
     {
         /// Hash map is shared between all `HashJoin` instances, so the `median_size` is actually the total size
         /// we need to preallocate in all buckets of all hash maps.
@@ -182,7 +193,7 @@ ConcurrentHashJoin::ConcurrentHashJoin(
     std::shared_ptr<TableJoin> table_join_,
     size_t slots_,
     SharedHeader right_sample_block,
-    const StatsCollectingParams & stats_collecting_params_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
     bool any_take_last_row_,
     size_t external_join_threshold_)
     : table_join(table_join_)
@@ -247,10 +258,13 @@ ConcurrentHashJoin::~ConcurrentHashJoin()
 {
     try
     {
-        if (!build_phase_finished || !hash_joins[0]->data->twoLevelMapIsUsed())
+        if (!build_phase_finished)
             return;
 
-        updateStatistics(hash_joins, stats_collecting_params);
+        updateStatistics(hash_joins, stats_collecting_params.build, stats_collecting_params.match);
+
+        if (!hash_joins[0]->data->twoLevelMapIsUsed())
+            return;
 
         for (size_t i = 0; i < slots; ++i)
         {
@@ -336,7 +350,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
 
                 if (!hash_join->space_was_preallocated && hash_join->data->twoLevelMapIsUsed())
                 {
-                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params, slots, external_join_threshold);
+                    reserveSpaceInHashMaps(*hash_join->data, i, stats_collecting_params.build, slots, external_join_threshold);
                     hash_join->space_was_preallocated = true;
                 }
 

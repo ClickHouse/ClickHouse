@@ -10,7 +10,7 @@ namespace DB
 JoinSwitcher::JoinSwitcher(
     std::shared_ptr<TableJoin> table_join_,
     SharedHeader right_sample_block_,
-    const StatsCollectingParams & stats_collecting_params_)
+    const HashJoinStatsCollectingParams & stats_collecting_params_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)

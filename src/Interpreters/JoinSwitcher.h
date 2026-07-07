@@ -20,7 +20,7 @@ public:
     JoinSwitcher(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     std::string getName() const override { return "JoinSwitcher"; }
     const TableJoin & getTableJoin() const override { return *table_join; }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <optional>
@@ -116,7 +117,7 @@ public:
         size_t reserve_num_ = 0,
         const String & instance_id_ = "",
         bool is_concurrent_hash_join_ = false,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     ~HashJoin() override;
 
@@ -550,6 +551,8 @@ public:
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
+    size_t getHashTableMatches() const { return hash_table_matches.load(std::memory_order_relaxed); }
+
 private:
     friend class NotJoinedHash;
     friend class JoinSource;
@@ -626,8 +629,11 @@ private:
     /// Track if shared runtime filters were already published to keep publication one-shot.
     bool shared_runtime_filters_publish_attempted = false;
 
-    const StatsCollectingParams stats_collecting_params;
+    const HashJoinStatsCollectingParams stats_collecting_params;
     bool build_phase_finished = false;
+
+    /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
+    mutable std::atomic<size_t> hash_table_matches{0};
 
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
@@ -654,6 +660,8 @@ private:
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
+
+    void addHashTableMatches(size_t rows) const { hash_table_matches.fetch_add(rows, std::memory_order_relaxed); }
 
     bool isRightTableRerangeEnabled() const;
     bool rightTableCanBeReranged() const;

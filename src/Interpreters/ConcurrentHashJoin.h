@@ -48,7 +48,7 @@ public:
         std::shared_ptr<TableJoin> table_join_,
         size_t slots_,
         SharedHeader right_sample_block,
-        const StatsCollectingParams & stats_collecting_params_,
+        const HashJoinStatsCollectingParams & stats_collecting_params_,
         bool any_take_last_row_ = false,
         size_t external_join_threshold_ = 0);
 
@@ -128,7 +128,7 @@ private:
     bool build_phase_finished = false;
     std::once_flag row_store_init_flag;
 
-    StatsCollectingParams stats_collecting_params;
+    HashJoinStatsCollectingParams stats_collecting_params;
     const size_t external_join_threshold;
 
     std::mutex totals_mutex;

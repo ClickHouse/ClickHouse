@@ -246,6 +246,7 @@ struct JoinAlgorithmParams
     bool join_any_take_last_row;
 
     UInt64 hash_table_key_hash;
+    UInt64 join_output_key_hash;
     bool collect_hash_table_stats_during_joins;
     UInt64 max_entries_for_hash_table_stats;
 
@@ -273,6 +274,7 @@ struct JoinAlgorithmParams
         const JoinSettings & join_settings,
         UInt64 max_threads_,
         UInt64 hash_table_key_hash_,
+        UInt64 join_output_key_hash_,
         UInt64 max_entries_for_hash_table_stats_,
         String initial_query_id_,
         std::chrono::milliseconds lock_acquire_timeout_);

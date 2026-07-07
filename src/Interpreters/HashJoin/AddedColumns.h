@@ -50,6 +50,7 @@ struct LazyOutput
     /// ASOF matches are inline encoded RowRef words too (the leaf of the sorted lookup vector).
     PaddedPODArray<UInt64> row_refs;
     size_t row_count = 0;   /// Total number of rows in all refs and ref lists
+    size_t hash_table_matches = 0; /// Total number of hash table matches
 
     /// Resolves RowRef::block_no at emit time; points into the join's StoredColumnsIndex,
     /// which is immutable once the build phase is finished. Used by the cold paths
@@ -90,7 +91,9 @@ struct LazyOutput
     {
         chassert(ref_word != 0);
         row_refs.emplace_back(ref_word);
-        row_count += refWordRows(ref_word);
+        const auto rows = refWordRows(ref_word);
+        row_count += rows;
+        hash_table_matches += rows;
     }
 
     void addDefault()

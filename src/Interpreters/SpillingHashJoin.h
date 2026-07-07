@@ -54,7 +54,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
-        const StatsCollectingParams & stats_collecting_params_ = {});
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     /// Concurrent mode: wraps a ConcurrentHashJoin.
     SpillingHashJoin(
@@ -65,7 +65,7 @@ public:
         size_t initial_num_buckets_,
         size_t max_num_buckets_,
         size_t concurrent_slots_,
-        const StatsCollectingParams & stats_collecting_params_);
+        const HashJoinStatsCollectingParams & stats_collecting_params_ = {});
 
     ~SpillingHashJoin() override;
 

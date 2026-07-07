@@ -178,6 +178,9 @@ public:
     UInt64 getRightHashTableCacheKey() const { return right_hash_table_cache_key; }
     void setRightHashTableCacheKey(UInt64 right_hash_table_cache_key_) { right_hash_table_cache_key = right_hash_table_cache_key_; }
 
+    UInt64 getJoinOutputCacheKey() const { return join_output_cache_key; }
+    void setJoinOutputCacheKey(UInt64 join_output_cache_key_) { join_output_cache_key = join_output_cache_key_; }
+
 protected:
     SharedHeader calculateOutputHeader(const NameSet & required_output_columns_set) const;
     void updateOutputHeader() override;
@@ -205,6 +208,7 @@ protected:
     std::optional<UInt64> right_rows_estimation = {};
     std::unordered_map<String, ColumnStats> result_column_stats = {};
     UInt64 right_hash_table_cache_key = 0;
+    UInt64 join_output_cache_key = 0;
 
     String left_table_label;
     String right_table_label;

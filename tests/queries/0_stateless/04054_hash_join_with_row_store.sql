@@ -67,6 +67,35 @@ WHERE event_date >= yesterday() AND query_id IN (
     SELECT query_id FROM system.query_log
     WHERE current_database = currentDatabase() AND log_comment = 'rs_disabled_by_planner' AND type = 'QueryFinish');
 
+SELECT '--- Hash table matches feedback loop test ---';
+
+-- Collect the number of hash table matches and feed it back into the row store decision on a following run.
+SET collect_hash_table_stats_during_joins = 1;
+
+-- The stat hints over-estimate the join output, so the first run enables the row store and records the actual number of matches. 
+-- The second run uses the observed match count instead of the estimate and disables the row store.
+SET param__internal_join_table_stat_hints = '{"left": {"cardinality": 1000000, "distinct_keys": {"k": 1}}, "right": {"cardinality": 100, "distinct_keys": {"k": 1}}}';
+
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS log_comment = 'rs_collect_runtime_stats';
+
+SELECT * FROM left l INNER JOIN right r ON l.k = r.k FORMAT Null
+SETTINGS log_comment = 'rs_disabed_by_runtime_stats';
+
+SYSTEM FLUSH LOGS text_log, query_log;
+
+SELECT 'rs_collect_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_collect_runtime_stats' AND type = 'QueryFinish');
+
+SELECT 'rs_disabed_by_runtime_stats', countIf(message LIKE 'Initialized Row store%') > 0
+FROM system.text_log
+WHERE event_date >= yesterday() AND query_id IN (
+    SELECT query_id FROM system.query_log
+    WHERE current_database = currentDatabase() AND log_comment = 'rs_disabed_by_runtime_stats' AND type = 'QueryFinish');
+
 -- Keep the row store enabled regardless of cardinality estimates.
 SET min_rows_ratio_for_hash_join_row_store = 0;
 
