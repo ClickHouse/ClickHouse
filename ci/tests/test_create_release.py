@@ -414,6 +414,95 @@ def test_prepare_recovers_from_tag(tmp_path):
     assert info["create_new_release"] is False
 
 
+def test_prepare_recovers_already_released_commit(tmp_path):
+    """A rerun that keeps the original commit SHA degrades to recovery.
+
+    ``auto_releases.yml`` dispatches ``ref=<commit_sha>``, and GitHub's "Re-run
+    failed jobs" replays the release matrix with that same SHA (AutoReleaseInfo
+    is not recomputed) even after the first attempt already pushed the release
+    tag. With no *newer* release tag on the branch this is not out-of-order:
+    the tag at this commit is this run's own tag, so ``prepare`` must recover
+    (``create_new_release=false``) rather than re-enter the creation/merge path.
+    """
+    pytest.importorskip("boto3")  # create_release.py imports s3_helper -> boto3
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def git(*args):
+        subprocess.run(
+            ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+        )
+
+    git("init", "-q", "-b", "26.6")
+    git("config", "user.email", "robot@clickhouse.com")
+    git("config", "user.name", "robot-clickhouse")
+    git("config", "commit.gpgsign", "false")
+    git("config", "tag.gpgsign", "false")
+
+    (repo / "cmake").mkdir()
+    (repo / _VERSIONS_FILE).write_text(_VERSIONS_CONTENT, encoding="utf-8")
+    (repo / "src" / "Storages" / "System").mkdir(parents=True)
+    (repo / _CONTRIBUTORS_FILE).write_text(
+        "const char * auto_contributors[] {\n    nullptr};\n", encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Base release commit")
+    # The release for this commit was already created (tagged) on a previous
+    # attempt; the rerun dispatches the SAME raw SHA, not the tag name.
+    commit_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    git("tag", "-a", "v26.6.2.1-stable", "-m", "Release v26.6.2.1-stable")
+    git("remote", "add", "origin", str(repo))
+    git("fetch", "-q", "origin")
+
+    os.symlink(os.path.join(REPO_ROOT, "ci"), repo / "ci")
+    os.symlink(os.path.join(REPO_ROOT, "tests"), repo / "tests")
+    script = str(repo / "ci" / "jobs" / "create_release.py")
+
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    gh_stub = bindir / "gh"
+    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONPATH": REPO_ROOT,
+        "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
+        "GITHUB_REPOSITORY": "test/clickhouse",
+    }
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            script,
+            "--prepare-release-info",
+            "--ref",
+            commit_sha,  # raw SHA of an already-released commit (the rerun case)
+            "--release-type",
+            "patch",
+            "--dry-run",
+        ],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        f"rerun recovery prepare failed (rc={result.returncode})\n"
+        f"--- stdout ---\n{result.stdout}\n--- stderr ---\n{result.stderr}"
+    )
+    with open("/tmp/release_info.json", encoding="utf-8") as f:
+        info = json.load(f)
+    assert info["release_tag"] == "v26.6.2.1-stable"
+    assert info["create_new_release"] is False
+
+
 def test_prepare_refuses_out_of_order_commit(tmp_path):
     """A commit ref that is behind the latest release tag must fail.
 

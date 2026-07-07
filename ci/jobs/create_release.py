@@ -310,37 +310,48 @@ class ReleaseInfo:
         # release re-applies them; recovering a superseded one does not).
         self.is_branch_release = not version.has_newer_release_tag()
 
-        # The operation is decided by the KIND of ref:
-        #   * a release tag re-publishes (recovers) exactly that release;
-        #   * a branch creates the next release from its tip;
-        #   * a bare commit SHA creates a release from that commit, but only if it
-        #     is strictly after the branch's latest release tag (else it is stale /
-        #     out of order). A branch tip is always the newest commit, so the
-        #     out-of-order check applies only to a raw SHA.
-        recover = Git.tag_exists(commit_ref)
-        if recover:
+        # The operation is decided from the ref and the branch's release tags:
+        #   * ref is an existing release tag -> recovery: re-publish exactly that
+        #     release (allowed even for a superseded one);
+        #   * ref is a branch/commit while the branch already has a strictly newer
+        #     release tag -> out-of-order. A branch ref can't reach this (its
+        #     version is always ahead of every tag), so it is a raw SHA pointing
+        #     behind the tip; refuse it;
+        #   * ref is a branch/commit whose own release tag already exists at this
+        #     commit -> recovery: a rerun. auto_releases dispatches ref=<commit_sha>
+        #     and GitHub's "Re-run failed jobs" replays the matrix with that same
+        #     SHA while AutoReleaseInfo is not recomputed, so the tag pushed on the
+        #     first attempt already points here — degrade to recovery instead of
+        #     trying to create (and re-merge) the release a second time;
+        #   * otherwise -> create the next release.
+        #
+        # The stale-SHA and superseded-recovery cases both compute the same
+        # existing release_tag; only the ref KIND distinguishes them, so the tag
+        # ref is checked first and the newer-tag guard runs before the rerun case.
+        if Git.tag_exists(commit_ref):
+            recover = True
             assert release_tag == commit_ref, (
                 f"ref [{commit_ref}] is a release tag but the version at its commit "
                 f"describes [{release_tag}]; refusing to re-publish a different "
                 f"release"
             )
+        elif version.has_newer_release_tag():
+            raise RuntimeError(
+                f"Refusing out-of-order release [{release_tag}] from [{commit_ref}]: "
+                f"branch [{release_branch}] already has a newer release tag. Pass a "
+                f"release tag to recover an existing release, or the branch to "
+                f"release its next commit."
+            )
+        elif Git.tag_exists(release_tag):
+            tagged_sha = Git.get_commit_sha(release_tag)
+            assert tagged_sha == commit_sha, (
+                f"release tag [{release_tag}] already exists at [{tagged_sha}] but "
+                f"this run targets [{commit_sha}]; refusing to re-publish a "
+                f"different commit"
+            )
+            recover = True
         else:
-            if not Git.branch_exists(commit_ref):
-                latest_tag = version.latest_release_tag()
-                if latest_tag:
-                    latest_sha = Git.get_commit_sha(latest_tag)
-                    strictly_after = commit_sha != latest_sha and Shell.check(
-                        f"git merge-base --is-ancestor {latest_sha} {commit_sha}",
-                        verbose=True,
-                    )
-                    if not strictly_after:
-                        raise RuntimeError(
-                            f"Refusing out-of-order release from [{commit_ref}]: it "
-                            f"is not after the latest release tag [{latest_tag}] on "
-                            f"branch [{release_branch}]. Pass the tag to recover an "
-                            f"existing release, or the branch to release the next "
-                            f"commit."
-                        )
+            recover = False
         self.create_new_release = not recover
         self.release_type = release_type
         return self
