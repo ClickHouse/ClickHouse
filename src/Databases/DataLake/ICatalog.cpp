@@ -305,6 +305,7 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
+    changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
 }

@@ -3,6 +3,7 @@
 #include <Poco/Net/HTTPRequest.h>
 #include <Common/Exception.h>
 #include <Common/RemoteHostFilter.h>
+#include <Common/config_version.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
@@ -22,6 +23,7 @@
 #include <Common/threadPoolCallbackRunner.h>
 #include <Common/Base64.h>
 #include <Common/checkStackSize.h>
+#include <Common/HTTPHeaderFilter.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/GCPOAuth.h>
@@ -55,6 +57,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace DB::Setting
@@ -186,6 +189,14 @@ RestCatalog::RestCatalog(
     else if (!auth_header_.empty())
     {
         auth_header = parseAuthHeader(auth_header_);
+        /// `registerDatabaseDataLake` validates `auth_header` on CREATE only, so that a database
+        /// persisted with a forbidden or malformed header does not block server startup on ATTACH.
+        /// The catalog is built lazily on first use instead; this is where the user-provided
+        /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
+        /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
+        /// validated and the original parsed header is kept.
+        DB::HTTPHeaderEntries header_to_check{auth_header.value()};
+        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
     }
     config = loadConfig();
 }
@@ -265,13 +276,15 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(bool update_token) const
     /// https://github.com/apache/iceberg/blob/3badfe0c1fcf0c0adfc7aa4a10f0b50365c48cf9/open-api/rest-catalog-open-api.yaml#L3498C5-L3498C34
     if (!client_id.empty())
     {
-        if (!access_token.has_value() || update_token)
+        auto current = access_token.get();
+        if (!current || update_token)
         {
-            access_token = retrieveAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token.value().token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
         return headers;
     }
     return {};
@@ -296,9 +309,16 @@ OneLakeCatalog::OneLakeCatalog(
     // Get token before loading config so getAuthHeaders() can work
     if (!client_id.empty() && !client_secret.empty())
     {
-        access_token = retrieveAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveAccessToken()));
     }
     config = loadConfig();
+}
+
+DB::HTTPHeaderEntries OneLakeCatalog::getAuthHeaders(bool update_token) const
+{
+    auto headers = RestCatalog::getAuthHeaders(update_token);
+    headers.emplace_back("User-Agent", fmt::format("ClickHouse/{}{} OneLake-Catalog", VERSION_STRING, VERSION_OFFICIAL));
+    return headers;
 }
 
 AccessToken RestCatalog::retrieveAccessToken() const
@@ -398,7 +418,8 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -407,12 +428,13 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        access_token = retrieveGoogleCloudAccessToken();
+        access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
     config = loadConfig();
 }
@@ -425,13 +447,15 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(bool update_token) const
     /// https://developers.google.com/identity/protocols/oauth2
     if (!google_project_id.empty() || !google_adc_client_id.empty())
     {
-        if (!access_token.has_value() || update_token || access_token->isExpired())
+        auto current = access_token.get();
+        if (!current || update_token || current->isExpired())
         {
-            access_token = retrieveGoogleCloudAccessToken();
+            access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
+            current = access_token.get();
         }
 
         DB::HTTPHeaderEntries headers;
-        headers.emplace_back("Authorization", "Bearer " + access_token->token);
+        headers.emplace_back("Authorization", "Bearer " + current->token);
 
         std::string project_id = google_project_id;
         if (project_id.empty() && !google_adc_quota_project_id.empty())
@@ -469,23 +493,29 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
-    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-    {
-        try
-        {
-            return retrieveGoogleCloudAccessTokenFromRefreshToken();
-        }
-        catch (const DB::Exception & e)
-        {
-            LOG_DEBUG(log, "Failed to use ADC credentials, falling back to metadata service: {}", e.what());
-        }
-    }
+    const auto & context = getContext();
 
-    /// Fallback to GCP metadata service (works inside GCP infrastructure)
+    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
+    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
+    /// mint a token with the server's own identity.
+    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+        return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
+    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
+    /// unless that was allowed when the database was created. The context here is the global one, whose live
+    /// setting never reflects the creating session, so pass the value captured at CREATE time.
+    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
+            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
+            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
+            "`s3_allow_server_credentials_in_user_queries`.");
+
+    /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
-
-    const auto & context = getContext();
 
     const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
     if (allowed_metadata_hosts.empty())
@@ -624,19 +654,23 @@ DB::ReadWriteBufferFromHTTPPtr RestCatalog::createReadBuffer(
 
 bool RestCatalog::empty() const
 {
-    /// TODO: add a test with empty namespaces and zero namespaces.
     bool found_table = false;
     auto stop_condition = [&](const std::string & namespace_name) -> bool
     {
+        if (found_table)
+            return true;
+
         const auto tables = getTables(namespace_name, /* limit */1);
-        found_table = !tables.empty();
+        if (!tables.empty())
+            found_table = true;
+
         return found_table;
     };
 
     Namespaces namespaces;
     getNamespacesRecursive("", namespaces, stop_condition, /* execute_func */{});
 
-    return found_table;
+    return !found_table;
 }
 
 DB::Names RestCatalog::getTables() const

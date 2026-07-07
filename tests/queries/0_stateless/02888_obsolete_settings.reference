@@ -1,4 +1,5 @@
 -- Obsolete server settings
+allow_experimental_webterminal
 allow_impersonate_user
 storage_metadata_write_full_object_key
 -- Obsolete general settings

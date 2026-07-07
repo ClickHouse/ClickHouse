@@ -1,13 +1,17 @@
 #include <LocalServer.h>
 
 #include <sys/resource.h>
+#include <exception>
 #include <Common/Config/getLocalConfigPath.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/PerCPUMemory.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
+#include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <base/getMemoryAmount.h>
+#include <base/safeExit.h>
 #include <Poco/Util/XMLConfiguration.h>
 #include <Poco/String.h>
 #include <Poco/Logger.h>
@@ -34,10 +38,12 @@
 #include <base/errnoToString.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
+#include <Common/ThreadStackSize.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TLDListsHolder.h>
 #include <Common/quoteString.h>
 #include <Common/ThreadPool.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/Jemalloc.h>
@@ -53,6 +59,8 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -64,6 +72,22 @@
 #include <base/argsToConfig.h>
 #include <filesystem>
 #include <Common/filesystemHelpers.h>
+#include <Common/getMultipleKeysFromConfig.h>
+#include <Common/ProfileEvents.h>
+#include <Interpreters/ServerAsynchronousMetrics.h>
+#include <Server/HTTP/HTTPServer.h>
+#include <Server/HTTPHandlerFactory.h>
+#include <Server/createServer.h>
+#include <Server/socketBindListen.h>
+#include <Server/stopServers.h>
+#include <Server/waitServersToFinish.h>
+#include <Server/TCPHandlerFactory.h>
+#include <Server/TCPServer.h>
+#include <Server/ServerType.h>
+#include <Poco/Net/HTTPServerParams.h>
+#include <Poco/ThreadPool.h>
+
+#include <algorithm>
 
 #include "config.h"
 
@@ -79,13 +103,25 @@ namespace CurrentMetrics
     extern const Metric MemoryTracking;
 }
 
+namespace ProfileEvents
+{
+    extern const Event InterfaceNativeReceiveBytes;
+    extern const Event InterfaceNativeSendBytes;
+    extern const Event InterfaceHTTPReceiveBytes;
+    extern const Event InterfaceHTTPSendBytes;
+}
+
 namespace DB
 {
 
 namespace Setting
 {
     extern const SettingsBool allow_introspection_functions;
+    extern const SettingsSeconds http_receive_timeout;
+    extern const SettingsSeconds http_send_timeout;
     extern const SettingsBool implicit_select;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
 }
 
@@ -108,6 +144,7 @@ namespace ServerSetting
     extern const ServerSettingsString index_uncompressed_cache_policy;
     extern const ServerSettingsUInt64 index_uncompressed_cache_size;
     extern const ServerSettingsDouble index_uncompressed_cache_size_ratio;
+    extern const ServerSettingsUInt64 point_in_polygon_cache_size;
     extern const ServerSettingsString vector_similarity_index_cache_policy;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_size;
     extern const ServerSettingsUInt64 vector_similarity_index_cache_max_entries;
@@ -128,6 +165,9 @@ namespace ServerSetting
     extern const ServerSettingsString mark_cache_policy;
     extern const ServerSettingsUInt64 mark_cache_size;
     extern const ServerSettingsDouble mark_cache_size_ratio;
+    extern const ServerSettingsString unique_key_bitmap_cache_policy;
+    extern const ServerSettingsUInt64 unique_key_bitmap_cache_size_bytes;
+    extern const ServerSettingsDouble unique_key_bitmap_cache_size_ratio;
     extern const ServerSettingsString iceberg_metadata_files_cache_policy;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_size;
     extern const ServerSettingsUInt64 iceberg_metadata_files_cache_max_entries;
@@ -143,9 +183,12 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_parts_cleaning_thread_pool_size;
     extern const ServerSettingsUInt64 max_server_memory_usage;
     extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
+    extern const ServerSettingsUInt64 max_temporary_data_on_disk_size;
     extern const ServerSettingsUInt64 max_thread_pool_free_size;
     extern const ServerSettingsUInt64 max_thread_pool_size;
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
+    extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
+    extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -175,7 +218,19 @@ namespace ServerSetting
     extern const ServerSettingsBool memory_worker_correct_memory_tracker;
     extern const ServerSettingsUInt64 memory_worker_decay_adjustment_period_ms;
     extern const ServerSettingsBool memory_worker_use_cgroup;
+    extern const ServerSettingsDouble memory_worker_rss_speculative_reserve_ratio;
+    extern const ServerSettingsBool memory_worker_dynamic_hard_limit;
     extern const ServerSettingsString allowed_disks_for_table_engines;
+    extern const ServerSettingsUInt32 listen_backlog;
+    extern const ServerSettingsBool listen_try;
+    extern const ServerSettingsInt32 max_connections;
+    extern const ServerSettingsUInt64 max_concurrent_queries;
+    extern const ServerSettingsUInt64 global_profiler_real_time_period_ns;
+    extern const ServerSettingsUInt64 global_profiler_cpu_time_period_ns;
+    extern const ServerSettingsSeconds keep_alive_timeout;
+    extern const ServerSettingsUInt64 max_keep_alive_requests;
+    extern const ServerSettingsBool asynchronous_metrics_enable_heavy_metrics;
+    extern const ServerSettingsUInt32 asynchronous_heavy_metrics_update_period_s;
 }
 
 namespace ErrorCodes
@@ -184,6 +239,39 @@ namespace ErrorCodes
     extern const int CANNOT_LOAD_CONFIG;
     extern const int FILE_ALREADY_EXISTS;
     extern const int INVALID_CONFIG_PARAMETER;
+    extern const int NETWORK_ERROR;
+    extern const int UNSUPPORTED_METHOD;
+}
+
+namespace
+{
+    /// `clickhouse-local` only manages `TCP` (native protocol) and `HTTP` listeners. Reject
+    /// other listener types up-front so `SYSTEM START/STOP LISTEN` for unsupported protocols
+    /// (e.g. `HTTPS`, `MYSQL`, `QUERIES CUSTOM`) gives a clear `UNSUPPORTED_METHOD` exception
+    /// rather than a misleading `NETWORK_ERROR` on start or a silent no-op on stop.
+    ///
+    /// For grouped types (`QUERIES ALL`, `QUERIES DEFAULT`), also reject forms whose `EXCEPT`
+    /// list strips out both `TCP` and `HTTP` — otherwise the operation would silently
+    /// no-op because the only managed protocols are excluded.
+    void validateLocalServerListenType(const ServerType & server_type)
+    {
+        switch (server_type.type)
+        {
+            case ServerType::Type::TCP:
+            case ServerType::Type::HTTP:
+                return;
+            case ServerType::Type::QUERIES_ALL:
+            case ServerType::Type::QUERIES_DEFAULT:
+                if (server_type.shouldStart(ServerType::Type::TCP) || server_type.shouldStart(ServerType::Type::HTTP))
+                    return;
+                [[fallthrough]];
+            default:
+                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                    "SYSTEM START/STOP LISTEN in clickhouse-local supports only TCP and HTTP listeners "
+                    "(or QUERIES ALL / QUERIES DEFAULT covering them); got '{}'",
+                    ServerType::serverTypeToString(server_type.type));
+        }
+    }
 }
 
 namespace
@@ -453,13 +541,24 @@ void LocalServer::tryInitPath()
 
     global_context->setPath(fs::path(path) / "");
 
-    global_context->setTemporaryStoragePath(fs::path(path) / "tmp" / "", 1_GiB);
+    /// clickhouse-local keeps a generous default limit on temporary data to guard against
+    /// runaway queries filling up the disk. It can be raised, or lifted entirely with a value of 0,
+    /// via the `max_temporary_data_on_disk_size` server setting.
+    const auto & max_temporary_data_on_disk_size = server_settings[ServerSetting::max_temporary_data_on_disk_size];
+    global_context->setTemporaryStoragePath(
+        fs::path(path) / "tmp" / "", max_temporary_data_on_disk_size.changed ? max_temporary_data_on_disk_size.value : 1_TiB);
     global_context->setFlagsPath(fs::path(path) / "flags" / "");
 
     global_context->setUserFilesPath(""); /// user's files are everywhere
 
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
+
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
 
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
@@ -473,11 +572,332 @@ void LocalServer::tryInitPath()
 }
 
 
+void LocalServer::stopServers(const ServerType & server_type)
+{
+    validateLocalServerListenType(server_type);
+    DB::stopServers(servers, server_type, &logger());
+}
+
+
+void LocalServer::startServers(const ServerType & server_type)
+{
+    validateLocalServerListenType(server_type);
+
+    const auto & config = getClientConfiguration();
+    const Settings & settings = global_context->getSettingsRef();
+
+    /// The configured `tcp_port` / `http_port` is the port that the listener binds, and `createServer`
+    /// casts it to `UInt16`, so a value outside `0..65535` would silently wrap (`-1` -> `65535`,
+    /// `70000` -> `4464`) and bring the listener up on an unexpected port. `--tcp_port` / `--http_port`
+    /// are already range-checked when parsed, but a value coming from a loaded config file reaches this
+    /// path unchecked, so validate the effective value here for every protocol being started. `0` means
+    /// an OS-assigned port and is allowed.
+    auto validate_port_range = [&](const char * port_name)
+    {
+        if (!config.has(port_name))
+            return;
+        Int64 port = config.getInt64(port_name);
+        if (port < 0 || port > 65535)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} for {}: a port number must be in the range 0..65535 (use 0 for an OS-assigned port)",
+                port, port_name);
+    };
+    if (server_type.shouldStart(ServerType::Type::TCP))
+        validate_port_range("tcp_port");
+    if (server_type.shouldStart(ServerType::Type::HTTP))
+        validate_port_range("http_port");
+
+    /// An explicit `--listen_host` on the command line is a hard override: bind only that single host
+    /// and ignore any `listen_host` entries from a loaded config file. This matters because
+    /// `getMultipleValuesFromConfig` returns the union of repeated `listen_host[...]` keys across all
+    /// configuration layers, so a plain `config.setString("listen_host", ...)` would replace only the
+    /// first entry and leave lower-priority hosts (possibly non-loopback) from the config still bound,
+    /// defeating the documented hardening path.
+    std::vector<std::string> listen_hosts;
+    if (cli_listen_host.has_value())
+        listen_hosts.emplace_back(*cli_listen_host);
+    else
+        listen_hosts = DB::getMultipleValuesFromConfig(config, "", "listen_host");
+
+    const bool hosts_explicitly_configured = !listen_hosts.empty();
+    if (listen_hosts.empty())
+    {
+        listen_hosts.emplace_back("::1");
+        listen_hosts.emplace_back("127.0.0.1");
+    }
+
+    /// Mirror `clickhouse-server`'s `getListenTry`: honor an explicit `listen_try` server setting,
+    /// and otherwise fall back to `listen_try=true` only when the user has not named any host
+    /// explicitly (so the implicit `::1` + `127.0.0.1` defaults don't fail on a host without
+    /// IPv6). When the user names hosts explicitly with `listen_try=0`, surface bind failures.
+    bool listen_try = server_settings[ServerSetting::listen_try];
+    if (!listen_try)
+        listen_try = !hosts_explicitly_configured;
+
+    /// `getServerPort` stores a single value per `port_name`, so an OS-assigned ephemeral
+    /// port (`port=0`) combined with multiple `listen_host` values would produce an
+    /// ambiguous mapping: each host would bind to a different ephemeral port and the last
+    /// `registerServerPort` call would silently overwrite the others. Reject this combination
+    /// up-front so the user picks an explicit `listen_host` when relying on `port=0`.
+    if (listen_hosts.size() > 1)
+    {
+        auto port_is_zero = [&](const char * port_name)
+        {
+            return config.has(port_name) && config.getInt(port_name) == 0;
+        };
+        if ((server_type.shouldStart(ServerType::Type::TCP) && port_is_zero("tcp_port"))
+            || (server_type.shouldStart(ServerType::Type::HTTP) && port_is_zero("http_port")))
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Using port 0 (OS-assigned) with multiple listen_host values is not supported in clickhouse-local "
+                "because the port registry stores a single value per port_name. "
+                "Specify exactly one --listen_host when using --tcp_port 0 or --http_port 0.");
+        }
+    }
+
+    /// Size the connection pool from the same server settings as `Server::main` so that a
+    /// `SYSTEM START LISTEN` in `clickhouse-local` honors `max_connections` (and the global
+    /// profiler periods) instead of a hard-coded limit.
+    if (!server_pool)
+        server_pool = std::make_unique<Poco::ThreadPool>(
+            /* minCapacity */ 3,
+            /* maxCapacity */ server_settings[ServerSetting::max_connections],
+            /* idleTime */ 60,
+            /* stackSize */ DEFAULT_THREAD_STACK_SIZE ? static_cast<int>(DEFAULT_THREAD_STACK_SIZE) : POCO_THREAD_STACK_SIZE,
+            server_settings[ServerSetting::global_profiler_real_time_period_ns],
+            server_settings[ServerSetting::global_profiler_cpu_time_period_ns]);
+
+    if (!async_metrics)
+    {
+        auto metrics_func = [this]() -> std::vector<ProtocolServerMetrics>
+        {
+            std::vector<ProtocolServerMetrics> result;
+            std::lock_guard lock(servers_lock);
+            result.reserve(servers.size());
+            for (const auto & server : servers)
+                result.emplace_back(ProtocolServerMetrics{server.getPortName(), server.currentConnections(), 0});
+            return result;
+        };
+        /// Note: we intentionally don't call `start` on it, to avoid an extra background thread
+        /// in clickhouse-local. The object only satisfies the dependency of `createHandlerFactory`.
+        async_metrics = std::make_unique<ServerAsynchronousMetrics>(
+            global_context,
+            /* update_period_seconds= */ 60,
+            /* update_heavy_metrics_= */ false,
+            /* heavy_metrics_update_period_seconds= */ 120,
+            metrics_func,
+            /* update_jemalloc_epoch_= */ false,
+            /* update_rss_= */ false
+        );
+    }
+
+    Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
+    http_params->setTimeout(settings[Setting::http_receive_timeout]);
+    http_params->setKeepAliveTimeout(global_context->getServerSettings()[ServerSetting::keep_alive_timeout]);
+    http_params->setMaxKeepAliveRequests(static_cast<int>(global_context->getServerSettings()[ServerSetting::max_keep_alive_requests]));
+    http_params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+
+    /// Treat a repeated SYSTEM START LISTEN as a no-op when a matching listener is already active,
+    /// matching `clickhouse-server` behavior. We verify success per requested protocol below so a
+    /// partial start (e.g. TCP already running while HTTP fails on every `listen_host` under
+    /// `listen_try`) is reported instead of silently masked by an active sibling listener.
+    auto has_active_listener = [&](const char * port_name)
+    {
+        return std::any_of(servers.begin(), servers.end(),
+            [port_name](const ProtocolServerAdapter & s)
+            {
+                return !s.isStopping() && s.getPortName() == port_name;
+            });
+    };
+
+    /// Start listeners as an all-or-nothing operation in two phases, so a failure can never leave a
+    /// half-open set of listeners — or, worse, an already-admitted external session — behind.
+    ///
+    /// Phase 1 binds every requested `listen_host` x protocol socket but does NOT start its accept
+    /// thread (`start_server=false`): each socket is bound and listening at the kernel level, yet no
+    /// connection is ever handed to a handler. Only once every requested protocol is confirmed bound
+    /// (the per-protocol verification below) does phase 2 start the accept threads. This closes the
+    /// window where an earlier listener could accept a connection and begin executing a query while a
+    /// later bind in the same call is still pending: under the default unauthenticated local users
+    /// setup, a rejected `SYSTEM START LISTEN` must not leave any external session running.
+    ///
+    /// On any failure (a bind in phase 1, the verification, or a `start` in phase 2) the listeners
+    /// appended by this call are rolled back; in the common case none has begun accepting, so
+    /// destroying them simply closes the bound sockets (a connection still queued in the kernel
+    /// backlog is reset, never served). Listeners from earlier successful `SYSTEM START LISTEN` calls
+    /// are left untouched.
+    ///
+    /// `Context::server_ports` (read by the `getServerPort` SQL function and the `tcp_port` /
+    /// `http_port` lookups) must stay consistent with the all-or-nothing listener state, so port
+    /// registration is deferred until after phase 2. Otherwise a rolled-back bind would leave the
+    /// registry pointing at a port whose listener was just closed.
+    const size_t servers_started_before = servers.size();
+    std::vector<std::pair<const char *, UInt16>> ports_to_register;
+    try
+    {
+        for (const auto & listen_host : listen_hosts)
+        {
+            if (server_type.shouldStart(ServerType::Type::TCP))
+            {
+                const char * port_name = "tcp_port";
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                    socket.setReceiveTimeout(settings[Setting::receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::send_timeout]);
+
+                    Poco::Net::TCPServerParams::Ptr params = new Poco::Net::TCPServerParams();
+                    params->setMaxQueued(server_settings[ServerSetting::listen_backlog]);
+
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "native protocol (tcp): " + address.toString(),
+                        std::make_unique<TCPServer>(
+                            new TCPHandlerFactory(*this, /* secure= */ false, /* parse_proxy_protocol_= */ false,
+                                ProfileEvents::InterfaceNativeReceiveBytes, ProfileEvents::InterfaceNativeSendBytes),
+                            *server_pool,
+                            socket,
+                            params));
+                }, &logger()))
+                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+            }
+
+            if (server_type.shouldStart(ServerType::Type::HTTP))
+            {
+                const char * port_name = "http_port";
+                if (DB::createServer(config, listen_host, port_name, listen_try, /* start_server= */ false, servers, [&](UInt16 port) -> ProtocolServerAdapter
+                {
+                    Poco::Net::ServerSocket socket;
+                    auto address = socketBindListen(server_settings, socket, listen_host, port, &logger());
+                    socket.setReceiveTimeout(settings[Setting::http_receive_timeout]);
+                    socket.setSendTimeout(settings[Setting::http_send_timeout]);
+
+                    return ProtocolServerAdapter(
+                        listen_host,
+                        port_name,
+                        "http://" + address.toString(),
+                        std::make_unique<HTTPServer>(
+                            std::make_shared<HTTPContext>(global_context),
+                            createHandlerFactory(*this, config, *async_metrics, "HTTPHandler-factory"),
+                            *server_pool,
+                            socket,
+                            http_params,
+                            /* connection_filter= */ nullptr,
+                            ProfileEvents::InterfaceHTTPReceiveBytes,
+                            ProfileEvents::InterfaceHTTPSendBytes));
+                }, &logger()))
+                    ports_to_register.emplace_back(port_name, servers.back().portNumber());
+            }
+        }
+
+        /// Verify each requested protocol independently so grouped types (`QUERIES ALL` / `QUERIES DEFAULT`)
+        /// don't silently accept a partial start when one protocol fails on every `listen_host`.
+        if (server_type.shouldStart(ServerType::Type::TCP) && !has_active_listener("tcp_port"))
+            throw Exception(ErrorCodes::NETWORK_ERROR,
+                "Failed to start TCP listener — check listen_host and tcp_port configuration");
+        if (server_type.shouldStart(ServerType::Type::HTTP) && !has_active_listener("http_port"))
+            throw Exception(ErrorCodes::NETWORK_ERROR,
+                "Failed to start HTTP listener — check listen_host and http_port configuration");
+
+        /// Phase 2: the whole requested set is bound and verified. Only now start the accept threads,
+        /// so no listener admits a connection until the entire set is known-good. `createServer` no
+        /// longer logs (it does not start the server), so emit the "Listening for ..." line here.
+        for (size_t i = servers_started_before; i < servers.size(); ++i)
+        {
+            servers[i].start();
+            LOG_INFO(&logger(), "Listening for {}", servers[i].getDescription());
+        }
+    }
+    catch (...)
+    {
+        /// Roll back every listener appended by this call so a reported failure never leaves a port
+        /// accepting new connections. The caller (`SYSTEM START LISTEN` handler) already holds
+        /// `servers_lock` for the whole `startServers` call, so we must not re-acquire it here (the
+        /// mutex is not recursive), and we must not call `waitServersToFinish` (it takes the lock and
+        /// would also stop listeners from earlier successful calls).
+        ///
+        /// In the common failure path (a bind in phase 1, or the verification) none of the appended
+        /// adapters has started accepting, so `currentConnections()` is 0 for every one and the erase
+        /// loop drops them all — no external connection was ever admitted. The stop/erase shape below
+        /// is still the correct general rule for the rare case where a `start` itself throws in phase 2
+        /// after some accept threads are already live: `stop` only prevents new connections, and an
+        /// accept thread that already handed a connection to a handler still references the underlying
+        /// `TCPServer`, so destroying that adapter would be a use-after-free. Mirror the normal
+        /// `stopServers` lifetime rule: stop every appended adapter, then erase only those with no
+        /// active connections. Any still-busy adapter stays in `servers` (already stopped, so it
+        /// accepts nothing new and is not reported as an active listener); it is drained and destroyed
+        /// by `cleanup` at teardown.
+        for (size_t i = servers_started_before; i < servers.size(); ++i)
+            if (!servers[i].isStopping())
+                servers[i].stop();
+
+        for (size_t i = servers.size(); i > servers_started_before; --i)
+            if (!servers[i - 1].currentConnections())
+                servers.erase(servers.begin() + (i - 1));
+
+        throw;
+    }
+
+    /// All requested listeners are bound, verified, and now started — publish their ports, so the
+    /// registry is only ever updated for a fully successful (and therefore non-rolled-back) start.
+    for (const auto & [port_name, port] : ports_to_register)
+        global_context->registerServerPort(port_name, port);
+}
+
+
 void LocalServer::cleanup()
 {
     try
     {
         connection.reset();
+
+        /// Signal cancellation so that active handlers (e.g. TCPHandler)
+        /// exit their receive loops promptly instead of waiting for socket timeout.
+        is_cancelled = true;
+
+        /// Stop protocol servers before shutting down context.
+        {
+            std::lock_guard lock(servers_lock);
+            for (auto & server : servers)
+                if (!server.isStopping())
+                    server.stop();
+        }
+
+        /// Wait for active connections to drain (up to 5 seconds),
+        /// mirroring the shutdown sequence in Server.cpp.
+        constexpr size_t shutdown_wait_seconds = 5;
+        size_t current_connections = waitServersToFinish(servers, servers_lock, shutdown_wait_seconds);
+
+        if (current_connections)
+        {
+            /// There is no better way to force connections to close in Poco. If we tried
+            /// `server_pool->joinAll`, connection handlers would keep the threads busy and
+            /// shutdown would be unbounded. Mirror `Server::main`: log and force-exit.
+            LOG_WARNING(&logger(), "Closed connections. But {} remain.", current_connections);
+            LOG_WARNING(&logger(), "Will shutdown forcefully.");
+            /// `cleanup` can run from `SCOPE_EXIT` in `main` while the stack is unwinding from a
+            /// failed query. Force-exiting here bypasses the surrounding `catch`, so preserve a
+            /// nonzero status in that case instead of always reporting success.
+            safeExit(std::uncaught_exceptions() ? 1 : 0);
+        }
+
+        /// Join the server thread pool to avoid use-after-free of destroyed context in handlers.
+        if (server_pool)
+            server_pool->joinAll();
+
+        {
+            std::lock_guard lock(servers_lock);
+            servers.clear();
+        }
+
+        if (async_metrics)
+        {
+            async_metrics->stop();
+            async_metrics.reset();
+        }
 
         /// Stop the memory worker before shutting down context, as it references the page cache.
         memory_worker.reset();
@@ -751,7 +1171,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {
@@ -896,8 +1322,11 @@ void LocalServer::processConfig()
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent queries, override max_concurrent_queries.
-    global_context->getProcessList().setMaxSize(0);
+    /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server
+    /// via `SYSTEM START LISTEN` it accepts external connections and must honor the configured
+    /// limit just like `clickhouse-server`. Take it from `max_concurrent_queries`, whose default
+    /// of 0 preserves the historical "no limit" behavior for ordinary local usage.
+    global_context->getProcessList().setMaxSize(server_settings[ServerSetting::max_concurrent_queries]);
 
     size_t max_server_memory_usage = server_settings[ServerSetting::max_server_memory_usage];
     const double max_server_memory_usage_to_ram_ratio = server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio];
@@ -924,12 +1353,17 @@ void LocalServer::processConfig()
                  max_server_memory_usage_to_ram_ratio);
     }
 
-    total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+    /// The hard limit is installed atomically by `MemoryWorker::setDynamicHardLimitSettings`
+    /// below, under the same mutex that the worker tick uses, to keep config reload and
+    /// dynamic adjustment from racing. Setting it here too would just overwrite the same value.
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+    per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
+    per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
 
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
     size_t page_cache_max_size = server_settings[ServerSetting::page_cache_max_size];
@@ -967,8 +1401,23 @@ void LocalServer::processConfig()
             .correct_tracker = server_settings[ServerSetting::memory_worker_correct_memory_tracker],
             .decay_adjustment_period_ms = server_settings[ServerSetting::memory_worker_decay_adjustment_period_ms],
             .use_cgroup = server_settings[ServerSetting::memory_worker_use_cgroup],
+            .rss_speculative_reserve_ratio = server_settings[ServerSetting::memory_worker_rss_speculative_reserve_ratio],
+            .dynamic_hard_limit_ratio = server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? static_cast<double>(server_settings[ServerSetting::max_server_memory_usage_to_ram_ratio])
+                : 0.0,
         };
         memory_worker.emplace(memory_worker_config, global_context->getPageCache());
+        /// Inform `MemoryWorker` of the configured ceiling and the ratio so its dynamic
+        /// adjustment (which only sees `MemAvailable` or cgroup memory) cannot exceed
+        /// the explicit `max_server_memory_usage`. `clickhouse-local` does not currently
+        /// support config reload, so the ratio is set once here. The call also installs
+        /// `max_server_memory_usage` as the new hard limit atomically with the settings
+        /// update.
+        memory_worker->setDynamicHardLimitSettings(
+            static_cast<Int64>(max_server_memory_usage),
+            server_settings[ServerSetting::memory_worker_dynamic_hard_limit]
+                ? max_server_memory_usage_to_ram_ratio
+                : 0.0);
         memory_worker->start();
     }
 
@@ -996,6 +1445,17 @@ void LocalServer::processConfig()
         LOG_INFO(log, "Lowered mark cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(mark_cache_size));
     }
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    /// UNIQUE KEY delete-bitmap cache. Zero size disables.
+    String unique_key_bitmap_cache_policy_name = server_settings[ServerSetting::unique_key_bitmap_cache_policy];
+    size_t unique_key_bitmap_cache_size = server_settings[ServerSetting::unique_key_bitmap_cache_size_bytes];
+    double unique_key_bitmap_cache_size_ratio = server_settings[ServerSetting::unique_key_bitmap_cache_size_ratio];
+    if (unique_key_bitmap_cache_size > max_cache_size)
+    {
+        unique_key_bitmap_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered UNIQUE KEY delete-bitmap cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(unique_key_bitmap_cache_size));
+    }
+    global_context->setDeleteBitmapCache(unique_key_bitmap_cache_policy_name, unique_key_bitmap_cache_size, unique_key_bitmap_cache_size_ratio);
 
     String index_uncompressed_cache_policy = server_settings[ServerSetting::index_uncompressed_cache_policy];
     size_t index_uncompressed_cache_size = server_settings[ServerSetting::index_uncompressed_cache_size];
@@ -1123,6 +1583,14 @@ void LocalServer::processConfig()
     CompiledExpressionCacheFactory::instance().init(compiled_expression_cache_max_size_in_bytes, compiled_expression_cache_max_elements);
 #endif
 
+    size_t point_in_polygon_cache_size = server_settings[ServerSetting::point_in_polygon_cache_size];
+    if (point_in_polygon_cache_size > max_cache_size)
+    {
+        point_in_polygon_cache_size = max_cache_size;
+        LOG_INFO(log, "Lowered point in polygon cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(point_in_polygon_cache_size));
+    }
+    setPointInPolygonCacheMaxSizeInBytes(point_in_polygon_cache_size);
+
     NamedCollectionFactory::instance().loadIfNot();
     FileCacheFactory::instance().loadDefaultCaches(config(), global_context);
 
@@ -1242,6 +1710,25 @@ void LocalServer::processConfig()
     else if (getClientConfiguration().has("prompt_by_server_display_name.default"))
         prompt = getClientConfiguration().getRawString("prompt_by_server_display_name.default");
     prompt = appendSmileyIfNeeded(prompt);
+
+    /// Set default ports if not specified, so SYSTEM START LISTEN works out of the box.
+    if (!getClientConfiguration().has("tcp_port"))
+        getClientConfiguration().setInt("tcp_port", DBMS_DEFAULT_PORT);
+    if (!getClientConfiguration().has("http_port"))
+        getClientConfiguration().setInt("http_port", DBMS_DEFAULT_HTTP_PORT);
+
+    /// Register callbacks for SYSTEM START/STOP LISTEN queries.
+    global_context->setStartServersCallback([this](const ServerType & server_type)
+    {
+        std::lock_guard lock(servers_lock);
+        startServers(server_type);
+    });
+
+    global_context->setStopServersCallback([this](const ServerType & server_type)
+    {
+        std::lock_guard lock(servers_lock);
+        stopServers(server_type);
+    });
 }
 
 
@@ -1306,6 +1793,10 @@ void LocalServer::addExtraOptions(OptionsDescription & options_description)
         ("path", po::value<std::string>(), "Storage path. If it was not specified, we will use a temporary directory, that is cleaned up on exit.")
         ("only-system-tables", "Attach only system tables from specified path")
         ("top_level_domains_path", po::value<std::string>(), "Path to lists with custom TLDs")
+
+        ("listen_host", po::value<std::string>(), "Host to listen on for SYSTEM START LISTEN (default: ::1 and 127.0.0.1)")
+        ("tcp_port", po::value<int>(), "Port for native TCP protocol (default: 9000)")
+        ("http_port", po::value<int>(), "Port for HTTP protocol (default: 8123)")
         ;
 }
 
@@ -1318,7 +1809,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 
@@ -1342,6 +1842,29 @@ void LocalServer::processOptions(const OptionsDescription &, const CommandLineOp
         getClientConfiguration().setString("table-data-format", options["input-format"].as<std::string>());
     if (options.contains("output-format"))
         getClientConfiguration().setString("output-format", options["output-format"].as<std::string>());
+
+    if (options.contains("listen_host"))
+        cli_listen_host = options["listen_host"].as<std::string>();
+
+    /// `--tcp_port` / `--http_port` define the port that `SYSTEM START LISTEN` will bind, and the
+    /// listener path stores them as `UInt16` (`createServer` does `static_cast<UInt16>(...)`). Reject
+    /// out-of-range values up front: without this an `int` such as `-1` or `70000` would silently wrap
+    /// (to `65535` and `4464`) and the listener would come up on an unexpected port instead of failing.
+    /// `0` is allowed and means an OS-assigned port.
+    auto get_port_option = [&](const char * option_name)
+    {
+        int port = options[option_name].as<int>();
+        if (port < 0 || port > 65535)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Invalid value {} for --{}: a port number must be in the range 0..65535 (use 0 for an OS-assigned port)",
+                port, option_name);
+        return port;
+    };
+    if (options.contains("tcp_port"))
+        getClientConfiguration().setInt("tcp_port", get_port_option("tcp_port"));
+    if (options.contains("http_port"))
+        getClientConfiguration().setInt("http_port", get_port_option("http_port"));
 
     if (options.contains("logger.console"))
         getClientConfiguration().setBool("logger.console", options["logger.console"].as<bool>());
@@ -1405,6 +1928,13 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 int mainEntryClickHouseLocal(int argc, char ** argv)
 {
     DB::MainThreadStatus::getInstance();
+
+    /// Join global-pool threads before the statics they may have accessed are destroyed.
+    /// That way, accesses happen-before destruction.
+    SCOPE_EXIT_SAFE({
+        DB::StaticThreadPool::shutdownAll();
+        GlobalThreadPool::shutdown();
+    });
 
     try
     {

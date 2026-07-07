@@ -44,7 +44,7 @@ namespace ErrorCodes
     DECLARE(Bool, use_persistent_processing_nodes, true, "This setting is deprecated", 0) \
     DECLARE(Bool, commit_on_select, false, "Whether SELECT query from queue table (not materialized view, but direct select from a queue table) needs to commit data and apply after_processing action. See also profile level setting stream_like_engine_allow_direct_select, which needs to be enabled if you want to use direct SELECT queries", 0) \
     DECLARE(Bool, deduplication_v2, true, "Deduplicate blocks in dependent materialized views using user token set as object_etag:chunk_offset", 0) \
-    DECLARE(UInt32, persistent_processing_node_ttl_seconds, 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
+    DECLARE(UInt32, persistent_processing_node_ttl_seconds, 6 * 60 * 60, "Cleanup period for abandoned processing nodes", 0) \
     DECLARE(UInt64, buckets, 0, "Number of buckets for Ordered mode parallel processing", 0) \
     DECLARE(UInt64, list_objects_batch_size, 1000, "Size of a list batch in object storage", 0) \
     DECLARE(UInt64, min_insert_block_size_rows_for_materialized_views, 0, "Override for profile setting min_insert_block_size_rows_for_materialized_views", 0) \
@@ -95,7 +95,8 @@ void ObjectStorageQueueSettings::dumpToSystemEngineSettingsColumns(
     const StorageObjectStorageQueue & storage) const
 {
     MutableColumns & res_columns = params.res_columns;
-    auto settings_changes_ast = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false)->settings_changes;
+    auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
+    auto settings_changes_ast = metadata_snapshot->settings_changes;
     if (!settings_changes_ast)
         return;
 

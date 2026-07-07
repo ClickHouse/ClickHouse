@@ -1,0 +1,90 @@
+---
+sidebarTitle: 'Crunchy Bridge Postgres'
+description: '将 Crunchy Bridge Postgres 配置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/crunchy-postgres
+title: 'Crunchy Bridge Postgres 数据源配置指南'
+keywords: ['crunchy bridge', 'postgres', 'clickpipes', '逻辑复制', '数据摄取']
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickPipes 支持 Postgres 12 及以上版本。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+Crunchy Bridge 默认已启用[逻辑复制](https://docs.crunchybridge.com/how-to/logical-replication)。请确保以下设置配置正确；如未正确配置，请按需调整。
+
+```sql
+SHOW wal_level; -- 应为 logical
+SHOW max_wal_senders; -- 应为 10
+SHOW max_replication_slots; -- 应为 10
+```
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## 创建 ClickPipes 用户并授予权限
+</div>
+
+使用 `postgres` 用户连接到您的 Crunchy Bridge Postgres，并运行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 向上一步创建的用户授予 schema 级的只读访问权限。以下示例展示的是 `public` schema 的权限。对于每个包含您要复制的表的 schema，都需要重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+    ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用您要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议仅将所需的表包含在 publication 中，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须已定义**主键**，&#95;或者&#95;将其**副本标识**配置为 `FULL`。有关如何界定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含从指定表生成的一组变更事件，后续将用于摄取复制 stream。
+
+<div id="safe-list-clickpipes-ips">
+  ## 将 ClickPipes IP 加入允许列表
+</div>
+
+在 Crunchy Bridge 中添加防火墙规则，将 [ClickPipes IP](/zh/integrations/clickpipes/home#list-of-static-ips) 加入允许列表。
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/firewall_rules_crunchy_bridge.webp" alt="在 Crunchy Bridge 中哪里可以找到防火墙规则？" border />
+
+<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/crunchy-postgres/add_firewall_rules_crunchy_bridge.webp" alt="为 ClickPipes 添加防火墙规则" border />
+
+<div id="whats-next">
+  ## 接下来做什么？
+</div>
+
+现在，您可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下您在设置 Postgres 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

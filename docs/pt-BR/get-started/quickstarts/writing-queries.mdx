@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'Selecionando dados'
+title: 'Selecionando dados do ClickHouse'
+slug: /guides/writing-queries
+description: 'Saiba mais sobre como selecionar dados do ClickHouse'
+keywords: ['SELECT', 'formatos de dados']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouse é um banco de dados SQL, e você consulta seus dados escrevendo o mesmo tipo de consultas `SELECT` que já conhece. Por exemplo:
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+```
+
+<Note>
+  Consulte a [Referência SQL](/pt-BR/reference/statements/select/index) para mais detalhes sobre a sintaxe, as cláusulas e as opções disponíveis.
+</Note>
+
+Observe que a resposta vem em um formato de tabela bem organizado:
+
+```response
+┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
+│     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
+│     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
+│     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
+│     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
+└─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.008 sec.
+```
+
+Adicione uma cláusula `FORMAT` para especificar um dos [muitos formatos de saída compatíveis com o ClickHouse](/pt-BR/reference/formats/index#formats-overview):
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+FORMAT TabSeparated
+```
+
+Na consulta acima, a saída é exibida separada por tabulações:
+
+```response
+Query id: 3604df1c-acfd-4117-9c56-f86c69721121
+
+102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
+102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
+101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
+101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
+
+4 rows in set. Elapsed: 0.005 sec.
+```
+
+<Note>
+  O ClickHouse oferece suporte a mais de 70 formatos de entrada e saída, então, entre os milhares de funções e todos os formatos de dados, você pode usar o ClickHouse para realizar transformações de dados rápidas e impressionantes, no estilo ETL. Na verdade, você nem
+  precisa ter um servidor ClickHouse em execução para transformar dados — basta usar a ferramenta `clickhouse-local`. Consulte a [página da documentação do `clickhouse-local`](/pt-BR/concepts/features/interfaces/cli) para mais detalhes.
+</Note>

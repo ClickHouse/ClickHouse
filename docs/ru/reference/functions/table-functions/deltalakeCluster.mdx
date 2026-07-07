@@ -1,0 +1,59 @@
+---
+description: 'Это расширение для табличной функции deltaLake.'
+sidebarTitle: 'deltaLakeCluster'
+slug: /sql-reference/table-functions/deltalakeCluster
+title: 'deltaLakeCluster'
+doc_type: 'reference'
+---
+
+Это расширение для табличной функции [deltaLake](/ru/reference/functions/table-functions/deltalake).
+
+Позволяет параллельно обрабатывать файлы из таблиц [Delta Lake](https://github.com/delta-io/delta) в Amazon S3 на множестве узлов указанного кластера. На узле-инициаторе создаётся connection ко всем узлам кластера, и каждый файл динамически распределяется между ними. Узел-воркер запрашивает у инициатора следующую задачу для обработки и выполняет её. Это повторяется, пока не будут завершены все задачи.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeCluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeS3Cluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
+deltaLakeS3Cluster(cluster_name, named_collection[, option=value [,..]])
+
+deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzureCluster(cluster_name, named_collection[, option=value [,..]])
+```
+
+`deltaLakeS3Cluster` — это псевдоним `deltaLakeCluster`; оба используются для S3.
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `cluster_name` — имя кластера, используемое для формирования набора адресов и параметров подключения к удалённым и локальным серверам.
+* Описание всех остальных аргументов совпадает с описанием аргументов в эквивалентной табличной функции [deltaLake](/ru/reference/functions/table-functions/deltalake).
+* Необязательный параметр `extra_credentials` можно использовать для передачи `role_arn` для ролевого доступа в ClickHouse Cloud. Инструкции по настройке см. в разделе [Безопасный доступ к S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely).
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения данных из кластера из указанной таблицы Delta Lake в S3.
+
+<div id="virtual-columns">
+  ## Виртуальные столбцы
+</div>
+
+* `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
+* `_file` — Имя файла. Тип: `LowCardinality(String)`.
+* `_size` — Размер файла в байтах. Тип: `Nullable(UInt64)`. Если размер файла неизвестен, значение — `NULL`.
+* `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
+* `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
+
+<div id="related">
+  ## См. также
+</div>
+
+* [движок deltaLake](/ru/reference/engines/table-engines/integrations/deltalake)
+* [табличная функция deltaLake](/ru/reference/functions/table-functions/deltalake)

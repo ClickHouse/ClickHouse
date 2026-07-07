@@ -4,6 +4,7 @@
 #if USE_AVRO
 #include <Databases/DataLake/ICatalog.h>
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <Interpreters/Context_fwd.h>
@@ -128,7 +129,7 @@ protected:
     std::string auth_scope;
     std::string oauth_server_uri;
     bool oauth_server_use_request_body;
-    mutable std::optional<AccessToken> access_token;
+    mutable MultiVersion<AccessToken> access_token;
 
     Poco::Net::HTTPBasicCredentials credentials{};
 
@@ -197,6 +198,8 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
+    DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
+
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
@@ -215,7 +218,8 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
-        DB::ContextPtr context_);
+        DB::ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_);
 
     DB::DatabaseDataLakeCatalogType getCatalogType() const override
     {
@@ -237,6 +241,9 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
+    /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
+    /// catalog is cached and holds the global context, whose settings never reflect the creating session.
+    const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;

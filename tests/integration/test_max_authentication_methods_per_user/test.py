@@ -1,6 +1,5 @@
 import pytest
 
-from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -66,7 +65,7 @@ def test_alter(started_cluster):
 def get_query_with_multiple_identified_with(
     operation, username, identified_with_count, add_operation=""
 ):
-    identified_clauses = ", ".join([f"BY '1'" for _ in range(identified_with_count)])
+    identified_clauses = ", ".join(["BY '1'" for _ in range(identified_with_count)])
     query = (
         f"{operation} USER {username} {add_operation} IDENTIFIED {identified_clauses}"
     )

@@ -1,0 +1,236 @@
+---
+description: '동일한 프라이머리 키(더 정확히는 동일한 [정렬 키](/reference/engines/table-engines/mergetree-family/mergetree))를 가진 모든 행을 집계 함수 상태의 조합을 저장하는 단일 행(단일 데이터 파트 내에서)으로 대체합니다.'
+sidebarTitle: 'AggregatingMergeTree'
+slug: /engines/table-engines/mergetree-family/aggregatingmergetree
+title: 'AggregatingMergeTree 테이블 엔진'
+doc_type: 'reference'
+---
+
+이 엔진은 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 상속하며, 데이터 파트 머지 로직을 변경합니다. ClickHouse는 동일한 프라이머리 키(더 정확히는 동일한 [정렬 키](/ko/reference/engines/table-engines/mergetree-family/mergetree))를 가진 모든 행을 집계 함수 상태의 조합을 저장하는 단일 행(단일 데이터 파트 내에서)으로 대체합니다.
+
+`AggregatingMergeTree` 테이블은 집계된 materialized view를 포함해 데이터의 증분 집계에 사용할 수 있습니다.
+
+아래 동영상에서 AggregatingMergeTree와 집계 함수 사용 예시를 확인할 수 있습니다:
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://www.youtube.com/embed/pryhI4F_zqQ" title="ClickHouse의 집계 상태" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+  </Frame>
+</div>
+
+이 엔진은 다음 타입의 모든 컬럼을 처리합니다:
+
+* [`AggregateFunction`](/ko/reference/data-types/aggregatefunction)
+* [`SimpleAggregateFunction`](/ko/reference/data-types/simpleaggregatefunction)
+
+`AggregatingMergeTree`는 행 수를 자릿수 수준으로 크게 줄일 수 있을 때 사용하는 것이 적절합니다.
+
+<div id="creating-a-table">
+  ## 테이블 만들기
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = AggregatingMergeTree()
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[TTL expr]
+[SETTINGS name=value, ...]
+```
+
+요청 매개변수에 대한 설명은 [요청 설명](/ko/reference/statements/create/table)을 참조하십시오.
+
+**쿼리 절**
+
+`AggregatingMergeTree` 테이블을 생성할 때는 `MergeTree` 테이블을 생성할 때와 동일한 [절](/ko/reference/engines/table-engines/mergetree-family/mergetree)이 필요합니다.
+
+<details markdown="1">
+  <summary>테이블 생성의 사용 중단 예정 메서드</summary>
+
+  <Note>
+    새 프로젝트에서는 이 메서드를 사용하지 말고, 가능하면 기존 프로젝트도 위에서 설명한 메서드로 전환하십시오.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] AggregatingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity)
+  ```
+
+  모든 매개변수의 의미는 `MergeTree`와 동일합니다.
+</details>
+
+<div id="select-and-insert">
+  ## SELECT 및 INSERT
+</div>
+
+데이터를 삽입하려면 집계 -State- 함수를 사용하는 [INSERT SELECT](/ko/reference/statements/insert-into) 쿼리를 사용합니다.
+`AggregatingMergeTree` 테이블에서 데이터를 선택할 때는 `GROUP BY` 절과 데이터 삽입 시 사용한 것과 동일한 집계 함수를 사용하되, `-Merge` 접미사를 사용합니다.
+
+`SELECT` 쿼리 결과에서 `AggregateFunction` 유형의 값은 모든 ClickHouse 출력 형식에서 구현별 이진 표현을 가집니다. 예를 들어, `SELECT` 쿼리로 데이터를 `TabSeparated` 포맷으로 덤프하면, 이 덤프를 `INSERT` 쿼리로 다시 로드할 수 있습니다.
+
+<div id="example-of-an-aggregated-materialized-view">
+  ## 집계된 materialized view 예시
+</div>
+
+다음 예시는 `test`라는 데이터베이스가 있다고 가정합니다. 아래 명령으로 아직 존재하지 않으면 생성하세요:
+
+```sql
+CREATE DATABASE test;
+```
+
+이제 원시 데이터를 저장하는 `test.visits` 테이블을 생성합니다:
+
+```sql
+CREATE TABLE test.visits
+ (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Sign Nullable(Int32),
+    UserID Nullable(Int32)
+) ENGINE = MergeTree ORDER BY (StartDate, CounterID);
+```
+
+다음으로, 전체 방문 수와 고유 사용자 수를 추적하는 `AggregationFunction`을 저장할 `AggregatingMergeTree` 테이블이 필요합니다.
+
+`AggregatingMergeTree` 머티리얼라이즈드 뷰를 생성하여 `test.visits` 테이블을 모니터링하고 [`AggregateFunction`](/ko/reference/data-types/aggregatefunction) 타입을 사용합니다:
+
+```sql
+CREATE TABLE test.agg_visits (
+    StartDate DateTime64 NOT NULL,
+    CounterID UInt64,
+    Visits AggregateFunction(sum, Nullable(Int32)),
+    Users AggregateFunction(uniq, Nullable(Int32))
+)
+ENGINE = AggregatingMergeTree() ORDER BY (StartDate, CounterID);
+```
+
+`test.visits`에서 `test.agg_visits`를 채우는 materialized view를 생성하세요:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    sumState(Sign) AS Visits,
+    uniqState(UserID) AS Users
+FROM test.visits
+GROUP BY StartDate, CounterID;
+```
+
+`test.visits` 테이블에 데이터를 삽입하세요:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1667446031000, 1, 3, 4), (1667446031000, 1, 6, 3);
+```
+
+데이터는 `test.visits`와 `test.agg_visits` 양쪽 모두에 삽입됩니다.
+
+집계된 데이터를 가져오려면 materialized view `test.visits_mv`에서 `SELECT ... GROUP BY ...`와 같은 쿼리를 실행하십시오:
+
+```sql
+SELECT
+    StartDate,
+    sumMerge(Visits) AS Visits,
+    uniqMerge(Users) AS Users
+FROM test.visits_mv
+GROUP BY StartDate
+ORDER BY StartDate;
+```
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │      9 │     2 │
+└─────────────────────────┴────────┴───────┘
+```
+
+`test.visits`에 레코드를 몇 개 더 추가하되, 이번에는 레코드 중 하나에 다른 타임스탬프(timestamp)를 사용해 보십시오:
+
+```sql
+INSERT INTO test.visits (StartDate, CounterID, Sign, UserID)
+ VALUES (1669446031000, 2, 5, 10), (1667446031000, 3, 7, 5);
+```
+
+`SELECT` 쿼리를 다시 실행하면 다음과 같은 결과가 반환됩니다:
+
+```text
+┌───────────────StartDate─┬─Visits─┬─Users─┐
+│ 2022-11-03 03:27:11.000 │     16 │     3 │
+│ 2022-11-26 07:00:31.000 │      5 │     1 │
+└─────────────────────────┴────────┴───────┘
+```
+
+경우에 따라 삽입 시점에 행을 사전 집계하지 않고 집계 비용을 삽입 시점에서 머지 시점으로 미루고 싶을 수 있습니다. 일반적으로는 오류를 방지하기 위해 materialized view 정의의 `GROUP BY` 절에 집계 대상이 아닌 컬럼도 포함해야 합니다. 그러나 `optimize_on_insert = 0` 설정(기본값은 활성화)과 함께 [`initializeAggregation`](/ko/reference/functions/regular-functions/other-functions#initializeAggregation) 함수를 사용하면 이를 구현할 수 있습니다. 이 경우 `GROUP BY`는 더 이상 필요하지 않습니다:
+
+```sql
+CREATE MATERIALIZED VIEW test.visits_mv TO test.agg_visits
+AS SELECT
+    StartDate,
+    CounterID,
+    initializeAggregation('sumState', Sign) AS Visits,
+    initializeAggregation('uniqState', UserID) AS Users
+FROM test.visits;
+```
+
+<Note>
+  `initializeAggregation`을 사용하면 그룹화 없이 각 개별 행마다 집계 상태가 생성됩니다.
+  각 소스 행은 materialized view에 하나의 행을 생성하며, 실제 집계는 나중에
+  `AggregatingMergeTree`가 파트를 머지할 때 이루어집니다. 이는 `optimize_on_insert = 0`인 경우에만 적용됩니다.
+</Note>
+
+<div id="tuple-element-aggregation">
+  ## Tuple 요소 집계
+</div>
+
+`allow_tuple_element_aggregation` 설정이 활성화되면 `Tuple` 컬럼은 각 리프 요소가 독립적으로 집계에 참여할 수 있도록 재귀적으로 평탄화됩니다. 즉, `Tuple` 내부의 `AggregateFunction` 또는 `SimpleAggregateFunction` 서브컬럼은 최상위 컬럼인 것처럼 각 함수에 따라 집계됩니다.
+
+정렬 키에 속하는 `Tuple`의 서브컬럼은 집계에서 제외됩니다. 집계 함수가 아닌 서브컬럼은 일반 컬럼으로 처리되며 첫 번째 값이 유지됩니다.
+
+<Note>
+  이 설정은 변경할 수 없으며 테이블 생성 시 지정해야 합니다.
+</Note>
+
+```sql
+CREATE TABLE agg_tuples
+(
+    key UInt32,
+    metrics Tuple(
+        total_visits SimpleAggregateFunction(sum, UInt64),
+        unique_users SimpleAggregateFunction(max, UInt64)
+    )
+) ENGINE = AggregatingMergeTree()
+ORDER BY key
+SETTINGS allow_tuple_element_aggregation = 1;
+
+INSERT INTO agg_tuples VALUES (1, (100, 5));
+INSERT INTO agg_tuples VALUES (1, (200, 8));
+INSERT INTO agg_tuples VALUES (2, (50, 3));
+
+OPTIMIZE TABLE agg_tuples FINAL;
+
+SELECT key, metrics.total_visits, metrics.unique_users FROM agg_tuples ORDER BY key;
+```
+
+```text
+┌─key─┬─metrics.total_visits─┬─metrics.unique_users─┐
+│   1 │                  300 │                    8 │
+│   2 │                   50 │                    3 │
+└─────┴──────────────────────┴──────────────────────┘
+```
+
+`total_visits`는 `sum`으로 집계되고(100 + 200 = 300), `unique_users`는 `max`로 집계됩니다(max(5, 8) = 8).
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* 블로그: [ClickHouse에서 배열, 맵, state에 집계 조합자 활용하기](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

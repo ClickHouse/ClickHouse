@@ -1,0 +1,416 @@
+---
+noindex: true
+title: "基础设施要求参考"
+sidebarTitle: "基础设施要求"
+description: "本文档汇总了所有受支持的 ClickHouse 私网部署平台的基础设施前置条件、节点规格、网络、存储和 IAM 要求"
+---
+
+本文档汇总了所有受支持的 ClickHouse 私网部署平台的基础设施前置条件、节点规格、网络、存储和 IAM 要求。
+
+***
+
+<div id="prerequisites-by-platform">
+  ## 各平台的前置条件
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+| 要求                   | 详细信息                                            |
+| -------------------- | ----------------------------------------------- |
+| AWS CLI              | 已安装并完成配置                                        |
+| `kubectl`            | 已安装                                             |
+| `helm`               | 已安装 v3.x                                        |
+| `skopeo`             | 建议用于复制容器镜像 (可保留所有架构)                            |
+| EKS cluster IAM role | 通过 AWS 控制台中的“Create recommended role”创建，并使用默认权限 |
+| Node IAM roles       | 通过 AWS 控制台中的“Create recommended role”创建，并使用默认权限 |
+| OIDC 提供商             | 已为 EKS 集群创建                                     |
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+| 要求                                                | 详情                                                              |
+| ------------------------------------------------- | --------------------------------------------------------------- |
+| GCP 项目                                            | 已启用计费                                                           |
+| `gcloud` CLI                                      | 已安装并完成身份验证                                                      |
+| `kubectl`                                         | 已安装                                                             |
+| `helm`                                            | 已安装 v3.x                                                        |
+| `skopeo`                                          | 已安装 (用于复制容器镜像)                                                  |
+| AWS credentials                                   | 对 ClickHouse ECR 具有只读访问权限 (用于镜像复制)                              |
+| Bastion host                                      | 位于 VPC 中，用于访问私网集群                                               |
+| Deployer service account                          | 具有相应权限 (请参见 [IAM / 服务账号要求](#iam-service-account-requirements))  |
+| **&#x20;(仅限 FIPS)&#x20;**&#x20;Red Hat UBI8 image | 通过 GKE 拉取，用于生成证书                                                |
+
+<div id="bare-metal-rke2">
+  ### 裸金属 (RKE2)
+</div>
+
+| 要求         | 详情                                                  |
+| ---------- | --------------------------------------------------- |
+| Terraform  | v1.13.2+                                            |
+| Ansible    | 安装了 `lablabs.rke2` 角色和 `kubernetes.core` collection |
+| `kubectl`  | 已安装                                                 |
+| `helm`     | 已安装 v3.x                                            |
+| AWS IAM 凭证 | 用于 ECR 和 S3/MinIO 的访问密钥和秘密密钥                        |
+| RKE2       | v1.33.5+rke2r1 (通过 Ansible 部署)                      |
+| OS         | Rocky Linux 9.6 (或兼容版本)                             |
+| MinIO      | 用于兼容 S3 的对象存储的 Operator 和租户                         |
+
+***
+
+<div id="node-group-specifications">
+  ## 节点组规格说明
+</div>
+
+### AWS (EKS)
+
+<div id="keeper-node-group">
+  #### Keeper 节点组
+</div>
+
+| 属性                     | 值                                                  |
+| ---------------------- | -------------------------------------------------- |
+| AMI (x86)              | `AL2023_x86_64`                                    |
+| AMI (arm64)            | `AL2023_ARM_64`                                    |
+| 磁盘大小                   | 20 GB                                              |
+| 推荐实例类型                 | `m7g.2xlarge`                                      |
+| 最小节点数 (不启用自动扩缩容)       | 每个 ClickHouse 集群 3 个                               |
+| Kubernetes 标签 (x86)    | `clickhouseGroup: keeper`                          |
+| Kubernetes 标签 (arm64)  | `clickhouseGroup: keeper-arm64`                    |
+| 污点                     | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| 污点 (仅限 arm64)          | `clickhouse.com/arch: arm64, NoSchedule`           |
+| 推荐资源                   | CPU：4，内存：16Gi                                      |
+
+<div id="server-node-group">
+  #### 服务器节点组
+</div>
+
+| 属性                     | 值                                                  |
+| ---------------------- | -------------------------------------------------- |
+| AMI (x86)              | `AL2023_x86_64`                                    |
+| AMI (arm64)            | `AL2023_ARM_64`                                    |
+| 磁盘大小                   | 20 GB                                              |
+| 推荐实例类型                 | `m7gd.16xlarge` (强烈建议使用配备 NVMe SSD 的 “d” 系列)       |
+| 最小节点数 (无自动扩缩容)         | 等于所需的 ClickHouse 副本数                               |
+| Kubernetes 标签 (x86)    | `clickhouseGroup: server`                          |
+| Kubernetes 标签 (arm64)  | `clickhouseGroup: server-arm64`                    |
+| 污点                     | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| 污点 (仅 arm64)           | `clickhouse.com/arch: arm64, NoSchedule`           |
+| 推荐资源                   | CPU：64，内存：256Gi                                    |
+| 启动模板                   | NVMe SSD RAID 配置需要自定义模板 (参见源文档)                    |
+
+<div id="operator-node-group-x86">
+  #### Operator 节点组 (x86)
+</div>
+
+| 属性     | 值                                    |
+| ------ | ------------------------------------ |
+| AMI    | `AL2023_x86_64`                      |
+| 磁盘大小   | 20 GB                                |
+| 最小实例规格 | xlarge                               |
+| 实例类型   | 任意兼容 x86 的类型                         |
+| 备注     | 如果现有节点组已兼容 x86 且规格至少为 xlarge，也可以直接使用 |
+
+**所有 AWS 节点都需要 [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) 才能进行身份验证。**
+
+对于 Keeper 和 server 节点组，如果您希望支持跨 AZ 的集群自动扩缩器，**请为每个 AZ 创建一个节点组**。
+
+自动扩缩器标签 (如果使用 cluster-autoscaler) ：- `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+<div id="keeper-node-pool">
+  #### Keeper 节点池
+</div>
+
+| 属性         | 值                                                |
+| ---------- | ------------------------------------------------ |
+| 机器类型 (开发)  | `n2-standard-4`                                  |
+| 机器类型 (生产)  | `n2-standard-8`                                  |
+| 磁盘类型       | `pd-ssd`                                         |
+| 磁盘大小       | 20 GB                                            |
+| 节点标签       | `clickhouseGroup=keeper`                         |
+| 污点         | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| 自动扩缩容      | 最小 1，最大 3                                        |
+| 工作负载元数据    | `GKE_METADATA` (用于 Workload Identity)            |
+| 推荐资源       | CPU：2，内存：8Gi                                     |
+
+<div id="server-node-pool">
+  #### 服务器节点池
+</div>
+
+| 属性         | 值                                                         |
+| ---------- | --------------------------------------------------------- |
+| 机器类型 (开发)  | `n2-standard-8`                                           |
+| 机器类型 (生产)  | `n2-standard-64`                                          |
+| 磁盘类型       | `pd-standard` + 本地 SSD                                    |
+| 磁盘大小       | 20 GB                                                     |
+| 本地 SSD 数量  | 1                                                         |
+| 节点标签       | `clickhouseGroup=server`                                  |
+| 污点         | `clickhouse.com/do-not-schedule=true:NoSchedule`          |
+| 自动扩缩容      | 最小 1，最大 10                                                |
+| 工作负载元数据    | `GKE_METADATA` (用于 Workload Identity)                     |
+| 推荐资源       | CPU：4，内存：16Gi (开发) ；CPU：64，内存：256Gi (生产)                  |
+| SSD 挂载路径   | `/mnt/disks/ssd0` (通过 DaemonSet 守护进程集；GKE COS 的根文件系统为只读)  |
+
+<div id="default-node-pool">
+  #### 默认节点池
+</div>
+
+| 属性   | 值               |
+| ---- | --------------- |
+| 机器类型 | `n2-standard-4` |
+| 磁盘类型 | `pd-standard`   |
+| 磁盘大小 | 50 GB           |
+| 节点数  | 1               |
+
+### 裸金属 (RKE2)
+
+<div id="node-layout">
+  #### 节点布局
+</div>
+
+| 角色                 | 主机名 (示例)                                       | 标签                             | 备注                  |
+| ------------------ | ---------------------------------------------- | ------------------------------ | ------------------- |
+| 控制平面 + etcd (服务器)  | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | 分布在 3 个 AZ 中的 3 个节点 |
+| agent (工作节点)       | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | 分布在 3 个 AZ 中的 3 个节点 |
+
+<div id="resource-configuration">
+  #### 资源配置
+</div>
+
+| 组件     | CPU | 内存    | 存储                                    |
+| ------ | --- | ----- | ------------------------------------- |
+| Server | 64  | 128Gi | 300Gi (通过 `local-nvme-sc` 使用本地 NVMe)  |
+| Keeper | 4   | 16Gi  | 30Gi (通过 `local-nvme-sc` 使用本地 NVMe)   |
+
+每个节点都有 2 块 838 GiB 的 NVMe 实例存储盘。
+
+***
+
+<div id="networking-requirements">
+  ## 网络要求
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| 组件       | 规格                                   |
+| -------- | ------------------------------------ |
+| VPC CIDR | `10.20.0.0/16` (示例)                  |
+| IPv6     | 不使用                                  |
+| Tenancy  | 默认                                   |
+| 最少可用区数   | 3 (用于高可用)                            |
+| 公网子网     | 3 (每个 AZ 1 个，每个均为 `/20`)             |
+| 私网子网     | 3 (每个 AZ 1 个，每个均为 `/18`)             |
+| NAT 网关   | 每个 AZ 1 个                            |
+| VPC 端点   | S3 网关                                |
+| DNS 主机名  | 已启用                                  |
+| DNS 解析   | 已启用                                  |
+| CNI      | 需要 IPv4 (例如带 IRSA 的 Amazon VPC CNI)  |
+
+示例子网布局 (us-west-2) ：
+
+| 类型 | AZ         | CIDR             |
+| -- | ---------- | ---------------- |
+| 公网 | us-west-2a | `10.20.192.0/20` |
+| 公网 | us-west-2b | `10.20.208.0/20` |
+| 公网 | us-west-2c | `10.20.224.0/20` |
+| 私网 | us-west-2a | `10.20.0.0/18`   |
+| 私网 | us-west-2b | `10.20.64.0/18`  |
+| 私网 | us-west-2c | `10.20.128.0/18` |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| 组件                    | 规格                                                  |
+| --------------------- | --------------------------------------------------- |
+| VPC 模式                | 自定义子网                                               |
+| GKE 子网范围              | `10.1.0.0/24` (示例)                                  |
+| pod (容器组) 次级范围        | `10.244.0.0/14` (必须位于 `/14` 边界上；第 3 个八位组必须能被 4 整除)  |
+| 服务次级范围                | `10.252.0.0/20` (必须位于 `/20` 边界上)                    |
+| 控制平面 IPv4 CIDR        | `172.16.0.0/28`                                     |
+| 私有节点                  | 已启用 (仅限内部 IP)                                       |
+| 专用终结点                 | 已启用 (无公网 API；FedRAMP)                               |
+| 控制平面授权网络              | GKE 子网 + 堡垒机子网                                      |
+| Cloud NAT             | 私有节点访问公网出站流量所必需                                     |
+| Private Google Access | 已在子网上启用                                             |
+
+<div id="bare-metal">
+  ### 裸金属
+</div>
+
+| 组件            | 规格             |
+| ------------- | -------------- |
+| VPC CIDR      | 按 Terraform 配置 |
+| Kubernetes 网络 | RKE2 内置 CNI    |
+| 可用区模拟         | 每个节点的拓扑标签      |
+| 入口            | 通过端口转发或负载均衡器访问 |
+
+***
+
+<div id="storage-requirements">
+  ## 存储要求
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| 资源                      | 详细信息                                                             |
+| ----------------------- | ---------------------------------------------------------------- |
+| S3 存储桶                  | 标准存储类别，已启用加密，与 EKS 集群处于同一区域                                      |
+| S3 存储桶范围                | 每个 ClickHouse 集群一个，或由多个集群共享，并为每个集群使用唯一的 `keyPrefix`              |
+| EBS CSI driver          | 必需；通过 Helm 配合 IRSA 安装                                            |
+| StorageClass            | `gp3-encrypted` (由 Helm 图表提供) 或自定义                               |
+| NVMe 缓存                 | `d` 系列实例 (例如 `m7gd.*`) ；通过 EC2 启动模板中的 RAID 脚本挂载到 `/nvme/disk`    |
+| 缓存容量规划                  | `bytesPerGiRAM * pod_memory_limit` (例如 11.3Gi * 250Gi = 2825Gi)  |
+| VolumeSnapshot CRD 资源定义 | operator 所需                                                      |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| 资源                      | 详细信息                                                                  |
+| ----------------------- | --------------------------------------------------------------------- |
+| GCS 存储桶                 | Standard 存储类别，统一存储桶级访问，与 GKE 集群位于同一区域                                 |
+| GCS 兼容 S3 端点            | `https://storage.googleapis.com`                                      |
+| GCS 区域设置                | `auto`                                                                |
+| StorageClass            | `premium-rwo` (GKE 内置) 或通过 Helm 图表使用 `pd.csi.storage.gke.io` 预配器进行自定义 |
+| 拓扑键                     | `topology.gke.io/zone` (不是 `topology.kubernetes.io/zone`)             |
+| 本地 SSD 缓存               | 通过 DaemonSet 守护进程集挂载到 `/mnt/disks/ssd0` (GKE COS 的根文件系统为只读)           |
+| VolumeSnapshot CRD 资源定义 | operator 必需                                                           |
+
+<div id="bare-metal">
+  ### 裸金属
+</div>
+
+| 资源           | 详情                                                       |
+| ------------ | -------------------------------------------------------- |
+| 对象存储         | MinIO (兼容 S3) ，NVMe 驱动器使用 DirectPV                       |
+| StorageClass | 使用 `rancher.io/local-path` provisioner 的 `local-nvme-sc` |
+| NVMe 驱动器     | 通过 DirectPV 发现并初始化；挂载到 `/nvme/disk`                      |
+| 本地存储驱动程序     | Rancher local-path-provisioner v0.0.32                   |
+
+***
+
+<div id="iam-service-account-requirements">
+  ## IAM / 服务账号要求
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+<div id="ecr-pull-role">
+  #### ECR 拉取角色
+</div>
+
+* **角色名称：** `ClickHouseAirgapECRPullRole`
+* **用途：** 从 ClickHouse 私有 ECR 拉取镜像
+* **权限：** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+* **操作：** 将该角色的 ARN 提供给 ClickHouse 团队
+
+<div id="clickhouse-serverkeeper-s3-role">
+  #### ClickHouse Server/Keeper S3 角色
+</div>
+
+* **每个已预配的 ClickHouse 集群对应一个角色**
+* **命名约定：** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+* `$NAME`：集群名称 (例如：`default-xx-01`) 
+* `$REGION`：区域缩写 (例如：`us-west-2` 缩写为 `uw2`) 
+* `$ORDINAL`：预留字段，设置为 `00`
+* 示例：`CH-S3-default-xx-01-uw2-00-Role`
+* **权限：** 对 bucket 资源授予 `s3:*` 和 `s3:ListBucket`
+* **信任策略：** 通过 IRSA 使用 `sts:AssumeRoleWithWebIdentity`，信任 EKS 集群的 OIDC 提供商
+
+<div id="ebs-csi-driver-role">
+  #### EBS CSI 驱动程序角色
+</div>
+
+* **示例名称：** `ClickHouse_EksEbsCsiDriverRole`
+* **托管策略：** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+* **信任策略：** 采用 EKS 集群的 OIDC 提供商的 IRSA
+
+<div id="gcp">
+  ### GCP
+</div>
+
+<div id="deployer-service-account">
+  #### 部署服务账号
+</div>
+
+| 角色                                      | 用途                         |
+| --------------------------------------- | -------------------------- |
+| `roles/compute.networkAdmin`            | 创建/管理 VPC、子网、NAT 和路由器      |
+| `roles/container.admin`                 | 创建/管理 GKE 集群和节点池           |
+| `roles/storage.admin`                   | 创建/管理 GCS 存储桶              |
+| `roles/iam.serviceAccountAdmin`         | 创建/管理服务账号                  |
+| `roles/iam.serviceAccountUser`          | 将服务账号用于 Workload Identity  |
+| `roles/iam.workloadIdentityUser`        | 配置 Workload Identity 绑定关系  |
+| `roles/artifactregistry.admin`          | 创建/管理 Artifact Registry 仓库 |
+| `roles/resourcemanager.projectIamAdmin` | 管理项目上的 IAM 策略              |
+
+<div id="clickhouse-workload-identity-service-account">
+  #### ClickHouse Workload Identity 服务账号
+</div>
+
+* **GCP SA：** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+* **K8s SA (手动创建) ：** 命名空间 `ns-$CLUSTER_NAME` 中的 `clickhouse`
+* **K8s SA (helm 创建) ：** 命名空间 `ns-$CLUSTER_NAME` 中的 `ch-$CLUSTER_NAME-sa`
+* **K8s SA 注解：** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+* **IAM 绑定成员：** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+* **存储桶权限：** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+* **Artifact Registry 权限：** `roles/artifactregistry.reader`
+
+<div id="bare-metal">
+  ### 裸金属
+</div>
+
+* **AWS 凭证：** 用于拉取 ECR 镜像的 Access Key 和 Secret Key
+* **MinIO 凭证：** 用于兼容 S3 存储的独立 Access Key 和 Secret Key
+* **镜像拉取密钥：** `clickhouse-operator-system` 和集群命名空间中的 `all-icr-io` docker-registry Secret
+* **服务账号：** `default` (不使用 IRSA；凭证通过环境变量传递) 
+
+***
+
+<div id="cluster-naming-conventions">
+  ## 集群命名规范
+</div>
+
+ClickHouse 集群的命名规范在所有平台上均保持一致：
+
+```text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| 组件            | 描述             | 示例        |
+| ------------- | -------------- | --------- |
+| `$DESCRIPTOR` | 描述名称 (仅限字母)    | `default` |
+| `$LETTERS`    | 保留；任意两个字母      | `xx`      |
+| `$ORDINAL`    | 从 `01` 开始递增的序号 | `01`      |
+
+**示例名称：** `default-xx-01`
+
+集群名称必须在**目标 Kubernetes 集群中保持唯一**，并用于： - Kubernetes 命名空间：`ns-$CLUSTER_NAME` - Kubernetes 资源：以 `c-$CLUSTER_NAME` 为前缀 - IAM 角色名称 (AWS) ：`CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - S3/GCS 键前缀：`ch-s3-<uuid>` (每个集群唯一) 
+
+***
+
+<div id="required-kubernetes-components">
+  ## Kubernetes 所需组件
+</div>
+
+| 组件                      | AWS                  | GCP                             | 裸金属                                |
+| ----------------------- | -------------------- | ------------------------------- | ---------------------------------- |
+| CNI (IPv4)              | Amazon VPC CNI (推荐)  | GKE 内置                          | RKE2 内置                            |
+| CSI 驱动                  | aws-ebs-csi-driver   | GKE 内置 (pd.csi.storage.gke.io)  | Rancher local-path-provisioner     |
+| DNS                     | CoreDNS              | GKE 内置                          | RKE2 内置                            |
+| VolumeSnapshot CRD 资源定义 | 必需                   | 必需                              | 未说明                                |
+| 自动扩缩器                   | 集群自动扩缩器 (推荐)         | GKE 节点池自动扩缩                     | N/A                                |
+| cert-manager            | 非必需 (除非启用 FIPS)      | FIPS 环境必需                       | 必需 (cert-manager + trust-manager)  |

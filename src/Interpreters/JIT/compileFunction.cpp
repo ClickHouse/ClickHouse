@@ -605,6 +605,14 @@ static void compileSortDescription(llvm::Module & module,
     std::vector<llvm::Type *> function_argument_types = {size_type, size_type, column_data_type->getPointerTo(), column_data_type->getPointerTo()};
     auto * comparator_func_declaration = llvm::FunctionType::get(b.getInt8Ty(), function_argument_types, false);
     auto * comparator_func = llvm::Function::Create(comparator_func_declaration, llvm::Function::ExternalLinkage, sort_description_dump, module);
+    /// The result is read back through an `int8_t (*)(...)` function pointer, so the i8 return
+    /// must obey the C `int8_t` calling convention. This matters only on Darwin/Apple arm64:
+    /// Apple's arm64 ABI makes the *callee* sign-extend sub-word return values and the caller
+    /// relies on it (it emits no `sxtb` after the call). Without `signext` the JIT callee leaves
+    /// the upper bits unset, so e.g. a -1 result is read as 255 and NULL ordering breaks.
+    /// Linux arm64 (AAPCS64) is unaffected because there the *caller* sign-extends the return
+    /// itself (`sxtb w0, w0`); x86-64 is likewise a no-op.
+    comparator_func->addRetAttr(llvm::Attribute::SExt);
 
     auto * arguments = comparator_func->args().begin();
     llvm::Value * lhs_index_arg = arguments++;

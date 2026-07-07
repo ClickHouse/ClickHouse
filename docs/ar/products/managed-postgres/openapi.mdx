@@ -1,0 +1,477 @@
+---
+slug: /cloud/managed-postgres/openapi
+sidebarTitle: 'OpenAPI'
+title: 'OpenAPI لـ Managed Postgres'
+description: 'أدِر خدمات Managed Postgres لديك باستخدام OpenAPI الخاص بنا'
+keywords: ['Managed Postgres', 'OpenAPI', 'واجهة برمجة تطبيقات', 'curl', 'دليل عملي', 'سطر الأوامر', 'Query Insights', 'الاستعلامات البطيئة']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
+
+استخدم [ClickHouse OpenAPI](/ar/products/cloud/features/admin-features/api/index) للتحكم برمجيًا
+في خدمات Managed Postgres لديك، تمامًا كما تفعل مع خدمات ClickHouse. كما تتيح
+واجهة برمجة التطبيقات نفسها أيضًا [نقطة نهاية Prometheus] لاستخراج
+مقاييس الخدمة. هل أنت على دراية مسبقة بـ[OpenAPI]؟ احصل على [مفاتيح API] وانتقل مباشرةً إلى
+[مرجع API لـ Managed Postgres][pg-openapi]. وإن لم تكن كذلك، فتابع معنا
+للاطلاع على شرح سريع.
+
+<div id="api-keys">
+  ## مفاتيح API
+</div>
+
+يتطلب استخدام ClickHouse OpenAPI المصادقة؛ راجع [مفاتيح API] لمعرفة كيفية
+إنشائها. ثم استخدمها كبيانات اعتماد Basic Auth على النحو التالي:
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+
+curl -s --user "$KEY_ID:$KEY_SECRET" https://api.clickhouse.cloud/v1/organizations | jq
+```
+
+<div id="organization-id">
+  ## معرّف المؤسسة
+</div>
+
+بعد ذلك، ستحتاج إلى معرّف مؤسستك.
+
+1. حدِّد اسم مؤسستك في الزاوية السفلية اليسرى من الواجهة.
+2. حدِّد **تفاصيل المؤسسة**.
+3. اضغط على أيقونة النسخ إلى يمين **معرّف المؤسسة** لنسخه مباشرةً
+   إلى الحافظة.
+
+يمكنك الآن استخدامه في طلباتك، كما يلي:
+
+```bash
+ORG_ID=myorgid
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" | jq
+```
+
+لقد أجريت الآن أول طلب إلى واجهة برمجة تطبيقات Postgres: تعرض [list API] أعلاه جميع
+خوادم Postgres في مؤسستك. يُفترض أن يكون الناتج
+على النحو التالي:
+
+```json
+{
+  "result": [
+    {
+      "id": "ee2fef9f-b443-8ad0-8c9b-724390cdb826",
+      "name": "oltp",
+      "provider": "aws",
+      "region": "eu-west-2",
+      "postgresVersion": "18",
+      "size": "r6gd.medium",
+      "storageSize": 59,
+      "haType": "none",
+      "tags": [],
+      "isPrimary": true,
+      "state": "running",
+      "createdAt": "2026-05-25T16:42:16+00:00"
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+<div id="crud">
+  ## CRUD
+</div>
+
+لنلقِ نظرة على دورة حياة خدمة Postgres.
+
+<div id="create">
+  ### إنشاء
+</div>
+
+أولًا، أنشئ خدمة جديدة
+باستخدام [واجهة برمجة تطبيقات create]. وتتطلب الخصائص التالية في نص JSON
+للطلب:
+
+* `name`: اسم خدمة Postgres الجديدة
+* `provider`: اسم موفّر السحابة
+* `region`: المنطقة ضمن شبكة الموفّر التي ستُنشر
+  فيها الخدمة
+* `size`: حجم الآلة الافتراضية
+
+راجع وثائق [واجهة برمجة تطبيقات create] للاطّلاع على القيم الممكنة لهذه الخصائص. بالإضافة
+إلى ذلك، لنحدّد Postgres 18 بدلًا من الإصدار الافتراضي، 17:
+
+```bash
+create_data='{
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large"
+}'
+```
+
+استخدم الآن هذه البيانات لإنشاء مثيل جديد؛ لاحظ أن ذلك يتطلب ترويسة
+Content-Type:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres" \
+    -d "$create_data" | jq
+```
+
+عند نجاح العملية، سيُنشئ مثيلًا جديدًا ويُرجع معلومات عنه،
+بما في ذلك بيانات الاتصال:
+
+```json
+{
+  "result": {
+    "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+    "name": "my postgres",
+    "provider": "aws",
+    "region": "us-west-2",
+    "postgresVersion": "18",
+    "size": "r8gd.large",
+    "storageSize": 118,
+    "haType": "none",
+    "tags": [],
+    "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+    "username": "postgres",
+    "password": "vV6cfEr2p_-TzkCDrZOx",
+    "hostname": "my-postgres-6d8d2e3e.pg7myrd1j06p3gx4zrm2ze8qz6.c0.us-west-2.aws.pg.clickhouse-dev.com",
+    "isPrimary": true,
+    "state": "creating"
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+<div id="read">
+  ### قراءة
+</div>
+
+استخدم القيمة `id` من الاستجابة لاسترجاع الخدمة مرة أخرى:
+
+```bash
+PG_ID=67b4bc12-8582-45d0-8806-fe9b2e5a54e6
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+ستكون المخرجات مشابهةً لـ JSON المُعاد عند الإنشاء، لكن راقب
+`state`؛ فعندما تتغير إلى `running`، يكون الخادم جاهزًا:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq .result.state
+```
+
+```json
+"running"
+```
+
+يمكنك الآن استخدام الخاصية `connectionString` للاتصال، على سبيل المثال عبر
+[psql]:
+
+```bash
+$ psql "$(
+    curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq -r .result.connectionString
+)"
+
+psql (18.3)
+SSL connection (protocol: TLSv1.3, cipher: TLS_AES_256_GCM_SHA384, compression: off, ALPN: postgresql)
+Type "help" for help.
+
+postgres=#
+```
+
+اكتب `\q` للخروج من [psql].
+
+<div id="update">
+  ### تحديث
+</div>
+
+تدعم [واجهة برمجة تطبيقات patch] تحديث مجموعة فرعية من خصائص خدمة Postgres المُدارة
+باستخدام [RFC 7396] JSON Merge Patch. وقد تكتسب الوسوم أهمية خاصة
+في عمليات النشر المعقدة؛ ما عليك سوى إرسالها وحدها ضمن الطلب:
+
+```bash
+curl -sX PATCH --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    -d '{"tags": [{"key": "Environment", "value": "production"}]}' \
+    | jq .result
+```
+
+يجب أن تتضمن البيانات المُسترجعة الوسوم الجديدة:
+
+```json
+{
+  "id": "67b4bc12-8582-45d0-8806-fe9b2e5a54e6",
+  "name": "my postgres",
+  "provider": "aws",
+  "region": "us-west-2",
+  "postgresVersion": "18",
+  "size": "r8gd.large",
+  "storageSize": 118,
+  "haType": "none",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "production"
+    }
+  ],
+  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
+  "username": "postgres",
+  "password": "vV6cfEr2p_-TzkCDrZOx",
+  "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
+  "isPrimary": true,
+  "state": "running"
+}
+```
+
+يوفّر OpenAPI نقاط وصول إضافية لتحديث الخصائص غير المدعومة
+من خلال [واجهة برمجة تطبيقات patch]. على سبيل المثال، لتحديث [تهيئة Postgres]،
+استخدم [واجهة برمجة تطبيقات config]:
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/config" \
+    -d '{"pgConfig": {"max_connections": "42"}, "pgBouncerConfig": {}}' | jq
+```
+
+سيُظهر الناتج التهيئة المحدَّثة، بالإضافة إلى رسالة توضّح
+تبعات هذا التغيير:
+
+```json
+{
+  "result":{
+    "pgConfig": {
+      "max_connections": "42"
+    },
+    "pgBouncerConfig": {},
+    "message": "The changes in the following parameters require a database restart to take effect: max_connections. You can restart the database by using the restart endpoint."
+  },
+  "requestId":"fdec06f2-66f7-45b4-9f82-0c051aba20aa",
+  "status": 200
+}
+```
+
+{/*
+
+  TODO: قم بإلغاء التعليق وإدراج مخرجات المثال الصحيحة عند طرح واجهة برمجة التطبيقات.
+
+  تشمل واجهات برمجة التطبيقات الإضافية الخاصة بالتحديث ما يلي:
+
+  * إعادة تعيين كلمة مرور المستخدم الخارق
+  * إعادة تسمية خدمة Postgres (يؤدي ذلك إلى تغيير اسم المضيف)
+  * الترقية إلى الإصدار الرئيسي التالي من Postgres
+
+  */}
+
+<div id="delete">
+  ### حذف
+</div>
+
+استخدم [واجهة برمجة تطبيقات الحذف] لحذف خدمة Postgres.
+
+<Warning>
+  يؤدي حذف خدمة Postgres إلى إزالة الخدمة بالكامل وجميع
+  بياناتها. تأكد من توفّر نسخة احتياطية لديك أو من أنك قمت بترقية
+  نسخة متماثلة إلى النسخة الأساسية قبل حذف الخدمة.
+</Warning>
+
+```bash
+curl -sX DELETE --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID" \
+    | jq
+```
+
+عند النجاح، ستُرجِع الاستجابة رمز الحالة 200، على سبيل المثال:
+
+```json
+{
+  "requestId": "ac9bbffa-e370-410c-8bdd-bd24bf3d7f82",
+  "status": 200
+}
+```
+
+<div id="monitoring">
+  ## المراقبة
+</div>
+
+توفّر نقطتا نهاية متوافقتان مع Prometheus مقاييس CPU والذاكرة والإدخال/الإخراج والاتصالات والمعاملات لخدمات Managed Postgres: تُرجع إحداهما المقاييس لكل خدمة في المؤسسة، بينما تُرجع الأخرى المقاييس لخدمة واحدة. راجع صفحة [نقطة نهاية Prometheus] لمعرفة كيفية الإعداد، و[مرجع المقاييس] للاطلاع على القائمة الكاملة للمقاييس.
+
+<div id="query-insights">
+  ## Query insights
+</div>
+
+إن بيانات القياس عن بُعد الخاصة بكل عبارة، والتي تستند إليها علامة التبويب [Query Insights] في الكونسول السحابي،
+متاحة أيضًا برمجيًا. توفّر نقطتا نهاية أبطأ
+أنماط الاستعلامات في خدمة: تسرد إحداهما جميع الأنماط مرتبةً حسب التأثير،
+بينما تُرجع الأخرى نمطًا واحدًا مع أحدث عمليات تنفيذه.
+
+<div id="list-slow-query-patterns">
+  ### إدراج أنماط الاستعلامات البطيئة
+</div>
+
+تعيد [واجهة برمجة تطبيقات الأنماط البطيئة] مقاييس مجمّعة لأبطأ أنماط
+الاستعلامات التي تم رصدها خلال نافذة زمنية. هذه النافذة مطلوبة — مرّر
+`from_date` و`to_date` كطوابع زمنية بتنسيق RFC 3339:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+تُعرَض النتائج افتراضيًا بحيث تظهر الأنماط الأكثر كلفة أولًا، مرتبة حسب `total_duration`
+ترتيبًا تنازليًا. فرّز حسب عدّاد مختلف باستخدام `sort_by` (على سبيل المثال
+`p99_duration` أو `call_count` أو `total_wal_bytes`) واعكس الاتجاه
+باستخدام `sort_order`. ضيّق مجموعة النتائج باستخدام عوامل التصفية `db_name` و`db_user`
+و`db_operation` و`app`، وتصفّح صفحاتها باستخدام `limit` و
+`offset`.
+
+يمثّل كلّ ناتج نمطًا مُطبَّعًا واحدًا، مع إزالة القيم الحرفية منه
+والإبلاغ عن المدد بوحدة الميكروثانية:
+
+```json
+{
+  "result": [
+    {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "app": "orders-api",
+      "callCount": 84213,
+      "errorCount": 0,
+      "totalDurationUs": 1012384556,
+      "avgDurationUs": 12021,
+      "maxDurationUs": 482915,
+      "p50DurationUs": 9874,
+      "p95DurationUs": 28431,
+      "p99DurationUs": 41200,
+      "totalRows": 842130,
+      "totalSharedBlksRead": 19284,
+      "totalSharedBlksHit": 48217734,
+      "totalCpuTimeUs": 938472113,
+      "totalWalBytes": 0
+    }
+  ],
+  "requestId": "c128d830-5769-4c82-8235-f79aa69d1ebf",
+  "status": 200
+}
+```
+
+إن `queryId` هو قيمة `hash` موقَّعة بطول 64 بت للعبارة المُطبَّعة، لذلك
+يكون سالبًا في كثير من الأحيان. أعد تمريره كما هو تمامًا — بما في ذلك الشرطة `-` في
+البداية — لاسترجاع نمط استعلام واحد.
+
+<div id="get-slow-query-pattern">
+  ### الحصول على نمط استعلام بطيء
+</div>
+
+مرّر `queryId` من استجابة القائمة إلى [واجهة برمجة تطبيقات نمط الاستعلامات البطيئة] للحصول على
+المقاييس المجمّعة لهذا النمط إلى جانب أحدث عمليات التنفيذ الفردية له.
+القيم `db_name` و`db_user` و`db_operation` التي تُعرّف هذا النمط
+مطلوبة:
+
+```bash
+QUERY_ID=-4748036479882663975
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/slowQueryPatterns/$QUERY_ID?db_name=sales&db_user=orders_service&db_operation=SELECT" \
+    | jq
+```
+
+تتضمن الاستجابة نفس ناتج التجميع الموجود في نقطة نهاية القائمة ضمن
+`aggregate`، بالإضافة إلى مصفوفة `recentExecutions`. ويتضمن كل تنفيذ
+العدادات الكاملة الخاصة به — إدخال/إخراج الكتل المشتركة والمؤقتة، ووقت
+CPU للمستخدم والنظام، والعمّال المتوازيون، وJIT، وWAL — وهي العدادات نفسها التي
+تفصّلها [اللوحة الجانبية للتفاصيل] في الكونسول:
+
+```json
+{
+  "result": {
+    "aggregate": {
+      "queryId": "-4748036479882663975",
+      "queryText": "SELECT * FROM orders WHERE customer_id = $1 ORDER BY created_at DESC LIMIT $2",
+      "dbName": "sales",
+      "dbUser": "orders_service",
+      "dbOperation": "SELECT",
+      "callCount": 84213,
+      "avgDurationUs": 12021,
+      "p99DurationUs": 41200
+    },
+    "recentExecutions": [
+      {
+        "timestamp": "2026-05-25T16:42:09Z",
+        "durationUs": 41200,
+        "rows": 10,
+        "sharedBlksHit": 412,
+        "sharedBlksRead": 3,
+        "tempBlksWritten": 0,
+        "cpuUserTimeUs": 38211,
+        "cpuSysTimeUs": 1044,
+        "parallelWorkersPlanned": 0,
+        "parallelWorkersLaunched": 0,
+        "walBytes": 0,
+        "serverRole": "primary"
+      }
+    ]
+  },
+  "requestId": "a5957990-dbe5-46fd-b5ce-a7f8f79e50fe",
+  "status": 200
+}
+```
+
+يختصر المثال كلا الكائنين مراعاةً للإيجاز؛ وتُرجع واجهة برمجة تطبيقات
+مجموعة العدادات الكاملة الموثقة ضمن [per-execution counters].
+
+[ClickHouse OpenAPI]: /products/cloud/features/admin-features/api/index "Cloud API"
+
+[OpenAPI]: https://www.openapis.org "مبادرة OpenAPI"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "إدارة مفاتيح API"
+
+[pg-openapi]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres "مواصفة OpenAPI لـ ClickHouse Cloud: ‏Postgres"
+
+[list API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceGetList "جلب قائمة بخدمات Postgres التابعة لمؤسسة"
+
+[create API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceCreate "إنشاء خدمة Postgres جديدة"
+
+[psql]: https://www.postgresql.org/docs/current/app-psql.html "وثائق PostgreSQL: ‏psql — الطرفية التفاعلية لـ PostgreSQL"
+
+[patch API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServicePatch "تحديث خدمة PostgreSQL"
+
+[RFC 7396]: https://www.rfc-editor.org/rfc/rfc7396 "RFC 7396: ‏JSON Merge Patch"
+
+[Postgres configuration]: https://www.postgresql.org/docs/18/runtime-config.html "وثائق PostgreSQL: تهيئة الخادم"
+
+[config API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceSetConfig "تحديث تهيئة خدمة Postgres"
+
+[delete API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/postgresServiceDelete "حذف خدمة PostgreSQL"
+
+[Prometheus endpoint]: /products/managed-postgres/monitoring/prometheus "نقطة نهاية Prometheus لـ Managed Postgres"
+
+[metrics reference]: /products/managed-postgres/monitoring/metrics "مرجع مقاييس Managed Postgres"
+
+[Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights لاستعلامات Postgres"
+
+[detail flyout]: /products/managed-postgres/monitoring/query-insights#detail "اللوحة الجانبية التفصيلية في Query Insights"
+
+[per-execution counters]: /products/managed-postgres/monitoring/query-insights#counters "عدادات Query Insights لكل تنفيذ"
+
+[slow patterns API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList "سرد أنماط الاستعلامات البطيئة في Postgres"
+
+[slow pattern API]: /api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet "الحصول على نمط استعلام بطيء في Postgres مع عمليات التنفيذ الأخيرة"
