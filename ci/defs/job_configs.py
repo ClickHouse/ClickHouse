@@ -141,7 +141,8 @@ common_ft_job_config = Job.Config(
 common_unit_test_job_config = Job.Config(
     name=JobNames.UNITTEST,
     runs_on=[],  # from parametrize()
-    command="python3 ./ci/jobs/unit_tests_job.py --gtest_filter=-FunctionsStress.*",
+    # `SilkFiberSocketTest` requires invariant TSC, which is not exposed on all runners.
+    command="python3 ./ci/jobs/unit_tests_job.py --gtest_filter=-FunctionsStress.*:SilkFiberSocketTest*",
     run_in_docker="altinityinfra/test-base+--privileged",
     digest_config=Job.CacheDigestConfig(
         include_paths=[
