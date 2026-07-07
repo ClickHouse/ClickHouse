@@ -7,10 +7,12 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int NOT_IMPLEMENTED;
 }
 
 using namespace DB;
@@ -186,6 +188,80 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
         EXPECT_EQ(msg.parameters[0], "hi");
+    }
+}
+
+TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
+{
+    /// Build a Bind message whose parameter format codes are given explicitly.
+    /// `format_codes` become the per-parameter format-code array (0 = text,
+    /// 1 = binary); a single text parameter "hi" follows.
+    auto build = [](const std::vector<Int16> & format_codes)
+    {
+        std::string bytes;
+        putInt32(bytes, 0); /// outer size field, unused for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, static_cast<Int16>(format_codes.size()));
+        for (Int16 code : format_codes)
+            putInt16(bytes, code);
+        putInt16(bytes, 1); /// one parameter
+        putInt32(bytes, 2);
+        bytes += "hi";
+        putInt16(bytes, 0); /// no result format codes
+        return bytes;
+    };
+
+    auto deserializeThrows = [](const std::string & bytes, int expected_code)
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        try
+        {
+            msg.deserialize(in);
+            return false;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), expected_code);
+            return e.code() == expected_code;
+        }
+    };
+
+    /// No format codes: all parameters are text (accepted).
+    {
+        std::string bytes = build({});
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        ASSERT_EQ(msg.parameters.size(), 1u);
+        EXPECT_EQ(msg.parameters[0], "hi");
+    }
+
+    /// Explicit text format code (accepted).
+    {
+        std::string bytes = build({0});
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        ASSERT_EQ(msg.parameters.size(), 1u);
+        EXPECT_EQ(msg.parameters[0], "hi");
+    }
+
+    /// Binary format code must be rejected rather than silently misbound.
+    EXPECT_TRUE(deserializeThrows(build({1}), ErrorCodes::NOT_IMPLEMENTED));
+
+    /// A binary code anywhere in the array is rejected.
+    EXPECT_TRUE(deserializeThrows(build({0, 1}), ErrorCodes::NOT_IMPLEMENTED));
+
+    /// A negative format-code count is malformed.
+    {
+        std::string bytes;
+        putInt32(bytes, 0);
+        bytes.push_back('\0');
+        bytes.push_back('\0');
+        putInt16(bytes, -1); /// negative format-code count
+        EXPECT_TRUE(deserializeThrows(bytes, ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT));
     }
 }
 

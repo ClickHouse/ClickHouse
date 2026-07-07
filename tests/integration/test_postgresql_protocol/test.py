@@ -420,6 +420,41 @@ def test_prepared_statement_no_sql_injection(started_cluster):
     cur.execute("DROP TABLE inj_secret;")
 
 
+def test_bind_binary_format_rejected(started_cluster):
+    # The Bind message carries a format code per parameter (0 = text, 1 = binary).
+    # This handler only understands text and would otherwise literalize a binary
+    # payload as a raw byte string (silent misbinding), so a binary format code
+    # must be rejected up front. Drive the extended Parse/Bind/Execute path with
+    # an explicit binary format code via libpq and assert the server refuses it.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    pg = ch.pgconn
+
+    # Sanity: the same query with a text format code (0) is accepted.
+    res_text = pg.exec_params(
+        b"SELECT $1::Int32", [b"42"], None, [0], 0
+    )
+    assert res_text.status == psycopg.pq.ExecStatus.TUPLES_OK, (
+        res_text.error_message
+    )
+    assert res_text.get_value(0, 0) == b"42"
+
+    # Binary format code (1) must be rejected, not silently misbound.
+    res_bin = pg.exec_params(
+        b"SELECT $1::Int32", [b"\x00\x00\x00\x2a"], None, [1], 0
+    )
+    assert res_bin.status == psycopg.pq.ExecStatus.FATAL_ERROR
+    assert b"Binary format parameters are not supported" in res_bin.error_message
+
+    ch.close()
+
+
 def test_execute_no_sql_injection(started_cluster):
     # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
     # prepared statement body by $N substitution, so a string argument must be

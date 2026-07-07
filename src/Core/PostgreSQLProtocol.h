@@ -782,12 +782,26 @@ public:
         readNullTerminated(portal_name, in);
         readNullTerminated(function_name, in);
 
+        /// Per-parameter format codes (0 = text, 1 = binary). Count semantics:
+        /// 0 means all parameters are text, 1 means the single code applies to
+        /// every parameter, otherwise there is one code per parameter. We only
+        /// support text: a binary payload would have to be decoded using the
+        /// declared type, which this handler does not do, so reject it up front
+        /// rather than splice raw bytes into the statement body.
         Int16 num_format_params = 0;
         readBinaryBigEndian(num_format_params, in);
+        if (num_format_params < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
         Int16 format_param = 0;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
+            /// FormatCode is declared further down in this header; 0 is TEXT,
+            /// anything else (1 = BINARY) is unsupported here.
+            if (format_param != 0)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                                "Binary format parameters are not supported in Bind messages, use the text format");
         }
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
