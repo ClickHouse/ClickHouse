@@ -670,12 +670,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     const auto result_sorting_key = extractSortingKeyColumns(result_block_copy, sorting_key.column_names);
     const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key.column_names);
 
-    /// Degenerate sorting key (tuple of no columns): the "equal-sort-key run" is the whole block
-    /// on both sides; we fall through to the hash-map branch over the full patch (like v1 Join mode).
     size_t main_idx = 0;
-
-    /// A patch block shared across several main blocks often carries a long prefix of rows below
-    /// `main[0]` that cannot match anything here; skip it in `O(log prefix)` instead of row by row.
     size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, result_sorting_key, 0, reverse_flags);
 
     /// The patch stream is typically much smaller than the main stream, so we drive the merge
@@ -739,26 +734,26 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         patch_idx = patch_run_end;
     }
 
-    /// Remove all unneeded columns from the patch block (sort-key results and their physical
-    /// source columns, identity columns) and keep only the updated columns.
-    auto erase_column = [&](const String & column_name)
+    /// Remove all unneeded columns from the patch block (sort-key results and their
+    /// physical source columns, identity columns) and keep only the updated columns.
+    auto erase_patch_column = [&](const String & column_name)
     {
-        if (result_block_copy.has(column_name))
+        if (patch_block_copy.has(column_name))
             patch_block_copy.erase(column_name);
     };
 
     for (const auto & column_name : sorting_key.column_names)
-        erase_column(column_name);
+        erase_patch_column(column_name);
 
     if (sorting_key.expression)
     {
         for (const auto & column_name : sorting_key.expression->getRequiredColumns())
-            erase_column(column_name);
+            erase_patch_column(column_name);
     }
 
-    erase_column(BlockNumberColumn::name);
-    erase_column(BlockOffsetColumn::name);
-    patch_to_apply->patch_blocks.emplace_back(result_block_copy);
+    erase_patch_column(BlockNumberColumn::name);
+    erase_patch_column(BlockOffsetColumn::name);
+    patch_to_apply->patch_blocks.emplace_back(patch_block_copy);
 
     return patch_to_apply;
 }

@@ -21,7 +21,7 @@ SELECT b FROM t_lwu_sequence WHERE a = 5 SETTINGS apply_patch_parts = 1;
 
 SELECT count(), sum(rows) FROM system.parts WHERE database = currentDatabase() AND table = 't_lwu_sequence' AND startsWith(name, 'patch') AND active;
 
-OPTIMIZE TABLE t_lwu_sequence PARTITION ID 'patch-42e80b325df426c7fe4787aa47de10e4-all' FINAL;
+OPTIMIZE TABLE t_lwu_sequence PARTITION ID 'patch-5ca1e4dd51b76809c857aba575f851d1-all' FINAL;
 
 SELECT b FROM t_lwu_sequence WHERE a = 5 SETTINGS apply_patch_parts = 0;
 SELECT b FROM t_lwu_sequence WHERE a = 5 SETTINGS apply_patch_parts = 1;

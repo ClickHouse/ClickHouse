@@ -58,10 +58,8 @@ struct PatchJoinReadResult : public PatchReadResult
     bool empty() const override { return entries.empty(); }
 };
 
-/// v2 patch-read result. The block's last row — projected onto the sort-key columns — defines the
-/// upper bound that `MergeTreePatchReaderMergeOnKey::needNewPatch`/`needOldPatch` compare against
-/// the main-side read result's min/max sort-key tuple. The sort-key expression is materialized
-/// in-place on `block` by the reader, so callers can look up sort-key columns on it by name.
+/// v2 patch-read result. Sort-key result columns are materialized on `block` by the reader.
+/// The last row's sort-key tuple is the upper bound that `needNewPatch`/`needOldPatch` compare against.
 struct PatchMergeOnKeyReadResult : public PatchReadResult
 {
     Block block;
@@ -73,9 +71,9 @@ struct PatchMergeOnKeyReadResult : public PatchReadResult
 PatchToApplyPtr applyPatchMerge(const Block & result_block, const Block & patch_block, const PatchPartInfoForReader & patch);
 PatchToApplyPtr applyPatchJoin(const Block & result_block, const PatchJoinCache::Entry & join_entry);
 
-/// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns; within
-/// each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which main-side row
-/// matches which patch-side row. Memory bounded by the largest equal-sort-key run (usually 1).
+/// Applies a v2 (MergeOnKey) patch. Two-cursor merge on the main table's sort-key columns.
+/// Within each equal-sort-key run, uses `(_block_number, _block_offset)` to identify which
+/// main-side row matches which patch-side row. Memory bounded by the largest equal-sort-key run.
 PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & patch_block, const KeyDescription & sorting_key);
 
 /// Updates rows in result_block from patch_block at specified indices.

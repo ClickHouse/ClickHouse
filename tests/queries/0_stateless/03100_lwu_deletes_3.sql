@@ -38,7 +38,7 @@ WHERE database = currentDatabase() AND table = 't_lwu_deletes_3' AND column = '_
 
 SYSTEM START MERGES t_lwu_deletes_3;
 SYSTEM SYNC REPLICA t_lwu_deletes_3 PULL;
-OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-59b7611c2f54436e293b58112d725550-all' FINAL SETTINGS optimize_throw_if_noop = 1;
+OPTIMIZE TABLE t_lwu_deletes_3 PARTITION ID 'patch-201cb7ceec29c1d4419caa57b820af27-all' FINAL SETTINGS optimize_throw_if_noop = 1;
 
 SELECT 'after merge patch';
 SELECT count(), sum(v1), sum(notEmpty(v2)) FROM t_lwu_deletes_3;
