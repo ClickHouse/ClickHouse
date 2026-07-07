@@ -2,7 +2,6 @@
 
 #include <Columns/IColumn.h>
 #include <Columns/ColumnNullable.h>
-#include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <Interpreters/KeysNullMap.h>
@@ -183,7 +182,6 @@ public:
     using FindResult = FindResultImpl<Mapped, need_offset>;
     static constexpr bool has_mapped = !std::is_same_v<Mapped, void>;
     using Cache = LastElementCache<Value, nullable>;
-    static constexpr bool has_range_check = false;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings &) { return nullptr; }
 
@@ -242,23 +240,8 @@ public:
             }
         }
 
-        if constexpr (Derived::has_range_check)
-        {
-            auto [key_holder, in_range] = static_cast<const Derived &>(*this).getKeyHolderInRange(row, pool);
-            if (!in_range)
-            {
-                if constexpr (has_mapped)
-                    return FindResult(nullptr, false, 0);
-                else
-                    return FindResult(false, 0);
-            }
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
-        }
-        else
-        {
-            auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
-            return findKeyImpl(keyHolderGetKey(key_holder), data);
-        }
+        auto key_holder = static_cast<Derived &>(*this).getKeyHolder(row, pool);
+        return findKeyImpl(keyHolderGetKey(key_holder), data);
     }
 
     template <typename Data>

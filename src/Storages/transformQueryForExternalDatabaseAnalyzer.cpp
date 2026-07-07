@@ -10,9 +10,11 @@
 #include <Analyzer/Utils.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/ConstantNode.h>
+#include <Analyzer/ConstantValue.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/JoinNode.h>
 
+#include <DataTypes/DataTypesNumber.h>
 
 namespace DB
 {

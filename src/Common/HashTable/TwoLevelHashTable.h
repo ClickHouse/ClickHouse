@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Common/HashTable/HashTable.h>
-#include <array>
 
 
 /** Two-level hash table.
@@ -89,11 +88,6 @@ public:
 
     Impl impls[NUM_BUCKETS];
 
-    /// Cached prefix sums of bucket capacities in cells to speed up offsetInternal
-    /// bucket_cells_prefix[b] = sum_{i=0..b-1} impls[i].getBufferSizeInCells()
-    mutable std::array<size_t, NUM_BUCKETS> bucket_cells_prefix{};
-    mutable std::once_flag bucket_prefix_once;
-
 
     TwoLevelHashTable() = default;
 
@@ -160,7 +154,6 @@ public:
 
         Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
-        size_t getBucket() const { return bucket; }
     };
 
 
@@ -201,7 +194,6 @@ public:
 
         const Cell * getPtr() const { return current_it.getPtr(); }
         size_t getHash() const { return current_it.getHash(); }
-        size_t getBucket() const { return bucket; }
     };
 
 
@@ -222,22 +214,6 @@ public:
     const_iterator end() const         { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
     iterator end()                     { return { this, MAX_BUCKET, impls[MAX_BUCKET].end() }; }
 
-    const_iterator iteratorAt(size_t bucket) const
-    {
-        if (bucket >= NUM_BUCKETS)
-            return end();
-        auto impl_it = beginOfNextNonEmptyBucket(bucket);
-        return { this, bucket, impl_it };
-    }
-
-    iterator iteratorAt(size_t bucket)
-    {
-        if (bucket >= NUM_BUCKETS)
-            return end();
-        auto impl_it = beginOfNextNonEmptyBucket(bucket);
-        return { this, bucket, impl_it };
-    }
-
 
     /// Insert a value. In the case of any more complex values, it is better to use the `emplace` function.
     std::pair<LookupResult, bool> ALWAYS_INLINE insert(const value_type & x)
@@ -249,19 +225,6 @@ public:
 
         if (res.second)
             res.first->setMapped(x);
-
-        return res;
-    }
-
-    std::pair<LookupResult, bool> ALWAYS_INLINE insert(const Cell & cell)
-    {
-        auto hash_value = cell.getHash(*this);
-
-        std::pair<LookupResult, bool> res;
-        emplace(cell.getKey(), res.first, res.second, hash_value);
-
-        if (res.second)
-            res.first->setMapped(cell.getValue());
 
         return res;
     }
@@ -396,18 +359,9 @@ public:
         const size_t buck = getBucketFromHash(ptr->getHash(*this));
         if (ptr->isZero(impls[buck]))
             return 0;
-
-        // Lazily compute prefix sums across buckets once; subsequent calls are O(1).
-        std::call_once(bucket_prefix_once, [this]()
-        {
-            size_t run = 0;
-            for (UInt32 i = 0; i < NUM_BUCKETS; ++i)
-            {
-                bucket_cells_prefix[i] = run;
-                run += impls[i].getBufferSizeInCells();
-            }
-        });
-
-        return bucket_cells_prefix[buck] + (ptr - impls[buck].buf) + 1;
+        size_t res = 0;
+        for (UInt32 i = 0; i < buck; ++i)
+            res += impls[i].getBufferSizeInCells();
+        return res + (ptr - impls[buck].buf) + 1;
     }
 };

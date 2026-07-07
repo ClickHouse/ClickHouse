@@ -3,6 +3,8 @@
 #include <Core/callOnTypeIndex.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>

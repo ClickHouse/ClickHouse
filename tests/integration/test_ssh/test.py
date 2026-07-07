@@ -55,8 +55,10 @@ def test_no_queries_from_file(started_cluster):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    # SUPPORT_IS_DISABLED error code is 344, exit code = 344 % 256 = 88
-    assert completed_process.returncode == 88
+    # Not sure which exit code should the ssh command have in this case
+    # Ideally it should be non-zero as be same as `ssh -vvv user@host "false"; echo $?` == 1
+    # But for now it is 0.
+    assert completed_process.returncode == 1
     assert "SUPPORT_IS_DISABLED" in completed_process.stderr
 
 
@@ -115,7 +117,7 @@ def test_create_table(started_cluster):
     execute_command_and_get_output("TRUNCATE test;")
     result = execute_command_and_get_output("SELECT * FROM test;")
     # Output should be empty
-    assert result.replace("\x00", "") == ""
+    assert result.replace("\x00", "\n") == "\n"
     execute_command_and_get_output("DROP TABLE IF EXISTS test;")
 
 

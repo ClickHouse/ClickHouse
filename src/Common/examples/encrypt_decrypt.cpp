@@ -3,7 +3,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/XMLConfiguration.h>
-#include <Common/ZooKeeper/ZooKeeperArgs.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/EventNotifier.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
@@ -84,8 +83,8 @@ int main(int argc, char ** argv)
             Poco::Util::LayeredConfiguration & conf = Poco::Util::Application::instance().config();
             conf.add(bootstrap_configuration);
 
-            zkutil::ZooKeeperArgs args(*bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
-            auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(std::move(args));
+            auto zookeeper = zkutil::ZooKeeper::createWithoutKillingPreviousSessions(
+                *bootstrap_configuration, bootstrap_configuration->has("zookeeper") ? "zookeeper" : "keeper");
 
             zkutil::ZooKeeperNodeCache zk_node_cache([&] { return zookeeper; });
             config_xml = processor.processConfig(&has_zk_includes, &zk_node_cache);

@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/IInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/logger_useful.h>
@@ -98,7 +99,7 @@ public:
         , max_block_size(params.max_block_size)
         , last_block_missing_values(getPort().getHeader().columns())
         , is_server(params.is_server)
-        , runner(getFormatParsingThreadPool().get(), ThreadName::PARALLEL_FORMATER_PARSER)
+        , runner(getFormatParsingThreadPool().get(), "ChunkParser")
     {
         // One unit for each thread, including segmentator and reader, plus a
         // couple more units so that the segmentation thread doesn't spuriously
@@ -188,7 +189,7 @@ private:
 
                     case IProcessor::Status::NeedData: break;
                     case IProcessor::Status::Async: break;
-                    case IProcessor::Status::UpdatePipeline:
+                    case IProcessor::Status::ExpandPipeline:
                         throw Exception(ErrorCodes::LOGICAL_ERROR, "One of the parsers returned status {} during parallel parsing",
                                              IProcessor::statusToName(status));
                 }
@@ -212,7 +213,7 @@ private:
 
     BlockMissingValues last_block_missing_values;
     size_t last_approx_bytes_read_for_chunk = 0;
-    SerializationInfoByName serialization_hints{{}};
+    SerializationInfoByName serialization_hints;
 
     /// Non-atomic because it is used in one thread.
     std::optional<size_t> next_block_in_current_unit;
@@ -289,7 +290,7 @@ private:
 
     void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        runner.enqueueAndKeepTrack([this, ticket_number]()
+        runner([this, ticket_number]()
         {
             parserThreadFunction(ticket_number);
         });

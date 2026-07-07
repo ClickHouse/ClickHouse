@@ -5,7 +5,6 @@ toc_folder_title: 'Table Engines'
 toc_priority: 26
 toc_title: 'Introduction'
 title: 'Table Engines'
-doc_type: 'reference'
 ---
 
 # Table engines

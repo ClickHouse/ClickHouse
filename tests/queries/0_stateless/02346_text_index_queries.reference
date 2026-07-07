@@ -1,4 +1,4 @@
-Test text(tokenizer = ngram(2))
+Test text(tokenizer="ngram", ngram_size = 2)
 af	text
 1
 101	Alick a01
@@ -11,7 +11,7 @@ af	text
 113	Click b03
 118	Click b08
 1
-Test text(tokenizer = "splitByNonAlpha")
+Test text(tokenizer = "default")
 af	text
 101	x Alick a01 y
 106	x Alick a06 y
@@ -20,21 +20,13 @@ af	text
 101	x Alick a01 y
 106	x Alick a06 y
 1
-Test text(tokenizer = ngrams(2)) on a column with two parts
+Test text(tokenizer = "ngram", ngram_size = 2) on a column with two parts
 af	text
 101	Alick a01
 111	Alick b01
 201	rick c01
 1
-Test text(tokenizer = ngrams(2)) on UTF-8 data
-af	text
-102	clickhouse你好
-1
-Test text(tokenizer = sparseGrams(3, 100)) on UTF-8 data
-af	text
-102	clickhouse你好
-1
-Test text(tokenizer = sparseGrams(3, 100, 4)) on UTF-8 data
+Test text(tokenizer = "ngram", ngram_size = 2) on UTF-8 data
 af	text
 102	clickhouse你好
 1

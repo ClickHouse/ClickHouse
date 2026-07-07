@@ -13,10 +13,8 @@
 #include <Storages/StorageMaterializedView.h>
 #include <base/isSharedPtrUnique.h>
 #include <Common/PoolId.h>
-#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/atomicRename.h>
 #include <Common/logger_useful.h>
-#include <Common/AsyncLoader.h>
 
 
 namespace fs = std::filesystem;
@@ -66,15 +64,9 @@ DatabaseAtomic::DatabaseAtomic(
     const String & logger_name,
     ContextPtr context_,
     DatabaseMetadataDiskSettings database_metadata_disk_settings_)
-    : DatabaseOrdinary(
-        name_,
-        metadata_path_,
-        DatabaseCatalog::getStoreDirPath() / "",
-        logger_name,
-        context_,
-        database_metadata_disk_settings_)
-    , path_to_table_symlinks(DatabaseCatalog::getDataDirPath(name_) / "")
-    , path_to_metadata_symlink(DatabaseCatalog::getMetadataDirPath(name_))
+    : DatabaseOrdinary(name_, metadata_path_, "store/", logger_name, context_, database_metadata_disk_settings_)
+    , path_to_table_symlinks(fs::path("data") / escapeForFileName(name_) / "")
+    , path_to_metadata_symlink(fs::path("metadata") / escapeForFileName(name_))
     , db_uuid(uuid)
 {
     assert(db_uuid != UUIDHelpers::Nil);
@@ -97,7 +89,7 @@ void DatabaseAtomic::createDirectoriesUnlocked()
     auto db_disk = getDisk();
 
     DatabaseOnDisk::createDirectoriesUnlocked();
-    db_disk->createDirectories(DatabaseCatalog::getMetadataDirPath());
+    db_disk->createDirectories("metadata");
     if (db_disk->isSymlinkSupported())
         db_disk->createDirectories(path_to_table_symlinks);
     tryCreateMetadataSymlink();
@@ -122,12 +114,8 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 
 void DatabaseAtomic::drop(ContextPtr)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::drop");
     waitDatabaseStarted();
-    {
-        std::lock_guard lock(mutex);
-        assert(tables.empty());
-    }
+    assert(TSA_SUPPRESS_WARNING_FOR_READ(tables).empty());
 
     auto db_disk = getDisk();
     try
@@ -148,7 +136,6 @@ void DatabaseAtomic::drop(ContextPtr)
 
 void DatabaseAtomic::attachTable(ContextPtr /* context_ */, const String & name, const StoragePtr & table, const String & relative_table_path)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::attachTable");
     assert(relative_table_path != data_path && !relative_table_path.empty());
     DetachedTables not_in_use;
     std::lock_guard lock(mutex);
@@ -185,7 +172,6 @@ StoragePtr DatabaseAtomic::detachTable(ContextPtr /* context */, const String & 
 
 void DatabaseAtomic::dropTable(ContextPtr local_context, const String & table_name, bool sync)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::dropTable");
     waitDatabaseStarted();
     auto table = tryGetTable(table_name, local_context);
     /// Remove the inner table (if any) to avoid deadlock
@@ -239,7 +225,6 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
                                  const String & to_table_name, bool exchange, bool dictionary)
     TSA_NO_THREAD_SAFETY_ANALYSIS   /// TSA does not support conditional locking
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameTable");
     if (typeid(*this) != typeid(to_database))
     {
         if (typeid_cast<DatabaseOrdinary *>(&to_database))
@@ -714,16 +699,15 @@ void DatabaseAtomic::tryCreateMetadataSymlink()
 
 void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new_name)
 {
-    auto component_guard = Coordination::setCurrentComponent("DatabaseAtomic::renameDatabase");
     /// CREATE, ATTACH, DROP, DETACH and RENAME DATABASE must hold DDLGuard
     createDirectories();
     waitDatabaseStarted();
-    std::lock_guard lock(mutex);
 
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
     {
+        std::lock_guard lock(mutex);
         for (auto & table : tables)
         {
             checkTableNameLengthUnlocked(new_name, table.first, getContext());
@@ -744,14 +728,16 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         LOG_WARNING(log, getCurrentExceptionMessageAndPattern(/* with_stacktrace */ true));
     }
 
-    auto old_metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
-    auto new_metadata_file_path = DatabaseCatalog::getMetadataFilePath(new_name);
+    auto new_name_escaped = escapeForFileName(new_name);
+    auto old_database_metadata_path = fs::path("metadata") / (escapeForFileName(getDatabaseName()) + ".sql");
+    auto new_database_metadata_path = fs::path("metadata") / (new_name_escaped + ".sql");
     auto default_db_disk = getContext()->getDatabaseDisk();
-    default_db_disk->moveFile(old_metadata_file_path, new_metadata_file_path);
+    default_db_disk->moveFile(old_database_metadata_path, new_database_metadata_path);
 
     String old_path_to_table_symlinks;
 
     {
+        std::lock_guard lock(mutex);
         {
             Strings table_names;
             table_names.reserve(tables.size());
@@ -773,9 +759,9 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             snapshot.database = database_name;
         }
 
-        path_to_metadata_symlink = DatabaseCatalog::getMetadataDirPath(new_name);
+        path_to_metadata_symlink = fs::path("metadata") / new_name_escaped;
         old_path_to_table_symlinks = path_to_table_symlinks;
-        path_to_table_symlinks = DatabaseCatalog::getDataDirPath(new_name) / "";
+        path_to_table_symlinks = fs::path("data") / new_name_escaped / "";
     }
 
     auto db_disk = getDisk();

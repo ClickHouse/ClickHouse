@@ -41,6 +41,7 @@ void narrowPipe(Pipe & pipe, size_t width)
             partitions[distribution[i]].emplace_back(ports[i]);
 
         Processors concats;
+        concats.reserve(width);
 
         for (size_t i = 0; i < width; ++i)
         {

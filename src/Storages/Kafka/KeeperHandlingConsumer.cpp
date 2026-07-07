@@ -1,7 +1,6 @@
 #include <Storages/Kafka/KeeperHandlingConsumer.h>
 
 #include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <boost/algorithm/string/join.hpp>
 #include <pcg-random/pcg_random.hpp>
 #include <Common/DateLUT.h>
@@ -131,12 +130,14 @@ bool KeeperHandlingConsumer::needsNewKeeper() const
 
 void KeeperHandlingConsumer::setKeeper(const std::shared_ptr<zkutil::ZooKeeper> & keeper_)
 {
-    keeper = keeper_;
+    /// Drop the lock holders before replacing `keeper` -- same use-after-free hazard as
+    /// `replica_is_active_node` in `StorageKafka2::partialShutdown` (see comment there).
     {
         std::lock_guard lock(topic_partition_locks_mutex);
         permanent_locks.clear();
         tmp_locks.clear();
     }
+    keeper = keeper_;
     tmp_locks_quota = 0;
     assigned_topic_partitions.clear();
     topic_partition_index_to_consume_from = 0;

@@ -6,6 +6,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -13,6 +14,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -144,13 +146,13 @@ public:
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                haystack_type->getName(), getName());
+                arguments[0]->getName(), getName());
 
         if (!isString(needle_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}",
-                needle_type->getName(), getName());
+                arguments[1]->getName(), getName());
 
         if (arguments.size() >= 3)
         {

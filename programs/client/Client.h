@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Client/ClientApplicationBase.h>
-#include <Common/QueryScope.h>
 
 
 namespace BuzzHouse
@@ -32,10 +31,6 @@ protected:
     bool processWithASTFuzzer(std::string_view full_query) override;
     bool buzzHouse() override;
     bool processASTFuzzerStep(const String & query_to_execute, const ASTPtr & parsed_query);
-
-#if USE_JWT_CPP && USE_SSL
-    void login();
-#endif
 
     void connect() override;
 
@@ -73,13 +68,9 @@ private:
     bool processBuzzHouseQuery(const String & full_query);
     bool fuzzLoopReconnect();
 #endif
+    void parseConnectionsCredentials(Poco::Util::AbstractConfiguration & config, const std::string & connection_name);
     std::vector<String> loadWarningMessages();
 
-    QueryScope query_scope;
-
-#if USE_JWT_CPP && USE_SSL
-    std::shared_ptr<JWTProvider> jwt_provider;
-    bool login_was_auto_added = false;
-#endif
+    std::optional<CurrentThread::QueryScope> query_scope;
 };
 }

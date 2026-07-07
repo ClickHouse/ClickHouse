@@ -52,9 +52,6 @@ public:
 
     AddPartOutcome tryAddPart(const MergeTreePartInfo & part_info, String * out_reason = nullptr);
 
-    /// Like add(const String &) but returns outcome instead of throwing on intersection.
-    AddPartOutcome tryAdd(const String & name, String * out_reason = nullptr);
-
     bool remove(const MergeTreePartInfo & part_info)
     {
         return part_info_to_name.erase(part_info) > 0;
@@ -68,13 +65,9 @@ public:
     /// Remove part and all covered parts from active set
     bool removePartAndCoveredParts(const String & part_name)
     {
-        return removePartAndCoveredParts(MergeTreePartInfo::fromPartName(part_name, format_version));
-    }
-
-    bool removePartAndCoveredParts(const MergeTreePartInfo & part_info)
-    {
-        Strings parts_covered_by = getPartsCoveredBy(part_info);
-        bool result = remove(part_info);
+        Strings parts_covered_by = getPartsCoveredBy(MergeTreePartInfo::fromPartName(part_name, format_version));
+        bool result = true;
+        result &= remove(part_name);
         for (const auto & part : parts_covered_by)
             result &= remove(part);
 
@@ -107,8 +100,6 @@ public:
     std::vector<MergeTreePartInfo> getPatchPartInfos() const;
     bool hasPartitionId(const String & partition_id) const;
 
-    bool isEmpty() const;
-    bool hasSome() const;
     size_t size() const;
 
     void clear()

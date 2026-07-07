@@ -3,9 +3,11 @@
 #include "config.h"
 
 #include <IO/VarInt.h>
+#include <IO/WriteHelpers.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>

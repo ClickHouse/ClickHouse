@@ -25,17 +25,16 @@ using Operators_t = const char **;
 class ParserList : public IParserBase
 {
 public:
-    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true, char result_separator_ = ',', bool allow_trailing_separator_ = false)
+    ParserList(ParserPtr && elem_parser_, ParserPtr && separator_parser_, bool allow_empty_ = true, char result_separator_ = ',')
         : elem_parser(std::move(elem_parser_))
         , separator_parser(std::move(separator_parser_))
         , allow_empty(allow_empty_)
         , result_separator(result_separator_)
-        , allow_trailing_separator(allow_trailing_separator_)
     {
     }
 
     template <typename F>
-    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, IParser & separator_parser_, bool allow_empty_ = true, bool allow_trailing_separator_ = false)
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, IParser & separator_parser_, bool allow_empty_ = true)
     {
         Pos begin = pos;
         if (!parse_element())
@@ -47,18 +46,9 @@ public:
         while (true)
         {
             begin = pos;
-            if (!separator_parser_.ignore(pos, expected))
+            if (!separator_parser_.ignore(pos, expected) || !parse_element())
             {
                 pos = begin;
-                return true;
-            }
-
-            Pos after_separator = pos;
-            if (!parse_element())
-            {
-                // Since the separator is not followed by an element, we can assume
-                // that the separator is trailing.
-                pos = allow_trailing_separator_ ? after_separator : begin;
                 return true;
             }
         }
@@ -67,16 +57,16 @@ public:
     }
 
     template <typename F>
-    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, TokenType separator, bool allow_empty_ = true, bool allow_trailing_separator_ = false)
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, TokenType separator, bool allow_empty_ = true)
     {
         ParserToken sep_parser{separator};
-        return parseUtil(pos, expected, parse_element, sep_parser, allow_empty_, allow_trailing_separator_);
+        return parseUtil(pos, expected, parse_element, sep_parser, allow_empty_);
     }
 
     template <typename F>
-    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, bool allow_empty_ = true, bool allow_trailing_separator_ = false)
+    static bool parseUtil(Pos & pos, Expected & expected, const F & parse_element, bool allow_empty_ = true)
     {
-        return parseUtil(pos, expected, parse_element, TokenType::Comma, allow_empty_, allow_trailing_separator_);
+        return parseUtil(pos, expected, parse_element, TokenType::Comma, allow_empty_);
     }
 
 protected:
@@ -87,7 +77,6 @@ private:
     ParserPtr separator_parser;
     bool allow_empty;
     char result_separator;
-    bool allow_trailing_separator;
 };
 
 class ParserUnionList : public IParserBase
@@ -328,7 +317,7 @@ protected:
 class ParserTTLExpressionList : public IParserBase
 {
 protected:
-    const char * getName() const override { return "ttl expression list"; }
+    const char * getName() const override { return "ttl expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 

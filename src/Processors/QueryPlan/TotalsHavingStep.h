@@ -31,13 +31,12 @@ public:
     void describeActions(FormatSettings & settings) const override;
 
     const ActionsDAG * getActions() const { return actions_dag ? &*actions_dag : nullptr; }
-    const String & getFilterColumnName() const { return filter_column_name; }
 
     void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
-    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+    static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
     void updateOutputHeader() override;

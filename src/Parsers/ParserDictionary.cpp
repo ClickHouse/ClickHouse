@@ -8,7 +8,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserDictionaryAttributeDeclaration.h>
 
+#include <Poco/String.h>
 
 #include <Parsers/ParserSetQuery.h>
 
@@ -21,7 +23,7 @@ bool ParserDictionaryLifetime::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserLiteral literal_p;
     ParserKeyValuePairsList key_value_pairs_p;
     ASTPtr ast_lifetime;
-    auto res = make_intrusive<ASTDictionaryLifetime>();
+    auto res = std::make_shared<ASTDictionaryLifetime>();
 
     /// simple lifetime with only maximum value e.g. LIFETIME(300)
     if (literal_p.parse(pos, ast_lifetime, expected))
@@ -85,7 +87,7 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (expr_list.children.size() != 2)
         return false;
 
-    auto res = make_intrusive<ASTDictionaryRange>();
+    auto res = std::make_shared<ASTDictionaryRange>();
     for (const auto & elem : expr_list.children)
     {
         const ASTPair & pair = elem->as<const ASTPair &>();
@@ -116,7 +118,7 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     const ASTFunctionWithKeyValueArguments & func = ast_func->as<const ASTFunctionWithKeyValueArguments &>();
-    auto res = make_intrusive<ASTDictionaryLayout>();
+    auto res = std::make_shared<ASTDictionaryLayout>();
     /// here must be exactly one argument - layout_type
     if (func.children.size() > 1)
         return false;
@@ -152,7 +154,7 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             return false;
     }
 
-    auto query = make_intrusive<ASTDictionarySettings>();
+    auto query = std::make_shared<ASTDictionarySettings>();
     query->changes = std::move(changes);
 
     node = query;
@@ -277,7 +279,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         break;
     }
 
-    auto query = make_intrusive<ASTDictionary>();
+    auto query = std::make_shared<ASTDictionary>();
     node = query;
     if (primary_key)
         query->set(query->primary_key, primary_key);

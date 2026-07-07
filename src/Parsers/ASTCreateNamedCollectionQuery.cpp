@@ -11,7 +11,7 @@ namespace DB
 
 ASTPtr ASTCreateNamedCollectionQuery::clone() const
 {
-    return make_intrusive<ASTCreateNamedCollectionQuery>(*this);
+    return std::make_shared<ASTCreateNamedCollectionQuery>(*this);
 }
 
 void ASTCreateNamedCollectionQuery::formatImpl(WriteBuffer & ostr, const IAST::FormatSettings & settings, IAST::FormatState &, IAST::FormatStateStacked) const

@@ -54,13 +54,7 @@ public:
 
     Field getDefault() const override;
 
-    /// Compares name, parameters, and argument types.
-    /// When ignore_variant is false (default), also compares the state variant (Aggregation vs Window).
-    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
-
-    /// Same as equals() but ignores the state variant (Aggregation vs Window).
-    bool equalsIgnoringVariant(const IDataType & rhs) const;
-
+    static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type);
     bool equals(const IDataType & rhs) const override;
     void updateHashImpl(SipHash & hash) const override;
 
@@ -68,7 +62,7 @@ public:
     bool haveSubtypes() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
     bool supportsSparseSerialization() const override { return false; }
 
     bool isVersioned() const;

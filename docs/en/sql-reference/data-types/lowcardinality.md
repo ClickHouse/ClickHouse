@@ -4,7 +4,6 @@ sidebar_label: 'LowCardinality(T)'
 sidebar_position: 42
 slug: /sql-reference/data-types/lowcardinality
 title: 'LowCardinality(T)'
-doc_type: 'reference'
 ---
 
 # LowCardinality(T)
@@ -55,7 +54,7 @@ Settings:
 
 Functions:
 
-- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#toLowCardinality)
+- [toLowCardinality](../../sql-reference/functions/type-conversion-functions.md#tolowcardinality)
 
 ## Related content {#related-content}
 

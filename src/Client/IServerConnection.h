@@ -34,7 +34,7 @@ struct Packet
 
     Block block;
     std::unique_ptr<Exception> exception;
-    String columns_description;
+    std::vector<String> multistring_message;
     Progress progress;
     ProfileInfo profile_info;
     std::vector<UUID> part_uuids;
@@ -152,10 +152,6 @@ public:
     virtual void setThrottler(const ThrottlerPtr & throttler_) = 0;
 
     virtual void setFormatSettings(const FormatSettings &) {}
-
-    /// Set a callback to check for query cancellation (e.g. Ctrl+C).
-    /// Used by LocalConnection to enable cancellation during query analysis.
-    virtual void setCancelCallback(std::function<bool()>) {}
 };
 
 using ServerConnectionPtr = std::unique_ptr<IServerConnection>;

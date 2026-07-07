@@ -47,7 +47,7 @@ public:
 
     bool equals(const IDataType & rhs) const override;
 
-    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override;
+    SerializationPtr doGetDefaultSerialization() const override;
 };
 
 }

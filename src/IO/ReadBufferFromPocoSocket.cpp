@@ -102,13 +102,6 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
 
 bool ReadBufferFromPocoSocketBase::nextImpl()
 {
-    if (handshake_timeout_milliseconds > 0 && handshake_stopwatch.elapsedMilliseconds() > handshake_timeout_milliseconds)
-        throw NetException(
-            ErrorCodes::SOCKET_TIMEOUT,
-            "Handshake timeout exceeded ({} milliseconds, peer: {})",
-            handshake_timeout_milliseconds,
-            peer_address.toString());
-
     if (internal_buffer.size() > INT_MAX)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
 
@@ -157,19 +150,6 @@ bool ReadBufferFromPocoSocketBase::poll(size_t timeout_microseconds) const
 void ReadBufferFromPocoSocketBase::setReceiveTimeout(size_t receive_timeout_microseconds)
 {
     socket.setReceiveTimeout(Poco::Timespan(receive_timeout_microseconds, 0));
-}
-
-void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_milliseconds)
-{
-    handshake_timeout_milliseconds = timeout_milliseconds;
-    if (handshake_timeout_milliseconds > 0)
-        handshake_stopwatch.restart();
-}
-
-void ReadBufferFromPocoSocketBase::clearHandshakeTimeout()
-{
-    handshake_timeout_milliseconds = 0;
-    handshake_stopwatch.stop();
 }
 
 }

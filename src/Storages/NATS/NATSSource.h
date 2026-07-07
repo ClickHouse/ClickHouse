@@ -2,7 +2,7 @@
 
 #include <Core/StreamingHandleErrorMode.h>
 #include <Processors/ISource.h>
-#include <Storages/NATS/INATSConsumer.h>
+#include <Storages/NATS/NATSConsumer.h>
 #include <Storages/NATS/StorageNATS.h>
 
 
@@ -23,7 +23,7 @@ public:
     ~NATSSource() override;
 
     String getName() const override { return storage.getName(); }
-    INATSConsumerPtr getConsumer() { return consumer; }
+    NATSConsumerPtr getConsumer() { return consumer; }
 
     Chunk generate() override;
 
@@ -45,7 +45,7 @@ private:
     const Block non_virtual_header;
     const Block virtual_header;
 
-    INATSConsumerPtr consumer;
+    NATSConsumerPtr consumer;
     bool unsubscribe_on_destroy = false;
 
     Poco::Timespan max_execution_time = 0;

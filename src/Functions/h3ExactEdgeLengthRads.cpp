@@ -1,4 +1,4 @@
-#include <Functions/h3Common.h>
+#include "config.h"
 
 #if USE_H3
 
@@ -7,6 +7,11 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <IO/WriteHelpers.h>
+#include <Common/typeid_cast.h>
+#include <base/range.h>
+
+#include <constants.h>
+#include <h3api.h>
 
 
 namespace DB
@@ -25,11 +30,7 @@ class FunctionH3ExactEdgeLengthRads : public IFunction
 public:
     static constexpr auto name = "h3ExactEdgeLengthRads";
 
-    H3Validator validator;
-
-    explicit FunctionH3ExactEdgeLengthRads(const ContextPtr & context) : validator(context) {}
-
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionH3ExactEdgeLengthRads>(context); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionH3ExactEdgeLengthRads>(); }
 
     std::string getName() const override { return name; }
 
@@ -78,9 +79,7 @@ public:
         for (size_t row = 0; row < input_rows_count; ++row)
         {
             const UInt64 index = data[row];
-            Float64 res = 0;
-            if (validator.validateEdge(index))
-                edgeLengthRads(index, &res);
+            Float64 res = exactEdgeLengthRads(index);
             dst_data[row] = res;
         }
 
@@ -92,32 +91,7 @@ public:
 
 REGISTER_FUNCTION(H3ExactEdgeLengthRads)
 {
-    FunctionDocumentation::Description description = R"(
-Returns the exact edge length of the unidirectional edge represented by the input [H3](#h3-index) in radians.
-    )";
-    FunctionDocumentation::Syntax syntax = "h3ExactEdgeLengthRads(index)";
-    FunctionDocumentation::Arguments arguments = {
-        {"index", "Hexagon index number.", {"UInt64"}}
-    };
-    FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the exact length of the H3 edge in radians. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
-        {"Float64"}
-    };
-    FunctionDocumentation::Examples examples = {
-        {
-            "Get exact edge length in radians",
-            "SELECT h3ExactEdgeLengthRads(1310277011704381439) AS exactEdgeLengthRads",
-            R"(
-┌──exactEdgeLengthRads─┐
-│ 0.030677980118976447 │
-└──────────────────────┘
-            )"
-        }
-    };
-    FunctionDocumentation::IntroducedIn introduced_in = {22, 2};
-    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
-    factory.registerFunction<FunctionH3ExactEdgeLengthRads>(documentation);
+    factory.registerFunction<FunctionH3ExactEdgeLengthRads>();
 }
 
 }

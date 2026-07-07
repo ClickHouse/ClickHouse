@@ -1,11 +1,10 @@
 #pragma once
 
 #include <Processors/Transforms/SortingTransform.h>
-#include <Common/Logger.h>
 #include <Core/SortDescription.h>
 #include <Common/filesystemHelpers.h>
+#include <Disks/TemporaryFileOnDisk.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
-#include <Processors/TopKThresholdTracker.h>
 
 
 namespace DB
@@ -32,8 +31,7 @@ public:
         size_t max_bytes_in_block_before_external_sort_,
         size_t max_bytes_in_query_before_external_sort_,
         TemporaryDataOnDiskScopePtr tmp_data_,
-        size_t min_free_disk_space_,
-        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
+        size_t min_free_disk_space_);
 
     String getName() const override { return "MergeSortingTransform"; }
 
@@ -42,7 +40,7 @@ protected:
     void serialize() override;
     void generate() override;
 
-    PipelineUpdate updatePipeline() override;
+    Processors expandPipeline() override;
 
 private:
     size_t max_bytes_before_remerge;
@@ -66,8 +64,6 @@ private:
     void remerge();
 
     ProcessorPtr external_merging_sorted;
-
-    TopKThresholdTrackerPtr threshold_tracker;
 };
 
 }

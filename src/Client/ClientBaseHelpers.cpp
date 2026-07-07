@@ -130,11 +130,6 @@ std::string getChineseZodiac()
     return zodiacs[offset];
 }
 
-bool isCloudEndpoint(const std::string & host)
-{
-    return endsWith(host, ".clickhouse.cloud") || endsWith(host, ".clickhouse-staging.com") || endsWith(host, ".clickhouse-dev.com");
-}
-
 #if USE_REPLXX
 /// Issue: https://github.com/ClickHouse/ClickHouse/issues/83987
 /// countCodePointsWithSeqLength calculates utf-8 code point position consistently with
@@ -178,8 +173,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         {Highlight::substitution, Replxx::Color::MAGENTA},
         {Highlight::number, replxx::color::rgb666(0, 4, 0)},
         {Highlight::string, Replxx::Color::GREEN},
-        {Highlight::string_escape, replxx::color::bold(Replxx::Color::LIGHTGRAY)},
-        {Highlight::string_metacharacter, replxx::color::bold(Replxx::Color::BRIGHTMAGENTA)},
+        {Highlight::string_like, Replxx::Color::GREEN},
+        {Highlight::string_regexp, Replxx::Color::GREEN},
     };
 
     /// We set reasonably small limits for size/depth, because we don't want the CLI to be slow.
@@ -228,22 +223,17 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
         return;
     }
 
-    /// Also if the cursor is at an identifier or alias, highlight all identifiers and aliases with the same name
-    const char * cursor_char_position = cursor_position >= 0
-        ? begin + UTF8::computeBytesBeforeCodePoint(
-            reinterpret_cast<const UInt8 *>(begin), query.size(), cursor_position)
-        : end;
-    const HighlightedRange * highlight_matching_identifiers = nullptr;
-
-    /// Expand string_like/string_regexp into character-level sub-ranges
-    /// (string, string_escape, string_metacharacter).
-    const auto expanded = expandHighlights(expected.highlights);
-
     /// We have to map from byte positions to Unicode positions.
     size_t code_point_pos = 0;
     const char * char_pos = begin;
-    for (const auto & range : expanded)
+    for (const auto & range : expected.highlights)
     {
+        const char * metacharacters = "";
+        if (range.highlight == Highlight::string_like)
+            metacharacters = "%_";
+        if (range.highlight == Highlight::string_regexp)
+            metacharacters = "|()^$.[]?*+{:-";
+
         auto it = type_to_color.find(range.highlight);
         if (it != type_to_color.end())
         {
@@ -253,94 +243,28 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
                 char_pos += UTF8::seqLength(*char_pos);
             }
 
-            if (!highlight_matching_identifiers
-                && range.begin <= cursor_char_position && cursor_char_position < range.end
-                && (range.highlight == Highlight::identifier || range.highlight == Highlight::alias))
-            {
-                highlight_matching_identifiers = &range;
-            }
-
-            /// Highlight digit groups inside numbers
-            bool is_regular_number = (range.highlight == Highlight::number);
-            bool is_regular_number_finished = false;
-            std::optional<size_t> regular_number_before_decimal_code_point_first;
-            std::optional<size_t> regular_number_before_decimal_code_point_last;
-
+            int escaped = 0;
             while (char_pos < range.end)
             {
-                colors[code_point_pos] = it->second;
-
-                if (is_regular_number)
+                if (*char_pos == '\\')
                 {
-                    if (*char_pos == '-')
-                    {
-                        /// Skip
-                    }
-                    else if (isNumericASCII(*char_pos))
-                    {
-                        if (!is_regular_number_finished)
-                        {
-                            if (!regular_number_before_decimal_code_point_first)
-                                regular_number_before_decimal_code_point_first = code_point_pos;
-                            regular_number_before_decimal_code_point_last = code_point_pos;
-                        }
-                    }
-                    else if (*char_pos == '.')
-                    {
-                        /// We are highlighting only before the decimal point
-                        is_regular_number_finished = true;
-                    }
-                    else
-                    {
-                        /// Unexpected, like already pre-formatted numbers, e.g., 1_000, or exponential notation or hex/bin
-                        /// Do not highlight.
-                        is_regular_number = false;
-                    }
+                    ++escaped;
+                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::LIGHTGRAY);
+                }
+                /// The counting of escape characters is quite tricky due to double escaping of string literals + regexps,
+                /// and the special logic of interpreting escape sequences that are not interpreted by the string literals.
+                else if ((escaped % 4 == 0 || escaped % 4 == 3) && nullptr != strchr(metacharacters, *char_pos))
+                {
+                    colors[code_point_pos] = replxx::color::bold(Replxx::Color::BRIGHTMAGENTA);
+                }
+                else
+                {
+                    colors[code_point_pos] = it->second;
+                    escaped = 0;
                 }
 
                 ++code_point_pos;
                 char_pos += UTF8::seqLength(*char_pos);
-            }
-
-            /// Highlight digit groups inside numbers
-            if (is_regular_number
-                && regular_number_before_decimal_code_point_first
-                && regular_number_before_decimal_code_point_last)
-            {
-                size_t number_length = 1 + *regular_number_before_decimal_code_point_last - *regular_number_before_decimal_code_point_first;
-                if (number_length >= 5)
-                {
-                    for (int64_t offset = number_length - 4; offset >= 0; offset -= 3)
-                    {
-                        size_t number_code_point_pos = *regular_number_before_decimal_code_point_first + offset;
-                        colors[number_code_point_pos] = replxx::color::underline(colors[number_code_point_pos]);
-                    }
-                }
-            }
-        }
-    }
-
-    if (highlight_matching_identifiers)
-    {
-        const char * identifiers_char_pos = begin;
-        size_t identifiers_code_point_pos = 0;
-        for (const auto & range : expanded)
-        {
-            if ((range.highlight == Highlight::identifier || range.highlight == Highlight::alias)
-                && std::string_view(range.begin, range.end) == std::string_view(highlight_matching_identifiers->begin, highlight_matching_identifiers->end))
-            {
-                while (identifiers_char_pos < range.begin)
-                {
-                    ++identifiers_code_point_pos;
-                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
-                }
-
-                while (identifiers_char_pos < range.end)
-                {
-                    colors[identifiers_code_point_pos] = replxx::color::underline(colors[identifiers_code_point_pos]);
-                    ++identifiers_code_point_pos;
-                    identifiers_char_pos += UTF8::seqLength(*identifiers_char_pos);
-                }
             }
         }
     }
@@ -378,7 +302,8 @@ void highlight(const String & query, std::vector<replxx::Replxx::Color> & colors
     IParser::Pos highlight_token_iterator(
         tokens,
         static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_depth]),
-        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks]));
+        static_cast<uint32_t>(context.getSettingsRef()[Setting::max_parser_backtracks])
+    );
 
     try
     {

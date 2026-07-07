@@ -59,6 +59,11 @@ Chunk ORCBlockInputFormat::read()
     if (!batch)
         return {};
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(*batch);
+
     auto table_result = arrow::Table::FromRecordBatches({batch});
     if (!table_result.ok())
         throw Exception(
@@ -167,13 +172,13 @@ void ORCSchemaReader::initializeIfNeeded()
     if (file_reader)
         return;
 
-    std::atomic<int> is_stopped = 0;
-    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
-
     if (auto status = file_reader->ReadMetadata(); status.ok())
         metadata = status.ValueUnsafe();
     else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Error while reading incorrect metadata of ORC {}", status.status().message());
+
+    std::atomic<int> is_stopped = 0;
+    getFileReaderAndSchema(in, file_reader, schema, format_settings, is_stopped);
 }
 
 NamesAndTypesList ORCSchemaReader::readSchema()

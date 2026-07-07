@@ -11,10 +11,10 @@ namespace DB
 template <typename Type>
 class SerializationEnum : public SerializationNumber<Type>
 {
-private:
+public:
     using typename SerializationNumber<Type>::FieldType;
     using typename SerializationNumber<Type>::ColumnType;
-    using Values = typename EnumValues<Type>::Values;
+    using Values = EnumValues<Type>::Values;
 
     // SerializationEnum can be constructed in two ways:
     /// - Make a copy of the Enum name-to-type mapping.
@@ -30,14 +30,6 @@ private:
         : own_enum_type(enum_type), ref_enum_values(*enum_type)
     {
     }
-
-public:
-    static UInt128 getHash(const Values & values);
-
-    static SerializationPtr create(const std::shared_ptr<const DataTypeEnum<Type>> & enum_type);
-    static SerializationPtr create(const Values & values_);
-
-    size_t allocatedBytes() const override;
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
     void serializeTextEscaped(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;

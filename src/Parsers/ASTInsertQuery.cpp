@@ -1,6 +1,5 @@
 #include <iomanip>
 
-#include <Common/logger_useful.h>
 #include <Common/SipHash.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
@@ -35,16 +34,18 @@ String ASTInsertQuery::getTable() const
 
 void ASTInsertQuery::setDatabase(const String & name)
 {
-    reset(database);
-    if (!name.empty())
-        set(database, make_intrusive<ASTIdentifier>(name));
+    if (name.empty())
+        database.reset();
+    else
+        database = std::make_shared<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::setTable(const String & name)
 {
-    reset(table);
-    if (!name.empty())
-        set(table, make_intrusive<ASTIdentifier>(name));
+    if (name.empty())
+        table.reset();
+    else
+        table = std::make_shared<ASTIdentifier>(name);
 }
 
 void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
@@ -122,14 +123,6 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     {
         ostr << delim;
         select->format(ostr, settings, state, frame);
-
-        /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
-        /// the FORMAT clause must be preserved in the formatted output.
-        if (!format.empty())
-        {
-            ostr << delim
-                << "FORMAT" << " " << format;
-        }
     }
     else
     {
