@@ -55,6 +55,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int CANNOT_BACKUP_TABLE;
 }
 
 DatabaseMaterializedPostgreSQL::DatabaseMaterializedPostgreSQL(
@@ -301,6 +302,16 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     if (!local_context->hasQueryContext())
         return DatabaseAtomic::getCreateTableQueryImpl(table_name, local_context, throw_on_error);
 
+    /// Use the table's actual (stable) UUID rather than a freshly generated one. Otherwise every
+    /// call to this method returns a slightly different definition, which breaks operations that
+    /// read the table metadata several times and expect it to stay consistent - most notably
+    /// BACKUP, which kept retrying with "Table ... was created or changed its definition during
+    /// scanning" and never finished. Fall back to a generated UUID only if the table does not exist
+    /// yet. Fetched before acquiring `handler_mutex` to avoid lock ordering issues.
+    UUID table_uuid = UUIDHelpers::generateV4();
+    if (auto existing_table = DatabaseAtomic::tryGetTable(table_name, getContext()))
+        table_uuid = existing_table->getStorageID().uuid;
+
     std::lock_guard lock(handler_mutex);
 
     ASTPtr ast_storage;
@@ -308,7 +319,7 @@ ASTPtr DatabaseMaterializedPostgreSQL::getCreateTableQueryImpl(const String & ta
     {
         auto storage = std::make_shared<StorageMaterializedPostgreSQL>(StorageID(TSA_SUPPRESS_WARNING_FOR_READ(database_name), table_name), getContext(), remote_database_name, table_name);
         ast_storage = replication_handler->getCreateNestedTableQuery(storage.get(), table_name);
-        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = UUIDHelpers::generateV4();
+        assert_cast<ASTCreateQuery *>(ast_storage.get())->uuid = table_uuid;
     }
     catch (...)
     {
@@ -522,6 +533,58 @@ DatabaseTablesIteratorPtr DatabaseMaterializedPostgreSQL::getTablesIterator(
 {
     /// Modify context into nested_context and pass query to Atomic database.
     return DatabaseAtomic::getTablesIterator(StorageMaterializedPostgreSQL::makeNestedTableContext(local_context), filter_by_table_name, skip_not_loaded);
+}
+
+
+std::vector<std::pair<ASTPtr, StoragePtr>>
+DatabaseMaterializedPostgreSQL::getTablesForBackup(const FilterByNameFunction & filter, const ContextPtr & local_context) const
+{
+    /// Fail closed instead of silently producing a partial backup. The base implementation enumerates tables
+    /// through `getTablesIterator`, which (in the nested context) only sees the already-created nested
+    /// ReplacingMergeTree tables. A table that this database is configured to replicate but whose nested table
+    /// has not been created yet - its initial snapshot from PostgreSQL is still in progress or failed, e.g. the
+    /// PostgreSQL table has no primary key and no replica identity index - would therefore be omitted from the
+    /// backup without any error. Refuse the whole backup in that case, mirroring the fail-closed check in
+    /// `StorageMaterializedPostgreSQL::backupData`, which the database backup path bypasses because it backs up
+    /// the nested tables directly rather than the `StorageMaterializedPostgreSQL` wrappers.
+    {
+        std::lock_guard lock(tables_mutex);
+
+        /// `startupDatabaseAsync` only *schedules* the background synchronization task, and `waitDatabaseStarted`
+        /// returns as soon as that scheduling job has run - not once `startSynchronization` has actually populated
+        /// `materialized_tables`. So right after `CREATE DATABASE` or a server restart - in particular for the
+        /// whole time the initial `fetchRequiredTables` call to PostgreSQL is in flight, or while synchronization
+        /// is failing and retrying - this method can run with an empty map, before any wrapper (and possibly any
+        /// nested table) exists. Backing up in that window would fall through to `DatabaseAtomic::getTablesForBackup`
+        /// and silently produce an empty or partial database backup. A database that finished starting up always
+        /// has at least one table (`startSynchronization` refuses an empty tables list), so an empty map here means
+        /// synchronization has not populated it yet: fail closed.
+        if (materialized_tables.empty())
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Cannot back up database {}: it has not finished its initial synchronization from PostgreSQL yet "
+                "(the list of replicated tables has not been populated - the database may have just been created, "
+                "the server may have just restarted, or synchronization may be failing and retrying). Failing "
+                "closed instead of producing an empty or partial database backup. Retry the backup once "
+                "synchronization has populated the tables.",
+                getDatabaseName());
+
+        for (const auto & [table_name, storage] : materialized_tables)
+        {
+            if (filter && !filter(table_name))
+                continue;
+
+            if (!storage->as<StorageMaterializedPostgreSQL>()->hasNested())
+                throw Exception(
+                    ErrorCodes::CANNOT_BACKUP_TABLE,
+                    "Cannot back up table {}: its nested ReplacingMergeTree table does not exist (the table may not "
+                    "have finished its initial synchronization from PostgreSQL yet). Failing closed instead of "
+                    "producing a partial database backup that silently omits this table.",
+                    storage->getStorageID().getNameForLogs());
+        }
+    }
+
+    return DatabaseAtomic::getTablesForBackup(filter, local_context);
 }
 
 void registerDatabaseMaterializedPostgreSQL(DatabaseFactory & factory);
@@ -748,55 +811,55 @@ Replication of [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.htm
 
 ### `materialized_postgresql_tables_list` {#materialized-postgresql-tables-list}
 
-    Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
+Sets a comma-separated list of PostgreSQL database tables, which will be replicated via [MaterializedPostgreSQL](../../engines/database-engines/materialized-postgresql.md) database engine.
 
-    Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
+Each table can have subset of replicated columns in brackets. If subset of columns is omitted, then all columns for table will be replicated.
 
-    ```sql
-    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
-    ```
+```sql
+materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
 
-    Default value: empty list — means whole PostgreSQL database will be replicated.
+Default value: empty list — means whole PostgreSQL database will be replicated.
 
 ### `materialized_postgresql_schema` {#materialized-postgresql-schema}
 
-    Default value: empty string. (Default schema is used)
+Default value: empty string. (Default schema is used)
 
 ### `materialized_postgresql_schema_list` {#materialized-postgresql-schema-list}
 
-    Default value: empty list. (Default schema is used)
+Default value: empty list. (Default schema is used)
 
 ### `materialized_postgresql_max_block_size` {#materialized-postgresql-max-block-size}
 
-    Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
+Sets the number of rows collected in memory before flushing data into PostgreSQL database table.
 
-    Possible values:
+Possible values:
 
-    - Positive integer.
+- Positive integer.
 
-    Default value: `65536`.
+Default value: `65536`.
 
 ### `materialized_postgresql_replication_slot` {#materialized-postgresql-replication-slot}
 
-    A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
+A user-created replication slot. Must be used together with `materialized_postgresql_snapshot`.
 
 ### `materialized_postgresql_snapshot` {#materialized-postgresql-snapshot}
 
-    A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
+A text string identifying a snapshot, from which [initial dump of PostgreSQL tables](../../engines/database-engines/materialized-postgresql.md) will be performed. Must be used together with `materialized_postgresql_replication_slot`.
 
-    ```sql
-    CREATE DATABASE database1
-    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
-    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
 
-    SELECT * FROM database1.table1;
-    ```
+SELECT * FROM database1.table1;
+```
 
-    The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
+The settings can be changed, if necessary, using a DDL query. But it is impossible to change the setting `materialized_postgresql_tables_list`. To update the list of tables in this setting use the `ATTACH TABLE` query.
 
-    ```sql
-    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
-    ```
+```sql
+ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
 
 ### `materialized_postgresql_use_unique_replication_consumer_identifier` {#materialized_postgresql_use_unique_replication_consumer_identifier}
 

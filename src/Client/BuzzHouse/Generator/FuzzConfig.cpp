@@ -2,6 +2,7 @@
 
 #include <ranges>
 #include <IO/copyData.h>
+#include <fmt/ranges.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
 
@@ -934,6 +935,25 @@ void FuzzConfig::loadServerConfigurations()
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
         "'tcp_handler_fail_connection_setup')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
+    /// Probe which function_implementation values the server supports. They depend on how the binary
+    /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an
+    /// unsupported value raises NO_SUITABLE_FUNCTION_IMPLEMENTATION, so test each candidate. Only
+    /// default, x86-64-v3 and x86-64-v4 implementations are registered in the server's source.
+    this->function_implementations.clear();
+    for (const auto & entry : {"default", "x86-64-v3", "x86-64-v4"})
+    {
+        if (processServerQuery(
+                false, fmt::format("SELECT ignore(sipHash64(materialize(1))) SETTINGS function_implementation = '{}' FORMAT Null;", entry)))
+        {
+            this->function_implementations.emplace_back(entry);
+        }
+    }
+    LOG_INFO(
+        log,
+        "Found {} entries for function implementations{}{}",
+        this->function_implementations.size(),
+        this->function_implementations.empty() ? "" : ": ",
+        fmt::join(this->function_implementations, ", "));
     loadFunctions();
 }
 

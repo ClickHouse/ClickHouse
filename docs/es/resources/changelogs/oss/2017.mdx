@@ -1,0 +1,334 @@
+---
+slug: /whats-new/changelog/2017
+sidebarTitle: '2017'
+title: 'Registro de cambios de 2017'
+description: 'Registro de cambios de 2017'
+doc_type: 'changelog'
+keywords: ['ClickHouse 2017', 'registro de cambios 2017', 'notas de la versión', 'historial de versiones', 'versiones iniciales']
+---
+
+<div id="clickhouse-release-1-1-54327-2017-12-21">
+  ### Lanzamiento de ClickHouse 1.1.54327, 2017-12-21
+</div>
+
+Esta versión contiene correcciones de errores de la versión anterior 1.1.54318:
+
+* Se corrigió un error relacionado con una posible condición de carrera en la replicación que podía provocar pérdida de datos. Este problema afecta a las versiones 1.1.54310 y 1.1.54318. Si usa una de estas versiones con tablas Replicated, se recomienda encarecidamente actualizar. Este problema se manifiesta en los logs con mensajes de advertencia como `Part ... from own log does not exist.` El problema es relevante incluso si no ve estos mensajes en los logs.
+
+<div id="clickhouse-release-1-1-54318-2017-11-30">
+  ### Lanzamiento de ClickHouse 1.1.54318, 2017-11-30
+</div>
+
+Esta versión incluye correcciones de errores de la versión anterior, 1.1.54310:
+
+* Se corrigieron eliminaciones incorrectas de filas durante las fusiones en el motor SummingMergeTree
+* Se corrigió una fuga de memoria en motores MergeTree no replicados
+* Se corrigió una degradación del rendimiento con inserciones frecuentes en motores MergeTree
+* Se corrigió un problema que hacía que la cola de replicación dejara de procesarse
+* Se corrigieron la rotación y el archivado de los logs del servidor
+
+<div id="clickhouse-release-1-1-54310-2017-11-01">
+  ### lanzamiento de ClickHouse 1.1.54310, 2017-11-01
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* Clave de partición personalizada para la familia MergeTree de motores de tabla.
+* Motor de tabla [Kafka](/es/reference/engines/table-engines/integrations/kafka).
+* Se agregó compatibilidad con la carga de modelos [CatBoost](https://yandex.com/dev/catboost/) y su aplicación a los datos almacenados en ClickHouse.
+* Se agregó compatibilidad con zonas horarias con desplazamientos no enteros respecto a UTC.
+* Se agregó compatibilidad con operaciones aritméticas sobre intervalos de tiempo.
+* El rango de valores de los tipos Date y DateTime se amplió hasta el año 2105.
+* Se agregó la consulta `CREATE MATERIALIZED VIEW x TO y` (especifica una tabla existente para almacenar los datos de una vista materializada).
+* Se agregó la consulta `ATTACH TABLE` sin argumentos.
+* La lógica de procesamiento de las columnas Nested con nombres terminados en -Map en una tabla SummingMergeTree se extrajo a la función de agregación sumMap. Ahora puede especificar estas columnas explícitamente.
+* El tamaño máximo del diccionario trie de IP se incrementó a 128M entradas.
+* Se agregó la función getSizeOfEnumType.
+* Se agregó la función de agregación sumWithOverflow.
+* Se agregó compatibilidad con el formato de entrada Cap&#39;n Proto.
+* Ahora puede personalizar el nivel de compresión al usar el algoritmo zstd.
+
+<div id="backward-incompatible-changes">
+  #### Cambios incompatibles con versiones anteriores:
+</div>
+
+* No se permite crear tablas temporales con un motor distinto de Memory.
+* No se permite crear tablas explícitamente con el motor View o MaterializedView.
+* Durante la creación de tablas, una nueva comprobación verifica que la expresión de la clave de muestreo esté incluida en la clave primaria.
+
+<div id="bug-fixes">
+  #### Correcciones de errores:
+</div>
+
+* Se corrigieron los bloqueos al insertar de forma síncrona en una tabla distribuida.
+* Se corrigió la adición y eliminación no atómicas de partes en tablas Replicated.
+* Los datos insertados en una vista materializada ya no se someten a una deduplicación innecesaria.
+* Ejecutar una consulta en una tabla Distributed cuya réplica local está retrasada y cuyas réplicas remotas no están disponibles ya no produce un error.
+* Los usuarios ya no necesitan permisos de acceso a la base de datos `default` para crear tablas temporales.
+* Se corrigió un fallo al especificar el tipo Array sin argumentos.
+* Se corrigieron los bloqueos cuando el volumen de disco que contiene los logs del servidor está lleno.
+* Se corrigió un desbordamiento en la función toRelativeWeekNum durante la primera semana del epoch de Unix.
+
+<div id="build-improvements">
+  #### Mejoras de compilación:
+</div>
+
+* Se actualizaron varias bibliotecas de terceros (en particular, Poco) y se convirtieron en submódulos de Git.
+
+<div id="clickhouse-release-1-1-54304-2017-10-19">
+  ### lanzamiento de ClickHouse 1.1.54304, 2017-10-19
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* Compatibilidad con TLS en el protocolo nativo (para habilitarla, configure `tcp_ssl_port` en `config.xml` ).
+
+<div id="bug-fixes">
+  #### Correcciones de errores:
+</div>
+
+* `ALTER` para tablas replicadas ahora intenta empezar a ejecutarse lo antes posible.
+* Se corrigió un cierre inesperado al leer datos con la configuración `preferred_block_size_bytes=0.`
+* Se corrigieron cierres inesperados de `clickhouse-client` al pulsar `Page Down`
+* Se corrigió la interpretación de ciertas consultas complejas con `GLOBAL IN` y `UNION ALL`
+* `FREEZE PARTITION` ahora siempre funciona de forma atómica.
+* Las solicitudes POST vacías ahora devuelven una respuesta con el código 411.
+* Se corrigieron errores de interpretación en expresiones como `CAST(1 AS Nullable(UInt8)).`
+* Se corrigió un error al leer columnas `Array(Nullable(String))` de tablas `MergeTree`.
+* Se corrigió un cierre inesperado al analizar consultas como `SELECT dummy AS dummy, dummy AS b`
+* Users se actualiza correctamente aunque `users.xml` no sea válido
+* Se corrigió el manejo de los casos en que un Diccionario ejecutable devuelve un código de respuesta distinto de cero.
+
+<div id="clickhouse-release-1-1-54292-2017-09-20">
+  ### Lanzamiento de ClickHouse 1.1.54292, 2017-09-20
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* Se añadió la función `pointInPolygon` para trabajar con coordenadas en un plano cartesiano.
+* Se añadió la función de agregado `sumMap` para calcular la suma de arrays, de forma similar a `SummingMergeTree`.
+* Se añadió la función `trunc`. Se mejoró el rendimiento de las funciones de redondeo (`round`, `floor`, `ceil`, `roundToExp2`) y se corrigió su lógica de funcionamiento. Se cambió la lógica de la función `roundToExp2` para fracciones y números negativos.
+* El archivo ejecutable de ClickHouse ahora depende menos de la versión de libc. El mismo archivo ejecutable de ClickHouse puede ejecutarse en una amplia variedad de sistemas Linux. Sigue habiendo una dependencia al usar consultas compiladas (con la configuración `compile = 1`, que no se usa de forma predeterminada).
+* Se redujo el tiempo necesario para la compilación dinámica de consultas.
+
+<div id="bug-fixes-2">
+  #### Corrección de errores:
+</div>
+
+* Se corrigió un error que a veces generaba mensajes `part ... intersects previous part` y debilitaba la consistencia de las réplicas.
+* Se corrigió un error que provocaba que el servidor se bloqueara si ZooKeeper no estaba disponible durante el cierre.
+* Se eliminó el exceso de logging al restaurar réplicas.
+* Se corrigió un error en la implementación de UNION ALL.
+* Se corrigió un error en la función concat que se producía si la primera columna de un bloque tiene el tipo Array.
+* Progress ahora se muestra correctamente en la tabla system.merges.
+
+<div id="clickhouse-release-1-1-54289-2017-09-13">
+  ### Lanzamiento de ClickHouse 1.1.54289, 2017-09-13
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* Consultas `SYSTEM` para la administración del servidor: `SYSTEM RELOAD DICTIONARY`, `SYSTEM RELOAD DICTIONARIES`, `SYSTEM DROP DNS CACHE`, `SYSTEM SHUTDOWN`, `SYSTEM KILL`.
+* Se añadieron funciones para trabajar con arrays: `concat`, `arraySlice`, `arrayPushBack`, `arrayPushFront`, `arrayPopBack`, `arrayPopFront`.
+* Se añadieron los parámetros `root` e `identity` para la configuración de ZooKeeper. Esto permite aislar a usuarios individuales dentro del mismo clúster de ZooKeeper.
+* Se añadieron las funciones de agregado `groupBitAnd`, `groupBitOr` y `groupBitXor` (por compatibilidad, también están disponibles con los nombres `BIT_AND`, `BIT_OR` y `BIT_XOR`).
+* Los diccionarios externos pueden cargarse desde MySQL especificando un socket en el sistema de archivos.
+* Los diccionarios externos pueden cargarse desde MySQL mediante SSL (parámetros `ssl_cert`, `ssl_key` y `ssl_ca`).
+* Se añadió la configuración `max_network_bandwidth_for_user` para restringir el uso total de ancho de banda de las consultas por usuario.
+* Soporte para `DROP TABLE` en tablas temporales.
+* Soporte para leer valores `DateTime` en formato de timestamp Unix desde los formatos `CSV` y `JSONEachRow`.
+* Las réplicas con retraso en las consultas distribuidas ahora se excluyen de forma predeterminada (el umbral predeterminado es de 5 minutos).
+* Se utiliza bloqueo FIFO durante ALTER: una consulta ALTER no queda bloqueada indefinidamente por consultas de ejecución continua.
+* Opción para establecer `umask` en el archivo de configuración.
+* Se mejoró el rendimiento de las consultas con `DISTINCT`.
+
+<div id="bug-fixes">
+  #### Correcciones de errores:
+</div>
+
+* Se mejoró el proceso de eliminación de nodos antiguos en ZooKeeper. Anteriormente, a veces esos nodos no se eliminaban si había inserciones muy frecuentes, lo que provocaba, entre otras cosas, que el servidor tardara en apagarse.
+* Se corrigió la selección aleatoria al elegir hosts para la conexión a ZooKeeper.
+* Se corrigió la exclusión de réplicas retrasadas en consultas distribuidas si la réplica es localhost.
+* Se corrigió un error por el que una parte de datos de una tabla `ReplicatedMergeTree` podía dañarse después de ejecutar `ALTER MODIFY` sobre un elemento de una estructura `Nested`.
+* Se corrigió un error que podía hacer que las consultas SELECT se &quot;quedaran colgadas&quot;.
+* Mejoras en las consultas DDL distribuidas.
+* Se corrigió la consulta `CREATE TABLE ... AS <vista materializada>`.
+* Se resolvió el interbloqueo en la consulta `ALTER ... CLEAR COLUMN IN PARTITION` para tablas `Buffer`.
+* Se corrigió el valor predeterminado no válido para los `Enum` (0 en lugar del mínimo) al usar los formatos `JSONEachRow` y `TSKV`.
+* Se resolvió la aparición de procesos zombi al usar un diccionario con una fuente `executable`.
+* Se corrigió un fallo de segmentación en la consulta HEAD.
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse">
+  #### Flujo de trabajo mejorado para desarrollar y compilar ClickHouse:
+</div>
+
+* Puede usar `pbuilder` para compilar ClickHouse.
+* Puede usar `libc++` en lugar de `libstdc++` para las compilaciones en Linux.
+* Se añadieron instrucciones para usar herramientas de análisis estático de código: `Coverage`, `clang-tidy`, `cppcheck`.
+
+<div id="please-note-when-upgrading">
+  #### Tenga en cuenta al actualizar:
+</div>
+
+* Ahora el valor predeterminado del ajuste de MergeTree `max_bytes_to_merge_at_max_space_in_pool` es mayor (el tamaño total máximo, en bytes, de las partes de datos que se pueden fusionar): ha pasado de 100 GiB a 150 GiB. Esto puede hacer que, tras la actualización del servidor, se ejecuten fusiones grandes, lo que podría aumentar la carga en el subsistema de disco. Si el espacio libre disponible en el servidor es inferior al doble del tamaño total de las fusiones en ejecución, todas las demás fusiones dejarán de ejecutarse, incluidas las fusiones de partes de datos pequeñas. Como resultado, las consultas INSERT fallarán con el mensaje &quot;Merges are processing significantly slower than inserts.&quot; Use la consulta `SELECT * FROM system.merges` para supervisar la situación. También puede comprobar la métrica `DiskSpaceReservedForMerge` en la tabla `system.metrics` o en Graphite. No necesita hacer nada para solucionarlo, ya que el problema se resolverá por sí solo cuando finalicen las fusiones grandes. Si esto le resulta inaceptable, puede restaurar el valor anterior del ajuste `max_bytes_to_merge_at_max_space_in_pool`. Para hacerlo, vaya a la sección `<merge_tree>` en config.xml, establezca `<merge_tree>``<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` y reinicie el servidor.
+
+<div id="clickhouse-release-1-1-54284-2017-08-29">
+  ### Lanzamiento de ClickHouse 1.1.54284, 2017-08-29
+</div>
+
+* Se trata de una versión de corrección de errores de la versión anterior 1.1.54282. Corrige fugas en el directorio de partes de ZooKeeper.
+
+<div id="clickhouse-release-1-1-54282-2017-08-23">
+  ### Lanzamiento de ClickHouse 1.1.54282, 2017-08-23
+</div>
+
+Esta versión incluye correcciones de errores de la versión anterior 1.1.54276:
+
+* Se corrigió `DB::Exception: Assertion violation: !_path.empty()` al insertar en una tabla distribuida.
+* Se corrigió el análisis al insertar en formato RowBinary si los datos de entrada comienzan con &#39;;&#39;.
+* Se corrigieron errores durante la compilación en tiempo de ejecución de ciertas funciones de agregación (p. ej. `groupArray()`).
+
+<div id="clickhouse-release-1-1-54276-2017-08-16">
+  ### Lanzamiento de ClickHouse 1.1.54276, 2017-08-16
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* Se añadió una sección WITH opcional para una consulta SELECT. Consulta de ejemplo: `WITH 1+1 AS a SELECT a, a*a`
+* INSERT puede realizarse de forma síncrona en una tabla distribuida: solo se devuelve OK después de que todos los datos se hayan guardado en todos los segmentos. Esto se activa con la configuración insert&#95;distributed&#95;sync=1.
+* Se añadió el tipo de dato UUID para trabajar con identificadores de 16 bytes.
+* Se añadieron alias de CHAR, FLOAT y otros tipos para ofrecer compatibilidad con Tableau.
+* Se añadieron las funciones toYYYYMM, toYYYYMMDD y toYYYYMMDDhhmmss para convertir el tiempo en números.
+* Puede usar direcciones IP (junto con el nombre de host) para identificar servidores en consultas DDL en clúster.
+* Se añadió compatibilidad con argumentos no constantes y desplazamientos negativos en la función `substring(str, pos, len).`
+* Se añadió el parámetro max&#95;size para la función de agregación `groupArray(max_size)(column)` y se optimizó su rendimiento.
+
+<div id="main-changes">
+  #### Cambios principales:
+</div>
+
+* Mejoras de seguridad: todos los archivos del servidor se crean con permisos 0640 (se puede cambiar mediante el parámetro de configuración `<umask>`).
+* Se mejoraron los mensajes de error para las consultas con sintaxis no válida.
+* Se redujo significativamente el consumo de memoria y se mejoró el rendimiento al fusionar grandes secciones de datos de MergeTree.
+* Se incrementó significativamente el rendimiento de las fusiones de datos para el motor ReplacingMergeTree.
+* Se mejoró el rendimiento de las inserciones asíncronas desde una tabla distribuida al combinar varias inserciones de origen. Para habilitar esta funcionalidad, use la configuración distributed&#95;directory&#95;monitor&#95;batch&#95;inserts=1.
+
+<div id="backward-incompatible-changes">
+  #### Cambios incompatibles con versiones anteriores:
+</div>
+
+* Se cambió el formato binario de los estados de agregación de las funciones `groupArray(array_column)` para arrays.
+
+<div id="complete-list-of-changes">
+  #### Lista completa de cambios:
+</div>
+
+* Se agregó la configuración `output_format_json_quote_denormals`, que permite generar valores nan e inf en formato JSON.
+* Se optimizó la asignación de flujos al leer desde una tabla distribuida.
+* Las configuraciones pueden establecerse en modo de solo lectura si el valor no cambia.
+* Se agregó la capacidad de leer gránulos no enteros del motor MergeTree para cumplir las restricciones de tamaño de bloque especificadas en la configuración preferred&#95;block&#95;size&#95;bytes. El objetivo es reducir el consumo de RAM y aumentar la localidad de caché al procesar consultas de tablas con columnas grandes.
+* Uso eficiente de índices que contienen expresiones como `toStartOfHour(x)` para condiciones como `toStartOfHour(x) op сonstexpr.`
+* Se agregaron nuevas configuraciones para los motores MergeTree (la sección merge&#95;tree en config.xml):
+  * replicated&#95;deduplication&#95;window&#95;seconds establece la cantidad de segundos permitidos para la deduplicación de inserciones en tablas Replicated.
+  * cleanup&#95;delay&#95;period establece con qué frecuencia iniciar la limpieza para eliminar datos obsoletos.
+  * replicated&#95;can&#95;become&#95;leader puede impedir que una réplica se convierta en líder (y asigne merges).
+* Se aceleró la limpieza para eliminar datos obsoletos de ZooKeeper.
+* Se realizaron múltiples mejoras y correcciones en las consultas DDL en clúster. De especial interés es la nueva configuración distributed&#95;ddl&#95;task&#95;timeout, que limita el tiempo de espera de respuesta de los servidores del clúster. Si una solicitud DDL no se ha ejecutado en todos los hosts, la respuesta contendrá un error de tiempo de espera y la solicitud se ejecutará en modo asíncrono.
+* Se mejoró la visualización de las trazas de pila en los logs del servidor.
+* Se agregó el valor &quot;none&quot; para el método de compresión.
+* Puede usar varias secciones dictionaries&#95;config en config.xml.
+* Es posible conectarse a MySQL a través de un socket del sistema de archivos.
+* La tabla system.parts tiene una nueva columna con información sobre el tamaño de las marcas, en bytes.
+
+<div id="bug-fixes">
+  #### Correcciones de errores:
+</div>
+
+* Las tablas Distributed que usan una tabla Merge ahora funcionan correctamente para una consulta SELECT con una condición sobre el campo `_table`.
+* Se corrigió una condición de carrera poco frecuente en ReplicatedMergeTree al comprobar las partes de datos.
+* Se corrigió un posible bloqueo durante la &quot;elección de líder&quot; al iniciar un servidor.
+* La configuración max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries se ignoraba al usar una réplica local de la fuente de datos. Esto se ha corregido.
+* Se corrigió el comportamiento incorrecto de `ALTER TABLE CLEAR COLUMN IN PARTITION` al intentar limpiar una columna inexistente.
+* Se corrigió una excepción en la función multiIf al usar arrays o cadenas vacías.
+* Se corrigieron asignaciones de memoria excesivas al deserializar el formato Native.
+* Se corrigió la actualización automática incorrecta de los diccionarios Trie.
+* Se corrigió una excepción al ejecutar consultas con una cláusula GROUP BY desde una tabla Merge al usar SAMPLE.
+* Se corrigió un fallo en GROUP BY al usar distributed&#95;aggregation&#95;memory&#95;efficient=1.
+* Ahora puede especificar database.table en el lado derecho de IN y JOIN.
+* Se usaban demasiados hilos para la agregación paralela. Esto se ha corregido.
+* Se corrigió el funcionamiento de la función &quot;if&quot; con argumentos FixedString.
+* SELECT funcionaba incorrectamente desde una tabla distribuida para segmentos con un peso de 0. Esto se ha corregido.
+* Ejecutar `CREATE VIEW IF EXISTS` ya no provoca fallos.
+* Se corrigió el comportamiento incorrecto cuando input&#95;format&#95;skip&#95;unknown&#95;fields=1 está configurado y hay números negativos.
+* Se corrigió un bucle infinito en la función `dictGetHierarchy()` si hay datos no válidos en el diccionario.
+* Se corrigieron los errores `Syntax error: unexpected (...)` al ejecutar consultas distribuidas con subconsultas en una cláusula IN o JOIN y tablas Merge.
+* Se corrigió una interpretación incorrecta de una consulta SELECT desde tablas Dictionary.
+* Se corrigió el error &quot;Cannot mremap&quot; al usar arrays en cláusulas IN y JOIN con más de 2 mil millones de elementos.
+* Se corrigió la conmutación por error para diccionarios con MySQL como fuente.
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse-1">
+  #### Flujo de trabajo mejorado para desarrollar y ensamblar ClickHouse:
+</div>
+
+* Las compilaciones se pueden realizar en Arcadia.
+* Se puede usar gcc 7 para compilar ClickHouse.
+* Las compilaciones paralelas con ccache+distcc ahora son más rápidas.
+
+<div id="clickhouse-release-1-1-54245-2017-07-04">
+  ### lanzamiento de ClickHouse 1.1.54245, 2017-07-04
+</div>
+
+<div id="new-features">
+  #### Nuevas características:
+</div>
+
+* DDL distribuido (por ejemplo, `CREATE TABLE ON CLUSTER`)
+* La consulta replicada `ALTER TABLE CLEAR COLUMN IN PARTITION.`
+* El motor para tablas Diccionario (acceso a los datos del diccionario en forma de tabla).
+* Motor de base de datos Diccionario (este tipo de base de datos tiene automáticamente disponibles tablas Diccionario para todos los diccionarios externos conectados).
+* Puede comprobar si hay actualizaciones del diccionario enviando una solicitud al origen.
+* Nombres de columna calificados
+* Identificadores entre comillas dobles.
+* Sesiones en la interfaz HTTP.
+* La consulta OPTIMIZE para una tabla Replicated puede ejecutarse no solo en el nodo líder.
+
+<div id="backward-incompatible-changes">
+  #### Cambios incompatibles con versiones anteriores:
+</div>
+
+* Se eliminó SET GLOBAL.
+
+<div id="minor-changes">
+  #### Cambios menores:
+</div>
+
+* Ahora, cuando se activa una alerta, el log muestra el stack trace completo.
+* Se flexibilizó la verificación de la cantidad de partes de datos dañadas o sobrantes al inicio (había demasiados falsos positivos).
+
+<div id="bug-fixes">
+  #### Correcciones de errores:
+</div>
+
+* Se corrigió un problema por el que una conexión defectuosa quedaba &quot;atascada&quot; al insertar en una tabla distribuida.
+* GLOBAL IN ahora funciona para una consulta desde una tabla Merge que accede a una tabla distribuida.
+* Se detectaba incorrectamente el número de núcleos en una máquina virtual de Google Compute Engine. Esto se ha corregido.
+* Se hicieron cambios en el funcionamiento de una fuente ejecutable de diccionarios externos en caché.
+* Se corrigió la comparación de cadenas que contienen caracteres nulos.
+* Se corrigió la comparación de campos de clave primaria Float32 con constantes.
+* Antes, una estimación incorrecta del tamaño de un campo podía provocar asignaciones excesivamente grandes.
+* Se corrigió un fallo al consultar una columna Nullable añadida a una tabla mediante ALTER.
+* Se corrigió un fallo al ordenar por una columna Nullable si el número de filas es inferior a LIMIT.
+* Se corrigió una subconsulta en ORDER BY compuesta únicamente por valores constantes.
+* Antes, una tabla Replicated podía permanecer en un estado no válido después de un DROP TABLE fallido.
+* Los alias de las subconsultas escalares con resultados vacíos ya no se pierden.
+* Ahora, una consulta que usaba compilación ya no falla con un error si el archivo .so se daña.

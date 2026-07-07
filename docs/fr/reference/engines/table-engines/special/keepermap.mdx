@@ -1,0 +1,130 @@
+---
+description: 'Ce moteur vous permet d''utiliser le cluster Keeper/ZooKeeper comme
+  stockage clé-valeur cohérent, avec des écritures linéarisables et des lectures à cohérence séquentielle.'
+sidebarTitle: 'KeeperMap'
+slug: /engines/table-engines/special/keeper-map
+title: 'Moteur de table KeeperMap'
+doc_type: 'reference'
+---
+
+Ce moteur vous permet d&#39;utiliser le cluster Keeper/ZooKeeper comme stockage clé-valeur cohérent, avec des écritures linéarisables et des lectures à cohérence séquentielle.
+
+Pour activer le moteur de stockage KeeperMap, vous devez définir un chemin ZooKeeper dans lequel les tables seront stockées à l&#39;aide de la configuration `<keeper_map_path_prefix>`.
+
+Par exemple :
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+où path peut correspondre à n’importe quel autre chemin ZooKeeper valide.
+
+<div id="creating-a-table">
+  ## Créer une table
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = KeeperMap(root_path, [keys_limit]) PRIMARY KEY(primary_key_name)
+```
+
+Paramètres du moteur :
+
+* `root_path` - chemin ZooKeeper dans lequel `table_name` sera stocké.
+  Ce chemin ne doit pas contenir le préfixe défini par la config `<keeper_map_path_prefix>`, car celui-ci sera automatiquement ajouté à `root_path`.
+  De plus, le format `auxiliary_zookeeper_cluster_name:/some/path` est également pris en charge, où `auxiliary_zookeeper_cluster` est un cluster ZooKeeper défini dans la config `<auxiliary_zookeepers>`.
+  Par défaut, le cluster ZooKeeper défini dans la config `<zookeeper>` est utilisé.
+* `keys_limit` - nombre de clés autorisées dans la table.
+  Cette limite est une limite souple, et il est possible que, dans certains cas particuliers, la table contienne davantage de clés.
+* `primary_key_name` – n’importe quel nom de colonne dans la liste des colonnes.
+* la `primary key` doit être spécifiée et ne peut contenir qu’une seule colonne. La clé primaire sera sérialisée en binaire comme `node name` dans ZooKeeper.
+* les colonnes autres que la clé primaire seront sérialisées en binaire dans l’ordre correspondant et stockées comme valeur du nœud résultant défini par la clé sérialisée.
+* les requêtes avec un filtrage sur la clé par `equals` ou `in` seront optimisées en recherche de plusieurs clés depuis `Keeper`, sinon toutes les valeurs seront récupérées.
+
+Exemple :
+
+```sql
+CREATE TABLE keeper_map_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = KeeperMap('/keeper_map_table', 4)
+PRIMARY KEY key
+```
+
+avec
+
+```xml
+<clickhouse>
+    <keeper_map_path_prefix>/keeper_map_tables</keeper_map_path_prefix>
+</clickhouse>
+```
+
+Chaque valeur, qui correspond à la sérialisation binaire de `(v1, v2, v3)`, sera stockée dans `/keeper_map_tables/keeper_map_table/data/serialized_key` dans `Keeper`.
+De plus, le nombre de clés aura une limite souple fixée à 4.
+
+Si plusieurs tables sont créées sur le même chemin ZooKeeper, les valeurs sont conservées tant qu’au moins une table l’utilise.
+Par conséquent, il est possible d’utiliser la clause `ON CLUSTER` lors de la création de la table et de partager les données entre plusieurs instances ClickHouse.
+Bien sûr, il est aussi possible d’exécuter manuellement `CREATE TABLE` avec le même chemin sur des instances ClickHouse non liées afin d’obtenir le même effet de partage des données.
+
+<div id="supported-operations">
+  ## Opérations prises en charge
+</div>
+
+<div id="inserts">
+  ### Insertions
+</div>
+
+Lorsque de nouvelles lignes sont insérées dans `KeeperMap`, si la clé n&#39;existe pas, une nouvelle entrée est créée pour cette clé.
+Si la clé existe et que le paramètre `keeper_map_strict_mode` est défini sur `true`, une exception est levée ; sinon, la valeur associée à la clé est écrasée.
+
+Exemple :
+
+```sql
+INSERT INTO keeper_map_table VALUES ('some key', 1, 'value', 3.2);
+```
+
+<div id="deletes">
+  ### Suppressions
+</div>
+
+Les lignes peuvent être supprimées à l’aide d’une requête `DELETE` ou de `TRUNCATE`.
+Si la clé existe et que le paramètre `keeper_map_strict_mode` est défini sur `true`, la récupération et la suppression des données ne peuvent aboutir que si elles sont exécutées de manière atomique.
+
+```sql
+DELETE FROM keeper_map_table WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+ALTER TABLE keeper_map_table DELETE WHERE key LIKE 'some%' AND v1 > 1;
+```
+
+```sql
+TRUNCATE TABLE keeper_map_table;
+```
+
+<div id="updates">
+  ### Mises à jour
+</div>
+
+Les valeurs peuvent être mises à jour à l’aide d’une requête `ALTER TABLE`. La clé primaire ne peut pas être mise à jour.
+Si le paramètre `keeper_map_strict_mode` est défini sur `true`, la récupération et la mise à jour des données ne réussiront que si elles sont exécutées de façon atomique.
+
+```sql
+ALTER TABLE keeper_map_table UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
+```
+
+<div id="related-content">
+  ## Contenu connexe
+</div>
+
+* Blog : [Créer des applications d’analyse en temps réel avec ClickHouse et Hex](https://clickhouse.com/blog/building-real-time-applications-with-clickhouse-and-hex-notebook-keeper-engine)

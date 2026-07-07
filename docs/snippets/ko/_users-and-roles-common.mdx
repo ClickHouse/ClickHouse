@@ -1,0 +1,562 @@
+---
+title: Users and roles 공통 사항
+---
+
+<div id="test-admin-privileges">
+  ## 관리자 권한 테스트
+</div>
+
+사용자 `default`에서 로그아웃한 후 사용자 `clickhouse_admin`으로 다시 로그인합니다.
+
+다음 항목은 모두 성공해야 합니다:
+
+```sql
+SHOW GRANTS FOR clickhouse_admin;
+```
+
+```sql
+CREATE DATABASE db1
+```
+
+```sql
+CREATE TABLE db1.table1 (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+```sql
+INSERT INTO db1.table1 (id, column1) VALUES (1, 'abc');
+```
+
+```sql
+SELECT * FROM db1.table1;
+```
+
+```sql
+DROP TABLE db1.table1;
+```
+
+```sql
+DROP DATABASE db1;
+```
+
+<div id="non-admin-users">
+  ## 비관리자 사용자
+</div>
+
+사용자에게는 필요한 권한만 부여해야 하며, 모든 사용자를 관리자 사용자로 둘 필요는 없습니다. 이 문서의 나머지 부분에서는 예시 시나리오와 이에 필요한 역할을 설명합니다.
+
+<div id="preparation">
+  ### 준비
+</div>
+
+예시에서 사용할 다음 테이블과 사용자를 생성합니다.
+
+<div id="creating-a-sample-database-table-and-rows">
+  #### 샘플 데이터베이스, 테이블, 행 만들기
+</div>
+
+<Steps>
+  <Step>
+    ##### 테스트 데이터베이스 만들기
+
+    ```sql
+    CREATE DATABASE db1;
+    ```
+  </Step>
+
+  <Step>
+    ##### 테이블 만들기
+
+    ```sql
+    CREATE TABLE db1.table1 (
+       id UInt64,
+       column1 String,
+       column2 String
+    )
+    ENGINE MergeTree
+    ORDER BY id;
+    ```
+  </Step>
+
+  <Step>
+    ##### 테이블에 샘플 행 삽입하기
+
+    ```sql
+    INSERT INTO db1.table1
+       (id, column1, column2)
+    VALUES
+       (1, 'A', 'abc'),
+       (2, 'A', 'def'),
+       (3, 'B', 'abc'),
+       (4, 'B', 'def');
+    ```
+  </Step>
+
+  <Step>
+    ##### 테이블 확인하기
+
+    ```sql title="쿼리"
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response title="응답"
+    Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### `column_user` 만들기
+
+    특정 컬럼에 대한 접근 제한을 보여주는 데 사용할 일반 사용자를 생성합니다:
+
+    ```sql
+    CREATE USER column_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+
+  <Step>
+    ##### `row_user` 만들기
+
+    특정 값을 가진 행에 대한 접근 제한을 보여주는 데 사용할 일반 사용자를 생성합니다:
+
+    ```sql
+    CREATE USER row_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+</Steps>
+
+<div id="creating-roles">
+  #### 역할 생성
+</div>
+
+다음 예시에서는 다음 작업을 수행합니다.
+
+* 컬럼 및 행 등 서로 다른 권한에 대한 역할을 생성합니다
+* 역할에 권한을 부여합니다
+* 각 역할에 사용자를 할당합니다
+
+역할을 사용하면 각 사용자를 개별적으로 관리하는 대신, 특정 권한별로 사용자 그룹을 정의할 수 있습니다.
+
+<Steps>
+  <Step>
+    ##### 이 역할에 속한 사용자가 데이터베이스 `db1`의 `table1`에서 `column1`만 볼 수 있도록 제한하는 역할 생성
+
+    ```sql
+    CREATE ROLE column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `column1`을 볼 수 있는 권한 설정
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `column_user` 사용자를 `column1_users` 역할에 추가
+
+    ```sql
+    GRANT column1_users TO column_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### 이 역할에 속한 사용자가 선택된 행만 볼 수 있도록 제한하는 역할 생성. 여기서는 `column1`에 `A`가 있는 행만 볼 수 있습니다
+
+    ```sql
+    CREATE ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `row_user`를 `A_rows_users` 역할에 추가
+
+    ```sql
+    GRANT A_rows_users TO row_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### `column1` 값이 `A`인 경우에만 볼 수 있도록 정책 생성
+
+    ```sql
+    CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 데이터베이스와 테이블에 대한 권한 설정
+
+    ```sql
+    GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### 다른 역할도 계속 모든 행에 접근할 수 있도록 명시적으로 권한 부여
+
+    ```sql
+    CREATE ROW POLICY allow_other_users_filter 
+    ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
+    ```
+
+    <Note>
+      정책을 테이블에 연결하면 시스템은 해당 정책을 적용하며, 그 정책에 정의된 사용자와 역할만 테이블에서 작업을 수행할 수 있습니다. 그 외 사용자와 역할의 모든 작업은 거부됩니다. 제한적인 행 정책이 다른 사용자에게 적용되지 않도록 하려면, 다른 사용자와 역할에 일반적인 접근 또는 다른 형태의 접근을 허용하는 별도의 정책을 추가로 정의해야 합니다.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="verification">
+  ## 확인
+</div>
+
+<div id="testing-role-privileges-with-column-restricted-user">
+  ### 컬럼이 제한된 사용자로 역할 권한 테스트
+</div>
+
+<Steps>
+  <Step>
+    ##### `clickhouse_admin` 사용자로 clickhouse client에 로그인합니다
+
+    ```bash
+    clickhouse-client --user clickhouse_admin --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 관리자 사용자로 데이터베이스, 테이블, 그리고 모든 행에 대한 접근을 확인합니다.
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: f5e906ea-10c6-45b0-b649-36334902d31d
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### `column_user` 사용자로 ClickHouse client에 로그인합니다
+
+    ```bash
+    clickhouse-client --user column_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 모든 컬럼으로 `SELECT`를 테스트합니다
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5576f4eb-7450-435c-a2d6-d6b49b7c4a23
+
+    0 rows in set. Elapsed: 0.006 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+
+    <Note>
+      모든 컬럼을 지정했지만, 이 사용자에게는 `id`와 `column1`에만 접근 권한이 있으므로 액세스가 거부됩니다
+    </Note>
+  </Step>
+
+  <Step>
+    ##### 지정되었고 허용된 컬럼만 사용하는 `SELECT` 쿼리를 확인합니다:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: cef9a083-d5ce-42ff-9678-f08dc60d4bb9
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    │  3 │ B       │
+    │  4 │ B       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="testing-role-privileges-with-row-restricted-user">
+  ### 행 제한이 적용된 사용자로 역할 권한 테스트
+</div>
+
+<Steps>
+  <Step>
+    ##### `row_user`로 ClickHouse client에 로그인
+
+    ```bash
+    clickhouse-client --user row_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### 조회 가능한 행 확인
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: a79a113c-1eca-4c3f-be6e-d034f9a220fb
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+
+    <Note>
+      위의 두 개 행만 반환되는지 확인하십시오. `column1`의 값이 `B`인 행은 제외되어야 합니다.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="modifying-users-and-roles">
+  ## 사용자 및 역할 수정
+</div>
+
+필요한 권한 조합에 따라 사용자에게 여러 역할을 할당할 수 있습니다. 여러 역할을 사용하는 경우 시스템은 각 역할을 조합해 권한을 결정하며, 결과적으로 역할 권한은 누적됩니다.
+
+예를 들어 `role1`이 `column1`에 대한 SELECT만 허용하고 `role2`가 `column1` 및 `column2`에 대한 SELECT를 허용하면, 해당 사용자는 두 컬럼 모두에 접근할 수 있습니다.
+
+<Steps>
+  <Step>
+    ##### 관리자 계정을 사용해 행과 컬럼 모두에 제한을 적용하고 기본 역할을 가진 새 사용자를 생성합니다
+
+    ```sql
+    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `A_rows_users` 역할의 기존 권한을 제거합니다
+
+    ```sql
+    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `A_row_users` 역할이 `column1`만 SELECT할 수 있도록 허용합니다
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### `row_and_column_user`로 clickhouse client에 로그인합니다
+
+    ```bash
+    clickhouse-client --user row_and_column_user --password password;
+    ```
+  </Step>
+
+  <Step>
+    ##### 모든 컬럼으로 테스트합니다:
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 8cdf0ff5-e711-4cbe-bd28-3c02e52e8bc4
+
+    0 rows in set. Elapsed: 0.005 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: row_and_column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+  </Step>
+
+  <Step>
+    ##### 허용된 컬럼만 사용해 테스트합니다:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5e30b490-507a-49e9-9778-8159799a6ed0
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## 문제 해결
+</div>
+
+권한이 서로 중첩되거나 결합되어 예상치 못한 결과가 발생하는 경우가 있습니다. 이런 경우 관리자 계정으로 다음 명령을 사용해 문제 범위를 좁힐 수 있습니다.
+
+<div id="listing-the-grants-and-roles-for-a-user">
+  ### 사용자에게 부여된 권한과 역할 확인
+</div>
+
+```sql
+SHOW GRANTS FOR row_and_column_user
+```
+
+```response
+Query id: 6a73a3fe-2659-4aca-95c5-d012c138097b
+
+┌─GRANTS FOR row_and_column_user───────────────────────────┐
+│ GRANT A_rows_users, column1_users TO row_and_column_user │
+└──────────────────────────────────────────────────────────┘
+```
+
+<div id="list-roles-in-clickhouse">
+  ### ClickHouse에서 역할 보기
+</div>
+
+```sql
+SHOW ROLES
+```
+
+```response
+Query id: 1e21440a-18d9-4e75-8f0e-66ec9b36470a
+
+┌─name────────────┐
+│ A_rows_users    │
+│ column1_users   │
+└─────────────────┘
+```
+
+<div id="display-the-policies">
+  ### 정책 보기
+</div>
+
+```sql
+SHOW ROW POLICIES
+```
+
+```response
+Query id: f2c636e9-f955-4d79-8e80-af40ea227ebc
+
+┌─name───────────────────────────────────┐
+│ A_row_filter ON db1.table1             │
+│ allow_other_users_filter ON db1.table1 │
+└────────────────────────────────────────┘
+```
+
+<div id="view-how-a-policy-was-defined-and-current-privileges">
+  ### 정책 정의 내용과 현재 권한 보기
+</div>
+
+```sql
+SHOW CREATE ROW POLICY A_row_filter ON db1.table1
+```
+
+```response
+Query id: 0d3b5846-95c7-4e62-9cdd-91d82b14b80b
+
+┌─CREATE ROW POLICY A_row_filter ON db1.table1────────────────────────────────────────────────┐
+│ CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="example-commands-to-manage-roles-policies-and-users">
+  ## 역할, 정책 및 사용자 관리를 위한 예시 명령
+</div>
+
+다음 명령으로 다음 작업을 수행할 수 있습니다.
+
+* 권한 삭제
+* 정책 삭제
+* 역할에서 사용자 제거
+* 사용자 및 역할 삭제
+  <br />
+
+<Tip>
+  이 명령은 관리자 사용자 또는 `default` 사용자로 실행하세요
+</Tip>
+
+<div id="remove-privilege-from-a-role">
+  ### 역할에서 권한 제거하기
+</div>
+
+```sql
+REVOKE SELECT(column1, id) ON db1.table1 FROM A_rows_users;
+```
+
+<div id="delete-a-policy">
+  ### 정책 삭제하기
+</div>
+
+```sql
+DROP ROW POLICY A_row_filter ON db1.table1;
+```
+
+<div id="unassign-a-user-from-a-role">
+  ### 역할에서 사용자 제거
+</div>
+
+```sql
+REVOKE A_rows_users FROM row_user;
+```
+
+<div id="delete-a-role">
+  ### 역할 삭제
+</div>
+
+```sql
+DROP ROLE A_rows_users;
+```
+
+<div id="delete-a-user">
+  ### 사용자 삭제
+</div>
+
+```sql
+DROP USER row_user;
+```
+
+<div id="summary">
+  ## 요약
+</div>
+
+이 문서에서는 SQL 사용자와 역할을 생성하는 기본 사항을 설명하고, 사용자와 역할의 권한을 설정하고 수정하는 방법을 안내했습니다. 각 항목에 대한 자세한 내용은 사용자 가이드와 참고 문서를 참조하십시오.

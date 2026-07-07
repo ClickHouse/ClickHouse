@@ -1,0 +1,148 @@
+---
+description: 'Documentación sobre el formato ParquetMetadata'
+keywords: ['ParquetMetadata']
+slug: /interfaces/formats/ParquetMetadata
+title: 'ParquetMetadata'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descripción
+</div>
+
+Formato especial para leer metadatos de archivos Parquet (https://parquet.apache.org/docs/file-format/metadata/). Siempre devuelve una fila con la siguiente estructura/contenido:
+
+* `num_columns` - el número de columnas
+* &#96;&#96;num&#95;rows&#96; - el número total de filas
+* `num_row_groups` - el número total de grupos de filas
+* `format_version` - versión del formato Parquet, siempre 1.0 o 2.6
+* `total_uncompressed_size` - tamaño total en bytes sin comprimir de los datos, calculado como la suma de total&#95;byte&#95;size de todos los grupos de filas
+* `total_compressed_size` - tamaño total en bytes comprimidos de los datos, calculado como la suma de total&#95;compressed&#95;size de todos los grupos de filas
+* `columns` - la lista de metadatos de las columnas con la siguiente estructura:
+  * `name` - nombre de la columna
+  * `path` - ruta de la columna (difiere del nombre en una columna anidada)
+  * `max_definition_level` - nivel máximo de definición
+  * `max_repetition_level` - nivel máximo de repetición
+  * `physical_type` - tipo físico de la columna
+  * `logical_type` - tipo lógico de la columna
+  * `compression` - compresión utilizada para esta columna
+  * `total_uncompressed_size` - tamaño total en bytes sin comprimir de la columna, calculado como la suma de total&#95;uncompressed&#95;size de la columna en todos los grupos de filas
+  * `total_compressed_size` - tamaño total en bytes comprimidos de la columna, calculado como la suma de total&#95;compressed&#95;size de la columna en todos los grupos de filas
+  * `space_saved` - porcentaje de espacio ahorrado por la compresión, calculado como (1 - total&#95;compressed&#95;size/total&#95;uncompressed&#95;size).
+  * `encodings` - la lista de codificaciones utilizadas para esta columna
+* `row_groups` - la lista de metadatos de los grupos de filas con la siguiente estructura:
+  * `num_columns` - el número de columnas del grupo de filas
+  * `num_rows` - el número de filas del grupo de filas
+  * `total_uncompressed_size` - tamaño total en bytes sin comprimir del grupo de filas
+  * `total_compressed_size` - tamaño total en bytes comprimidos del grupo de filas
+  * `columns` - la lista de metadatos de los fragmentos de columna con la siguiente estructura:
+    * `name` - nombre de la columna
+    * `path` - ruta de la columna
+    * `total_compressed_size` - tamaño total en bytes comprimidos de la columna
+    * `total_uncompressed_size` - tamaño total en bytes sin comprimir del grupo de filas
+    * `have_statistics` - indicador booleano que indica si los metadatos del fragmento de columna contienen estadísticas de columna
+    * `statistics` - estadísticas del fragmento de columna (todos los campos son NULL si have&#95;statistics = false) con la siguiente estructura:
+      * `num_values` - el número de valores no nulos en el fragmento de columna
+      * `null_count` - el número de valores NULL en el fragmento de columna
+      * `distinct_count` - el número de valores distintos en el fragmento de columna
+      * `min` - el valor mínimo del fragmento de columna
+      * `max` - el valor máximo del fragmento de columna
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Ejemplo:
+
+```sql
+SELECT * 
+FROM file(data.parquet, ParquetMetadata) 
+FORMAT PrettyJSONEachRow
+```
+
+```json
+{
+    "num_columns": "2",
+    "num_rows": "100000",
+    "num_row_groups": "2",
+    "format_version": "2.6",
+    "metadata_size": "577",
+    "total_uncompressed_size": "282436",
+    "total_compressed_size": "26633",
+    "columns": [
+        {
+            "name": "number",
+            "path": "number",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "INT32",
+            "logical_type": "Int(bitWidth=16, isSigned=false)",
+            "compression": "LZ4",
+            "total_uncompressed_size": "133321",
+            "total_compressed_size": "13293",
+            "space_saved": "90.03%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        },
+        {
+            "name": "concat('Hello', toString(modulo(number, 1000)))",
+            "path": "concat('Hello', toString(modulo(number, 1000)))",
+            "max_definition_level": "0",
+            "max_repetition_level": "0",
+            "physical_type": "BYTE_ARRAY",
+            "logical_type": "None",
+            "compression": "LZ4",
+            "total_uncompressed_size": "149115",
+            "total_compressed_size": "13340",
+            "space_saved": "91.05%",
+            "encodings": [
+                "RLE_DICTIONARY",
+                "PLAIN",
+                "RLE"
+            ]
+        }
+    ],
+    "row_groups": [
+        {
+            "num_columns": "2",
+            "num_rows": "65409",
+            "total_uncompressed_size": "179809",
+            "total_compressed_size": "14163",
+            "columns": [
+                {
+                    "name": "number",
+                    "path": "number",
+                    "total_compressed_size": "7070",
+                    "total_uncompressed_size": "85956",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "0",
+                        "max": "999"
+                    }
+                },
+                {
+                    "name": "concat('Hello', toString(modulo(number, 1000)))",
+                    "path": "concat('Hello', toString(modulo(number, 1000)))",
+                    "total_compressed_size": "7093",
+                    "total_uncompressed_size": "93853",
+                    "have_statistics": true,
+                    "statistics": {
+                        "num_values": "65409",
+                        "null_count": "0",
+                        "distinct_count": null,
+                        "min": "Hello0",
+                        "max": "Hello999"
+                    }
+                }
+            ]
+        },
+        ...
+    ]
+}
+```

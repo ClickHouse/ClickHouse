@@ -1,0 +1,33 @@
+---
+title: 'Удаление отдельных таблиц из ClickPipe'
+description: 'Удаление отдельных таблиц из ClickPipe'
+sidebarTitle: 'Удаление таблицы'
+slug: /integrations/clickpipes/postgres/removing_tables
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В некоторых случаях имеет смысл исключить определённые таблицы из ClickPipe для Postgres — например, если таблица не нужна для аналитики, её исключение поможет сократить затраты на хранение и репликацию в ClickHouse.
+
+<div id="remove-tables-steps">
+  ## Шаги по удалению определённых таблиц
+</div>
+
+Сначала нужно удалить таблицу из пайпа. Для этого выполните следующие шаги:
+
+1. [Приостановите](/ru/integrations/clickpipes/postgres/pause-and-resume) пайп.
+2. Нажмите Edit Table Settings.
+3. Найдите нужную таблицу — для этого воспользуйтесь строкой поиска.
+4. Снимите выделение с таблицы, нажав на установленный флажок.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+
+5. Нажмите update.
+6. После успешного обновления на вкладке **Metrics** статус будет **Running**. Этот ClickPipe больше не будет реплицировать эту таблицу.

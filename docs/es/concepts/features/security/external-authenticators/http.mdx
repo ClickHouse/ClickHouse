@@ -1,0 +1,117 @@
+---
+description: 'Documentación sobre HTTP'
+slug: /operations/external-authenticators/http
+title: 'HTTP'
+doc_type: 'referencia'
+---
+
+import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+El servidor HTTP puede utilizarse para autenticar a los usuarios de ClickHouse. La autenticación HTTP solo puede utilizarse como autenticador externo para usuarios existentes, definidos en `users.xml` o en las rutas locales de control de acceso. Actualmente, se admite el esquema de autenticación [Basic](https://datatracker.ietf.org/doc/html/rfc7617) mediante el método GET.
+
+<div id="http-auth-server-definition">
+  ## Definición del servidor de autenticación HTTP
+</div>
+
+Para definir un servidor de autenticación HTTP, debe añadir la sección `http_authentication_servers` a `config.xml`.
+
+**Ejemplo**
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <http_authentication_servers>
+        <basic_auth_server>
+          <uri>http://localhost:8000/auth</uri>
+          <connection_timeout_ms>1000</connection_timeout_ms>
+          <receive_timeout_ms>1000</receive_timeout_ms>
+          <send_timeout_ms>1000</send_timeout_ms>
+          <max_tries>3</max_tries>
+          <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
+          <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+          <forward_headers>
+            <name>Custom-Auth-Header-1</name>
+            <name>Custom-Auth-Header-2</name>
+          </forward_headers>
+
+        </basic_auth_server>
+    </http_authentication_servers>
+</clickhouse>
+
+```
+
+Ten en cuenta que puedes definir varios servidores HTTP dentro de la sección `http_authentication_servers` con nombres distintos.
+
+**Parámetros**
+
+* `uri` - URI para realizar la solicitud de autenticación
+
+Tiempos de espera, en milisegundos, del socket utilizado para comunicarse con el servidor:
+
+* `connection_timeout_ms` - Predeterminado: 1000 ms.
+* `receive_timeout_ms` - Predeterminado: 1000 ms.
+* `send_timeout_ms` - Predeterminado: 1000 ms.
+
+Parámetros de reintento:
+
+* `max_tries` - Número máximo de intentos para realizar una solicitud de autenticación. Predeterminado: 3
+* `retry_initial_backoff_ms` - Intervalo inicial de backoff para el reintento. Predeterminado: 50 ms
+* `retry_max_backoff_ms` - Intervalo máximo de backoff. Predeterminado: 1000 ms
+
+Reenviar encabezados:
+
+Esta parte define qué encabezados se reenviarán desde los encabezados de la solicitud del cliente al autenticador HTTP externo. Ten en cuenta que los encabezados se compararán con los configurados sin distinguir entre mayúsculas y minúsculas, pero se reenviarán tal cual, es decir, sin modificarlos.
+
+<div id="enabling-http-auth-in-users-xml">
+  ### Habilitar la autenticación HTTP en `users.xml`
+</div>
+
+Para habilitar la autenticación HTTP para el usuario, especifique la sección `http_authentication` en lugar de `password` o de secciones similares en la definición del usuario.
+
+Parámetros:
+
+* `server` - Nombre del servidor de autenticación HTTP configurado en el archivo principal `config.xml`, como se describió anteriormente.
+* `scheme` - Esquema de autenticación HTTP. Por ahora, solo se admite `Basic`. Valor predeterminado: Basic
+
+Ejemplo (va en `users.xml`):
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <my_user>
+        <!- ... -->
+        <http_authentication>
+            <server>basic_server</server>
+            <scheme>basic</scheme>
+        </http_authentication>
+    </test_user_2>
+</clickhouse>
+```
+
+<Note>
+  Tenga en cuenta que la autenticación HTTP no puede usarse junto con ningún otro mecanismo de autenticación. La presencia de cualquier otra sección, como `password`, junto con `http_authentication` hará que ClickHouse se cierre.
+</Note>
+
+<div id="enabling-http-auth-using-sql">
+  ### Habilitación de la autenticación HTTP mediante SQL
+</div>
+
+Cuando el [Control de acceso y gestión de cuentas mediante SQL](/es/concepts/features/security/access-rights#access-control-usage) está habilitado en ClickHouse, también se pueden crear con sentencias SQL usuarios identificados mediante autenticación HTTP.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server' SCHEME 'Basic'
+```
+
+...o bien, `Basic` es el valor predeterminado si no se define explícitamente ningún esquema
+
+```sql
+CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
+```
+
+<div id="passing-session-settings">
+  ### Pasar ajustes de sesión
+</div>
+
+Si el cuerpo de respuesta del servidor de autenticación HTTP tiene formato JSON y contiene el subobjeto `settings`, ClickHouse intentará analizar sus pares clave-valor como valores de tipo cadena y establecerlos como ajustes de sesión para la sesión actual del usuario autenticado. Si el análisis falla, se ignorará el cuerpo de respuesta del servidor.

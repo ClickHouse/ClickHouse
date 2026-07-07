@@ -1,0 +1,518 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs
+title: 'مراقبة سجلات المضيف باستخدام ClickStack'
+sidebarTitle: 'سجلات المضيف العامة'
+description: 'مراقبة سجلات المضيف العامة باستخدام ClickStack'
+doc_type: 'guide'
+keywords: ['سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'مراقبة النظام', 'سجلات الخادم']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **الخلاصة**
+
+  اجمع سجلات نظام المضيف (syslog وauth وkernel) وصوّرها بصريًا في ClickStack باستخدام مستقبِل OTel ‏`filelog`. يتضمن مجموعة بيانات تجريبية ولوحة معلومات مُعدّة مسبقًا.
+</Info>
+
+<div id="existing-hosts">
+  ## التكامل مع المضيفين الحاليين
+</div>
+
+يشرح هذا القسم كيفية تهيئة المضيفين الحاليين لديك لإرسال سجلات النظام إلى ClickStack، وذلك عبر تعديل إعدادات ClickStack OTel مجمّع لقراءة جميع ملفات سجلات النظام (`syslog` و`auth` و`kernel` و`daemon` وسجلات التطبيقات).
+
+إذا كنت ترغب في اختبار تكامل سجلات المضيف قبل تهيئة إعدادك الحالي، فيمكنك إجراء الاختبار باستخدام الإعداد المهيأ مسبقًا وبيانات العينة في قسم [&quot;مجموعة البيانات التجريبية&quot;](/ar/clickstack/integration-examples/host-logs#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات المسبقة
+</div>
+
+* مثيل ClickStack قيد التشغيل
+* نظام يحتوي على ملفات syslog
+* إمكانية تعديل ملفات تكوين ClickStack
+
+<Steps>
+  <Step>
+    #### تأكّد من وجود ملفات syslog
+
+    أولاً، تأكّد من أن نظامك يُنشئ ملفات syslog:
+
+    ```bash
+    # Check if syslog files exist (Linux)
+    ls -la /var/log/syslog /var/log/messages
+
+    # Or on macOS
+    ls -la /var/log/system.log
+
+    # View recent entries
+    tail -20 /var/log/syslog
+    ```
+
+    المواقع الشائعة لملفات syslog:
+
+    * **Ubuntu/Debian**: `/var/log/syslog`
+    * **RHEL/CentOS/Fedora**: `/var/log/messages`
+    * **macOS**: `/var/log/system.log`
+  </Step>
+
+  <Step>
+    #### إنشاء تهيئة مخصصة لـ OTel collector
+
+    يتيح لك ClickStack توسيع إعداد OpenTelemetry Collector الأساسي عن طريق ربط ملف إعداد مخصص وضبط متغير بيئة.
+
+    أنشئ ملفًا باسم `host-logs-monitoring.yaml` يتضمن إعدادات نظامك:
+
+    <Tabs>
+      <Tab title="Linux الحديث (Ubuntu 24.04+)">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="Linux القديم (Ubuntu 20.04, RHEL, CentOS)">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="macOS">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/system.log
+              - /host/private/var/log/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    جميع الإعدادات:
+
+    * اقرأ ملفات syslog من مواقعها القياسية
+    * حلّل تنسيق syslog لاستخراج الحقول المنظَّمة (الطابع الزمني، اسم المضيف، الوحدة/الخدمة، PID، الرسالة)
+    * احتفِظ بالطوابع الزمنية الأصلية للسجلات
+    * أضِف السمة `source: host-logs` لتسهيل التصفية في HyperDX
+    * وجّه السجلات إلى مُصدِّر ClickHouse عبر pipeline مخصّص
+
+    <Note>
+      - لا تُعرِّف في الإعداد المخصّص سوى `receivers` و`pipelines` الجديدة
+      - إن `processors` (`memory_limiter`, `transform`, `batch`) و`exporters` (`clickhouse`) معرّفة بالفعل في إعداد ClickStack الأساسي — ما عليك سوى الإشارة إليها بالاسم
+      - يستخرج محلّل `regex` أسماء وحدات systemd ومعرّفات PID وبيانات وصفية أخرى من تنسيق syslog
+      - يستخدم هذا الإعداد `start_at: end` لتجنّب إعادة إدخال السجلات عند إعادة تشغيل `collector`. وللاختبار، غيّره إلى `start_at: beginning` لعرض السجلات السابقة فورًا.
+    </Note>
+  </Step>
+
+  <Step>
+    #### هيّئ ClickStack لتحميل إعدادات مخصصة
+
+    لتمكين إعدادات المجمّع المخصصة في نشر ClickStack الحالي لديك، يجب عليك:
+
+    1. ربط ملف الإعدادات المخصص في المسار `/etc/otelcol-contrib/custom.config.yaml`
+    2. تعيين متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+    3. ربط دليل `syslog` لديك لكي يتمكن المجمّع من قراءته
+
+    ##### الخيار 1: Docker Compose
+
+    حدّث إعدادات نشر ClickStack لديك:
+
+    ```yaml
+    services:
+      clickstack:
+        # ... existing configuration ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... other environment variables ...
+        volumes:
+          - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log:/var/log:ro
+          # ... other volumes ...
+    ```
+
+    ##### الخيار 2: Docker Run (الصورة المتكاملة)
+
+    إذا كنت تستخدم الصورة المتكاملة مع docker run:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log:/var/log:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      تأكد من أن ClickStack collector لديه الصلاحيات المناسبة لقراءة ملفات syslog. في بيئة الإنتاج، استخدم عمليات ربط للقراءة فقط (`:ro`) واتبع مبدأ أقل الصلاحيات.
+    </Note>
+  </Step>
+
+  <Step>
+    #### التحقّق من السجلات في HyperDX
+
+    بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتحقّق من أن السجلات تتدفّق:
+
+    1. انتقل إلى عرض البحث
+    2. اضبط المصدر على Logs
+    3. صفِّ باستخدام `source:host-logs` لعرض السجلات الخاصة بالمضيف
+    4. ينبغي أن ترى إدخالات سجل منظَّمة تتضمن حقولًا مثل `unit` و`hostname` و`pid` و`message` وغيرها.
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="عرض البحث" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="عرض السجل" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة بيانات تجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل سجلات المضيف قبل تهيئة أنظمة الإنتاج الخاصة بهم، نوفر مجموعة بيانات نموذجية من سجلات النظام المُنشأة مسبقًا بأنماط واقعية.
+
+<Steps>
+  <Step>
+    #### تنزيل مجموعة البيانات النموذجية
+
+    نزّل ملف السجل النموذجي:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    تتضمن مجموعة البيانات:
+
+    * تسلسل إقلاع النظام
+    * نشاط تسجيل الدخول عبر SSH (محاولات ناجحة وفاشلة)
+    * حادثة أمنية (هجوم brute force مع استجابة fail2ban)
+    * صيانة مجدولة (مهام cron وanacron)
+    * عمليات إعادة تشغيل الخدمات (rsyslog)
+    * رسائل النواة ونشاط الجدار الناري
+    * مزيج من العمليات العادية والأحداث البارزة
+  </Step>
+
+  <Step>
+    #### أنشئ تهيئة المجمّع للاختبار
+
+    أنشئ ملفًا باسم `host-logs-demo.yaml` باستخدام التهيئة التالية:
+
+    ```yaml
+    cat > host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "host-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "host-demo"
+
+    service:
+      pipelines:
+        logs/host-demo:
+          receivers: [filelog/journal]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### شغّل ClickStack باستخدام التهيئة التجريبية
+
+    شغّل ClickStack باستخدام السجلات التجريبية وهذه التهيئة:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      **يؤدي هذا إلى ربط ملف السجل مباشرةً داخل الحاوية. ويتم ذلك لأغراض الاختبار باستخدام بيانات تجريبية ثابتة.**
+    </Note>
+  </Step>
+
+  <Step>
+    #### تحقّق من السجلات في HyperDX
+
+    بعد تشغيل ClickStack:
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    2. انتقل إلى Search view واضبط المصدر على `Logs`
+    3. اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أكثر وضوحًا.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والتصورات
+</div>
+
+لمساعدتك على بدء مراقبة سجلات المضيف باستخدام ClickStack، نوفر تصورات أساسية لسجلات النظام.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">نزّل</TrackedLink> إعداد لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استورد لوحة المعلومات الجاهزة
+
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
+    2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+
+    3. ارفع الملف `host-logs-dashboard.json` وانقر على **إتمام الاستيراد**
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إتمام الاستيراد" />
+  </Step>
+
+  <Step>
+    #### اعرض لوحة المعلومات
+
+    ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
+
+    تشمل التصورات الرئيسية ما يلي:
+
+    * حجم السجلات بمرور الوقت حسب مستوى الخطورة
+    * أكثر وحدات systemd توليدًا للسجلات
+    * نشاط تسجيل الدخول عبر SSH (الناجح مقابل الفاشل)
+    * نشاط جدار الحماية (المحظور مقابل المسموح)
+    * الأحداث الأمنية (عمليات تسجيل الدخول الفاشلة، والحظر، والحجب)
+    * نشاط إعادة تشغيل الخدمة
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن يكون للوحة المعلومات المستوردة نطاق زمني محدد افتراضيًا.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### تعذّر تحميل ملف الإعدادات المخصّص
+</div>
+
+تحقّق من تعيين متغير البيئة:
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+تحقّق من أن ملف الإعدادات المخصّص مربوط ويمكن قراءته:
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### عدم ظهور السجلات في HyperDX
+</div>
+
+**تأكّد من وجود ملفات syslog ومن استمرار الكتابة إليها:**
+
+```bash
+# Check if syslog exists
+ls -la /var/log/syslog /var/log/messages
+
+# Verify logs are being written
+tail -f /var/log/syslog
+```
+
+**تحقّق من قدرة المجمّع على قراءة السجلات:**
+
+```bash
+docker exec <container> cat /var/log/syslog | head -20
+```
+
+**تحقّق من أن الإعدادات الفعّالة تتضمن مستقبِل filelog لديك:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**تحقّق من وجود أخطاء في سجلات المجمّع:**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i "filelog\|syslog"
+```
+
+**إذا كنت تستخدم مجموعة البيانات التجريبية، فتأكّد من إمكانية الوصول إلى ملف السجل:**
+
+```bash
+docker exec <container> cat /tmp/host-demo/journal.log | wc -l
+```
+
+<div id="logs-not-parsing">
+  ### عدم تحليل السجلات بصورة صحيحة
+</div>
+
+**تحقّق من أن تنسيق syslog لديك يطابق التهيئة التي اخترتها:**
+
+بالنسبة إلى Linux الحديث (Ubuntu 24.04+):
+
+```bash
+# Should show ISO8601 format: 2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+لأنظمة Linux القديمة أو macOS:
+
+```bash
+# Should show traditional format: Nov 17 14:16:16
+tail -5 /var/log/syslog
+# or
+tail -5 /var/log/system.log
+```
+
+إذا لم يكن التنسيق لديك مطابقًا، فحدّد علامة تبويب التهيئة المناسبة في قسم [إنشاء تهيئة مخصصة لـ OTel مجمّع](#custom-otel).
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* أعدّ [التنبيهات](/ar/clickstack/features/alerts) لأحداث النظام الحرجة (تعطّل الخدمات، فشل المصادقة، تحذيرات القرص)
+* رشّح حسب وحدات محددة لمراقبة خدمات بعينها
+* اربط بين سجلات المضيف وسجلات التطبيق لاستكشاف الأخطاء وإصلاحها على نحو شامل
+* أنشئ لوحات معلومات مخصصة لمراقبة الأمان (محاولات SSH، استخدام sudo، عمليات حظر جدار الحماية)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أمّا لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

@@ -94,6 +94,12 @@ std::pair<ASTPtr, BlockIO> executeQuery(
 /// if built pipeline does not require any input and does not produce any output.
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel = false);
 
+/// Finishes a query whose pipeline has already been fully executed: releases the query slot early,
+/// runs query_finish_callback (used to flush the HTTP response), and then calls io.onFinish()
+/// which records QueryFinish and releases the memory reservation.
+/// If the callback throws, its exception is rethrown after io.onFinish().
+void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback);
+
 /// Prepares a QueryLogElement and, if enabled, logs it to system.query_log
 QueryLogElement logQueryStart(
     const std::chrono::time_point<std::chrono::system_clock> & query_start_time,
@@ -104,6 +110,7 @@ QueryLogElement logQueryStart(
     const QueryPipeline & pipeline,
     const IInterpreter * interpreter,
     bool internal,
+    bool log_as_internal,
     const String & query_database,
     const String & query_table,
     bool async_insert);
@@ -116,7 +123,8 @@ void logQueryFinish(
     bool pulling_pipeline,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     QueryResultCacheUsage query_result_cache_usage,
-    bool internal);
+    bool internal,
+    bool log_as_internal);
 
 void logQueryException(
     QueryLogElement & elem,
@@ -125,6 +133,7 @@ void logQueryException(
     const ASTPtr & query_ast,
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span,
     bool internal,
+    bool log_as_internal,
     bool log_error);
 
 void logExceptionBeforeStart(
@@ -134,7 +143,8 @@ void logExceptionBeforeStart(
     ASTPtr ast,
     const std::shared_ptr<OpenTelemetry::SpanHolder> & query_span,
     UInt64 elapsed_milliseconds,
-    bool internal);
+    bool internal,
+    bool log_as_internal);
 
 /// Returns the global AST fuzzer instance with a lock held.
 std::pair<std::shared_ptr<QueryFuzzer>, std::unique_lock<std::mutex>> getGlobalASTFuzzer();

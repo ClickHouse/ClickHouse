@@ -1,0 +1,201 @@
+---
+description: 'Табличная функция `remote` позволяет обращаться к удалённым серверам на лету,
+  то есть без создания Distributed таблицы. Табличная функция `remoteSecure` аналогична
+  `remote`, но использует защищённое соединение.'
+sidebarTitle: 'remote'
+slug: /sql-reference/table-functions/remote
+title: 'remote, remoteSecure'
+doc_type: 'reference'
+---
+
+Табличная функция `remote` позволяет обращаться к удалённым серверам на лету, то есть без создания [Distributed](/ru/reference/engines/table-engines/special/distributed) таблицы. Табличная функция `remoteSecure` аналогична `remote`, но использует защищённое соединение.
+
+Обе функции можно использовать в запросах `SELECT` и `INSERT`.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+remote(addresses_expr, [db, table, user [, password], sharding_key])
+remote(addresses_expr, [db.table, user [, password], sharding_key])
+remote(named_collection[, option=value [,..]])
+remoteSecure(addresses_expr, [db, table, user [, password], sharding_key])
+remoteSecure(addresses_expr, [db.table, user [, password], sharding_key])
+remoteSecure(named_collection[, option=value [,..]])
+```
+
+<div id="parameters">
+  ## Параметры
+</div>
+
+| Аргумент         | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `addresses_expr` | Адрес удалённого сервера или выражение, генерирующее несколько адресов удалённых серверов. Формат: `host` или `host:port`.<br /><br />    `host` можно указать как имя сервера либо как адрес IPv4 или IPv6. Адрес IPv6 необходимо указывать в `[]`.<br /><br />    `port` — TCP-порт удалённого сервера. Если порт не указан, используется [tcp&#95;port](/ru/reference/settings/server-settings/settings#tcp_port) из файла конфигурации сервера для табличной функции `remote` (по умолчанию 9000) и [tcp&#95;port&#95;secure](/ru/reference/settings/server-settings/settings#tcp_port_secure) для табличной функции `remoteSecure` (по умолчанию 9440).<br /><br />    Для адресов IPv6 указание порта обязательно.<br /><br />    Если указан только параметр `addresses_expr`, для `db` и `table` по умолчанию используется `system.one`.<br /><br />    Тип: [String](/ru/reference/data-types/string). |
+| `db`             | Имя базы данных. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `table`          | Имя таблицы. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `user`           | Имя пользователя. Если не указано, используется `default`. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `password`       | Пароль пользователя. Если не указан, используется пустой пароль. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `sharding_key`   | Ключ сегментирования для распределения данных по узлам. Например: `insert into remote('127.0.0.1:9000,127.0.0.2', db, table, 'default', rand())`. Тип: [UInt32](/ru/reference/data-types/int-uint).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+
+Аргументы также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections).
+
+<div id="returned-value">
+  ## Возвращаемое значение
+</div>
+
+Таблица, расположенная на удалённом сервере.
+
+<div id="usage">
+  ## Использование
+</div>
+
+Поскольку табличные функции `remote` и `remoteSecure` заново устанавливают соединение для каждого запроса, вместо них рекомендуется использовать таблицу `Distributed`. Кроме того, если указаны имена хостов, выполняется разрешение имён, а ошибки при работе с различными репликами не учитываются. При обработке большого количества запросов всегда заранее создавайте таблицу `Distributed` и не используйте табличную функцию `remote`.
+
+Табличная функция `remote` может быть полезна в следующих случаях:
+
+* Однократная миграция данных из одной системы в другую
+* Доступ к конкретному серверу для сравнения данных, отладки и тестирования, то есть разовые ad hoc-подключения.
+* Запросы между различными кластерами ClickHouse в исследовательских целях.
+* Нечастые распределённые запросы, выполняемые вручную.
+* Распределённые запросы, в которых набор серверов каждый раз задаётся заново.
+
+<div id="addresses">
+  ### Адреса
+</div>
+
+```text
+example01-01-1
+example01-01-1:9440
+example01-01-1:9000
+localhost
+127.0.0.1
+[::]:9440
+[::]:9000
+[2a02:6b8:0:1111::11]:9000
+```
+
+Несколько адресов можно указать через запятую. В этом случае ClickHouse будет использовать распределённую обработку и отправлять запрос на все указанные адреса (как в случае с сегментами, содержащими разные данные). Пример:
+
+```text
+example01-01-1,example01-02-1
+```
+
+<div id="examples">
+  ## Примеры
+</div>
+
+<div id="selecting-data-from-a-remote-server">
+  ### Выборка данных с удалённого сервера:
+</div>
+
+```sql
+SELECT * FROM remote('127.0.0.1', db.remote_engine_table) LIMIT 3;
+```
+
+Или используя [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION creds AS
+        host = '127.0.0.1',
+        database = 'db';
+SELECT * FROM remote(creds, table='remote_engine_table') LIMIT 3;
+```
+
+<div id="inserting-data-into-a-table-on-a-remote-server">
+  ### Вставка данных в таблицу на удалённом сервере:
+</div>
+
+```sql
+CREATE TABLE remote_table (name String, value UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION remote('127.0.0.1', currentDatabase(), 'remote_table') VALUES ('test', 42);
+SELECT * FROM remote_table;
+```
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### Миграция таблиц из одной системы в другую:
+</div>
+
+В этом примере используется одна таблица из набора демонстрационных данных. База данных — `imdb`, а таблица — `actors`.
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  #### В исходной системе ClickHouse (системе, где сейчас хранятся данные)
+</div>
+
+* Проверьте исходную базу данных и имя таблицы (`imdb.actors`)
+
+  ```sql
+  show databases
+  ```
+
+  ```sql
+  show tables in imdb
+  ```
+
+* Получите оператор CREATE TABLE в исходной системе:
+
+```sql
+  SELECT create_table_query
+  FROM system.tables
+  WHERE database = 'imdb' AND table = 'actors'
+```
+
+Ответ
+
+```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+```
+
+<div id="on-the-destination-clickhouse-system">
+  #### В целевой системе ClickHouse
+</div>
+
+* Создайте целевую базу данных:
+
+  ```sql
+  CREATE DATABASE imdb
+  ```
+
+* Используя оператор CREATE TABLE из исходной системы, создайте целевую таблицу:
+
+  ```sql
+  CREATE TABLE imdb.actors (`id` UInt32,
+                            `first_name` String,
+                            `last_name` String,
+                            `gender` FixedString(1))
+                  ENGINE = MergeTree
+                  ORDER BY (id, first_name, last_name, gender);
+  ```
+
+<div id="back-on-the-source-deployment">
+  #### Возвращаемся к исходному развертыванию
+</div>
+
+Выполните вставку данных в новую базу данных и таблицу, созданные в удаленной системе. Вам понадобятся host, port, имя пользователя, пароль, база данных пункта назначения и целевая таблица.
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('remote.clickhouse.cloud:9440', 'imdb.actors', 'USER', 'PASSWORD')
+SELECT * from imdb.actors
+```
+
+<div id="globs-in-addresses">
+  ## Глоббинг
+</div>
+
+Шаблоны в `{ }` используются для генерации набора сегментов и указания реплик. Если есть несколько пар `{ }`, генерируется декартово произведение соответствующих наборов.
+
+Поддерживаются следующие типы шаблонов.
+
+* `{a,b,c}` - Обозначает любую из альтернативных строк `a`, `b` или `c`. Шаблон заменяется на `a` в адресе первого сегмента, на `b` — в адресе второго сегмента и так далее. Например, `example0{1,2}-1` генерирует адреса `example01-1` и `example02-1`.
+* `{N..M}` - Диапазон чисел. Этот шаблон генерирует адреса сегментов с последовательно возрастающими индексами от `N` до `M` включительно. Например, `example0{1..2}-1` генерирует `example01-1` и `example02-1`.
+* `{0n..0m}` - Диапазон чисел с ведущими нулями. Этот шаблон сохраняет ведущие нули в индексах. Например, `example{01..03}-1` генерирует `example01-1`, `example02-1` и `example03-1`.
+* `{a|b}` - Любое количество вариантов, разделённых символом `|`. Шаблон задаёт реплики. Например, `example01-{1|2}` генерирует реплики `example01-1` и `example01-2`.
+
+Запрос будет отправлен на первую работоспособную реплику. Однако для `remote` реплики перебираются в порядке, заданном параметром [load&#95;balancing](/ru/reference/settings/session-settings#load_balancing).
+Количество генерируемых адресов ограничено параметром [table&#95;function&#95;remote&#95;max&#95;addresses](/ru/reference/settings/session-settings#table_function_remote_max_addresses).

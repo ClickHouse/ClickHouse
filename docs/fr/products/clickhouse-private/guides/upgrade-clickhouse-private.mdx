@@ -1,0 +1,138 @@
+---
+noindex: true
+title: "Mettre à niveau ClickHouse Private"
+description: "Mettre à niveau les composants de ClickHouse Private — l’opérateur et le cluster ClickHouse (Keeper + server) — vers une nouvelle version."
+---
+
+Mettez à niveau les composants de ClickHouse Private — l’opérateur et le cluster ClickHouse (Keeper + server) — vers une nouvelle version.
+
+> **Bonne pratique :** effectuez toujours la mise à niveau d’abord sur un cluster de préproduction ou de test avant de l’appliquer en production. Il est vivement recommandé d’utiliser un cluster de test dédié reproduisant la production dans le cadre de votre procédure standard de mise à niveau.
+
+<div id="pre-upgrade-checklist">
+  ## Liste de contrôle avant la mise à niveau
+</div>
+
+Avant de commencer la mise à niveau :
+
+1. **Vérifiez que le cluster est en bon état** — assurez-vous que tous les pods de serveur et Keeper sont en cours d’exécution et prêts, et que le statut de la ressource personnalisée `ClickhouseCluster` n’affiche aucune erreur :
+
+   ```bash
+   kubectl get clickhousecluster -A
+   ```
+
+   Ne poursuivez pas si des pods sont en état de crashlooping ou si le cluster est dégradé.
+
+2. **(Fortement recommandé en production) Effectuez une sauvegarde complète** de votre cluster — voir [Sauvegarder et restaurer ClickHouse](/fr/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual). Vérifiez que la sauvegarde s’est bien terminée (`status = BACKUP_DONE` dans `system.backups`) avant de continuer.
+
+3. **Assurez-vous que la version précédente est disponible pour un retour arrière** — vérifiez que les versions précédentes des artefacts sont toujours accessibles dans votre ECR interne. Il suffit que les images et les charts soient disponibles pour pouvoir revenir rapidement en arrière si nécessaire.
+
+4. **Copiez toutes les images de la nouvelle version dans votre ECR interne**. Utilisez la [référence Versions des composants](/fr/products/clickhouse-private/reference/component-versions) pour la version cible.
+
+5. **Exécutez les vérifications préalables**. Les vérifications préalables valident des exigences supplémentaires et recherchent les feature flags obsolètes. Pour plus de détails, consultez la page [Guide pratique : exécuter les vérifications préalables](/fr/products/clickhouse-private/guides/run-preflight-checks).
+
+<div id="upgrade-procedure">
+  ## Procédure de mise à niveau
+</div>
+
+<Steps>
+  <Step>
+    ### 1. Mettre à niveau le chart Helm de l’opérateur
+
+    Conservez les valeurs Helm existantes telles quelles et mettez à jour uniquement les versions de l’opérateur vers les nouvelles versions cibles.
+
+    ```bash
+    helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+      --version <new-version> \
+      -f values.yaml \
+      -n clickhouse-operator-system
+    ```
+
+    > **Remarque :** La mise à niveau de l’opérateur peut déclencher un redémarrage progressif de tous les clusters ClickHouse qu’il gère. Si vous avez plusieurs clusters et souhaitez valider la mise à niveau sur l’un d’eux avant de laisser l’opérateur réconcilier les autres, consultez [Protecting Clusters During Upgrade](#protecting-clusters-during-upgrade) ci-dessous.
+  </Step>
+
+  <Step>
+    ### 2. Valider l’opérateur mis à niveau
+
+    Vérifiez que le déploiement de l’opérateur est en cours d’exécution et fonctionne correctement :
+
+    ```bash
+    kubectl rollout status deployment -n clickhouse-operator-system
+    kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+    kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+    ```
+
+    Vérifiez qu’il n’y a pas d’erreurs dans les logs et que tous les clusters gérés ont bien été réconciliés :
+
+    ```bash
+    kubectl get clickhousecluster -A
+    ```
+  </Step>
+
+  <Step>
+    ### 3. Mettre à niveau le chart Helm `onprem-clickhouse-cluster`
+
+    Mettez à niveau le chart Helm `onprem-clickhouse-cluster` pour chaque cluster. Conservez les valeurs Helm existantes telles quelles et mettez à jour uniquement les versions des images du serveur ClickHouse et de Keeper vers les nouvelles versions cibles.
+
+    ```bash
+    helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+      --version <new-chart-version> \
+      -n <namespace> \
+      -f values.yaml \
+      --set server.version=<new-server-version> \
+      --set keeper.version=<new-keeper-version>
+    ```
+
+    Cela déclenche un **redémarrage progressif des pods Keeper et serveur** (un pod à la fois). Répétez l’opération pour chaque cluster.
+  </Step>
+
+  <Step>
+    ### 4. Valider le cluster mis à niveau
+
+    Une fois le redémarrage progressif terminé, vérifiez que le cluster est sain :
+
+    ```bash
+    kubectl get clickhousecluster -n <namespace>
+    kubectl get pods -n <namespace>
+    ```
+
+    Tous les pods doivent être dans l’état `Running` et la ressource personnalisée `ClickhouseCluster` ne doit afficher aucune erreur. Pour valider davantage la connectivité, effectuez un port-forward vers le service ClickHouse (voir la section Port-forward du [tutoriel](/fr/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks) correspondant) et exécutez une requête de test.
+  </Step>
+</Steps>
+
+<div id="protecting-clusters-during-upgrade">
+  ## Protéger les clusters pendant la mise à niveau
+</div>
+
+Si vous gérez plusieurs clusters avec un seul opérateur et souhaitez valider sa mise à niveau sur un cluster avant de le laisser réconcilier les autres (par exemple, en testant sur un cluster de préproduction avant la production), mettez en pause la réconciliation sur certains clusters à l’aide de l’annotation `clickhouse.com/skip-reconcile`.
+
+Ajoutez l’annotation à chaque cluster que vous souhaitez protéger avant de mettre à niveau l’opérateur :
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+L’opérateur ignore entièrement la réconciliation des clusters annotés — aucun redémarrage ni aucune modification de configuration n’est appliqué. Une fois la mise à niveau validée sur votre cluster de test, supprimez l’annotation pour permettre à l’opérateur de reprendre la réconciliation normale :
+
+```bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+Confirmez que l’opérateur a bien pris en compte l’annotation en vérifiant la présence de l’élément suivant dans ses logs :
+
+```text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+<div id="rollback">
+  ## Retour en arrière
+</div>
+
+Si des problèmes sont détectés après la mise à niveau :
+
+* **Retour en arrière de l’opérateur :** redéployez la version précédente du chart Helm de l’opérateur.
+* **Retour en arrière du cluster :** redéployez la version précédente du chart Helm `onprem-clickhouse-cluster` avec les versions précédentes des images du serveur et de Keeper.
+* **Récupération des données :** si des problèmes de données sont suspectés, restaurez-les à partir de la sauvegarde effectuée dans la liste de contrôle préalable à la mise à niveau — voir [Sauvegarder et restaurer ClickHouse](/fr/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).

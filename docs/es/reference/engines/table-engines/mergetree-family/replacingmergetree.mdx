@@ -1,0 +1,235 @@
+---
+description: 'se diferencia de MergeTree en que elimina las entradas duplicadas con el
+  mismo valor de la clave de ordenación (sección de la tabla `ORDER BY`, no `PRIMARY KEY`).'
+sidebarTitle: 'ReplacingMergeTree'
+slug: /engines/table-engines/mergetree-family/replacingmergetree
+title: 'motor de tabla ReplacingMergeTree'
+doc_type: 'referencia'
+---
+
+El motor se diferencia de [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) en que elimina las entradas duplicadas con el mismo valor de la [clave de ordenación](/es/reference/engines/table-engines/mergetree-family/mergetree) (sección de la tabla `ORDER BY`, no `PRIMARY KEY`).
+
+La deduplicación de datos se produce solo durante una fusión. Las fusiones se realizan en segundo plano en un momento indeterminado, por lo que no se pueden planificar. Es posible que parte de los datos permanezca sin procesar. Aunque puedes ejecutar una fusión no programada mediante la consulta `OPTIMIZE`, no debes confiar en ello, ya que la consulta `OPTIMIZE` leerá y escribirá una gran cantidad de datos.
+
+Por lo tanto, `ReplacingMergeTree` es adecuado para eliminar datos duplicados en segundo plano y ahorrar espacio, pero no garantiza la ausencia de duplicados.
+
+<Note>
+  Hay una guía detallada sobre ReplacingMergeTree, incluidas las buenas prácticas y cómo optimizar el rendimiento, disponible [aquí](/es/concepts/features/operations/update/replacing-merge-tree).
+</Note>
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = ReplacingMergeTree([ver [, is_deleted]])
+[PARTITION BY expr]
+[ORDER BY expr]
+[PRIMARY KEY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+Para ver una descripción de los parámetros de la solicitud, consulte la [descripción de la sentencia](/es/reference/statements/create/table).
+
+<Note>
+  La unicidad de las filas viene determinada por la cláusula `ORDER BY` de la tabla, no por `PRIMARY KEY`.
+</Note>
+
+<div id="replacingmergetree-parameters">
+  ## Parámetros de ReplacingMergeTree
+</div>
+
+<div id="ver">
+  ### `ver`
+</div>
+
+`ver` — columna con el número de versión. Tipo `UInt*`, `Date`, `DateTime` o `DateTime64`. Parámetro opcional.
+
+Al realizar la fusión, `ReplacingMergeTree` deja solo una de todas las filas con la misma clave de ordenación:
+
+* La última de la selección, si no se especifica `ver`. Una selección es un conjunto de filas en un conjunto de partes que participan en la fusión. La parte creada más recientemente (el último insert) será la última de la selección. Por lo tanto, tras la deduplicación, permanecerá la última fila del insert más reciente para cada clave de ordenación única.
+* La que tenga la versión máxima, si se especifica `ver`. Si `ver` es el mismo para varias filas, se aplicará la regla &quot;si no se especifica `ver`&quot; para ellas; es decir, permanecerá la fila insertada más recientemente.
+
+Ejemplo:
+
+```sql
+-- sin ver: gana la última fila insertada
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+
+INSERT INTO myFirstReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO myFirstReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM myFirstReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ second  │ 2020-01-01 00:00:00 │
+└─────┴─────────┴─────────────────────┘
+
+-- con ver: gana la fila con el valor de ver más alto
+CREATE TABLE mySecondReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree(eventTime)
+ORDER BY key;
+
+INSERT INTO mySecondReplacingMT Values (1, 'first', '2020-01-01 01:01:01');
+INSERT INTO mySecondReplacingMT Values (1, 'second', '2020-01-01 00:00:00');
+
+SELECT * FROM mySecondReplacingMT FINAL;
+
+┌─key─┬─someCol─┬───────────eventTime─┐
+│   1 │ first   │ 2020-01-01 01:01:01 │
+└─────┴─────────┴─────────────────────┘
+```
+
+<div id="is_deleted">
+  ### `is_deleted`
+</div>
+
+`is_deleted` — Nombre de una columna utilizada durante una fusión para determinar si los datos de esta fila representan el estado o si deben eliminarse; `1` es una fila &quot;eliminada&quot; y `0` es una fila de &quot;estado&quot;.
+
+Tipo de datos de la columna — `UInt8`.
+
+<Note>
+  `is_deleted` solo puede habilitarse cuando se usa `ver`.
+
+  Independientemente de la operación realizada sobre los datos, la versión debe incrementarse. Si dos filas insertadas tienen el mismo número de versión, se conserva la última fila insertada.
+
+  De forma predeterminada, ClickHouse conservará la última fila de una clave incluso si esa fila es una fila eliminada. Esto permite que cualquier fila futura con versiones inferiores
+  pueda insertarse de forma segura y que la fila eliminada siga aplicándose.
+
+  Para eliminar permanentemente esas filas eliminadas, habilite la configuración de tabla `allow_experimental_replacing_merge_with_cleanup` y haga una de las siguientes acciones:
+
+  1. Establezca las configuraciones de tabla `enable_replacing_merge_with_cleanup_for_min_age_to_force_merge`, `min_age_to_force_merge_on_partition_only` y `min_age_to_force_merge_seconds`. Si todas las partes de una partición son más antiguas que `min_age_to_force_merge_seconds`, ClickHouse las fusionará
+     todas en una sola parte y eliminará cualquier fila eliminada.
+
+  2. Ejecute manualmente `OPTIMIZE TABLE table [PARTITION partition | PARTITION ID 'partition_id'] FINAL CLEANUP`.
+</Note>
+
+Ejemplo:
+
+```sql
+-- con ver e is_deleted
+CREATE OR REPLACE TABLE myThirdReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime,
+    `is_deleted` UInt8
+)
+ENGINE = ReplacingMergeTree(eventTime, is_deleted)
+ORDER BY key
+SETTINGS allow_experimental_replacing_merge_with_cleanup = 1;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 0);
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 01:01:01', 1);
+
+select * from myThirdReplacingMT final;
+
+0 rows in set. Elapsed: 0.003 sec.
+
+-- eliminar filas con is_deleted
+OPTIMIZE TABLE myThirdReplacingMT FINAL CLEANUP;
+
+INSERT INTO myThirdReplacingMT Values (1, 'first', '2020-01-01 00:00:00', 0);
+
+select * from myThirdReplacingMT final;
+
+┌─key─┬─someCol─┬───────────eventTime─┬─is_deleted─┐
+│   1 │ first   │ 2020-01-01 00:00:00 │          0 │
+└─────┴─────────┴─────────────────────┴────────────┘
+```
+
+<div id="query-clauses">
+  ## Cláusulas de consulta
+</div>
+
+Al crear una tabla `ReplacingMergeTree`, se requieren las mismas [cláusulas](/es/reference/engines/table-engines/mergetree-family/mergetree) que al crear una tabla `MergeTree`.
+
+<details markdown="1">
+  <summary>Método obsoleto para crear una tabla</summary>
+
+  <Note>
+    No utilice este método en proyectos nuevos y, si es posible, migre los proyectos antiguos al método descrito anteriormente.
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] ReplacingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [ver])
+  ```
+
+  Todos los parámetros, excepto `ver`, tienen el mismo significado que en `MergeTree`.
+
+  * `ver` - columna con la versión. Parámetro opcional. Para ver una descripción, consulte el texto anterior.
+</details>
+
+<div id="query-time-de-duplication--final">
+  ## Eliminación de duplicados en tiempo de consulta &amp; FINAL
+</div>
+
+Durante las fusiones, ReplacingMergeTree identifica las filas duplicadas usando los valores de las columnas `ORDER BY` (utilizadas para crear la tabla) como identificador único, y conserva solo la versión más reciente. Sin embargo, esto solo ofrece corrección eventual: no garantiza que las filas se eliminen por duplicado, y no debe depender de ello. Por lo tanto, las consultas pueden producir respuestas incorrectas porque tienen en cuenta filas de actualización y filas eliminadas.
+
+Para obtener respuestas correctas, los usuarios deberán complementar las fusiones en segundo plano con la eliminación de duplicados en tiempo de consulta y la eliminación de filas borradas. Esto puede lograrse usando el operador `FINAL`. Por ejemplo, considere el siguiente ejemplo:
+
+```sql
+CREATE TABLE rmt_example
+(
+    `number` UInt16
+)
+ENGINE = ReplacingMergeTree
+ORDER BY number
+
+INSERT INTO rmt_example SELECT floor(randUniform(0, 100)) AS number
+FROM numbers(1000000000)
+
+0 rows in set. Elapsed: 19.958 sec. Processed 1.00 billion rows, 8.00 GB (50.11 million rows/s., 400.84 MB/s.)
+```
+
+Hacer una consulta sin `FINAL` produce un recuento incorrecto (el resultado exacto variará en función de las fusiones):
+
+```sql
+SELECT count()
+FROM rmt_example
+
+┌─count()─┐
+│     200 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Añadir FINAL produce un resultado correcto:
+
+```sql
+SELECT count()
+FROM rmt_example
+FINAL
+
+┌─count()─┐
+│     100 │
+└─────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Para obtener más información sobre `FINAL`, incluida la forma de optimizar su rendimiento, recomendamos leer nuestra [guía detallada sobre ReplacingMergeTree](/es/concepts/features/operations/update/replacing-merge-tree).
