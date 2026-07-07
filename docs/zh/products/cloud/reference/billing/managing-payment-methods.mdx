@@ -1,0 +1,149 @@
+---
+sidebarTitle: '管理付款方式'
+slug: /manage/manage/billing/managing-payment-methods
+title: '管理付款方式'
+description: '管理 Marketplace 订阅并添加备用信用卡'
+keywords: ['billing']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文档介绍如何在 ClickHouse Cloud 中管理和更新您组织的计费方式，包括在信用卡计费和市场计费之间切换、添加备用信用卡，以及在多个组织之间共享 Marketplace 订阅。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你必须在该组织中拥有 Admin 或 Billing 角色，才能更新付款方式。
+* 你可用的 Marketplace 订阅，是你在其他组织中拥有 Admin 或 Billing 角色且当前处于活跃状态的订阅。
+* 若要共享其他组织的 Marketplace 订阅，你必须同时在当前组织和拥有该 Marketplace 订阅的组织中拥有 Admin 或 Billing 角色。
+* 要通过 Marketplace 订阅为组织内的所有服务计费，这些服务必须与 Marketplace 位于同一云提供商上 (AWS、GCP 或 Azure) 。
+
+<Note>
+  你不能共享其他组织的信用卡。
+  如果你当前的付款方式是信用卡并且想要更新，则必须输入新的卡片信息。
+</Note>
+
+<div id="add-update-cc-payment-method">
+  ## 添加或更新信用卡付款方式
+</div>
+
+如果您的组织当前通过信用卡付费，您可以在 Billing 页面更新卡片信息。
+
+<div id="steps-add-update">
+  ### 添加或更新信用卡的步骤
+</div>
+
+1. 在 ClickHouse Cloud 控制台中，前往 **Billing**。
+2. 如果您要添加信用卡，请点击页面顶部的 **添加付款方式** 按钮。
+
+<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="添加付款方式" size="lg" />
+
+3. 如果您要编辑信用卡，请点击页面顶部的 **编辑信用卡** 按钮。
+
+<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="编辑信用卡" size="lg" />
+
+4. 在这两种情况下，请按照说明添加或更新信用卡的账单地址信息。
+
+<div id="configure-billing-to-existing-mp-sub">
+  ## 将组织的计费方式配置为现有的 Marketplace 订阅
+</div>
+
+如果您有多个组织，可以：
+
+* 将某个组织的计费方式从信用卡计费切换为您其他组织中已启用的 Marketplace 订阅。
+* 将某个组织当前使用的 Marketplace 订阅更换为其他组织正在使用的订阅。
+
+<div id="steps-switch-org-already-active">
+  ### 将组织的计费方式从信用卡切换到已在你其他某个组织中启用的 Marketplace 订阅的步骤
+</div>
+
+1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
+2. 点击 **付款方式** 旁边的编辑图标。
+
+<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="编辑付款方式" size="lg" />
+
+3. 在 **编辑付款方式** 对话框中，你会看到当前信用卡被列为主付款方式。
+4. 在信用卡下方，会显示你其他组织中符合条件的 Marketplace 订阅。每个条目都会显示 Marketplace 类型 (例如 AWS Marketplace) 以及关联的组织名称。
+5. 选择要用于为该组织用量计费的 Marketplace 订阅。
+6. 点击 **更新付款方式** 以确认。
+
+<div id="steps-switch-org-different-org">
+  ### 将某个组织当前的 Marketplace 订阅切换为由另一个组织使用的订阅的步骤
+</div>
+
+1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
+2. 点击 **付款方式** 旁边的编辑图标。
+
+<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="编辑付款方式" size="lg" />
+
+3. 在 **编辑付款方式** 对话框中，您会看到当前的 Marketplace 订阅被列为付款方式。
+4. 在当前 Marketplace 订阅下方，会显示来自您其他组织的其他符合条件的 Marketplace 订阅。每个条目都会显示 Marketplace 类型 (例如 AWS Marketplace) 以及关联的组织名称。
+5. 选择您希望用于为该组织用量计费的新 Marketplace 订阅。
+6. 点击 **更新付款方式** 进行确认。
+
+<div id="add-backup-cc-to-marketplace-org">
+  ## 向 Marketplace 组织添加备用信用卡
+</div>
+
+如果您组织的主付款方式是 Marketplace 订阅，您可以添加一张信用卡作为备用付款方式。只有在我们无法通过 Marketplace 订阅对使用量进行计费时 (例如订阅已取消或已过期) ，才会向这张备用信用卡收费。
+
+<Note>
+  使用 ClickHouse Cloud 要求您的组织至少配置一种有效且处于活动状态的计费方式 (Marketplace 订阅或信用卡) 。有关计费合规的更多信息，请参见[此处](/zh/products/cloud/reference/billing/billing-compliance#billing-compliance)。
+</Note>
+
+<div id="steps-add-backup-cc">
+  ### 添加备用信用卡的步骤
+</div>
+
+1. 前往 ClickHouse Cloud 控制台中的 **Billing** 页面。
+2. 在 **Billing** 页面的顶部，你会看到主付款方式显示为 Marketplace 订阅，备用付款方式显示为 **None**。
+3. 点击 **add credit card** 按钮，设置备用付款方式。
+
+<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="添加备用信用卡" size="lg" />
+
+4. 按照说明添加或更新信用卡的账单地址信息。保存后，**Billing** 页面将显示备用信用卡以及主要的 Marketplace 订阅。
+
+<Note>
+  配置备用信用卡后，你还可以点击按钮编辑信用卡，并将其设为主付款方式。
+  但如果这样做，你的信用卡将成为该组织唯一的付款方式，而你的 Marketplace 订阅会从 ClickHouse Cloud 中完全移除。
+  你需要返回云市场账户，并按照[&quot;从你的云提供商设置市场计费&quot;](#set-up-marketplace-billing-from-cp)一节中的步骤重新配置。
+</Note>
+
+<div id="set-up-marketplace-billing-from-cp">
+  ## 从您的云提供商设置市场计费
+</div>
+
+您也可以直接通过云市场设置或更新组织的 Marketplace 订阅，而无需通过 ClickHouse Cloud 控制台。如果您想将 ClickHouse 组织切换为通过其他市场计费账户中的新订阅进行计费，这会很有帮助。
+
+请根据市场和订阅类型，按照以下说明操作：
+
+* [AWS Marketplace 按使用量付费](/zh/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace 承诺合同](/zh/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace 按使用量付费](/zh/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace 承诺合同](/zh/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace 按使用量付费](/zh/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace 承诺合同](/zh/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+完成此流程后，所选组织的计费将关联到新的 Marketplace 订阅，ClickHouse Cloud 控制台中的计费页面也会显示这一更新。
+
+<div id="support">
+  ## 支持
+</div>
+
+如果您遇到任何问题，请随时[联系支持团队](https://clickhouse.com/support/program)。
+
+<div id="faqs">
+  ## 常见问题
+</div>
+
+<div id="what-happens-to-my-usage-charges-if-i-switch-billing-methods-mid-billing-cycle">
+  ### 如果我在计费周期中途切换计费方式，我的使用费用会如何处理？
+</div>
+
+这取决于切换的方向：
+
+从市场计费切换为信用卡计费：从计费周期开始到切换时为止的使用量会发送到市场。自切换时起至计费周期结束的其余使用量，将在计费周期结束时向信用卡开具账单。
+
+从信用卡计费切换为市场计费：整个计费周期内所有尚未开具账单的使用量都会发送到市场。

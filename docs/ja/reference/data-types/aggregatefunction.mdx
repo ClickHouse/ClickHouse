@@ -1,0 +1,123 @@
+---
+description: '集約関数の中間状態を格納する ClickHouse の AggregateFunction データ型のドキュメント'
+keywords: ['AggregateFunction', 'Type']
+sidebarTitle: 'AggregateFunction'
+slug: /sql-reference/data-types/aggregatefunction
+title: 'AggregateFunction 型'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+ClickHouse のすべての [Aggregate functions](/ja/reference/functions/aggregate-functions/index) には、
+実装固有の中間状態があり、これをシリアライズして
+`AggregateFunction` データ型としてテーブルに保存できます。通常、これは
+[materialized view](/ja/reference/statements/create/view) を使って行います。
+
+`AggregateFunction` 型でよく使われる集約関数の [集約関数コンビネータ](/ja/reference/functions/aggregate-functions/combinators)
+は 2 つあります。
+
+* [`-State`](/ja/reference/functions/aggregate-functions/combinators#-state) 集約関数コンビネータ。これを集約
+  関数名の末尾に付けると、`AggregateFunction` の中間状態を生成します。
+* [`-Merge`](/ja/reference/functions/aggregate-functions/combinators#-merge) 集約
+  関数コンビネータ。これは、中間状態から集約の最終結果を取得するために
+  使用されます。
+
+<div id="syntax">
+  ## 構文
+</div>
+
+```sql
+AggregateFunction(aggregate_function_name, types_of_arguments...)
+```
+
+**パラメータ**
+
+* `aggregate_function_name` - 集約関数の名前。関数が
+  パラメトリックな場合は、そのパラメータも指定する必要があります。
+* `types_of_arguments` - 集約関数の引数の型。
+
+例えば:
+
+```sql
+CREATE TABLE t
+(
+    column1 AggregateFunction(uniq, UInt64),
+    column2 AggregateFunction(anyIf, String, UInt8),
+    column3 AggregateFunction(quantiles(0.5, 0.9), UInt64)
+) ENGINE = ...
+```
+
+<div id="usage">
+  ## 使用
+</div>
+
+<div id="data-insertion">
+  ### データの挿入
+</div>
+
+`AggregateFunction` 型のカラムを持つテーブルにデータを挿入するには、
+集約関数と
+[`-State`](/ja/reference/functions/aggregate-functions/combinators#-state) 集約関数
+コンビネータを用いた `INSERT SELECT` を使用できます。
+
+たとえば、`AggregateFunction(uniq, UInt64)` 型および
+`AggregateFunction(quantiles(0.5, 0.9), UInt64)` 型のカラムに挿入する場合は、次の
+コンビネータ付き集約関数を使用します。
+
+```sql
+uniqState(UserID)
+quantilesState(0.5, 0.9)(SendTiming)
+```
+
+関数 `uniq` と `quantiles` とは対照的に、`uniqState` と `quantilesState`
+(`-State` コンビネータ を付加したもの) は、最終的な値ではなく状態を返します。
+言い換えると、これらは `AggregateFunction` 型の値を返します。
+
+`SELECT` クエリの結果では、`AggregateFunction` 型の値は、
+ClickHouse のすべての出力フォーマットにおいて実装固有のバイナリ表現を持ちます。
+
+入力値から状態を構築できる特別なセッションレベル設定 `aggregate_function_input_format` があります。
+この設定は次のフォーマットをサポートします。
+
+* `state` - シリアライズされた状態を含む binary string (デフォルト) 。
+  たとえば、`SELECT`
+  クエリでデータを `TabSeparated` フォーマットにダンプした場合、その dump は `INSERT` クエリを使って再度読み込めます。
+* `value` - このフォーマットでは、aggregate function の argument の単一の値、または複数の argument の場合はそれらの tuple を受け取ります。これがデシリアライズされ、対応する状態が構築されます
+* `array` - このフォーマットでは、上記の values オプションで説明したとおり、値の Array を受け取ります。Array のすべての要素が集計されて状態が構築されます
+
+<div id="data-selection">
+  ### データの選択
+</div>
+
+`AggregatingMergeTree` テーブルからデータを選択する際は、`GROUP BY` 句と、
+データの挿入時に使用したものと同じ集約関数を使いますが、
+[`-Merge`](/ja/reference/functions/aggregate-functions/combinators#-merge) コンビネータを使用します。
+
+集約関数に `-Merge` コンビネータを付加すると、複数の
+state を受け取ってそれらを結合し、データ全体を集約した結果を返します。
+
+たとえば、次の 2 つのクエリは同じ結果を返します。
+
+```sql
+SELECT uniq(UserID) FROM table
+
+SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
+```
+
+<div id="usage-example">
+  ## 使用例
+</div>
+
+[AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree) エンジンの説明をご覧ください。
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouseでAggregate Combinatorを使う](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
+* [MergeState](/ja/reference/functions/aggregate-functions/combinators#-mergestate)
+  コンビネータ。
+* [State](/ja/reference/functions/aggregate-functions/combinators#-state) コンビネータ。
