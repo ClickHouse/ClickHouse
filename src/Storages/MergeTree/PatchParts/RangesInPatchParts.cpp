@@ -13,6 +13,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/logger_useful.h>
 #include <Interpreters/Context.h>
+#include <base/range.h>
 
 namespace ProfileEvents
 {
@@ -51,6 +52,26 @@ MarkRanges optimizeRanges(const MarkRanges & ranges)
     }
 
     return result_ranges;
+}
+
+/// Splits ranges into subranges with at most `max_granules_in_range` granules each.
+MarkRanges splitRanges(const MarkRanges & ranges, size_t max_granules_in_range)
+{
+    MarkRanges split_ranges;
+
+    for (const auto & range : ranges)
+    {
+        size_t begin = range.begin;
+
+        while (begin < range.end)
+        {
+            size_t next = std::min<size_t>(range.end, begin + max_granules_in_range);
+            split_ranges.emplace_back(begin, next);
+            begin = next;
+        }
+    }
+
+    return split_ranges;
 }
 
 MarkRanges getRangesInPatchPartMerge(const DataPartPtr & original_part, const PatchPartInfoForReader & patch, const MarkRanges & original_ranges)
@@ -134,11 +155,11 @@ MarkRanges getRangesInPatchPartJoin(const PatchPartInfoForReader & patch)
     return optimizeRanges(patch_part_ranges);
 }
 
-/// v2 patches. Finds the patch mark ranges whose sort-key values intersect the sort-key range
-/// covered by `original_ranges` on the main part: for each main range, binary-search the patch's
-/// primary index over the full common prefix of the sort keys, then coalesce via `optimizeRanges`.
-/// Falls back to "every range" when no bound can be obtained (empty index, no common prefix,
-/// etc.) — correctness is preserved, only the pruning benefit is lost.
+/// Returns the ranges of a `MergeOnKey` (v2) patch part required to apply the patch to
+/// `original_ranges` of the main part. For each main range binary-searches the patch's primary
+/// index over the common prefix of the main and patch sorting keys. Falls back to the whole
+/// patch part when bounds cannot be obtained (empty index, no common key prefix) —
+/// only the pruning benefit is lost.
 MarkRanges getRangesInPatchPartMergeOnKey(
     const DataPartPtr & original_part,
     const PatchPartInfoForReader & patch,
@@ -198,6 +219,7 @@ MarkRanges getRangesInPatchPartMergeOnKey(
     };
 
     MarkRanges patch_part_ranges;
+    const auto patch_marks = collections::range(patch_marks_count);
 
     for (const auto & range : original_ranges)
     {
@@ -206,47 +228,32 @@ MarkRanges getRangesInPatchPartMergeOnKey(
 
         const size_t main_end = std::min(range.end, main_marks_count);
 
-        /// lower_bound: first patch granule whose first-row key is >= main[range.begin].
-        /// Back up by 1 to include the patch granule whose rows *span* main[range.begin]
-        /// (that granule has keys in `[patch[j-1], patch[j])` — the main key may fall inside).
-        size_t lo = 0;
-        size_t hi = patch_marks_count;
+        /// Find the first patch granule whose first-row key is >= the first key of the main range.
+        /// Take one granule before it as well: the index stores only first-row keys, and the rows
+        /// of the previous granule may contain the main key too.
+        auto lower_it = std::lower_bound(
+            patch_marks.begin(), patch_marks.end(), range.begin,
+            [&](size_t patch_row, size_t main_row) { return compare_patch(patch_row, main_row) < 0; });
 
-        while (lo < hi)
-        {
-            size_t mid = lo + (hi - lo) / 2;
-            if (compare_patch(mid, range.begin) < 0)
-                lo = mid + 1;
-            else
-                hi = mid;
-        }
-
-        const size_t patch_lo = lo > 0 ? lo - 1 : 0;
-        size_t patch_hi;
-
-        /// upper_bound: first patch granule whose first-row sort-key is strictly greater than main
-        /// row `main_end`. Strict `>` is required: for the final mark the index stores the last
-        /// row's value (not a past-the-end sentinel), and `>=` would drop granules with equal keys.
+        const size_t lower_mark = lower_it - patch_marks.begin();
+        const size_t patch_lo = lower_mark > 0 ? lower_mark - 1 : 0;
+        size_t patch_hi = 0;
 
         if (main_end == main_marks_count)
         {
+            /// There is no index entry after the last mark, take all the remaining patch granules.
             patch_hi = patch_marks_count;
         }
         else
         {
-            lo = patch_lo;
-            hi = patch_marks_count;
+            /// Find the first patch granule whose first-row key is strictly greater than the key at
+            /// main row `main_end`. Keys equal to it may still belong to the main range, so patch
+            /// granules starting with that key are required.
+            auto upper_it = std::upper_bound(
+                patch_marks.begin() + patch_lo, patch_marks.end(), main_end,
+                [&](size_t main_row, size_t patch_row) { return compare_patch(patch_row, main_row) > 0; });
 
-            while (lo < hi)
-            {
-                size_t mid = lo + (hi - lo) / 2;
-                if (compare_patch(mid, main_end) <= 0)
-                    lo = mid + 1;
-                else
-                    hi = mid;
-            }
-
-            patch_hi = lo;
+            patch_hi = upper_it - patch_marks.begin();
         }
 
         if (patch_lo < patch_hi)
@@ -292,6 +299,11 @@ void RangesInPatchParts::addPart(const DataPartPtr & original_part, const PatchP
 
     for (const auto & patch_part : patch_parts)
     {
+        /// Ranges are accumulated only for `Join` patches: `PatchJoinCache` is keyed by the chunks built from them.
+        /// For other modes `getRanges` builds tight per-task ranges without using `ranges_by_name`.
+        if (patch_part.mode != PatchMode::Join)
+            continue;
+
         auto patch_ranges = getRangesInPatchPart(original_part, patch_part, original_ranges);
 
         if (!patch_ranges.empty())
@@ -308,22 +320,8 @@ void RangesInPatchParts::optimize()
 
     for (auto & [_, ranges] : ranges_by_name)
     {
-        MarkRanges split_ranges;
-
         std::sort(ranges.begin(), ranges.end(), [](const auto & lhs, const auto & rhs) { return lhs.begin < rhs.begin; });
-        auto optimized_ranges = optimizeRanges(ranges);
-
-        for (auto & range : optimized_ranges)
-        {
-            size_t num_full_splits = (range.end - range.begin) / max_granules_in_range;
-            for (size_t i = 0; i < num_full_splits; ++i)
-                split_ranges.emplace_back(range.begin + max_granules_in_range * i, range.begin + max_granules_in_range * (i + 1));
-
-            if ((range.end - range.begin) % max_granules_in_range != 0)
-               split_ranges.emplace_back(range.begin + max_granules_in_range * num_full_splits, range.end);
-        }
-
-        ranges = std::move(split_ranges);
+        ranges = splitRanges(optimizeRanges(ranges), max_granules_in_range);
     }
 }
 
@@ -338,28 +336,13 @@ std::vector<MarkRanges> RangesInPatchParts::getRanges(const DataPartPtr & origin
 
     for (size_t i = 0; i < raw_ranges.size(); ++i)
     {
-        /// v2 `MergeOnKey` pruning already returns a sort-key-tight range per task. Intersecting it
-        /// with the pre-split chunks from `ranges_by_name` would widen the read back out to a chunk
-        /// boundary, so split the tight range ourselves, capped at `max_granules_in_range`.
-        if (patch_parts[i].mode == PatchMode::MergeOnKey)
-        {
-            MarkRanges split;
-            for (const auto & r : raw_ranges[i])
-            {
-                size_t begin = r.begin;
-                while (begin < r.end)
-                {
-                    size_t next = std::min<size_t>(r.end, begin + max_granules_in_range);
-                    split.emplace_back(begin, next);
-                    begin = next;
-                }
-            }
-            optimized_ranges[i] = std::move(split);
-        }
-        else
-        {
+        /// `Join` patches must use whole chunks of `ranges_by_name` because `PatchJoinCache` is
+        /// keyed by them. Other modes have no caches shared between tasks and use the tight
+        /// per-task ranges directly, because intersecting with the chunks would only widen them.
+        if (patch_parts[i].mode == PatchMode::Join)
             optimized_ranges[i] = getIntersectingRanges(patch_parts[i].part->getPartName(), raw_ranges[i]);
-        }
+        else
+            optimized_ranges[i] = splitRanges(raw_ranges[i], max_granules_in_range);
     }
 
     return optimized_ranges;
