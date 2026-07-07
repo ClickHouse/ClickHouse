@@ -430,6 +430,9 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     }
     if (settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
     {
+        /// `name` is the primary cache name (the one that first created this instance in `FileCacheFactory`).
+        /// When several cache configurations share the same path they alias a single `FileCache` instance,
+        /// so usage is reported once, under the primary name, and never double-counted across aliases.
         main_priority->setOnUsageChangeCallback([this](const String & user_id, Int64 size_delta, Int64 elements_delta)
         {
             try

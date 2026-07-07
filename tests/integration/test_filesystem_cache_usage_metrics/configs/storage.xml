@@ -19,6 +19,38 @@
                 <slru_size_ratio>0.5</slru_size_ratio>
                 <load_metadata_asynchronously>false</load_metadata_asynchronously>
             </cache_with_usage_metrics>
+
+            <!-- Two cache disks sharing the same path and identical settings alias a single
+                 FileCache instance in FileCacheFactory. Usage metrics must be reported once,
+                 under the primary (first-created) cache name, and never double-counted. -->
+            <shared_alias_a>
+                <type>cache</type>
+                <disk>local_blob</disk>
+                <path>shared_alias_cache/</path>
+                <expose_prometheus_cache_usage_metrics_per_user>1</expose_prometheus_cache_usage_metrics_per_user>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <max_size>2Mi</max_size>
+                <max_elements>256</max_elements>
+                <max_file_segment_size>10Ki</max_file_segment_size>
+                <boundary_alignment>10Ki</boundary_alignment>
+                <cache_policy>SLRU</cache_policy>
+                <slru_size_ratio>0.5</slru_size_ratio>
+                <load_metadata_asynchronously>false</load_metadata_asynchronously>
+            </shared_alias_a>
+            <shared_alias_b>
+                <type>cache</type>
+                <disk>local_blob</disk>
+                <path>shared_alias_cache/</path>
+                <expose_prometheus_cache_usage_metrics_per_user>1</expose_prometheus_cache_usage_metrics_per_user>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <max_size>2Mi</max_size>
+                <max_elements>256</max_elements>
+                <max_file_segment_size>10Ki</max_file_segment_size>
+                <boundary_alignment>10Ki</boundary_alignment>
+                <cache_policy>SLRU</cache_policy>
+                <slru_size_ratio>0.5</slru_size_ratio>
+                <load_metadata_asynchronously>false</load_metadata_asynchronously>
+            </shared_alias_b>
         </disks>
         <policies>
             <cache_usage_metrics_policy>
@@ -28,6 +60,20 @@
                     </main>
                 </volumes>
             </cache_usage_metrics_policy>
+            <shared_alias_a_policy>
+                <volumes>
+                    <main>
+                        <disk>shared_alias_a</disk>
+                    </main>
+                </volumes>
+            </shared_alias_a_policy>
+            <shared_alias_b_policy>
+                <volumes>
+                    <main>
+                        <disk>shared_alias_b</disk>
+                    </main>
+                </volumes>
+            </shared_alias_b_policy>
         </policies>
     </storage_configuration>
 </clickhouse>

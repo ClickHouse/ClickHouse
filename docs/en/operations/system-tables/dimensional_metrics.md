@@ -59,6 +59,10 @@ Filesystem cache size in bytes, labelled by cache name and user id. Disabled by 
 ### `filesystem_cache_elements` {#filesystem-cache-elements}
 Filesystem cache elements (file segments), labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
 
+:::note
+When several cache configurations share the same `path`, they refer to a single physical cache instance (see `FileCacheFactory`). The `cache_name` label of the usage gauges above is the *primary* cache name — the name of the configuration that first created the instance. Usage is reported once, under the primary name, to avoid double-counting the shared cache. Other alias names for the same instance have no separate series, even though `system.filesystem_cache_settings` reports the same `current_size` and `current_elements_num` for each alias.
+:::
+
 ### `filesystem_cache_evictions_total` {#filesystem-cache-evictions-total}
 Number of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.
 
