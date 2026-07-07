@@ -1,0 +1,129 @@
+---
+date: 2023-05-08
+title: "Exemple pratique d’un client Python pour se connecter à un service ClickHouse Cloud"
+description: "Découvrez comment vous connecter à un service ClickHouse Cloud avec Python à l’aide d’un exemple pas à pas utilisant le driver clickhouse-connect."
+tags: ['Clients pour langages']
+keywords: ['Python', 'ClickHouse Cloud']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+Voici un exemple pas à pas pour commencer à utiliser Python avec un service ClickHouse Cloud.
+
+<Note>
+  Gardez à l’esprit que les versions de Python et les dépendances des bibliothèques évoluent constamment. Veillez également à utiliser les dernières versions prises en charge du driver et de l’environnement Python lorsque vous effectuez cet essai.
+
+  Au moment de la rédaction de cet article, nous utilisons respectivement le driver [clickhouse-connect](https://github.com/ClickHouse/clickhouse-connect) version `0.5.23` et Python `3.11.2`.
+</Note>
+
+<div id="steps">
+  ## Étapes
+</div>
+
+1. Vérifiez la version de Python :
+
+```
+$  python -V
+Python 3.11.2
+```
+
+2. Nous allons créer le projet dans un dossier appelé `ch-python` :
+
+```
+$ mkdir ch-python
+$ cd ch-python
+```
+
+3. Créez un fichier de dépendances appelé `requirements.txt` avec :
+
+```
+clickhouse-connect==0.5.23
+```
+
+4. Créez un fichier source Python nommé `main.py` :
+
+```py
+import clickhouse_connect
+import sys
+import json
+
+CLICKHOUSE_CLOUD_HOSTNAME = 'HOSTNAME.clickhouse.cloud'
+CLICKHOUSE_CLOUD_USER = 'default'
+CLICKHOUSE_CLOUD_PASSWORD = 'YOUR_SECRET_PASSWORD'
+
+client = clickhouse_connect.get_client(
+    host=CLICKHOUSE_CLOUD_HOSTNAME, port=8443, username=CLICKHOUSE_CLOUD_USER, password=CLICKHOUSE_CLOUD_PASSWORD)
+
+print("connected to " + CLICKHOUSE_CLOUD_HOSTNAME + "\n")
+client.command(
+    'CREATE TABLE IF NOT EXISTS new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+
+print("table new_table created or exists already!\n")
+
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+
+print("written 2 rows to table new_table\n")
+
+QUERY = "SELECT max(key), avg(metric) FROM new_table"
+
+result = client.query(QUERY)
+
+sys.stdout.write("query: ["+QUERY + "] returns:\n\n")
+print(result.result_rows)
+```
+
+5. Créez l’environnement virtuel :
+
+```
+chpython$ python -m venv venv
+```
+
+6. Activez l’environnement virtuel :
+
+```
+chpython$ source venv/bin/activate
+```
+
+Une fois activé, l’invite de votre terminal doit être précédée de (venv), installez les dépendances :
+
+```
+(venv) ➜  chpython$ pip install -r requirements.txt
+Collecting certifi
+  Using cached certifi-2023.5.7-py3-none-any.whl (156 kB)
+Collecting urllib3>=1.26
+  Using cached urllib3-2.0.2-py3-none-any.whl (123 kB)
+Collecting pytz
+  Using cached pytz-2023.3-py2.py3-none-any.whl (502 kB)
+Collecting zstandard
+  Using cached zstandard-0.21.0-cp311-cp311-macosx_11_0_arm64.whl (364 kB)
+Collecting lz4
+  Using cached lz4-4.3.2-cp311-cp311-macosx_11_0_arm64.whl (212 kB)
+Installing collected packages: pytz, zstandard, urllib3, lz4, certifi, clickhouse-connect
+Successfully installed certifi-2023.5.7 clickhouse-connect-0.5.23 lz4-4.3.2 pytz-2023.3 urllib3-2.0.2 zstandard-0.21.0
+```
+
+7. Exécutez le code !
+
+```
+(venv) chpython$ venv/bin/python main.py
+
+connected to HOSTNAME.clickhouse.cloud
+
+table new_table created or exists already!
+
+written 2 rows to table new_table
+
+query: [SELECT max(key), avg(metric) FROM new_table] returns:
+
+[(2000, -50.9035)]
+```
+
+<Tip>
+  Si vous utilisez une ancienne version de Python (par ex. `3.9.6`), vous risquez de rencontrer une `ImportError` liée à la bibliothèque `urllib3`.
+  Dans ce cas, mettez à niveau votre environnement Python vers une version plus récente ou fixez la version de `urllib3` à `1.26.15` dans votre fichier requirements.txt.
+</Tip>

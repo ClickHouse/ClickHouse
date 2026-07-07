@@ -1,0 +1,105 @@
+---
+sidebarTitle: 'Onboarding para HIPAA'
+slug: /cloud/security/compliance/hipaa-onboarding
+title: 'Onboarding para HIPAA'
+description: 'Saiba mais sobre como fazer o onboarding de serviços em conformidade com a HIPAA'
+doc_type: 'guide'
+keywords: ['hipaa', 'conformidade', 'saúde', 'segurança', 'proteção de dados']
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+O ClickHouse oferece serviços em conformidade com a Regra de Segurança da Health Information Portability and Accountability Act (HIPAA) de 1996. Os clientes podem processar informações de saúde protegidas (PHI) nesses serviços após assinarem um Business Associate Agreement (BAA) e implantarem serviços em uma região compatível.
+
+Para mais informações sobre o programa de conformidade do ClickHouse e a disponibilidade de relatórios de auditoria de terceiros, consulte nossa [visão geral da conformidade](/pt-BR/products/cloud/reference/security/compliance-overview) e o [Trust Center](https://trust.clickhouse.com). Além disso, os clientes devem consultar nossa página de [recursos de segurança](/pt-BR/products/cloud/features/security) para selecionar e implementar os controles de segurança adequados para suas cargas de trabalho.
+
+Esta página descreve o processo para habilitar a implantação de serviços compatíveis com a HIPAA no ClickHouse Cloud.
+
+<div id="enable-hipaa-compliant-services">
+  ## Habilite e implante serviços compatíveis com a HIPAA
+</div>
+
+<Steps>
+  <Step>
+    ### Assine os serviços Enterprise
+
+    1. Selecione o nome da sua organização no canto inferior esquerdo do console.
+    2. Clique em **Billing**.
+    3. Verifique seu **Plan** no canto superior esquerdo.
+    4. Se o seu **Plan** for **Enterprise**, vá para a próxima seção. Caso contrário, clique em **Change plan**.
+    5. Selecione **Switch to Enterprise**.
+  </Step>
+
+  <Step>
+    ### Ative a HIPAA para sua organização
+
+    1. Selecione o nome da sua organização no canto inferior esquerdo do console.
+    2. Clique em **Organization details**.
+    3. Ative **Enable HIPAA**.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="Solicitar ativação da HIPAA" background="black" />
+
+    <br />
+
+    4. Siga as instruções na tela para enviar uma solicitação e concluir um BAA.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="Enviar uma solicitação de BAA" background="black" />
+
+    <br />
+
+    5. Após a conclusão do BAA, a HIPAA será ativada para a organização.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="HIPAA ativada" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### Implante serviços em regiões compatíveis com a HIPAA
+
+    1. Selecione **New service** no canto superior esquerdo da tela inicial do console
+    2. Altere **Region type** para **compatível com a HIPAA**
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="Implantar em uma região compatível com a HIPAA" background="black" />
+
+    <br />
+
+    3. Insira um nome para o serviço e preencha as informações restantes
+
+    Para ver uma lista completa de provedores de Cloud e serviços compatíveis com a HIPAA, consulte nossa página [Supported cloud regions](/pt-BR/products/cloud/reference/supported-regions).
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## Migrar serviços existentes
+</div>
+
+É altamente recomendável que os clientes implantem serviços em ambientes em conformidade, quando necessário. O processo de migrar serviços de uma região padrão para uma região compatível com a HIPAA envolve a restauração a partir de um backup e pode exigir algum tempo de inatividade.
+
+Se for necessário migrar de regiões padrão para regiões compatíveis com a HIPAA, siga estas etapas para realizar migrações por autoatendimento:
+
+1. Selecione o serviço a ser migrado.
+2. Clique em **Backups** no lado esquerdo.
+3. Selecione os três pontos à esquerda do backup a ser restaurado.
+4. Selecione o **Region type** para restaurar o backup em uma região compatível com a HIPAA.
+5. Quando a restauração for concluída, execute algumas consultas para verificar se os esquemas e as contagens de registros estão conforme o esperado.
+6. Exclua o serviço antigo.
+
+<Info>
+  **Restrições**
+
+  Os serviços devem permanecer no mesmo provedor de Cloud e na mesma região geográfica. Esse processo migra o serviço para o ambiente em conformidade dentro do mesmo provedor de Cloud e da mesma região.
+</Info>

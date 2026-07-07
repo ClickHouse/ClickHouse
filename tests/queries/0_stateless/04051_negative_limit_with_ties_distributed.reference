@@ -1,0 +1,158 @@
+-- { echo }
+
+SET enable_analyzer=0;
+SELECT 'Old Analyzer:';
+Old Analyzer:
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number DESC LIMIT 20, 5 WITH TIES;
+13
+12
+12
+12
+11
+11
+11
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT -20, -5 WITH TIES;
+11
+11
+11
+12
+12
+12
+13
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT -20, 5 WITH TIES;
+0
+0
+0
+1
+1
+1
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT 20, -5 WITH TIES;
+18
+18
+18
+19
+19
+19
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x DESC LIMIT 20, 5 WITH TIES;
+4
+4
+4
+4
+3
+3
+3
+3
+3
+3
+3
+3
+3
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT -20, -5 WITH TIES;
+3
+3
+3
+3
+3
+3
+3
+3
+3
+4
+4
+4
+4
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT -20, 5 WITH TIES;
+0
+0
+0
+0
+0
+0
+0
+0
+0
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT 20, -5 WITH TIES;
+6
+6
+6
+6
+6
+6
+SET enable_analyzer=1;
+SELECT 'Analyzer:';
+Analyzer:
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number DESC LIMIT 20, 5 WITH TIES;
+13
+12
+12
+12
+11
+11
+11
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT -20, -5 WITH TIES;
+11
+11
+11
+12
+12
+12
+13
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT -20, 5 WITH TIES;
+0
+0
+0
+1
+1
+1
+SELECT number FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY number LIMIT 20, -5 WITH TIES;
+18
+18
+18
+19
+19
+19
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x DESC LIMIT 20, 5 WITH TIES;
+4
+4
+4
+4
+3
+3
+3
+3
+3
+3
+3
+3
+3
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT -20, -5 WITH TIES;
+3
+3
+3
+3
+3
+3
+3
+3
+3
+4
+4
+4
+4
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT -20, 5 WITH TIES;
+0
+0
+0
+0
+0
+0
+0
+0
+0
+SELECT intDiv(number, 3) AS x FROM remote('127.0.0.{1,2,3}', numbers_mt(20)) ORDER BY x LIMIT 20, -5 WITH TIES;
+6
+6
+6
+6
+6
+6

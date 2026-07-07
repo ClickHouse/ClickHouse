@@ -1,0 +1,80 @@
+-- driver runtime commands
+docker_default_cpus_per_worker
+docker_cpu_override_preserved
+docker_fifo_runtime_present
+docker_exec_runtime_absent
+docker_run_runtime_absent
+docker_gvisor_runtime_absent
+docker_container_name_present
+docker_fifo_runner_present
+docker_fifo_per_process_dir_present
+docker_fifo_mkfifo_present
+docker_fifo_detached_exec_absent
+docker_fifo_exec_absent
+docker_fifo_run_present
+docker_fifo_docker_stdin_closed
+docker_fifo_writer_stdin_present
+docker_execute_direct
+gvisor_runtime_present
+gvisor_docker_absent
+gvisor_execute_shell
+gvisor_pipe_capacity_configured
+unsafe_runtime_direct
+unsafe_execute_direct
+unsafe_docker_absent
+-- create + call
+42
+-- dynamic config exists after create
+yes
+buffers_format
+dynamic_command_relative
+dynamic_execute_direct
+chunk_header_enabled
+pipe_capacity_default
+-- work dir uses uuid name
+uuid_workdir_name
+uuid_workdir_present
+function_workdir_absent
+setvbuf_absent
+stdio_serde_absent
+numeric_arg_view_present
+numeric_result_view_present
+chunk_loop_function_present
+wrapper_pipe_capacity_present
+input_staging_absent
+-- multi-row chunk call
+55
+-- declared argument cast
+3
+-- string args + return
+hello world
+0
+0:1:2:3:4:
+string_allocator_present
+string_stdio_serde_absent
+-- unsafe driver direct call
+42
+unsafe_dynamic_runtime_direct
+unsafe_dynamic_execute_direct
+-- if not exists does not invoke driver
+3
+-- attach-style recreate after config loss
+15
+-- query_log classifies driver-created function as executable UDF only
+168
+executable	sql_clean
+-- drop removes everything
+config_removed
+workdir_metadata_removed
+workdir_removed
+sql_removed
+u64_config_removed
+u64_workdir_metadata_removed
+u64_sql_removed
+string_config_removed
+string_workdir_metadata_removed
+string_workdir_removed
+string_sql_removed
+unsafe_config_removed
+unsafe_workdir_metadata_removed
+unsafe_sql_removed

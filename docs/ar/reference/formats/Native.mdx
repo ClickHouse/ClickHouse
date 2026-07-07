@@ -1,0 +1,500 @@
+---
+alias: []
+description: 'وثائق تنسيق Native'
+input_format: true
+keywords: ['Native']
+output_format: true
+slug: /interfaces/formats/Native
+title: 'Native'
+doc_type: 'reference'
+---
+
+| إدخال | إخراج | اسم مستعار |
+| ----- | ----- | ---------- |
+| ✔     | ✔     |            |
+
+<div id="description">
+  ## الوصف
+</div>
+
+المواصفة الرسمية الكاملة لتنسيق `Native` متاحة [هنا](/ar/reference/interfaces/specs/NativeFormat)، كما تتوفر [هنا](/ar/reference/interfaces/specs/NativeProtocol) المواصفة المرافقة لبروتوكول `Native` — أي بروتوكول TCP الذي ينقله.
+
+<Note>
+  جرى توليد كلتا المواصفتين بواسطة نماذج لغوية كبيرة انطلاقًا من الشيفرة المصدرية لـ ClickHouse. وتبقى الشيفرة المصدرية هي المرجع الأساسي: إذا وُجد اختلاف بين المواصفة والشيفرة، فالشيفرة هي الصحيحة.
+</Note>
+
+يُعد تنسيق `Native` أكثر تنسيقات ClickHouse كفاءة لأنه &quot;عمودي&quot; بالفعل
+إذ لا يحوّل الأعمدة إلى صفوف.
+
+في هذا التنسيق، تُكتب البيانات وتُقرأ على شكل [كتل](/ar/resources/develop-contribute/introduction/architecture#block) بتنسيق ثنائي.
+ولكل كتلة، يُسجَّل عدد الصفوف، وعدد الأعمدة، وأسماء الأعمدة وأنواعها، وأجزاء الأعمدة في الكتلة، واحدًا تلو الآخر.
+
+وهذا هو التنسيق المستخدم في الواجهة الأصلية للتفاعل بين الخوادم، ولاستخدام عميل سطر الأوامر، ولعملاء C++.
+
+<Tip>
+  يمكنك استخدام هذا التنسيق لإنشاء dump بسرعة، ولا يمكن قراءته إلا بواسطة نظام إدارة قواعد البيانات ClickHouse.
+  وقد لا يكون من العملي التعامل مع هذا التنسيق بنفسك.
+</Tip>
+
+<div id="data-types-wire-format">
+  ## تنسيق أنواع البيانات wire
+</div>
+
+تُرسَل البيانات أثناء النقل بتنسيق عمودي، ما يعني أن كل عمود يُرسَل على حدة،
+وتُرسَل جميع قيم العمود معًا في مصفوفة واحدة.
+
+يحتوي كل عمود في كتلة على ترويسة مشابهة لـ [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes).
+
+<Note>
+  عند استخدام بروتوكول TCP الثنائي الأصلي (أو عندما تتلقى نقطة نهاية HTTP القيمة `?client_protocol_version=<n>`)،
+  تُكتَب بنية `BlockInfo` قبل عدد الأعمدة والصفوف. وتستخدم الأمثلة في هذا القسم
+  واجهة HTTP العادية من دون إصدار للبروتوكول، ولذلك لا تتضمن `BlockInfo`.
+</Note>
+
+<div id="block-structure">
+  ### بنية الكتلة
+</div>
+
+يعرض الاستعلام التالي عمودين، `number` و`str`، في ثلاثة صفوف:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str FROM system.numbers LIMIT 3" > out.bin
+```
+
+تندرج بيانات الإخراج ضمن كتلة واحدة في ClickHouse، وستبدو على النحو التالي:
+
+```js
+const data = new Uint8Array([
+  // --- Block Header ---
+  0x02,                   // 2 columns
+  0x03,                   // 3 rows
+  // -- Column 1 Header --
+  0x06,                   // LEB128 - column name 'number' has 6 bytes
+  0x6e, 0x75, 0x6d,       
+  0x62, 0x65, 0x72,       // column name: 'number'
+  0x06,                   // LEB128 - column type 'UInt64' has 6 bytes
+  0x55, 0x49, 0x6e,
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 0 as UInt64
+  0x01, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 1 as UInt64
+  0x02, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 2 as UInt64
+  0x03,                   // LEB128 - column name 'str' has 3 bytes
+  0x73, 0x74, 0x72,       // column name: 'str'
+  0x06,                   // LEB128 - column type 'String' has 6 bytes
+  0x53, 0x74, 0x72, 
+  0x69, 0x6e, 0x67,       // 'String'
+  0x01,                   // LEB128 - the string has 1 byte
+  0x30,                   // '0' as String
+  0x01,                   // LEB128 - the string has 1 byte
+  0x31,                   // '1' as String
+  0x01,                   // LEB128 - the string has 1 byte
+  0x32,                   // '2' as String
+])
+```
+
+<div id="multiple-blocks">
+  ### كتل متعددة
+</div>
+
+ومع ذلك، في كثير من الحالات، لا تتسع البيانات ضمن كتلة واحدة، لذا سيرسل ClickHouse البيانات على شكل عدة كتل.
+انظر إلى الاستعلام التالي الذي يجلب صفّين مع تقليل حجم الكتلة لفرض تقسيم البيانات بحيث يكون كل صف في كتلة منفصلة:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" --data-binary "SELECT number, toString(number) AS str                FROM system.numbers LIMIT 2                 SETTINGS max_block_size=1" \  > out.bin
+```
+
+الناتج:
+
+```js
+const data = new Uint8Array([
+ 
+  // ----- Block 1 ----- 
+  0x02,                   // 2 columns
+  0x01,                   // 1 row
+  0x06,                   // LEB128 - column name 'number' has 6 bytes
+  0x6E, 0x75, 0x6D, 
+  0x62, 0x65, 0x72,       // column name: 'number' 
+  0x06,                   // LEB128 - column type 'UInt64' has 6 bytes
+  0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34,       // 'UInt64' 
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00, // 0 as UInt64
+  0x03,                   // LEB128 - column name 'str' has 3 bytes
+  0x73, 0x74, 0x72,       // column name: 'str'
+  0x06,                   // LEB128 - column type 'String' has 6 bytes
+  0x53, 0x74, 0x72, 
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - the string has 1 byte
+  0x30,                   // '0' as String
+  
+  // ----- Block 2 -----
+  0x02,                   // 2 columns
+  0x01,                   // 1 row
+  0x06,                   // LEB128 - column name 'number' has 6 bytes
+  0x6E, 0x75, 0x6D,  
+  0x62, 0x65, 0x72,       // column name: 'number'
+  0x06,                   // LEB128 - column type 'UInt64' has 6 bytes
+  0x55, 0x49, 0x6E,  
+  0x74, 0x36, 0x34,       // 'UInt64'
+  0x01, 0x00, 0x00, 0x00,  
+  0x00, 0x00, 0x00, 0x00, // 1 as UInt64
+  0x03,                   // LEB128 - column name 'str' has 3 bytes
+  0x73, 0x74, 0x72,       // column name: 'str'
+  0x06,                   // LEB128 - column type 'String' has 6 bytes
+  0x53, 0x74, 0x72,  
+  0x69, 0x6E, 0x67,       // 'String'
+  0x01,                   // LEB128 - the string has 1 byte
+  0x31,                   // '1' as String
+]);
+```
+
+<div id="simple-data-types">
+  ### أنواع البيانات البسيطة
+</div>
+
+يشبه تنسيق wire لقيمة مفردة من أحد أنواع البيانات الأبسط تنسيق `RowBinary`/`RowBinaryWithNamesAndTypes`.
+تتضمن القائمة الكاملة للأنواع التي ينطبق عليها هذا الوصف ما يلي:
+
+* (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
+* Float32, Float64
+* Bool
+* String
+* FixedString(N)
+* Date
+* Date32
+* DateTime
+* DateTime64
+* IPv4
+* IPv6
+* UUID
+
+ارجع إلى أوصاف الأنواع أعلاه في [&quot;تنسيق wire لأنواع بيانات RowBinary&quot;](/ar/reference/formats/RowBinary/RowBinary#data-types-wire-format) لمزيد من التفاصيل.
+
+<div id="complex-data-types">
+  ### أنواع البيانات المعقدة
+</div>
+
+يختلف ترميز الأنواع التالية عن ترميز `RowBinary` و`RowBinaryWithNamesAndTypes`.
+
+* Nullable
+* LowCardinality
+* Array
+* Map
+* Variant
+* Dynamic
+* JSON
+
+<div id="nullable">
+  #### Nullable
+</div>
+
+في تنسيق `Native`، يسبق البيانات الفعلية في العمود القابل لأن تكون قيمته `NULL` عددٌ من البايتات يساوي عدد الصفوف في الكتلة. ويشير كل بايت من هذه البايتات إلى ما إذا كانت القيمة `NULL` أم لا. على سبيل المثال، في هذا الاستعلام، ستكون كل قيمة فردية `NULL` بدلًا من ذلك:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, number, NULL) :: Nullable(UInt64) AS maybe_null                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+سيكون الإخراج على النحو التالي:
+
+```js
+const data = new Uint8Array([
+  // --- Block Header ---
+  0x01,                         // LEB128 - 1 column
+  0x05,                         // LEB128 - 5 rows
+  
+  // -- Column Header --
+  0x0A,                         // LEB128 - column name has 10 bytes
+  0x6D, 0x61, 0x79, 0x62, 0x65, 
+  0x5F, 0x6E, 0x75, 0x6C, 0x6C, // column name: 'maybe_null'
+  
+  0x10,                         // LEB128 - column type has 16 bytes
+  0x4E, 0x75, 0x6C, 0x6C, 
+  0x61, 0x62, 0x6C, 0x65, 
+  0x28, 0x55, 0x49, 0x6E, 
+  0x74, 0x36, 0x34, 0x29,       // column type: 'Nullable(UInt64)'
+  
+  // -- Nullable mask --
+  0x00,                         // Row 0 is NOT NULL
+  0x01,                         // Row 1 is NULL
+  0x00,                         // Row 2 is NOT NULL
+  0x01,                         // Row 3 is NULL
+  0x00,                         // Row 4 is NOT NULL
+  
+  // -- UInt64 values --
+  0x00, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Row 0: 0 as UInt64
+
+  // even though we still might have a proper value for this number 
+  // in the block, it should be still returned as NULL to the user!
+  0x01, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // Row #1: NULL
+  
+  0x02, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,       // Row #2: 2 as UInt64
+  
+  0x03, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Row #3: NULL, similar to Row #1
+  
+  0x04, 0x00, 0x00, 0x00, 
+  0x00, 0x00, 0x00, 0x00,       // Row #4: 4 as UInt64
+]);
+```
+
+يعمل ذلك بالطريقة نفسها مع `Nullable(String)`. يأتي مؤشر null دائمًا من بايت قناع nullable —
+فقيمة القناع `0x01` تعني أن الصف هو `NULL` بغضّ النظر عن محتوى السلسلة. بالنسبة إلى الصفوف ذات القيمة `NULL`،
+تُخزَّن السلسلة الأساسية كسلسلة فارغة (طول LEB128 يساوي `0`). لاحظ أن السلسلة الفارغة غير `NULL`
+يكون طول LEB128 لها أيضًا `0`، لذا فإن بايت القناع وحده هو ما يميّز بين الحالتين. على سبيل المثال، الاستعلام التالي:
+
+```bash
+curl -XPOST "http://localhost:8123?default_format=Native" \  --data-binary "SELECT if(number % 2 = 0, toString(number), NULL) :: Nullable(String) AS maybe_str                 FROM system.numbers LIMIT 5" \  > out.bin
+```
+
+سيكون الناتج كما يلي:
+
+```js
+const data = new Uint8Array([
+  // --- Block Header ---
+  0x01, // LEB128 - 1 column
+  0x05, // LEB128 - 5 rows
+
+  // -- Column Header --
+  0x09, // LEB128 - column name has 9 bytes
+  0x6d,
+  0x61,
+  0x79,
+  0x62,
+  0x65,
+  0x5f,
+  0x73,
+  0x74,
+  0x72, // column name: 'maybe_str'
+
+  0x10, // LEB128 - column type has 16 bytes
+  0x4e,
+  0x75,
+  0x6c,
+  0x6c,
+  0x61,
+  0x62,
+  0x6c,
+  0x65,
+  0x28,
+  0x53,
+  0x74,
+  0x72,
+  0x69,
+  0x6e,
+  0x67,
+  0x29, // column type: 'Nullable(String)'
+
+  // -- Nullable mask --
+  0x00, // Row 0 is NOT NULL
+  0x01, // Row 1 is NULL
+  0x00, // Row 2 is NOT NULL
+  0x01, // Row 3 is NULL
+  0x00, // Row 4 is NOT NULL
+
+  // -- String values --
+  0x01,
+  0x30, // Row 0: LEB128 == 1, '0' as String
+  0x00, // Row 1: LEB128 == 0, NULL
+  0x01,
+  0x32, // Row 2: LEB128 == 1, '2' as String
+  0x00, // Row 3: LEB128 == 0, NULL
+  0x01,
+  0x34, // Row 4: LEB128 == 1, '4' as String
+])
+```
+
+<div id="lowcardinality">
+  #### LowCardinality
+</div>
+
+على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#lowcardinality)، حيث يكون `LowCardinality` شفافًا، يستخدم تنسيق Native ترميزًا عموديًا قائمًا على القاموس. ويُرمَّز العمود على هيئة بادئة إصدار، ثم قاموس للقيم الفريدة، ثم Array من فهارس الأعداد الصحيحة التي تشير إلى ذلك القاموس.
+
+<Note>
+  يمكن تعريف العمود على أنه `LowCardinality(Nullable(T))`، لكن لا يمكن تعريفه على أنه `Nullable(LowCardinality(T))` — إذ يؤدي ذلك دائمًا إلى خطأ من الخادم.
+</Note>
+
+بادئة الإصدار هي `UInt64(LE)` بقيمة `1`، وتُكتب مرة واحدة لكل عمود. ثم، لكل كتلة، يُكتب ما يلي:
+
+* `UInt64(LE)` — حقل بتات `IndexesSerializationType`. ترمّز البتات 0–7 عرض الفهرس (0 = UInt8، 1 = UInt16، 2 = UInt32، 3 = UInt64). ولا يُضبط البت 8 (`NeedGlobalDictionaryBit`) مطلقًا في تنسيق Native (ويُطلق الخادم استثناءً إذا تمت مصادفته). ويشير البت 9 إلى وجود مفاتيح إضافية في القاموس. ويشير البت 10 إلى أنه ينبغي إعادة تعيين القاموس.
+* `UInt64(LE)` — عدد مفاتيح القاموس، تليه المفاتيح مُسلسلةً دفعةً واحدة باستخدام ترميز النوع الداخلي.
+* `UInt64(LE)` — عدد الصفوف، تليه قيم الفهارس مُسلسلةً دفعةً واحدة باستخدام عرض UInt المناسب.
+
+يحتوي القاموس دائمًا على قيمة default عند الفهرس 0 (على سبيل المثال، سلسلة فارغة لـ `String` و0 للأنواع الرقمية). وبالنسبة إلى `LowCardinality(Nullable(T))`، يمثّل الفهرس 0 القيمة `NULL`، وتُسلسَل المفاتيح من دون الغلاف `Nullable`.
+
+على سبيل المثال، `LowCardinality(String)` مع 5 صفوف `['foo', 'bar', 'baz', 'foo', 'bar']`:
+
+```text
+// Version prefix
+01 00 00 00 00 00 00 00    // UInt64(LE) = 1
+
+// IndexesSerializationType: UInt8 indexes, has keys, update dictionary
+00 06 00 00 00 00 00 00    // UInt64(LE) = 0x0600
+
+04 00 00 00 00 00 00 00    // 4 dictionary keys
+00                          // key 0: "" (default)
+03 66 6f 6f                 // key 1: "foo"
+03 62 61 72                 // key 2: "bar"
+03 62 61 7a                 // key 3: "baz"
+
+05 00 00 00 00 00 00 00    // 5 rows
+01 02 03 01 02              // indexes → "foo", "bar", "baz", "foo", "bar"
+```
+
+مع `LowCardinality(Nullable(String))`، تكون القيمة عند الفهرس 0 هي `NULL`:
+
+```text
+01 00 00 00 00 00 00 00    // version
+00 06 00 00 00 00 00 00    // IndexesSerializationType
+03 00 00 00 00 00 00 00    // 3 keys
+00                          // key 0: NULL
+00                          // key 1: "" (default)
+03 79 65 73                 // key 2: "yes"
+05 00 00 00 00 00 00 00    // 5 rows
+02 00 02 00 02              // indexes → "yes", NULL, "yes", NULL, "yes"
+```
+
+<div id="array">
+  #### Array
+</div>
+
+بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#array)، حيث تُسبق كل مصفوفة بعدد عناصر مُرمَّز بـ LEB128، يشفّر التنسيق Native المصفوفات على شكل تدفقين فرعيين عموديين:
+
+* عدد N من إزاحات `UInt64` التراكمية (بترتيب little-endian، 8 بايت لكل إزاحة). يحتوي الصف `i` على `offset[i] - offset[i-1]` عنصرًا، مع اعتبار `offset[-1]` مساويًا ضمنيًا لـ 0.
+* جميع العناصر المتداخلة عبر كل الصفوف، مُسلسلة دفعةً واحدة وبشكل متجاور.
+
+على سبيل المثال، `Array(UInt32)` مع 3 صفوف `[[0, 10], [1, 11], [2, 12]]`:
+
+```text
+// Offsets
+02 00 00 00 00 00 00 00    // 2 (row 0: 2 elements)
+04 00 00 00 00 00 00 00    // 4 (row 1: 2 elements)
+06 00 00 00 00 00 00 00    // 6 (row 2: 2 elements)
+
+// Nested UInt32 values (6 total)
+00 00 00 00                 // 0
+0a 00 00 00                 // 10
+01 00 00 00                 // 1
+0b 00 00 00                 // 11
+02 00 00 00                 // 2
+0c 00 00 00                 // 12
+```
+
+للمصفوفة الفارغة الإزاحة نفسها الموجودة في الصف السابق. على سبيل المثال، `Array(String)` مع 4 صفوف `[[], ['0'], ['0','1'], ['0','1','2']]`:
+
+```text
+00 00 00 00 00 00 00 00    // 0 (empty)
+01 00 00 00 00 00 00 00    // 1
+03 00 00 00 00 00 00 00    // 3
+06 00 00 00 00 00 00 00    // 6
+01 30                       // "0"
+01 30                       // "0"
+01 31                       // "1"
+01 30                       // "0"
+01 31                       // "1"
+01 32                       // "2"
+```
+
+<div id="map">
+  #### Map
+</div>
+
+يُرمَّز `Map(K, V)` على شكل `Array(Tuple(K, V))` — إزاحات المصفوفة، تليها جميع المفاتيح، ثم جميع القيم. ويختلف ذلك عن [RowBinary](/ar/reference/formats/RowBinary/RowBinary#map)، حيث تتعاقب المفاتيح والقيم في كل عنصر.
+
+على سبيل المثال، `Map(String, UInt64)` مع 3 صفوف `[{'a':0,'b':10}, {'a':1,'b':11}, {'a':2,'b':12}]`:
+
+```text
+// Array offsets
+02 00 00 00 00 00 00 00    // 2
+04 00 00 00 00 00 00 00    // 4
+06 00 00 00 00 00 00 00    // 6
+
+// All keys (6 Strings)
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+01 61                       // "a"
+01 62                       // "b"
+
+// All values (6 UInt64s)
+00 00 00 00 00 00 00 00    // 0
+0a 00 00 00 00 00 00 00    // 10
+01 00 00 00 00 00 00 00    // 1
+0b 00 00 00 00 00 00 00    // 11
+02 00 00 00 00 00 00 00    // 2
+0c 00 00 00 00 00 00 00    // 12
+```
+
+<div id="variant">
+  #### Variant
+</div>
+
+بخلاف [RowBinary](/ar/reference/formats/RowBinary/RowBinary#variant)، حيث يحمل كل صف بايت المميِّز الخاص به متبوعًا بالقيمة بشكل Inline، يفصل تنسيق Native بين المميِّزات والبيانات.
+
+<Warning>
+  كما في RowBinary، تُرتَّب الأنواع في التعريف دائمًا ترتيبًا أبجديًا، ويكون المميِّز هو الفهرس ضمن تلك القائمة المرتبة. وتمثل القيمة `0xFF` (255) القيمة `NULL`.
+</Warning>
+
+يُرمَّز عمود `Variant` على النحو التالي:
+
+* بادئة وضع المميِّزات `UInt64(LE)` (`0` = BASIC، `1` = COMPACT). يستخدم خرج تنسيق Native عادةً BASIC (`0`)؛ وقد يظهر وضع COMPACT عند قراءة بيانات مخزَّنة مع تفعيل `use_compact_variant_discriminators_serialization`.
+* N من المميِّزات `UInt8`، واحد لكل صف.
+* بيانات كل variant type كـ عمود مجمّع منفصل لا يحتوي إلا على الصفوف المطابقة، وفق ترتيب المميِّزات.
+
+على سبيل المثال، `Variant(String, UInt32)` مع 5 صفوف `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']` (مرتبة: `String` = 0، `UInt32` = 1):
+
+```text
+00 00 00 00 00 00 00 00    // discriminators mode = BASIC
+01 00 ff 01 00              // UInt32, String, NULL, UInt32, String
+
+// String (2 values, rows 1 and 4)
+05 68 65 6c 6c 6f          // "hello"
+05 68 65 6c 6c 6f          // "hello"
+
+// UInt32 (2 values, rows 0 and 3)
+00 00 00 00                 // 0
+03 00 00 00                 // 3
+```
+
+<div id="dynamic">
+  #### Dynamic
+</div>
+
+على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#dynamic)، حيث تكون كل قيمة موصوفة ذاتيًا (بادئة النوع + القيمة)، فإن تنسيق Native يُسلسِل `Dynamic` كبادئة بنية تتبعها عمود [Variant](#variant).
+
+تحتوي بادئة البنية على إصدار التسلسل من نوع `UInt64(LE)`، ثم عدد الأنواع الديناميكية (بصيغة VarUInt)، ثم type names كسلاسل نصية. في الإصدار V1، يُكتَب عدد الأنواع مرتين لأغراض التوافق. أما البيانات التي تلي ذلك فهي عمود `Variant` تكون قائمة أنواعه هي الأنواع الديناميكية بالإضافة إلى النوع الداخلي `SharedVariant`، مرتبةً أبجديًا.
+
+على سبيل المثال، `Dynamic` مع 5 صفوف `[0::UInt32, 'hello', NULL, 3::UInt32, 'hello']`:
+
+```text
+// Structure prefix (V1)
+01 00 00 00 00 00 00 00    // version = V1
+02                          // num types (V1 writes twice)
+02                          // num types
+06 53 74 72 69 6e 67       // "String"
+06 55 49 6e 74 33 32       // "UInt32"
+
+// Variant data: Variant(SharedVariant, String, UInt32)
+// discriminants: SharedVariant=0, String=1, UInt32=2
+00 00 00 00 00 00 00 00    // discriminators mode = BASIC
+02 01 ff 02 01              // UInt32, String, NULL, UInt32, String
+// SharedVariant: 0 values
+05 68 65 6c 6c 6f          // String: "hello"
+05 68 65 6c 6c 6f          // String: "hello"
+00 00 00 00                 // UInt32: 0
+03 00 00 00                 // UInt32: 3
+```
+
+<div id="json">
+  #### JSON
+</div>
+
+على عكس [RowBinary](/ar/reference/formats/RowBinary/RowBinary#json)، حيث يكون كل صف ذاتي الوصف بأسماء المسارات والقيم، فإن تنسيق Native يُسلسل `JSON` ببنية عمودية. ويكون هذا الترميز معقدًا ومعتمدًا على الإصدار: إذ يتكون من بادئة بنية تتضمن إصدار التسلسل، وأسماء المسارات الديناميكية، وتخطيط البيانات المشتركة، ثم تليها مسارات محددة النوع (كل منها على هيئة عمود مجمّع)، ومسارات ديناميكية (كل منها عمود [Dynamic](#dynamic))، وبيانات مشتركة لمسارات overflow.
+
+لتحقيق توافقية أبسط، يُنصح باستخدام الإعداد `output_format_native_write_json_as_string=1`، الذي يُسلسل أعمدة JSON كسلاسل نصية عادية بتنسيق JSON (قيمة `String` واحدة لكل صف).

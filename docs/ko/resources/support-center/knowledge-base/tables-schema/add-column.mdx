@@ -1,0 +1,218 @@
+---
+title: 테이블에 컬럼 추가
+description: 이 가이드에서는 기존 테이블에 컬럼을 추가하는 방법을 알아봅니다.
+date: 2024-12-18
+tags: ['데이터 모델링']
+keywords: ['컬럼 추가']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="adding-a-column-to-a-table">
+  ## 테이블에 컬럼 추가하기
+</div>
+
+여기서는 clickhouse-local을 사용합니다:
+
+```bash
+clickhouse -m --output_format_pretty_row_numbers=
+```
+
+다음과 같은 테이블이 있다고 가정해 보겠습니다:
+
+```sql
+CREATE TABLE events (
+    date Date DEFAULT today(), 
+    name String
+) 
+ENGINE = MergeTree
+ORDER BY date;
+```
+
+레코드 1개를 추가해 보겠습니다:
+
+```sql
+INSERT INTO events (name) VALUES ('Alexey');
+```
+
+이제 `events` 테이블에 쿼리를 실행하세요:
+
+```sql
+SELECT *
+FROM events;
+```
+
+```text
+┌───────date─┬─name───┐
+│ 2024-12-18 │ Alexey │
+└────────────┴────────┘
+```
+
+<div id="adding-a-new-column">
+  ## 새 컬럼 추가
+</div>
+
+이제 `Float64` 타입의 `favoriteNumber`라는 새 컬럼을 추가해 보겠습니다.
+이는 [`ALTER TABLE...ADD COLUMN`](/ko/reference/statements/alter/column#add-column) 절을 사용해 수행할 수 있습니다:
+
+```sql
+ALTER TABLE events 
+ADD COLUMN favoriteNumber Float64 DEFAULT 7;
+```
+
+`events` 테이블을 쿼리하면 다음과 같은 출력이 표시됩니다:
+
+```text
+┌───────date─┬─name───┬─favoriteNumber─┐
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+`Alexey` 행은 해당 행을 추가할 당시 그 컬럼이 존재하지 않았으므로 기본값이 7로 설정됩니다.
+다음으로 다른 컬럼을 하나 추가해 보겠습니다:
+
+```sql
+INSERT INTO events (name) VALUES ('Tyler');
+```
+
+`events` 테이블을 쿼리하면 다음과 같은 출력이 표시됩니다:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │              7 │
+└────────────┴────────┴────────────────┘
+```
+
+<div id="modifying-a-columns-default-value">
+  ## 컬럼 기본값 수정
+</div>
+
+[`ALTER TABLE...MODIFY COLUMN`](/ko/reference/statements/alter/column#modify-column) 절을 사용해 `favoriteNumber` 컬럼의 데이터 유형을 다르게 변경하면 흥미로운 상황이 발생합니다:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 99;
+```
+
+`events`를 다시 쿼리하면 다음 출력이 표시됩니다:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Alexey │             99 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tyler`는 해당 행이 생성될 때의 기본값이었던 `7`을 유지합니다.
+`Alexey`는 해당 행이 생성될 때 `favoriteNumber` 컬럼이 존재하지 않았기 때문에 새로운 기본값 `99`를 사용합니다.
+
+`Alexey` 행이 즉시 현재 기본값을 사용하게 하려면, 현재 기본값이 디스크에 기록되도록 [`OPTIMIZE TABLE` ](/ko/reference/statements/optimize)을 호출해야 합니다:
+
+```sql
+OPTIMIZE TABLE events;
+```
+
+이렇게 한 뒤, 기본값을 다시 변경한다고 가정해 보겠습니다:
+
+```sql
+ALTER TABLE events 
+MODIFY COLUMN favoriteNumber Float64 DEFAULT 21;
+```
+
+그런 다음 다른 행을 하나 더 삽입합니다:
+
+```sql
+INSERT INTO events (name) VALUES ('Tanya');
+```
+
+마지막으로, `events`에 다시 한 번 쿼리해 보겠습니다:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │             99 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │              7 │
+├────────────┼────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │             21 │
+└────────────┴────────┴────────────────┘
+```
+
+`Tanya`는 새로운 기본값인 `21`을 사용하지만, `Alexey`는 기존 기본값인 `99`를 사용합니다.
+
+<div id="controlling-column-position-in-table">
+  ## 테이블에서 컬럼 위치 제어
+</div>
+
+새 컬럼을 추가하면 기본적으로 테이블 맨 끝에 추가됩니다.
+하지만 `FIRST` 및 `AFTER` 절을 사용하면 컬럼의 위치를 제어할 수 있습니다.
+
+예를 들어, `name` 컬럼 뒤에 `favoriteColor`라는 컬럼을 추가하려면 다음과 같이 합니다:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteColor String DEFAULT 'Yellow' AFTER name;
+```
+
+이제 `events`를 쿼리해 보겠습니다:
+
+```text
+┏━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+├────────────┼────────┼───────────────┼────────────────┤
+│ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+└────────────┴────────┴───────────────┴────────────────┘
+```
+
+그리고 `favoriteDatabase` 컬럼을 추가해 목록의 맨 앞에 오도록 하려면 다음과 같이 하면 됩니다:
+
+```sql
+ALTER TABLE events
+ADD COLUMN favoriteDatabase String DEFAULT 'ClickHouse' FIRST;
+```
+
+```text
+┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┓
+┃ favoriteDatabase ┃       date ┃ name   ┃ favoriteColor ┃ favoriteNumber ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━┩
+│ ClickHouse       │ 2024-12-18 │ Tanya  │ Yellow        │             21 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Alexey │ Yellow        │             99 │
+├──────────────────┼────────────┼────────┼───────────────┼────────────────┤
+│ ClickHouse       │ 2024-12-18 │ Tyler  │ Yellow        │              7 │
+└──────────────────┴────────────┴────────┴───────────────┴────────────────┘
+```
+
+이제 table definition을 살펴보겠습니다:
+
+```sql
+SHOW CREATE TABLE events
+FORMAT LineAsString
+```
+
+```sql
+CREATE TABLE default.`clickhouse-local-ab404c86-56cc-495b-ad1d-fb343cac3bc0events`
+(
+    `favoriteDatabase` String DEFAULT 'ClickHouse',
+    `date` Date DEFAULT today(),
+    `name` String,
+    `favoriteColor` String DEFAULT 'Yellow',
+    `favoriteNumber` Float64 DEFAULT 21
+)
+ENGINE = MergeTree
+ORDER BY date
+```

@@ -1,0 +1,99 @@
+---
+slug: /cloud/billing/marketplace/aws-marketplace-committed-contract
+title: 'AWS Marketplace 承诺合同'
+description: '通过 AWS Marketplace 订阅 ClickHouse Cloud（承诺合同）'
+keywords: ['aws', '亚马逊', 'marketplace', '计费', '承诺', '承诺合同']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+通过 [AWS Marketplace](https://aws.amazon.com/marketplace) 的承诺合同开始使用 ClickHouse Cloud。
+承诺合同 (也称为专属报价) 允许客户承诺在一段时间内为 ClickHouse Cloud 支出一定金额。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 一份来自 ClickHouse、基于特定合同条款的 专属报价。
+* 要将 ClickHouse 组织关联到您的承诺消费优惠，您必须是该组织的管理员。
+
+在 AWS 中查看并接受您的承诺合同所需的权限：
+
+* 如果您使用 AWS 托管策略，则必须具备以下权限：
+  * `AWSMarketplaceRead-only`、`AWSMarketplaceManageSubscriptions`
+  * 或 `AWSMarketplaceFullAccess`
+* 如果您未使用 AWS 托管策略，则必须具备以下权限：
+  * IAM 操作 `aws-marketplace:ListPrivateListings` 和 `aws-marketplace:ViewSubscriptions`
+
+<div id="steps-to-sign-up">
+  ## 注册步骤
+</div>
+
+<Steps>
+  <Step>
+    ### 接受您的专属报价
+
+    您应该已经收到一封电子邮件，其中包含用于查看并接受专属报价的链接。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_1.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
+  </Step>
+
+  <Step>
+    ### 查看报价链接
+
+    点击电子邮件中的 Review Offer 链接。
+    这会将您带到 AWS Marketplace 页面，查看专属报价的详细信息。
+  </Step>
+
+  <Step>
+    ### 设置您的账户
+
+    在 AWS 门户中完成订阅步骤，然后点击 **&quot;Set up your account&quot;**。
+    此时务必要跳转到 ClickHouse Cloud，并注册新账户或使用现有账户登录。
+    如果未完成此步骤，我们将无法把您的 AWS Marketplace 合同关联到 ClickHouse Cloud。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_2.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
+  </Step>
+
+  <Step>
+    ### 登录 Cloud
+
+    跳转到 ClickHouse Cloud 后，您可以使用现有账户登录，或注册一个新账户。
+    此步骤必不可少，这样我们才能将您的 ClickHouse Cloud 组织绑定到 AWS Marketplace 计费。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_3.webp" size="md" alt="AWS Marketplace 专属报价电子邮件" />
+  </Step>
+
+  <Step>
+    ### 如为新用户，请注册
+
+    如果您是 ClickHouse Cloud 新用户，请点击页面底部的“Register”。
+    系统会提示您创建新用户并验证电子邮件地址。
+    完成电子邮件验证后，您可以离开 ClickHouse Cloud 登录页面，并使用新用户名在 [https://console.clickhouse.cloud](https://console.clickhouse.cloud) 登录。
+
+    请注意，如果您是新用户，还需要提供一些企业基本信息。
+    请参见下面的截图。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_4.png" size="md" alt="提供企业信息" />
+
+    <Image img="/images/cloud/reference/mp_committed_spend_5.png" size="md" alt="提供企业信息" />
+
+    如果您是现有 ClickHouse Cloud 用户，直接使用您的凭据登录即可。
+  </Step>
+
+  <Step>
+    ### 创建或选择计费组织
+
+    成功登录后，您可以选择创建一个新组织来关联此市场合同的计费，或选择一个现有组织来关联此合同的计费。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_6.webp" size="md" alt="创建或选择一个组织以对此订阅计费" />
+
+    完成此步骤后，您的组织将连接到 AWS 承诺消费合同，所有用量都将通过您的 AWS 账户计费。
+    您可以在 ClickHouse UI 的组织计费页面中确认计费现已关联到 AWS Marketplace。
+
+    <Image img="/images/cloud/reference/mp_committed_spend_7.webp" size="md" alt="确认设置已完成" />
+
+    如果您遇到任何问题，请随时联系我们的[支持团队](https://clickhouse.com/support/program)。
+  </Step>
+</Steps>

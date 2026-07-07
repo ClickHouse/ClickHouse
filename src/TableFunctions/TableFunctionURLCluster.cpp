@@ -1,6 +1,7 @@
 #include <TableFunctions/TableFunctionURLCluster.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
+#include <Common/Exception.h>
 #include <TableFunctions/registerTableFunctions.h>
 
 #include <Common/Exception.h>
@@ -11,6 +12,22 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
+}
+
+namespace
+{
+    void checkURLClusterDoesNotUseIndexPageWildcards(const String & filename, const StorageURL::Configuration & configuration)
+    {
+        if (configuration.http_method.empty() && urlPathHasListableGlobs(filename))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "`urlCluster` does not support wildcard expansion from HTTP index pages");
+    }
+}
+
+ColumnsDescription TableFunctionURLCluster::getActualTableStructure(ContextPtr context, bool is_insert_query) const
+{
+    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
+    return TableFunctionURL::getActualTableStructure(context, is_insert_query);
 }
 
 StoragePtr TableFunctionURLCluster::getStorage(
@@ -28,6 +45,8 @@ StoragePtr TableFunctionURLCluster::getStorage(
             ErrorCodes::BAD_ARGUMENTS,
             "The 'body' argument is not supported for INSERT INTO FUNCTION urlCluster(...): "
             "the inserted data is sent as the request body.");
+
+    checkURLClusterDoesNotUseIndexPageWildcards(filename, configuration);
 
     if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
     {

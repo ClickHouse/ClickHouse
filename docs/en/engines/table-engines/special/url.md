@@ -48,6 +48,13 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 When used with the `url` table function, the request can carry an HTTP request body produced by a constant string or a `SELECT` subquery. See the [body argument](/sql-reference/table-functions/url#sending-a-body) of the `url` table function for details.
 
+## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
+
+When [allow_experimental_url_wildcard_from_index_pages](/operations/settings/settings.md#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+This is the same mechanism as the [`url`](../../../sql-reference/table-functions/url.md#wildcards-with-http-index-pages) table function.
+
+Expansion is limited by [max_http_index_page_size](/operations/server-configuration-parameters/settings.md#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/operations/settings/settings.md#url_wildcard_max_directories_to_read) for recursive directory traversal.
+
 ## Example {#example}
 
 **1.** Create a `url_engine_table` table on the server :

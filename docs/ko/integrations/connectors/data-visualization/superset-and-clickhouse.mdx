@@ -1,0 +1,148 @@
+---
+sidebarTitle: 'Superset'
+slug: /integrations/superset
+keywords: ['superset']
+description: 'Apache Superset은 오픈소스 데이터 탐색 및 시각화 플랫폼입니다.'
+title: 'Superset을 ClickHouse에 연결하기'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<a href="https://superset.apache.org/" target="_blank">Apache Superset</a>는 Python으로 작성된 오픈소스 데이터 탐색 및 시각화 플랫폼입니다. Superset은 ClickHouse에서 제공하는 Python 드라이버를 사용해 ClickHouse에 연결합니다. 작동 방식을 살펴보겠습니다...
+
+<div id="goal">
+  ## 목표
+</div>
+
+이 가이드에서는 ClickHouse 데이터베이스의 데이터를 사용해 Superset에서 대시보드를 만듭니다. 완성된 대시보드는 다음과 같습니다.
+
+<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="여러 파이 차트와 테이블을 포함해 영국 부동산 가격을 보여주는 Superset 대시보드" border />
+
+<br />
+
+<Tip>
+  **데이터 추가**
+
+  작업할 데이터셋이 없다면 예시 중 하나를 추가할 수 있습니다. 이 가이드에서는 [UK Price Paid](/ko/get-started/sample-datasets/uk-price-paid) 데이터셋을 사용하므로, 이를 선택하면 됩니다. 같은 문서 카테고리에서 확인할 수 있는 다른 예시도 여러 개 있습니다.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 연결 정보 확인하기
+</div>
+
+<ConnectionDetails />
+
+<div id="2-install-the-driver">
+  ## 2. 드라이버 설치
+</div>
+
+1. Superset은 ClickHouse에 연결하기 위해 `clickhouse-connect` 드라이버를 사용합니다. `clickhouse-connect`에 대한 자세한 내용은 <a href="https://pypi.org/project/clickhouse-connect/" target="_blank">https://pypi.org/project/clickhouse-connect/</a>에서 확인할 수 있으며, 다음 명령으로 설치할 수 있습니다.
+
+   ```console
+   pip install clickhouse-connect
+   ```
+
+<Info>
+  **Docker Compose 설정**
+
+  Docker 기반 설치에서는 컨테이너에 `clickhouse-connect`를 추가하는 방법을 [Superset 데이터베이스 구성 가이드](https://superset.apache.org/docs/configuration/databases/#clickhouse)에서 확인하십시오.
+</Info>
+
+2. Superset을 시작하거나 다시 시작하십시오.
+
+<div id="3-connect-superset-to-clickhouse">
+  ## 3. Superset를 ClickHouse에 연결하기
+</div>
+
+1. Superset에서 상단 메뉴의 **Data**를 선택한 다음 드롭다운 메뉴에서 **Databases**를 선택합니다. **+ Database** 버튼을 클릭하여 새 데이터베이스를 추가합니다.
+
+<Image size="lg" img="/images/integrations/data-visualization/superset_01.webp" alt="**+ Database** 버튼이 강조 표시된 Database 메뉴를 보여주는 Superset 인터페이스" border />
+
+<br />
+
+2. 첫 번째 단계에서 데이터베이스 유형으로 **ClickHouse Connect**를 선택합니다.
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_02.webp" alt="**ClickHouse Connect** 옵션이 선택된 Superset 데이터베이스 연결 마법사" border />
+
+<br />
+
+3. 두 번째 단계에서:
+
+* SSL 사용 여부를 설정합니다.
+* 앞서 확인한 연결 정보를 입력합니다.
+* **DISPLAY NAME**을 지정합니다. 원하는 이름을 사용할 수 있습니다. 여러 ClickHouse 데이터베이스에 연결할 예정이라면 더 구체적인 이름을 지정하는 것이 좋습니다.
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_03.webp" alt="ClickHouse 연결 매개변수가 표시된 Superset 연결 구성 양식" border />
+
+<br />
+
+4. **CONNECT**를 클릭한 다음 **FINISH**를 클릭하여 설정 마법사를 완료합니다. 완료되면 데이터베이스 목록에 추가한 데이터베이스가 표시됩니다.
+
+<div id="4-add-a-dataset">
+  ## 4. 데이터셋 추가
+</div>
+
+1. Superset에서 ClickHouse 데이터를 사용하려면 ***데이터셋***&#xC744; 정의해야 합니다. Superset 상단 메뉴에서 **Data**를 선택한 다음 드롭다운 메뉴에서 **Datasets**를 선택하십시오.
+
+2. 데이터셋 추가 버튼을 클릭하십시오. 새 데이터베이스를 데이터 소스로 선택하면 해당 데이터베이스에 정의된 테이블이 표시됩니다:
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_04.webp" alt="ClickHouse 데이터베이스에서 사용 가능한 테이블을 보여주는 Superset 데이터셋 생성 대화 상자" border />
+
+<br />
+
+3. 대화 상자 하단의 **ADD** 버튼을 클릭하면 테이블이 데이터셋 목록에 나타납니다. 이제 대시보드를 만들고 ClickHouse 데이터를 분석할 준비가 되었습니다!
+
+<div id="5--creating-charts-and-a-dashboard-in-superset">
+  ## 5.  Superset에서 차트와 대시보드 만들기
+</div>
+
+Superset에 익숙하다면 다음 섹션도 어렵지 않게 진행할 수 있습니다. Superset이 처음이라면, 음... 다른 훌륭한 시각화 도구들과 비슷하다고 보면 됩니다. 시작은 쉽지만, 세부 기능과 사용상의 차이는 직접 사용하면서 점차 익히게 됩니다.
+
+1. 먼저 대시보드를 만듭니다. Superset의 상단 메뉴에서 **Dashboards**를 선택합니다. 오른쪽 상단의 버튼을 클릭해 새 대시보드를 추가합니다. 아래 예시의 대시보드 이름은 **UK property prices**입니다:
+
+<Image size="md" img="/images/integrations/data-visualization/superset_05.webp" alt="차트를 추가할 준비가 된 UK property prices라는 이름의 빈 Superset 대시보드" border />
+
+<br />
+
+2. 새 차트를 만들려면 상단 메뉴에서 **Charts**를 선택한 다음, 버튼을 클릭해 새 차트를 추가합니다. 다양한 옵션이 표시됩니다. 아래 예시에서는 **CHOOSE A DATASET** 드롭다운에서 **uk&#95;price&#95;paid** 데이터셋을 선택하고 **Pie Chart** 차트를 사용하는 모습을 보여줍니다:
+
+<Image size="md" img="/images/integrations/data-visualization/superset_06.webp" alt="Pie Chart 시각화 유형이 선택된 Superset 차트 생성 인터페이스" border />
+
+<br />
+
+3. Superset의 파이 차트에는 **Dimension**과 **Metric**이 필요하며, 나머지 설정은 선택 사항입니다. 차원과 메트릭에는 원하는 필드를 선택할 수 있고, 이 예시에서는 ClickHouse 필드 `district`를 차원으로, `AVG(price)`를 메트릭으로 사용합니다.
+
+<Image size="md" img="/images/integrations/data-visualization/superset_08.webp" alt="파이 차트에 district 필드가 선택된 차원 구성" border />
+
+<Image size="md" img="/images/integrations/data-visualization/superset_09.webp" alt="파이 차트의 AVG(price) 집계 함수가 표시된 메트릭 구성" border />
+
+<br />
+
+5. 파이 차트보다 도넛 차트를 선호한다면 **CUSTOMIZE** 아래에서 해당 옵션과 기타 옵션을 설정할 수 있습니다:
+
+<Image size="sm" img="/images/integrations/data-visualization/superset_10.webp" alt="도넛 차트 옵션과 기타 파이 차트 구성 설정을 보여주는 사용자 지정 패널" border />
+
+<br />
+
+6. **SAVE** 버튼을 클릭해 차트를 저장한 다음, **ADD TO DASHBOARD** 드롭다운에서 **UK property prices**를 선택합니다. 이어서 **SAVE &amp; GO TO DASHBOARD**를 클릭하면 차트가 저장되고 대시보드에 추가됩니다:
+
+<Image size="md" img="/images/integrations/data-visualization/superset_11.webp" alt="대시보드 선택 드롭다운과 Save & Go to Dashboard 버튼이 있는 차트 저장 대화상자" border />
+
+<br />
+
+7. 이것으로 끝입니다. ClickHouse의 데이터를 기반으로 Superset에서 대시보드를 만들면 매우 빠른 데이터 분석의 가능성을 폭넓게 활용할 수 있습니다!
+
+<Image size="md" img="/images/integrations/data-visualization/superset_12.webp" alt="ClickHouse의 UK property price 데이터에 대한 여러 시각화가 포함된 완성된 Superset 대시보드" border />
+
+<br />

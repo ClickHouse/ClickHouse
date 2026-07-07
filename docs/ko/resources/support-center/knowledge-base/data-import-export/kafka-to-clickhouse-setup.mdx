@@ -1,0 +1,371 @@
+---
+title: Kafka에서 ClickHouse로 데이터 수집하는 방법
+description: "Kafka 테이블 엔진, materialized view, MergeTree 테이블을 사용해 Kafka 토픽의 데이터를 ClickHouse로 수집하는 방법을 알아봅니다."
+date: 2024-04-27
+tags: ['데이터 수집']
+keywords: ['Kafka']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## 개요
+</div>
+
+이 문서에서는 Kafka 토픽의 데이터를 ClickHouse 테이블로 전송하는 과정을 안내합니다. Wikimedia의 여러 속성에서 발생한 변경 사항을 나타내는 [이벤트 스트림](https://stream.wikimedia.org/v2/stream/recentchange)을 제공하는 Wiki 최근 변경 피드를 사용합니다. 단계는 다음과 같습니다:
+
+1. Ubuntu에서 Kafka 설정하기
+2. 데이터 스트림을 Kakfa 토픽으로 수집하기
+3. 토픽을 구독하는 ClickHouse 테이블 만들기
+
+<div id="1-setup-kafka-on-ubuntu">
+  # 1. Ubuntu에서 Kafka 설정하기
+</div>
+
+1. Ubuntu **ec2** 인스턴스를 생성한 후 SSH로 접속하세요:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+```
+
+2. 다음 지침을 참고하여 Kafka를 설치합니다(https://www.linode.com/docs/guides/how-to-install-apache-kafka-on-ubuntu/):
+
+```bash
+sudo apt update
+sudo apt install openjdk-11-jdk
+
+mkdir /home/ubuntu/kafka
+cd /home/ubuntu/kafka/
+
+wget https://downloads.apache.org/kafka/3.7.0/kafka_2.13-3.7.0.tgz
+
+tar -zxvf kafka_2.13-3.7.0.tgz
+```
+
+3. ZooKeeper를 시작하세요:
+
+```bash
+cd kafka_2.13-3.7.0
+bin/zookeeper-server-start.sh config/zookeeper.properties
+```
+
+4. 새 터미널을 열고 Kafka를 실행하세요:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+cd kafka/kafka_2.13-3.7.0/
+bin/kafka-server-start.sh config/server.properties
+```
+
+5. 세 번째 콘솔을 열고 `wikimedia`라는 이름의 토픽을 생성하세요:
+
+```bash
+ssh -i ~/training.pem ubuntu@ec2.compute.amazonaws.com
+cd kafka/kafka_2.13-3.7.0/
+
+bin/kafka-topics.sh --create --topic wikimedia --bootstrap-server localhost:9092
+```
+
+6. 다음과 같이 성공적으로 생성되었는지 확인할 수 있습니다:
+
+```bash
+bin/kafka-topics.sh --list --bootstrap-server localhost:9092
+```
+
+<div id="2-ingest-the-wikimedia-stream-into-kafka">
+  # 2. Wikimedia 스트림을 Kafka에 수집하기
+</div>
+
+1. 먼저 몇 가지 유틸리티가 필요합니다:
+
+```bash
+sudo apt-get install librdkafka-dev libyajl-dev
+sudo apt-get install kafkacat
+```
+
+2. 영리한 **curl** 명령을 사용해 최신 Wikimedia 이벤트를 가져와 JSON 데이터를 파싱한 뒤, 이를 Kafka 토픽으로 전송합니다:
+
+```bash
+curl -N https://stream.wikimedia.org/v2/stream/recentchange  | awk '/^data: /{gsub(/^data: /, ""); print}' | kafkacat -P -b localhost:9092 -t wikimedia
+```
+
+3. 토픽을 &quot;describe&quot;하여 확인할 수 있습니다:
+
+```bash
+bin/kafka-topics.sh --describe --topic wikimedia --bootstrap-server localhost:9092
+```
+
+4. 이벤트를 몇 건 소비해 모든 것이 정상적으로 작동하는지 확인해 보겠습니다:
+
+```bash
+bin/kafka-console-consumer.sh --topic wikimedia --from-beginning --bootstrap-server localhost:9092
+```
+
+5. 이전 명령을 중지하려면 **Ctrl+c**를 누르십시오.
+
+<div id="3-ingest-the-data-into-clickhouse">
+  # 3. 데이터를 ClickHouse에 수집하기
+</div>
+
+1. 수집되는 데이터는 다음과 같습니다:
+
+```json
+{
+	"$schema": "/mediawiki/recentchange/1.0.0",
+	"meta": {
+		"uri": "https://www.wikidata.org/wiki/Q45791749",
+		"request_id": "f64cfb17-04ba-4d09-8935-38ec6f0001c2",
+		"id": "9d7d2b5a-b79b-45ea-b72c-69c3b69ae931",
+		"dt": "2024-04-18T13:21:21Z",
+		"domain": "www.wikidata.org",
+		"stream": "mediawiki.recentchange",
+		"topic": "eqiad.mediawiki.recentchange",
+		"partition": 0,
+		"offset": 5032636513
+	},
+	"id": 2196113017,
+	"type": "edit",
+	"namespace": 0,
+	"title": "Q45791749",
+	"title_url": "https://www.wikidata.org/wiki/Q45791749",
+	"comment": "/* wbsetqualifier-add:1| */ [[Property:P1545]]: 20, Modify PubMed ID: 7292984 citation data from NCBI, Europe PMC and CrossRef",
+	"timestamp": 1713446481,
+	"user": "Cewbot",
+	"bot": true,
+	"notify_url": "https://www.wikidata.org/w/index.php?diff=2131981357&oldid=2131981341&rcid=2196113017",
+	"minor": false,
+	"patrolled": true,
+	"length": {
+		"old": 75618,
+		"new": 75896
+	},
+	"revision": {
+		"old": 2131981341,
+		"new": 2131981357
+	},
+	"server_url": "https://www.wikidata.org",
+	"server_name": "www.wikidata.org",
+	"server_script_path": "/w",
+	"wiki": "wikidatawiki",
+	"parsedcomment": "<span dir=\"auto\"><span class=\"autocomment\">Added qualifier: </span></span> <a href=\"/wiki/Property:P1545\" title=\"series ordinal | position of an item in its parent series (most frequently a 1-based index), generally to be used as a qualifier (different from &quot;rank&quot; defined as a class, and from &quot;ranking&quot; defined as a property for evaluating a quality).\"><span class=\"wb-itemlink\"><span class=\"wb-itemlink-label\" lang=\"en\" dir=\"ltr\">series ordinal</span> <span class=\"wb-itemlink-id\">(P1545)</span></span></a>: 20, Modify PubMed ID: 7292984 citation data from NCBI, Europe PMC and CrossRef"
+}
+```
+
+2. **Kafka** 테이블 엔진을 사용해 Kafka 토픽에서 데이터를 가져와야 합니다:
+
+```sql
+CREATE OR REPLACE TABLE wikiQueue
+(
+    `id` UInt32,
+    `type` String,
+    `title` String,
+    `title_url` String,
+    `comment` String,
+    `timestamp` UInt64,
+    `user` String,
+    `bot` Bool,
+    `server_url` String,
+    `server_name` String,
+    `wiki` String,
+    `meta` Tuple(uri String, id String, stream String, topic String, domain String)
+)
+ENGINE = Kafka(
+   'ec2.compute.amazonaws.com:9092',
+   'wikimedia',
+   'consumer-group-wiki',
+   'JSONEachRow'
+);
+```
+
+3. 어떤 이유인지 **Kafka** 테이블 엔진이 공용 **ec2** URL을 비공개 DNS 이름으로 바꾸는 것 같아서, 로컬 `/etc/hosts` 파일에 해당 항목을 추가해야 했습니다:
+
+```bash
+52.14.154.92  ip.us-east-2.compute.internal
+```
+
+4. Kafka 테이블에서도 읽을 수 있으며, 이를 위해서는 설정만 활성화하면 됩니다:
+
+```sql
+SELECT *
+FROM wikiQueue
+LIMIT 20
+FORMAT Vertical
+SETTINGS stream_like_engine_allow_direct_select = 1;
+```
+
+행은 **wikiQueue** 테이블에 정의된 컬럼에 따라 알맞게 파싱된 상태로 반환되어야 합니다:
+
+```response
+id:          2473996741
+type:        edit
+title:       File:Père-Lachaise - Division 6 - Cassereau 05.jpg
+title_url:   https://commons.wikimedia.org/wiki/File:P%C3%A8re-Lachaise_-_Division_6_-_Cassereau_05.jpg
+comment:     /* wbcreateclaim-create:1| */ [[d:Special:EntityPage/P921]]: [[d:Special:EntityPage/Q112327116]], [[:toollabs:quickstatements/#/batch/228454|batch #228454]]
+timestamp:   1713457283
+user:        Ameisenigel
+bot:         false
+server_url:  https://commons.wikimedia.org
+server_name: commons.wikimedia.org
+wiki:        commonswiki
+meta:        ('https://commons.wikimedia.org/wiki/File:P%C3%A8re-Lachaise_-_Division_6_-_Cassereau_05.jpg','01a832e2-24c5-4ccb-bd93-8e2c0e429418','mediawiki.recentchange','eqiad.mediawiki.recentchange','commons.wikimedia.org')
+```
+
+5. 수신되는 이러한 이벤트를 저장하려면 **MergeTree** 테이블이 필요합니다:
+
+```sql
+CREATE TABLE rawEvents (
+    id UInt64,
+    type LowCardinality(String),
+    comment String,
+    timestamp DateTime64(3, 'UTC'),
+    title_url String,
+    topic LowCardinality(String),
+    user String
+)
+ENGINE = MergeTree
+ORDER BY (type, timestamp);
+```
+
+6. **Kafka** 테이블에 삽입이 발생하면 실행되어 데이터를 **rawEvents** 테이블로 보내는 materialized view를 정의해보겠습니다:
+
+```sql
+CREATE MATERIALIZED VIEW rawEvents_mv TO rawEvents
+AS
+   SELECT
+       id,
+       type,
+       comment,
+       toDateTime(timestamp) AS timestamp,
+       title_url,
+       tupleElement(meta, 'topic') AS topic,
+       user
+FROM wikiQueue
+WHERE title_url <> '';
+```
+
+7. 거의 즉시 **rawEvents**에 데이터가 들어오기 시작하는 것을 확인할 수 있습니다:
+
+```sql
+SELECT count()
+FROM rawEvents;
+```
+
+8. 행 몇 개를 살펴보겠습니다:
+
+```sql
+SELECT *
+FROM rawEvents
+LIMIT 5
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:        124842852
+type:      142
+comment:   Pere prlpz commented on "Plantilles Enciclopèdia Catalana" (Diria que no cal fer res als articles. Es pot actualitzar els enllaços que es facin servir a les referències (tot i que l'antic encara ha...)
+timestamp: 2024-04-18 16:22:29.000
+title_url: https://ca.wikipedia.org/wiki/Tema:Wu36d6vfsiuu4jsi
+topic:     eqiad.mediawiki.recentchange
+user:      Pere prlpz
+
+Row 2:
+──────
+id:        2473996748
+type:      categorize
+comment:   [[:File:Ruïne van een poortgebouw, RP-T-1976-29-6(R).jpg]] removed from category
+timestamp: 2024-04-18 16:21:20.000
+title_url: https://commons.wikimedia.org/wiki/Category:Pieter_Moninckx
+topic:     eqiad.mediawiki.recentchange
+user:      Warburg1866
+
+Row 3:
+──────
+id:        311828596
+type:      categorize
+comment:   [[:Cujo (película)]] añadida a la categoría
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://es.wikipedia.org/wiki/Categor%C3%ADa:Pel%C3%ADculas_basadas_en_obras_de_Stephen_King
+topic:     eqiad.mediawiki.recentchange
+user:      Beta15
+
+Row 4:
+──────
+id:        311828597
+type:      categorize
+comment:   [[:Cujo (película)]] eliminada de la categoría
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://es.wikipedia.org/wiki/Categor%C3%ADa:Trabajos_basados_en_obras_de_Stephen_King
+topic:     eqiad.mediawiki.recentchange
+user:      Beta15
+
+Row 5:
+──────
+id:        48494536
+type:      categorize
+comment:   [[:braiteremmo]] ajoutée à la catégorie
+timestamp: 2024-04-18 16:21:21.000
+title_url: https://fr.wiktionary.org/wiki/Cat%C3%A9gorie:Wiktionnaire:Exemples_manquants_en_italien
+topic:     eqiad.mediawiki.recentchange
+user:      Àncilu bot
+```
+
+9. 어떤 종류의 이벤트가 들어오고 있는지 살펴보겠습니다:
+
+```
+SELECT
+    type,
+    count()
+FROM rawEvents
+GROUP BY type
+```
+
+```response
+   ┌─type───────┬─count()─┐
+1. │ 142        │       1 │
+2. │ new        │    1003 │
+3. │ categorize │   12228 │
+4. │ log        │    1799 │
+5. │ edit       │   17142 │
+   └────────────┴─────────┘
+```
+
+현재 materialized view에 연결되는 또 다른 materialized view를 정의하겠습니다. 분 단위의 일부 집계 통계를 추적합니다:
+
+```sql
+CREATE TABLE byMinute
+(
+    `dateTime` DateTime64(3, 'UTC') NOT NULL,
+    `users` AggregateFunction(uniq, String),
+    `pages` AggregateFunction(uniq, String),
+    `updates` AggregateFunction(sum, UInt32)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY dateTime;
+
+CREATE MATERIALIZED VIEW byMinute_mv TO byMinute
+AS SELECT
+    toStartOfMinute(timestamp) AS dateTime,
+    uniqState(user) AS users,
+    uniqState(title_url) AS pages,
+    sumState(toUInt32(1)) AS updates
+FROM rawEvents
+GROUP BY dateTime;
+```
+
+9. 결과를 보려면 **-Merge** 함수가 필요합니다:
+
+```sql
+SELECT
+    dateTime AS dateTime,
+    uniqMerge(users) AS users,
+    uniqMerge(pages) AS pages,
+    sumMerge(updates) AS updates
+FROM byMinute
+GROUP BY dateTime
+ORDER BY dateTime DESC
+LIMIT 10;
+```

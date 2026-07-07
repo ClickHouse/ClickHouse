@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'jdbc', 'подключение', 'интеграция']
+slug: /integrations/jdbc/jdbc-with-clickhouse
+description: 'ClickHouse JDBC Bridge позволяет ClickHouse получать доступ к данным из любого внешнего источника данных, для которого доступен JDBC-драйвер'
+title: 'Подключение ClickHouse к внешним источникам данных с помощью JDBC'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<Warning>
+  clickhouse-jdbc-bridge содержит экспериментальный код и больше не поддерживается. Он может содержать проблемы с надёжностью и уязвимости безопасности. Используйте его на свой страх и риск.
+</Warning>
+
+<Note>
+  Для использования JDBC требуется ClickHouse JDBC Bridge, поэтому вам понадобится `clickhouse-local` на локальной машине, чтобы передавать данные из вашей базы данных в ClickHouse Cloud. Подробнее см. на странице [**Использование clickhouse-local**](/ru/get-started/migrate/other-methods/clickhouse-local-etl) в разделе **Миграция** документации.
+</Note>
+
+**Обзор:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> в сочетании с [табличной функцией jdbc](/ru/reference/functions/table-functions/jdbc) или [движком таблицы JDBC](/ru/reference/engines/table-engines/integrations/jdbc) позволяет ClickHouse получать доступ к данным из любого внешнего источника данных, для которого доступен <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC-драйвер</a>:
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="Диаграмма архитектуры ClickHouse JDBC Bridge" background="white" />
+
+Это удобно, когда для внешнего источника данных нет встроенного [движка интеграции](/ru/reference/engines/table-engines/integrations/index), табличной функции или внешнего словаря, но для этого источника доступен драйвер JDBC.
+
+ClickHouse JDBC Bridge можно использовать как для чтения, так и для записи. Также его можно использовать параллельно для нескольких внешних источников данных: например, вы можете выполнять в ClickHouse распределённые запросы к нескольким внешним и внутренним источникам данных в реальном времени.
+
+В этом уроке мы покажем, как легко установить, настроить и запустить ClickHouse JDBC Bridge, чтобы подключить ClickHouse к внешнему источнику данных. В качестве внешнего источника данных в этом уроке мы будем использовать MySQL.
+
+Начнём!
+
+<Info>
+  **Предварительные требования**
+
+  У вас есть доступ к машине, на которой есть:
+
+  1. Unix shell и доступ в интернет
+  2. установленный <a href="https://www.gnu.org/software/wget/" target="_blank">wget</a>
+  3. установлена актуальная версия **Java** (например, <a href="https://openjdk.java.net" target="_blank">OpenJDK</a> версии &gt;= 17)
+  4. установлена и запущена актуальная версия **MySQL** (например, <a href="https://www.mysql.com" target="_blank">MySQL</a> версии &gt;=8)
+  5. актуальная версия **ClickHouse** [установлена](/ru/get-started/setup/install) и запущена
+</Info>
+
+<div id="install-the-clickhouse-jdbc-bridge-locally">
+  ## Установите ClickHouse JDBC Bridge локально
+</div>
+
+Самый простой способ использовать ClickHouse JDBC Bridge — установить и запустить его на том же хосте, где работает ClickHouse:<Image img="/images/integrations/data-ingestion/dbms/jdbc-02.webp" size="lg" alt="Схема локального развертывания ClickHouse JDBC Bridge" background="white" />
+
+Для начала подключитесь к Unix shell на машине, где работает ClickHouse, и создайте локальную папку, в которую позже будет установлен ClickHouse JDBC Bridge (папку можно назвать как угодно и разместить где угодно):
+
+```bash
+mkdir ~/clickhouse-jdbc-bridge
+```
+
+Теперь загрузим в эту папку <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/" target="_blank">актуальную версию</a> ClickHouse JDBC Bridge:
+
+```bash
+cd ~/clickhouse-jdbc-bridge
+wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0.7/clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+Чтобы подключиться к MySQL, создадим именованный источник данных:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ mkdir -p config/datasources
+ touch config/datasources/mysql8.json
+```
+
+Теперь вы можете скопировать следующую конфигурацию и вставить её в файл `~/clickhouse-jdbc-bridge/config/datasources/mysql8.json`:
+
+```json
+ {
+   "mysql8": {
+   "driverUrls": [
+     "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
+   ],
+   "jdbcUrl": "jdbc:mysql://<host>:<port>",
+   "username": "<username>",
+   "password": "<password>"
+   }
+ }
+```
+
+<Note>
+  в приведённом выше конфигурационном файле
+
+  * для источника данных можно использовать любое имя; мы использовали `mysql8`
+  * в значении `jdbcUrl` нужно заменить `<host>` и `<port>` на подходящие значения для вашего экземпляра MySQL, например `"jdbc:mysql://localhost:3306"`
+  * нужно заменить `<username>` и `<password>` на ваши учетные данные MySQL; если пароль не используется, можно удалить строку `"password": "<password>"` из приведённого выше конфигурационного файла
+  * в значении `driverUrls` мы просто указали URL, по которому можно скачать <a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">текущую версию</a> JDBC-драйвера MySQL. Это всё, что нужно сделать: ClickHouse JDBC Bridge автоматически скачает этот JDBC-драйвер (в каталог, зависящий от ОС).
+</Note>
+
+<br />
+
+Теперь мы готовы запустить ClickHouse JDBC Bridge:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+<Note>
+  Мы запустили ClickHouse JDBC Bridge в режиме переднего плана. Чтобы остановить Bridge, верните на передний план окно Unix-оболочки, показанное выше, и нажмите `CTRL+C`.
+</Note>
+
+<div id="use-the-jdbc-connection-from-within-clickhouse">
+  ## Использование JDBC-подключения в ClickHouse
+</div>
+
+Теперь ClickHouse может получать доступ к данным MySQL либо с помощью [табличной функции jdbc](/ru/reference/functions/table-functions/jdbc), либо с помощью [движка таблицы JDBC](/ru/reference/engines/table-engines/integrations/jdbc).
+
+Проще всего выполнить следующие примеры, если скопировать и вставить их в [`clickhouse-client`](/ru/concepts/features/interfaces/cli) или в [интерфейс Play](/ru/concepts/features/interfaces/http).
+
+* Табличная функция jdbc:
+
+```sql
+ SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
+```
+
+<Note>
+  В качестве первого параметра табличной функции JDBC мы используем имя именованного источника данных, который настроили выше.
+</Note>
+
+* Движок таблицы JDBC:
+
+```sql
+ CREATE TABLE mytable (
+      <column> <column_type>,
+      ...
+ )
+ ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
+
+ SELECT * FROM mytable;
+```
+
+<Note>
+  В качестве первого параметра для движка `jdbc` мы используем имя именованного источника данных, который настроили выше
+
+  Схема таблицы с движком ClickHouse JDBC и схема подключённой таблицы MySQL должны быть согласованы: например, имена столбцов и их порядок должны совпадать, а типы данных столбцов — быть совместимыми
+</Note>
+
+<div id="install-the-clickhouse-jdbc-bridge-externally">
+  ## Установка ClickHouse JDBC Bridge на отдельном хосте
+</div>
+
+Для распределённого кластера ClickHouse (то есть кластера с более чем одним хостом ClickHouse) имеет смысл установить и запускать ClickHouse JDBC Bridge отдельно, на собственном хосте:
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="Схема развертывания ClickHouse JDBC Bridge на отдельном хосте" background="white" />
+
+Преимущество такого подхода в том, что каждый хост ClickHouse сможет обращаться к JDBC Bridge. В противном случае JDBC Bridge пришлось бы устанавливать локально на каждом экземпляре ClickHouse, которому нужен доступ к внешним источникам данных через Bridge.
+
+Чтобы установить ClickHouse JDBC Bridge отдельно, выполните следующие шаги:
+
+1. Установите, настройте и запустите ClickHouse JDBC Bridge на выделенном хосте, следуя шагам, описанным в разделе 1 этого руководства.
+
+2. На каждом хосте ClickHouse добавьте следующий блок конфигурации в <a href="/ru/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">конфигурацию сервера ClickHouse</a> (в зависимости от выбранного формата конфигурации используйте вариант XML или YAML):
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <jdbc_bridge>
+       <host>JDBC-Bridge-Host</host>
+       <port>9019</port>
+    </jdbc_bridge>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    jdbc_bridge:
+        host: JDBC-Bridge-Host
+        port: 9019
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  * замените `JDBC-Bridge-Host` на имя хоста или IP-адрес выделенного хоста ClickHouse JDBC Bridge
+  * здесь указан стандартный порт ClickHouse JDBC Bridge — `9019`; если вы используете другой порт для JDBC Bridge, соответствующим образом измените приведённую выше конфигурацию
+</Note>
+
+[//]: # "## 4. Additional Info"
+
+[//]: #
+
+[//]: # "TODO: "
+
+[//]: # "- mention that for jdbc table function it is more performant (not two queries each time) to also specify the schema as a parameter"
+
+[//]: #
+
+[//]: # "- mention ad hoc query vs table query, saved query, named query"
+
+[//]: #
+
+[//]: # "- mention insert into "
