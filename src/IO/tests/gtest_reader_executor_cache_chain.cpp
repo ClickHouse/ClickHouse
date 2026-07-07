@@ -1540,3 +1540,84 @@ TEST_F(ReaderExecutorCacheChain, PlanHeldHitSurvivesEvictionPressure)
     EXPECT_EQ(probe->front().state(), FileSegment::State::EMPTY)
         << "without the plan's hold the sweep must take the segment";
 }
+
+#if USE_SSL
+
+#include <IO/FileEncryptionCommon.h>
+#include <IO/WriteBufferFromString.h>
+
+namespace
+{
+
+String encryptedFileBytes(const String & key, FileEncryption::InitVector iv, const String & plaintext)
+{
+    String file_bytes;
+    {
+        WriteBufferFromString wb(file_bytes);
+        FileEncryption::Header header;
+        header.algorithm = FileEncryption::Algorithm::AES_128_CTR;
+        header.key_fingerprint = FileEncryption::calculateKeyFingerprint(key);
+        header.init_vector = iv;
+        header.write(wb);
+        wb.finalize();
+    }
+    FileEncryption::Encryptor enc(FileEncryption::Algorithm::AES_128_CTR, key, iv);
+    enc.setOffset(0);
+    String ciphertext(plaintext.size(), '\0');
+    enc.decrypt(plaintext.data(), plaintext.size(), ciphertext.data());
+    return file_bytes + ciphertext;
+}
+
+}
+
+/// The encryption headers go through the cache chain like any other bytes: the cold
+/// executor populates them (they are the FIRST bytes of the first cache cell, whose
+/// append-only prefix would otherwise stay uncommitted forever - data writes start at
+/// `data_start_offset` and cannot fill the hole below them), and a warm executor reads
+/// them from the cache. So a fully-warm encrypted re-read adds ZERO source requests,
+/// where it previously always paid at least the header fetch.
+TEST_F(ReaderExecutorCacheChain, EncryptionHeaderGoesThroughTheCacheChain)
+{
+    constexpr size_t segment_size = 256;
+    constexpr size_t block_size = 128;
+    const String key(16, 'k');
+    FileEncryption::InitVector iv(UInt128{0xabcdef});
+    const String plaintext = makePattern(1000);
+    const String file_bytes = encryptedFileBytes(key, iv, plaintext);
+
+    auto fc = makeFileCache("enc_header_fc", segment_size, /*max_size=*/1ull << 20);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(makeDiskProvider(fc));
+
+    ReaderExecutor::Options opts;
+    opts.window_size = block_size;
+    opts.block_size = block_size;
+
+    const auto key_finder = [&](UInt128, const String &) { return key; };
+
+    const size_t src_before_cold = sourceRequestsSoFar();
+    {
+        ReaderExecutor cold(source, objects, caches, opts);
+        cold.addDecryptionLayer("/t", 0, key_finder);
+        cold.initDecryption();
+        EXPECT_EQ(drainAll(cold), plaintext) << "cold encrypted scan serves all plaintext";
+    }
+    EXPECT_GT(sourceRequestsSoFar() - src_before_cold, 0u) << "cold scan must hit the source";
+
+    const size_t src_before_warm = sourceRequestsSoFar();
+    {
+        ReaderExecutor warm(source, objects, caches, opts);
+        warm.addDecryptionLayer("/t", 0, key_finder);
+        warm.initDecryption();
+        EXPECT_EQ(drainAll(warm), plaintext) << "warm encrypted scan serves all plaintext";
+    }
+    EXPECT_EQ(sourceRequestsSoFar() - src_before_warm, 0u)
+        << "the warm re-read must serve the header AND the first cell from the cache";
+}
+
+#endif

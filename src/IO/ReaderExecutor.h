@@ -560,6 +560,13 @@ private:
     /// Safe to call from a worker concurrently with the foreground.
     void decryptInPlace(char * data, size_t size, size_t logical_offset);
 
+    /// Read the encryption headers (physical `[0, data_start_offset)`) through the
+    /// cache chain: serve from the first tier holding them, else fetch from source
+    /// and populate the incrementally-fillable tiers - the headers are the first
+    /// bytes of the first cache cell, and skipping them would leave that cell's
+    /// append-only prefix permanently uncommitted. Runs before any plan exists.
+    ChainedBuffers fetchEncryptionHeader();
+
     /// The collect verb. With a machine in flight for this gap: if its step
     /// started/finished, COLLECT it (wait the release edge, reclaim its
     /// connection, backfill, finalize) into `chain` and return true; if still

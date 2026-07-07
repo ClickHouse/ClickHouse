@@ -622,12 +622,7 @@ void ReaderExecutor::initDecryption()
 
     LOG_DEBUG(log, "initDecryption: reading headers ({} bytes)", data_start_offset);
 
-    /// No plan built yet at init time: read the header bytes directly from the source, once.
-    /// The header is tiny and read a single time per executor, so it is not cached/pinned - a
-    /// plain one-shot source read (no long connection, no plan) suffices.
-    ChainedBuffers header_chain = fetchGapsFromSource(ByteRange{0, data_start_offset},
-        /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
-        /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
+    ChainedBuffers header_chain = fetchEncryptionHeader();
 
     /// Under size-unknown sources `fetchGapsFromSource` latches `reached_eof`
     /// on short returns instead of throwing, so an empty chain means
@@ -645,6 +640,88 @@ void ReaderExecutor::initDecryption()
 
     decryptor.parseHeaders(header_chain);
 #endif
+}
+
+ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
+{
+    /// The encryption headers are ordinary file bytes and belong in the caches like any
+    /// others: every executor over the file needs them, and - more important - they are
+    /// the FIRST bytes of the first cache cell. Data writes start at `data_start_offset`
+    /// and an append-only cell can never fill a hole below its write frontier, so a
+    /// header that bypassed the cache would leave the first cell's prefix permanently
+    /// uncommitted and the first data window uncacheable.
+    const ByteRange header_range{0, data_start_offset};
+
+    /// The headers sit at the front of the FIRST object; the exotic layout where that
+    /// object is shorter than the headers falls back to the direct source read.
+    auto pieces = offset_map.map(header_range);
+    const bool cacheable = !caches.empty() && pieces.size() == 1;
+
+    /// ONE residency probe per tier (the probe/open decomposition the provider API is
+    /// built around): a tier holding the full header serves it right here - the view is
+    /// destroyed after the read, running its deferred LRU bump. Otherwise the view is
+    /// KEPT when the tier can take the header prefix, so the post-fetch populate reuses
+    /// its aligned misses instead of re-probing. Whole-cell tiers (page cache) cannot
+    /// take a header-sized prefix by construction.
+    VectorWithMemoryTracking<std::pair<ICacheProvider *, CacheViewPtr>> populate_views;
+    if (cacheable)
+    {
+        for (auto & cache : caches)
+        {
+            auto view = cache->planResidencyView(pieces.front().object, /*object_file_offset=*/0, header_range);
+            if (view->allHit())
+            {
+                ChainedBuffers chain;
+                for (const auto & hit : view->hits())
+                {
+                    if (!hit.reader)
+                        continue;
+                    const size_t lo = std::max(hit.range.offset, header_range.offset);
+                    const size_t hi = std::min({hit.range.end(), header_range.end(), hit.reader->readable()});
+                    if (lo >= hi)
+                        continue;
+                    chain.append(hit.reader->read(ByteRange{lo, hi - lo}));
+                }
+                if (chain.covers(header_range))
+                {
+                    stats.add(Stats::CacheGetRequests);
+                    stats.add(cache->tier() == CacheTier::PageCache ? Stats::BytesFromPageCache : Stats::BytesFromFilesystemCache,
+                        data_start_offset);
+                    LOG_DEBUG(log, "initDecryption: headers served from cache {}", cache->name());
+                    return chain.slice(header_range);
+                }
+            }
+            if (cache->populatesOnMiss() && !cache->fillsWholeCell() && !view->misses().empty())
+                populate_views.emplace_back(cache.get(), std::move(view));
+        }
+    }
+
+    /// Miss: one one-shot source read (no long connection, no plan exists yet).
+    ChainedBuffers fetched = fetchGapsFromSource(header_range,
+        /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
+        /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
+
+    /// Populate the incrementally-fillable tiers so the first cell's append-only prefix
+    /// commits and the following data writes can continue from `data_start_offset`.
+    if (fetched.totalBytes() == data_start_offset)
+    {
+        for (auto & [cache, view] : populate_views)
+        {
+            VectorWithMemoryTracking<ByteRange> miss_ranges;
+            for (const auto & m : view->misses())
+                miss_ranges.push_back(m.range);
+            for (auto & m : cache->openWriteBuffers(pieces.front().object, /*object_file_offset=*/0, miss_ranges))
+            {
+                if (!m.writer)
+                    continue;
+                stats.add(Stats::CachePopulateRequests);
+                StatTimer put_scope(stats, Stats::CachePopulateMicroseconds);
+                stats.add(Stats::BytesPushedToCacheSync,
+                    fill_lane.write(*m.writer, fetched.slice(header_range), /*streaming=*/false));
+            }
+        }
+    }
+    return fetched;
 }
 
 void ReaderExecutor::decryptInPlace(
