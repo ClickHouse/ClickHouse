@@ -312,6 +312,13 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"3.14"}}), "SELECT 3.14");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT -2.5e-3");
 
+    /// Assorted valid single literals: leading sign, leading/trailing decimal point,
+    /// explicit-plus exponent.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"-5"}}), "SELECT -5");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{".5"}}), "SELECT .5");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"5."}}), "SELECT 5.");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"1E+10"}}), "SELECT 1E+10");
+
     /// A parameter with no declared type (OID 0) or a text OID (25 = text) stays a
     /// quoted+escaped string literal.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"41"}}), "SELECT '41'");
@@ -345,6 +352,38 @@ TEST(PostgreSQLProtocol, BindRejectsInjectionInNumericParameter)
     EXPECT_TRUE(throwsBadArgument("1'"));
     EXPECT_TRUE(throwsBadArgument(""));
     EXPECT_TRUE(throwsBadArgument("0x10"));
+
+    /// A per-character "numeric characters only" check would accept these: every
+    /// character is in [0-9+-.eE], yet the value is not a single numeric literal.
+    /// `1--` opens a line comment that drops the rest of the query; `1+2` / `1-2`
+    /// are expressions, not one bound value. All must be rejected.
+    EXPECT_TRUE(throwsBadArgument("1--"));
+    EXPECT_TRUE(throwsBadArgument("1+2"));
+    EXPECT_TRUE(throwsBadArgument("1-2"));
+    EXPECT_TRUE(throwsBadArgument("1.2.3"));
+    EXPECT_TRUE(throwsBadArgument("1e"));
+    EXPECT_TRUE(throwsBadArgument("."));
+    EXPECT_TRUE(throwsBadArgument("+"));
+    EXPECT_TRUE(throwsBadArgument("1e+"));
+    EXPECT_TRUE(throwsBadArgument("--1"));
+
+    /// The `1--` payload proves the injection concretely: with a per-character
+    /// check it splices in as `id = 1-- AND ...`, dropping the trailing predicate.
+    /// The strict check rejects it, so the query is never assembled.
+    EXPECT_TRUE(throwsBadArgument("1--"));
+    {
+        bool trailing_predicate_dropped = false;
+        try
+        {
+            bindAndGetStatement("SELECT * FROM t WHERE id = $1 AND tenant_id = 42", {23}, {{"1--"}});
+            trailing_predicate_dropped = true;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+        EXPECT_FALSE(trailing_predicate_dropped);
+    }
 
     /// The same payload declared as text (OID 0) is safely quoted, not rejected.
     EXPECT_EQ(

@@ -497,14 +497,33 @@ def test_bind_preserves_numeric_parameter_types(started_cluster):
     )
     assert res_limit.get_value(0, 0) == b"2"
 
-    # A value declared numeric but carrying an injection payload is rejected
-    # (only numeric characters are allowed in the unquoted literal), so type
-    # preservation does not reopen the injection hole.
+    # A value declared numeric but carrying an injection payload is rejected: the
+    # value must parse as exactly one numeric literal, so type preservation does
+    # not reopen the injection hole.
     res_inj = pg.exec_params(
         b"SELECT $1", [b"1 UNION ALL SELECT 42"], [23], [0], 0
     )
     assert res_inj.status == psycopg.pq.ExecStatus.FATAL_ERROR
     assert b"numeric prepared-statement parameter" in res_inj.error_message
+
+    # A per-character "numeric characters only" check would accept `1--`, `1+2`
+    # and `1-2` (every char is in [0-9+-.eE]) yet none is a single literal. `1--`
+    # is the sharpest: without the strict check it splices in as `id = 1-- AND
+    # tenant_id = 42`, and the `--` line comment drops the tenant predicate,
+    # returning rows for every tenant. All three must be rejected, so the query
+    # is never assembled and the trailing predicate cannot be dropped.
+    for payload in (b"1--", b"1+2", b"1-2"):
+        res_bad = pg.exec_params(
+            b"SELECT count() FROM bind_num_t WHERE x = $1 AND x = 42",
+            [payload],
+            [23],
+            [0],
+            0,
+        )
+        assert res_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
+        assert b"numeric prepared-statement parameter" in res_bad.error_message, (
+            payload
+        )
 
     setup.execute("DROP TABLE bind_num_t;")
     ch.close()

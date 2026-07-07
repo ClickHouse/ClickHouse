@@ -1821,9 +1821,9 @@ public:
         /// parameter type OID from the Parse message: a numeric type is emitted as
         /// a bare numeric literal (so `SELECT $1 + 1` and `LIMIT $1` keep their
         /// declared type), everything else as a quoted+escaped string literal.
-        /// Both forms are injection-safe: a string is escaped, a numeric literal is
-        /// validated to contain only numeric characters and rejected otherwise, so
-        /// a parameter such as `x' UNION ALL SELECT ...` can never break out.
+        /// Both forms are injection-safe: a string is escaped, a numeric value is
+        /// validated to be exactly one numeric literal and rejected otherwise, so a
+        /// parameter such as `x' UNION ALL SELECT ...` or `1--` can never break out.
         VectorWithMemoryTracking<String> arguments;
         arguments.reserve(bind_query->parameters.size());
         for (size_t i = 0; i < bind_query->parameters.size(); ++i)
@@ -1888,24 +1888,71 @@ private:
         }
     }
 
+    /// Returns true if the whole string is exactly one decimal numeric literal:
+    ///   [sign] digits [. digits] [ (e|E) [sign] digits ]
+    /// with at least one digit in the mantissa and no trailing characters. This is
+    /// a strict grammar check, not a per-character whitelist: a per-character check
+    /// accepts values like `1--`, `1+2` or `1-2` (every character is "numeric") that
+    /// are not a single literal — `1--` makes `Lexer` treat the rest of the query as
+    /// a line comment, and `1+2` / `1-2` splice an expression where a bound value is
+    /// expected. Requiring the value to parse as one literal end-to-end forbids that.
+    static bool isSingleNumericLiteral(const String & value)
+    {
+        const char * p = value.data();
+        const char * const end = p + value.size();
+        if (p == end)
+            return false;
+
+        if (*p == '+' || *p == '-')
+            ++p;
+
+        bool has_mantissa_digit = false;
+        while (p != end && *p >= '0' && *p <= '9')
+        {
+            has_mantissa_digit = true;
+            ++p;
+        }
+        if (p != end && *p == '.')
+        {
+            ++p;
+            while (p != end && *p >= '0' && *p <= '9')
+            {
+                has_mantissa_digit = true;
+                ++p;
+            }
+        }
+        if (!has_mantissa_digit)
+            return false;
+
+        if (p != end && (*p == 'e' || *p == 'E'))
+        {
+            ++p;
+            if (p != end && (*p == '+' || *p == '-'))
+                ++p;
+            bool has_exponent_digit = false;
+            while (p != end && *p >= '0' && *p <= '9')
+            {
+                has_exponent_digit = true;
+                ++p;
+            }
+            if (!has_exponent_digit)
+                return false;
+        }
+
+        return p == end;
+    }
+
     /// Formats a numeric-typed Bind parameter as a bare SQL literal. The value is
-    /// validated to contain only characters that can appear in a numeric literal
-    /// (digits, sign, decimal point, exponent). This is what makes emitting it
-    /// unquoted safe: a crafted payload such as `1 UNION ALL SELECT ...` contains
-    /// spaces/letters and is rejected instead of being spliced into the body.
+    /// validated to be exactly one decimal numeric literal (see
+    /// isSingleNumericLiteral). This is what makes emitting it unquoted safe: a
+    /// crafted payload such as `1 UNION ALL SELECT ...`, `1--` or `1+2` does not
+    /// parse as a single literal and is rejected instead of being spliced into the
+    /// body.
     static String formatNumericParameter(const String & value)
     {
-        if (value.empty())
+        if (!isSingleNumericLiteral(value))
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Empty value for a numeric prepared-statement parameter");
-        for (char c : value)
-        {
-            const bool is_numeric_char =
-                (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E';
-            if (!is_numeric_char)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
-        }
+                            "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
         return value;
     }
 
