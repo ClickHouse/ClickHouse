@@ -9,6 +9,10 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
+
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -1070,13 +1074,13 @@ void writeColumnImpl(
                     UInt64 h = 0;
                     constexpr UInt64 seed = 0;
                     if constexpr (std::is_same_v<ParquetDType, parquet::FLBAType>)
-                        h = XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converter.fixedStringSize(), seed);
                     else if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-                        h = XXH64(converted[i].ptr, converted[i].len, seed);
+                        h = XXH_INLINE_XXH64(converted[i].ptr, converted[i].len, seed);
                     else
                     {
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
-                        h = XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
+                        h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
