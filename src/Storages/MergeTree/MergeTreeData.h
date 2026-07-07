@@ -1720,6 +1720,10 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
+    bool hasParseableDetachedParts(const DiskPtr & disk) const;
+    void validateFormatVersion(const DiskPtr & disk) const;
+    bool containsTableDataOnNewDisk(const DiskPtr & disk) const;
+
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex under lock.
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;
 
