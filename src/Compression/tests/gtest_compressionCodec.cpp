@@ -3,7 +3,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -12,6 +11,7 @@
 
 #include <Compression/ICompressionCodec.h>
 #include <Compression/LZ4_decompress_faster.h>
+#include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
 #include <random>
@@ -33,6 +33,11 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+extern const int CORRUPTED_DATA;
+extern const int TOO_LARGE_SIZE_COMPRESSED;
+}
 
 namespace
 {
@@ -1568,6 +1573,112 @@ TEST(CompressionCodecMultipleTest, DecompressMalformedInputShortBlockHeader)
 
     auto codec = CompressionCodecFactory::instance().get(static_cast<UInt8>(CompressionMethodByte::Multiple));
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+/// Expects getCompressionCodecForFile to reject the block with the given error code.
+void expectRejectedBlock(ReadBuffer & in, int expected_code, bool skip_to_next_block = true)
+{
+    UInt32 size_compressed = 0;
+    UInt32 size_decompressed = 0;
+    try
+    {
+        getCompressionCodecForFile(in, size_compressed, size_decompressed, skip_to_next_block);
+        FAIL() << "Expected exception with code " << expected_code;
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), expected_code);
+    }
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeBelowHeader)
+{
+    /// size_compressed (5) is below the 9-byte block header: must throw CORRUPTED_DATA.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCorruptSizeEvenWithoutSkip)
+{
+    /// Pin that the size checks run regardless of the flag.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x05, 0x00, 0x00, 0x00, /// size_compressed = 5
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA, /*skip_to_next_block=*/false);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnCompressedSizeAboveLimit)
+{
+    /// size_compressed (2 GiB) is above DBMS_MAX_COMPRESSED_SIZE (1 GiB): must throw TOO_LARGE_SIZE_COMPRESSED.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x00, 0x00, 0x00, 0x80, /// size_compressed = 2 GiB
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::TOO_LARGE_SIZE_COMPRESSED);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnZeroDecompressedSize)
+{
+    /// Decompression rejects blocks with decompressed size 0, so identification must too.
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x82, /// LZ4 method byte
+        0x0D, 0x00, 0x00, 0x00, /// size_compressed = 13 (valid)
+        0x00, 0x00, 0x00, 0x00, /// size_decompressed = 0
+        0x01, 0x02, 0x03, 0x04, /// payload, so unguarded code would identify the codec successfully
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, ThrowsOnMultipleSizeBelowConsumed)
+{
+    /// Multiple block whose declared size_compressed (10) is below the chain bytes consumed (9B header + 1B count + 2 method bytes).
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x0A, 0x00, 0x00, 0x00, /// size_compressed = 10
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+        0x02, /// 2 codecs
+        0x82, 0x82, /// two LZ4 method bytes (valid, so codec construction succeeds)
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+}
+
+TEST(GetCompressionCodecForFileTest, DoesNotOverreadMultipleCountByteWhenSizeEqualsHeader)
+{
+    constexpr unsigned char block[] = {
+        0,    0,    0,    0,    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, /// 16-byte checksum (ignored)
+        0x91, /// Multiple method byte
+        0x09, 0x00, 0x00, 0x00, /// size_compressed = 9 (== header size, so no payload follows)
+        0x01, 0x00, 0x00, 0x00, /// size_decompressed = 1
+        0x01, /// count byte: belongs to the next block, must NOT be read
+        0x82, /// padding, so an (incorrect) read of the count byte would find real data
+    };
+
+    ReadBufferFromMemory in(reinterpret_cast<const char *>(block), std::size(block));
+    expectRejectedBlock(in, ErrorCodes::CORRUPTED_DATA);
+    /// The count byte at offset 25 must not have been consumed.
+    EXPECT_EQ(in.count(), 16u + ICompressionCodec::getHeaderSize());
 }
 
 auto ALPSequentialGenerator = []<typename T>(T base = T{0}, T exception = T{0}, double exception_probability = 0, int decimals = 2)
