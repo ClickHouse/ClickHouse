@@ -427,10 +427,13 @@ TEST(BackupInfo, NormalizedStringValidatesS3ExtraCredentials)
     auto context = getContext().context;
     auto valid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(role_arn = 'ROLEARN'))");
     auto invalid = BackupInfo::fromString("S3('s3://bucket/backup', extra_credentials(unknown = 'UNKNOWN'))");
+    auto ignored_for_named_collection = BackupInfo::fromString("S3(collection, extra_credentials(unknown = 'UNKNOWN'))");
+    ignored_for_named_collection.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
 
     EXPECT_NO_THROW((void)valid.toNormalizedString(context));
     EXPECT_THROW((void)valid.toNormalizedString(), Exception);
     EXPECT_THROW((void)invalid.toNormalizedString(context), Exception);
+    EXPECT_NO_THROW((void)ignored_for_named_collection.toNormalizedString(context));
 }
 #endif
 

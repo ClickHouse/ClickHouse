@@ -725,6 +725,7 @@ String BackupInfo::toNormalizedString(ContextPtr context) const
     BackupInfo resolved = *this;
     resolved.id_arg.clear();
     resolved.kv_args.clear();
+    resolved.function_arg = nullptr;
     resolved.args.clear();
 
     if (backup_engine_name == "S3")
