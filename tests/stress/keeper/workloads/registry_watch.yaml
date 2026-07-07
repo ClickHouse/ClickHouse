@@ -1,12 +1,20 @@
 name: registry_watch
-# Service-discovery registry pattern: many clients each hold a session with a
-# children-watch on a shared registry path, re-list it whenever it changes, and
-# read every member entry. Membership churn (join/leave) fires the children-watch
-# on every watcher simultaneously.
+# Service-discovery registry access pattern, approximated statistically: many
+# sessions keep a children-watch armed on a shared registry path and read the
+# member entries, while rare membership churn (join/leave) fires the
+# children-watch on every watcher simultaneously.
+#
+# keeper-bench generates each request independently — a fired watch is recorded
+# (watches_fired) but does not trigger a reactive re-list, and the member set
+# read by `get` is the one resolved at startup. The steady, dominant list
+# weight stands in for the re-list-on-change behavior of a real registry
+# client: it keeps every session's children-watch re-armed and keeps the hot
+# path read at a constant rate, so watch registrations, fan-out deliveries,
+# and re-arm traffic still scale with the session count.
 #
 # Request mix per client loop:
-#   - list the registry with a watch armed (dominant)
-#   - get each member entry (no watch on reads of the entries themselves)
+#   - list the registry with a children-watch armed (dominant; also the re-arm)
+#   - get member entries (no watch on reads of the entries themselves)
 #   - rare create/remove churn under the registry (fires fan-out to all watchers)
 #
 # Value sizes: 100-300 bytes (registration payloads: endpoints, metadata).
