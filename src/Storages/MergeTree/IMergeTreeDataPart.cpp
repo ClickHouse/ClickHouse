@@ -121,6 +121,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsBool use_streaming_marks_compression;
 }
 
 namespace ErrorCodes
@@ -843,7 +844,8 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         }

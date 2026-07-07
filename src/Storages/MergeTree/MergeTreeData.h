@@ -1705,6 +1705,8 @@ protected:
         bool attach = false,
         ContextPtr local_context = nullptr);
 
+    void checkMinMaxIndexForJSON(const IndexDescription & index) const;
+
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
