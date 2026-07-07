@@ -1,29 +1,51 @@
 <test>
-    <!-- `parallel_full_sorting_merge` shards a full sorting merge join by the hash of the join keys and runs
-         one merge join per shard in parallel, keeping the low, streaming memory of a merge join. This test
-         covers both cases the sharding handles:
-           - an unsorted side (join not on the ORDER BY key) that is sorted per shard, and
-           - a read-in-order side (join on the ORDER BY key) that is scattered while preserving order, so each
-             shard only finishes the sort instead of redoing it.
-         The `full_sorting_merge` (single-threaded merge) queries are kept alongside as a baseline to compare. -->
+    <!-- Benchmark for the `parallel_full_sorting_merge` join algorithm added in
+         https://github.com/ClickHouse/ClickHouse/pull/109005. It shards a full
+         sorting merge join by the hash of the join keys into independent
+         per-shard merge joins that run in parallel (up to `max_threads`), keeping
+         the low, streaming memory of a merge join.
 
-    <create_query>CREATE TABLE pfsmj_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
-    <create_query>CREATE TABLE pfsmj_right (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+         Two shapes are covered:
+           - `pfsm_*` use `ORDER BY tuple()`, so neither side is sorted by the join
+             key: the pre-join sort is a full parallel sort that is scattered into
+             shards (each shard sorts from scratch).
+           - `pfsm_sorted_*` use `ORDER BY k` and join on `k`, so both sides are read
+             in order: the already-sorted input is scattered by the hash of the join
+             keys while preserving order, and each shard only finishes the sort
+             instead of redoing it.
 
-    <fill_query>INSERT INTO pfsmj_left SELECT number % 20000000, number FROM numbers_mt(20000000)</fill_query>
-    <fill_query>INSERT INTO pfsmj_right SELECT number, number FROM numbers_mt(20000000)</fill_query>
-    <fill_query>OPTIMIZE TABLE pfsmj_left FINAL</fill_query>
-    <fill_query>OPTIMIZE TABLE pfsmj_right FINAL</fill_query>
+         `full_sorting_merge` (single merge) and `parallel_hash` are included on the
+         same data as a reference, mirroring the benchmark in the PR. Each query
+         carries `join_algorithm` in its own `SETTINGS` clause rather than a
+         test-wide `<settings>` block, so the query using the new value is run only
+         on the new server (as a "partial" query) instead of failing the
+         precondition on a server that does not have the value yet. -->
 
-    <!-- Join on the ORDER BY key `k`: both sides read in order, so this exercises the read-in-order sharding
-         (scatter while preserving order, finish the sort per shard). -->
-    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.k = r.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
-    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.k = r.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <create_query>CREATE TABLE pfsm_left (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE pfsm_right (k UInt64) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO pfsm_left SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_right SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_right FINAL</fill_query>
 
-    <!-- Join on the non-key column `v`: neither side is sorted by the key, so each shard sorts from scratch. -->
-    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.v = r.v FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
-    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.v = r.v FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <create_query>CREATE TABLE pfsm_sorted_left (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE pfsm_sorted_right (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO pfsm_sorted_left SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsm_sorted_right SELECT number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_sorted_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsm_sorted_right FINAL</fill_query>
 
-    <drop_query>DROP TABLE IF EXISTS pfsmj_left</drop_query>
-    <drop_query>DROP TABLE IF EXISTS pfsmj_right</drop_query>
+    <!-- Unsorted input: a full parallel sort scattered into shards. -->
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_left AS a JOIN pfsm_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_hash'</query>
+
+    <!-- Read-in-order input (join on the ORDER BY key): scattered while preserving order, sort only finished per shard. -->
+    <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsm_sorted_left AS a JOIN pfsm_sorted_right AS b ON a.k = b.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+    <drop_query>DROP TABLE IF EXISTS pfsm_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_right</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_sorted_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsm_sorted_right</drop_query>
 </test>
