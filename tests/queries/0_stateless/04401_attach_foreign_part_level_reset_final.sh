@@ -58,7 +58,7 @@ run_case() {
     echo "${engine} src part level > 0: $(echo "${part}" | awk -F_ '{print ($4 > 0) ? 1 : 0}')"
 
     mkdir -p "${dst_path}detached"
-    cp -r "${src_path}${part}" "${dst_path}detached/${part}"
+    cp -rl "${src_path}${part}" "${dst_path}detached/${part}"
 
     ${CLICKHOUSE_CLIENT} -q "ALTER TABLE dst ATTACH PART '${part}'"
 
