@@ -1,0 +1,29 @@
+<test>
+    <!-- `parallel_full_sorting_merge` shards a full sorting merge join by the hash of the join keys and runs
+         one merge join per shard in parallel, keeping the low, streaming memory of a merge join. This test
+         covers both cases the sharding handles:
+           - an unsorted side (join not on the ORDER BY key) that is sorted per shard, and
+           - a read-in-order side (join on the ORDER BY key) that is scattered while preserving order, so each
+             shard only finishes the sort instead of redoing it.
+         The `full_sorting_merge` (single-threaded merge) queries are kept alongside as a baseline to compare. -->
+
+    <create_query>CREATE TABLE pfsmj_left (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+    <create_query>CREATE TABLE pfsmj_right (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO pfsmj_left SELECT number % 20000000, number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>INSERT INTO pfsmj_right SELECT number, number FROM numbers_mt(20000000)</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsmj_left FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE pfsmj_right FINAL</fill_query>
+
+    <!-- Join on the ORDER BY key `k`: both sides read in order, so this exercises the read-in-order sharding
+         (scatter while preserving order, finish the sort per shard). -->
+    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.k = r.k FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.k = r.k FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+    <!-- Join on the non-key column `v`: neither side is sorted by the key, so each shard sorts from scratch. -->
+    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.v = r.v FORMAT Null SETTINGS join_algorithm = 'parallel_full_sorting_merge'</query>
+    <query>SELECT count() FROM pfsmj_left AS l JOIN pfsmj_right AS r ON l.v = r.v FORMAT Null SETTINGS join_algorithm = 'full_sorting_merge'</query>
+
+    <drop_query>DROP TABLE IF EXISTS pfsmj_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pfsmj_right</drop_query>
+</test>
