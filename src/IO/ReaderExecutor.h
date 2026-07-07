@@ -785,9 +785,10 @@ private:
     /// the plaintext window.
     ChainedBuffers finishWindow(ChainedBuffers chain);
 
-    /// The CONSUMER's serve: one window of the serve run at `position_phys` - a hit run is
-    /// the covers-immediately case, a job run pumps the producer until the display covers
-    /// the cursor. `advanceAhead` launches the schedule's `Remote` jobs at the lane cursor.
+    /// The CONSUMER's serve, serve-first: try the display, and only when nothing is
+    /// deliverable heal (claimed-but-unreadable) or pump (a hit run has nothing to pump -
+    /// its unservable window is EOF). `advanceAhead` launches the schedule's `Remote` jobs
+    /// at the lane cursor.
     ChainedBuffers serveWindow(size_t position_phys);
     /// The next source piece of a populatable retrieve, off the schedule: the cell's
     /// append-only floor walked across the job's `fetch_runs`, grid-bounded to the window.
@@ -833,6 +834,9 @@ private:
             IntervalSet & covered, Stats & out_stats);
 
     private:
+        /// Is `phys` servable by ANY holder - the one-byte gate that keeps an empty `read`
+        /// costless (the serve-first cycle probes by serving).
+        bool coversByte(size_t phys) const;
         ReaderExecutor & ex;
     };
 
@@ -917,14 +921,14 @@ private:
     /// committed set - a refused cell write or a sibling-downloaded segment. Used by the launch
     /// scan, the lead launch, and the Ready->Done transition; the serve never reads it.
     size_t launchProgress(size_t ri) const;
-    /// THE ENGINE's inline advance: bring job `ri` one step closer to serving `window` on the
-    /// display - join an in-flight machine (own or foreign), wait a sibling's live cell and
-    /// bank its bytes, or run one source piece as an INLINE machine (the collect pins, puts,
-    /// and overflow-banks what the cells refuse). Returns false when no progress is possible
-    /// (EOF / nothing schedulable) - the serve then returns the display's servable prefix,
-    /// empty meaning end-of-extent. The rare wait-timeout case (a sibling leader hung
-    /// mid-download and re-election keeps losing) falls to one cache-blind direct read.
-    bool pump(size_t ri, ByteRange window);
+    /// The PRODUCER's demand step: one unit of progress toward serving `window`. HEAL first
+    /// (a claimed-but-unreadable cursor is producible only cache-blind - the sole production
+    /// a job-less hit run has); then, for a job: join an in-flight machine (own or foreign),
+    /// wait a sibling's live cell and bank its bytes, or run one source piece as an INLINE
+    /// machine (the collect pins, puts, and overflow-banks what the cells refuse), with one
+    /// bounded cache-blind read as the hung-sibling last resort. FALSE = nothing left to
+    /// produce for this window - the consumer reads that as this extent's EOF.
+    bool pump(std::optional<size_t> ri, ByteRange window);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes; shifts to logical. The serve tail shared by the hit
     /// step and the banked bypass step.

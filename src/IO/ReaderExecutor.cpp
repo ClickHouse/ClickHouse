@@ -2278,8 +2278,19 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     return {};
 }
 
-bool ReaderExecutor::pump(size_t ri, ByteRange window)
+bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
 {
+    /// The HEAL is the first production step: a claimed-but-unreadable cursor (a raced
+    /// shrink/detach staled the truth; a hit run's view goes stale the same way) is
+    /// producible only by the cache-blind read, banked into the lane - and it is the ONLY
+    /// production a job-less (hit) run has. A false heal proves the source empty at the
+    /// window: nothing left to produce.
+    if (display.frontier(window) > window.offset)
+        return bankDirectRead(window);
+    if (!ri_opt.has_value())
+        return false;   /// a hit run that stops covering has nothing else to produce
+
+    const size_t ri = *ri_opt;
     const auto & r = read_plan.schedule.retrieves[ri];
 
     /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
@@ -2492,6 +2503,25 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
     return std::max(jobFrontier(ri), std::min(std::max(r.range.offset, fill_lane.attempted_end), r.range.end()));
 }
 
+bool ReaderExecutor::Display::coversByte(size_t phys) const
+{
+    if (const auto & geom = ex.read_plan.geometry())
+    {
+        const auto res = geom->residentAt(phys);
+        if (res.resident() && res.entry < ex.read_plan.bufs.size() && ex.read_plan.bufs[res.entry].view)
+            return true;
+    }
+    for (const auto & buf : ex.read_plan.bufs)
+        for (const auto & w : buf.writers)
+            if (w.writer && w.writer->range().offset <= phys && phys < w.writer->range().end()
+                && w.writer->committed().subtract(ByteRange{phys, 1}).empty())
+                return true;
+    for (const auto & iv : ex.fill_lane.bank.getIntervals())
+        if (iv.offset + ex.data_start_offset <= phys && phys < iv.end() + ex.data_start_offset)
+            return true;
+    return false;
+}
+
 IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
 {
     /// Committed cells - the writers' LIVE committed sets, so an in-flight worker's streaming
@@ -2537,6 +2567,13 @@ size_t ReaderExecutor::Display::frontier(ByteRange window_phys) const
 
 void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
 {
+    /// The caller delivers only the CONTIGUOUS prefix, so an unservable FIRST byte makes the
+    /// whole pass moot - and the pass is not free: it would read AND count mid-window
+    /// committed islands the caller then discards. The serve-first cycle probes by serving,
+    /// and this one-byte gate is what keeps an empty probe costless.
+    if (!coversByte(window_phys.offset))
+        return;
+
     /// 1) Resident HIT views: stream contiguous resident runs from the plan's held (pinning)
     ///    readers, the fastest tier at each position (`residentAt`), stopping at the first
     ///    non-resident byte - the later holders take over under the shared `covered` guard.
@@ -2698,48 +2735,23 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
         return {};
     const ByteRange window{position_phys, want};
 
-    /// A hit run serves WITHOUT the frontier probe - the classification IS the coverage
-    /// claim, and a full coverage build per warm window is exactly the coordination CPU the
-    /// warm path must not pay. Only an empty serve (a stale view) falls into the loop, where
-    /// the heal runs.
-    if (!run.require_retrieve.has_value())
+    /// THE CONSUMER LOOP: consume any ready prefix off the display, else ask the producer
+    /// for progress. The serve returns whatever contiguous prefix is ready (the bound is
+    /// only the ask; the rest is the next call's) and runs the scheduled handed fills from
+    /// the served bytes; an unservable window costs one byte-probe (`Display::read`'s gate),
+    /// so the warm path pays no coverage walk. EOF is not display state - the display is a
+    /// positional buffer, and "nothing will ever appear here" is knowledge only the producer
+    /// has: a false `pump` IS this extent's EOF. The cache is the buffer: a populatable
+    /// job's bytes are read back OUT of the committed cells, so a cold miss legitimately
+    /// shows BOTH the source fetch and the cache read.
+    while (true)
     {
         ChainedBuffers out = serveFromDisplay(window);
         if (!out.empty())
             return out;
+        if (!pump(run.require_retrieve, window))
+            return {};
     }
-
-    /// THE ENGINE - one serve for hit, populatable, and bypass runs alike: advance the job
-    /// (frontier-wait our leading machine / join a finished or foreign one / wait a sibling /
-    /// run an inline piece) until the display can serve the cursor, then read the display.
-    /// The cache is the buffer: a populatable job's bytes are read back OUT of the committed
-    /// cells, so a cold miss legitimately shows BOTH the source fetch (filling the cell) and
-    /// the cache read (serving it back out). A serve that returns nothing despite a claimed
-    /// frontier (a raced reset staled the committed truth) re-enters the pump rather than
-    /// reporting a false EOF; a false advance with nothing servable is EOF for this extent.
-    /// `serveFromDisplay` also runs any scheduled handed fill from the served bytes - a
-    /// planned job runs regardless of which holder served them.
-    while (true)
-    {
-        if (display.frontier(window) > window.offset)
-        {
-            ChainedBuffers out = serveFromDisplay(window);
-            if (!out.empty())
-                return out;
-            /// Claimed but unreadable: a raced shrink/detach staled the truth at the cursor
-            /// (the read guards refused to serve it - a hit run's view can go stale the same
-            /// way) - only a cache-blind read heals it, through the lane's bank. Nothing
-            /// back = a true EOF.
-            if (!bankDirectRead(window))
-                break;
-            continue;
-        }
-        /// A hit run is the covers-immediately case: nothing to pump when it stops covering
-        /// (the heal above already ran).
-        if (!run.require_retrieve.has_value() || !pump(*run.require_retrieve, window))
-            break;
-    }
-    return serveFromDisplay(window);
 }
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
