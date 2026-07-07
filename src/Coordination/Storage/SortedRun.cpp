@@ -6,9 +6,19 @@
 #include <Coordination/Storage/StorageState.h>
 #include <Coordination/CoordinationSettings.h>
 #include <Coordination/KeeperContext.h>
+#include <Common/Exception.h>
+#include <Core/Defines.h>
+#include <Disks/IDisk.h>
+#include <IO/ReadBufferFromFileBase.h>
+#include <IO/WriteBufferFromFileBase.h>
 #include <base/defines.h>
 
 #include <algorithm>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::CoordinationSetting
 {
@@ -90,6 +100,12 @@ SortedRunWriter::~SortedRunWriter()
 {
     if (!storage->memory_only && sorted_run)
     {
+        if (file_writer)
+        {
+            file_writer->cancel();
+            file_writer.reset();
+        }
+
         /// TODO: Delete files, catch+log+ignore exceptions.
     }
 }
@@ -109,7 +125,10 @@ void SortedRunWriter::appendNode(FullNode & node)
 
         if (!storage->memory_only)
         {
-            /// TODO: Assign file->file_path.
+            file->file_path = storage->makeSortedFilePath(
+                sorted_run->min_file_seqno, sorted_run->max_file_seqno, sorted_run->files.size());
+            file_writer = storage->disk->writeFile(
+                file->file_path, DB::DBMS_DEFAULT_BUFFER_SIZE, DB::WriteMode::Rewrite, storage->write_settings);
         }
     }
 
@@ -180,7 +199,22 @@ void SortedRunWriter::finishFile()
     /// in sorted_run when returning true. Merge relies on this when publishing partial results.
     finishBlock();
 
-    /// TODO: Write file footer, close file.
+    if (!storage->memory_only)
+    {
+        /// TODO: Write file footer.
+
+        file_writer->finalize();
+        file_writer.reset();
+
+        /// Open the file for reading. All block loads are positioned reads (readBigAt) on this
+        /// buffer; they may run in parallel.
+        file->read_buffer = storage->disk->readFile(file->file_path, storage->read_settings, /*read_hint*/ {});
+        if (!file->read_buffer->supportsReadAt())
+            throw DB::Exception(
+                DB::ErrorCodes::LOGICAL_ERROR,
+                "Keeper data disk '{}' doesn't support positioned reads for file {} (but the check on startup passed)",
+                storage->disk->getName(), file->file_path);
+    }
 
     chassert(!file->blocks.empty()); // a file is created only when a node is appended
     sorted_run->total_block_size += file->total_block_size;

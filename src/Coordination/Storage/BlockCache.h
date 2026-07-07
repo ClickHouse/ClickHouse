@@ -27,6 +27,8 @@ struct BlockCacheWeightFunction
     size_t operator()(const BlockPtr & block) const;
 };
 
+/// TODO: Make it auto-resize to use most available memory, like PageCache (hopefully reusing the
+///       autoresize code).
 class BlockCache
 {
 public:

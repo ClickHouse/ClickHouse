@@ -72,6 +72,7 @@ namespace ErrorCodes
     DECLARE(Bool, async_replication, true, "Enable async replication. All write and read guarantees are preserved while better performance is achieved.", 0) \
     DECLARE(Bool, use_new_storage, false, "[Not implemented yet] Use LSM tree storage for nodes. Has about the same performance but lower memory usage.", 0) \
     DECLARE(Bool, storage_memory_only, false, "LSMT: keep all data in memory, don't write to files", 0) \
+    DECLARE(UInt64, block_cache_size, 2 * 1024 * 1024 * 1024, "LSMT: size of the in-memory cache of blocks read from files, in bytes.", 0) \
     DECLARE(UInt64, committed_memtable_size, 64 * 1024 * 1024, "LSMT: rotate the memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, memtable_block_size, 32 * 1024, "LSMT: target size of memtable blocks, in bytes.", HOT_RELOAD) \

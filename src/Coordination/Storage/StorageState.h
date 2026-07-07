@@ -6,6 +6,14 @@
 #include <Coordination/Storage/SortedRun.h>
 #include <Coordination/Storage/Memtable.h>
 #include <Common/SharedMutex.h>
+#include <IO/ReadSettings.h>
+#include <IO/WriteSettings.h>
+
+namespace DB
+{
+class IDisk;
+using DiskPtr = std::shared_ptr<IDisk>;
+}
 
 /// White-box unit tests that inspect StorageState internals (befriended inside StorageState).
 class KeeperStorage_BackgroundFlushAndMerge_Test;
@@ -49,6 +57,12 @@ private:
     /// In memory-only mode stays null (blocks are owned by SortedFile-s instead).
     std::unique_ptr<BlockCache> block_cache;
 
+    /// IO environment used for all file reads and writes. `disk` is assigned in startup and
+    /// stays null in memory-only mode. Files live at the root of the disk.
+    DB::DiskPtr disk;
+    DB::ReadSettings read_settings;
+    DB::WriteSettings write_settings;
+
     /// Protects committed state (`files`, `{mutable,immutable}_memtables`, `node_cache`, etc).
     DB::SharedMutex * storage_mutex = nullptr;
 
@@ -70,7 +84,6 @@ private:
     std::vector<MemtablePtr> immutable_memtables;
     MemtablePtr mutable_memtable; // may be nullptr
 
-    /// TODO: On startup, initialize to (maximum max_file_seqno over preexisting files) + 1.
     uint32_t next_file_seqno = 1;
 
     /// Latest occurrence of each node in files and memtables. Doesn't contain removed nodes.
@@ -156,6 +169,17 @@ public:
 private:
     /// Call when memtables or sorted runs were added or removed, with storage_mutex held.
     void recalculateWriteThrottling();
+
+    /// Generates a unique file name for a new SortedFile. We don't rely on the file name format
+    /// anywhere, the min_file_seqno/max_file_seqno/file_idx_in_run are just for debugging
+    /// convenience; this function could equally well return a random string.
+    std::string makeSortedFilePath(uint32_t min_file_seqno, uint32_t max_file_seqno, size_t file_idx_in_run) const;
+
+    /// On startup we write a mostly useless file and read it back, to fail early if the disk
+    /// doesn't work (e.g. no directory) or doesn't support positioned reads (readBigAt).
+    /// Otherwise the problem would only be reported by background thread after filling a memtable
+    /// and flushing it, potentially a long time after startup.
+    void writeInfoFile();
 };
 
 }
