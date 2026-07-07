@@ -1,0 +1,252 @@
+---
+sidebarTitle: 'Langfuse'
+slug: /cloud/features/ai-ml/langfuse
+title: 'Langfuse'
+description: 'Langfuse 是一个开源 LLM 工程平台，可帮助团队协作调试、分析并持续改进其 LLM 应用。'
+doc_type: 'reference'
+---
+
+<div id="what-is-langfuse">
+  ## 什么是 Langfuse？
+</div>
+
+[Langfuse](https://langfuse.com) 是一个开源的 LLM 工程平台，可帮助团队以协作方式调试、分析并持续迭代其 LLM 应用。它是 ClickHouse 生态系统的一部分，以 **ClickHouse** 作为核心，提供可扩展且高性能的可观测性后端。
+
+凭借 ClickHouse 的列式存储和快速分析能力，Langfuse 能够以低延迟处理数十亿条链路追踪和事件，因此非常适合高吞吐的生产环境工作负载。
+
+<div id="why-langfuse">
+  ## 为什么选择 Langfuse？
+</div>
+
+* **开源：** 完全开源，并提供用于自定义集成的公开 API
+* **针对生产环境优化：** 设计时将性能开销降至最低
+* **一流的 SDKs：** 提供适用于 Python 和 JavaScript 的原生 SDKs
+* **框架支持：** 可与 OpenAI SDK、LangChain 和 LlamaIndex 等主流框架集成
+* **多模态：** 支持对文本、图像及其他模态进行追踪
+* **完整平台：** 提供覆盖整个 LLM 应用开发生命周期的一整套工具
+
+<div id="deployment-options">
+  ## 部署选项
+</div>
+
+Langfuse 提供灵活的部署选项，以满足不同的安全性和基础设施需求。
+
+**[Langfuse Cloud](https://cloud.langfuse.com)** 是一项全托管服务，由托管的 ClickHouse 集群提供支持，以实现最佳性能。它已通过 SOC 2 Type II 和 ISO 27001 认证，符合 GDPR 要求，并可在美国 (AWS us-west-2) 和欧洲 (AWS eu-west-1) 区域使用。
+
+**[自托管](https://langfuse.com/self-hosting)** Langfuse 完全开源 (MIT 许可证) ，可通过 Docker 或 Kubernetes 免费部署在您自己的基础设施上。您可以运行自己的 ClickHouse 实例 (或使用 ClickHouse Cloud) 来存储可观测性数据，从而完全掌控您的数据。 
+
+<div id="architecture">
+  ## 架构
+</div>
+
+Langfuse 仅依赖开源组件，可部署在本地、云基础设施或私有化环境中：
+
+* **ClickHouse**：存储高吞吐量的可观测性数据 (链路追踪、spans、generations、scores) ，支持快速聚合分析并为仪表盘提供支撑。
+* **Postgres**：存储事务性数据，例如用户账户、项目配置和提示词定义。
+* **Redis**：处理事件队列和缓存。
+* **S3/Blob Storage**：存储大型载荷和原始事件数据。
+
+```mermaid
+flowchart TB
+    User["UI、API、SDKs"]
+    subgraph vpc ["VPC"]
+        Web["Web 服务器<br/>(langfuse/langfuse)"]
+        Worker["异步工作线程<br/>(langfuse/worker)"]
+        Postgres@{ img: "https://langfuse.com/images/logos/postgres_icon.svg", label: "Postgres - OLTP\n(事务型数据)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Cache@{ img: "https://langfuse.com/images/logos/redis_icon.png", label: "Redis\n(缓存、队列)", pos: "b", w: 60, h: 60, constraint: "on" }
+        Clickhouse@{ img: "https://langfuse.com/images/logos/clickhouse_icon.svg", label: "Clickhouse - OLAP\n(可观测性数据)", pos: "b", w: 60, h: 60, constraint: "on" }
+        S3@{ img: "https://langfuse.com/images/logos/s3_icon.svg", label: "S3 / Blob Storage\n(原始事件、多模态附件)", pos: "b", w: 60, h: 60, constraint: "on" }
+    end
+    LLM["LLM API/网关<br/>(可选；BYO；可位于同一 VPC 中或与 VPC 建立对等连接)"]
+
+    User --> Web
+    Web --> S3
+    Web --> Postgres
+    Web --> Cache
+    Web --> Clickhouse
+    Web -..->|"playground 场景下可选"| LLM
+
+    Cache --> Worker
+    Worker --> Clickhouse
+    Worker --> Postgres
+    Worker --> S3
+    Worker -..->|"evals 场景下可选"| LLM
+```
+
+<div id="features">
+  ## 功能
+</div>
+
+<div id="observability">
+  ### 可观测性
+</div>
+
+[可观测性](https://langfuse.com/docs/observability/overview) 对于理解和调试 LLM 应用至关重要。与传统软件不同，LLM 应用涉及复杂的非确定性交互，因此更难监控和调试。Langfuse 提供了全面的链路追踪能力，帮助你准确了解应用中到底发生了什么。
+
+*📹 想了解更多？观看 Langfuse 可观测性的[**端到端演示**](https://langfuse.com/watch-demo?tab=observability)，了解如何将其集成到你的应用中。*
+
+<Tabs>
+  <Tab title="Trace 详情">
+    链路追踪可让你跟踪应用中的每一次 LLM 调用以及其他相关逻辑。
+
+    <video src="https://static.langfuse.com/docs-videos/trace-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="会话">
+    会话可让你跟踪多轮对话或智能体工作流。
+
+    <video src="https://static.langfuse.com/docs-videos/sessions-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="时间线">
+    通过查看时间线视图来排查延迟问题。
+
+    <video src="https://static.langfuse.com/docs-videos/timeline-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="用户">
+    添加你自己的 `userId`，以监控每位用户的成本和用量。你还可以选择在自己的系统中创建指向该视图的深度链接。
+
+    <video src="https://static.langfuse.com/docs-videos/users-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="agent 图">
+    可将 LLM agent 可视化为图，以展示复杂智能体工作流的流程。
+
+    <video src="https://static.langfuse.com/docs-videos/langgraph-new-ui.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="仪表板">
+    在仪表板中查看质量、成本和延迟指标，以监控你的 LLM 应用。
+
+    <video src="https://static.langfuse.com/docs-videos/dashboard.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="prompt-management">
+  ### 提示词管理
+</div>
+
+[提示词管理](https://langfuse.com/docs/prompt-management/overview)是构建高效 LLM 应用的关键环节。Langfuse 提供了一系列工具，帮助你在整个开发生命周期内管理、版本化和优化提示词。
+
+*📹 想进一步了解？可观看 [**端到端演示**](https://langfuse.com/watch-demo?tab=prompt)，了解 Langfuse 提示词管理以及如何将其集成到你的应用中。*
+
+<Tabs>
+  <Tab title="创建">
+    通过 UI、SDKs 或 API 创建新的提示词。
+
+    <video src="https://static.langfuse.com/docs-videos/create-update-prompts.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="版本控制">
+    通过 UI、API 或 SDKs 协作管理提示词版本并进行编辑。
+
+    <video src="https://static.langfuse.com/docs-videos/create-prompt-version.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="部署">
+    通过标签将提示词部署到生产环境或其他任意环境中，无需修改代码。
+
+    <video src="https://static.langfuse.com/docs-videos/deploy-prompt.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="指标">
+    比较不同提示词版本在延迟、成本和评估指标方面的表现。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-metrics.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="在 Playground 中测试">
+    立即在 Playground 中测试你的提示词。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-to-playground.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="与链路追踪关联">
+    将提示词与链路追踪关联起来，以了解它们在你的 LLM 应用上下文中的表现。
+
+    <video src="https://static.langfuse.com/docs-videos/linked-generations.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="跟踪变更">
+    跟踪提示词的变更，了解它们如何随时间演变。
+
+    <video src="https://static.langfuse.com/docs-videos/track-changes.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+</Tabs>
+
+<div id="evaluation">
+  ### 评估与数据集
+</div>
+
+[评估](https://langfuse.com/docs/evaluation/overview)对于确保 LLM 应用的质量和可靠性至关重要。Langfuse 提供灵活的评估工具，可根据你的具体需求进行调整，无论你是在开发阶段测试，还是监控生产环境中的性能。
+
+*📹 想了解更多？[**观看端到端演示**](https://langfuse.com/watch-demo?tab=evaluation)，了解 Langfuse Evaluation 以及如何用它改进你的 LLM 应用。*
+
+<Tabs>
+  <Tab title="Analytics">
+    在 Langfuse 仪表板 中查看评估结果图表。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-dashboard.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="User Feedback">
+    收集用户反馈。可通过我们的 Browser SDK 在前端采集，也可通过 SDKs 或 API 在服务端采集。视频中包含示例应用。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-user-feedback.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="LLM-as-a-Judge">
+    在生产或开发 trace 上运行全托管的 LLM-as-a-judge 评估。它可应用于应用中的任意步骤，以支持分步骤评估。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-llm-as-a-judge.mp4%20MOVED%20TO%20R2.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="Experiments">
+    直接在用户界面中基于数据集评估提示词和模型。无需编写自定义代码。
+
+    <video src="https://static.langfuse.com/docs-videos/prompt-experiments.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="Annotation Queue">
+    通过 Annotation Queues 中的人工标注，为评估工作流打下基础。
+
+    <video src="https://static.langfuse.com/docs-videos/scores-annotation-queue.mp4" autoPlay loop muted playsInline width="100%" style={{boxShadow: "0px 1px 8px -1px rgba(21, 21, 21, 0.20)", borderRadius: "4px"}} />
+  </Tab>
+
+  <Tab title="Custom Evals">
+    添加自定义评估结果；支持数值、布尔和分类值。
+
+    ```bash
+    POST /api/public/scores
+    ```
+
+    通过 Python 或 JS SDK 添加评分。
+
+    ```python title="Example (Python)"
+    langfuse.score(
+      trace_id="123",
+      name="my_custom_evaluator",
+      value=0.5,
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="quickstarts">
+  ## 快速入门
+</div>
+
+几分钟内即可开始使用 Langfuse。选择最适合您当前需求的路径：
+
+* [集成 LLM 应用程序/agent 追踪](https://langfuse.com/docs/observability/get-started)
+* [集成提示词管理](https://langfuse.com/docs/prompt-management/get-started)
+* [配置评估](https://langfuse.com/docs/evaluation/overview)
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+* [Langfuse 文档](https://langfuse.com/docs)
+* [Langfuse GitHub 代码库](https://github.com/langfuse/langfuse)
+* [观看演示视频](https://langfuse.com/watch-demo)

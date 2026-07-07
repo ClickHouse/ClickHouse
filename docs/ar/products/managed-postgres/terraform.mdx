@@ -1,0 +1,186 @@
+---
+slug: /cloud/managed-postgres/terraform
+sidebarTitle: 'Terraform'
+title: 'مرجع Terraform لـ Managed Postgres'
+description: 'مرجع لإدارة خدمات ClickHouse Managed Postgres باستخدام موفر Terraform من ClickHouse.'
+keywords: ['managed postgres', 'terraform', 'البنية التحتية كرمز', 'iac', 'موفر', 'برمجي']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.terraform-beta" />
+
+يمكن إنشاء خدمات ClickHouse Managed Postgres وإدارتها باستخدام المورد `clickhouse_postgres_service` في [موفّر Terraform لـ ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs/resources/postgres_service). تتناول هذه الصفحة إعداد الموفّر وأمثلة على تهيئة هذا المورد ومصادر البيانات المرتبطة به.
+
+<Note>
+  هذا المورد في مرحلة alpha، وقد يتغير سلوكه في الإصدارات المستقبلية من الموفّر. وهو متضمن في الإصدار الاعتيادي للموفّر ومتاح بدءًا من إصدار الموفّر **v3.17.1** — راجع [إصدارات الموفّر](https://github.com/ClickHouse/terraform-provider-clickhouse/releases) للاطلاع على التفاصيل.
+</Note>
+
+<div id="provider-setup">
+  ## إعداد الموفّر
+</div>
+
+أضِف موفّر ClickHouse إلى إعدادات Terraform الخاصة بك:
+
+```hcl
+terraform {
+  required_providers {
+    clickhouse = {
+      source  = "ClickHouse/clickhouse"
+      version = ">= 3.17.1"
+    }
+  }
+}
+
+provider "clickhouse" {
+  organization_id = var.organization_id
+  token_key       = var.token_key
+  token_secret    = var.token_secret
+}
+```
+
+راجع [إدارة مفاتيح API](/ar/products/cloud/features/admin-features/api/openapi) للاطّلاع على إرشادات إنشاء مفتاح API لاستخدامه مع موفّر الخدمة.
+
+<div id="resource-overview">
+  ## نظرة عامة على المورد
+</div>
+
+يحتوي المورد `clickhouse_postgres_service` على الوسيطات التالية:
+
+| الوسيطة                    | مطلوب               | الوصف                                                                                                                                                                        |
+| -------------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                     | نعم                 | اسم سهل القراءة للخدمة. غير قابل للتغيير — ويؤدي تغييره إلى حذف الخدمة وإعادة إنشائها.                                                                                       |
+| `cloud_provider`           | عند إنشاء خدمة عادي | موفّر السحابة الذي يستضيف المثيل. لا يتوفر الدعم حاليًا إلا لـ `aws`. احذف هذه القيمة عند إنشاء نسخة متماثلة للقراءة أو عند الاستعادة إلى نقطة زمنية (تُورث من المصدر).      |
+| `region`                   | عند إنشاء خدمة عادي | منطقة السحابة (على سبيل المثال، `us-east-1`). احذف هذه القيمة عند إنشاء نسخة متماثلة للقراءة أو عند الاستعادة إلى نقطة زمنية (تُورث من المصدر).                              |
+| `size`                     | عند إنشاء خدمة عادي | حجم المثيل (VM SKU)، على سبيل المثال `m6gd.large`. يمكن تغيير حجمه في مكانه. احذف هذه القيمة عند الاستعادة إلى نقطة زمنية (إذ يعمل المثيل المُستعاد بحجم النسخة الاحتياطية). |
+| `postgres_version`         | لا                  | الإصدار الرئيسي من Postgres (على سبيل المثال، `18`). يؤدي تغيير الإصدار الرئيسي إلى حذف الخدمة وإعادة إنشائها.                                                               |
+| `ha_type`                  | لا                  | وضع التوافر العالي: `none` أو `async` أو `sync`. راجع [التوافر العالي](#high-availability).                                                                                  |
+| `password`                 | لا                  | كلمة مرور المستخدم الخارق. احذفها إذا أردت أن يُنشئ الخادم كلمة مرور تلقائيًا. وتُخزَّن في الحالة باعتبارها قيمة حساسة.                                                      |
+| `pg_config`                | لا                  | معاملات خادم Postgres على هيئة خريطة مفاتيح-قيم.                                                                                                                             |
+| `pgbouncer_config`         | لا                  | معاملات مُجمِّع الاتصالات PgBouncer على هيئة خريطة مفاتيح-قيم.                                                                                                               |
+| `tags`                     | لا                  | علامات المورد على هيئة خريطة مفاتيح-قيم.                                                                                                                                     |
+| `read_replica_of`          | لا                  | معرّف الخدمة الأساسية المطلوب النسخ المتماثل منها. راجع [النسخ المتماثلة للقراءة](#read-replicas). ولا يمكن استخدامه مع `restore_to_point_in_time`.                          |
+| `restore_to_point_in_time` | لا                  | أنشئ الخدمة عبر استعادة خدمة أخرى إلى نقطة زمنية محددة. راجع [الاستعادة إلى نقطة زمنية](#point-in-time-restore). ولا يمكن استخدامه مع `read_replica_of`.                     |
+
+السمات التالية للقراءة فقط، ويقوم ClickHouse Cloud بتعبئتها بعد الإنشاء: `id` و`state` و`created_at` و`is_primary` و`hostname` و`port` و`username` و`connection_string` (حساس).
+
+<Warning>
+  تُخزَّن قيمة `password` كنص عادي في حالة Terraform لديك. لذلك احمِ ملف الحالة بالشكل المناسب — على سبيل المثال، باستخدام backend بعيد مع التشفير عند السكون. وإذا حذفت `password`، فسينشئ الخادم كلمة مرور ويعيد المزوّد قراءتها إلى الحالة عند كل `refresh`.
+</Warning>
+
+<div id="create-a-service">
+  ## إنشاء خدمة
+</div>
+
+```hcl
+resource "clickhouse_postgres_service" "example" {
+  name           = "my-postgres"
+  cloud_provider = "aws"
+  region         = "us-east-1"
+  size           = "m6gd.large"
+
+  # High-availability mode — number of standby replicas:
+  #   "none"  – primary only, no standby (default)
+  #   "async" – 1 standby, asynchronous replication
+  #   "sync"  – 2 standbys, synchronous replication
+  ha_type = "async"
+
+  tags = {
+    environment = "production"
+    team        = "data"
+  }
+}
+```
+
+لإدارة كلمة المرور بنفسك، عيِّن `password` — يجب ألا يقل طوله عن 12 حرفًا، وأن يتضمن حرفًا صغيرًا واحدًا على الأقل، وحرفًا كبيرًا واحدًا على الأقل، ورقمًا واحدًا. وإذا حذفته، فسينشئ الخادم كلمة مرور.
+
+<div id="high-availability">
+  ## التوافر العالي
+</div>
+
+تتحكم الوسيطة `ha_type` في عدد النسخ الاحتياطية الجاهزة:
+
+| `ha_type` | النسخ الاحتياطية الجاهزة  | النسخ المتماثل                                                           |
+| --------- | ------------------------- | ------------------------------------------------------------------------ |
+| `none`    | لا شيء (الأساسي فقط)      | —                                                                        |
+| `async`   | نسخة احتياطية جاهزة واحدة | غير متزامن — تُثبَّت عمليات الكتابة دون انتظار النسخة الاحتياطية الجاهزة |
+| `sync`    | نسختان احتياطيتان جاهزتان | متزامن — ينتظر الأساسي تأكيدًا من نسخة احتياطية جاهزة واحدة على الأقل    |
+
+يمكن تغيير `ha_type` بعد الإنشاء؛ ويؤدي تغييرها إلى انتقال في التوافر العالي. راجع [التوافر العالي](/ar/products/managed-postgres/high-availability) للتفاصيل.
+
+<div id="read-replicas">
+  ## النسخ المتماثلة للقراءة
+</div>
+
+عيّن `read_replica_of` إلى قيمة `id` الخاصة بخدمة أساسية لإنشاء نسخة متماثلة للقراءة بتدفّق مستمر. ترث النسخة المتماثلة `cloud_provider` و`region` و`postgres_version` ومستخدم فائق الصلاحيات من الخدمة الأساسية، لذا اترك هذه القيم (و`password`) فارغة:
+
+```hcl
+resource "clickhouse_postgres_service" "replica" {
+  name            = "my-postgres-replica"
+  size            = "m6gd.large"
+  read_replica_of = clickhouse_postgres_service.example.id
+}
+```
+
+راجع [النسخ المتماثلة للقراءة](/ar/products/managed-postgres/read-replicas) لمزيد من التفاصيل.
+
+<div id="point-in-time-restore">
+  ## الاستعادة إلى نقطة زمنية
+</div>
+
+عيّن `restore_to_point_in_time` لإنشاء خدمة من خلال استعادة نسخة احتياطية لخدمة أخرى إلى نقطة زمنية محددة. تكون `cloud_provider` و`region` و`postgres_version` موروثة من المصدر (لذا احذفها)، كما يجب حذف `size` و`ha_type`:
+
+```hcl
+resource "clickhouse_postgres_service" "restored" {
+  name = "my-postgres-restored"
+
+  restore_to_point_in_time = {
+    source_id      = clickhouse_postgres_service.example.id
+    restore_target = "2026-06-01T12:00:00Z"
+  }
+}
+```
+
+هذه الكتلة بأكملها مخصّصة لوقت الإنشاء فقط: إن تغيير `source_id` أو `restore_target`، أو إزالة الكتلة، يؤدي إلى حذف الخدمة وإعادة إنشائها. راجع [النسخ الاحتياطي والاستعادة](/ar/products/managed-postgres/backup-and-restore) للاطلاع على التفاصيل.
+
+<div id="data-sources">
+  ## مصادر البيانات
+</div>
+
+تتيح لك ثلاثة مصادر بيانات مرافقة العثور على الخدمات الحالية:
+
+```hcl
+# A single service by ID.
+data "clickhouse_postgres_service" "example" {
+  id = clickhouse_postgres_service.example.id
+}
+
+# All Managed Postgres services in the organization.
+data "clickhouse_postgres_services" "all" {}
+
+# The CA certificates for a service, for TLS connections.
+data "clickhouse_postgres_service_ca_certificates" "certs" {
+  service_id = clickhouse_postgres_service.example.id
+}
+```
+
+<div id="importing-existing-services">
+  ## استيراد الخدمات الحالية
+</div>
+
+يمكن استيراد خدمات Managed Postgres الحالية إلى حالة Terraform باستخدام معرّف الخدمة. وتُستعاد كلمة المرور عند الاستيراد — إذ يعرضها الخادم عند `GET`:
+
+```bash
+terraform import clickhouse_postgres_service.example xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+```
+
+<div id="unsupported-operations">
+  ## العمليات غير المدعومة
+</div>
+
+العناصر التالية غير موجودة عمدًا في مخطط المورد:
+
+* الأوامر التشغيلية (إعادة التشغيل، ترقية العقدة، تبديل الأدوار).
+* قوائم السماح لعناوين IP، ونقاط النهاية الخاصة، وإعدادات النسخ الاحتياطي، ونوافذ الصيانة، ومفاتيح التشفير التي يديرها العميل، وBYOC.
+* مهل دورة الحياة القابلة للتهيئة — لا توجد كتلة `timeouts {}`.

@@ -1029,6 +1029,33 @@ def test_backup_table_s3_named_collection():
     node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
 
 
+def test_database_backup_engine_s3():
+    """Secrets in the nested S3(...) destination of the `Backup` database engine must be masked in logs,
+    both for the explicit-key form and for the named-collection form (including session_token and the
+    Google ADC secrets). The CREATE fails because the backup does not exist, but it is still logged."""
+    password = new_password()
+
+    queries = [
+        f"CREATE DATABASE backup_db_s3_1 ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '{password}'))",
+        f"CREATE DATABASE backup_db_s3_2 ENGINE = Backup('', S3(named_collection_6, url = 'http://minio1:9001/root/data/db_backup_nonexistent', access_key_id = 'minio', secret_access_key = '{password}', session_token = '{password}', google_adc_client_secret = '{password}'))",
+    ]
+    for query in queries:
+        node.query_and_get_answer_with_error(query)
+
+    check_logs(
+        must_contain=[
+            "ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '[HIDDEN]'))",
+            "session_token = '[HIDDEN]'",
+            "secret_access_key = '[HIDDEN]'",
+            "google_adc_client_secret = '[HIDDEN]'",
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_1")
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
+
+
 def test_backup_table_azure_named_collection():
     """Test that secrets in Azure named collection backups are masked in system.backups and logs."""
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]

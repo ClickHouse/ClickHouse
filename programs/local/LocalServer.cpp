@@ -1817,7 +1817,15 @@ void LocalServer::applyCmdOptions(ContextMutablePtr context)
     /// empty). As a setting it is still the fallback (the local CLI itself formats from its own
     /// `default_output_format`), but a per-request override now wins. The legacy field stays reserved
     /// for the wire protocols (`MySQLWire` / `PostgreSQLWire` / gRPC), which must keep winning.
-    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    ///
+    /// The fallback is `TabSeparated`, not the interactive terminal default (`PrettyCompact`): this
+    /// context default is also served to connections handled by the embedded listeners, so it must
+    /// match a real `clickhouse-server` (which defaults to `TabSeparated`). Otherwise a client
+    /// connecting over HTTP would receive a `PrettyCompact`-formatted response and fail to parse it
+    /// (for example, the version query used during the connection handshake). The interactive
+    /// terminal default is only for rendering query results and is applied separately via
+    /// `ClientBase::default_output_format`.
+    context->setSetting("default_format", getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 

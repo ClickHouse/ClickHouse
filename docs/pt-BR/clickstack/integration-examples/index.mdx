@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'Ingestão de dados para o ClickStack - a stack de observabilidade do ClickHouse'
+title: 'Guias de integração'
+doc_type: 'landing-page'
+keywords: ['ingestão de dados do ClickStack', 'ingestão de dados de observabilidade', 'guias de integração do ClickStack']
+---
+
+O ClickStack oferece várias maneiras de fazer a ingestão de dados de observabilidade na sua instância do ClickHouse. Esta seção reúne guias de início rápido para várias fontes de logs, traces e métricas.
+
+<Note>
+  Vários destes guias de integração usam o OpenTelemetry Collector integrado do ClickStack Open Source para testes e avaliações rápidas.
+
+  Para implantações em produção, recomendamos executar as integrações como agentes do OpenTelemetry Collector próximos aos seus workloads. Esses agentes devem encaminhar dados de telemetria via OTLP para um ClickStack OpenTelemetry Collector, que então entrega os dados a uma instância autogerenciada do ClickHouse para a distribuição ClickStack Open Source ou ao Managed ClickStack. Consulte [&quot;Enviando dados do OpenTelemetry&quot;](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+</Note>
+
+| Seção                                                                          | Descrição                                      |
+| ------------------------------------------------------------------------------ | ---------------------------------------------- |
+| [Logs genéricos de host](/pt-BR/clickstack/integration-examples/host-logs)           | Colete logs do sistema do host                 |
+| [Logs de host do EC2](/pt-BR/clickstack/integration-examples/host-logs/ec2)          | Monitore os logs da instância EC2              |
+| [Logs do AWS Lambda usando Rotel](/pt-BR/clickstack/integration-examples/aws-lambda) | Encaminhe logs do Lambda com Rotel             |
+| [AWS CloudWatch](/pt-BR/clickstack/integration-examples/cloudwatch)                  | Encaminhe grupos de logs do CloudWatch         |
+| [Métricas de JVM](/pt-BR/clickstack/integration-examples/jvm-metrics)                | Monitore o desempenho da JVM                   |
+| [Logs do Kafka](/pt-BR/clickstack/integration-examples/kafka-logs)                   | Colete logs do broker do Kafka                 |
+| [Métricas do Kafka](/pt-BR/clickstack/integration-examples/kafka-metrics)            | Monitore o desempenho do Kafka                 |
+| [Kubernetes](/pt-BR/clickstack/integration-examples/kubernetes)                      | Monitore clusters do K8s                       |
+| [Logs do MongoDB](/pt-BR/clickstack/integration-examples/mongodb-logs)               | Colete logs do servidor MongoDB                |
+| [Logs do MySQL](/pt-BR/clickstack/integration-examples/mysql)                        | Colete logs de consultas lentas/erros do MySQL |
+| [Logs do Nginx](/pt-BR/clickstack/integration-examples/nginx-logs)                   | Colete logs de acesso/erro do Nginx            |
+| [Traces do Nginx](/pt-BR/clickstack/integration-examples/nginx-traces)               | Rastreie requisições HTTP do Nginx             |
+| [Traces do Node.js](/pt-BR/clickstack/integration-examples/nodejs-traces)            | Rastreie requisições HTTP do Node.js           |
+| [Logs do PostgreSQL](/pt-BR/clickstack/integration-examples/postgres-logs)           | Colete logs do PostgreSQL                      |
+| [Métricas do PostgreSQL](/pt-BR/clickstack/integration-examples/postgres-metrics)    | Monitore o desempenho do PostgreSQL            |
+| [Logs do Redis](/pt-BR/clickstack/integration-examples/redis-logs)                   | Colete logs do servidor Redis                  |
+| [Métricas do Redis](/pt-BR/clickstack/integration-examples/redis-metrics)            | Monitore o desempenho do Redis                 |
+| [Logs do Systemd](/pt-BR/clickstack/integration-examples/systemd)                    | Colete logs do Systemd/Journald                |
+| [Métricas do Temporal](/pt-BR/clickstack/integration-examples/temporal)              | Monitore as métricas do Temporal Cloud         |

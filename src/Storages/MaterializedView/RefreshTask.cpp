@@ -1098,6 +1098,10 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+            /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
+            /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
+            /// pattern's bucket instead of the shared hash-0 bucket.
+            refresh_context->setNormalizedQueryHash(normalized_query_hash);
             refresh_context->setProgressCallback([this](const Progress & prog)
             {
                 execution.progress.incrementPiecewiseAtomically(prog);

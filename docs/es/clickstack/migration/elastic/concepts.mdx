@@ -1,0 +1,288 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/concepts
+title: 'Conceptos equivalentes en ClickStack y Elastic'
+sidebarTitle: 'Conceptos equivalentes'
+description: 'Conceptos equivalentes: ClickStack y Elastic'
+show_related_blogs: true
+keywords: ['Elasticsearch']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="elastic-vs-clickstack">
+  ## Elastic Stack vs ClickStack
+</div>
+
+Tanto Elastic Stack como ClickStack cubren las funciones principales de una plataforma de observabilidad, pero abordan estas funciones con filosofías de diseño diferentes. Estas funciones incluyen:
+
+* **UI y alertas**: herramientas para consultar datos, crear dashboards y gestionar alertas.
+* **Almacenamiento y motor de consultas**: los sistemas de backend responsables de almacenar datos de observabilidad y servir consultas analíticas.
+* **Recopilación de datos y ETL**: agentes y canalizaciones que recopilan datos de telemetría y los procesan antes de la ingestión.
+
+La siguiente tabla describe cómo cada stack asigna sus componentes a estas funciones:
+
+| **Rol**                                 | **Elastic Stack**                                                   | **ClickStack**                                                            | **Comentarios**                                                                                                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **UI y alertas**                        | **Kibana** — dashboards, búsqueda y alertas                         | **ClickStack UI (HyperDX)** — UI en tiempo real, búsqueda y alertas       | Ambos sirven como interfaz principal para los usuarios, incluidas las visualizaciones y la gestión de alertas. La UI de ClickStack está diseñada específicamente para la observabilidad y estrechamente acoplada a la semántica de OpenTelemetry.                     |
+| **Almacenamiento y motor de consultas** | **Elasticsearch** — almacén de documentos JSON con índice invertido | **ClickHouse** — base de datos orientada a columnas con motor vectorizado | Elasticsearch usa un índice invertido optimizado para búsquedas; ClickHouse usa almacenamiento columnar y SQL para analítica de alta velocidad sobre datos estructurados y semiestructurados.                                                                         |
+| **Recopilación de datos**               | **Elastic Agent**, **Beats** (p. ej., Filebeat, Metricbeat)         | **OpenTelemetry Collector** (edge + gateway)                              | Elastic admite shippers personalizados y un agente unificado gestionado por Fleet. ClickStack se basa en OpenTelemetry, lo que permite una recopilación y un procesamiento de datos independientes del proveedor.                                                     |
+| **SDKs de instrumentación**             | **Elastic APM agents** (propietarios)                               | **OpenTelemetry SDKs** (distribuidos por ClickStack)                      | Los SDKs de Elastic están vinculados al stack de Elastic. ClickStack se basa en los SDKs de OpenTelemetry para logs, métricas y traces en los principales lenguajes.                                                                                                  |
+| **ETL / Procesamiento de datos**        | **Logstash**, canalizaciones de ingestión                           | **OpenTelemetry Collector** + vistas materializadas de ClickHouse         | Elastic usa canalizaciones de ingestión y Logstash para la transformación. ClickStack desplaza el procesamiento al momento de inserción mediante vistas materializadas y procesadores del OTel collector, que transforman los datos de forma eficiente e incremental. |
+| **Filosofía de arquitectura**           | Integración vertical, agentes y formatos propietarios               | Componentes basados en estándares abiertos y débilmente acoplados         | Elastic crea un ecosistema estrechamente integrado. ClickStack enfatiza la modularidad y los estándares (OpenTelemetry, SQL, almacenamiento de objetos) para ofrecer flexibilidad y eficiencia de costos.                                                             |
+
+ClickStack enfatiza los estándares abiertos y la interoperabilidad, ya que es totalmente nativo de OpenTelemetry desde la recopilación hasta la UI. En cambio, Elastic ofrece un ecosistema estrechamente acoplado, pero más integrado verticalmente, con agentes y formatos propietarios.
+
+Dado que **Elasticsearch** y **ClickHouse** son los motores principales responsables del almacenamiento, procesamiento y consulta de datos en sus respectivos stacks, es esencial comprender en qué se diferencian. Estos sistemas sustentan el rendimiento, la escalabilidad y la flexibilidad de toda la arquitectura de observabilidad. La siguiente sección explora las diferencias clave entre Elasticsearch y ClickHouse, incluido cómo modelan los datos, gestionan la ingestión, ejecutan consultas y administran el almacenamiento.
+
+<div id="elasticsearch-vs-clickhouse">
+  ## Elasticsearch vs ClickHouse
+</div>
+
+ClickHouse y Elasticsearch organizan y consultan los datos con modelos subyacentes distintos, pero muchos conceptos fundamentales cumplen funciones similares. Esta sección resume las equivalencias clave para quienes estén familiarizados con Elastic y las vincula con sus equivalentes en ClickHouse. Aunque la terminología difiere, la mayoría de los flujos de trabajo de observabilidad pueden reproducirse —a menudo con mayor eficiencia— en ClickStack.
+
+<div id="core-structural-concepts">
+  ### Conceptos estructurales principales
+</div>
+
+| **Elasticsearch** | **ClickHouse / SQL**        | **Descripción**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Campo**         | **Columna**                 | La unidad básica de los datos, que contiene uno o más valores de un tipo específico. Los campos de Elasticsearch pueden almacenar tipos primitivos, así como arrays y objetos. Los campos solo pueden tener un tipo. ClickHouse también admite arrays y objetos (`Tuples`, `Maps`, `Nested`), además de tipos dinámicos como [`Variant`](/es/reference/data-types/variant) y [`Dynamic`](/es/reference/data-types/dynamic), que permiten que una columna tenga varios tipos.                                                                                                                      |
+| **Documento**     | **Fila**                    | Una colección de campos (columnas). De forma predeterminada, los documentos de Elasticsearch son más flexibles, ya que se pueden añadir nuevos campos dinámicamente en función de los datos (el tipo se infiere a partir de ). En cambio, las filas de ClickHouse están sujetas a un esquema por defecto, por lo que los usuarios deben insertar todas las columnas de una fila o solo un subconjunto. El tipo [`JSON`](/es/guides/clickhouse/data-formats/json/intro) de ClickHouse admite una creación equivalente de columnas dinámicas semiestructuradas a partir de los datos insertados. |
+| **Índice**        | **Tabla**                   | La unidad de ejecución de consultas y de almacenamiento. En ambos sistemas, las consultas se ejecutan sobre índices o tablas, que almacenan filas/documentos.                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| *Implícito*       | Esquema (SQL)               | Los esquemas SQL agrupan tablas en espacios de nombres y suelen usarse para el control de acceso. Elasticsearch y ClickHouse no tienen esquemas, pero ambos admiten seguridad a nivel de fila y de tabla mediante roles y RBAC.                                                                                                                                                                                                                                                                                                                                                             |
+| **Clúster**       | **Clúster / Base de datos** | Los clústeres de Elasticsearch son instancias en tiempo de ejecución que gestionan uno o varios índices. En ClickHouse, las bases de datos organizan tablas dentro de un espacio de nombres lógico, lo que proporciona la misma agrupación lógica que un clúster en Elasticsearch. Un clúster de ClickHouse es un conjunto distribuido de nodos, similar al de Elasticsearch, pero está desacoplado y es independiente de los propios datos.                                                                                                                                                |
+
+<div id="data-modeling-and-flexibility">
+  ### Modelado de datos y flexibilidad
+</div>
+
+Elasticsearch es conocido por la flexibilidad de su esquema mediante [mapeos dinámicos](https://www.elastic.co/docs/manage-data/data-store/mapping/dynamic-mapping). Los campos se crean a medida que se ingestan los documentos, y los tipos se infieren automáticamente, a menos que se especifique un esquema. ClickHouse es más estricto de forma predeterminada —las tablas se definen con esquemas explícitos—, pero ofrece flexibilidad mediante los tipos [`Dynamic`](/es/reference/data-types/dynamic), [`Variant`](/es/reference/data-types/variant) y [`JSON`](/es/guides/clickhouse/data-formats/json/intro). Estos permiten la ingestión de datos semiestructurados, con creación dinámica de columnas e inferencia de tipos similar a Elasticsearch. Del mismo modo, el tipo [`Map`](/es/reference/data-types/map) permite almacenar pares clave-valor arbitrarios, aunque se aplica un único tipo tanto para la clave como para el valor.
+
+El enfoque de ClickHouse respecto a la flexibilidad de tipos es más transparente y controlado. A diferencia de Elasticsearch, donde los conflictos de tipos pueden causar errores de ingestión, ClickHouse permite datos de tipos mixtos en columnas [`Variant`](/es/reference/data-types/variant) y admite la evolución del esquema mediante el uso del tipo [`JSON`](/es/guides/clickhouse/data-formats/json/intro).
+
+Si no se usa [`JSON`](/es/guides/clickhouse/data-formats/json/intro), el esquema se define estáticamente. Si no se proporcionan valores para una fila, estos se definirán como [`Nullable`](/es/reference/data-types/nullable) (no se usa en ClickStack) o volverán al valor predeterminado del tipo; por ejemplo, un valor vacío para `String`.
+
+<div id="ingestion-and-transformation">
+  ### Ingestión y transformación
+</div>
+
+Elasticsearch usa canalizaciones de ingestión con procesadores (p. ej., `enrich`, `rename`, `grok`) para transformar documentos antes de indexarlos. En ClickHouse, una funcionalidad similar se consigue mediante [**vistas materializadas incrementales**](/es/concepts/features/materialized-views/incremental-materialized-view), que pueden [filtrar y transformar](/es/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation), o [enriquecer](/es/concepts/features/materialized-views/incremental-materialized-view#lookup-table) los datos entrantes e insertar los resultados en tablas de destino. También puede insertar datos en un motor de tabla `Null` si solo necesita almacenar la salida de la vista materializada. Esto significa que solo se conservan los resultados de las vistas materializadas, mientras que los datos originales se descartan, lo que ahorra espacio de almacenamiento.
+
+Para el enriquecimiento, Elasticsearch admite [procesadores `enrich` específicos](https://www.elastic.co/docs/reference/enrich-processor/enrich-processor) para añadir contexto a los documentos. En ClickHouse, los [**diccionarios**](/es/concepts/features/dictionaries/index) pueden utilizarse tanto en [tiempo de consulta](/es/concepts/features/dictionaries/index#query-time-enrichment) como en [tiempo de ingestión](/es/concepts/features/dictionaries/index#index-time-enrichment) para enriquecer filas; por ejemplo, para [asociar IP con ubicaciones](/es/guides/use-cases/observability/build-your-own/schema-design#using-ip-dictionaries) o aplicar [búsquedas de user-agent](/es/guides/use-cases/observability/build-your-own/schema-design#using-regex-dictionaries-user-agent-parsing) al insertar.
+
+<div id="query-languages">
+  ### Lenguajes de consulta
+</div>
+
+Elasticsearch admite [varios lenguajes de consulta](https://www.elastic.co/docs/explore-analyze/query-filter/languages), incluidos [DSL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/querydsl), [ES|QL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/esql), [EQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/eql) y consultas [KQL](https://www.elastic.co/docs/explore-analyze/query-filter/languages/kql) (estilo Lucene), pero su compatibilidad con joins es limitada: solo están disponibles los **left outer joins** mediante [`ES|QL`](https://www.elastic.co/guide/en/elasticsearch/reference/8.x/esql-commands.html#esql-lookup-join). ClickHouse admite **la sintaxis SQL completa**, incluidos [todos los tipos de join](/es/reference/statements/select/join#supported-types-of-join), [funciones de ventana](/es/reference/functions/window-functions/index), subconsultas (incluidas las correlacionadas) y CTE. Esto supone una gran ventaja si necesita correlacionar señales de observabilidad con datos de negocio o de infraestructura.
+
+En ClickStack, [la UI proporciona una interfaz de búsqueda compatible con Lucene](/es/clickstack/features/search) para facilitar la transición, junto con compatibilidad completa con SQL a través del backend de ClickHouse. Esta sintaxis es comparable a la sintaxis de [query string de Elastic](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax). Para ver una comparación exacta de esta sintaxis, consulte [&quot;Searching in ClickStack and Elastic&quot;](/es/clickstack/migration/elastic/search).
+
+<div id="file-formats-and-interfaces">
+  ### Formatos de archivo e interfaces
+</div>
+
+Elasticsearch admite la ingestión de JSON (y [compatibilidad limitada con CSV](https://www.elastic.co/docs/reference/enrich-processor/csv-processor)). ClickHouse admite más de **70 formatos de archivo**, incluidos Parquet, Protobuf, Arrow, CSV y otros, tanto para la ingestión como para la exportación. Esto facilita la integración con canalizaciones y herramientas externas.
+
+Ambos sistemas ofrecen una API REST, pero ClickHouse también proporciona un **protocolo nativo** para interactuar con baja latencia y alto rendimiento. La interfaz nativa admite el progreso de la consulta, la compresión y la transmisión en streaming con mayor eficiencia que HTTP, y es la opción predeterminada para la mayor parte de la ingestión en producción.
+
+<div id="indexing-and-storage">
+  ### Indexación y almacenamiento
+</div>
+
+<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+
+El concepto de `segmentación` es fundamental en el modelo de escalabilidad de Elasticsearch. Cada ① [**índice**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) se divide en **segmentos**, cada uno de los cuales es un índice físico de Lucene almacenado como segmentos en disco. Un segmento puede tener una o más copias físicas, llamadas segmentos de réplica, para aportar resiliencia. Para escalar, los segmentos y las réplicas pueden distribuirse entre varios nodos. Un solo segmento ② consta de uno o más segmentos inmutables. Un segmento es la estructura básica de indexación de Lucene, la biblioteca de Java que proporciona las funciones de indexación y búsqueda en las que se basa Elasticsearch.
+
+<Info>
+  **Procesamiento de inserciones en Elasticsearch**
+
+  Ⓐ Los documentos recién insertados Ⓑ pasan primero a un búfer de indexación en memoria que, de forma predeterminada, se vacía una vez por segundo. Se utiliza una fórmula de enrutamiento para determinar el segmento de destino de los documentos volcados, y se escribe un nuevo segmento para ese segmento en disco. Para mejorar la eficiencia de las consultas y permitir la eliminación física de los documentos eliminados o actualizados, los segmentos se fusionan continuamente en segundo plano en segmentos más grandes hasta alcanzar un tamaño máximo de 5 GB. No obstante, es posible forzar la fusión en segmentos aún mayores.
+</Info>
+
+Elasticsearch recomienda dimensionar los segmentos en torno a [50 GB o 200 millones de documentos](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards) debido a la [sobrecarga de heap de la JVM y de metadatos](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead). También existe un límite estricto de [2 mil millones de documentos por segmento](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit). Elasticsearch paraleliza las consultas entre segmentos, pero cada segmento se procesa usando un **único hilo**, lo que hace que un exceso de segmentos resulte costoso y contraproducente. Esto acopla de forma inherente la `segmentación` al escalado, ya que se requieren más segmentos (y nodos) para aumentar el rendimiento.
+
+Elasticsearch indexa todos los campos en [**índices invertidos**](https://www.elastic.co/docs/manage-data/data-store/index-basics) para acelerar las búsquedas, y puede usar opcionalmente [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values) para agregaciones, ordenación y acceso a campos mediante scripts. Los campos numéricos y geográficos utilizan [árboles Block K-D](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf) para búsquedas sobre datos geoespaciales y sobre rangos numéricos y de fechas.
+
+Es importante destacar que Elasticsearch almacena el documento original completo en [`_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field) (comprimido con `LZ4`, `Deflate` o `ZSTD`), mientras que ClickHouse no almacena una representación independiente del documento. Los datos se reconstruyen a partir de las columnas en tiempo de consulta, lo que ahorra espacio de almacenamiento. Esta misma capacidad también es posible en Elasticsearch mediante [Synthetic `_source`](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source), con algunas [restricciones](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#synthetic-source-restrictions). Deshabilitar `_source` también tiene [implicaciones](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/mapping-source-field#include-exclude) que no se aplican a ClickHouse.
+
+En Elasticsearch, los [mapeos de índice](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html) (equivalentes a los esquemas de tabla en ClickHouse) controlan el tipo de campos y las estructuras de datos utilizadas para esta persistencia y consulta.
+
+ClickHouse, en cambio, es **orientado a columna**: cada columna se almacena de forma independiente, pero siempre ordenada según la clave primaria o clave de ordenación de la tabla. Esta ordenación permite [índices primarios dispersos](/es/concepts/core-concepts/primary-indexes), que permiten a ClickHouse omitir datos de forma eficiente durante la ejecución de consultas. Cuando las consultas filtran por campos de la clave primaria, ClickHouse lee solo las partes relevantes de cada columna, lo que reduce significativamente la E/S de disco y mejora el rendimiento, incluso sin un índice completo en cada columna.
+
+<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+
+ClickHouse también admite [**índices de omisión**](/es/concepts/features/performance/skip-indexes/skipping-indexes), que aceleran el filtrado al precalcular datos de índice para las columnas seleccionadas. Deben definirse explícitamente, pero pueden mejorar significativamente el rendimiento. Además, ClickHouse permite especificar [codecs de compresión](/es/guides/use-cases/observability/build-your-own/schema-design#using-codecs) y algoritmos de compresión por columna, algo que Elasticsearch no admite (su [compresión](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) solo se aplica al almacenamiento JSON de `_source`).
+
+ClickHouse también admite sharding, pero su modelo está diseñado para favorecer el **escalado vertical**. Un solo segmento puede almacenar **billones de filas** y seguir ofreciendo un buen rendimiento siempre que la memoria, la CPU y el disco lo permitan. A diferencia de Elasticsearch, **no existe un límite estricto de filas** por segmento. Los segmentos en ClickHouse son lógicos — en la práctica, tablas individuales — y no requieren particionamiento a menos que el conjunto de datos supere la capacidad de un solo nodo. Esto suele ocurrir por limitaciones de espacio en disco, y el sharding ① se introduce solo cuando es necesario escalar horizontalmente, lo que reduce la complejidad y la sobrecarga. En este caso, al igual que en Elasticsearch, un segmento contendrá un subconjunto de los datos. Los datos dentro de un único segmento se organizan como una colección de ② partes de datos inmutables que contienen ③ varias estructuras de datos.
+
+El procesamiento dentro de un segmento de ClickHouse está **totalmente paralelizado**, y se recomienda a los usuarios escalar verticalmente para evitar los costes de red asociados al movimiento de datos entre nodos.
+
+<Info>
+  **Procesamiento de inserciones en ClickHouse**
+
+  Las inserciones en ClickHouse son **sincrónicas de forma predeterminada** — la escritura solo se confirma tras el commit — pero pueden configurarse como **inserciones asíncronas** para ajustarse al almacenamiento en búfer y la agrupación por lotes al estilo de Elastic. Si se usan [inserciones de datos asíncronas](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse), Ⓐ las filas recién insertadas pasan primero a un Ⓑ búfer de inserción en memoria, que se vacía de forma predeterminada cada 200 milisegundos. Si se usan varios segmentos, se utiliza una [tabla distribuida](/es/reference/engines/table-engines/special/distributed) para dirigir las filas recién insertadas a su segmento de destino. Se escribe una nueva parte en disco para el segmento.
+</Info>
+
+<div id="distribution-and-replication">
+  ### Distribución y replicación
+</div>
+
+Aunque tanto Elasticsearch como ClickHouse usan clústeres, segmentos y réplicas para garantizar la escalabilidad y la tolerancia a fallos, sus modelos difieren significativamente en su implementación y sus características de rendimiento.
+
+Elasticsearch usa un modelo **primario-secundario** para la replicación. Cuando los datos se escriben en un segmento primario, se copian de forma síncrona a una o más réplicas. Estas réplicas son, a su vez, segmentos completos distribuidos entre nodos para garantizar la redundancia. Elasticsearch confirma las escrituras solo después de que todas las réplicas requeridas hayan confirmado la operación, un modelo que ofrece una **consistencia secuencial** casi total, aunque es posible realizar **lecturas sucias** desde las réplicas antes de la sincronización completa. Un **nodo maestro** coordina el clúster y gestiona la asignación de segmentos, el estado de salud y la elección de líder.
+
+Por el contrario, ClickHouse emplea **consistencia eventual** de forma predeterminada, coordinada por **Keeper** - una alternativa ligera a ZooKeeper. Las escrituras pueden enviarse directamente a cualquier réplica o mediante una [**tabla distribuida**](/es/reference/engines/table-engines/special/distributed), que selecciona automáticamente una réplica. La replicación es asíncrona: los cambios se propagan al resto de réplicas después de que se confirma la escritura. Para obtener garantías más estrictas, ClickHouse [admite **consistencia secuencial**](/es/get-started/migrate/postgres/appendix#sequential-consistency), en la que las escrituras solo se confirman después de haberse aplicado en todas las réplicas, aunque este modo rara vez se usa debido a su impacto en el rendimiento. Las tablas distribuidas unifican el acceso entre múltiples segmentos, reenviando las consultas `SELECT` a todos los segmentos y fusionando los resultados. Para las operaciones `INSERT`, equilibran la carga distribuyendo los datos de manera uniforme entre segmentos. La replicación de ClickHouse es muy flexible: cualquier réplica (una copia de un segmento) puede aceptar escrituras, y todos los cambios se sincronizan de forma asíncrona con las demás. Esta arquitectura permite seguir sirviendo consultas sin interrupciones durante fallos o tareas de mantenimiento, con la resincronización gestionada automáticamente, lo que elimina la necesidad de imponer un esquema primario-secundario en la capa de datos.
+
+<Info>
+  **ClickHouse Cloud**
+
+  En **ClickHouse Cloud**, la arquitectura introduce un modelo de cómputo shared-nothing en el que un único **segmento se respalda en almacenamiento de objetos**. Esto sustituye la alta disponibilidad tradicional basada en réplicas, lo que permite que el segmento **pueda leerse y escribirse desde varios nodos simultáneamente**. La separación entre almacenamiento y cómputo permite un escalado elástico sin necesidad de gestionar réplicas explícitamente.
+</Info>
+
+En resumen:
+
+* **Elastic**: Los segmentos son estructuras físicas de Lucene vinculadas a la memoria de la JVM. Un exceso de segmentación introduce penalizaciones de rendimiento. La replicación es síncrona y está coordinada por un nodo maestro.
+* **ClickHouse**: Los segmentos son lógicos y escalables verticalmente, con una ejecución local muy eficiente. La replicación es asíncrona (aunque puede ser secuencial), y la coordinación es ligera.
+
+En última instancia, ClickHouse prioriza la simplicidad y el rendimiento a escala al minimizar la necesidad de ajustar los segmentos, sin dejar de ofrecer sólidas garantías de consistencia cuando se necesitan.
+
+<div id="deduplication-and-routing">
+  ### Deduplicación y enrutamiento
+</div>
+
+Elasticsearch elimina documentos duplicados en función de su `_id` y los enruta a los segmentos correspondientes. ClickHouse no almacena un identificador de fila predeterminado, pero admite la **deduplicación durante la inserción**, lo que permite a los usuarios reintentar inserciones fallidas de forma segura. Para un mayor control, `ReplacingMergeTree` y otros motores de tabla permiten la deduplicación por columnas específicas.
+
+El enrutamiento de índices en Elasticsearch garantiza que determinados documentos siempre se enruten a segmentos específicos. En ClickHouse, puede definir **claves de segmento** o usar tablas `Distributed` para lograr una localidad de datos similar.
+
+<div id="aggregations-execution-model">
+  ### Agregaciones y modelo de ejecución
+</div>
+
+Aunque ambos sistemas admiten la agregación de datos, ClickHouse ofrece [muchas más funciones](/es/reference/functions/aggregate-functions/reference-index), incluidas funciones estadísticas, aproximadas y analíticas especializadas.
+
+En los casos de uso de observabilidad, una de las aplicaciones más comunes de las agregaciones es contar con qué frecuencia se producen mensajes de log o eventos específicos (y generar una alerta si esa frecuencia es inusual).
+
+El equivalente en Elasticsearch a una consulta SQL de ClickHouse `SELECT count(*) FROM ... GROUP BY ...` es la [agregación de términos](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html), que es una [agregación de buckets](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket.html) de Elasticsearch.
+
+El `GROUP BY` de ClickHouse con `count(*)` y la agregación de términos de Elasticsearch suelen ser equivalentes en funcionalidad, pero difieren mucho en su implementación, rendimiento y calidad de resultados.
+
+En Elasticsearch, esta agregación [estima los resultados en consultas &quot;top-N&quot;](https://www.elastic.co/docs/reference/aggregations/search-aggregations-bucket-terms-aggregation#terms-agg-doc-count-error) (por ejemplo, los 10 hosts principales por recuento) cuando los datos consultados abarcan múltiples segmentos. Esta estimación mejora la velocidad, pero puede comprometer la precisión. Puede reducir este error [inspeccionando `doc_count_error_upper_bound`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#terms-agg-doc-count-error) y aumentando el parámetro `shard_size`, a costa de un mayor uso de memoria y un peor rendimiento de la consulta.
+
+Elasticsearch también requiere un [ajuste `size`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-terms-aggregation.html#search-aggregations-bucket-terms-aggregation-size) para todas las agregaciones en buckets: no hay forma de devolver todos los grupos únicos sin establecer explícitamente un límite. Las agregaciones de alta cardinalidad corren el riesgo de alcanzar los [límites de `max_buckets`](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-settings.html#search-settings-max-buckets) o requieren paginación con una [agregación compuesta](https://www.elastic.co/docs/reference/aggregations/bucket/composite-aggregation), lo que suele ser complejo e ineficiente.
+
+ClickHouse, en cambio, realiza agregaciones exactas de forma predeterminada. Funciones como `count(*)` devuelven resultados precisos sin necesidad de ajustar la configuración, lo que hace que el comportamiento de las consultas sea más simple y predecible.
+
+ClickHouse no impone límites de tamaño. Puede realizar consultas de agrupación sin límites sobre grandes conjuntos de datos. Si se superan los umbrales de memoria, ClickHouse [puede volcar datos a disco](/es/reference/statements/select/group-by#group-by-in-external-memory). Las agregaciones que agrupan por un prefijo de la clave primaria son especialmente eficientes y a menudo se ejecutan con un consumo de memoria mínimo.
+
+<div id="execution-model">
+  #### Modelo de ejecución
+</div>
+
+Las diferencias anteriores pueden atribuirse a los modelos de ejecución de Elasticsearch y ClickHouse, que adoptan enfoques fundamentalmente distintos para la ejecución de consultas y el paralelismo.
+
+ClickHouse se diseñó para maximizar la eficiencia en hardware moderno. De forma predeterminada, ClickHouse ejecuta una consulta SQL con N vías de ejecución concurrentes en una máquina con N núcleos de CPU:
+
+<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="Ejecución de ClickHouse" size="lg" />
+
+En un solo nodo, las vías de ejecución dividen los datos en rangos independientes, lo que permite el procesamiento concurrente en varios hilos de CPU. Esto incluye filtrado, agregación y ordenación. Los resultados locales de cada vía acaban fusionándose, y se aplica un operador de límite en caso de que la consulta incluya una cláusula `LIMIT`.
+
+La ejecución de consultas se paraleliza aún más mediante:
+
+1. **Vectorización SIMD**: las operaciones sobre datos columnares utilizan [instrucciones SIMD de CPU](https://en.wikipedia.org/wiki/Single_instruction,_multiple_data) (p. ej., [AVX512](https://en.wikipedia.org/wiki/AVX-512)), lo que permite procesar valores por lotes.
+2. **Paralelismo a nivel de clúster**: en configuraciones distribuidas, cada nodo realiza el procesamiento de consultas localmente. Los [estados parciales de agregación](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states#working-with-aggregation-states) se transmiten al nodo que inicia la consulta y se fusionan. Si las claves de `GROUP BY` de la consulta están alineadas con las claves de sharding, la fusión puede [reducirse al mínimo o evitarse por completo](/es/reference/settings/session-settings#distributed_group_by_no_merge).
+
+<br />
+
+Este modelo permite escalar de forma eficiente entre núcleos y nodos, lo que hace que ClickHouse sea muy adecuado para análisis a gran escala. El uso de *estados parciales de agregación* permite fusionar resultados intermedios de distintos hilos y nodos sin pérdida de precisión.
+
+Elasticsearch, por el contrario, asigna un hilo por segmento para la mayoría de las agregaciones, independientemente de cuántos núcleos de CPU haya disponibles. Estos hilos devuelven resultados top-N locales por segmento, que se fusionan en el nodo coordinador. Este enfoque puede infrautilizar los recursos del sistema e introducir posibles imprecisiones en las agregaciones globales, especialmente cuando los términos frecuentes se distribuyen entre varios segmentos. La precisión puede mejorarse aumentando el parámetro `shard_size`, pero esto tiene el coste de un mayor uso de memoria y una mayor latencia de consulta.
+
+<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Ejecución de Elasticsearch" size="lg" />
+
+En resumen, ClickHouse ejecuta agregaciones y consultas con un paralelismo más granular y un mayor control sobre los recursos de hardware, mientras que Elasticsearch se basa en una ejecución por segmentos con restricciones más rígidas.
+
+Para obtener más detalles sobre la mecánica de las agregaciones en estas tecnologías, recomendamos la entrada del blog [&quot;ClickHouse vs. Elasticsearch: la mecánica de las agregaciones de conteo&quot;](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#elasticsearch).
+
+<div id="data-management">
+  ### Gestión de datos
+</div>
+
+Elasticsearch y ClickHouse adoptan enfoques fundamentalmente distintos para gestionar los datos de observabilidad de series temporales, especialmente en lo que respecta a la retención de datos, la rotación y el almacenamiento por niveles.
+
+<div id="lifecycle-vs-ttl">
+  #### Gestión del ciclo de vida de índices vs. TTL nativo
+</div>
+
+En Elasticsearch, la gestión de datos a largo plazo se realiza mediante **Index Lifecycle Management (ILM)** y **Data Streams**. Estas funciones permiten definir políticas que determinan cuándo se renuevan los índices (p. ej., al alcanzar un determinado tamaño o antigüedad), cuándo los índices más antiguos se trasladan a almacenamiento de menor coste (p. ej., niveles warm o cold) y cuándo, por último, se eliminan. Esto es necesario porque Elasticsearch **no admite re-segmentación** y los segmentos no pueden crecer indefinidamente sin degradar el rendimiento. Para controlar el tamaño de los segmentos y permitir una eliminación eficiente, es necesario crear periódicamente índices nuevos y eliminar los antiguos; en la práctica, esto implica rotar los datos a nivel de índice.
+
+ClickHouse adopta un enfoque distinto. Normalmente, los datos se almacenan en una **sola tabla** y se gestionan mediante **expresiones TTL (time-to-live)** a nivel de columna o partición. Los datos pueden **particionarse por fecha**, lo que permite eliminarlos de forma eficiente sin necesidad de crear tablas nuevas ni de renovar índices. A medida que los datos envejecen y cumplen la condición de TTL, ClickHouse los elimina automáticamente; no se requiere infraestructura adicional para gestionar esta rotación.
+
+<div id="storage-tiers">
+  #### Niveles de almacenamiento y arquitecturas hot-warm
+</div>
+
+Elasticsearch admite arquitecturas de almacenamiento **hot-warm-cold-frozen**, en las que los datos se mueven entre niveles de almacenamiento con distintas características de rendimiento. Esto suele configurarse mediante ILM y asociarse a los roles de nodo del clúster.
+
+ClickHouse admite **almacenamiento por niveles** mediante motores de tabla nativos como `MergeTree`, que pueden mover automáticamente los datos más antiguos entre distintos **volúmenes** (por ejemplo, de SSD a HDD y a almacenamiento de objetos) según reglas personalizadas. Esto puede reproducir el enfoque hot-warm-cold de Elastic, pero sin la complejidad de gestionar múltiples roles de nodo o clústeres.
+
+<Info>
+  **ClickHouse Cloud**
+
+  En **ClickHouse Cloud**, esto es aún más transparente: todos los datos se almacenan en **almacenamiento de objetos (p. ej., S3)**, y el cómputo está desacoplado. Los datos pueden permanecer en el almacenamiento de objetos hasta que se consultan; en ese momento, se recuperan y se almacenan en caché localmente (o en una caché distribuida), lo que ofrece el mismo perfil de coste que el nivel frozen de Elastic, con mejores características de rendimiento. Este enfoque significa que no es necesario mover datos entre niveles de almacenamiento, por lo que las arquitecturas hot-warm se vuelven redundantes.
+</Info>
+
+<div id="rollups-vs-incremental-aggregates">
+  ### Rollups vs agregaciones incrementales
+</div>
+
+En Elasticsearch, los **rollups** o las **agregaciones** se consiguen mediante un mecanismo llamado [**transforms**](https://www.elastic.co/guide/en/elasticsearch/reference/current/transforms.html). Se utilizan para resumir datos de series temporales en intervalos fijos (p. ej., por hora o por día) mediante un modelo de **ventana deslizante**. Se configuran como tareas recurrentes en segundo plano que agregan datos de un índice y escriben los resultados en un **índice de rollup** independiente. Esto ayuda a reducir el coste de las consultas sobre rangos largos al evitar escaneos repetidos de datos sin procesar con alta cardinalidad.
+
+El siguiente diagrama muestra de forma abstracta cómo funcionan los transforms (ten en cuenta que usamos el color azul para todos los documentos que pertenecen al mismo bucket para el que queremos precalcular valores agregados):
+
+<Image img="/images/use-cases/observability/es-transforms.webp" alt="Transforms de Elasticsearch" size="lg" />
+
+Los transforms continuos usan [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) basados en un intervalo de comprobación configurable (la [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) del transform, con un valor predeterminado de 1 minuto). En el diagrama anterior, asumimos que ① se crea un nuevo checkpoint después de que haya transcurrido el intervalo de comprobación. Entonces, Elasticsearch comprueba si hay cambios en el índice de origen de los transforms y detecta tres nuevos documentos `blue` (11, 12 y 13) que existen desde el checkpoint anterior. Por lo tanto, el índice de origen se filtra para incluir todos los documentos `blue` existentes y, con una [agregación compuesta](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (para aprovechar la [paginación](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) de resultados), se recalculan los valores agregados (y el índice de destino se actualiza con un documento que sustituye al que contenía los valores de agregación anteriores). Del mismo modo, en ② y ③, se procesan nuevos checkpoints comprobando si hay cambios y recalculando los valores agregados a partir de todos los documentos existentes que pertenecen al mismo bucket `blue`.
+
+ClickHouse adopta un enfoque fundamentalmente distinto. En lugar de volver a agregar los datos periódicamente, ClickHouse admite **vistas materializadas incrementales**, que transforman y agregan los datos **en el momento de la inserción**. Cuando se escriben nuevos datos en una tabla de origen, una vista materializada ejecuta una consulta SQL de agregación predefinida solo sobre los nuevos **bloques insertados** y escribe los resultados agregados en una tabla de destino.
+
+Este modelo es posible gracias al soporte de ClickHouse para [**estados parciales de agregación**](/es/reference/data-types/aggregatefunction), representaciones intermedias de funciones de agregación que pueden almacenarse y fusionarse posteriormente. Esto permite mantener resultados parcialmente agregados que son rápidos de consultar y baratos de actualizar. Dado que la agregación se produce a medida que llegan los datos, no es necesario ejecutar tareas recurrentes costosas ni volver a resumir datos antiguos.
+
+A continuación esbozamos de forma abstracta el funcionamiento de las vistas materializadas incrementales (ten en cuenta que usamos el color azul para todas las filas que pertenecen al mismo grupo para el que queremos precalcular valores agregados):
+
+<Image img="/images/use-cases/observability/ch-mvs.webp" alt="Vistas materializadas de ClickHouse" size="lg" />
+
+En el diagrama anterior, la tabla de origen de la vista materializada ya contiene una parte de datos que almacena algunas filas `blue` (de la 1 a la 10) que pertenecen al mismo grupo. Para este grupo, también existe ya una parte de datos en la tabla de destino de la vista que almacena un [estado parcial de agregación](https://www.youtube.com/watch?v=QDAJTKZT8y4) para el grupo `blue`. Cuando se producen inserciones ① ② ③ en la tabla de origen con nuevas filas, se crea una parte de datos correspondiente en la tabla de origen para cada inserción y, en paralelo, (solo) para cada bloque de filas recién insertadas, se calcula un estado parcial de agregación y se inserta, en forma de parte de datos, en la tabla de destino de la vista materializada. ④ Durante las fusiones de partes en segundo plano, los estados parciales de agregación se fusionan, lo que da como resultado una agregación incremental de datos.
+
+Ten en cuenta que todas las [funciones de agregación](/es/reference/functions/aggregate-functions/reference-index) (más de 90), incluidas sus combinaciones con [combinadores](https://www.youtube.com/watch?v=7ApwD0cfAFI) de funciones de agregación, admiten [estados parciales de agregación](/es/reference/data-types/aggregatefunction).
+
+Para ver un ejemplo más concreto de Elasticsearch frente a ClickHouse para agregaciones incrementales, consulta este [ejemplo](https://github.com/ClickHouse/examples/tree/main/blog-examples/clickhouse-vs-elasticsearch/continuous-data-transformation#continuous-data-transformation-example).
+
+Las ventajas del enfoque de ClickHouse incluyen:
+
+* **Agregados siempre actualizados**: las vistas materializadas siempre están sincronizadas con la tabla de origen.
+* **Sin procesos en segundo plano**: las agregaciones se realizan en el momento de la inserción en lugar de en tiempo de consulta.
+* **Mejor rendimiento en tiempo real**: ideal para cargas de trabajo de observabilidad y análisis en tiempo real en los que se necesitan agregados recientes de inmediato.
+* **Combinables**: las vistas materializadas pueden encadenarse o unirse con otras vistas y tablas para estrategias más complejas de aceleración de consultas.
+* **TTL distintos**: se pueden aplicar configuraciones de TTL diferentes a la tabla de origen y a la tabla de destino de la vista materializada.
+
+Este modelo es especialmente potente para casos de uso de observabilidad en los que necesitas calcular métricas como tasas de error por minuto, latencias o desgloses top-N sin tener que escanear miles de millones de registros sin procesar en cada consulta.
+
+<div id="lakehouse-support">
+  ### Soporte para lakehouse
+</div>
+
+ClickHouse y Elasticsearch adoptan enfoques fundamentalmente distintos para la integración con lakehouse. ClickHouse es un motor completo de ejecución de consultas, capaz de ejecutar consultas sobre formatos de lakehouse como [Iceberg](/es/reference/functions/table-functions/iceberg) y [Delta Lake](/es/reference/functions/table-functions/deltalake), además de integrarse con catálogos de lago de datos como [AWS Glue](/es/guides/use-cases/data-warehousing/glue-catalog) y [Unity catalog](/es/guides/use-cases/data-warehousing/unity-catalog). Estos formatos dependen de la consulta eficiente de archivos [Parquet](/es/reference/formats/Parquet/Parquet), que ClickHouse admite por completo. ClickHouse puede leer directamente tablas de Iceberg y Delta Lake, lo que permite una integración fluida con arquitecturas modernas de lago de datos.
+
+En cambio, Elasticsearch está estrechamente acoplado a su formato de datos interno y a su motor de almacenamiento basado en Lucene. No puede consultar directamente formatos de lakehouse ni archivos Parquet, lo que limita su capacidad para integrarse en arquitecturas modernas de lago de datos. Elasticsearch requiere que los datos se transformen y se carguen en su formato propietario antes de poder consultarse.
+
+Las capacidades de lakehouse de ClickHouse van más allá de la simple lectura de datos:
+
+* **Integración con catálogos de datos**: ClickHouse admite la integración con catálogos de datos como [AWS Glue](/es/guides/use-cases/data-warehousing/glue-catalog), lo que permite descubrir automáticamente tablas en almacenamiento de objetos y acceder a ellas.
+* **Compatibilidad con almacenamiento de objetos**: compatibilidad nativa para consultar datos ubicados en [S3](/es/reference/engines/table-engines/integrations/s3), [GCS](/es/reference/functions/table-functions/gcs) y [Azure Blob Storage](/es/reference/engines/table-engines/integrations/azureBlobStorage) sin necesidad de mover los datos.
+* **Federación de consultas**: capacidad para correlacionar datos de múltiples fuentes, incluidas tablas de lakehouse, bases de datos tradicionales y tablas de ClickHouse, mediante [diccionarios externos](/es/concepts/features/dictionaries/index) y [funciones de tabla](/es/reference/functions/table-functions/index).
+* **Carga incremental**: compatibilidad con la carga continua desde tablas de lakehouse hacia tablas locales [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree), mediante funcionalidades como [S3Queue](/es/reference/engines/table-engines/integrations/s3queue) y [ClickPipes](/es/integrations/clickpipes/home).
+* **Optimización del rendimiento**: ejecución distribuida de consultas sobre datos de lakehouse mediante [funciones de clúster](/es/reference/functions/table-functions/cluster) para mejorar el rendimiento.
+
+Estas capacidades hacen de ClickHouse una opción natural para las organizaciones que adoptan arquitecturas lakehouse, ya que les permiten aprovechar tanto la flexibilidad de los lagos de datos como el rendimiento de una base de datos columnar.

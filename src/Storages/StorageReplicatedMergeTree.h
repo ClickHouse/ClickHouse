@@ -511,7 +511,6 @@ private:
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
-    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;

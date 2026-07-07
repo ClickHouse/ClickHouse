@@ -88,19 +88,7 @@ namespace
 
 /// Settings without path are top-level server settings (no nesting).
 #define LIST_OF_SERVER_SETTINGS_WITHOUT_PATH(DECLARE, ALIAS) \
-    DECLARE(InsertDeduplicationVersions, insert_deduplication_version, InsertDeduplicationVersions::NEW_UNIFIED_HASHES, R"(
-This setting makes it possible to migrate from the code version which makes insert deduplication for sync and async inserts totally different not transparent way to the code version where inserted data would be deduplicated across sync and async inserts.
-The value `old_separate_hashes` means that ClickHouse will use different deduplication hashes for sync and async inserts (the same as before).
-This value preserves the legacy pre-migration behavior, for instances that intentionally have not started the migration; it is no longer the recommended default.
-The value `compatible_double_hashes` means that ClickHouse will use two deduplication hashes: the old one for sync or async inserts and another the new one for all inserts. This value should be used to migrate existing instances to the new behavior in a safe way.
-This value should be enabled for some time (see replicated_deduplication_window and non_replicated_deduplication_window settings) to make sure that no sync or async inserts are lost during migration.
-Finally the value `new_unified_hash` means that ClickHouse will use the new deduplication hash for sync and async inserts. This value could be enabled on new instances of ClickHouse or on instances which already used `compatible_double_hashes` value for some time.
-With `new_unified_hash`, the deduplication hash covers the whole inserted block, so an insert is deduplicated only when its entire data matches a previous insert (a retry), not per individual partition.
-Under `new_unified_hash` async inserts also use the unified hash and share the sync deduplication window (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`); the `*_for_async_inserts` window settings apply only to the legacy `old_separate_hashes` / `compatible_double_hashes` path.
-The default was `compatible_double_hashes` for one phase of the migration and is now `new_unified_hash`, which completes the migration in a safe way in two phases.
-Instances upgraded directly from `old_separate_hashes` should run with `compatible_double_hashes` until the longest relevant deduplication window has elapsed (the sync window `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, the async window `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts` which defaults to one week if async inserts are used, and `non_replicated_deduplication_window`) before relying on the unified hash. Otherwise pre-upgrade ids still held in the old `blocks` / `async_blocks` directories are not seen by the unified hash and their retries can be accepted as new inserts, producing duplicates.
-Async inserts add a caveat at the switch to `new_unified_hash`: under `compatible_double_hashes` their deduplication effectively spans the async window (the `async_blocks` id is kept that long), while `new_unified_hash` consults only `deduplication_hashes` (kept for the sync window), so async inserts older than the sync window can be re-accepted after the switch even after waiting. Before switching async workloads, either raise `replicated_deduplication_window` / `replicated_deduplication_window_seconds` to the async window and run so for a full async window, quiesce async inserts for the async window, or keep `compatible_double_hashes`.
-)", 0) \
+    DECLARE(String, insert_deduplication_version, "new_unified_hash", R"(Deprecated migration guard. This version supports only the unified insert deduplication hash (`new_unified_hash`); the server refuses to start if this setting is present with any other value (such as `old_separate_hashes` or `compatible_double_hashes`). Complete the deduplication migration on the previous version before upgrading by running `compatible_double_hashes` (which writes both the legacy and unified hashes). For replicated tables run it for at least `replicated_deduplication_window_seconds` (one hour by default); the default windows retain the unified hashes of all inserts for that window, which is considered enough to cover an insert retry loop. For non-replicated tables with `non_replicated_deduplication_window` > 0 the window is count-based rather than time-based, so run `compatible_double_hashes` for at least that many inserts before upgrading.)", 0) \
     DECLARE(UInt64, dictionary_background_reconnect_interval, 1000, "Interval in milliseconds for reconnection attempts of failed MySQL and Postgres dictionaries having `background_reconnect` enabled.", 0) \
     DECLARE(Bool, show_addresses_in_stack_traces, true, R"(If it is set true will show addresses in stack traces)", 0) \
     DECLARE(Bool, shutdown_wait_unfinished_queries, false, R"(If set true ClickHouse will wait for running queries finish before shutdown.)", 0) \
@@ -480,6 +468,7 @@ A value of `0` means "never". The default value corresponds to 1 day.
     DECLARE(UInt64, database_catalog_drop_table_concurrency, 16, R"(The size of the threadpool used for dropping tables.)", 0) \
     \
     \
+    DECLARE(UInt64, max_remote_read_connections, 1000, R"(Maximum number of open remote read connections kept alive by `ReaderExecutor` for sequential read optimization. 0 disables connection reuse.)", EXPERIMENTAL) \
     DECLARE(UInt64, max_concurrent_queries, 0, R"(
 Limit on total number of concurrently executed queries. Note that limits on `INSERT` and `SELECT` queries, and on the maximum number of queries for users must also be considered.
 
@@ -1417,6 +1406,31 @@ Changing this value calls `prof.reset` which resets all accumulated profiling st
 \
     DECLARE(UInt64, s3_max_redirects, S3::DEFAULT_MAX_REDIRECTS, R"(Max number of S3 redirects hops allowed.)", 0) \
     DECLARE(UInt64, s3_retry_attempts, S3::DEFAULT_RETRY_ATTEMPTS, R"(Setting for Aws::Client::RetryStrategy, Aws::Client does retries itself, 0 means no retries)", 0) \
+    DECLARE(Bool, s3_load_table_anonymously_if_credentials_restricted, true, R"(
+Controls what happens when a persistent `S3` or `S3Queue` table, a dynamic `disk(type = s3, ...)`, or a
+`DataLakeCatalog` (Glue, BigLake) database is loaded from existing metadata (server startup or `RESTORE`) and
+its definition would resolve the server's own (ambient) S3/cloud credentials that are blocked for user
+queries by `s3_allow_server_credentials_in_user_queries`.
+
+When enabled (the default), the object is loaded without those credentials instead of aborting startup: an
+`S3`/`S3Queue` table or a dynamic S3 disk is built with an anonymous S3 client, and a `DataLakeCatalog`
+database is left with an unavailable catalog. The server starts, but the object is inaccessible (its requests
+to a private bucket are denied, or the catalog reports a clear error) until its credentials resolve to a
+permitted source again. It never silently regains the server's identity. This keeps a single such object —
+for example one created in an older version before the restriction existed, or one whose named collection was
+later re-bound to `use_environment_credentials = 1` — from aborting server startup.
+
+When disabled, loading such an object instead fails, which can prevent the server from starting. Use this only
+if you prefer a hard failure over a silently inaccessible table, disk, or catalog database.
+)", 0) \
+    DECLARE(Bool, s3_allow_server_credentials_for_system_table_disks, false, R"(
+Allows a dynamic `disk(type = s3, ...)` of a table in the `system` database to use the server's own (ambient)
+S3 credentials, exempting it from the `s3_allow_server_credentials_in_user_queries` restriction. This is for
+server-internal infrastructure that ships system tables to S3 with the server's identity (attached by the
+cloud operator into the `system` database). Unlike the session setting, it is a server-level setting, so the
+exemption also applies when the table is reloaded from metadata on restart. It is scoped to the `system`
+database, which ordinary users cannot create tables in, so it does not relax the restriction for user queries.
+)", 0) \
     DECLARE(Int32, os_threads_nice_value_merge_mutate, 0, R"(
 Linux nice value for merge and mutation threads. Lower values mean higher CPU priority.
 

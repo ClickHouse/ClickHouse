@@ -1,0 +1,169 @@
+---
+description: 'Permite executar consultas `SELECT` e `INSERT` em dados armazenados
+  em um servidor PostgreSQL remoto.'
+sidebarTitle: 'postgresql'
+slug: /sql-reference/table-functions/postgresql
+title: 'postgresql'
+doc_type: 'reference'
+---
+
+Permite executar consultas `SELECT` e `INSERT` em dados armazenados em um servidor PostgreSQL remoto.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+```sql
+postgresql({host:port, database, table, user, password[, schema, [, on_conflict]] | named_collection[, option=value [,..]]})
+```
+
+<div id="arguments">
+  ## Argumentos
+</div>
+
+| Argumento     | Descrição                                                                          |
+| ------------- | ---------------------------------------------------------------------------------- |
+| `host:port`   | Endereço do servidor PostgreSQL.                                                   |
+| `database`    | Nome do banco de dados remoto.                                                     |
+| `table`       | Nome da tabela remota.                                                             |
+| `user`        | Usuário do PostgreSQL.                                                             |
+| `password`    | Senha do usuário.                                                                  |
+| `schema`      | Esquema não padrão da tabela. Opcional.                                            |
+| `on_conflict` | Estratégia de resolução de conflitos. Exemplo: `ON CONFLICT DO NOTHING`. Opcional. |
+
+Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, `host` e `port` devem ser especificados separadamente. Essa abordagem é recomendada para ambientes de produção.
+
+<div id="returned_value">
+  ## Valor retornado
+</div>
+
+Um objeto de tabela com as mesmas colunas da tabela PostgreSQL original.
+
+<Note>
+  Na consulta `INSERT`, para diferenciar a função de tabela `postgresql(...)` do nome da tabela com uma lista de nomes de colunas, você deve usar as palavras-chave `FUNCTION` ou `TABLE FUNCTION`. Veja os exemplos abaixo.
+</Note>
+
+<div id="implementation-details">
+  ## Detalhes de implementação
+</div>
+
+As consultas `SELECT` no PostgreSQL são executadas como `COPY (SELECT ...) TO STDOUT` dentro de uma transação PostgreSQL somente leitura, com commit após cada consulta `SELECT`.
+
+Cláusulas `WHERE` simples, como `=`, `!=`, `>`, `>=`, `<`, `<=` e `IN`, são executadas no servidor PostgreSQL.
+
+Todas as junções, agregações, ordenação, condições `IN [ array ]` e a restrição de amostragem `LIMIT` são executadas no ClickHouse somente após o término da consulta ao PostgreSQL.
+
+As consultas `INSERT` no PostgreSQL são executadas como `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` dentro de uma transação PostgreSQL, com commit automático após cada instrução `INSERT`.
+
+Tipos Array do PostgreSQL são convertidos em arrays do ClickHouse.
+
+<Note>
+  Atenção: no PostgreSQL, uma coluna do tipo array, como Integer[], pode conter arrays com dimensões diferentes em linhas distintas, mas no ClickHouse só é permitido ter arrays multidimensionais com a mesma dimensão em todas as linhas.
+</Note>
+
+Há suporte a várias réplicas, que devem ser listadas com `|`. Por exemplo:
+
+```sql
+SELECT name FROM postgresql(`postgres{1|2|3}:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+ou
+
+```sql
+SELECT name FROM postgresql(`postgres1:5431|postgres2:5432`, 'postgres_database', 'postgres_table', 'user', 'password');
+```
+
+Suporta prioridade de réplicas para a fonte do dicionário PostgreSQL. Quanto maior o número no map, menor a prioridade. A prioridade mais alta é `0`.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Tabela no PostgreSQL:
+
+```text
+postgres=# CREATE TABLE "public"."test" (
+"int_id" SERIAL,
+"int_nullable" INT NULL DEFAULT NULL,
+"float" FLOAT NOT NULL,
+"str" VARCHAR(100) NOT NULL DEFAULT '',
+"float_nullable" FLOAT NULL DEFAULT NULL,
+PRIMARY KEY (int_id));
+
+CREATE TABLE
+
+postgres=# INSERT INTO test (int_id, str, "float") VALUES (1,'test',2);
+INSERT 0 1
+
+postgresql> SELECT * FROM test;
+  int_id | int_nullable | float | str  | float_nullable
+ --------+--------------+-------+------+----------------
+       1 |              |     2 | test |
+(1 row)
+```
+
+Selecionando dados do ClickHouse com argumentos simples:
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password') WHERE str IN ('test');
+```
+
+Ou usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections):
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+        host = 'localhost',
+        port = 5432,
+        database = 'test',
+        user = 'postgresql_user',
+        password = 'password';
+SELECT * FROM postgresql(mypg, table='test') WHERE str IN ('test');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+Inserção:
+
+```sql
+INSERT INTO TABLE FUNCTION postgresql('localhost:5432', 'test', 'test', 'postgrsql_user', 'password') (int_id, float) VALUES (2, 3);
+SELECT * FROM postgresql('localhost:5432', 'test', 'test', 'postgresql_user', 'password');
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─str──┬─float_nullable─┐
+│      1 │         ᴺᵁᴸᴸ │     2 │ test │           ᴺᵁᴸᴸ │
+│      2 │         ᴺᵁᴸᴸ │     3 │      │           ᴺᵁᴸᴸ │
+└────────┴──────────────┴───────┴──────┴────────────────┘
+```
+
+Usando um esquema diferente do padrão:
+
+```text
+postgres=# CREATE SCHEMA "nice.schema";
+
+postgres=# CREATE TABLE "nice.schema"."nice.table" (a integer);
+
+postgres=# INSERT INTO "nice.schema"."nice.table" SELECT i FROM generate_series(0, 99) as t(i)
+```
+
+```sql
+CREATE TABLE pg_table_schema_with_dots (a UInt32)
+        ENGINE PostgreSQL('localhost:5432', 'clickhouse', 'nice.table', 'postgrsql_user', 'password', 'nice.schema');
+```
+
+<div id="related">
+  ## Veja também
+</div>
+
+* [O motor de tabela PostgreSQL](/pt-BR/reference/engines/table-engines/integrations/postgresql)
+* [Usando o PostgreSQL como fonte de dicionário](/pt-BR/reference/statements/create/dictionary/sources/postgresql)
+
+<div id="replicating-or-migrating-postgres-data-with-peerdb">
+  ### Replicando ou migrando dados do Postgres com o PeerDB
+</div>
+
+> Além das funções de tabela, você sempre pode usar o [PeerDB](https://docs.peerdb.io/introduction), da ClickHouse, para configurar um pipeline contínuo de dados do Postgres para o ClickHouse. O PeerDB é uma ferramenta projetada especificamente para replicar dados do Postgres para o ClickHouse usando CDC (captura de alterações de dados).
