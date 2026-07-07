@@ -260,7 +260,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             break;
         }
         case Type::RELOAD_DICTIONARY:
-        case Type::RELOAD_MODEL:
         case Type::RELOAD_FUNCTION:
         case Type::RESTART_DISK:
         case Type::WAIT_BLOBS_CLEANUP:
@@ -270,11 +269,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
             {
                 ostr << ' ';
                 print_database_table();
-            }
-            else if (!target_model.empty())
-            {
-                ostr << ' ';
-                print_identifier(target_model);
             }
             else if (!target_function.empty())
             {
@@ -617,7 +611,6 @@ void ASTSystemQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         case Type::REPLICA_UNREADY: /// Obsolete
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
-        case Type::RELOAD_MODELS:
         case Type::RELOAD_FUNCTIONS:
         case Type::RELOAD_CONFIG:
         case Type::RELOAD_USERS:
