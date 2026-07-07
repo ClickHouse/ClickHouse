@@ -7,7 +7,25 @@ namespace
 {
 
 struct Log10Name { static constexpr auto name = "log10"; };
+
+#if USE_FASTOPS
+struct Log10Fast
+{
+    static constexpr auto name = Log10Name::name;
+    static void fast(const double * src, size_t size, double * dst)
+    {
+        static constexpr double inv_ln10 = 0.43429448190325182765112891891660508;
+        fastNaturalLogScaled(src, size, dst, inv_ln10);
+    }
+};
+struct FunctionLog10
+{
+    static constexpr auto name = Log10Name::name;
+    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<Log10Name, Log10Fast, log10>(context); }
+};
+#else
 using FunctionLog10 = FunctionMathUnary<UnaryFunctionVectorized<Log10Name, log10>>;
+#endif
 
 }
 

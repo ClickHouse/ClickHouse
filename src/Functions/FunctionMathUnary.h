@@ -27,6 +27,9 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
+/// Defined in FunctionMathUnary.cpp; reads the `fast_float_math` setting from the query context.
+bool fastFloatMathEnabled(const ContextPtr & context);
+
 
 template <typename Impl>
 class FunctionMathUnary final : public IFunction
@@ -190,5 +193,56 @@ struct UnaryFunctionVectorized
         *dst = Function(static_cast<Float64>(*src));
     }
 };
+
+
+#if USE_FASTOPS
+
+/// Vectorized (FastOps) unary math impl, selected at create time when `fast_float_math` is enabled.
+/// `Ops` must provide `static constexpr auto name` and `static void fast(const double *, size_t, double *)`.
+/// Always returns Float64, matching the historical behavior of these functions.
+template <typename Ops>
+struct FastMathUnaryImpl
+{
+    static constexpr auto name = Ops::name;
+    static constexpr auto rows_per_iteration = 0;
+    static constexpr bool always_returns_float64 = true;
+
+    template <typename T>
+    static void execute(const T * __restrict src, size_t size, Float64 * __restrict dst)
+    {
+        if constexpr (std::is_same_v<T, Float64>)
+        {
+            Ops::fast(src, size, dst);
+        }
+        else
+        {
+            /// FastOps operates on Float64 in place; promote the input first. Integer inputs
+            /// already arrive as Float64, so this only runs for Float32/BFloat16 columns.
+            for (size_t i = 0; i < size; ++i)
+                dst[i] = static_cast<Float64>(src[i]);
+            Ops::fast(dst, size, dst);
+        }
+    }
+};
+
+/// log_b(x) = ln(x) / ln(b). `NFastOps::Log` handles all special values (0 -> -inf,
+/// negatives -> NaN, +inf -> +inf), which the finite scale factor preserves.
+inline void fastNaturalLogScaled(const double * src, size_t size, double * dst, double inv_ln_base)
+{
+    NFastOps::Log<true>(src, size, dst);
+    for (size_t i = 0; i < size; ++i)
+        dst[i] *= inv_ln_base;
+}
+
+/// Precise scalar libm by default; the FastOps `FastOps` path when `fast_float_math` is enabled.
+template <typename Name, typename FastOps, Float64(Precise)(Float64)>
+FunctionPtr createGatedMathUnary(ContextPtr context)
+{
+    if (fastFloatMathEnabled(context))
+        return FunctionMathUnary<FastMathUnaryImpl<FastOps>>::create(context);
+    return FunctionMathUnary<UnaryFunctionVectorized<Name, Precise>>::create(context);
+}
+
+#endif
 
 }

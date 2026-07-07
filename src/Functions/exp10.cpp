@@ -8,7 +8,21 @@ namespace
 {
 
 struct Exp10Name { static constexpr auto name = "exp10"; };
+
+#if USE_FASTOPS
+struct Exp10Fast
+{
+    static constexpr auto name = Exp10Name::name;
+    static void fast(const double * src, size_t size, double * dst) { NFastOps::Exp10<true>(src, size, dst); }
+};
+struct FunctionExp10
+{
+    static constexpr auto name = Exp10Name::name;
+    static FunctionPtr create(ContextPtr context) { return createGatedMathUnary<Exp10Name, Exp10Fast, preciseExp10>(context); }
+};
+#else
 using FunctionExp10 = FunctionMathUnary<UnaryFunctionVectorized<Exp10Name, preciseExp10>>;
+#endif
 
 }
 

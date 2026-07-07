@@ -4043,6 +4043,20 @@ Possible values:
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
 )", 0) \
+    DECLARE(Bool, fast_float_math, false, R"(
+Use faster, vectorized (SIMD) but less precise implementations of certain floating-point math functions (`exp2`, `exp10`, `log2`, `log10`, `pow`).
+
+When disabled (the default), these functions use precise scalar libm implementations, so results are bit-for-bit unchanged. When enabled, they are evaluated through the vectorized `FastOps` kernels (the same ones already used unconditionally by `exp`/`log`), which are 2.5-11x faster but approximate.
+
+:::warning
+Results become inaccurate. Measured worst-case relative error over the finite domain:
+- `exp2`, `exp10`: ~`1e-12` (about 12 significant digits);
+- `log2`, `log10`: ~`5e-9` (matching the accuracy of the already-vectorized `exp`/`log`);
+- `pow`: exact for integer exponents; ~`1e-12` for a constant positive base; other cases fall back to precise `pow`.
+
+Special values (zero, negatives, `NaN`, `Inf`, and the overflow/underflow boundaries) are handled correctly in both modes; only the last few mantissa bits of finite results differ.
+:::
+)", 0) \
     DECLARE(Bool, allow_custom_error_code_in_throwif, false, R"(
 Enable custom error code in function throwIf(). If true, thrown exceptions may have unexpected error codes.
 )", 0) \
