@@ -775,10 +775,11 @@ private:
 
     /// Bring the plan up to date for serving at `position_phys`: collect an in-flight
     /// machine sitting at the consumed plan end, then (re)plan once the plan is fully consumed
-    /// (cursor before `plan_start`, or at `plan_end` with the plan not already running to EOF).
+    /// (the position before `plan_start`, or at `plan_end` with the plan not already running
+    /// to EOF).
     /// Never replans while a machine is in flight - that would re-probe residency and could see
     /// the worker's just-fetched gap as resident.
-    void prepareCursor(size_t position_phys);
+    void preparePlan(size_t position_phys);
 
     /// The shared post-serve tail of `readNextWindow`: account the served window, net out the
     /// over-read, drop the fill pin at EOF, launch the next read-ahead, and decrypt. Returns

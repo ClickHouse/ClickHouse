@@ -402,7 +402,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         /// window through the normal serve; the next call finds no machine and returns empty.
         if (machine)
         {
-            prepareCursor(position_phys);
+            preparePlan(position_phys);
             return finishWindow(serveWindow(position_phys));
         }
 
@@ -413,13 +413,13 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    /// Not at EOF, so the position's window is served below. `prepareCursor` no-ops at the extent
+    /// Not at EOF, so the position's window is served below. `preparePlan` no-ops at the extent
     /// (`atExtent()`), where `serveWindow` then returns empty - the correct EOF for this extent.
-    prepareCursor(position_phys);
+    preparePlan(position_phys);
     return finishWindow(serveWindow(position_phys));
 }
 
-void ReaderExecutor::prepareCursor(size_t position_phys)
+void ReaderExecutor::preparePlan(size_t position_phys)
 {
     /// At the read extent there is nothing left to (re)plan: `boundedPlanSpan` clamps to the
     /// extent, so a replan would only build an empty plan (and needlessly reset the in-flight
@@ -2716,7 +2716,7 @@ ChainedBuffers ReaderExecutor::serveFromDisplay(ByteRange window)
 ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
 {
     /// Nothing to serve: the read extent is exhausted (`readCeiling() == 0`) or the plan is
-    /// empty. `prepareCursor` is the sole scheduler - it (re)plans before every serve when the
+    /// empty. `preparePlan` is the sole scheduler - it (re)plans before every serve when the
     /// position outruns the plan, so there is no reschedule to do here; an empty result is EOF
     /// for this extent.
     if (readCeiling() == 0 || !read_plan.geometry() || read_plan.schedule.serve_runs.empty())

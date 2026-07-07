@@ -72,7 +72,7 @@ public:
     ChainedBuffers serveWindowAt(size_t logical_pos)
     {
         const size_t phys = logical_pos + ex.data_start_offset;
-        ex.prepareCursor(phys);
+        ex.preparePlan(phys);
         return ex.serveWindow(phys);
     }
 
