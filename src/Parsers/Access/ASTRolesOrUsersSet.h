@@ -33,6 +33,11 @@ public:
     String getID(char) const override { return "RolesOrUsersSet"; }
     ASTPtr clone() const override { return make_intrusive<ASTRolesOrUsersSet>(*this); }
 
+    /// The distinguishing state (`all`, the role/user names, `CURRENT_USER`, and the `EXCEPT` list)
+    /// is kept in plain members outside `children`, so `getTreeHash` would otherwise ignore it and
+    /// treat e.g. `SHOW GRANTS FOR a` and `SHOW GRANTS FOR b` as equal. Fold it into the hash.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
