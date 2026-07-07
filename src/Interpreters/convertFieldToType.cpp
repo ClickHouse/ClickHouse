@@ -32,6 +32,8 @@
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/DateLUT.h>
 
+#include <base/wide_integer_to_string.h>
+
 
 namespace DB
 {
@@ -198,51 +200,206 @@ Field convertDecimalType(const Field & from, const To & type, bool strict)
     return result;
 }
 
-/// Bounds of the numeric domain for a Field being coerced into a Time or DateTime column
-/// (mirrors MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP in Functions/DateTimeTransforms.h).
+/// Bounds of the numeric domain for a Field being coerced into a temporal column
+/// (mirror MAX_TIME_TIMESTAMP / MAX_DATETIME_TIMESTAMP / MAX_DATETIME64_TIMESTAMP in
+/// Functions/DateTimeTransforms.h and the day-number maxima in Common/DateLUTImpl.h).
 constexpr Int64 MAX_TIME_TIMESTAMP_FIELD = 3599999;      /// 999:59:59
 constexpr Int64 MAX_DATETIME_TIMESTAMP_FIELD = 0xFFFFFFFF;
+constexpr Int64 DATE_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_DAY_NUM;               /// 0xFFFF, 2149-06-06
+constexpr Int64 DATE_MAX_TIMESTAMP_FIELD = 0xFFFFFFFF;                       /// MAX_DATETIME_TIMESTAMP
+constexpr Int64 DATE32_DAY_NUM_MAX_FIELD = DATE_LUT_MAX_EXTEND_DAY_NUM;      /// last extended day num
+constexpr Int64 DATE32_MAX_TIMESTAMP_FIELD = 10413791999LL;                  /// MAX_DATETIME64_TIMESTAMP, 2299-12-31
 
-/// Coerce a numeric Field into the seconds domain of a Time or DateTime column, honouring
-/// date_time_overflow_behavior. Numeric casts (toTime / toDateTime / CAST) already respect the
-/// setting in FunctionsConversion.h; the VALUES/INSERT path reaches this function instead, so it
-/// must apply the same rule rather than storing the raw out-of-range value. In `throw` mode an
-/// out-of-range value raises; otherwise it is clamped to [min_bound, max_bound], keeping
-/// `saturate` and `ignore` consistent with the cast path. A clamped value is returned in the
-/// target's canonical Field representation: Int64 for a signed target (Time, min_bound < 0) and
-/// UInt64 for an unsigned one (DateTime). This matches what the column serializer produces on
-/// read-back, so a clamped partition value still compares equal in getPartitionIDFromQuery.
-Field coerceNumericFieldToDateTimeOrTime(
-    const Field & src, Int64 min_bound, Int64 max_bound,
+/// Clamp an in-bounds numeric value to a time_t (mirrors saturateToRange in FunctionsConversion.h):
+/// the value is proven inside [min_bound, max_bound] with accurate comparisons before the narrowing
+/// cast, so it never wraps (unsigned/wide above INT64_MAX) or is undefined (float out of time_t range).
+template <typename T>
+Int64 clampToTimestamp(const T & value, Int64 min_bound, Int64 max_bound)
+{
+    if constexpr (is_floating_point<T>)
+        if (isNaN(value))
+            return min_bound;
+    if (accurate::greaterOp(value, max_bound))
+        return max_bound;
+    if (accurate::lessOp(value, min_bound))
+        return min_bound;
+    return static_cast<Int64>(value);
+}
+
+/// Coerce a single numeric value into the seconds domain of a Time or DateTime column, honouring
+/// date_time_overflow_behavior. In `throw` mode an out-of-range value raises; otherwise it is clamped
+/// to [min_bound, max_bound], keeping `saturate` and `ignore` consistent with the numeric CAST path
+/// (toTime / toDateTime, which respect the setting in FunctionsConversion.h). NaN is treated as below
+/// the range in non-throw modes. The result is returned in the target's canonical Field representation
+/// (Int64 for a signed Time target, UInt64 for an unsigned DateTime target) so a clamped partition value
+/// still compares equal to the serializer's read-back in getPartitionIDFromQuery.
+template <typename T>
+Field coerceNumericValueToDateTimeOrTime(
+    const T & value, Int64 min_bound, Int64 max_bound, bool signed_target,
     FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
 {
-    /// Time and DateTime literals arrive as UInt64 (non-negative) or Int64 (possibly negative).
-    const bool over_max = src.getType() == Field::Types::Int64
-        ? accurate::greaterOp(src.safeGet<Int64>(), max_bound)
-        : accurate::greaterOp(src.safeGet<UInt64>(), max_bound);
-    const bool under_min = src.getType() == Field::Types::Int64
-        && accurate::lessOp(src.safeGet<Int64>(), min_bound);
+    bool is_nan = false;
+    if constexpr (is_floating_point<T>)
+        is_nan = isNaN(value);
 
-    /// A signed target (Time, min_bound < 0) is backed by Int32 and its canonical Field is Int64;
-    /// an unsigned target (DateTime) is backed by UInt32 and its canonical Field is UInt64.
-    const bool signed_target = min_bound < 0;
+    const bool over_max = !is_nan && accurate::greaterOp(value, max_bound);
+    const bool under_min = is_nan || accurate::lessOp(value, min_bound);
 
     if (over_max || under_min)
     {
         if (overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
             throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                "Value {} is out of bounds of type {}", applyVisitor(FieldVisitorToString(), src), type_name);
+                "Value {} is out of bounds of type {}", value, type_name);
 
         /// Saturate / ignore: clamp into the representable range.
         const Int64 clamped = over_max ? max_bound : min_bound;
         return signed_target ? Field(clamped) : Field(static_cast<UInt64>(clamped));
     }
 
-    /// In range: return the value in the target's canonical Field representation so a partition
-    /// value still compares equal to the serializer's read-back in getPartitionIDFromQuery.
-    if (signed_target)
-        return src.getType() == Field::Types::Int64 ? src : Field(static_cast<Int64>(src.safeGet<UInt64>()));
-    return src.getType() == Field::Types::UInt64 ? src : Field(static_cast<UInt64>(src.safeGet<Int64>()));
+    /// In range: return the value in the target's canonical Field representation.
+    const Int64 in_range = clampToTimestamp(value, min_bound, max_bound);
+    return signed_target ? Field(in_range) : Field(static_cast<UInt64>(in_range));
+}
+
+/// Dispatch a numeric Field to coerceNumericValueToDateTimeOrTime for the concrete Field type, covering
+/// the integer, float and wide-integer sources evaluateConstantExpression can produce so the VALUES/IN
+/// coercion path respects date_time_overflow_behavior consistently with numeric CAST for all of them.
+Field coerceNumericFieldToDateTimeOrTime(
+    const Field & src, Int64 min_bound, Int64 max_bound,
+    FormatSettings::DateTimeOverflowBehavior overflow_behavior, const char * type_name)
+{
+    /// A signed target (Time, min_bound < 0) is backed by Int32; an unsigned one (DateTime) by UInt32.
+    const bool signed_target = min_bound < 0;
+    auto run = [&](const auto & value) -> Field
+    {
+        return coerceNumericValueToDateTimeOrTime(value, min_bound, max_bound, signed_target, overflow_behavior, type_name);
+    };
+
+    switch (src.getType())
+    {
+        case Field::Types::UInt64: return run(src.safeGet<UInt64>());
+        case Field::Types::Int64:  return run(src.safeGet<Int64>());
+        case Field::Types::Float64: return run(src.safeGet<Float64>());
+        case Field::Types::UInt128: return run(src.safeGet<UInt128>());
+        case Field::Types::Int128:  return run(src.safeGet<Int128>());
+        case Field::Types::UInt256: return run(src.safeGet<UInt256>());
+        case Field::Types::Int256:  return run(src.safeGet<Int256>());
+        default: return {}; /// non-numeric: let the caller fall through to its existing handling
+    }
+}
+
+/// Coerce a numeric value into a Date day-number Field, honouring date_time_overflow_behavior and
+/// mirroring the numeric CAST path (ToDateTransformFromSecondsOrDays): a value within [0, 0xFFFF] is a
+/// day number, a larger value is a unix timestamp clamped to MAX_DATETIME_TIMESTAMP then converted with
+/// toDayNum. `throw` raises on out-of-range; `saturate`/`ignore` clamp. Date has no valid values below
+/// zero. The result is a UInt64 Field (Date is UInt16 under the hood; UInt64 is its canonical Field).
+template <typename T>
+Field coerceNumericToDateField(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
+{
+    const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
+    auto out_of_bounds = [&]() -> Field
+    {
+        if (throw_mode)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", value);
+        return Field(); /// caller turns Null into 0 / default consistently
+    };
+
+    if constexpr (is_floating_point<T>)
+        if (isNaN(value))
+            return throw_mode ? out_of_bounds() : Field(static_cast<UInt64>(0));
+
+    if (accurate::lessOp(value, 0))
+        return throw_mode ? out_of_bounds() : Field(static_cast<UInt64>(0));
+
+    /// Above the day-number domain: treat as a unix timestamp (matches the CAST "a bit weird" behavior).
+    if (accurate::greaterOp(value, DATE_DAY_NUM_MAX_FIELD))
+    {
+        if (throw_mode && accurate::greaterOp(value, DATE_MAX_TIMESTAMP_FIELD))
+            return out_of_bounds();
+        const Int64 ts = clampToTimestamp(value, 0, DATE_MAX_TIMESTAMP_FIELD);
+        return Field(static_cast<UInt64>(time_zone.toDayNum(ts).toUnderType()));
+    }
+
+    /// In the day-number domain (0 .. 0xFFFF): the value is itself the day number.
+    return Field(static_cast<UInt64>(value));
+}
+
+/// Coerce a numeric value into a Date32 day-number Field, mirroring the numeric CAST path
+/// (ToDate32TransformFromSecondsOrDays): a value within [daynum_min_offset, DATE_LUT_MAX_EXTEND_DAY_NUM)
+/// is a (possibly negative) day number, a larger value is a unix timestamp clamped to
+/// MAX_DATETIME64_TIMESTAMP then converted with toDayNum. `throw` raises on out-of-range;
+/// `saturate`/`ignore` clamp. The result is an Int64 Field (Date32 is Int32 under the hood).
+template <typename T>
+Field coerceNumericToDate32Field(const T & value, const DateLUTImpl & time_zone, FormatSettings::DateTimeOverflowBehavior overflow)
+{
+    const bool throw_mode = overflow == FormatSettings::DateTimeOverflowBehavior::Throw;
+    const Int64 daynum_min_offset = -static_cast<Int64>(DateLUTImpl::getDayNumOffsetEpoch());
+
+    bool is_nan = false;
+    if constexpr (is_floating_point<T>)
+        is_nan = isNaN(value);
+
+    if (is_nan || accurate::lessOp(value, daynum_min_offset))
+    {
+        if (throw_mode)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);
+        return Field(static_cast<Int64>(daynum_min_offset));
+    }
+
+    /// Above the extended day-number domain: treat as a unix timestamp.
+    if (accurate::greaterOp(value, DATE32_DAY_NUM_MAX_FIELD - 1))
+    {
+        if (throw_mode && accurate::greaterOp(value, DATE32_MAX_TIMESTAMP_FIELD))
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Date32", value);
+        const Int64 ts = clampToTimestamp(value, 0, DATE32_MAX_TIMESTAMP_FIELD);
+        return Field(static_cast<Int64>(time_zone.toDayNum(ts).toUnderType()));
+    }
+
+    /// In the extended day-number domain: the value is itself the (signed) day number.
+    return Field(static_cast<Int64>(value));
+}
+
+/// Dispatch a numeric Field to coerceNumericToDate/coerceNumericToDate32 for the concrete Field type.
+/// Handles the integer, float and wide-integer sources evaluateConstantExpression can produce so the
+/// VALUES/IN coercion path respects date_time_overflow_behavior consistently with numeric CAST.
+Field coerceNumericFieldToDateOrDate32(const Field & src, bool is_date32, FormatSettings::DateTimeOverflowBehavior overflow)
+{
+    const auto & time_zone = DateLUT::instance();
+    auto run = [&](const auto & value) -> Field
+    {
+        return is_date32 ? coerceNumericToDate32Field(value, time_zone, overflow)
+                         : coerceNumericToDateField(value, time_zone, overflow);
+    };
+
+    switch (src.getType())
+    {
+        case Field::Types::UInt64: return run(src.safeGet<UInt64>());
+        case Field::Types::Int64:  return run(src.safeGet<Int64>());
+        case Field::Types::Float64: return run(src.safeGet<Float64>());
+        case Field::Types::UInt128: return run(src.safeGet<UInt128>());
+        case Field::Types::Int128:  return run(src.safeGet<Int128>());
+        case Field::Types::UInt256: return run(src.safeGet<UInt256>());
+        case Field::Types::Int256:  return run(src.safeGet<Int256>());
+        default: return {}; /// non-numeric: let the caller fall through to its existing handling
+    }
+}
+
+/// The numeric Field types evaluateConstantExpression can hand to the temporal coercion helpers above.
+bool isNumericFieldForTemporalCoercion(const Field & src)
+{
+    switch (src.getType())
+    {
+        case Field::Types::UInt64:
+        case Field::Types::Int64:
+        case Field::Types::Float64:
+        case Field::Types::UInt128:
+        case Field::Types::Int128:
+        case Field::Types::UInt256:
+        case Field::Types::Int256:
+            return true;
+        default:
+            return false;
+    }
 }
 
 Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict)
@@ -395,14 +552,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && isNumericFieldForTemporalCoercion(src))
         {
-            /// Date is UInt16 under the hood; range-check so out-of-range integers
-            /// don't get silently truncated by the Date serializer downstream.
-            return convertNumericType<UInt16>(src, type);
+            /// Date is UInt16 day-number under the hood. Respect date_time_overflow_behavior so the
+            /// VALUES/INSERT path matches numeric CAST/toDate (day-number vs unix-timestamp interpretation,
+            /// saturate/throw/ignore) instead of returning Null and silently defaulting downstream.
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/false, format_settings.date_time_overflow_behavior);
         }
 
-        if (which_type.isDateTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        if (which_type.isDateTime() && isNumericFieldForTemporalCoercion(src))
         {
             /// DateTime is UInt32 seconds since the epoch (canonical Field is UInt64). Respect
             /// date_time_overflow_behavior so the VALUES/INSERT path matches numeric CAST/toDateTime
@@ -411,26 +569,23 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
                 src, 0, MAX_DATETIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "DateTime");
         }
 
-        if (which_type.isTime() && (src.getType() == Field::Types::UInt64 || src.getType() == Field::Types::Int64))
+        if (which_type.isTime() && isNumericFieldForTemporalCoercion(src))
         {
-            /// Time is backed by Int32 (canonical Field is Int64). First route through
-            /// convertNumericType<Int32> so the result is the canonical Int64 Field that Time part
-            /// loading produces: this keeps OPTIMIZE ... PARTITION from raising a LOGICAL_ERROR in
-            /// getPartitionIDFromQuery (STID 3993-36c1) and rejects values outside the Int32 storage
-            /// range with ARGUMENT_OUT_OF_BOUND instead of silently truncating them.
-            Field time_field = convertNumericType<Int32>(src, type);
-            if (time_field.isNull())
-                return time_field;
-            /// Then apply date_time_overflow_behavior against the visible Time range so the
-            /// VALUES/INSERT path matches numeric CAST/toTime.
+            /// Time is backed by Int32 (canonical Field is Int64). Apply date_time_overflow_behavior
+            /// against the visible Time range so the VALUES/INSERT path matches numeric CAST/toTime.
+            /// coerceNumericFieldToDateTimeOrTime clamps/throws first, so an out-of-Int32 source no longer
+            /// returns Null (which used to silently default), and the clamped result always fits Int32,
+            /// keeping the canonical Int64 Field that Time part loading produces (getPartitionIDFromQuery).
             return coerceNumericFieldToDateTimeOrTime(
-                time_field, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time");
+                src, -MAX_TIME_TIMESTAMP_FIELD, MAX_TIME_TIMESTAMP_FIELD, format_settings.date_time_overflow_behavior, "Time");
         }
 
-        if (which_type.isDate32() && src.getType() == Field::Types::Int64)
+        if (which_type.isDate32() && isNumericFieldForTemporalCoercion(src))
         {
-            /// We don't need any conversion Int64 is under type of Date32
-            return src;
+            /// Date32 is Int32 day-number under the hood. Respect date_time_overflow_behavior so the
+            /// VALUES/INSERT path matches numeric CAST/toDate32 instead of returning `src` verbatim and
+            /// letting the Date32 serializer narrow an out-of-range Int64 to Int32.
+            return coerceNumericFieldToDateOrDate32(src, /*is_date32=*/true, format_settings.date_time_overflow_behavior);
         }
 
         if (which_type.isDateTime64() && src.getType() == Field::Types::Decimal64)
@@ -482,21 +637,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             const UInt64 value = scale_from > scale_to ? from_type.getValue().value / scale_multiplier_diff
                                                        : from_type.getValue().value * scale_multiplier_diff;
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
-        }
-
-        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
-        /// range-check so out-of-range integers don't get silently truncated
-        /// by the Date serializer downstream.
-        if (which_type.isDate() && src.getType() == Field::Types::Int64)
-        {
-            return convertNumericType<UInt16>(src, type);
-        }
-
-        /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
-        /// produce wrong result in some special cases.
-        if (which_type.isDate32() && src.getType() == Field::Types::UInt64)
-        {
-            return convertNumericType<Int64>(src, type);
         }
 
         if (which_type.isDateTime64()
