@@ -1804,6 +1804,41 @@ std::optional<IStorage::ColumnSizeByName> StorageMerge::tryGetColumnSizes() cons
     }
 }
 
+std::optional<IStorage::ColumnPhysicalPresenceByName> StorageMerge::tryGetColumnPhysicalPresence() const
+{
+    try
+    {
+        IStorage::ColumnPhysicalPresenceByName result;
+        bool has_tables = false;
+        bool has_stats_for_all_tables = true;
+
+        forEachTable(
+            [&](const auto & table)
+            {
+                has_tables = true;
+                auto stats = table->tryGetColumnPhysicalPresence();
+                if (!stats)
+                {
+                    has_stats_for_all_tables = false;
+                    return;
+                }
+
+                result.add(*stats);
+            });
+
+        if (!has_tables || !has_stats_for_all_tables)
+            return std::nullopt;
+
+        return result;
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() == ErrorCodes::UNKNOWN_DATABASE)
+            return std::nullopt;
+        throw;
+    }
+}
+
 
 std::tuple<bool /* is_regexp */, ASTPtr> StorageMerge::evaluateDatabaseName(const ASTPtr & node, ContextPtr context_)
 {

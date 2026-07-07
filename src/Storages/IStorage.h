@@ -199,6 +199,11 @@ public:
     /// Same as getColumnSizes() but may return nullopt in some specific engines like Merge/Alias
     virtual std::optional<ColumnSizeByName> tryGetColumnSizes() const { return getColumnSizes(); }
 
+    /// Optional information about physical column presence in active data parts.
+    /// Valid only for storages whose data is represented as immutable parts.
+    using ColumnPhysicalPresenceByName = DB::ColumnPhysicalPresenceByName;
+    virtual std::optional<ColumnPhysicalPresenceByName> tryGetColumnPhysicalPresence() const { return std::nullopt; }
+
     /// Optional size information of each secondary index.
     /// Valid only for MergeTree family.
     using IndexSizeByName = std::unordered_map<std::string, IndexSize>;

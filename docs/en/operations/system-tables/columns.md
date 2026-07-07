@@ -40,6 +40,10 @@ Columns from [temporary tables](../../sql-reference/statements/create/table.md#t
 - `datetime_precision` ([Nullable(UInt64)](/sql-reference/data-types/nullable)) — Decimal precision of DateTime64 data type. For other data types, the NULL value is returned.
 - `serialization_hint` ([Nullable(String)](/sql-reference/data-types/nullable)) — A hint for column to choose serialization on inserts according to statistics.
 - `statistics` ([String](/sql-reference/data-types/string)) — The types of statistics created in this columns.
+- `parts_with_column_num` ([UInt64](/sql-reference/data-types/int-uint)) — The number of active data parts physically storing the column.
+- `parts_with_column_ratio` ([Float64](/sql-reference/data-types/float)) — The ratio of active data parts physically storing the column to all active data parts.
+- `rows_with_column_num` ([UInt64](/sql-reference/data-types/int-uint)) — The number of rows in active data parts physically storing the column.
+- `rows_with_column_ratio` ([Float64](/sql-reference/data-types/float)) — The ratio of rows in active data parts physically storing the column to all rows in active data parts.
 
 **Aliases:**
 

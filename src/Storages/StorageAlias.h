@@ -276,6 +276,15 @@ public:
         return target->getColumnSizes();
     }
 
+    std::optional<ColumnPhysicalPresenceByName> tryGetColumnPhysicalPresence() const override
+    {
+        auto target = tryGetTargetTable();
+        if (!target)
+            return std::nullopt;
+
+        return target->tryGetColumnPhysicalPresence();
+    }
+
     IndexSizeByName getSecondaryIndexSizes() const override { auto target = tryGetTargetTable(); return target ? target->getSecondaryIndexSizes() : IndexSizeByName{}; }
 
     DataValidationTasksPtr getCheckTaskList(const CheckTaskFilter & filter, ContextPtr query_context) override;

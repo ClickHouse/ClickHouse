@@ -99,6 +99,10 @@ CREATE TABLE system.columns
     `datetime_precision` Nullable(UInt64),
     `serialization_hint` Nullable(String),
     `statistics` String,
+    `parts_with_column_num` UInt64,
+    `parts_with_column_ratio` Float64,
+    `rows_with_column_num` UInt64,
+    `rows_with_column_ratio` Float64,
     `column` String ALIAS name
 )
 ENGINE = SystemColumns

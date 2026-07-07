@@ -6685,14 +6685,33 @@ void MergeTreeData::calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedL
     are_columns_and_secondary_indices_sizes_calculated = true;
 }
 
-void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
+void MergeTreeData::calculateColumnPhysicalPresenceLazily(
+    DataPartsSharedLock & /*parts_lock*/, std::unique_lock<std::mutex> & /*sizes_lock*/) const
 {
-    /// If sizes are calculated lazily, don't add part contribution. All sizes from all active parts will be calculated later.
-    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (is_column_physical_presence_calculated)
         return;
 
-    addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+    column_physical_presence.clear();
+
+    auto committed_parts_range = getDataPartsStateRange(DataPartState::Active);
+    for (const auto & part : committed_parts_range)
+        addPartContributionToColumnPhysicalPresenceUnlocked(part);
+
+    is_column_physical_presence_calculated = true;
+}
+
+void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
+{
+    /// If statistics are calculated lazily, don't add part contribution. All statistics from active parts will be calculated later.
+    std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
+    if (!are_columns_and_secondary_indices_sizes_calculated && !is_column_physical_presence_calculated)
+        return;
+
+    if (are_columns_and_secondary_indices_sizes_calculated)
+        addPartContributionToColumnAndSecondaryIndexSizesUnlocked(part);
+
+    if (is_column_physical_presence_calculated)
+        addPartContributionToColumnPhysicalPresenceUnlocked(part);
 }
 
 void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const
@@ -6716,52 +6735,126 @@ void MergeTreeData::addPartContributionToColumnAndSecondaryIndexSizesUnlocked(co
     primary_index_size.add(part->getIndexSizeFromFile());
 }
 
+void MergeTreeData::addPartContributionToColumnPhysicalPresenceUnlocked(const DataPartPtr & part) const
+{
+    if (part->info.isPatch())
+        return;
+
+    ++column_physical_presence.total_parts;
+    column_physical_presence.total_rows += part->rows_count;
+
+    for (const auto & column : part->getColumns())
+        column_physical_presence.columns[column.name].addPart(part->rows_count);
+}
+
 void MergeTreeData::removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const
 {
-    /// If sizes are calculated lazily, don't remove part contribution. All sizes from all active parts will be calculated later.
+    /// If statistics are calculated lazily, don't remove part contribution. All statistics from active parts will be calculated later.
     std::unique_lock lock(columns_and_secondary_indices_sizes_mutex);
-    if (!are_columns_and_secondary_indices_sizes_calculated)
+    if (!are_columns_and_secondary_indices_sizes_calculated && !is_column_physical_presence_calculated)
         return;
+
+    if (are_columns_and_secondary_indices_sizes_calculated)
+    {
+        for (const auto & column : part->getColumns())
+        {
+            ColumnSize & total_column_size = column_sizes[column.name];
+            ColumnSize part_column_size = part->getColumnSize(column.name);
+
+            auto log_subtract = [&](size_t & from, size_t value, const char * field)
+            {
+                if (value > from)
+                    LOG_ERROR(
+                        log,
+                        "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
+                        from,
+                        value,
+                        from - value,
+                        column.name,
+                        field);
+
+                from -= value;
+            };
+
+            log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
+            log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
+            log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
+        }
+
+        const auto metadata_ptr = getInMemoryMetadataPtr(getContext(), false);
+        for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
+        {
+            if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
+                continue;
+
+            IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
+
+            auto log_subtract = [&](size_t & from, size_t value, const char * field)
+            {
+                if (value > from)
+                    LOG_ERROR(
+                        log,
+                        "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
+                        from,
+                        value,
+                        from - value,
+                        secondary_index_name,
+                        field);
+
+                from -= value;
+            };
+
+            log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
+            log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
+            log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
+        }
+    }
+
+    if (is_column_physical_presence_calculated)
+        removePartContributionToColumnPhysicalPresenceUnlocked(part);
+}
+
+void MergeTreeData::removePartContributionToColumnPhysicalPresenceUnlocked(const DataPartPtr & part) const
+{
+    if (part->info.isPatch())
+        return;
+
+    auto log_subtract = [&](size_t & from, size_t value, const char * field)
+    {
+        if (value > from)
+        {
+            LOG_ERROR(
+                log,
+                "Possibly incorrect column physical presence subtraction: {} - {}, field: {}, part: {}",
+                from,
+                value,
+                field,
+                part->name);
+            from = 0;
+            return;
+        }
+
+        from -= value;
+    };
+
+    log_subtract(column_physical_presence.total_parts, 1, ".total_parts");
+    log_subtract(column_physical_presence.total_rows, part->rows_count, ".total_rows");
 
     for (const auto & column : part->getColumns())
     {
-        ColumnSize & total_column_size = column_sizes[column.name];
-        ColumnSize part_column_size = part->getColumnSize(column.name);
-
-        auto log_subtract = [&](size_t & from, size_t value, const char * field)
+        auto it = column_physical_presence.columns.find(column.name);
+        if (it == column_physical_presence.columns.end())
         {
-            if (value > from)
-                LOG_ERROR(log, "Possibly incorrect column size subtraction: {} - {} = {}, column: {}, field: {}",
-                    from, value, from - value, column.name, field);
-
-            from -= value;
-        };
-
-        log_subtract(total_column_size.data_compressed, part_column_size.data_compressed, ".data_compressed");
-        log_subtract(total_column_size.data_uncompressed, part_column_size.data_uncompressed, ".data_uncompressed");
-        log_subtract(total_column_size.marks, part_column_size.marks, ".marks");
-    }
-
-    const auto metadata_ptr = getInMemoryMetadataPtr(getContext(), false);
-    for (auto & [secondary_index_name, total_secondary_index_size] : secondary_index_sizes)
-    {
-        if (!part->hasSecondaryIndex(secondary_index_name, metadata_ptr))
+            LOG_ERROR(
+                log,
+                "Possibly incorrect column physical presence subtraction: column {} from part {} was not accounted",
+                column.name,
+                part->name);
             continue;
+        }
 
-        IndexSize part_secondary_index_size = part->getSecondaryIndexSize(secondary_index_name);
-
-        auto log_subtract = [&](size_t & from, size_t value, const char * field)
-        {
-            if (value > from)
-                LOG_ERROR(log, "Possibly incorrect index size subtraction: {} - {} = {}, index: {}, field: {}",
-                    from, value, from - value, secondary_index_name, field);
-
-            from -= value;
-        };
-
-        log_subtract(total_secondary_index_size.data_compressed, part_secondary_index_size.data_compressed, ".data_compressed");
-        log_subtract(total_secondary_index_size.data_uncompressed, part_secondary_index_size.data_uncompressed, ".data_uncompressed");
-        log_subtract(total_secondary_index_size.marks, part_secondary_index_size.marks, ".marks");
+        log_subtract(it->second.parts, 1, ".parts");
+        log_subtract(it->second.rows, part->rows_count, ".rows");
     }
 }
 

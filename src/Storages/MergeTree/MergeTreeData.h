@@ -1104,6 +1104,15 @@ public:
         return column_sizes;
     }
 
+    std::optional<ColumnPhysicalPresenceByName> tryGetColumnPhysicalPresence() const override
+    {
+        /// Always keep locks order parts_lock -> sizes_lock
+        auto parts_lock = readLockParts();
+        std::unique_lock sizes_lock(columns_and_secondary_indices_sizes_mutex);
+        calculateColumnPhysicalPresenceLazily(parts_lock, sizes_lock);
+        return column_physical_presence;
+    }
+
     IndexSizeByName getSecondaryIndexSizes() const override
     {
         /// Always keep locks order parts_lock -> sizes_lock
@@ -1481,6 +1490,8 @@ private:
     mutable bool are_columns_and_secondary_indices_sizes_calculated = false;
     /// Current column sizes in compressed and uncompressed form.
     mutable ColumnSizeByName column_sizes;
+    mutable bool is_column_physical_presence_calculated = false;
+    mutable ColumnPhysicalPresenceByName column_physical_presence;
     /// Current secondary index sizes in compressed and uncompressed form.
     mutable IndexSizeByName secondary_index_sizes;
     mutable IndexSize primary_index_size;
@@ -1494,6 +1505,8 @@ protected:
     {
         column_sizes.clear();
         are_columns_and_secondary_indices_sizes_calculated = false;
+        column_physical_presence.clear();
+        is_column_physical_presence_calculated = false;
     }
 
 private:
@@ -1714,10 +1727,16 @@ protected:
     /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
     void calculateColumnAndSecondaryIndexSizesLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
 
+    /// Calculates physical column presence in active parts.
+    /// Call it with data_parts mutex under a shared lock, and columns_and_secondary_indices_sizes_mutex mutex under an unique lock.
+    void calculateColumnPhysicalPresenceLazily(DataPartsSharedLock & parts_lock, std::unique_lock<std::mutex> & sizes_lock) const;
+
     /// Adds or subtracts the contribution of the part to compressed column and secondary indexes sizes.
     void addPartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
     void addPartContributionToColumnAndSecondaryIndexSizesUnlocked(const DataPartPtr & part) const;
     void removePartContributionToColumnAndSecondaryIndexSizes(const DataPartPtr & part) const;
+    void addPartContributionToColumnPhysicalPresenceUnlocked(const DataPartPtr & part) const;
+    void removePartContributionToColumnPhysicalPresenceUnlocked(const DataPartPtr & part) const;
 
     /// If there is no part in the partition with ID `partition_id`, returns empty ptr. Should be called under the lock.
     DataPartPtr getAnyPartInPartition(const String & partition_id, const DataPartsAnyLock & data_parts_lock) const;

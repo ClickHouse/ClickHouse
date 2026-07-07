@@ -40,36 +40,68 @@ StorageSystemColumns::StorageSystemColumns(const StorageID & table_id_)
 
     /// NOTE: when changing the list of columns, take care of the ColumnsSource::generate method,
     /// when they are referenced by their numeric positions.
-    auto description = ColumnsDescription({
-        { "database",           std::make_shared<DataTypeString>(), "Database name."},
-        { "table",              std::make_shared<DataTypeString>(), "Table name."},
-        { "name",               std::make_shared<DataTypeString>(), "Column name."},
-        { "type",               std::make_shared<DataTypeString>(), "Column type."},
-        { "position",           std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
-        { "default_kind",       std::make_shared<DataTypeString>(), "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
-        { "default_expression", std::make_shared<DataTypeString>(), "Expression for the default value, or an empty string if it is not defined."},
-        { "data_compressed_bytes",      std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
-        { "data_uncompressed_bytes",    std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
-        { "marks_bytes",                std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
-        { "comment",                    std::make_shared<DataTypeString>(), "Comment on the column, or an empty string if it is not defined."},
-        { "is_in_partition_key", std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the partition expression."},
-        { "is_in_sorting_key",   std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the sorting key expression."},
-        { "is_in_primary_key",   std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the primary key expression."},
-        { "is_in_sampling_key",  std::make_shared<DataTypeUInt8>(), "Flag that indicates whether the column is in the sampling key expression."},
-        { "compression_codec",   std::make_shared<DataTypeString>(), "Compression codec name."},
-        { "character_octet_length",     std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for FixedString data type. Otherwise, the NULL value is returned."},
-        { "numeric_precision",          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bit width for integer types and decimal precision for Decimal types. Otherwise, the NULL value is returned."},
-        { "numeric_precision_radix",    std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. In ClickHouse it's 2 for integer types and 10 for Decimal types. Otherwise, the NULL value is returned."},
-        { "numeric_scale",              std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for Decimal types. Otherwise, the NULL value is returned."},
-        { "datetime_precision",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
-        { "serialization_hint",         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()), "A hint for column to choose serialization on inserts according to statistics."},
-        { "statistics",                 std::make_shared<DataTypeString>(), "The types of statistics created in this columns."}
-    });
+    auto description = ColumnsDescription(
+        {{"database", std::make_shared<DataTypeString>(), "Database name."},
+         {"table", std::make_shared<DataTypeString>(), "Table name."},
+         {"name", std::make_shared<DataTypeString>(), "Column name."},
+         {"type", std::make_shared<DataTypeString>(), "Column type."},
+         {"position", std::make_shared<DataTypeUInt64>(), "Ordinal position of a column in a table starting with 1."},
+         {"default_kind",
+          std::make_shared<DataTypeString>(),
+          "Expression type (DEFAULT, MATERIALIZED, ALIAS) for the default value, or an empty string if it is not defined."},
+         {"default_expression",
+          std::make_shared<DataTypeString>(),
+          "Expression for the default value, or an empty string if it is not defined."},
+         {"data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
+         {"data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
+         {"marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
+         {"comment", std::make_shared<DataTypeString>(), "Comment on the column, or an empty string if it is not defined."},
+         {"is_in_partition_key",
+          std::make_shared<DataTypeUInt8>(),
+          "Flag that indicates whether the column is in the partition expression."},
+         {"is_in_sorting_key",
+          std::make_shared<DataTypeUInt8>(),
+          "Flag that indicates whether the column is in the sorting key expression."},
+         {"is_in_primary_key",
+          std::make_shared<DataTypeUInt8>(),
+          "Flag that indicates whether the column is in the primary key expression."},
+         {"is_in_sampling_key",
+          std::make_shared<DataTypeUInt8>(),
+          "Flag that indicates whether the column is in the sampling key expression."},
+         {"compression_codec", std::make_shared<DataTypeString>(), "Compression codec name."},
+         {"character_octet_length",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+          "Maximum length in bytes for binary data, character data, or text data and images. In ClickHouse makes sense only for "
+          "FixedString data type. Otherwise, the NULL value is returned."},
+         {"numeric_precision",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+          "Accuracy of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse it is bit width for "
+          "integer types and decimal precision for Decimal types. Otherwise, the NULL value is returned."},
+         {"numeric_precision_radix",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+          "The base of the number system is the accuracy of approximate numeric data, exact numeric data, integer data or monetary data. "
+          "In ClickHouse it's 2 for integer types and 10 for Decimal types. Otherwise, the NULL value is returned."},
+         {"numeric_scale",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+          "The scale of approximate numeric data, exact numeric data, integer data, or monetary data. In ClickHouse makes sense only for "
+          "Decimal types. Otherwise, the NULL value is returned."},
+         {"datetime_precision",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+          "Decimal precision of DateTime64 data type. For other data types, the NULL value is returned."},
+         {"serialization_hint",
+          std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
+          "A hint for column to choose serialization on inserts according to statistics."},
+         {"statistics", std::make_shared<DataTypeString>(), "The types of statistics created in this columns."},
+         {"parts_with_column_num", std::make_shared<DataTypeUInt64>(), "The number of active data parts physically storing the column."},
+         {"parts_with_column_ratio",
+          std::make_shared<DataTypeFloat64>(),
+          "The ratio of active data parts physically storing the column to all active data parts."},
+         {"rows_with_column_num",
+          std::make_shared<DataTypeUInt64>(),
+          "The number of rows in active data parts physically storing the column."},
+         {"rows_with_column_ratio",
+          std::make_shared<DataTypeFloat64>(),
+          "The ratio of rows in active data parts physically storing the column to all rows in active data parts."}});
 
     description.setAliases({
         {"column", std::make_shared<DataTypeString>(), "name"}
@@ -145,6 +177,7 @@ protected:
             Names cols_required_for_primary_key;
             Names cols_required_for_sampling;
             IStorage::ColumnSizeByName column_sizes;
+            IStorage::ColumnPhysicalPresenceByName column_physical_presence;
             SerializationInfoByName serialization_hints{{}};
 
             {
@@ -180,6 +213,12 @@ protected:
                 {
                     if (auto hints = storage->tryGetSerializationHints())
                         serialization_hints = std::move(*hints);
+                }
+
+                if (columns_mask[23] || columns_mask[24] || columns_mask[25] || columns_mask[26])
+                {
+                    if (auto presence = storage->tryGetColumnPhysicalPresence())
+                        column_physical_presence = std::move(*presence);
                 }
             }
 
@@ -342,6 +381,35 @@ protected:
                 {
                     const ColumnStatisticsDescription & stats = column.statistics;
                     res_columns[res_index++]->insert(stats.getNameForLogs());
+                }
+
+                {
+                    UInt64 parts_with_column = 0;
+                    UInt64 rows_with_column = 0;
+                    if (auto it = column_physical_presence.columns.find(column.name); it != column_physical_presence.columns.end())
+                    {
+                        parts_with_column = it->second.parts;
+                        rows_with_column = it->second.rows;
+                    }
+
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(parts_with_column);
+                    if (columns_mask[src_index++])
+                    {
+                        double ratio = column_physical_presence.total_parts
+                            ? static_cast<double>(parts_with_column) / column_physical_presence.total_parts
+                            : 0.0;
+                        res_columns[res_index++]->insert(ratio);
+                    }
+                    if (columns_mask[src_index++])
+                        res_columns[res_index++]->insert(rows_with_column);
+                    if (columns_mask[src_index++])
+                    {
+                        double ratio = column_physical_presence.total_rows
+                            ? static_cast<double>(rows_with_column) / column_physical_presence.total_rows
+                            : 0.0;
+                        res_columns[res_index++]->insert(ratio);
+                    }
                 }
 
                 ++rows_count;

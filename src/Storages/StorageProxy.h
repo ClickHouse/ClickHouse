@@ -33,6 +33,10 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getNested()->supportsColumnsWithDynamicStructure(); }
 
     ColumnSizeByName getColumnSizes() const override { return getNested()->getColumnSizes(); }
+    std::optional<ColumnPhysicalPresenceByName> tryGetColumnPhysicalPresence() const override
+    {
+        return getNested()->tryGetColumnPhysicalPresence();
+    }
 
     StorageSnapshotPtr getStorageSnapshot(const StorageMetadataPtr & base_metadata, ContextPtr query_context) const override
     {
