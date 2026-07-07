@@ -1500,9 +1500,19 @@ static bool isConstructionSettingName(std::string_view name)
 bool hasConstructionSettings(const IAST & ast)
 {
     if (const auto * set_query = ast.as<ASTSetQuery>())
+    {
         for (const auto & change : set_query->changes)
             if (isConstructionSettingName(change.name))
                 return true;
+        /// A `name = DEFAULT` reset lives in `default_settings`, not `changes` (see
+        /// `takeConstructionSettingsFromSetQuery`), but it is just as much a construction setting on
+        /// the (sub)query. Without this a `CREATE VIEW … SETTINGS limit = DEFAULT` or an
+        /// `ALTER TABLE … MODIFY QUERY … SETTINGS filter = DEFAULT` would slip an unsupported
+        /// construction-setting form past the stored-view guard.
+        for (const auto & reset_name : set_query->default_settings)
+            if (isConstructionSettingName(reset_name))
+                return true;
+    }
     for (const auto & child : ast.children)
         if (child && hasConstructionSettings(*child))
             return true;
@@ -1674,12 +1684,18 @@ static void wrapPerArmConstructionSettings(
             return nullptr;
         ASTPtr settings_ptr = select->settings();
         auto * set_query = settings_ptr ? settings_ptr->as<ASTSetQuery>() : nullptr;
-        if (set_query
-            && (set_query->changes.tryGet("select") || set_query->changes.tryGet("filter")
-                || set_query->changes.tryGet("order") || set_query->changes.tryGet("sort")
-                || set_query->changes.tryGet("limit") || set_query->changes.tryGet("offset")
-                || set_query->changes.tryGet("page")))
-            return set_query;
+        if (!set_query)
+            return nullptr;
+        for (const auto & change : set_query->changes)
+            if (isConstructionSettingName(change.name))
+                return set_query;
+        /// A `name = DEFAULT` reset lives in `default_settings`, not `changes`; it is still an arm-local
+        /// construction setting for per-arm-mode detection and the last-arm ambiguity rejection below.
+        /// Otherwise a mixed `(… SETTINGS limit = 1) UNION ALL … SETTINGS limit = DEFAULT` would be
+        /// accepted and silently re-scoped to whole-union instead of being rejected as ambiguous.
+        for (const auto & reset_name : set_query->default_settings)
+            if (isConstructionSettingName(reset_name))
+                return set_query;
         return nullptr;
     };
 
