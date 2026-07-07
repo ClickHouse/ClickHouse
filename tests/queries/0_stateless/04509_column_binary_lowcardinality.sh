@@ -46,6 +46,12 @@ run_roundtrip "Tuple(LowCardinality(String), UInt64)" \
 
 # Direct-encoding proof: a low-cardinality column with many repeated values must produce a
 # frame far smaller than encoding the same data as plain String (index bytes plus one small
-# dictionary, not one full string value per row).
-${CLICKHOUSE_CLIENT} --query "SELECT toLowCardinality(toString(number % 5)) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c
-${CLICKHOUSE_CLIENT} --query "SELECT toString(number % 5) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c
+# dictionary, not one full string value per row). Force a single output block/frame (fixed
+# max_block_size, parallel formatting off) so the byte count is deterministic regardless of
+# whatever block-size/formatting settings the test runner's random settings picked — each
+# additional frame carries its own header+descriptor+dictionary overhead, which would
+# otherwise make this an unstable assertion.
+${CLICKHOUSE_CLIENT} --max_block_size 1000000 --output_format_parallel_formatting 0 \
+    --query "SELECT toLowCardinality(toString(number % 5)) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c
+${CLICKHOUSE_CLIENT} --max_block_size 1000000 --output_format_parallel_formatting 0 \
+    --query "SELECT toString(number % 5) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c
