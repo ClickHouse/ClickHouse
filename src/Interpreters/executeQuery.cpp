@@ -25,6 +25,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -119,6 +120,8 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event ASTFuzzerSkippedBackupRestore;
+    extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -2068,6 +2071,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (!any_query && !isReadOnlyQuery(ast))
         return;
 
+    /// Do not fuzz while an internal replicated-DDL execution is in flight on `context`.
+    /// DatabaseReplicatedDDLWorker re-executes a committed DDL entry whose serialized settings still
+    /// carry ast_fuzzer_runs, so the fuzzer would fire again on the entry's live, single-shot
+    /// ZooKeeperMetadataTransaction. A fuzzed follow-up DDL then either adds ops to the already-executed
+    /// txn (ZooKeeperMetadataTransaction::addOp throws "Cannot add ZooKeeper operation because query is
+    /// executed") or, because is_replicated_database_internal makes shouldReplicateQuery() route it to a
+    /// local commit, reaches DatabaseReplicated::commit* with no txn while the DDL worker is active and
+    /// trips the `!ddl_worker->isCurrentlyActive() || txn` assertion. Both are LOGICAL_ERRORs that abort
+    /// debug/sanitizer builds. The initiating client query is fuzzed normally; only this redundant
+    /// re-fuzz during log replay is skipped.
+    if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -2117,6 +2136,19 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
+        /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
+        /// `executeQuery` immediately while `BackupsWorker` keeps the query context alive and its
+        /// background workers read it via `Context::createCopy` under the shared `Context::mutex`.
+        /// The per-iteration cleanup below would then mutate that escaped context without holding
+        /// the mutex, reintroducing the very `merge_tree_transaction` data race this code avoids.
+        /// Checked first (before the depth/format/length guards below), and counted, so the skip
+        /// is attributable to the query type alone regardless of those other early-continue paths.
+        if (fuzzed_ast->as<ASTBackupQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedBackupRestore);
+            continue;
+        }
+
         /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
         try
         {
@@ -2154,10 +2186,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
         /// Declare contexts outside try block so we can reset transactions on all paths.
         /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
         /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2177,6 +2205,16 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
+            /// Reset the transaction (if any) on the fuzz session context to isolate
+            /// fuzzed queries from the caller's transaction state. The transaction pointer
+            /// was copied as a shared_ptr in the copy constructor (see `InterpreterTransactionControlQuery::executeBegin`
+            /// which stores it in both session and query contexts).
+            /// We clear it on the copy, not on the parent `context`: mutating the caller's
+            /// `merge_tree_transaction` races with concurrent readers of the same `Context`
+            /// (e.g. `RESTORE ASYNC` background workers calling `Context::createCopy` under
+            /// the shared `Context::mutex`), and it also has the surprising side effect of
+            /// silently clearing the user's active transaction on the caller session.
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
@@ -2640,10 +2678,6 @@ void executeQuery(
         /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
         /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
         /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-        ///
-        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
-        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
-        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 

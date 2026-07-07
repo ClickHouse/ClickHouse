@@ -103,6 +103,7 @@ WHAT TO REVIEW VS WHAT TO IGNORE
 **Documentation:**
 - Structured ClickHouse surfaces are documented from source registrations: SQL functions and aggregate functions (`FunctionDocumentation`), settings (`DECLARE` doc strings), table functions, table engines, formats, system tables, and similar components. Do not ask for a separate `docs/` page when this source-level documentation is present and adequate.
 - Flag documentation only when source-level structured docs are missing or weak, or when the change needs non-structured user guidance that belongs under `docs/` (guides, tutorials, architecture, operations/admin, integrations).
+- Documentation updates in the /docs directory should be made only to the files in /docs/en. These are used to build the current Docusaurus site. Other files in this repository will be used to build the documentation on Mintlify, but should not be edited yet. Do not flag a PR for editing only `/docs/en` and not the Mintlify files.
 
 **Explicitly ignore (do not comment on these unless they indicate a bug):**
 - Pure formatting (whitespace, brace style, minor naming preferences).
