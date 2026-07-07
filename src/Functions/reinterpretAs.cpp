@@ -475,11 +475,16 @@ public:
     String getSignatureString() const override
     {
         if constexpr (std::is_same_v<ToDataType, DataTypeFixedString>)
+            /// Documentation-only: the FixedString length N is derived from the input value size.
             return "(Any) -> FixedString";
+        else if constexpr (std::is_same_v<ToDataType, DataTypeString>)
+            /// reinterpretAsString accepts any value laid out contiguously in memory.
+            return "(UnambiguouslyRepresentedInContiguousMemoryRegion) -> String";
         else
         {
+            /// The input matcher is exactly `canBeReinterpretedAsNumeric` plus String/FixedString.
             static const String sig
-                = String("(Number | Date | Date32 | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
+                = String("(Number | Date | DateTime | DateTime64 | UUID | StringOrFixedString) -> ")
                 + ToDataType{}.getName();
             return sig;
         }
@@ -527,6 +532,12 @@ public:
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
+        /// reinterpretAsFixedString derives its N from the input value size, so it stays
+        /// documentation-only. The other targets are authoritative: the input matcher in the
+        /// declarative signature encodes exactly which source types can be reinterpreted.
+        if constexpr (!std::is_same_v<ToDataType, DataTypeFixedString>)
+            return IFunction::getReturnTypeImpl(arguments);
+
         auto arguments_with_type = addTypeColumnToArguments(arguments);
         return impl.getReturnTypeImpl(arguments_with_type);
     }

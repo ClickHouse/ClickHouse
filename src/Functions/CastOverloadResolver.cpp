@@ -147,9 +147,19 @@ public:
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
-    /// Documentation-only — the result type is parsed from the const-string
-    /// type-name argument (and may be wrapped in `Nullable` for the
-    /// `accurateCastOrNull` variant or when `cast_keep_nullable` is set).
+    /// Documentation-only, and intentionally so: CAST is where a declarative signature stops being
+    /// a reasonable fit. Its result type is parsed from the const type-name argument
+    /// (`typeFromString`), but `getReturnTypeImpl` then applies rules that are not type-level:
+    ///   - `validateDataType` rejects "suspicious" target types based on query settings
+    ///     (`allow_suspicious_low_cardinality_types`, fixed-string sizes, ...) — a settings-driven
+    ///     validation, not a type computation;
+    ///   - three cast-type variants (plain / accurate / accurateOrNull) plus the internal `_CAST`
+    ///     differ in Nullable behavior, with `accurateOrNull` wrapping only when the target cannot
+    ///     already contain NULL (and an extra nested-type validation);
+    ///   - `cast_keep_nullable` wraps the result in Nullable depending on the source's nullability;
+    ///   - the source time zone is substituted into a tz-less DateTime/DateTime64 target.
+    /// Expressing this would require moving the settings-driven validations into the signature
+    /// machinery (they cannot be), so the legacy `getReturnTypeImpl` stays authoritative.
     String getSignatureString() const override
     {
         return "(Any, const String) -> Any";
