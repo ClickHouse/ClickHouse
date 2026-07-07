@@ -52,7 +52,7 @@ def main():
         # Generate some random rows
         for id in range(0, i):
             letters = string.ascii_letters
-            random_string =  ''.join(random.choices(letters ,k=10))
+            random_string =  ''.join(random.choices(letters, k=10))
             print(str(id) + '\t' + random_string + '\n', end='')
 
         # Flush results to stdout
