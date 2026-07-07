@@ -1,0 +1,190 @@
+---
+description: '지리 객체와 위치를 나타내는 데 사용되는 ClickHouse의 기하 데이터 타입
+  문서'
+sidebarTitle: 'Geo'
+slug: /sql-reference/data-types/geo
+title: '기하'
+doc_type: '참고'
+---
+
+ClickHouse는 위치, 토지 등과 같은 지리 객체를 표현하기 위한 데이터 타입을 지원합니다.
+
+**관련 항목**
+
+* [단순한 지리 객체 표현](https://en.wikipedia.org/wiki/GeoJSON).
+
+<div id="point">
+  ## Point
+</div>
+
+`Point`는 X 좌표와 Y 좌표로 표현되며, [Tuple](/ko/reference/data-types/tuple)([Float64](/ko/reference/data-types/float), [Float64](/ko/reference/data-types/float))에 저장됩니다.
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE geo_point (p Point) ENGINE = Memory();
+INSERT INTO geo_point VALUES((10, 10));
+SELECT p, toTypeName(p) FROM geo_point;
+```
+
+```text title="Response"
+┌─p───────┬─toTypeName(p)─┐
+│ (10,10) │ Point         │
+└─────────┴───────────────┘
+```
+
+<div id="ring">
+  ## Ring
+</div>
+
+`Ring`은 점의 배열로 저장되는, 내부에 빈 영역이 없는 단순 다각형입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE geo_ring (r Ring) ENGINE = Memory();
+INSERT INTO geo_ring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT r, toTypeName(r) FROM geo_ring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ Ring          │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="linestring">
+  ## LineString
+</div>
+
+`LineString`은 점 배열로 저장되는 선입니다: [배열](/ko/reference/data-types/array)([Point](#point)).
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE geo_linestring (l LineString) ENGINE = Memory();
+INSERT INTO geo_linestring VALUES([(0, 0), (10, 0), (10, 10), (0, 10)]);
+SELECT l, toTypeName(l) FROM geo_linestring;
+```
+
+```text title="Response"
+┌─r─────────────────────────────┬─toTypeName(r)─┐
+│ [(0,0),(10,0),(10,10),(0,10)] │ LineString    │
+└───────────────────────────────┴───────────────┘
+```
+
+<div id="multilinestring">
+  ## MultiLineString
+</div>
+
+`MultiLineString`은 여러 개의 선을 `LineString`의 배열로 저장하는 타입입니다: [배열](/ko/reference/data-types/array)([LineString](#linestring)).
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE geo_multilinestring (l MultiLineString) ENGINE = Memory();
+INSERT INTO geo_multilinestring VALUES([[(0, 0), (10, 0), (10, 10), (0, 10)], [(1, 1), (2, 2), (3, 3)]]);
+SELECT l, toTypeName(l) FROM geo_multilinestring;
+```
+
+```text title="Response"
+┌─l───────────────────────────────────────────────────┬─toTypeName(l)───┐
+│ [[(0,0),(10,0),(10,10),(0,10)],[(1,1),(2,2),(3,3)]] │ MultiLineString │
+└─────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="polygon">
+  ## Polygon
+</div>
+
+`Polygon`은 링의 배열로 저장되는, 내부에 구멍이 있는 다각형입니다: [배열](/ko/reference/data-types/array)([Ring](#ring)). 바깥 배열의 첫 번째 요소는 다각형의 외곽을 나타내고, 그 뒤의 요소들은 모두 구멍을 나타냅니다.
+
+**예시**
+
+다음은 구멍이 1개 있는 다각형입니다:
+
+```sql title="Query"
+CREATE TABLE geo_polygon (pg Polygon) ENGINE = Memory();
+INSERT INTO geo_polygon VALUES([[(20, 20), (50, 20), (50, 50), (20, 50)], [(30, 30), (50, 50), (50, 30)]]);
+SELECT pg, toTypeName(pg) FROM geo_polygon;
+```
+
+```text title="Response"
+┌─pg────────────────────────────────────────────────────────────┬─toTypeName(pg)─┐
+│ [[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]] │ Polygon        │
+└───────────────────────────────────────────────────────────────┴────────────────┘
+```
+
+<div id="multipolygon">
+  ## MultiPolygon
+</div>
+
+`MultiPolygon`은 여러 개의 Polygon으로 구성되며, Polygon의 배열로 저장됩니다: [배열](/ko/reference/data-types/array)([Polygon](#polygon)).
+
+**예시**
+
+이 MultiPolygon은 서로 분리된 2개의 Polygon으로 구성됩니다 — 첫 번째는 hole이 없고, 두 번째는 hole이 1개 있습니다:
+
+```sql title="Query"
+CREATE TABLE geo_multipolygon (mpg MultiPolygon) ENGINE = Memory();
+INSERT INTO geo_multipolygon VALUES([[[(0, 0), (10, 0), (10, 10), (0, 10)]], [[(20, 20), (50, 20), (50, 50), (20, 50)],[(30, 30), (50, 50), (50, 30)]]]);
+SELECT mpg, toTypeName(mpg) FROM geo_multipolygon;
+```
+
+```text title="Response"
+┌─mpg─────────────────────────────────────────────────────────────────────────────────────────────┬─toTypeName(mpg)─┐
+│ [[[(0,0),(10,0),(10,10),(0,10)]],[[(20,20),(50,20),(50,50),(20,50)],[(30,30),(50,50),(50,30)]]] │ MultiPolygon    │
+└─────────────────────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
+```
+
+<div id="geometry">
+  ## Geometry
+</div>
+
+`Geometry`는 위에 나열된 모든 타입을 포괄하는 공통 타입입니다. 즉, 이러한 타입들의 Variant와 같습니다.
+
+**예시**
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo (geom Geometry) ENGINE = Memory();
+INSERT INTO geo VALUES ((1, 2));
+SELECT * FROM geo;
+```
+
+```text title="Response"
+   ┌─geom──┐
+1. │ (1,2) │
+   └───────┘
+```
+
+{/* */}
+
+```sql title="Query"
+CREATE TABLE IF NOT EXISTS geo_dst (geom Geometry) ENGINE = Memory();
+
+CREATE TABLE IF NOT EXISTS geo (geom String, id Int) ENGINE = Memory();
+INSERT INTO geo VALUES ('POLYGON((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 1);
+INSERT INTO geo VALUES ('POINT(0 0)', 2);
+INSERT INTO geo VALUES ('MULTIPOLYGON(((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4)),((-10 -10,-10 -9,-9 10,-10 -10)))', 3);
+INSERT INTO geo VALUES ('LINESTRING(1 0,10 0,10 10,0 10,1 0)', 4);
+INSERT INTO geo VALUES ('MULTILINESTRING((1 0,10 0,10 10,0 10,1 0),(4 4,5 4,5 5,4 5,4 4))', 5);
+INSERT INTO geo_dst SELECT readWKT(geom) FROM geo ORDER BY id;
+
+SELECT * FROM geo_dst;
+```
+
+```text title="Response"
+   ┌─geom─────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+1. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+2. │ (0,0)                                                                                                            │
+3. │ [[[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]],[[(-10,-10),(-10,-9),(-9,10),(-10,-10)]]] │
+4. │ [(1,0),(10,0),(10,10),(0,10),(1,0)]                                                                              │
+5. │ [[(1,0),(10,0),(10,10),(0,10),(1,0)],[(4,4),(5,4),(5,5),(4,5),(4,4)]]                                            │
+   └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [대규모 실제 데이터 세트 탐색: ClickHouse의 100년이 넘는 기상 기록](https://clickhouse.com/blog/real-world-data-noaa-climate-data)

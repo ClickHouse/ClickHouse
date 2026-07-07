@@ -1,0 +1,45 @@
+---
+description: 'Página que descreve o motor de banco de dados `Shared`, disponível no ClickHouse Cloud'
+sidebarTitle: 'Shared'
+slug: /engines/database-engines/shared
+title: 'Shared'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/pt-BR/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+<div id="shared-database-engine">
+  # Shared database engine
+</div>
+
+O motor de banco de dados `Shared` funciona em conjunto com o Shared Catalog para gerenciar bancos de dados cujas tabelas usam motores de tabela sem estado, como [`SharedMergeTree`](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree).
+Esses motores de tabela não gravam estado persistente em disco e são compatíveis com ambientes de compute dinâmico.
+
+O motor de banco de dados `Shared` no Cloud elimina a dependência de discos locais.
+É um motor puramente em memória, exigindo apenas CPU e memória.
+
+<div id="how-it-works">
+  ## Como isso funciona?
+</div>
+
+O motor de banco de dados `Shared` armazena todas as definições de bancos de dados e tabelas em um Shared Catalog central baseado no Keeper. Em vez de gravar no disco local, ele mantém um único estado global versionado, compartilhado entre todos os nós de computação.
+
+Cada nó acompanha apenas a última versão aplicada e, na inicialização, busca o estado mais recente sem precisar de arquivos locais nem de configuração manual.
+
+<div id="syntax">
+  ## Sintaxe
+</div>
+
+Para usuários finais, o uso do Shared Catalog e do Shared motor de banco de dados não requer configuração adicional. A criação de bancos de dados é a mesma de sempre:
+
+```sql
+CREATE DATABASE my_database;
+```
+
+ClickHouse Cloud atribui automaticamente o Shared motor de banco de dados aos bancos de dados. Quaisquer tabelas criadas em um banco de dados desse tipo usando engines sem estado se beneficiarão automaticamente dos recursos de replicação e coordenação do Shared Catalog.
+
+<Tip>
+  Para mais informações sobre o Shared Catalog e seus benefícios, consulte [&quot;Shared catalog and shared database engine&quot;](/pt-BR/products/cloud/features/infrastructure/shared-catalog) na seção de referência do Cloud.
+</Tip>

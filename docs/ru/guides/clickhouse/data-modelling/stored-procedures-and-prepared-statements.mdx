@@ -1,0 +1,960 @@
+---
+sidebarTitle: 'Хранимые процедуры и параметры запроса'
+keywords: ['clickhouse', 'хранимые процедуры', 'подготовленные операторы', 'параметры запроса', 'UDF', 'параметризованные представления']
+description: 'Руководство по хранимым процедурам, подготовленным операторам и параметрам запроса в ClickHouse'
+slug: /guides/developer/stored-procedures-and-prepared-statements
+title: 'Хранимые процедуры и параметры запроса в ClickHouse'
+doc_type: 'guide'
+---
+
+Если вы переходите с традиционной реляционной базы данных, возможно, вы ищете в ClickHouse хранимые процедуры и подготовленные операторы.
+В этом руководстве объясняется подход ClickHouse к этим концепциям и приводятся рекомендуемые альтернативы.
+
+<div id="alternatives-to-stored-procedures">
+  ## Альтернативы хранимым процедурам в ClickHouse
+</div>
+
+ClickHouse не поддерживает традиционные хранимые процедуры с логикой управления потоком выполнения (`IF`/`ELSE`, циклы и т. д.).
+Это осознанное решение, обусловленное архитектурой ClickHouse как аналитической базы данных.
+В аналитических базах данных циклы не рекомендуются, поскольку выполнение O(n) простых запросов обычно медленнее, чем выполнение меньшего числа более сложных запросов.
+
+ClickHouse оптимизирован для:
+
+* **Аналитических нагрузок** - Сложных агрегаций на больших наборах данных
+* **Пакетной обработки** - Эффективной работы с большими объёмами данных
+* **Декларативных запросов** - SQL-запросов, которые описывают, какие данные нужно получить, а не как их обрабатывать
+
+Хранимые процедуры с процедурной логикой идут вразрез с этими принципами оптимизации. Вместо них ClickHouse предлагает альтернативы, которые лучше соответствуют его сильным сторонам.
+
+<div id="user-defined-functions">
+  ### Пользовательские функции (UDFs)
+</div>
+
+Пользовательские функции позволяют инкапсулировать повторно используемую логику без использования конструкций управления потоком. ClickHouse поддерживает два типа:
+
+<div id="lambda-based-udfs">
+  #### UDF на основе лямбда-выражений
+</div>
+
+Создавайте функции с помощью SQL-выражений и синтаксиса лямбда-выражений:
+
+<Accordion title="Тестовые данные для примеров">
+  ```sql
+  -- Создание таблицы products
+  CREATE TABLE products (
+      product_id UInt32,
+      product_name String,
+      price Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY product_id;
+
+  -- Вставка тестовых данных
+  INSERT INTO products (product_id, product_name, price) VALUES
+  (1, 'Laptop', 899.99),
+  (2, 'Wireless Mouse', 24.99),
+  (3, 'USB-C Cable', 12.50),
+  (4, 'Monitor', 299.00),
+  (5, 'Keyboard', 79.99),
+  (6, 'Webcam', 54.95),
+  (7, 'Desk Lamp', 34.99),
+  (8, 'External Hard Drive', 119.99),
+  (9, 'Headphones', 149.00),
+  (10, 'Phone Stand', 15.99);
+  ```
+</Accordion>
+
+```sql
+-- Простая функция вычисления
+CREATE FUNCTION calculate_tax AS (price, rate) -> price * rate;
+
+SELECT
+    product_name,
+    price,
+    calculate_tax(price, 0.08) AS tax
+FROM products;
+```
+
+```sql
+-- Условная логика с использованием if()
+CREATE FUNCTION price_tier AS (price) ->
+    if(price < 100, 'Budget',
+       if(price < 500, 'Mid-range', 'Premium'));
+
+SELECT
+    product_name,
+    price,
+    price_tier(price) AS tier
+FROM products;
+```
+
+```sql
+-- Работа со строками
+CREATE FUNCTION format_phone AS (phone) ->
+    concat('(', substring(phone, 1, 3), ') ',
+           substring(phone, 4, 3), '-',
+           substring(phone, 7, 4));
+
+SELECT format_phone('5551234567');
+-- Результат: (555) 123-4567
+```
+
+**Ограничения:**
+
+* Нет циклов и сложного управления потоком
+* Нельзя изменять данные (`INSERT`/`UPDATE`/`DELETE`)
+* Рекурсивные функции не поддерживаются
+
+Полный синтаксис см. в [`CREATE FUNCTION`](/ru/reference/statements/create/function).
+
+<div id="executable-udfs">
+  #### Исполняемые UDF
+</div>
+
+Для более сложной логики используйте исполняемые UDF, которые вызывают внешние программы:
+
+```xml
+<!-- /etc/clickhouse-server/sentiment_analysis_function.xml -->
+<functions>
+    <function>
+        <type>executable</type>
+        <name>sentiment_score</name>
+        <return_type>Float32</return_type>
+        <argument>
+            <type>String</type>
+        </argument>
+        <format>TabSeparated</format>
+        <command>python3 /opt/scripts/sentiment.py</command>
+    </function>
+</functions>
+```
+
+```sql
+-- Использование исполняемой UDF
+SELECT
+    review_text,
+    sentiment_score(review_text) AS score
+FROM customer_reviews;
+```
+
+Исполняемые UDF могут реализовывать произвольную логику на любом языке программирования (Python, Node.js, Go и т. д.).
+
+Подробности см. в разделе [Исполняемые UDF](/ru/reference/functions/regular-functions/udf).
+
+<div id="parameterized-views">
+  ### Параметризованные представления
+</div>
+
+Параметризованные представления работают как функции, возвращающие наборы данных.
+Они идеально подходят для повторно используемых запросов с динамической фильтрацией:
+
+<Accordion title="Тестовые данные для примера">
+  ```sql
+  -- Создание таблицы sales
+  CREATE TABLE sales (
+    date Date,
+    product_id UInt32,
+    product_name String,
+    category String,
+    quantity UInt32,
+    revenue Decimal(10, 2),
+    sales_amount Decimal(10, 2)
+  )
+  ENGINE = MergeTree()
+  ORDER BY (date, product_id);
+
+  -- Вставка тестовых данных
+  INSERT INTO sales VALUES
+  ('2024-01-05', 12345, 'Laptop Pro', 'Electronics', 2, 1799.98, 1799.98),
+  ('2024-01-06', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-01-10', 12346, 'Wireless Mouse', 'Electronics', 5, 124.95, 124.95),
+  ('2024-01-15', 12347, 'USB-C Cable', 'Accessories', 10, 125.00, 125.00),
+  ('2024-01-20', 12345, 'Laptop Pro', 'Electronics', 3, 2699.97, 2699.97),
+  ('2024-01-25', 12348, 'Monitor 4K', 'Electronics', 2, 598.00, 598.00),
+  ('2024-02-01', 12345, 'Laptop Pro', 'Electronics', 1, 899.99, 899.99),
+  ('2024-02-05', 12349, 'Keyboard Mechanical', 'Accessories', 4, 319.96, 319.96),
+  ('2024-02-10', 12346, 'Wireless Mouse', 'Electronics', 8, 199.92, 199.92),
+  ('2024-02-15', 12350, 'Webcam HD', 'Electronics', 3, 164.85, 164.85);
+  ```
+</Accordion>
+
+```sql
+-- Создание параметризованного представления
+CREATE VIEW sales_by_date AS
+SELECT
+    date,
+    product_id,
+    sum(quantity) AS total_quantity,
+    sum(revenue) AS total_revenue
+FROM sales
+WHERE date BETWEEN {start_date:Date} AND {end_date:Date}
+GROUP BY date, product_id;
+```
+
+```sql
+-- Запрос к представлению с параметрами
+SELECT *
+FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
+WHERE product_id = 12345;
+```
+
+<div id="common-use-cases">
+  #### Распространённые варианты использования
+</div>
+
+* Динамическая фильтрация по диапазону дат
+* Сегментация данных по пользователям
+* [Доступ к данным в многопользовательской среде](/ru/products/cloud/guides/best-practices/multitenancy)
+* Шаблоны отчётов
+* [Маскирование данных](/ru/products/cloud/guides/security/data-masking)
+
+```sql
+-- Более сложное параметризованное представление
+CREATE VIEW top_products_by_category AS
+SELECT
+    category,
+    product_name,
+    revenue,
+    rank
+FROM (
+    SELECT
+        category,
+        product_name,
+        revenue,
+        rank() OVER (PARTITION BY category ORDER BY revenue DESC) AS rank
+    FROM (
+        SELECT
+            category,
+            product_name,
+            sum(sales_amount) AS revenue
+        FROM sales
+        WHERE category = {category:String}
+            AND date >= {min_date:Date}
+        GROUP BY category, product_name
+    )
+)
+WHERE rank <= {top_n:UInt32};
+
+-- Использование
+SELECT * FROM top_products_by_category(
+    category='Electronics',
+    min_date='2024-01-01',
+    top_n=10
+);
+```
+
+Дополнительные сведения см. в разделе [Параметризованные представления](/ru/reference/statements/create/view#parameterized-view).
+
+<div id="materialized-views">
+  ### Materialized views
+</div>
+
+Materialized views идеально подходят для предварительного вычисления ресурсоёмких агрегаций, которые в традиционных базах данных обычно выполняются в хранимых процедурах. Если вы привыкли к традиционным базам данных, воспринимайте materialized view как **INSERT trigger**, который автоматически преобразует и агрегирует данные по мере их вставки в исходную таблицу:
+
+```sql
+-- Исходная таблица
+CREATE TABLE page_views (
+    user_id UInt64,
+    page String,
+    timestamp DateTime,
+    session_id String
+)
+ENGINE = MergeTree()
+ORDER BY (user_id, timestamp);
+
+-- Materialized view для поддержания агрегированной статистики
+CREATE MATERIALIZED VIEW daily_user_stats
+ENGINE = SummingMergeTree()
+ORDER BY (date, user_id)
+AS SELECT
+    toDate(timestamp) AS date,
+    user_id,
+    count() AS page_views,
+    uniq(session_id) AS sessions,
+    uniq(page) AS unique_pages
+FROM page_views
+GROUP BY date, user_id;
+
+-- Вставка тестовых данных в исходную таблицу
+INSERT INTO page_views VALUES
+(101, '/home', '2024-01-15 10:00:00', 'session_a1'),
+(101, '/products', '2024-01-15 10:05:00', 'session_a1'),
+(101, '/checkout', '2024-01-15 10:10:00', 'session_a1'),
+(102, '/home', '2024-01-15 11:00:00', 'session_b1'),
+(102, '/about', '2024-01-15 11:05:00', 'session_b1'),
+(101, '/home', '2024-01-16 09:00:00', 'session_a2'),
+(101, '/products', '2024-01-16 09:15:00', 'session_a2'),
+(103, '/home', '2024-01-16 14:00:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:05:00', 'session_c1'),
+(103, '/products', '2024-01-16 14:10:00', 'session_c1'),
+(102, '/home', '2024-01-17 10:30:00', 'session_b2'),
+(102, '/contact', '2024-01-17 10:35:00', 'session_b2');
+
+-- Запрос предварительно агрегированных данных
+SELECT
+    user_id,
+    sum(page_views) AS total_views,
+    sum(sessions) AS total_sessions
+FROM daily_user_stats
+WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
+GROUP BY user_id;
+```
+
+<div id="refreshable-materialized-views">
+  #### Refreshable materialized views
+</div>
+
+Для пакетной обработки по расписанию (например, для ночных хранимых процедур):
+
+```sql
+-- Автоматическое обновление каждый день в 2:00
+CREATE MATERIALIZED VIEW monthly_sales_report
+REFRESH EVERY 1 DAY OFFSET 2 HOUR
+AS SELECT
+    toStartOfMonth(order_date) AS month,
+    region,
+    product_category,
+    count() AS order_count,
+    sum(amount) AS total_revenue,
+    avg(amount) AS avg_order_value
+FROM orders
+WHERE order_date >= today() - INTERVAL 13 MONTH
+GROUP BY month, region, product_category;
+
+-- Запрос всегда возвращает актуальные данные
+SELECT * FROM monthly_sales_report
+WHERE month = toStartOfMonth(today());
+```
+
+См. [Каскадные materialized view](/ru/concepts/features/materialized-views/cascading-materialized-views) для более сложных сценариев.
+
+<div id="external-orchestration">
+  ### Внешняя оркестрация
+</div>
+
+Для сложной бизнес-логики, ETL-процессов или многоэтапных процессов логику всегда можно реализовать вне ClickHouse,
+используя клиентские библиотеки.
+
+<div id="using-application-code">
+  #### Использование прикладного кода
+</div>
+
+Ниже приведено наглядное сравнение того, как хранимая процедура MySQL реализуется в виде прикладного кода при работе с ClickHouse:
+
+<Tabs>
+  <Tab title="Хранимая процедура в MySQL">
+    ```sql
+    DELIMITER $$
+
+    CREATE PROCEDURE process_order(
+        IN p_order_id INT,
+        IN p_customer_id INT,
+        IN p_order_total DECIMAL(10,2),
+        OUT p_status VARCHAR(50),
+        OUT p_loyalty_points INT
+    )
+    BEGIN
+        DECLARE v_customer_tier VARCHAR(20);
+        DECLARE v_previous_orders INT;
+        DECLARE v_discount DECIMAL(10,2);
+
+        -- Начало транзакции
+        START TRANSACTION;
+
+        -- Получение информации о клиенте
+        SELECT tier, total_orders
+        INTO v_customer_tier, v_previous_orders
+        FROM customers
+        WHERE customer_id = p_customer_id;
+
+        -- Расчёт скидки на основе уровня
+        IF v_customer_tier = 'gold' THEN
+            SET v_discount = p_order_total * 0.15;
+        ELSEIF v_customer_tier = 'silver' THEN
+            SET v_discount = p_order_total * 0.10;
+        ELSE
+            SET v_discount = 0;
+        END IF;
+
+        -- Вставка записи о заказе
+        INSERT INTO orders (order_id, customer_id, order_total, discount, final_amount)
+        VALUES (p_order_id, p_customer_id, p_order_total, v_discount,
+                p_order_total - v_discount);
+
+        -- Обновление статистики клиента
+        UPDATE customers
+        SET total_orders = total_orders + 1,
+            lifetime_value = lifetime_value + (p_order_total - v_discount),
+            last_order_date = NOW()
+        WHERE customer_id = p_customer_id;
+
+        -- Расчёт баллов лояльности (1 балл за доллар)
+        SET p_loyalty_points = FLOOR(p_order_total - v_discount);
+
+        -- Запись транзакции баллов лояльности
+        INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+        VALUES (p_customer_id, p_loyalty_points, NOW(),
+                CONCAT('Order #', p_order_id));
+
+        -- Проверка необходимости повышения уровня клиента
+        IF v_previous_orders + 1 >= 10 AND v_customer_tier = 'bronze' THEN
+            UPDATE customers SET tier = 'silver' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER';
+        ELSEIF v_previous_orders + 1 >= 50 AND v_customer_tier = 'silver' THEN
+            UPDATE customers SET tier = 'gold' WHERE customer_id = p_customer_id;
+            SET p_status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD';
+        ELSE
+            SET p_status = 'ORDER_COMPLETE';
+        END IF;
+
+        COMMIT;
+    END$$
+
+    DELIMITER ;
+
+    -- Вызов хранимой процедуры
+    CALL process_order(12345, 5678, 250.00, @status, @points);
+    SELECT @status, @points;
+    ```
+  </Tab>
+
+  <Tab title="Прикладной код ClickHouse">
+    <Info>
+      **Параметры запроса**
+
+      В примере ниже используются параметры запроса в ClickHouse.
+      Если вы еще не знакомы с параметрами запроса в ClickHouse, сразу переходите к разделу [&quot;Альтернативы подготовленным операторам в ClickHouse&quot;](/ru/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements#alternatives-to-prepared-statements-in-clickhouse).
+    </Info>
+
+    ```python
+    # Пример на Python с использованием clickhouse-connect
+    import clickhouse_connect
+    from datetime import datetime
+    from decimal import Decimal
+
+    client = clickhouse_connect.get_client(host='localhost')
+
+    def process_order(order_id: int, customer_id: int, order_total: Decimal) -> tuple[str, int]:
+        """
+        Processes an order with business logic that would be in a stored procedure.
+        Returns: (status_message, loyalty_points)
+
+        Note: ClickHouse is optimized for analytics, not OLTP transactions.
+        For transactional workloads, use an OLTP database (PostgreSQL, MySQL)
+        and sync analytics data to ClickHouse for reporting.
+        """
+
+        # Шаг 1: Получение информации о клиенте
+        result = client.query(
+            """
+            SELECT tier, total_orders
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id}
+        )
+
+        if not result.result_rows:
+            raise ValueError(f"Customer {customer_id} not found")
+
+        customer_tier, previous_orders = result.result_rows[0]
+
+        # Шаг 2: Расчёт скидки на основе уровня (бизнес-логика на Python)
+        discount_rates = {'gold': 0.15, 'silver': 0.10, 'bronze': 0.0}
+        discount = order_total * Decimal(str(discount_rates.get(customer_tier, 0.0)))
+        final_amount = order_total - discount
+
+        # Шаг 3: Вставка записи о заказе
+        client.command(
+            """
+            INSERT INTO orders (order_id, customer_id, order_total, discount,
+                               final_amount, order_date)
+            VALUES ({oid: UInt32}, {cid: UInt32}, {total: Decimal64(2)},
+                    {disc: Decimal64(2)}, {final: Decimal64(2)}, now())
+            """,
+            parameters={
+                'oid': order_id,
+                'cid': customer_id,
+                'total': float(order_total),
+                'disc': float(discount),
+                'final': float(final_amount)
+            }
+        )
+
+        # Шаг 4: Расчёт новой статистики клиента
+        new_order_count = previous_orders + 1
+
+        # Для аналитических баз данных предпочтительнее использовать INSERT вместо UPDATE
+        # Здесь применяется шаблон ReplacingMergeTree
+        client.command(
+            """
+            INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                  update_time)
+            SELECT
+                customer_id,
+                tier,
+                {new_count: UInt32} AS total_orders,
+                now() AS last_order_date,
+                now() AS update_time
+            FROM customers
+            WHERE customer_id = {cid: UInt32}
+            """,
+            parameters={'cid': customer_id, 'new_count': new_order_count}
+        )
+
+        # Шаг 5: Расчёт и запись баллов лояльности
+        loyalty_points = int(final_amount)
+
+        client.command(
+            """
+            INSERT INTO loyalty_points (customer_id, points, transaction_date, description)
+            VALUES ({cid: UInt32}, {pts: Int32}, now(),
+                    {desc: String})
+            """,
+            parameters={
+                'cid': customer_id,
+                'pts': loyalty_points,
+                'desc': f'Order #{order_id}'
+            }
+        )
+
+        # Шаг 6: Проверка повышения уровня (бизнес-логика на Python)
+        status = 'ORDER_COMPLETE'
+
+        if new_order_count >= 10 and customer_tier == 'bronze':
+            # Повышение до уровня silver
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'silver' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_SILVER'
+
+        elif new_order_count >= 50 and customer_tier == 'silver':
+            # Повышение до уровня gold
+            client.command(
+                """
+                INSERT INTO customers (customer_id, tier, total_orders, last_order_date,
+                                      update_time)
+                SELECT
+                    customer_id, 'gold' AS tier, total_orders, last_order_date,
+                    now() AS update_time
+                FROM customers
+                WHERE customer_id = {cid: UInt32}
+                """,
+                parameters={'cid': customer_id}
+            )
+            status = 'ORDER_COMPLETE_TIER_UPGRADED_GOLD'
+
+        return status, loyalty_points
+
+    # Вызов функции
+    status, points = process_order(
+        order_id=12345,
+        customer_id=5678,
+        order_total=Decimal('250.00')
+    )
+
+    print(f"Status: {status}, Loyalty Points: {points}")
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="key-differences">
+  #### Ключевые различия
+</div>
+
+1. **Управляющий поток** - Хранимые процедуры MySQL используют `IF/ELSE` и циклы `WHILE`. В ClickHouse эту логику следует реализовывать в прикладном коде (Python, Java и т. д.)
+2. **Транзакции** - MySQL поддерживает `BEGIN/COMMIT/ROLLBACK` для ACID-транзакций. ClickHouse — аналитическая база данных, оптимизированная для рабочих нагрузок с добавлением данных, а не для транзакционных обновлений
+3. **Обновления** - MySQL использует операторы `UPDATE`. В ClickHouse для изменяемых данных предпочтительнее `INSERT` с [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) или [CollapsingMergeTree](/ru/reference/engines/table-engines/mergetree-family/collapsingmergetree)
+4. **Переменные и состояние** - Хранимые процедуры MySQL могут объявлять переменные (`DECLARE v_discount`). В ClickHouse состоянием следует управлять в прикладном коде
+5. **Обработка ошибок** - MySQL поддерживает `SIGNAL` и обработчики исключений. В прикладном коде используйте встроенные в язык средства обработки ошибок (try/catch)
+
+<Tip>
+  **Когда использовать каждый подход:**
+
+  * **OLTP-нагрузки** (заказы, платежи, учетные записи пользователей) → Используйте MySQL/PostgreSQL с хранимыми процедурами
+  * **Аналитические нагрузки** (отчетность, агрегации, временные ряды) → Используйте ClickHouse с оркестрацией на уровне приложения
+  * **Гибридная архитектура** → Используйте оба варианта! Передавайте транзакционные данные из OLTP в ClickHouse для аналитики
+</Tip>
+
+<div id="using-workflow-orchestration-tools">
+  #### Использование инструментов оркестрации рабочих процессов
+</div>
+
+* **Apache Airflow** - Планирование и мониторинг сложных DAG с запросами ClickHouse
+* **dbt** - Преобразование данных с помощью SQL-ориентированных рабочих процессов
+* **Prefect/Dagster** - Современные средства оркестрации на Python
+* **Custom schedulers** - задания cron, Kubernetes CronJobs и т. д.
+
+**Преимущества внешней оркестрации:**
+
+* Полная мощь языков программирования
+* Более удобная обработка ошибок и логика повторных попыток
+* Интеграция с внешними системами (API, другими базами данных)
+* Контроль версий и тестирование
+* Мониторинг и оповещения
+* Более гибкое планирование
+
+<div id="alternatives-to-prepared-statements-in-clickhouse">
+  ## Альтернативы подготовленным операторам в ClickHouse
+</div>
+
+Хотя в ClickHouse нет традиционных «подготовленных операторов» в смысле СУБД, он поддерживает **параметры запроса**, которые выполняют ту же задачу: позволяют создавать безопасные параметризованные запросы и предотвращать SQL-инъекции.
+
+<div id="query-parameters-syntax">
+  ### Синтаксис
+</div>
+
+Существует два способа задать параметры запроса:
+
+<div id="method-1-using-set">
+  #### Способ 1: с помощью `SET`
+</div>
+
+<Accordion title="Пример таблицы и данных">
+  ```sql
+  -- Создание таблицы user_events (синтаксис ClickHouse)
+  CREATE TABLE user_events (
+      event_id UInt32,
+      user_id UInt64,
+      event_name String,
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = MergeTree()
+  ORDER BY (user_id, event_date);
+
+  -- Пример вставки данных для нескольких пользователей и событий
+  INSERT INTO user_events (event_id, user_id, event_name, event_date, event_timestamp) VALUES
+  (1, 12345, 'page_view', '2024-01-05', '2024-01-05 10:30:00'),
+  (2, 12345, 'page_view', '2024-01-05', '2024-01-05 10:35:00'),
+  (3, 12345, 'add_to_cart', '2024-01-05', '2024-01-05 10:40:00'),
+  (4, 12345, 'page_view', '2024-01-10', '2024-01-10 14:20:00'),
+  (5, 12345, 'add_to_cart', '2024-01-10', '2024-01-10 14:25:00'),
+  (6, 12345, 'purchase', '2024-01-10', '2024-01-10 14:30:00'),
+  (7, 12345, 'page_view', '2024-01-15', '2024-01-15 09:15:00'),
+  (8, 12345, 'page_view', '2024-01-15', '2024-01-15 09:20:00'),
+  (9, 12345, 'page_view', '2024-01-20', '2024-01-20 16:45:00'),
+  (10, 12345, 'add_to_cart', '2024-01-20', '2024-01-20 16:50:00'),
+  (11, 12345, 'purchase', '2024-01-25', '2024-01-25 11:10:00'),
+  (12, 12345, 'page_view', '2024-01-28', '2024-01-28 13:30:00'),
+  (13, 67890, 'page_view', '2024-01-05', '2024-01-05 11:00:00'),
+  (14, 67890, 'add_to_cart', '2024-01-05', '2024-01-05 11:05:00'),
+  (15, 67890, 'purchase', '2024-01-05', '2024-01-05 11:10:00'),
+  (16, 12345, 'page_view', '2024-02-01', '2024-02-01 10:00:00'),
+  (17, 12345, 'add_to_cart', '2024-02-01', '2024-02-01 10:05:00');
+  ```
+</Accordion>
+
+```sql
+SET param_user_id = 12345;
+SET param_start_date = '2024-01-01';
+SET param_end_date = '2024-01-31';
+
+SELECT
+    event_name,
+    count() AS event_count
+FROM user_events
+WHERE user_id = {user_id: UInt64}
+    AND event_date BETWEEN {start_date: Date} AND {end_date: Date}
+GROUP BY event_name;
+```
+
+<div id="method-2-using-cli-parameters">
+  #### Метод 2: с использованием параметров CLI
+</div>
+
+```bash
+clickhouse-client \
+    --param_user_id=12345 \
+    --param_start_date='2024-01-01' \
+    --param_end_date='2024-01-31' \
+    --query="SELECT count() FROM user_events
+             WHERE user_id = {user_id: UInt64}
+             AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
+```
+
+<div id="parameter-syntax">
+  ### Синтаксис параметров
+</div>
+
+Для обращения к параметрам используется запись: `{parameter_name: DataType}`
+
+* `parameter_name` - имя параметра (без префикса `param_`)
+* `DataType` - тип данных ClickHouse, к которому нужно привести параметр
+
+<div id="data-type-examples">
+  ### Примеры типов данных
+</div>
+
+<Accordion title="Таблицы и тестовые данные для примера">
+  ```sql
+  -- 1. Создать таблицу для тестов строк и чисел
+  CREATE TABLE IF NOT EXISTS users (
+      name String,
+      age UInt8,
+      salary Float64
+  ) ENGINE = Memory;
+
+  INSERT INTO users VALUES
+      ('John Doe', 25, 75000.50),
+      ('Jane Smith', 30, 85000.75),
+      ('Peter Jones', 20, 50000.00);
+
+  -- 2. Создать таблицу для тестов дат и временных меток
+  CREATE TABLE IF NOT EXISTS events (
+      event_date Date,
+      event_timestamp DateTime
+  ) ENGINE = Memory;
+
+  INSERT INTO events VALUES
+      ('2024-01-15', '2024-01-15 14:30:00'),
+      ('2024-01-15', '2024-01-15 15:00:00'),
+      ('2024-01-16', '2024-01-16 10:00:00');
+
+  -- 3. Создать таблицу для тестов массивов
+  CREATE TABLE IF NOT EXISTS products (
+      id UInt32,
+      name String
+  ) ENGINE = Memory;
+
+  INSERT INTO products VALUES (1, 'Laptop'), (2, 'Monitor'), (3, 'Mouse'), (4, 'Keyboard');
+
+  -- 4. Создать таблицу для тестов Map (аналогов структур)
+  CREATE TABLE IF NOT EXISTS accounts (
+      user_id UInt32,
+      status String,
+      type String
+  ) ENGINE = Memory;
+
+  INSERT INTO accounts VALUES
+      (101, 'active', 'premium'),
+      (102, 'inactive', 'basic'),
+      (103, 'active', 'basic');
+
+  -- 5. Создать таблицу для тестов Identifier
+  CREATE TABLE IF NOT EXISTS sales_2024 (
+      value UInt32
+  ) ENGINE = Memory;
+
+  INSERT INTO sales_2024 VALUES (100), (200), (300);
+  ```
+</Accordion>
+
+<Tabs>
+  <Tab title="Строки & числа">
+    ```sql
+    SET param_name = 'John Doe';
+    SET param_age = 25;
+    SET param_salary = 75000.50;
+
+    SELECT name, age, salary FROM users
+    WHERE name = {name: String}
+      AND age >= {age: UInt8}
+      AND salary <= {salary: Float64};
+    ```
+  </Tab>
+
+  <Tab title="Даты & время">
+    ```sql
+    SET param_date = '2024-01-15';
+    SET param_timestamp = '2024-01-15 14:30:00';
+
+    SELECT * FROM events
+    WHERE event_date = {date: Date}
+       OR event_timestamp > {timestamp: DateTime};
+    ```
+  </Tab>
+
+  <Tab title="Массивы">
+    ```sql
+    SET param_ids = [1, 2, 3, 4, 5];
+
+    SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+    ```
+  </Tab>
+
+  <Tab title="Map">
+    ```sql
+    SET param_filters = {'target_status': 'active'};
+
+    SELECT user_id, status, type FROM accounts
+    WHERE status = arrayElement(
+        mapValues({filters: Map(String, String)}),
+        indexOf(mapKeys({filters: Map(String, String)}), 'target_status')
+    );
+    ```
+  </Tab>
+
+  <Tab title="Идентификаторы">
+    ```sql
+    SET param_table = 'sales_2024';
+
+    SELECT count() FROM {table: Identifier};
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+О том, как использовать параметры запроса в [клиентских библиотеках](/ru/integrations/language-clients/index), см. документацию
+для конкретного клиента, который вас интересует.
+
+<div id="limitations-of-query-parameters">
+  ### Ограничения параметров запроса
+</div>
+
+Параметры запроса — **не универсальные текстовые подстановки**. У них есть определённые ограничения:
+
+1. Они **в первую очередь предназначены для операторов SELECT** — лучше всего поддерживаются в запросах SELECT
+2. Они **работают как идентификаторы или литералы** — ими нельзя подставлять произвольные фрагменты SQL
+3. У них **ограниченная поддержка DDL** — они поддерживаются в `CREATE TABLE`, но не в `ALTER TABLE`
+
+**Что РАБОТАЕТ:**
+
+```sql
+-- ✓ Значения в предложении WHERE
+SELECT * FROM users WHERE id = {user_id: UInt64};
+
+-- ✓ Имена таблиц/баз данных
+SELECT * FROM {db: Identifier}.{table: Identifier};
+
+-- ✓ Значения в предложении IN
+SELECT * FROM products WHERE id IN {ids: Array(UInt32)};
+
+-- ✓ CREATE TABLE
+CREATE TABLE {table_name: Identifier} (id UInt64, name String) ENGINE = MergeTree() ORDER BY id;
+```
+
+**Что НЕ работает:**
+
+```sql
+-- ✗ Имена столбцов в SELECT (используйте Identifier с осторожностью)
+SELECT {column: Identifier} FROM users;  -- Ограниченная поддержка
+
+-- ✗ Произвольные фрагменты SQL
+SELECT * FROM users {where_clause: String};  -- НЕ ПОДДЕРЖИВАЕТСЯ
+
+-- ✗ Команды ALTER TABLE
+ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- НЕ ПОДДЕРЖИВАЕТСЯ
+
+-- ✗ Несколько команд
+{statements: String};  -- НЕ ПОДДЕРЖИВАЕТСЯ
+```
+
+<div id="security-best-practices">
+  ### Рекомендации по безопасности
+</div>
+
+**Всегда используйте параметры запроса для данных, вводимых пользователем:**
+
+```python
+# ✓ БЕЗОПАСНО - Использует параметры
+user_input = request.get('user_id')
+result = client.query(
+    "SELECT * FROM orders WHERE user_id = {uid: UInt64}",
+    parameters={'uid': user_input}
+)
+
+# ✗ ОПАСНО - Риск SQL-инъекции!
+user_input = request.get('user_id')
+result = client.query(f"SELECT * FROM orders WHERE user_id = {user_input}")
+```
+
+**Проверяйте типы входных данных:**
+
+```python
+def get_user_orders(user_id: int, start_date: str):
+    # Проверяем типы перед выполнением запроса
+    if not isinstance(user_id, int) or user_id <= 0:
+        raise ValueError("Invalid user_id")
+
+    # Параметры обеспечивают типобезопасность
+    return client.query(
+        """
+        SELECT * FROM orders
+        WHERE user_id = {uid: UInt64}
+            AND order_date >= {start: Date}
+        """,
+        parameters={'uid': user_id, 'start': start_date}
+    )
+```
+
+<div id="mysql-protocol-prepared-statements">
+  ### Подготовленные операторы в протоколе MySQL
+</div>
+
+[Интерфейс MySQL](/ru/concepts/features/interfaces/mysql) в ClickHouse поддерживает подготовленные операторы (`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`) лишь в минимальном объёме — в первую очередь чтобы обеспечить совместимость с такими инструментами, как Tableau Online, которые оборачивают запросы в подготовленные операторы.
+
+**Ключевые ограничения:**
+
+* **Привязка параметров не поддерживается** — нельзя использовать плейсхолдеры `?` со связанными параметрами
+* Запросы сохраняются, но не разбираются на этапе `PREPARE`
+* Реализация минимальна и рассчитана на совместимость с конкретными BI-инструментами
+
+**Пример того, что не работает:**
+
+```sql
+-- Этот подготовленный оператор в стиле MySQL с параметрами НЕ работает в ClickHouse
+PREPARE stmt FROM 'SELECT * FROM users WHERE id = ?';
+EXECUTE stmt USING @user_id;  -- Привязка параметров не поддерживается
+```
+
+<Tip>
+  **Вместо этого используйте собственные параметры запросов ClickHouse.** Они обеспечивают полную поддержку привязки параметров, типобезопасность и защиту от SQL-инъекций во всех интерфейсах ClickHouse:
+
+  ```sql
+  -- Собственные параметры запросов ClickHouse (рекомендуется)
+  SET param_user_id = 12345;
+  SELECT * FROM users WHERE id = {user_id: UInt64};
+  ```
+</Tip>
+
+Подробнее см. [документацию по интерфейсу MySQL](/ru/concepts/features/interfaces/mysql) и [статью в блоге о поддержке MySQL](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey).
+
+<div id="summary">
+  ## Кратко
+</div>
+
+<div id="summary-stored-procedures">
+  ### Альтернативы хранимым процедурам в ClickHouse
+</div>
+
+| Традиционный шаблон хранимых процедур      | Альтернатива в ClickHouse                                                 |
+| ------------------------------------------ | ------------------------------------------------------------------------- |
+| Простые вычисления и преобразования        | Пользовательские функции (UDF)                                            |
+| Переиспользуемые параметризованные запросы | Параметризованные представления                                           |
+| Предварительно вычисленные агрегации       | Materialized Views                                                        |
+| Пакетная обработка по расписанию           | Refreshable Materialized Views                                            |
+| Сложный многоэтапный ETL                   | Цепочки materialized views или внешняя оркестрация (Python, Airflow, dbt) |
+| Бизнес-логика с управляющими конструкциями | Прикладной код                                                            |
+
+<div id="summary-query-parameters">
+  ### Использование параметров запроса
+</div>
+
+Параметры запроса можно использовать для:
+
+* Предотвращения SQL-инъекций
+* Параметризованных запросов с контролем типов
+* Динамической фильтрации в приложениях
+* Повторного использования шаблонов запросов
+
+<div id="related-documentation">
+  ## Сопутствующая документация
+</div>
+
+* [`CREATE FUNCTION`](/ru/reference/statements/create/function) - Пользовательские функции
+* [`CREATE VIEW`](/ru/reference/statements/create/view) - Представления, включая параметризованные и materialized view
+* [Синтаксис SQL — параметры запроса](/ru/reference/syntax#defining-and-using-query-parameters) - Полный синтаксис параметров
+* [Каскадные materialized view](/ru/concepts/features/materialized-views/cascading-materialized-views) - Продвинутые шаблоны materialized view
+* [Исполняемые UDF](/ru/reference/functions/regular-functions/udf) - Выполнение внешних функций

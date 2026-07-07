@@ -1,0 +1,123 @@
+---
+title: '发布状态页面'
+sidebarTitle: '发布状态'
+keywords: ['云', '发布状态', '滚动发布', '版本', '更新']
+description: '显示各发布渠道发布状态的页面'
+slug: /cloud/release-status
+doc_type: 'reference'
+---
+
+import ReleaseSchedule from "/snippets/zh/components/ReleaseSchedule/ReleaseSchedule.jsx";
+
+ClickHouse Cloud 提供不同的发布渠道，以满足不同用户对稳定性、新功能访问以及升级可预测性的需求。每个渠道都有各自的升级计划，旨在适配不同的使用场景——既适合希望立即使用新版本的用户，也适合希望延后升级、以确保获得最稳定版本的用户。
+
+<div id="release-channel-details">
+  ## 发布渠道详情
+</div>
+
+<Accordion title="了解更多发布渠道信息">
+  | Channel Name             | Description                                                          | Key Considerations                                         | Tiers Supported                    |
+  | :----------------------- | :------------------------------------------------------------------- | :--------------------------------------------------------- | :--------------------------------- |
+  | **Fast (Early Release)** | 建议用于非生产环境。这是每次数据库版本升级最先开放的发布渠道。                                      | 优先获得新功能，而非稳定性。<br />可在生产环境升级前，先在非生产环境中测试新版本                | 基础版 (默认) <br />Scale、Enterprise 层级 |
+  | **Regular**              | 所有多副本服务的默认发布渠道。<br />该渠道通常会在 Fast 发布渠道启动两周后开始滚动发布。                   | 默认的全局升级方式。<br />服务会在数周内逐步完成升级                              | Scale 和 Enterprise                 |
+  | **Slow (Deferred)**      | 建议风险偏好较低、希望其服务在发布计划后段再升级的用户使用。<br />该渠道通常会在 Regular 发布渠道启动两周后开始滚动发布。 | 提供最高程度的稳定性和可预测性。<br />适合需要先在 Fast/Regular 渠道上对新版本进行更多测试的用户 | Enterprise                         |
+
+  <br />
+
+  <br />
+
+  <Note>
+    所有单副本服务都会自动加入 Fast 发布渠道。
+  </Note>
+</Accordion>
+
+对于 Enterprise 层级中的服务，所有发布渠道都支持计划升级时间窗口。借助此功能，你可以将升级安排在每周某一天的指定时间段内进行。
+
+<div id="release-schedule">
+  ## 发布计划
+</div>
+
+<Warning>
+  **了解发布时间**
+
+  下方显示的日期表示 ClickHouse **开始在各发布渠道中滚动发布**的时间，并非您的具体服务实际升级的时间。
+
+  * 滚动发布为自动执行，并会在数周内逐步完成
+  * 已配置计划升级时间窗口的服务，会在该发布渠道滚动发布结束后的下一周，按其计划窗口进行升级 (从周一 00:00 UTC 开始)
+  * 由于滚动发布暂停 (例如节假日冻结) 或健康监测，滚动发布完成时间可能会延后
+
+  如果希望在生产环境升级前提前测试，请将 Fast 或 Regular 渠道用于非生产服务，将 Slow 渠道用于生产服务。
+</Warning>
+
+<ReleaseSchedule
+  releases={[
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+ version: '26.4',
+ fast_start_date: '2026-06-22',
+ fast_end_date: '待定',
+ regular_start_date: '待定',
+ regular_end_date: '待定',
+ slow_start_date: '待定',
+ slow_end_date: '待定',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+ version: '26.2',
+ fast_start_date: '2026-04-03',
+ fast_end_date: '2026-04-14',
+ regular_start_date: '2026-05-06',
+ regular_end_date: '2026-06-17',
+ slow_start_date: '2026-07-01',
+ slow_end_date: '待定',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+ fast_delay_note: '已配置升级窗口的服务将从 2026-04-15 开始升级。',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+ version: '25.12',
+ fast_start_date: '2026-02-10',
+ fast_end_date: '2026-02-11',
+ regular_start_date: '2026-03-09',
+ regular_end_date: '2026-03-18',
+ slow_start_date: '2026-04-07',
+ slow_end_date: '2026-04-09',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+ regular_delay_note: '已配置计划升级时间窗口的服务将在 3 月 23 日之后的一周内，于其计划窗口期间升级到 25.12',
+ slow_delay_note: '已配置计划升级时间窗口的服务将在 4 月 13 日之后的一周内，于其计划窗口期间升级到 25.12',
+},
+{
+ changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
+ version: '25.10',
+ fast_start_date: '2025-12-11',
+ fast_end_date: '2025-12-15',
+ regular_start_date: '2026-01-23',
+ regular_end_date: '2026-03-10',
+ slow_start_date: '2026-03-23',
+ slow_end_date: '2026-03-23',
+ fast_progress: 'green',
+ regular_progress: 'green',
+ slow_progress: 'green',
+},
+{
+changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
+version: '25.8',
+fast_start_date: '已完成',
+fast_end_date: '已完成',
+regular_start_date: '2025-10-29',
+regular_end_date: '2025-12-19',
+slow_start_date: '2026-01-27',
+slow_end_date: '2026-02-04',
+fast_progress: 'green',
+regular_progress: 'green',
+slow_progress: 'green',
+}
+]}
+/>

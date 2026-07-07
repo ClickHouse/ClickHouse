@@ -1,0 +1,94 @@
+---
+alias: []
+description: 'Documentación sobre el formato JSONCompactStringsEachRow'
+input_format: true
+keywords: ['JSONCompactStringsEachRow']
+output_format: true
+slug: /interfaces/formats/JSONCompactStringsEachRow
+title: 'JSONCompactStringsEachRow'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Se diferencia de [`JSONCompactEachRow`](/es/reference/formats/JSON/JSONCompactEachRow) únicamente en que los campos de datos se muestran como cadenas, no como valores JSON tipados.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="inserting-data">
+  ### Inserción de datos
+</div>
+
+Usa un archivo JSON con los siguientes datos, llamado `football.json`:
+
+```json
+["2022-04-30", "2021", "Sutton United", "Bradford City", "1", "4"]
+["2022-04-30", "2021", "Swindon Town", "Barrow", "2", "1"]
+["2022-04-30", "2021", "Tranmere Rovers", "Oldham Athletic", "2", "0"]
+["2022-05-02", "2021", "Port Vale", "Newport County", "1", "2"]
+["2022-05-02", "2021", "Salford City", "Mansfield Town", "2", "2"]
+["2022-05-07", "2021", "Barrow", "Northampton Town", "1", "3"]
+["2022-05-07", "2021", "Bradford City", "Carlisle United", "2", "0"]
+["2022-05-07", "2021", "Bristol Rovers", "Scunthorpe United", "7", "0"]
+["2022-05-07", "2021", "Exeter City", "Port Vale", "0", "1"]
+["2022-05-07", "2021", "Harrogate Town A.F.C.", "Sutton United", "0", "2"]
+["2022-05-07", "2021", "Hartlepool United", "Colchester United", "0", "2"]
+["2022-05-07", "2021", "Leyton Orient", "Tranmere Rovers", "0", "1"]
+["2022-05-07", "2021", "Mansfield Town", "Forest Green Rovers", "2", "2"]
+["2022-05-07", "2021", "Newport County", "Rochdale", "0", "2"]
+["2022-05-07", "2021", "Oldham Athletic", "Crawley Town", "3", "3"]
+["2022-05-07", "2021", "Stevenage Borough", "Salford City", "4", "2"]
+["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
+```
+
+Inserta los datos:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactStringsEachRow;
+```
+
+<div id="reading-data">
+  ### Lectura de datos
+</div>
+
+Lea los datos con el formato `JSONCompactStringsEachRow`:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONCompactStringsEachRow
+```
+
+La salida estará en formato JSON:
+
+```json
+["2022-04-30", "2021", "Sutton United", "Bradford City", "1", "4"]
+["2022-04-30", "2021", "Swindon Town", "Barrow", "2", "1"]
+["2022-04-30", "2021", "Tranmere Rovers", "Oldham Athletic", "2", "0"]
+["2022-05-02", "2021", "Port Vale", "Newport County", "1", "2"]
+["2022-05-02", "2021", "Salford City", "Mansfield Town", "2", "2"]
+["2022-05-07", "2021", "Barrow", "Northampton Town", "1", "3"]
+["2022-05-07", "2021", "Bradford City", "Carlisle United", "2", "0"]
+["2022-05-07", "2021", "Bristol Rovers", "Scunthorpe United", "7", "0"]
+["2022-05-07", "2021", "Exeter City", "Port Vale", "0", "1"]
+["2022-05-07", "2021", "Harrogate Town A.F.C.", "Sutton United", "0", "2"]
+["2022-05-07", "2021", "Hartlepool United", "Colchester United", "0", "2"]
+["2022-05-07", "2021", "Leyton Orient", "Tranmere Rovers", "0", "1"]
+["2022-05-07", "2021", "Mansfield Town", "Forest Green Rovers", "2", "2"]
+["2022-05-07", "2021", "Newport County", "Rochdale", "0", "2"]
+["2022-05-07", "2021", "Oldham Athletic", "Crawley Town", "3", "3"]
+["2022-05-07", "2021", "Stevenage Borough", "Salford City", "4", "2"]
+["2022-05-07", "2021", "Walsall", "Swindon Town", "0", "3"]
+```
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>

@@ -1,0 +1,120 @@
+---
+sidebarTitle: 'BladePipe'
+keywords: ['clickhouse', 'BladePipe', 'اتصال', 'تكامل', 'CDC', 'ETL', 'تكامل البيانات']
+slug: /integrations/bladepipe
+description: 'دفق البيانات إلى ClickHouse باستخدام مسارات بيانات BladePipe'
+title: 'ربط BladePipe بـ ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<a href="https://www.bladepipe.com/" target="_blank">BladePipe</a> هي أداة تكامل بيانات شاملة من البداية إلى النهاية في الوقت الفعلي، بزمن استجابة يقل عن ثانية، ما يضمن تدفقًا سلسًا للبيانات عبر المنصات.
+
+يُعد ClickHouse أحد الموصلات الجاهزة في BladePipe، ما يتيح للمستخدمين دمج البيانات من مصادر متعددة في ClickHouse تلقائيًا. توضّح هذه الصفحة كيفية تحميل البيانات إلى ClickHouse في الوقت الفعلي خطوة بخطوة.
+
+<div id="supported-sources">
+  ## المصادر المدعومة
+</div>
+
+يدعم BladePipe حاليًا تكامل البيانات مع ClickHouse من المصادر التالية:
+
+* MySQL/MariaDB/AuroraMySQL
+* Oracle
+* PostgreSQL/AuroraPostgreSQL
+* MongoDB
+* Kafka
+* PolarDB-MySQL
+* OceanBase
+* TiDB
+
+سيجري دعم المزيد من المصادر لاحقًا.
+
+<Steps>
+  <Step>
+    ## تنزيل وتشغيل BladePipe
+
+    1. سجّل الدخول إلى <a href="https://www.bladepipe.com/" target="_blank">BladePipe Cloud</a>.
+
+    2. اتبع التعليمات الواردة في <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_docker" target="_blank">تثبيت Worker (Docker)</a> أو <a href="https://doc.bladepipe.com/productOP/byoc/installation/install_worker_binary" target="_blank">تثبيت Worker (الملف التنفيذي)</a> لتنزيل Worker من BladePipe وتثبيته.
+
+    <Note>
+      بدلاً من ذلك، يمكنك تنزيل <a href="https://doc.bladepipe.com/productOP/onPremise/installation/install_all_in_one_binary" target="_blank">BladePipe Enterprise</a> ونشره.
+    </Note>
+  </Step>
+
+  <Step>
+    ## أضِف ClickHouse كوجهة
+
+    <Note>
+      1. يدعم BladePipe إصدار ClickHouse `20.12.3.3` أو الإصدارات الأحدث.
+      2. لاستخدام ClickHouse كوجهة، تأكَّد من أن لدى المستخدم أذونات SELECT وINSERT وأذونات DDL الشائعة.
+    </Note>
+
+    1. في BladePipe، انقر على &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;.
+
+    2. اختر `ClickHouse`، ثم املأ الإعدادات بإدخال مضيف ClickHouse والمنفذ واسم المستخدم وكلمة المرور، ثم انقر على &quot;Test Connection&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp" size="lg" border alt="أضِف ClickHouse كوجهة" />
+
+    3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل ClickHouse.
+  </Step>
+
+  <Step>
+    ## إضافة MySQL كمصدر
+
+    في هذا الدليل العملي، نستخدم مثيل MySQL كمصدر، ونشرح عملية تحميل بيانات MySQL إلى ClickHouse.
+
+    <Note>
+      لاستخدام MySQL كمصدر، تأكد من أن المستخدم لديه <a href="https://doc.bladepipe.com/dataMigrationAndSync/datasource_func/MySQL/privs_for_mysql" target="_blank">الأذونات المطلوبة</a>.
+    </Note>
+
+    1. في BladePipe، انقر على &quot;DataSource&quot; &gt; &quot;Add DataSource&quot;.
+
+    2. حدِّد `MySQL`، ثم املأ الإعدادات بإدخال مضيف MySQL والمنفذ واسم المستخدم وكلمة المرور، ثم انقر على &quot;Test Connection&quot;.
+
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp" size="lg" border alt="إضافة MySQL كمصدر" />
+
+    3. انقر على &quot;Add DataSource&quot; في الأسفل، وستتم إضافة مثيل MySQL.
+  </Step>
+
+  <Step>
+    ## إنشاء مسار معالجة
+
+    1. في BladePipe، انقر على &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;.
+
+    2. حدِّد مثيلَي MySQL وClickHouse اللذين تمت إضافتهما، ثم انقر على &quot;Test Connection&quot; للتأكد من اتصال BladePipe بهما. بعد ذلك، حدِّد قواعد البيانات المطلوب نقلها.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp" size="lg" border alt="حدد المصدر والوجهة" />
+
+    3. حدِّد &quot;Incremental&quot; كنوع DataJob، مع خيار &quot;Full Data&quot;.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp" size="lg" border alt="حدد نوع المزامنة" />
+
+    4. حدِّد الجداول المطلوب نسخها.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp" size="lg" border alt="حدد الجداول" />
+
+    5. حدِّد الأعمدة المطلوب نسخها.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp" size="lg" border alt="حدد الأعمدة" />
+
+    6. أكِّد إنشاء DataJob، وسيبدأ تشغيله تلقائيًا.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp" size="lg" border alt="DataJob قيد التشغيل" />
+  </Step>
+
+  <Step>
+    ## تحقّق من البيانات
+
+    1. أوقف كتابة البيانات في مثيل MySQL وانتظر حتى يُكمل ClickHouse دمج البيانات.
+
+    <Note>
+      نظرًا إلى أن توقيت عمليات الدمج التلقائي في ClickHouse غير متوقع، يمكنك تشغيل الأمر `OPTIMIZE TABLE xxx FINAL;` لبدء عملية دمج يدويًا. لاحظ أن عملية الدمج اليدوية هذه قد لا تنجح دائمًا.
+
+      بدلاً من ذلك، يمكنك تشغيل الأمر `CREATE VIEW xxx_v AS SELECT * FROM xxx FINAL;` لإنشاء عرض ثم تنفيذ الاستعلامات عليه للتأكد من أن البيانات قد دُمجت بالكامل.
+    </Note>
+
+    2. أنشئ <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">DataJob للتحقق</a>. بعد اكتمال DataJob للتحقق، راجع النتائج للتأكد من أن البيانات في ClickHouse مطابقة للبيانات في MySQL.
+       <Image img="/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp" size="lg" border alt="التحقق من البيانات" />
+  </Step>
+</Steps>
