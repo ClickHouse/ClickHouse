@@ -447,10 +447,6 @@ private:
         /// it (phase transitions) and serves from it (`depsSatisfied`, serve dispatch).
         VectorWithMemoryTracking<RetrieveStatus> retrieve_status;
 
-        /// The step interpreter's loop authority - an index into `schedule.steps`,
-        /// reconstructed from `position` on re-plan/seek.
-        size_t cursor = 0;
-
         /// The launch interpreter's authority - the first `schedule.retrieves` index not
         /// yet launched/exhausted; advanced by `advanceAhead`. Reset on re-plan.
         size_t launch_frontier = 0;
@@ -784,33 +780,27 @@ private:
     /// plan.
     void observeAndSchedule(size_t physical_start);
 
-    /// Schedule-cursor maintenance: `cursor` = index of the `schedule.steps` step whose
-    /// `output` contains the current `position_phys`; the interpreter dispatches and serves
-    /// from it. `reconstructCursor` re-derives it after a re-plan or seek; `advanceCursor`
-    /// moves it forward as windows are served.
-    size_t findStepContaining(size_t pos_phys) const;
-    void reconstructCursor();
-    void advanceCursor();
+    /// The serve run whose `output` contains `pos_phys` (clamps to the last run past the
+    /// materialized span). DERIVED per window from `position` - the model's two cursors are
+    /// the serve position and the lane's ahead cursor; there is no third to maintain.
+    size_t serveRunAt(size_t pos_phys) const;
 
-    /// Bring the plan and cursor up to date for serving at `position_phys`: collect an in-flight
+    /// Bring the plan up to date for serving at `position_phys`: collect an in-flight
     /// machine sitting at the consumed plan end, then (re)plan once the plan is fully consumed
     /// (cursor before `plan_start`, or at `plan_end` with the plan not already running to EOF).
     /// Never replans while a machine is in flight - that would re-probe residency and could see
     /// the worker's just-fetched gap as resident.
     void prepareCursor(size_t position_phys);
 
-    /// The shared post-serve tail of `readNextWindow`: account the served window, advance the
-    /// cursor, net out the over-read, drop the fill pin at EOF, launch the next read-ahead, and
-    /// decrypt. Returns the plaintext window.
+    /// The shared post-serve tail of `readNextWindow`: account the served window, net out the
+    /// over-read, drop the fill pin at EOF, launch the next read-ahead, and decrypt. Returns
+    /// the plaintext window.
     ChainedBuffers finishWindow(ChainedBuffers chain);
 
-    /// The schedule-driven interpreter: `readNextWindow` runs the schedule's already-planned
-    /// jobs instead of re-deriving the next gap from the coverage map. `interpretStep`
-    /// dispatches on `steps[cursor]`; `advanceAhead` launches the schedule's `Remote`
-    /// jobs at a frontier.
-    ChainedBuffers interpretStep(size_t position_phys);
-    ChainedBuffers serveHitStep(const PlanSchedule::Step & step, size_t position_phys);
-    ChainedBuffers serveRetrieveStep(const PlanSchedule::Step & step, size_t ri, size_t position_phys);
+    /// The CONSUMER's serve: one window of the serve run at `position_phys` - a hit run is
+    /// the covers-immediately case, a job run pumps the producer until the display covers
+    /// the cursor. `advanceAhead` launches the schedule's `Remote` jobs at the lane cursor.
+    ChainedBuffers serveWindow(size_t position_phys);
     /// The next source piece of a populatable retrieve, off the schedule: the cell's
     /// append-only floor walked across the job's `fetch_runs`, grid-bounded to the window.
     /// Empty when no scheduled source byte lies past the cell frontier.
@@ -1066,7 +1056,7 @@ private:
     /// window when the source size is unknown. `> 0` iff there is room to read at the cursor.
     /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: when EOF latches
     /// with a machine still in flight, `readNextWindow`'s `atEnd()` branch drains that final
-    /// window through `interpretStep`, which serves only while `readCeiling() > 0`.
+    /// window through `serveWindow`, which serves only while `readCeiling() > 0`.
     size_t readCeiling() const
     {
         return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);

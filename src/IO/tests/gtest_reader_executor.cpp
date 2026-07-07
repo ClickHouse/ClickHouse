@@ -4836,11 +4836,11 @@ void validateScheduleMatchesReality(
     ASSERT_NE(geom, nullptr);
     auto sched = buildSchedule(*geom, ByteRange{0, file_size}, min_bytes_for_seek);
 
-    ASSERT_EQ(outputs.size(), sched.steps.size()) << "step count vs live windows";
+    ASSERT_EQ(outputs.size(), sched.serve_runs.size()) << "serve-run count vs live windows";
     for (size_t i = 0; i < outputs.size(); ++i)
     {
-        EXPECT_EQ(outputs[i].offset, sched.steps[i].output.offset) << "window " << i << " offset";
-        EXPECT_EQ(outputs[i].size, sched.steps[i].output.size) << "window " << i << " size";
+        EXPECT_EQ(outputs[i].offset, sched.serve_runs[i].output.offset) << "window " << i << " offset";
+        EXPECT_EQ(outputs[i].size, sched.serve_runs[i].output.size) << "window " << i << " size";
     }
 
     /// The schedule's predicted byte-KPIs equal the executor's actual
@@ -4967,12 +4967,12 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
             break;
         ++windows;
 #if defined(DEBUG_OR_SANITIZER_BUILD)
-        const size_t c = inspect(executor).cursor();
-        ASSERT_LT(c, inspect(executor).stepCount());
-        const auto step = inspect(executor).stepOutput(c);
         const size_t pos = executor.getPosition();  // physical == logical (no encryption)
-        EXPECT_TRUE(step.offset <= pos && pos <= step.offset + step.size)
-            << "cursor step [" << step.offset << "," << step.offset + step.size
+        const size_t c = inspect(executor).serveRunAt(pos);
+        ASSERT_LT(c, inspect(executor).serveRunCount());
+        const auto run = inspect(executor).serveRunOutput(c);
+        EXPECT_TRUE(run.offset <= pos && pos <= run.offset + run.size)
+            << "the derived serve run [" << run.offset << "," << run.offset + run.size
             << ") must contain position " << pos;
         for (size_t i = 0; i < inspect(executor).retrieveStatusSize(); ++i)
             if (inspect(executor).retrieveLaunchProgress(i) > 0)

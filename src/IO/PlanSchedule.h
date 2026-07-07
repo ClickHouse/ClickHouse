@@ -82,7 +82,10 @@ struct PlanSchedule
 
     /// One readNextWindow output and the retrieval it waits on (its READY
     /// milestone). `require_retrieve` is empty for a cache hit.
-    struct Step
+    /// The serve-side MAP (not an instruction stream): one classification run - a window
+    /// must not cross a hit/gap boundary, or the pump would be keyed to an ambiguous job -
+    /// wired to the job that fills it (`require_retrieve` empty = a resident hit run).
+    struct ServeRun
     {
         ByteRange output;                             /// physical / plan coords (same space as Retrieve.range and position_phys)
         std::optional<size_t> require_retrieve;       /// index into `retrieves`
@@ -90,7 +93,7 @@ struct PlanSchedule
 
     VectorWithMemoryTracking<TypedRange> ranges;
     VectorWithMemoryTracking<Retrieve> retrieves;
-    VectorWithMemoryTracking<Step> steps;
+    VectorWithMemoryTracking<ServeRun> serve_runs;
 };
 
 /// Describe the work of the plan `geometry` for the half-open logical request

@@ -39,10 +39,10 @@ public:
     }
     size_t retrieveStatusSize() const { return ex.read_plan.retrieve_status.size(); }
 
-    /// Assert-spine shadow state (cursor / steps / per-job progress).
-    size_t cursor() const { return ex.read_plan.cursor; }
-    size_t stepCount() const { return ex.read_plan.schedule.steps.size(); }
-    ByteRange stepOutput(size_t i) const { return ex.read_plan.schedule.steps[i].output; }
+    /// The serve map (runs / per-job progress).
+    size_t serveRunCount() const { return ex.read_plan.schedule.serve_runs.size(); }
+    ByteRange serveRunOutput(size_t i) const { return ex.read_plan.schedule.serve_runs[i].output; }
+    size_t serveRunAt(size_t phys) const { return ex.serveRunAt(phys); }
     /// Job-RELATIVE launch progress (bytes from the job's range start).
     size_t retrieveLaunchProgress(size_t i) const
     {
@@ -89,7 +89,7 @@ public:
     {
         const size_t phys = logical_pos + ex.data_start_offset;
         ex.prepareCursor(phys);
-        return ex.interpretStep(phys);
+        return ex.serveWindow(phys);
     }
 
     /// Long-connection probes.

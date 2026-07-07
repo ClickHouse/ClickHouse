@@ -413,7 +413,7 @@ PlanSchedule buildSchedule(
                     break;
                 }
 
-        sched.steps.push_back(PlanSchedule::Step{.output = out, .require_retrieve = require});
+        sched.serve_runs.push_back(PlanSchedule::ServeRun{.output = out, .require_retrieve = require});
         cursor = out_end;
     }
 

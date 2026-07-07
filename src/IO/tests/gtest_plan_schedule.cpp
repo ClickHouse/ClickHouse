@@ -53,11 +53,11 @@ void expectRanges(const PlanSchedule & s, const std::vector<Seg> & want)
 
 void expectSteps(const PlanSchedule & s, const std::vector<ByteRange> & want)
 {
-    ASSERT_EQ(s.steps.size(), want.size()) << "step count";
+    ASSERT_EQ(s.serve_runs.size(), want.size()) << "step count";
     for (size_t i = 0; i < want.size(); ++i)
     {
-        EXPECT_EQ(s.steps[i].output.offset, want[i].offset) << "step[" << i << "].off";
-        EXPECT_EQ(s.steps[i].output.size, want[i].size) << "step[" << i << "].size";
+        EXPECT_EQ(s.serve_runs[i].output.offset, want[i].offset) << "step[" << i << "].off";
+        EXPECT_EQ(s.serve_runs[i].output.size, want[i].size) << "step[" << i << "].size";
     }
 }
 
@@ -205,10 +205,10 @@ TEST(PlanScheduleRetrieves, DesignWorkedExample)
     EXPECT_TRUE(intoHas(promote, 0, {5, 3})) << "the user gap promotes into the page block";
 
     /// The gap step [5,8) waits on the Remote retrieve; the hit step does not.
-    ASSERT_EQ(s.steps.size(), 2u);
-    EXPECT_FALSE(s.steps[0].require_retrieve.has_value());  // [4,5) page hit
-    ASSERT_TRUE(s.steps[1].require_retrieve.has_value());   // [5,8) gap
-    EXPECT_EQ(*s.steps[1].require_retrieve, 0u);
+    ASSERT_EQ(s.serve_runs.size(), 2u);
+    EXPECT_FALSE(s.serve_runs[0].require_retrieve.has_value());  // [4,5) page hit
+    ASSERT_TRUE(s.serve_runs[1].require_retrieve.has_value());   // [5,8) gap
+    EXPECT_EQ(*s.serve_runs[1].require_retrieve, 0u);
 }
 
 /// `fetch_runs` are the schedule's EXECUTABLE source ranges: the retrieve's (merged,
@@ -451,8 +451,8 @@ TEST(PlanScheduleRetrieves, PromoteFromSlowerTier)
         }
     EXPECT_EQ(promotes, 1u);
     // The step is a cache hit (served from fs), so it waits on no retrieve.
-    ASSERT_EQ(s.steps.size(), 1u);
-    EXPECT_FALSE(s.steps[0].require_retrieve.has_value());
+    ASSERT_EQ(s.serve_runs.size(), 1u);
+    EXPECT_FALSE(s.serve_runs[0].require_retrieve.has_value());
 }
 
 /// A cache cell wider than the plan (a slow tier's block, or a seek mid-segment)
@@ -493,20 +493,20 @@ TEST(PlanScheduleRetrieves, SeveralGapsEachWiredToOwnRetrieve)
 
     /// Each gap step points to a retrieve covering it; the three gap steps point
     /// to three DISTINCT retrieves; hit steps have none.
-    ASSERT_EQ(split.steps.size(), 5u);
-    EXPECT_FALSE(split.steps[1].require_retrieve.has_value());  // hit [4,6)
-    EXPECT_FALSE(split.steps[3].require_retrieve.has_value());  // hit [12,14)
-    ASSERT_TRUE(split.steps[0].require_retrieve.has_value());
-    ASSERT_TRUE(split.steps[2].require_retrieve.has_value());
-    ASSERT_TRUE(split.steps[4].require_retrieve.has_value());
-    const size_t r0 = *split.steps[0].require_retrieve;
-    const size_t r2 = *split.steps[2].require_retrieve;
-    const size_t r4 = *split.steps[4].require_retrieve;
+    ASSERT_EQ(split.serve_runs.size(), 5u);
+    EXPECT_FALSE(split.serve_runs[1].require_retrieve.has_value());  // hit [4,6)
+    EXPECT_FALSE(split.serve_runs[3].require_retrieve.has_value());  // hit [12,14)
+    ASSERT_TRUE(split.serve_runs[0].require_retrieve.has_value());
+    ASSERT_TRUE(split.serve_runs[2].require_retrieve.has_value());
+    ASSERT_TRUE(split.serve_runs[4].require_retrieve.has_value());
+    const size_t r0 = *split.serve_runs[0].require_retrieve;
+    const size_t r2 = *split.serve_runs[2].require_retrieve;
+    const size_t r4 = *split.serve_runs[4].require_retrieve;
     EXPECT_NE(r0, r2);
     EXPECT_NE(r2, r4);
     EXPECT_NE(r0, r4);
     // and each names a retrieve whose range covers that gap step's output
-    EXPECT_TRUE(rangeContains(split.retrieves[r0].range, split.steps[0].output));
-    EXPECT_TRUE(rangeContains(split.retrieves[r2].range, split.steps[2].output));
-    EXPECT_TRUE(rangeContains(split.retrieves[r4].range, split.steps[4].output));
+    EXPECT_TRUE(rangeContains(split.retrieves[r0].range, split.serve_runs[0].output));
+    EXPECT_TRUE(rangeContains(split.retrieves[r2].range, split.serve_runs[2].output));
+    EXPECT_TRUE(rangeContains(split.retrieves[r4].range, split.serve_runs[4].output));
 }
