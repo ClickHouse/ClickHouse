@@ -400,6 +400,7 @@
     M(BcryptCacheSize, "Total number of entries in the bcrypt authentication cache") \
     M(ColumnsDescriptionsCacheSize, "Size of ColumnsDescriptions cache (per-table cache)") \
     M(SharedPartSerializationsCacheSize, "Number of distinct serializations maps shared across data parts (sum over per-table caches)") \
+    M(SharedPartSerializationGroupsCacheSize, "Number of distinct per-column serialization groups shared across data parts (sum over per-table caches)") \
     M(SharedPartColumnsSubstreamsCacheSize, "Number of distinct columns substreams lists shared across data parts (sum over per-table caches)") \
     M(SharedPartColumnSubstreamsEntriesCacheSize, "Number of distinct per-column substream entries shared across data parts (sum over per-table caches)") \
     M(S3Requests, "S3 requests count") \

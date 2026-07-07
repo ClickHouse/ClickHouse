@@ -181,7 +181,7 @@ public:
 
     const SerializationInfoByName & getSerializationInfos() const { return serialization_infos; }
 
-    const SerializationByName & getSerializations() const { return *serializations; }
+    const PartSerializations & getSerializations() const { return *serializations; }
 
     SerializationPtr getSerialization(const String & column_name) const;
     SerializationPtr tryGetSerialization(const String & column_name) const;
@@ -786,8 +786,9 @@ private:
     SerializationInfoByName serialization_infos{{}};
 
     /// Serializations for every columns and subcolumns by their names.
-    /// Shared across parts of the table with the same serialization kinds. Never null.
-    std::shared_ptr<const SerializationByName> serializations = SharedPartColumns::getEmptySerializations();
+    /// Shared across parts of the table with the same serialization kinds; the per-column pieces
+    /// inside are shared even when only some columns have the same kinds. Never null.
+    PartSerializationsPtr serializations = SharedPartColumns::getEmptySerializations();
 
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.

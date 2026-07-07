@@ -14,9 +14,14 @@
 
 #include <xxhash.h>
 
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+
 namespace CurrentMetrics
 {
     extern const Metric SharedPartSerializationsCacheSize;
+    extern const Metric SharedPartSerializationGroupsCacheSize;
     extern const Metric SharedPartColumnsSubstreamsCacheSize;
     extern const Metric SharedPartColumnSubstreamsEntriesCacheSize;
 }
@@ -63,36 +68,97 @@ SharedPartColumns::SharedPartColumns(
     , columns_description(std::move(columns_description_))
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
+    , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
     , substream_entries_metric_handle(CurrentMetrics::SharedPartColumnSubstreamsEntriesCacheSize)
 {
 }
 
-SerializationByName SharedPartColumns::buildSerializations(const SerializationInfoByName & infos) const
+SerializationByName PartSerializations::toSerializationByName() const
 {
-    SerializationByName serializations;
-    /// A lower bound: subcolumns add entries on top, but this avoids the first rehashes.
-    serializations.reserve(columns.size());
+    SerializationByName result;
+    result.reserve(name_to_slot->size());
+    for (const auto & [name, slot] : *name_to_slot)
+        result.emplace(name, groups[slot.first]->serializations[slot.second]);
+    return result;
+}
 
+const PartSerializations::NameToSlotPtr & PartSerializations::getEmptyNameToSlot()
+{
+    static const auto empty = std::make_shared<const NameToSlot>();
+    return empty;
+}
+
+SharedPartColumns::SerializationsBuild SharedPartColumns::buildSerializations(const SerializationInfoByName & infos) const
+{
+    SerializationsBuild build;
+    build.groups.reserve(columns.size());
+    build.group_keys.reserve(columns.size());
+    build.name_to_slot = std::make_shared<PartSerializations::NameToSlot>();
+    /// A lower bound: subcolumns add entries on top, but this avoids the first rehashes.
+    build.name_to_slot->reserve(columns.size());
+
+    /// The lookup map is a pure function of its deterministic build sequence, so hashing the
+    /// sequence gives a valid interning key for it (verified by full content comparison on a hit).
+    XXH3_state_t name_sequence_hash;
+    XXH_INLINE_XXH3_128bits_reset(&name_sequence_hash);
+
+    auto add_name = [&](const String & name, UInt32 column_position, UInt32 index_in_group)
+    {
+        /// emplace: the first occurrence of a name wins, as in the flat map this replaces.
+        build.name_to_slot->emplace(name, std::make_pair(column_position, index_in_group));
+        UInt64 size = name.size();
+        XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, &size, sizeof(size));
+        XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, name.data(), name.size());
+    };
+
+    UInt32 position = 0;
     for (const auto & column : columns)
     {
         auto it = infos.find(column.name);
+
+        SerializationGroupKey key;
+        key.column_position = position;
+        if (it == infos.end())
+        {
+            key.settings = infos.getSettings();
+        }
+        else
+        {
+            key.has_info = true;
+            key.settings = it->second->getSettings();
+            WriteBufferFromOwnString kinds;
+            it->second->serialializeKindStackBinary(kinds);
+            key.kinds = std::move(kinds.str());
+        }
+
         auto serialization = it == infos.end()
             ? IDataType::getSerialization(column, infos.getSettings())
             : IDataType::getSerialization(column, *it->second);
 
-        serializations.emplace(column.name, serialization);
+        auto group = std::make_shared<PartSerializations::ColumnGroup>();
+        group->serializations.push_back(serialization);
+        add_name(column.name, position, 0);
 
         IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
         {
             auto full_name = Nested::concatenateName(column.name, subname);
             /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
             if (!column_name_to_position.contains(full_name))
-                serializations.emplace(full_name, subdata.serialization);
+            {
+                add_name(full_name, position, static_cast<UInt32>(group->serializations.size()));
+                group->serializations.push_back(subdata.serialization);
+            }
         }, ISerialization::SubstreamData(serialization));
+
+        build.groups.push_back(std::move(group));
+        build.group_keys.push_back(std::move(key));
+        ++position;
     }
 
-    return serializations;
+    auto hash = XXH_INLINE_XXH3_128bits_digest(&name_sequence_hash);
+    build.name_to_slot_hash = {hash.low64, hash.high64};
+    return build;
 }
 
 SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos)
@@ -129,8 +195,22 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
     return key;
 }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const SerializationGroupKey & key) const noexcept
+{
+    XXH3_state_t state;
+    XXH_INLINE_XXH3_64bits_reset(&state);
+
+    XXH_INLINE_XXH3_64bits_update(&state, &key.column_position, sizeof(key.column_position));
+    XXH_INLINE_XXH3_64bits_update(&state, &key.has_info, sizeof(key.has_info));
+    XXH_INLINE_XXH3_64bits_update(&state, key.kinds.data(), key.kinds.size());
+
+    SipHash settings_hash;
+    key.settings.updateHash(settings_hash);
+    UInt64 settings_hash_value = settings_hash.get64();
+    XXH_INLINE_XXH3_64bits_update(&state, &settings_hash_value, sizeof(settings_hash_value));
+
+    return XXH_INLINE_XXH3_64bits_digest(&state);
+}
 
 size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const SerializationsCacheKey & key) const noexcept
 {
@@ -155,9 +235,7 @@ size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const Serializa
     return XXH_INLINE_XXH3_64bits_digest(&state);
 }
 
-#pragma clang diagnostic pop
-
-std::shared_ptr<const SerializationByName> SharedPartColumns::getSerializations(const SerializationInfoByName & infos) const
+PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationInfoByName & infos) const
 {
     auto key = buildSerializationsCacheKey(infos);
 
@@ -168,15 +246,62 @@ std::shared_ptr<const SerializationByName> SharedPartColumns::getSerializations(
                 return shared;
     }
 
-    /// Build outside the lock: when the cache does not help (each part has a unique combination of
-    /// serialization kinds), concurrent part loads still build their maps in parallel, exactly as
-    /// they did when the map was built per-part.
-    /// The map and the cache entry live as long as some part of the table needs them: route them
-    /// to the dedicated parts arena (no-op when the caller already did).
+    /// Build outside the lock: when the whole-object cache does not help (each part has a unique
+    /// combination of serialization kinds), concurrent part loads still build in parallel, exactly
+    /// as they did when the serializations were built per-part.
+    /// Everything built here lives as long as some part of the table needs it: route it to the
+    /// dedicated parts arena (no-op when the caller already did).
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-    auto built = std::make_shared<const SerializationByName>(buildSerializations(infos));
+    auto build = buildSerializations(infos);
 
     std::lock_guard lock(serializations_cache_mutex);
+
+    /// Intern the per-column groups and the name lookup map, so that parts whose serialization
+    /// kinds differ in some columns still share the groups of every column they agree on (and the
+    /// lookup map, which does not depend on the kinds at all).
+    for (size_t i = 0; i != build.groups.size(); ++i)
+    {
+        auto [it, inserted] = serialization_groups_cache.try_emplace(std::move(build.group_keys[i]));
+        if (!inserted)
+        {
+            if (auto shared = it->second.lock())
+            {
+                build.groups[i] = std::move(shared);
+                continue;
+            }
+            it->second = build.groups[i];
+            continue;
+        }
+        it->second = build.groups[i];
+        serialization_groups_metric_handle.add(1);
+    }
+    sweepExpiredEntries(serialization_groups_cache, serialization_groups_size_after_sweep, serialization_groups_metric_handle);
+
+    PartSerializations::NameToSlotPtr name_to_slot = std::move(build.name_to_slot);
+    {
+        auto [it, inserted] = serialization_name_slots_cache.try_emplace(build.name_to_slot_hash);
+        if (!inserted)
+        {
+            /// The sequence hash is verified by full content comparison: on a mismatch (a hash
+            /// collision) the map is simply left unshared. Correctness never depends on the hash.
+            if (auto shared = it->second.lock())
+            {
+                if (*shared == *name_to_slot)
+                    name_to_slot = std::move(shared);
+            }
+            else
+                it->second = name_to_slot;
+        }
+        else
+            it->second = name_to_slot;
+
+        /// This cache holds one entry per distinct name set (almost always exactly one), so
+        /// expired entries are swept unconditionally.
+        std::erase_if(serialization_name_slots_cache, [](const auto & entry) { return entry.second.expired(); });
+    }
+
+    auto built = std::make_shared<const PartSerializations>(std::move(name_to_slot), std::move(build.groups));
+
     auto [it, inserted] = serializations_cache.try_emplace(std::move(key));
     if (!inserted)
     {
@@ -285,9 +410,9 @@ const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
     return empty;
 }
 
-const std::shared_ptr<const SerializationByName> & SharedPartColumns::getEmptySerializations()
+const PartSerializationsPtr & SharedPartColumns::getEmptySerializations()
 {
-    static const auto empty = std::make_shared<const SerializationByName>();
+    static const auto empty = std::make_shared<const PartSerializations>();
     return empty;
 }
 

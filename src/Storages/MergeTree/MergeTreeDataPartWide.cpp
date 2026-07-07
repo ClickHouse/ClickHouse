@@ -323,8 +323,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    const auto & serializations = getSerializations();
-    for (const auto & [column_name, serialization] : serializations)
+    getSerializations().forEach([&](const String & column_name, const SerializationPtr & serialization)
     {
         serialization->enumerateStreams([&](const auto & subpath)
         {
@@ -336,7 +335,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
         });
-    }
+    });
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const

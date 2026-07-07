@@ -765,8 +765,7 @@ SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name
 
 SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
 {
-    auto it = serializations->find(column_name);
-    return it == serializations->end() ? nullptr : it->second;
+    return serializations->tryGet(column_name);
 }
 
 bool IMergeTreeDataPart::isMovingPart() const
