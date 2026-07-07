@@ -497,7 +497,7 @@ struct ExplainSettings : public Settings
 
 struct QuerySyntaxSettings
 {
-    bool oneline = false;
+    bool oneline = true;
     bool run_query_tree_passes = false;
     Int64 query_tree_passes = -1;
 

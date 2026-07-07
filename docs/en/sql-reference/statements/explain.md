@@ -110,18 +110,18 @@ Shows the Abstract Syntax Tree (AST) of a query after syntax analysis.
 
 It's done by parsing the query, constructing query AST and query tree, optionally running query analyzer and optimization passes, and then converting the query tree back to the query AST.
 
-The reformatted query is returned as a single multi-line record.
+The reformatted query is returned as a single record. By default it is printed on one line; set `oneline = 0` to print it across multiple lines.
 
 Settings:
 
-- `oneline` – Print the query in one line. Default: `0`.
+- `oneline` – Print the query in one line. Default: `1`.
 - `run_query_tree_passes` – Run query tree passes before dumping the query tree. Default: `0`.
 - `query_tree_passes` – If `run_query_tree_passes` is set, specifies how many passes to run. Without specifying `query_tree_passes` it runs all the passes.
 
 Examples:
 
 ```sql title="Query"
-EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+EXPLAIN SYNTAX oneline = 0 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
 ```sql title="Response"
@@ -133,7 +133,7 @@ WHERE (a.number = b.number) AND (b.number = c.number)
 With `run_query_tree_passes`:
 
 ```sql title="Query"
-EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+EXPLAIN SYNTAX oneline = 0, run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
 ```
 
 ```sql title="Response"
