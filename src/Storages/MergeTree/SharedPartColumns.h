@@ -126,6 +126,15 @@ private:
         substreams_cache TSA_GUARDED_BY(substreams_cache_mutex);
     mutable size_t substreams_cache_size_after_sweep TSA_GUARDED_BY(substreams_cache_mutex) = 0;
     mutable AggregatedMetrics::GlobalSum substreams_cache_metric_handle;
+
+    /// Per-column entries of `ColumnsSubstreams`, interned by content: a column's substreams depend
+    /// only on that column and its serialization kinds, so parts whose substream sets differ in
+    /// other columns (and thus miss the whole-object cache above) still share the entries of every
+    /// column they agree on.
+    mutable std::unordered_map<UInt128, std::weak_ptr<const ColumnsSubstreams::ColumnEntry>, SubstreamsCacheKeyHash>
+        substream_entries_cache TSA_GUARDED_BY(substreams_cache_mutex);
+    mutable size_t substream_entries_size_after_sweep TSA_GUARDED_BY(substreams_cache_mutex) = 0;
+    mutable AggregatedMetrics::GlobalSum substream_entries_metric_handle;
 };
 
 using SharedPartColumnsPtr = std::shared_ptr<const SharedPartColumns>;

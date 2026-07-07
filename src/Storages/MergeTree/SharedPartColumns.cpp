@@ -18,6 +18,7 @@ namespace CurrentMetrics
 {
     extern const Metric SharedPartSerializationsCacheSize;
     extern const Metric SharedPartColumnsSubstreamsCacheSize;
+    extern const Metric SharedPartColumnSubstreamsEntriesCacheSize;
 }
 
 namespace DB
@@ -63,6 +64,7 @@ SharedPartColumns::SharedPartColumns(
     , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
+    , substream_entries_metric_handle(CurrentMetrics::SharedPartColumnSubstreamsEntriesCacheSize)
 {
 }
 
@@ -204,10 +206,50 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
                 return shared;
     }
 
-    /// The first part with this content pays for the copy; it is shared from then on.
-    /// Route it to the dedicated parts arena (no-op when the caller already did).
+    /// The first part with this content pays for the copies; they are shared from then on.
+    /// Route them to the dedicated parts arena (no-op when the caller already did).
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-    auto built = std::make_shared<const ColumnsSubstreams>(substreams);
+
+    /// Intern the per-column entries first, so that parts whose substream sets differ in some
+    /// columns (and therefore never match the whole-object cache) still share the entries of
+    /// every column they agree on. The copy below is then only a vector of shared pointers.
+    ColumnsSubstreams interned = substreams;
+
+    std::vector<UInt128> entry_hashes;
+    interned.internColumnEntries([&](const ColumnsSubstreams::ColumnEntryPtr & entry)
+    {
+        entry_hashes.push_back(ColumnsSubstreams::getColumnEntryHash(*entry));
+        return entry;
+    });
+
+    {
+        std::lock_guard lock(substreams_cache_mutex);
+        size_t entry_index = 0;
+        interned.internColumnEntries([&](const ColumnsSubstreams::ColumnEntryPtr & entry) TSA_NO_THREAD_SAFETY_ANALYSIS
+        {
+            UInt128 entry_hash = entry_hashes[entry_index++];
+            auto [it, inserted] = substream_entries_cache.try_emplace(entry_hash);
+            if (!inserted)
+            {
+                if (auto shared = it->second.lock())
+                {
+                    if (shared->column == entry->column && shared->substreams == entry->substreams)
+                        return shared;
+                    /// Full 128-bit hash collision between different contents: keep the existing
+                    /// entry and leave this one unshared. Correctness never depends on the hash.
+                    return entry;
+                }
+                it->second = entry;
+                return entry;
+            }
+            it->second = entry;
+            substream_entries_metric_handle.add(1);
+            return entry;
+        });
+        sweepExpiredEntries(substream_entries_cache, substream_entries_size_after_sweep, substream_entries_metric_handle);
+    }
+
+    auto built = std::make_shared<const ColumnsSubstreams>(std::move(interned));
 
     std::lock_guard lock(substreams_cache_mutex);
     auto [it, inserted] = substreams_cache.try_emplace(content_hash);
