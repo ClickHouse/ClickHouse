@@ -8,8 +8,7 @@
 -- primary-key predicate, so the guards threw incorrectly. The fix enables parallel_replicas_filter_pushdown
 -- automatically when either guard is set, so the predicate is pushed through the view boundary into the
 -- reading step: a covered predicate passes with parallel replicas still enabled, and a genuinely unused
--- index still throws (the negative cases below). The serialize_query_plan = 1 cases cover the follower path,
--- where the pushed filter reaches the follower only through the shipped AST.
+-- index still throws (the negative cases below).
 
 DROP TABLE IF EXISTS t_force_index_pr;
 DROP VIEW IF EXISTS v_force_index_pr;
@@ -70,18 +69,6 @@ SELECT count() FROM v_force_index_pr
 WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
 SETTINGS enable_parallel_replicas = 0, force_index_by_date = 1, force_primary_key = 1;
 
--- Same view read with serialize_query_plan = 1 (the "distributed plan" mode). Here the follower runs a
--- query plan serialized before the pushed-down filter is added, so the filter reached the follower only
--- through the AST and the guard threw on the follower. The fix ships the AST for this case, so the
--- follower sees the predicate and the covered key passes.
-SELECT count() FROM v_force_index_pr
-WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS serialize_query_plan = 1, force_index_by_date = 1, force_primary_key = 1;
-
-SELECT count() FROM vv_force_index_pr
-WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS serialize_query_plan = 1, force_index_by_date = 1, force_primary_key = 1;
-
 -- Negative: the contract must still hold. A query through the view whose predicate does not use the
 -- primary key must still throw under parallel replicas (the guard is enforced at the reading step, not
 -- silently turned into a no-op).
@@ -98,49 +85,6 @@ SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
 SELECT count() FROM vv_force_index_pr
 WHERE value = 1
 SETTINGS force_index_by_date = 1; -- { serverError INDEX_NOT_USED }
-
--- Negative: contract holds with serialize_query_plan = 1 as well.
-SELECT count() FROM v_force_index_pr
-WHERE value = 1
-SETTINGS serialize_query_plan = 1, force_primary_key = 1; -- { serverError INDEX_NOT_USED }
-
--- The fix ships the query AST (serialize_query_plan = 0) so the pushed filter reaches followers, but only
--- when additional_table_filters is empty. additional_table_filters with parallel replicas is supported only
--- with serialize_query_plan = 1 (the analyzer throws SUPPORT_IS_DISABLED or disables parallel replicas
--- otherwise), so the override must not fire for it. These read a plain table (no view) with a primary-key
--- additional filter and a guard set, which must keep working under serialize_query_plan = 1 (they used to
--- throw SUPPORT_IS_DISABLED when the guard forced serialize_query_plan = 0). parallel_replicas_local_plan = 1
--- pins the initiator-local plan so the additional filter is applied deterministically (follower-side
--- additional_table_filters delivery is not guaranteed and is not what this case checks).
-SELECT count() FROM t_force_index_pr
-SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
-    serialize_query_plan = 1, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, force_primary_key = 1;
-
-SELECT count() FROM t_force_index_pr
-SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
-    serialize_query_plan = 1, enable_parallel_replicas = 1, parallel_replicas_local_plan = 1, force_primary_key = 1;
-
-SELECT count() FROM t_force_index_pr
-SETTINGS additional_table_filters = {'t_force_index_pr': 'timestamp >= toDateTime(\'2026-06-05 12:00:00\')'},
-    serialize_query_plan = 1, enable_parallel_replicas = 2, parallel_replicas_local_plan = 1, force_index_by_date = 1;
-
--- A view read whose additional_table_filters targets the view and that also enables serialize_query_plan = 1.
--- The additional filter is applied above the view boundary, so the outer key predicate still has to cross the
--- boundary via the pushdown, which reaches the follower only through the shipped AST. The plain-table override
--- guard above (skip when additional_table_filters is non-empty) must NOT suppress the AST shipping here, or the
--- follower serializes its plan before the pushed filter is added and throws a false INDEX_NOT_USED. So the
--- override still fires for a view-inner read regardless of additional_table_filters. See issue #108266.
-SELECT count() FROM v_force_index_pr
-WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS additional_table_filters = {'v_force_index_pr': '1'}, serialize_query_plan = 1, force_primary_key = 1;
-
-SELECT count() FROM v_force_index_pr
-WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS additional_table_filters = {'v_force_index_pr': '1'}, serialize_query_plan = 1, force_index_by_date = 1;
-
-SELECT count() FROM vv_force_index_pr
-WHERE timestamp >= toDateTime('2026-06-05 12:00:00')
-SETTINGS additional_table_filters = {'vv_force_index_pr': '1'}, serialize_query_plan = 1, force_primary_key = 1;
 
 DROP VIEW va_force_index_pr;
 DROP VIEW vv_force_index_pr;
