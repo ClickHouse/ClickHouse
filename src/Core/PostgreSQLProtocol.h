@@ -1818,15 +1818,17 @@ public:
         /// Bind parameters arrive as untyped text from the wire. Turn each into a
         /// safe SQL literal before it is spliced into the statement body. The NULL
         /// sentinel becomes the SQL keyword NULL. For a value we use the declared
-        /// parameter type OID from the Parse message: a numeric type is validated
-        /// against that type's grammar and re-serialized as a type-preserving SQL
-        /// fragment (see formatTypedNumericParameter) so the declared type and exact
-        /// value survive (`int4` rejects `3.14`, `numeric` keeps full precision as a
-        /// Decimal instead of being reparsed as Float64); everything else becomes a
-        /// quoted+escaped string literal. Both forms are injection-safe: a string is
-        /// escaped, a numeric value is validated to be exactly one literal of its
-        /// declared type and rejected otherwise, so a parameter such as
-        /// `x' UNION ALL SELECT ...`, `1--` or `1+2` can never break out.
+        /// parameter type OID from the Parse message (see formatTypedParameter): a
+        /// type we can map to a ClickHouse type is emitted as
+        /// `accurateCast('<escaped value>', '<type>')`, which delegates parsing,
+        /// range/width checking and rejection to ClickHouse's own parser while
+        /// keeping the declared type (`int4` rejects `3.14` and out-of-range
+        /// `2147483648`, `numeric` keeps full precision as a Decimal, `bool`/`date`/
+        /// `uuid` stay their declared type). Every other OID becomes a quoted+escaped
+        /// string literal. Both forms are injection-safe by construction: the value
+        /// is always inside a quoted+escaped string literal (the cast argument or the
+        /// literal itself), so a parameter such as `x' UNION ALL SELECT ...`, `1--`
+        /// or `1+2` can never break out of the value position.
         VectorWithMemoryTracking<String> arguments;
         arguments.reserve(bind_query->parameters.size());
         for (size_t i = 0; i < bind_query->parameters.size(); ++i)
@@ -1839,7 +1841,7 @@ public:
             }
             /// A parameter without a declared type (OID 0 or none) is treated as text.
             const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
-            if (auto formatted = formatTypedNumericParameter(oid, *parameter))
+            if (auto formatted = formatTypedParameter(oid, *parameter))
                 arguments.push_back(std::move(*formatted));
             else
                 arguments.push_back(quoteString(*parameter));
@@ -1870,33 +1872,6 @@ private:
     UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
-
-    /// Returns true if the whole string is exactly one integer literal
-    /// `[sign] digits` (no decimal point, no exponent, at least one digit, no
-    /// trailing characters). `allow_sign` is false for unsigned types (oid), so a
-    /// value like `-1` is rejected there just as PostgreSQL rejects it.
-    static bool isIntegerLiteral(const String & value, bool allow_sign)
-    {
-        const char * p = value.data();
-        const char * const end = p + value.size();
-        if (p == end)
-            return false;
-
-        if (*p == '+' || *p == '-')
-        {
-            if (!allow_sign)
-                return false;
-            ++p;
-        }
-
-        bool has_digit = false;
-        while (p != end && *p >= '0' && *p <= '9')
-        {
-            has_digit = true;
-            ++p;
-        }
-        return has_digit && p == end;
-    }
 
     /// Returns true if the whole string is exactly one decimal numeric literal:
     ///   [sign] digits [. digits] [ (e|E) [sign] digits ]
@@ -2047,77 +2022,80 @@ private:
         return std::make_pair(std::move(plain), scale);
     }
 
-    /// Formats a Bind parameter declared with a numeric PostgreSQL type OID as a
-    /// type-preserving SQL fragment, or returns nullopt when the OID is not one of
-    /// the numeric types we handle (the caller then quotes the value as a string).
-    ///
-    /// The value is validated against the declared type's grammar and re-serialized
-    /// so both the declared type and the exact value survive:
-    ///  - integer types (int2/int4/int8) require an integer literal and are emitted
-    ///    as a bare integer literal (already integer-typed in ClickHouse SQL). A
-    ///    fractional value like `3.14` for an int4 is rejected, not silently
-    ///    truncated;
-    ///  - `oid` is an unsigned integer, so a sign or exponent (`-1`, `1e2`) is
-    ///    rejected exactly as PostgreSQL rejects it;
-    ///  - float types (float4/float8) require a numeric literal and are emitted as a
-    ///    bare literal (ClickHouse parses it as Float64, matching PostgreSQL float
-    ///    semantics);
-    ///  - `numeric` has no literal form in ClickHouse SQL (a bare `2.11` would be
-    ///    reparsed as Float64, losing precision), so it is re-serialized as an exact
-    ///    Decimal via `CAST('<value>', 'Decimal256(scale)')`. A value needing more
-    ///    significant digits than Decimal256 can hold is rejected rather than
-    ///    silently rounded.
-    ///
-    /// Every branch is injection-safe: the value is either validated to be exactly
-    /// one literal of its declared type (emitted bare) or quoted+escaped inside a
-    /// CAST, so a payload such as `1--`, `1+2` or `1 UNION ALL SELECT ...` can never
-    /// break out of the intended value position.
-    static std::optional<String> formatTypedNumericParameter(Int32 oid, const String & value)
+    /// Maps a declared PostgreSQL type OID to the ClickHouse type name a Bind value
+    /// of that type must be cast to, or nullptr when we have no safe mapping (the
+    /// caller then treats the value as text). Only types whose PostgreSQL text
+    /// representation is accepted verbatim by ClickHouse's parser are mapped, so the
+    /// cast below both preserves the declared type and enforces its exact
+    /// range/width (e.g. int4 rejects `2147483648`, oid rejects `-1`).
+    static const char * clickHouseTypeForOID(Int32 oid)
     {
         switch (oid)
         {
-            case 20: /// int8
-            case 21: /// int2
-            case 23: /// int4
-                if (!isIntegerLiteral(value, /*allow_sign=*/ true))
-                    throwInvalidNumeric(value, "integer");
-                return value;
-            case 26: /// oid (unsigned)
-                if (!isIntegerLiteral(value, /*allow_sign=*/ false))
-                    throwInvalidNumeric(value, "oid");
-                return value;
-            case 700: /// float4
-            case 701: /// float8
-                if (!isSingleNumericLiteral(value))
-                    throwInvalidNumeric(value, "float");
-                return value;
-            case 1700: /// numeric
-            {
-                if (!isSingleNumericLiteral(value))
-                    throwInvalidNumeric(value, "numeric");
-                auto normalized = normalizeDecimal(value);
-                if (!normalized)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                    "Value {} for a numeric prepared-statement parameter exceeds the maximum "
-                                    "representable Decimal precision", quoteString(value));
-                return fmt::format("CAST({}, 'Decimal256({})')", quoteString(normalized->first), normalized->second);
-            }
-            default:
-                return std::nullopt;
+            case 16:   return "Bool";           /// bool
+            case 21:   return "Int16";          /// int2
+            case 23:   return "Int32";          /// int4
+            case 20:   return "Int64";          /// int8
+            case 26:   return "UInt32";         /// oid (unsigned)
+            case 700:  return "Float32";        /// float4
+            case 701:  return "Float64";        /// float8
+            case 1082: return "Date32";         /// date
+            case 1114: return "DateTime64(6)";  /// timestamp
+            case 1184: return "DateTime64(6)";  /// timestamptz
+            case 2950: return "UUID";           /// uuid
+            default:   return nullptr;
         }
     }
 
-    [[noreturn]] static void throwInvalidNumeric(const String & value, const char * type_name)
+    /// Formats a Bind parameter declared with a PostgreSQL type OID as a
+    /// type-preserving SQL fragment, or returns nullopt when the OID has no safe
+    /// mapping (the caller then quotes the value as a string literal).
+    ///
+    /// A mapped OID is emitted as `accurateCast('<escaped value>', '<type>')`. This
+    /// hands parsing, range/width checking and rejection to ClickHouse's own parser
+    /// (accurateCast, unlike CAST, does not silently wrap on overflow), so the
+    /// declared type and exact value survive and out-of-range or malformed input for
+    /// the declared type is rejected rather than truncated: `int4` rejects `3.14` and
+    /// `2147483648`, `int2` rejects `32768`, `oid` rejects `-1`/`1e2`, `bool` keeps
+    /// its boolean type, `date`/`timestamp`/`uuid` keep theirs.
+    ///
+    /// `numeric` (OID 1700) is special: ClickHouse SQL has no Decimal literal (a bare
+    /// `2.11` would be reparsed as Float64, losing precision) and a fixed cast scale
+    /// would truncate, so the value is first validated and normalized to a plain,
+    /// exponent-free decimal string with its exact scale and cast to a Decimal256 of
+    /// that scale; a value needing more significant digits than Decimal256 can hold
+    /// is rejected rather than silently rounded.
+    ///
+    /// Every mapped branch is injection-safe by construction: the value is always
+    /// quoted+escaped inside the cast argument, so a payload such as `1--`, `1+2` or
+    /// `1 UNION ALL SELECT ...` stays inside the string literal and can never break
+    /// out of the value position.
+    static std::optional<String> formatTypedParameter(Int32 oid, const String & value)
     {
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid value {} for a {} prepared-statement parameter", quoteString(value), type_name);
+        if (oid == 1700) /// numeric
+        {
+            if (!isSingleNumericLiteral(value))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
+            auto normalized = normalizeDecimal(value);
+            if (!normalized)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "Value {} for a numeric prepared-statement parameter exceeds the maximum "
+                                "representable Decimal precision", quoteString(value));
+            return fmt::format("accurateCast({}, 'Decimal256({})')", quoteString(normalized->first), normalized->second);
+        }
+
+        if (const char * type = clickHouseTypeForOID(oid))
+            return fmt::format("accurateCast({}, '{}')", quoteString(value), type);
+
+        return std::nullopt;
     }
 
     /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
     /// arguments. Each argument MUST already be a safe SQL fragment (a quoted
     /// literal, a validated number, or NULL); callers are responsible for that
     /// (the EXECUTE path uses FieldVisitorToString, the Bind path quoteString or
-    /// formatNumericParameter).
+    /// formatTypedParameter).
     ///
     /// Substitution runs over lexer tokens: a `$N` is replaced only where it is a
     /// real token, never inside a string literal, quoted identifier, comment or

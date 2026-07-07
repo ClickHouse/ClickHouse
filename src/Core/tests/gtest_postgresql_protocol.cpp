@@ -299,30 +299,39 @@ String bindAndGetStatement(
 
 }
 
-TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
+TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
 {
-    /// A parameter declared with a numeric OID (int4 = 23) is emitted as a bare
-    /// numeric literal, so `SELECT $1 + 1` and `LIMIT $1` keep working instead of
-    /// being coerced to a String literal.
-    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT 41 + 1");
-    EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {23}, {{"10"}}), "SELECT * FROM t LIMIT 10");
+    /// A parameter declared with a mapped OID is emitted as an accurateCast to the
+    /// matching ClickHouse type, so `SELECT $1 + 1` and `LIMIT $1` keep working and
+    /// the declared type is preserved instead of being coerced to a String literal.
+    /// The value is always quoted+escaped inside the cast, so nothing can break out.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT accurateCast('41', 'Int32') + 1");
+    EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {23}, {{"10"}}),
+              "SELECT * FROM t LIMIT accurateCast('10', 'Int32')");
 
-    /// int8 emits a bare integer literal.
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {20}, {{"9223372036854775807"}}), "SELECT 9223372036854775807");
-    /// float4/float8 emit a bare numeric literal (ClickHouse parses it as Float64,
-    /// matching PostgreSQL float semantics).
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"3.14"}}), "SELECT 3.14");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT -2.5e-3");
+    /// Each integer OID maps to the correspondingly-sized ClickHouse integer.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {21}, {{"32000"}}), "SELECT accurateCast('32000', 'Int16')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {20}, {{"9223372036854775807"}}),
+              "SELECT accurateCast('9223372036854775807', 'Int64')");
+    /// `oid` maps to an unsigned integer.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {26}, {{"42"}}), "SELECT accurateCast('42', 'UInt32')");
 
-    /// Assorted valid single literals: leading sign, leading/trailing decimal point,
-    /// explicit-plus exponent.
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"-5"}}), "SELECT -5");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{".5"}}), "SELECT .5");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"5."}}), "SELECT 5.");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"1E+10"}}), "SELECT 1E+10");
+    /// float4/float8 map to Float32/Float64.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {700}, {{"3.14"}}), "SELECT accurateCast('3.14', 'Float32')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT accurateCast('-2.5e-3', 'Float64')");
 
-    /// A parameter with no declared type (OID 0) or a text OID (25 = text) stays a
-    /// quoted+escaped string literal.
+    /// Non-numeric typed OIDs are preserved too (previously they were silently
+    /// downgraded to a String literal, regressing standards-compliant typed binds).
+    EXPECT_EQ(bindAndGetStatement("SELECT NOT $1", {16}, {{"true"}}), "SELECT NOT accurateCast('true', 'Bool')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1082}, {{"2024-01-15"}}),
+              "SELECT accurateCast('2024-01-15', 'Date32')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1114}, {{"2024-01-15 12:30:45"}}),
+              "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}}),
+              "SELECT accurateCast('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')");
+
+    /// An OID with no safe mapping (0 = none, 25 = text) stays a quoted+escaped
+    /// string literal.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"41"}}), "SELECT '41'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {25}, {{"hi"}}), "SELECT 'hi'");
 
@@ -330,7 +339,30 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {std::nullopt}), "SELECT NULL");
 }
 
-TEST(PostgreSQLProtocol, BindValidatesAndPreservesDeclaredNumericType)
+TEST(PostgreSQLProtocol, BindTypedNumericIsInjectionSafeInsideCast)
+{
+    /// The mapped-OID path emits accurateCast('<escaped value>', '<type>'). Range,
+    /// width and type validation for these OIDs is delegated to ClickHouse's parser
+    /// at execution time (accurateCast rejects out-of-range or malformed input for
+    /// the declared type); the integration test asserts that rejection. Here we
+    /// assert the assembled fragment is injection-safe: an injection payload stays
+    /// quoted+escaped inside the cast argument and can never splice SQL, even though
+    /// it is not a valid value for the declared type.
+    EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {23}, {{"1--"}}),
+              "SELECT id = accurateCast('1--', 'Int32')");
+    EXPECT_EQ(bindAndGetStatement("SELECT id = $1", {23}, {{"1+2"}}),
+              "SELECT id = accurateCast('1+2', 'Int32')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"1 UNION ALL SELECT secret FROM s"}}),
+              "SELECT accurateCast('1 UNION ALL SELECT secret FROM s', 'Int32')");
+    /// A single quote in the value is backslash-escaped so it cannot close the cast
+    /// argument's string literal.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"1'"}}),
+              "SELECT accurateCast('1\\'', 'Int32')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"x' OR 1=1--"}}),
+              "SELECT accurateCast('x\\' OR 1=1--', 'UUID')");
+}
+
+TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
 {
     auto throwsBadArgument = [](Int32 oid, const String & value)
     {
@@ -346,104 +378,59 @@ TEST(PostgreSQLProtocol, BindValidatesAndPreservesDeclaredNumericType)
         }
     };
 
-    /// Integer types (int2/int4/int8) require an integer literal. A fractional or
-    /// exponent value is rejected instead of being silently truncated or reparsed,
-    /// so `Parse("SELECT $1 + 1", [int4])` + `Bind("3.14")` no longer assembles.
-    EXPECT_TRUE(throwsBadArgument(23, "3.14"));
-    EXPECT_TRUE(throwsBadArgument(23, "1e2"));
-    EXPECT_TRUE(throwsBadArgument(21, "1.0"));
-    EXPECT_TRUE(throwsBadArgument(20, "0.5"));
-    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT 41 + 1");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"-5"}}), "SELECT -5");
-
-    /// `oid` is unsigned: a sign or exponent (values PostgreSQL rejects) is rejected
-    /// here too, but a plain unsigned integer passes.
-    EXPECT_TRUE(throwsBadArgument(26, "-1"));
-    EXPECT_TRUE(throwsBadArgument(26, "1e2"));
-    EXPECT_TRUE(throwsBadArgument(26, "+1"));
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {26}, {{"42"}}), "SELECT 42");
-
     /// `numeric` (OID 1700) has no Decimal literal form in ClickHouse SQL, so a bare
-    /// `2.11` would be reparsed as Float64 and lose precision. It is re-serialized as
-    /// an exact Decimal via CAST, preserving the value and type.
+    /// `2.11` would be reparsed as Float64 and lose precision. It is validated and
+    /// re-serialized as an exact Decimal via accurateCast, preserving value and type.
     EXPECT_EQ(bindAndGetStatement("SELECT toTypeName($1)", {1700}, {{"2.11"}}),
-              "SELECT toTypeName(CAST('2.11', 'Decimal256(2)'))");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-5"}}), "SELECT CAST('-5', 'Decimal256(0)')");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"100"}}), "SELECT CAST('100', 'Decimal256(0)')");
+              "SELECT toTypeName(accurateCast('2.11', 'Decimal256(2)'))");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-5"}}), "SELECT accurateCast('-5', 'Decimal256(0)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"100"}}), "SELECT accurateCast('100', 'Decimal256(0)')");
     /// Exponent forms are normalized to a plain decimal string with the correct scale.
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"1e2"}}), "SELECT CAST('100', 'Decimal256(0)')");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-2.5e-3"}}), "SELECT CAST('-0.0025', 'Decimal256(4)')");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{".5"}}), "SELECT CAST('0.5', 'Decimal256(1)')");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"5."}}), "SELECT CAST('5', 'Decimal256(0)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"1e2"}}), "SELECT accurateCast('100', 'Decimal256(0)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-2.5e-3"}}), "SELECT accurateCast('-0.0025', 'Decimal256(4)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{".5"}}), "SELECT accurateCast('0.5', 'Decimal256(1)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"5."}}), "SELECT accurateCast('5', 'Decimal256(0)')");
     /// A value needing more significant digits than Decimal256 can hold is rejected,
     /// not silently rounded.
     EXPECT_TRUE(throwsBadArgument(1700, String(78, '9')));
 
-    /// The numeric-branch injection payloads are still rejected for every numeric OID.
+    /// The numeric branch validates the value as one literal at assembly time, so an
+    /// injection payload declared `numeric` is rejected, never spliced or cast.
     EXPECT_TRUE(throwsBadArgument(1700, "1--"));
     EXPECT_TRUE(throwsBadArgument(1700, "1+2"));
-    EXPECT_TRUE(throwsBadArgument(700, "1--"));
-    EXPECT_TRUE(throwsBadArgument(26, "1--"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1-2"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1 UNION ALL SELECT secret FROM s"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1.2.3"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1e"));
+    EXPECT_TRUE(throwsBadArgument(1700, "."));
+    EXPECT_TRUE(throwsBadArgument(1700, ""));
 }
 
-TEST(PostgreSQLProtocol, BindRejectsInjectionInNumericParameter)
+TEST(PostgreSQLProtocol, BindTextParameterStaysQuotedString)
 {
-    /// Emitting a numeric parameter unquoted is only safe because the value is
-    /// validated to contain numeric characters only. An injection payload
-    /// declared as a numeric type is rejected, never spliced into the body.
-    auto throwsBadArgument = [](const String & value)
+    /// A parameter with no declared type or an unmapped OID is always a
+    /// quoted+escaped string literal, so an injection payload can never break out.
+    auto quotesAsString = [](const String & value, const String & expected)
     {
-        try
-        {
-            bindAndGetStatement("SELECT $1", {23}, {{value}});
-            return false;
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
-            return e.code() == ErrorCodes::BAD_ARGUMENTS;
-        }
+        EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{value}}), expected);
     };
 
-    EXPECT_TRUE(throwsBadArgument("1 UNION ALL SELECT secret FROM s"));
-    EXPECT_TRUE(throwsBadArgument("1); DROP TABLE t; --"));
-    EXPECT_TRUE(throwsBadArgument("1'"));
-    EXPECT_TRUE(throwsBadArgument(""));
-    EXPECT_TRUE(throwsBadArgument("0x10"));
+    quotesAsString("1 UNION ALL SELECT secret FROM s", "SELECT '1 UNION ALL SELECT secret FROM s'");
+    quotesAsString("1); DROP TABLE t; --", "SELECT '1); DROP TABLE t; --'");
+    quotesAsString("1--", "SELECT '1--'");
+    quotesAsString("x' UNION ALL SELECT 1--", "SELECT 'x\\' UNION ALL SELECT 1--'");
 
-    /// A per-character "numeric characters only" check would accept these: every
-    /// character is in [0-9+-.eE], yet the value is not a single numeric literal.
-    /// `1--` opens a line comment that drops the rest of the query; `1+2` / `1-2`
-    /// are expressions, not one bound value. All must be rejected.
-    EXPECT_TRUE(throwsBadArgument("1--"));
-    EXPECT_TRUE(throwsBadArgument("1+2"));
-    EXPECT_TRUE(throwsBadArgument("1-2"));
-    EXPECT_TRUE(throwsBadArgument("1.2.3"));
-    EXPECT_TRUE(throwsBadArgument("1e"));
-    EXPECT_TRUE(throwsBadArgument("."));
-    EXPECT_TRUE(throwsBadArgument("+"));
-    EXPECT_TRUE(throwsBadArgument("1e+"));
-    EXPECT_TRUE(throwsBadArgument("--1"));
+    /// The `1--` payload proves injection containment concretely: with a per-character
+    /// numeric check it would splice in as `id = 1-- AND ...`, dropping the trailing
+    /// predicate. Because the value is emitted inside a quoted cast argument, the
+    /// trailing predicate is preserved verbatim and the `--` cannot start a comment:
+    /// the assembled query is `id = accurateCast('1--', 'Int32') AND tenant_id = 42`
+    /// (which the parser then rejects at execution time, so no rows leak).
+    EXPECT_EQ(
+        bindAndGetStatement("SELECT * FROM t WHERE id = $1 AND tenant_id = 42", {23}, {{"1--"}}),
+        "SELECT * FROM t WHERE id = accurateCast('1--', 'Int32') AND tenant_id = 42");
 
-    /// The `1--` payload proves the injection concretely: with a per-character
-    /// check it splices in as `id = 1-- AND ...`, dropping the trailing predicate.
-    /// The strict check rejects it, so the query is never assembled.
-    EXPECT_TRUE(throwsBadArgument("1--"));
-    {
-        bool trailing_predicate_dropped = false;
-        try
-        {
-            bindAndGetStatement("SELECT * FROM t WHERE id = $1 AND tenant_id = 42", {23}, {{"1--"}});
-            trailing_predicate_dropped = true;
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
-        }
-        EXPECT_FALSE(trailing_predicate_dropped);
-    }
-
-    /// The same payload declared as text (OID 0) is safely quoted, not rejected.
+    /// The same payload declared as text (OID 0) is safely quoted.
     EXPECT_EQ(
         bindAndGetStatement("SELECT $1", {0}, {{"1 UNION ALL SELECT secret FROM s"}}),
         "SELECT '1 UNION ALL SELECT secret FROM s'");
