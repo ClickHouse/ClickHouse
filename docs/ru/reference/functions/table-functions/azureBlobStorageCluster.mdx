@@ -1,0 +1,69 @@
+---
+description: 'Позволяет параллельно обрабатывать файлы из Azure Blob Storage с
+  помощью множества узлов в указанном кластере.'
+sidebarTitle: 'azureBlobStorageCluster'
+slug: /sql-reference/table-functions/azureBlobStorageCluster
+title: 'azureBlobStorageCluster'
+doc_type: 'reference'
+---
+
+Позволяет параллельно обрабатывать файлы из [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) с помощью множества узлов в указанном кластере. На initiator создаётся connection ко всем узлам cluster, раскрываются звёздочки в path к файлу S3, после чего каждый файл динамически распределяется. На узле-воркере запрашивается у initiator следующая task для processing, и она обрабатывается. Это повторяется, пока не будут завершены все tasks.
+Эта табличная функция похожа на [функцию s3Cluster](/ru/reference/functions/table-functions/s3Cluster).
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+| Аргумент            | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`      | Имя кластера, которое используется для формирования набора адресов и параметров подключения к удалённым и локальным серверам.                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `connection_string` | `storage_account_url` — `connection_string` включает имя учётной записи и ключ ([Создание строки подключения](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json\&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account)), либо здесь можно указать URL учётной записи хранилища, а имя учётной записи и ключ учётной записи передать как отдельные параметры (см. параметры `account_name` и `account_key`) |
+| `container_name`    | Имя контейнера                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `blobpath`          | путь к файлу. Поддерживает следующие подстановочные шаблоны в режиме только для чтения: `*`, `**`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, `'abc'`, `'def'` — строки.                                                                                                                                                                                                                                                                                                                                                                          |
+| `account_name`      | если используется `storage_account_url`, здесь можно указать имя учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `account_key`       | если используется `storage_account_url`, здесь можно указать ключ учётной записи                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `format`            | [Формат](/ru/reference/formats/index) файла.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `compression`       | Поддерживаемые значения: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. По умолчанию сжатие определяется автоматически по расширению файла. (то же самое, что установить значение `auto`.)                                                                                                                                                                                                                                                                                                                                                        |
+| `structure`         | Структура таблицы. Формат: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с указанной структурой для чтения или записи данных в указанный файл.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Аналогично движку таблицы [AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage), для локальной разработки с Azure Storage можно использовать эмулятор Azurite. Подробности [здесь](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). Ниже предполагается, что Azurite доступен по имени хоста `azurite1`.
+
+Подсчитайте количество строк в файле `test_cluster_*.csv`, используя все узлы кластера `cluster_simple`:
+
+```sql
+SELECT count(*) FROM azureBlobStorageCluster(
+        'cluster_simple', 'http://azurite1:10000/devstoreaccount1', 'testcontainer', 'test_cluster_count.csv', 'devstoreaccount1',
+        'Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', 'CSV',
+        'auto', 'key UInt64')
+```
+
+<div id="using-shared-access-signatures-sas-sas-tokens">
+  ## Использование подписей общего доступа (SAS)
+</div>
+
+Примеры см. в разделе [azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens).
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Движок AzureBlobStorage](/ru/reference/engines/table-engines/integrations/azureBlobStorage)
+* [Табличная функция azureBlobStorage](/ru/reference/functions/table-functions/azureBlobStorage)

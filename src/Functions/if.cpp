@@ -1013,13 +1013,13 @@ private:
             {
                 data_column = const_nullable_arg->getNestedColumnPtr();
                 if (!data_column->empty())
-                    cond_is_null = const_nullable_arg->getNullMapData()[0];
+                    cond_is_null = cond_is_null || const_nullable_arg->getNullMapData()[0];
             }
 
-            if (!data_column->empty())
+            if (!cond_is_null && !data_column->empty())
             {
-                cond_is_true = !cond_is_null && checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
-                cond_is_false = !cond_is_null && !cond_is_true;
+                cond_is_true = checkAndGetColumn<ColumnUInt8>(*data_column).getBool(0);
+                cond_is_false = !cond_is_true;
             }
         }
 
@@ -1317,7 +1317,9 @@ private:
         /// Check if condition is const or null to not create full mask from it.
         if ((isColumnConst(*arguments[0].column) || arguments[0].column->onlyNull()) && !arguments[0].column->empty())
         {
-            bool value = arguments[0].column->getBool(0);
+            /// `onlyNull` columns (e.g. `Const(Nullable(Nothing))`) are treated as the false branch:
+            /// `getBool` would throw on the dummy nested column, but `if(NULL, then, else)` returns `else`.
+            const bool value = !arguments[0].column->onlyNull() && arguments[0].column->getBool(0);
             executeColumnIfNeeded(arguments[1], !value);
             executeColumnIfNeeded(arguments[2], value);
             return;

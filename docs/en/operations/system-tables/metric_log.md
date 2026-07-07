@@ -106,7 +106,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times parquet metadata has not been found in the cache and had to be read from disk.
 - `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/sql-reference/data-types/int-uint)) — Approximate number of bytes evicted from the parquet metadata cache.
 - `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
-- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent on synchronous initialization of iceberg data iterators.
+- `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent updating iceberg storage metadata from state (buildStorageMetadataFromState).
 - `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of returned object infos from iceberg iterator.
 - `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
 - `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/sql-reference/data-types/int-uint)) — Total number of accepted data files-position delete file pairs by minmax analysis from pairs suitable by partitioning and sequence number.
@@ -119,7 +119,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has been found in the cache.
 - `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a header has not been found in the cache.
 - `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has been found in the cache.
-- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a a text index posting list has not been found in the cache.
+- `ProfileEvent_TextIndexPostingsCacheMisses` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a text index posting list has not been found in the cache.
 - `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times a sparse index block has been read from the text index.
 - `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading the text index.
 - `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/sql-reference/data-types/int-uint)) — Total time spent reading and analyzing granules of the text index.
@@ -527,8 +527,6 @@ Contains history of metrics values from tables `system.metrics` and `system.even
   9. Part format related settings like 'enable_mixed_granularity_parts' are different on different replicas.
   The server successfully detected this situation and will download merged part from the replica to force the byte-identical result.
 - `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/sql-reference/data-types/int-uint)) — Number of times data after mutation is not byte-identical to the data on other replicas. In addition to the reasons described in 'DataAfterMergeDiffersFromReplica', it is also possible due to non-deterministic mutation.
-- `ProfileEvent_PolygonsAddedToPool` ([UInt64](/sql-reference/data-types/int-uint)) — A polygon has been added to the cache (pool) for the 'pointInPolygon' function.
-- `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — The number of bytes for polygons added to the cache (pool) for the 'pointInPolygon' function.
 - `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/sql-reference/data-types/int-uint)) — Number of Naive Bayes Classifier models loaded.
 - `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes allocated for Naive Bayes Classifier models.
 - `ProfileEvent_USearchAddCount` ([UInt64](/sql-reference/data-types/int-uint)) — Number of vectors added to usearch indexes.
@@ -728,7 +726,7 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/sql-reference/data-types/int-uint)) — Number of bytes evicted from filesystem cache
 - `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/sql-reference/data-types/int-uint)) — Number of created key directories
 - `ProfileEvent_FilesystemCacheEvictedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache
-- `ProfileEvent_FilesystemCacheEvictedFileSegmentsDuringPriorityIncrease` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments evicted from filesystem cache when increasing priority of file segments (Applies to SLRU cache policy)
+- `ProfileEvent_FilesystemCacheDowngradedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments downgraded (moved) from the protected to the probationary queue in SLRU cache policy. This is an internal move within the cache, not an eviction.
 - `ProfileEvent_FilesystemCacheBackgroundDownloadQueuePush` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments sent for background download in filesystem cache
 - `ProfileEvent_FilesystemCacheEvictionSkippedFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in unreleasable state
 - `ProfileEvent_FilesystemCacheEvictionSkippedEvictingFileSegments` ([UInt64](/sql-reference/data-types/int-uint)) — Number of file segments skipped for eviction because of being in evicting state
@@ -1584,6 +1582,8 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 - `CurrentMetric_FilesystemCacheSize` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size in bytes
 - `CurrentMetric_FilesystemCacheSizeLimit` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache size limit in bytes
 - `CurrentMetric_FilesystemCacheElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements (file segments)
+- `CurrentMetric_FilesystemCachePriorityQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Total number of entries in the filesystem cache priority queue, including invalidated entries pending removal
+- `CurrentMetric_FilesystemCacheInvalidatedElements` ([Int64](/sql-reference/data-types/int-uint)) — Number of invalidated (zero size, pending removal) entries in the filesystem cache priority queue
 - `CurrentMetric_FilesystemCacheDownloadQueueElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in download queue
 - `CurrentMetric_FilesystemCacheDelayedCleanupElements` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache elements in background cleanup queue
 - `CurrentMetric_FilesystemCacheHoldFileSegments` ([Int64](/sql-reference/data-types/int-uint)) — Filesystem cache file segment which are currently hold as unreleasable

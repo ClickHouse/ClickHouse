@@ -1,0 +1,351 @@
+---
+slug: /integrations/prometheus
+sidebarTitle: 'Endpoint Prometheus'
+title: 'Intégration Prometheus'
+description: 'Exporter les métriques ClickHouse vers Prometheus'
+keywords: ['prometheus', 'grafana', 'monitoring', 'metrics', 'exporter']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La fonctionnalité prend en charge l’intégration de [Prometheus](https://prometheus.io/) pour surveiller les services ClickHouse Cloud. L’accès aux métriques Prometheus est disponible via l’endpoint de la [ClickHouse Cloud API](/fr/products/cloud/features/admin-features/api/api-overview), qui vous permet de vous connecter de manière sécurisée et d’exporter les métriques vers votre collector Prometheus. Ces métriques peuvent être intégrées à des dashboards, par exemple dans Grafana ou Datadog, à des fins de visualisation.
+
+Pour commencer, [générez une clé API](/fr/products/cloud/features/admin-features/api/openapi).
+
+Si vous recherchez l’endpoint équivalent pour les services [Managed Postgres](/fr/products/managed-postgres/overview), consultez le [Managed Postgres Prometheus endpoint](/fr/products/managed-postgres/monitoring/prometheus).
+
+<div id="prometheus-endpoint-api-to-retrieve-clickhouse-cloud-metrics">
+  ## API de l’endpoint Prometheus pour récupérer les métriques ClickHouse Cloud
+</div>
+
+<div id="api-reference">
+  ### Référence de l’API
+</div>
+
+| Méthode | Chemin                                                                                                                          | Description                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/services/:serviceId/prometheus?filtered_metrics=[true \| false]` | Renvoie les métriques d’un service spécifique                 |
+| GET     | `https://api.clickhouse.cloud/v1/organizations/:organizationId/prometheus?filtered_metrics=[true \| false]`                     | Renvoie les métriques de tous les services d’une organisation |
+
+**Paramètres de la requête**
+
+| Nom                  | Emplacement           | Type                 |
+| -------------------- | --------------------- | -------------------- |
+| Organization ID      | Adresse de l’endpoint | uuid                 |
+| Service ID           | Adresse de l’endpoint | uuid (facultatif)    |
+| filtered&#95;metrics | Paramètre de requête  | booléen (facultatif) |
+
+<div id="authentication">
+  ### Authentification
+</div>
+
+Utilisez votre clé API ClickHouse Cloud pour l’authentification de base :
+
+```bash
+Username: <KEY_ID>
+Password: <KEY_SECRET>
+Example request
+export KEY_SECRET=<key_secret>
+export KEY_ID=<key_id>
+export ORG_ID=<org_id>
+
+# For all services in $ORG_ID
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/prometheus?filtered_metrics=true
+
+# For a single service only
+export SERVICE_ID=<service_id>
+curl --silent --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations/$ORG_ID/services/$SERVICE_ID/prometheus?filtered_metrics=true
+```
+
+<div id="sample-response">
+  ### Exemple de réponse
+</div>
+
+```response
+# HELP ClickHouse_ServiceInfo Information about service, including cluster status and ClickHouse version
+# TYPE ClickHouse_ServiceInfo untyped
+ClickHouse_ServiceInfo{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",clickhouse_cluster_status="running",clickhouse_version="24.5",scrape="full"} 1
+
+# HELP ClickHouseProfileEvents_Query Number of queries to be interpreted and potentially executed. Does not include queries that failed to parse or were rejected due to AST size limits, quota limits or limits on the number of simultaneously running queries. May include internal queries initiated by ClickHouse itself. Does not count subqueries.
+# TYPE ClickHouseProfileEvents_Query counter
+ClickHouseProfileEvents_Query{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 6
+
+# HELP ClickHouseProfileEvents_QueriesWithSubqueries Count queries with all subqueries
+# TYPE ClickHouseProfileEvents_QueriesWithSubqueries counter
+ClickHouseProfileEvents_QueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 230
+
+# HELP ClickHouseProfileEvents_SelectQueriesWithSubqueries Count SELECT queries with all subqueries
+# TYPE ClickHouseProfileEvents_SelectQueriesWithSubqueries counter
+ClickHouseProfileEvents_SelectQueriesWithSubqueries{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 224
+
+# HELP ClickHouseProfileEvents_FileOpen Number of files opened.
+# TYPE ClickHouseProfileEvents_FileOpen counter
+ClickHouseProfileEvents_FileOpen{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 4157
+
+# HELP ClickHouseProfileEvents_Seek Number of times the 'lseek' function was called.
+# TYPE ClickHouseProfileEvents_Seek counter
+ClickHouseProfileEvents_Seek{clickhouse_org="c2ba4799-a76e-456f-a71a-b021b1fafe60",clickhouse_service="12f4a114-9746-4a75-9ce5-161ec3a73c4c",clickhouse_service_name="test service",hostname="c-cream-ma-20-server-3vd2ehh-0",instance="c-cream-ma-20-server-3vd2ehh-0",table="system.events"} 1840
+
+# HELP ClickPipes_Info Always equal to 1. Label "clickpipe_state" contains the current state of the pipe: Stopped/Provisioning/Running/Paused/Failed
+# TYPE ClickPipes_Info gauge
+ClickPipes_Info{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent",clickpipe_status="Running"} 1
+
+# HELP ClickPipes_SentEvents_Total Total number of records sent to ClickHouse
+# TYPE ClickPipes_SentEvents_Total counter
+ClickPipes_SentEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5534250
+
+# HELP ClickPipes_SentBytesCompressed_Total Total compressed bytes sent to ClickHouse.
+# TYPE ClickPipes_SentBytesCompressed_Total counter
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 380837520
+ClickPipes_SentBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name
+
+# HELP ClickPipes_FetchedBytes_Total Total uncompressed bytes fetched from the source.
+# TYPE ClickPipes_FetchedBytes_Total counter
+ClickPipes_FetchedBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_Errors_Total Total errors ingesting data.
+# TYPE ClickPipes_Errors_Total counter
+ClickPipes_Errors_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 0
+
+# HELP ClickPipes_SentBytes_Total Total uncompressed bytes sent to ClickHouse.
+# TYPE ClickPipes_SentBytes_Total counter
+ClickPipes_SentBytes_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 477187967
+
+# HELP ClickPipes_FetchedBytesCompressed_Total Total compressed bytes fetched from the source. If data is uncompressed at the source, this will equal ClickPipes_FetchedBytes_Total
+# TYPE ClickPipes_FetchedBytesCompressed_Total counter
+ClickPipes_FetchedBytesCompressed_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 873286202
+
+# HELP ClickPipes_FetchedEvents_Total Total number of records fetched from the source.
+# TYPE ClickPipes_FetchedEvents_Total counter
+ClickPipes_FetchedEvents_Total{clickhouse_org="11dfa1ec-767d-43cb-bfad-618ce2aaf959",clickhouse_service="82b83b6a-5568-4a82-aa78-fed9239db83f",clickhouse_service_name="ClickPipes demo instace",clickpipe_id="642bb967-940b-459e-9f63-a2833f62ec44",clickpipe_name="Confluent demo pipe",clickpipe_source="confluent"} 5535376
+```
+
+<div id="metric-labels">
+  ### Libellés des métriques
+</div>
+
+Toutes les métriques comportent les libellés suivants :
+
+| Libellé                         | Description          |
+| ------------------------------- | -------------------- |
+| clickhouse&#95;org              | ID de l’organisation |
+| clickhouse&#95;service          | ID du service        |
+| clickhouse&#95;service&#95;name | Nom du service       |
+
+Pour ClickPipes, les métriques comportent également les libellés suivants :
+
+| Libellé              | Description                 |
+| -------------------- | --------------------------- |
+| clickpipe&#95;id     | ID du ClickPipe             |
+| clickpipe&#95;name   | Nom du ClickPipe            |
+| clickpipe&#95;source | Type de source du ClickPipe |
+
+<div id="information-metrics">
+  ### Métriques d’information
+</div>
+
+ClickHouse Cloud fournit une métrique spéciale `ClickHouse_ServiceInfo`, qui est une `gauge` ayant toujours la valeur `1`. Cette métrique contient tous les **libellés de métrique** ainsi que les libellés suivants :
+
+| Libellé                           | Description                                                                                                                                      |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| clickhouse&#95;cluster&#95;status | État du service. Peut être l’un des suivants : [`awaking` | `running` | `degraded` | `idle` | `stopped`]                                         |
+| clickhouse&#95;version            | Version du serveur ClickHouse utilisée par le service                                                                                            |
+| scrape                            | Indique l’état du dernier scrape. Peut être `full` ou `partial`                                                                                  |
+| full                              | Indique qu’aucune erreur ne s’est produite lors du dernier scrape des métriques                                                                  |
+| partial                           | Indique que des erreurs se sont produites lors du dernier scrape des métriques et que seule la métrique `ClickHouse_ServiceInfo` a été renvoyée. |
+
+Les requêtes visant à récupérer des métriques ne réactiveront pas un service mis en veille. Si un service est dans l’état `idle`, seule la métrique `ClickHouse_ServiceInfo` sera renvoyée.
+
+Pour ClickPipes, il existe une métrique `gauge` similaire, `ClickPipes_Info`, qui contient, en plus des **libellés de métrique**, les libellés suivants :
+
+| Libellé             | Description           |
+| ------------------- | --------------------- |
+| clickpipe&#95;state | L’état actuel du pipe |
+
+<div id="configuring-prometheus">
+  ### Configuration de Prometheus
+</div>
+
+Le serveur Prometheus collecte les métriques à partir des cibles configurées aux intervalles définis. Vous trouverez ci-dessous un exemple de configuration permettant au serveur Prometheus d’utiliser le ClickHouse Cloud Prometheus Endpoint :
+
+```yaml
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "prometheus"
+    static_configs:
+    - targets: ["localhost:9090"]
+  - job_name: "clickhouse"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    scheme: https
+    params:
+      filtered_metrics: ["true"]
+    metrics_path: "/v1/organizations/<ORG_ID>/prometheus"
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+```
+
+Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que le label d’instance soit correctement renseigné. De plus, `filtered_metrics` est défini sur `true` dans l’exemple ci-dessus, mais doit être configuré selon les préférences de l’utilisateur.
+
+<div id="integrating-with-grafana">
+  ## Intégration à Grafana
+</div>
+
+Les utilisateurs ont deux principales façons d’intégrer Grafana :
+
+* **Endpoint de métriques** – Cette approche a l’avantage de ne nécessiter aucun composant ni infrastructure supplémentaire. Cette offre est limitée à Grafana Cloud et requiert uniquement l’URL du ClickHouse Cloud Prometheus Endpoint ainsi que des informations d’authentification.
+* **Grafana Alloy** - Grafana Alloy est une distribution d’OpenTelemetry (OTel) Collector indépendante des fournisseurs, qui remplace Grafana Agent. Il peut être utilisé comme scraper, être déployé dans votre propre infrastructure et est compatible avec n’importe quel endpoint Prometheus.
+
+Nous fournissons ci-dessous des instructions sur l’utilisation de ces options, en nous concentrant sur les détails propres au ClickHouse Cloud Prometheus Endpoint.
+
+<div id="grafana-cloud-with-metrics-endpoint">
+  ### Grafana Cloud avec endpoint de métrique
+</div>
+
+* Connectez-vous à votre compte Grafana Cloud
+* Ajoutez une nouvelle connexion en sélectionnant **endpoint de métrique**
+* Configurez l’URL de scraping pour qu’elle pointe vers l’endpoint Prometheus et utilisez l’authentification de base pour configurer votre connexion avec la clé API/le secret
+* Testez la connexion pour vous assurer qu’elle fonctionne
+
+<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configurer l’endpoint de métrique Grafana" border />
+
+<br />
+
+Une fois la configuration terminée, vous devriez voir les métriques dans le menu déroulant, que vous pourrez sélectionner pour configurer des tableaux de bord :
+
+<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Menu déroulant de Grafana Metrics Explorer" border />
+
+<br />
+
+<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Graphique de Grafana Metrics Explorer" border />
+
+<div id="grafana-cloud-with-alloy">
+  ### Grafana Cloud avec Alloy
+</div>
+
+Si vous utilisez Grafana Cloud, vous pouvez installer Alloy en accédant au menu Alloy dans Grafana et en suivant les instructions affichées à l’écran :
+
+<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+
+<br />
+
+Cela devrait configurer Alloy avec un composant `prometheus.remote_write` pour envoyer des données vers un endpoint Grafana Cloud à l’aide d’un jeton d’authentification. Il vous suffit ensuite de modifier la configuration d’Alloy (située dans `/etc/alloy/config.alloy` sous Linux) pour y inclure un scraper pour le ClickHouse Cloud Prometheus Endpoint.
+
+L’exemple suivant montre une configuration Alloy avec un composant `prometheus.scrape` pour scraper les métriques depuis le ClickHouse Cloud Endpoint, ainsi que le composant `prometheus.remote_write` configuré automatiquement. Notez que le composant de configuration `basic_auth` contient l’ID et le secret de notre clé Cloud API comme nom d’utilisateur et mot de passe, respectivement.
+
+```yaml
+prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<clickhouse_org_id>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels    = true
+  scrape_interval = "30s"
+  scrape_timeout  = "25s"
+
+  basic_auth {
+  username = "<clickhouse_api_key_id>"
+  password = "<clickhouse_api_key_secret>"
+  }
+
+  forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+}
+
+  prometheus.remote_write "grafana_cloud" {
+  endpoint {
+  url = "https://<grafana_prometheus_url>/api/prom/push"
+
+  basic_auth {
+  username = "<grafana_username>"
+  password = "<grafana_api_token>"
+  }
+  }
+}
+```
+
+Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que le libellé d’instance soit correctement renseigné.
+
+<div id="grafana-self-managed-with-alloy">
+  ### Grafana autogéré avec Alloy
+</div>
+
+Les utilisateurs de Grafana autogéré peuvent consulter les instructions d’installation de l’agent Alloy [ici](https://grafana.com/docs/alloy/latest/get-started/install/). Nous partons du principe qu’Alloy est configuré pour envoyer les métriques Prometheus vers la destination souhaitée. Le composant `prometheus.scrape` ci-dessous permet à Alloy de scraper le ClickHouse Cloud Endpoint. Nous supposons que `prometheus.remote_write` reçoit les métriques scrapées. Ajustez la clé `forward_to` vers la destination cible si elle n’existe pas.
+
+```yaml
+// prometheus.scrape component causes Alloy to scrape the ClickHouse Cloud Prometheus endpoint.
+  // Adjust the forward_to key to match your remote_write receiver if it differs.
+  prometheus.scrape "clickhouse_cloud" {
+  targets = [{
+  __address__ = "api.clickhouse.cloud",
+  }]
+
+  scheme       = "https"
+  metrics_path = "/v1/organizations/<organizationId>/prometheus"
+
+  params = {
+  "filtered_metrics" = ["true"],
+  }
+
+  honor_labels = true
+
+  basic_auth {
+  username = "<KEY_ID>"
+  password = "<KEY_SECRET>"
+  }
+
+  forward_to = [prometheus.remote_write.metrics_service.receiver]
+}
+```
+
+Une fois la configuration effectuée, vous devriez voir les métriques liées à ClickHouse dans votre explorateur de métriques :
+
+<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Explorateur de métriques Grafana" border />
+
+<br />
+
+Notez que le paramètre de configuration `honor_labels` doit être défini sur `true` pour que l&#39;instance label soit correctement renseigné.
+
+<div id="integrating-with-datadog">
+  ## Intégration avec Datadog
+</div>
+
+Vous pouvez utiliser l’[Agent](https://docs.datadoghq.com/agent/?tab=Linux) Datadog et l’[intégration OpenMetrics](https://docs.datadoghq.com/integrations/openmetrics/) pour collecter des métriques à partir de l’endpoint ClickHouse Cloud. Vous trouverez ci-dessous un exemple simple de configuration pour cet agent et cette intégration. Notez toutefois qu’il peut être préférable de ne sélectionner que les métriques les plus pertinentes pour vous. L’exemple passe-partout ci-dessous exportera plusieurs milliers de combinaisons métrique-instance, que Datadog considérera comme des métriques personnalisées.
+
+```yaml
+init_config:
+
+instances:
+   - openmetrics_endpoint: 'https://api.clickhouse.cloud/v1/organizations/97a33bdb-4db3-4067-b14f-ce40f621aae1/prometheus?filtered_metrics=true'
+     namespace: 'clickhouse'
+     metrics:
+         - '^ClickHouse.*'
+     username: username
+     password: password
+```
+
+<br />
+
+<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Intégration Prometheus-Datadog" />
+
+<div id="related">
+  ## Pages connexes
+</div>
+
+* [Vue d’ensemble du monitoring](/fr/products/cloud/features/monitoring/overview) — Comparez les différentes approches de monitoring pour ClickHouse Cloud
+* [Monitoring dans Cloud Console](/fr/products/cloud/features/monitoring/cloud-console) — Des tableaux de bord intégrés, sans outil externe
+* [Intégrations communautaires et partenaires](/fr/products/cloud/features/monitoring/integrations) — Intégration de l’agent Datadog et solutions de la communauté
+* [Interroger les tables système](/fr/products/cloud/features/monitoring/system-tables) — Accès SQL direct aux métriques système
+* [Endpoint Prometheus de Managed Postgres](/fr/products/managed-postgres/monitoring/prometheus) — Collectez les métriques de vos services Managed Postgres

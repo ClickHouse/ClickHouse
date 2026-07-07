@@ -59,6 +59,7 @@
 #include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
+#include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
@@ -520,6 +521,11 @@ MutationsInterpreter::MutationsInterpreter(
     use_analyzer = shouldUseAnalyzerForMutations(new_context);
     if (!use_analyzer)
         LOG_TEST(logger, "Will use old analyzer to prepare mutation");
+
+    /// Mutation source reads build a synthetic `SELECT` without a table expression,
+    /// so parallel replicas must not be used for them.
+    new_context->setSetting("enable_parallel_replicas", Field(0));
+
     context = std::move(new_context);
 }
 
@@ -649,6 +655,8 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
 
 void MutationsInterpreter::prepare(bool dry_run)
 {
+    auto component_guard = Coordination::setCurrentComponent("MutationsInterpreter");
+
     if (is_prepared)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "MutationsInterpreter is already prepared. It is a bug.");
 
@@ -1980,6 +1988,15 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         auto query_tree = subquery->detachQueryTree();
         if (!query_tree)
             continue;
+
+        /// The set subquery is planned standalone with its own `GlobalPlannerContext`, so its
+        /// table expressions must carry unique aliases. Otherwise two distinct table expressions
+        /// exposing a column with the same name (e.g. `dummy` from `system.one` in
+        /// `1 IN (SELECT 1 FROM (SELECT * FROM system.one))`) would both produce a bare column
+        /// identifier and `GlobalPlannerContext::createColumnIdentifier` would throw
+        /// "Column identifier ... is already registered". The regular planner path collects sets
+        /// from an already-aliased query tree; here we re-apply the aliasing on the detached tree.
+        createUniqueAliasesIfNecessary(query_tree, context_);
 
         auto subquery_options = SelectQueryOptions{}.subquery();
         /// Sets may use Materialized CTEs; mirror the regular planner path

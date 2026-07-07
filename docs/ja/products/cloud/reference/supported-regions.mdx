@@ -1,0 +1,135 @@
+---
+title: 'サポート対象クラウドリージョン'
+sidebarTitle: 'サポート対象クラウドリージョン'
+keywords: ['aws', 'gcp', 'google cloud', 'azure', 'クラウド', 'リージョン']
+description: 'ClickHouse Cloud のサポート対象リージョン'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## AWS リージョン
+</div>
+
+* ap-northeast-1 (東京)
+* ap-northeast-2 (韓国・ソウル)
+* ap-south-1 (ムンバイ)
+* ap-southeast-1 (シンガポール)
+* ap-southeast-2 (シドニー)
+* eu-central-1 (フランクフルト)
+* eu-west-1 (アイルランド)
+* eu-west-2 (ロンドン)
+* us-east-1 (北バージニア)
+* us-east-2 (オハイオ)
+* us-west-2 (オレゴン)
+* il-central-1 (イスラエル・テルアビブ)
+
+**プライベートリージョン:**
+
+* ca-central-1 (カナダ)
+* af-south-1 (南アフリカ)
+* eu-north-1 (ストックホルム)
+* sa-east-1 (南アメリカ)
+* ap-southeast-3 (ジャカルタ)
+* ap-east-1 (香港)
+* mx-central-1 (メキシコ)
+
+<div id="google-cloud-regions">
+  ## Google Cloud のリージョン
+</div>
+
+* asia-southeast1 (シンガポール)
+* asia-northeast1 (東京)
+* europe-west2 (ロンドン)
+* europe-west4 (オランダ)
+* us-central1 (アイオワ)
+* us-east1 (サウスカロライナ)
+
+**プライベートリージョン:**
+
+* australia-southeast1(シドニー)
+* europe-west3 (フランクフルト)
+* europe-west6 (チューリッヒ)
+* northamerica-northeast1 (モントリオール)
+* us-west1 (オレゴン)
+
+<div id="azure-regions">
+  ## Azure リージョン
+</div>
+
+* West US 3 (アリゾナ)
+* East US 2 (バージニア)
+* Germany West Central (フランクフルト)
+
+**プライベートリージョン:**
+
+* Japan East (東京、埼玉)
+* UAE North (ドバイ)
+* Australia East (ニューサウスウェールズ)
+
+<Note>
+  現在掲載されていないリージョンへのデプロイが必要な場合は、[リクエストを送信](https://clickhouse.com/pricing?modal=open)してください。
+</Note>
+
+<div id="private-regions">
+  ## プライベートリージョン
+</div>
+
+<EnterprisePlanFeatureBadge feature="プライベートリージョン機能" />
+
+Enterprise tier のサービスでは、プライベートリージョンを提供しています。プライベートリージョンをご希望の場合は、[お問い合わせください](https://clickhouse.com/company/contact)。
+
+プライベートリージョンに関する主な注意点:
+
+* サービスは自動スケーリングされませんが、手動での垂直スケーリングおよび水平スケーリングには対応しています。
+* サービスをアイドル状態にすることはできません。
+* プライベートリージョンではステータスページを利用できません。
+
+HIPAA コンプライアンスには、追加要件が適用される場合があります (BAA の締結を含む) 。なお、HIPAA は現在 Enterprise tier のサービスでのみ利用可能です
+
+<div id="hipaa-compliant-regions">
+  ## HIPAA 準拠リージョン
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+HIPAA 準拠リージョンでサービスをセットアップするには、Business Associate Agreement (BAA) に署名し、営業またはサポートを通じてオンボーディングを依頼する必要があります。HIPAA 準拠に対応しているリージョンは次のとおりです。
+
+* AWS af-south-1 (南アフリカ)  **プライベートリージョン**
+* AWS ca-central-1 (カナダ)  **プライベートリージョン**
+* AWS eu-central-1 (フランクフルト) 
+* AWS eu-north-1 (ストックホルム)  **プライベートリージョン**
+* AWS eu-west-1 (アイルランド) 
+* AWS eu-west-2 (ロンドン) 
+* AWS sa-east-1 (南アメリカ)  **プライベートリージョン**
+* AWS us-east-1 (北バージニア) 
+* AWS us-east-2 (オハイオ) 
+* AWS us-west-2 (オレゴン) 
+* GCP europe-west4 (オランダ) 
+* GCP us-central1 (アイオワ) 
+* GCP us-east1 (サウスカロライナ)
+
+<div id="pci-compliant-regions">
+  ## PCI 準拠リージョン
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+PCI 準拠リージョンでサービスをセットアップするには、Sales または Support を通じてオンボーディングを依頼する必要があります。以下のリージョンが PCI コンプライアンスに対応しています。
+
+* AWS af-south-1 (南アフリカ)  **プライベートリージョン**
+* AWS ca-central-1 (カナダ)  **プライベートリージョン**
+* AWS eu-central-1 (フランクフルト) 
+* AWS eu-north-1 (ストックホルム)  **プライベートリージョン**
+* AWS eu-west-1 (アイルランド) 
+* AWS eu-west-2 (ロンドン) 
+* AWS mx-central-1 (メキシコ)  **プライベートリージョン**
+* AWS sa-east-1 (南アメリカ)  **プライベートリージョン**
+* AWS us-east-1 (北バージニア) 
+* AWS us-east-2 (オハイオ) 
+* AWS us-west-2 (オレゴン) 
+* GCP europe-west4 (オランダ) 
+* GCP us-central1 (アイオワ) 
+* GCP us-east1 (サウスカロライナ)

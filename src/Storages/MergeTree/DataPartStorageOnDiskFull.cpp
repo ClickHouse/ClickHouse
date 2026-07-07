@@ -2,10 +2,13 @@
 
 #include <Disks/IDiskTransaction.h>
 #include <Disks/SingleDiskVolume.h>
+#include <IO/PackedFilesReader.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/ReadHelpers.h>
+#include <IO/ReadPipeline.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Interpreters/Context.h>
+#include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Common/typeid_cast.h>
 
 namespace DB
@@ -48,7 +51,7 @@ bool DataPartStorageOnDiskFull::exists() const
     return volume->getDisk()->existsDirectory(fs::path(root_path) / part_dir);
 }
 
-bool DataPartStorageOnDiskFull::existsFile(const std::string & name) const
+bool DataPartStorageOnDiskFull::existsFileImpl(const std::string & name) const
 {
     return volume->getDisk()->existsFile(fs::path(root_path) / part_dir / name);
 }
@@ -89,7 +92,7 @@ Poco::Timestamp DataPartStorageOnDiskFull::getFileLastModified(const String & fi
     return volume->getDisk()->getLastModified(fs::path(root_path) / part_dir / file_name);
 }
 
-size_t DataPartStorageOnDiskFull::getFileSize(const String & file_name) const
+size_t DataPartStorageOnDiskFull::getFileSizeImpl(const String & file_name) const
 {
     return volume->getDisk()->getFileSize(fs::path(root_path) / part_dir / file_name);
 }
@@ -122,7 +125,7 @@ String DataPartStorageOnDiskFull::getUniqueId() const
     return disk->getUniqueId(fs::path(getRelativePath()) / "checksums.txt");
 }
 
-void DataPartStorageOnDiskFull::prepareRead(
+void DataPartStorageOnDiskFull::prepareReadImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint,
@@ -131,7 +134,7 @@ void DataPartStorageOnDiskFull::prepareRead(
     volume->getDisk()->prepareRead(fs::path(root_path) / part_dir / name, settings, read_hint, pipeline);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExists(
+std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskFull::readFileIfExistsImpl(
     const std::string & name,
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const

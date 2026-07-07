@@ -1,0 +1,732 @@
+---
+description: '名前付きコレクションに関するドキュメント'
+sidebarTitle: '名前付きコレクション'
+slug: /operations/named-collections
+title: '名前付きコレクション'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+名前付きコレクションは、外部ソースとのインテグレーションを設定するためのキー・バリューのペアの集合を保存する仕組みです。名前付きコレクションは、辞書、テーブル、テーブル関数、オブジェクトストレージで使用できます。
+
+名前付きコレクションは DDL または設定ファイルで設定でき、ClickHouse の起動時に適用されます。これにより、オブジェクトの作成が簡単になるほか、管理者アクセス権のないユーザーに認証情報を見せずに済みます。
+
+名前付きコレクション内のキーは、対応する関数、テーブルエンジン、データベースなどのパラメータ名と一致している必要があります。以下の例では、各タイプごとにパラメータ一覧へのリンクを示しています。
+
+名前付きコレクションで設定したパラメータは SQL で上書きできます。これについては以下の例で示します。この動作は、`[NOT] OVERRIDABLE` キーワード、XML 属性、および/または設定オプション `allow_named_collection_override_by_default` を使って制限できます。
+
+<Warning>
+  上書きが許可されている場合、管理者アクセス権のないユーザーが
+  隠そうとしている認証情報を突き止められる可能性があります。
+  この目的で名前付きコレクションを使用している場合は、
+  `allow_named_collection_override_by_default` (デフォルトで有効) を無効にしてください。
+</Warning>
+
+<div id="storing-named-collections-in-the-system-database">
+  ## system database に 名前付きコレクション を格納する
+</div>
+
+<div id="ddl-example">
+  ### DDLの例
+</div>
+
+```sql
+CREATE NAMED COLLECTION name AS
+key_1 = 'value' OVERRIDABLE,
+key_2 = 'value2' NOT OVERRIDABLE,
+url = 'https://connection.url/'
+```
+
+上記の例では:
+
+* `key_1` は常にオーバーライドできます。
+* `key_2` は一切オーバーライドできません。
+* `url` は、`allow_named_collection_override_by_default` の値によって、オーバーライドできる場合とできない場合があります。
+
+<div id="permissions-to-create-named-collections-with-ddl">
+  ### DDL を使用して 名前付きコレクション を作成するための権限
+</div>
+
+DDL で 名前付きコレクション を管理するには、ユーザーに `named_collection_control` 権限が必要です。これは、`/etc/clickhouse-server/users.d/` にファイルを追加することで付与できます。以下の例では、ユーザー `default` に `access_management` と `named_collection_control` の両方の権限を付与しています。
+
+```xml title='/etc/clickhouse-server/users.d/user_default.xml' highlight={6}
+<clickhouse>
+  <users>
+    <default>
+      <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
+      <access_management>1</access_management>
+      <named_collection_control>1</named_collection_control>
+    </default>
+  </users>
+</clickhouse>
+```
+
+<Tip>
+  上記の例では、`password_sha256_hex` の値は、パスワードの SHA256 ハッシュを16進数で表したものです。ユーザー `default` のこの設定に `replace=true` 属性があるのは、デフォルト設定ですでに平文の `password` が設定されており、1人のユーザーに平文パスワードと sha256 hex パスワードの両方を設定することはできないためです。
+</Tip>
+
+<div id="storage-for-named-collections">
+  ### 名前付きコレクションの保存先
+</div>
+
+名前付きコレクションは、ローカルディスクまたは ZooKeeper/Keeper に保存できます。デフォルトではローカルストレージが使用されます。
+また、[ディスク暗号化](/ja/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)で使用されるものと同じアルゴリズムを使って暗号化して保存することもでき、
+デフォルトでは `aes_128_ctr` が使用されます。
+
+名前付きコレクションの保存先を設定するには、`type` を指定する必要があります。指定できる値は `local` または `keeper`/`zookeeper` です。暗号化ストレージの場合は、
+`local_encrypted` または `keeper_encrypted`/`zookeeper_encrypted` を使用できます。
+
+ZooKeeper/Keeper を使用する場合は、configuration file の
+`named_collections_storage` セクションに `path` (名前付きコレクションの保存先となる ZooKeeper/Keeper 内のパス) も設定する必要があります。次の例では、暗号化と ZooKeeper/Keeper を使用しています。
+
+```xml
+<clickhouse>
+  <named_collections_storage>
+    <type>zookeeper_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <algorithm>aes_128_ctr</algorithm>
+    <path>/named_collections_path/</path>
+    <update_timeout_ms>1000</update_timeout_ms>
+  </named_collections_storage>
+</clickhouse>
+```
+
+省略可能な設定パラメータ `update_timeout_ms` のデフォルト値は `5000` です。
+
+<div id="storing-named-collections-in-configuration-files">
+  ## 設定ファイルに named collections を保存する
+</div>
+
+<div id="xml-example">
+  ### XMLの例
+</div>
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+     <named_collections>
+        <name>
+            <key_1 overridable="true">value</key_1>
+            <key_2 overridable="false">value_2</key_2>
+            <url>https://connection.url/</url>
+        </name>
+     </named_collections>
+</clickhouse>
+```
+
+上記の例では:
+
+* `key_1` は常に上書きできます。
+* `key_2` は上書きできません。
+* `url` は、`allow_named_collection_override_by_default` の値に応じて、上書きできる場合とできない場合があります。
+
+<div id="modifying-named-collections">
+  ## 名前付きコレクションの変更
+</div>
+
+DDLクエリで作成した名前付きコレクションは、DDLで変更または削除できます。XMLファイルで作成した名前付きコレクションは、対応するXMLを編集または削除して管理できます。
+
+<div id="alter-a-ddl-named-collection">
+  ### DDL の named collection を変更する
+</div>
+
+コレクション `collection2` の `key1` と `key3` を変更または追加します
+(これらのキーの `overridable` フラグの値は変更されません) :
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4, key3='value3'
+```
+
+`key1` キーを変更または追加し、常に上書き可能にします:
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4 OVERRIDABLE
+```
+
+`collection2` から `key2` キーを削除します:
+
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key2
+```
+
+`collection2` コレクションのキー `key1` を変更または追加し、`key3` を削除します:
+
+```sql
+ALTER NAMED COLLECTION collection2 SET key1=4, DELETE key3
+```
+
+`overridable` フラグのデフォルト設定をキーに適用するには、
+そのキーを削除してから再度追加する必要があります。
+
+```sql
+ALTER NAMED COLLECTION collection2 DELETE key1;
+ALTER NAMED COLLECTION collection2 SET key1=4;
+```
+
+<div id="drop-the-ddl-named-collection-collection2">
+  ### DDL の名前付きコレクション `collection2` を削除します:
+</div>
+
+```sql
+DROP NAMED COLLECTION collection2
+```
+
+<div id="named-collections-for-accessing-s3">
+  ## S3 にアクセスするための名前付きコレクション
+</div>
+
+パラメータの説明については、[s3テーブル関数](/ja/reference/functions/table-functions/s3)を参照してください。
+
+<div id="ddl-example">
+  ### DDLの例
+</div>
+
+```sql
+CREATE NAMED COLLECTION s3_mydata AS
+access_key_id = 'AKIAIOSFODNN7EXAMPLE',
+secret_access_key = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+format = 'CSV',
+url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
+```
+
+<div id="xml-example">
+  ### XMLの例
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <s3_mydata>
+            <access_key_id>AKIAIOSFODNN7EXAMPLE</access_key_id>
+            <secret_access_key>wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY</secret_access_key>
+            <format>CSV</format>
+            <url>https://s3.us-east-1.amazonaws.com/yourbucket/mydata/</url>
+        </s3_mydata>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="s3-function-and-s3-table-named-collection-examples">
+  ### s3() 関数と S3テーブルの named collection の例
+</div>
+
+以下の 2 つの例では、どちらも同じ named collection `s3_mydata` を使用します。
+
+<div id="s3-function">
+  #### s3() 関数
+</div>
+
+```sql
+INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
+   format = 'TSV', structure = 'number UInt64', compression_method = 'gzip')
+SELECT * FROM numbers(10000);
+```
+
+<Tip>
+  上記の `s3()` 関数の最初の引数は、名前付きコレクション `s3_mydata` の名前です。名前付きコレクションを使用しない場合は、アクセスキー ID、シークレット、フォーマット、URL を毎回 `s3()` 関数の呼び出し時に渡す必要があります。
+</Tip>
+
+<div id="s3-table">
+  #### S3 テーブル
+</div>
+
+```sql
+CREATE TABLE s3_engine_table (number Int64)
+ENGINE=S3(s3_mydata, url='https://s3.us-east-1.amazonaws.com/yourbucket/mydata/test_file.tsv.gz', format = 'TSV')
+SETTINGS input_format_with_names_use_header = 0;
+
+SELECT * FROM s3_engine_table LIMIT 3;
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+└────────┘
+```
+
+<div id="named-collections-for-accessing-mysql-database">
+  ## MySQL データベースにアクセスするための 名前付きコレクション
+</div>
+
+パラメータの説明については、[mysql](/ja/reference/functions/table-functions/mysql) を参照してください。
+
+<div id="ddl-example">
+  ### DDLの例
+</div>
+
+```sql
+CREATE NAMED COLLECTION mymysql AS
+user = 'myuser',
+password = 'mypass',
+host = '127.0.0.1',
+port = 3306,
+database = 'test',
+connection_pool_size = 8,
+replace_query = 1
+```
+
+<div id="xml-example-2">
+  ### XML の例
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymysql>
+            <user>myuser</user>
+            <password>mypass</password>
+            <host>127.0.0.1</host>
+            <port>3306</port>
+            <database>test</database>
+            <connection_pool_size>8</connection_pool_size>
+            <replace_query>1</replace_query>
+        </mymysql>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="mysql-function-mysql-table-mysql-database-and-dictionary-named-collection-examples">
+  ### mysql() 関数、MySQL テーブル、MySQL データベース、および Dictionary の named collection の例
+</div>
+
+以下の4つの例では、同じ named collection `mymysql` を使用します。
+
+<div id="mysql-function">
+  #### mysql() 関数
+</div>
+
+```sql
+SELECT count() FROM mysql(mymysql, table = 'test');
+
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<Note>
+  名前付きコレクション では `table` パラメータが指定されていないため、関数呼び出しで `table = 'test'` を指定します。
+</Note>
+
+<div id="mysql-table">
+  #### MySQLテーブル
+</div>
+
+```sql
+CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<Note>
+  DDL は、connection&#95;pool&#95;size の 名前付きコレクション の設定を上書きします。
+</Note>
+
+<div id="mysql-database">
+  #### MySQL データベース
+</div>
+
+```sql
+CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
+
+SHOW TABLES FROM mydatabase;
+
+┌─name───┐
+│ source │
+│ test   │
+└────────┘
+```
+
+<div id="mysql-dictionary">
+  #### MySQL Dictionary
+</div>
+
+```sql
+CREATE DICTIONARY dict (A Int64, B String)
+PRIMARY KEY A
+SOURCE(MYSQL(NAME mymysql TABLE 'source'))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'B', 2);
+
+┌─dictGet('dict', 'B', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-postgresql-database">
+  ## PostgreSQLデータベースにアクセスするための名前付きコレクション
+</div>
+
+パラメータの説明については、[postgresql](/ja/reference/functions/table-functions/postgresql)を参照してください。さらに、以下の別名があります。
+
+* `user` の別名として `username`
+* `database` の別名として `db`
+
+パラメータ `addresses_expr` は、コレクション内では `host:port` の代わりに使用します。このパラメータは省略可能です。これは、`host`、`hostname`、`port` といった他の省略可能なパラメータがあるためです。優先順位は次の疑似コードで説明します。
+
+```sql
+CASE
+    WHEN collection['addresses_expr'] != '' THEN collection['addresses_expr']
+    WHEN collection['host'] != ''           THEN collection['host'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+    WHEN collection['hostname'] != ''       THEN collection['hostname'] || ':' || if(collection['port'] != '', collection['port'], '5432')
+END
+```
+
+作成例:
+
+```sql
+CREATE NAMED COLLECTION mypg AS
+user = 'pguser',
+password = 'jw8s0F4',
+host = '127.0.0.1',
+port = 5432,
+database = 'test',
+schema = 'test_schema'
+```
+
+設定例:
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mypg>
+            <user>pguser</user>
+            <password>jw8s0F4</password>
+            <host>127.0.0.1</host>
+            <port>5432</port>
+            <database>test</database>
+            <schema>test_schema</schema>
+        </mypg>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="example-of-using-named-collections-with-the-postgresql-function">
+  ### postgresql 関数で named collections を使用する例
+</div>
+
+```sql
+SELECT * FROM postgresql(mypg, table = 'test');
+
+┌─a─┬─b───┐
+│ 2 │ two │
+│ 1 │ one │
+└───┴─────┘
+SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<div id="example-of-using-named-collections-with-database-with-engine-postgresql">
+  ### PostgreSQLエンジンのデータベースで名前付きコレクションを使用する例
+</div>
+
+```sql
+CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
+
+SELECT * FROM mypgtable;
+
+┌─a─┐
+│ 1 │
+│ 2 │
+│ 3 │
+└───┘
+```
+
+<Note>
+  PostgreSQL では、テーブルの作成時に名前付きコレクションからデータがコピーされます。後からコレクションを変更しても、既存のテーブルには反映されません。
+</Note>
+
+<div id="example-of-using-named-collections-with-database-with-engine-postgresql">
+  ### PostgreSQLエンジンのデータベースで名前付きコレクションを使用する例
+</div>
+
+```sql
+CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
+
+SHOW TABLES FROM mydatabase
+
+┌─name─┐
+│ test │
+└──────┘
+```
+
+<div id="example-of-using-named-collections-with-a-dictionary-with-source-postgresql">
+  ### ソースが POSTGRESQL の Dictionary で 名前付きコレクション を使用する例
+</div>
+
+```sql
+CREATE DICTIONARY dict (a Int64, b String)
+PRIMARY KEY a
+SOURCE(POSTGRESQL(NAME mypg TABLE test))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-a-remote-clickhouse-database">
+  ## リモート ClickHouse データベースにアクセスするための名前付きコレクション
+</div>
+
+パラメータの説明は、[remote](/ja/reference/functions/table-functions/remote#parameters) を参照してください。
+
+設定例:
+
+```sql
+CREATE NAMED COLLECTION remote1 AS
+host = 'remote_host',
+port = 9000,
+database = 'system',
+user = 'foo',
+password = 'secret',
+secure = 1
+```
+
+```xml
+<clickhouse>
+    <named_collections>
+        <remote1>
+            <host>remote_host</host>
+            <port>9000</port>
+            <database>system</database>
+            <user>foo</user>
+            <password>secret</password>
+            <secure>1</secure>
+        </remote1>
+    </named_collections>
+</clickhouse>
+```
+
+`secure` は、接続には `remoteSecure` があるため必要ありませんが、辞書では使用できます。
+
+<div id="example-of-using-named-collections-with-the-remoteremotesecure-functions">
+  ### `remote`/`remoteSecure` 関数で named collections を使う例
+</div>
+
+```sql
+SELECT * FROM remote(remote1, table = one);
+┌─dummy─┐
+│     0 │
+└───────┘
+
+SELECT * FROM remote(remote1, database = merge(system, '^one'));
+┌─dummy─┐
+│     0 │
+└───────┘
+
+INSERT INTO FUNCTION remote(remote1, database = default, table = test) VALUES (1,'a');
+
+SELECT * FROM remote(remote1, database = default, table = test);
+┌─a─┬─b─┐
+│ 1 │ a │
+└───┴───┘
+```
+
+<div id="example-of-using-named-collections-with-a-dictionary-with-source-clickhouse">
+  ### ソースが ClickHouse の Dictionary での named collections の使用例
+</div>
+
+```sql
+CREATE DICTIONARY dict(a Int64, b String)
+PRIMARY KEY a
+SOURCE(CLICKHOUSE(NAME remote1 TABLE test DB default))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED());
+
+SELECT dictGet('dict', 'b', 1);
+┌─dictGet('dict', 'b', 1)─┐
+│ a                       │
+└─────────────────────────┘
+```
+
+<div id="named-collections-for-accessing-kafka">
+  ## Kafka へのアクセス用の名前付きコレクション
+</div>
+
+パラメータの説明は、[Kafka](/ja/reference/engines/table-engines/integrations/kafka) を参照してください。
+
+<div id="ddl-example">
+  ### DDLの例
+</div>
+
+```sql
+CREATE NAMED COLLECTION my_kafka_cluster AS
+kafka_broker_list = 'localhost:9092',
+kafka_topic_list = 'kafka_topic',
+kafka_group_name = 'consumer_group',
+kafka_format = 'JSONEachRow',
+kafka_max_block_size = '1048576';
+
+```
+
+<div id="xml-example">
+  ### XMLの例
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <my_kafka_cluster>
+            <kafka_broker_list>localhost:9092</kafka_broker_list>
+            <kafka_topic_list>kafka_topic</kafka_topic_list>
+            <kafka_group_name>consumer_group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_max_block_size>1048576</kafka_max_block_size>
+        </my_kafka_cluster>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="example-of-using-named-collections-with-a-kafka-table">
+  ### Kafkaテーブルで named collection を使用する例
+</div>
+
+以下の2つの例では、どちらも同じ named collection `my_kafka_cluster` を使用します。
+
+```sql
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+
+CREATE TABLE queue
+(
+    timestamp UInt64,
+    level String,
+    message String
+)
+ENGINE = Kafka(my_kafka_cluster)
+SETTINGS kafka_num_consumers = 4,
+         kafka_thread_per_consumer = 1;
+```
+
+<div id="named-collections-for-backups">
+  ## バックアップ用の名前付きコレクション
+</div>
+
+パラメーターの説明は、[バックアップと復元](/ja/concepts/features/backup-restore/overview)を参照してください。
+
+<div id="ddl-example-4">
+  ### DDL の例
+</div>
+
+```sql
+BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
+```
+
+<div id="xml-example">
+  ### XMLの例
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <named_collection_s3_backups>
+            <url>https://my-s3-bucket.s3.amazonaws.com/backup-S3/</url>
+            <access_key_id>ABC123</access_key_id>
+            <secret_access_key>Abc+123</secret_access_key>
+        </named_collection_s3_backups>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="named-collections-for-accessing-mongodb-table-and-dictionary">
+  ## MongoDB Table および Dictionary にアクセスするための named collections
+</div>
+
+パラメータの説明は [mongodb](/ja/reference/functions/table-functions/mongodb) を参照してください。
+
+<div id="ddl-example">
+  ### DDLの例
+</div>
+
+```sql
+CREATE NAMED COLLECTION mymongo AS
+user = '',
+password = '',
+host = '127.0.0.1',
+port = 27017,
+database = 'test',
+collection = 'my_collection',
+options = 'connectTimeoutMS=10000'
+```
+
+<div id="xml-example">
+  ### XMLの例
+</div>
+
+```xml
+<clickhouse>
+    <named_collections>
+        <mymongo>
+            <user></user>
+            <password></password>
+            <host>127.0.0.1</host>
+            <port>27017</port>
+            <database>test</database>
+            <collection>my_collection</collection>
+            <options>connectTimeoutMS=10000</options>
+        </mymongo>
+    </named_collections>
+</clickhouse>
+```
+
+<div id="mongodb-table">
+  #### MongoDB テーブル
+</div>
+
+```sql
+CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
+SELECT count() FROM mytable;
+
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+<Note>
+  DDL によって、オプションに指定した 名前付きコレクション の設定は上書きされます。
+</Note>
+
+<div id="mongodb-dictionary">
+  #### MongoDB Dictionary
+</div>
+
+```sql
+CREATE DICTIONARY dict
+(
+    `a` Int64,
+    `b` String
+)
+PRIMARY KEY a
+SOURCE(MONGODB(NAME mymongo COLLECTION my_dict))
+LIFETIME(MIN 1 MAX 2)
+LAYOUT(HASHED())
+
+SELECT dictGet('dict', 'b', 2);
+
+┌─dictGet('dict', 'b', 2)─┐
+│ two                     │
+└─────────────────────────┘
+```
+
+<Note>
+  名前付きコレクション では、コレクション名に `my_collection` を指定しています。関数呼び出しでは、別のコレクションを選択するために `collection = 'my_dict'` を指定してこれを上書きします。
+</Note>

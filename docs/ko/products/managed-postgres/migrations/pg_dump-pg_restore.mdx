@@ -1,0 +1,133 @@
+---
+slug: /cloud/managed-postgres/migrations/pg_dump-pg_restore
+sidebarTitle: 'pg_dump 및 pg_restore'
+title: pg_dump 및 pg_restore를 사용하여 Managed Postgres로 마이그레이션
+description: 'pg_dump 및 pg_restore를 사용해 PostgreSQL 데이터를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 알아봅니다'
+keywords: ['postgres', 'postgresql', 'pg_dump', 'pg_restore', '마이그레이션', '데이터 이전', 'Managed Postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 가이드에서는 `pg_dump` 및 `pg_restore` 유틸리티를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 단계별로 안내합니다.
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
+
+<div id="migration-pgdump-pg-restore-prerequisites">
+  ## 사전 요구사항
+</div>
+
+* 원본 PostgreSQL 데이터베이스에 대한 액세스 권한
+* 로컬 머신에 `pg_dump` 및 `pg_restore`가 설치되어 있어야 합니다. 일반적으로 PostgreSQL 설치 시 함께 제공됩니다. 포함되어 있지 않다면 [PostgreSQL 공식 웹사이트](https://www.postgresql.org/download/)에서 다운로드할 수 있습니다.
+
+<div id="migration-pgdump-pg-restore-setup">
+  ## 설정
+</div>
+
+단계를 따라 진행하기 위해 원본 데이터베이스로 샘플 RDS Postgres 데이터베이스를 사용하겠습니다. 예시는 다음과 같습니다:
+
+<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="원본 PostgreSQL 데이터베이스 설정" size="xl" border />
+
+구성은 다음과 같습니다:
+
+* 2개의 테이블(table) `events`와 `users`가 있습니다. `events`에는 100만 개의 행이 있고, `users`에는 1천 개의 행이 있습니다.
+* `events`에는 인덱스가 있습니다.
+* `events` 테이블 위에 뷰가 있습니다.
+* 시퀀스가 2개 있습니다
+
+<div id="migration-pgdump-pg-restore-dump">
+  ## 원본 데이터베이스의 덤프 생성
+</div>
+
+이제 `pg_dump`를 사용해 위 객체들의 덤프 파일을 생성합니다. 명령은 간단합니다:
+
+```shell
+pg_dump \
+  -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+  --format directory \
+  -f rds-dump
+```
+
+다음과 같습니다:
+
+* `<user>`, `<password>`, `<host>`, `<port>`, `<database>`를 소스 데이터베이스의 자격 증명으로 바꾸십시오. 대부분의 Postgres provider는 바로 사용할 수 있는 connection string을 제공합니다.
+* `--format directory`는 덤프를 디렉터리 포맷으로 생성하도록 지정하며, 이 포맷은 `pg_restore`에 적합합니다.
+* `-f rds-dump`는 덤프 파일의 출력 디렉터리를 지정합니다. 이 디렉터리는 자동으로 생성되므로 미리 존재하지 않아야 합니다.
+* `--jobs` 플래그 뒤에 실행할 병렬 job 수를 지정하면 덤프 프로세스를 병렬로 수행할 수도 있습니다. 자세한 내용은 [pg&#95;dump documentation](https://www.postgresql.org/docs/current/app-pgdump.html)을 참조하십시오.
+
+<Tip>
+  이 과정을 한 번 테스트해 보면 소요 시간과 덤프 파일 크기를 어느 정도 가늠할 수 있습니다.
+</Tip>
+
+이 명령을 실행하면 다음과 같습니다:
+
+<Image img="/images/managed-postgres/pg_dump_restore/dump-command.webp" alt="pg_dump 명령 실행" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-restore">
+  ## 덤프를 ClickHouse Managed Postgres로 복원하기
+</div>
+
+이제 덤프 파일이 준비되었으므로 `pg_restore`를 사용해 ClickHouse Managed Postgres 인스턴스에 복원할 수 있습니다.
+
+<div id="migration-pgdump-pg-restore-create-pg">
+  ### Managed Postgres 인스턴스 생성
+</div>
+
+먼저 Managed Postgres 인스턴스가 준비되어 있는지 확인하십시오. 가능하면 원본과 동일한 리전에 설정하는 것이 좋습니다. 간단한 가이드는 [여기](/ko/products/managed-postgres/quickstart#create-postgres-database)에서 확인할 수 있습니다. 이 가이드에서는 다음과 같은 구성을 생성합니다:
+
+<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres 인스턴스 생성" size="md" border />
+
+<div id="migration-pgdump-pg-restore-restore-dump">
+  ### 덤프 복원
+</div>
+
+이제 다시 로컬 머신으로 돌아와 `pg_restore` 명령을 사용해 Managed Postgres 인스턴스에 덤프를 복원할 수 있습니다:
+
+```shell
+pg_restore \
+  -d 'postgresql://<user>:<password>@<pg_clickhouse_host>:5432/<database>' \
+  --verbose \
+  rds-dump
+```
+
+Managed Postgres 인스턴스의 connection string은 ClickHouse Cloud 콘솔에서 확인할 수 있으며, 아주 간단한 설명은 [여기](/ko/products/managed-postgres/connection)에서 확인할 수 있습니다.
+
+여기서도 알아둘 몇 가지 플래그가 있습니다:
+
+* `--verbose`는 복원 과정에서 상세한 출력을 제공합니다.
+* `--jobs` 플래그를 사용해 복원 과정을 병렬화할 수도 있습니다. 자세한 내용은 [pg&#95;restore documentation](https://www.postgresql.org/docs/current/app-pgrestore.html)을 참조하십시오.
+
+이 예에서는 다음과 같습니다:
+
+<Image img="/images/managed-postgres/pg_dump_restore/restore-command.webp" alt="pg_restore 명령 실행" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-verify">
+  ## 마이그레이션 확인
+</div>
+
+복원 프로세스가 완료되면 Managed Postgres 인스턴스에 연결하여 모든 데이터와 객체가 성공적으로 마이그레이션되었는지 확인할 수 있습니다. PostgreSQL 클라이언트는 어떤 것이든 사용하여 연결하고 쿼리를 실행할 수 있습니다.
+마이그레이션 후 Managed Postgres 설정은 다음과 같습니다.
+
+<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="대상 Managed Postgres 데이터베이스 설정" size="xl" border />
+
+모든 테이블, 인덱스, 뷰, 시퀀스가 온전히 유지되고 있으며 데이터 건수도 일치하는 것을 확인할 수 있습니다.
+
+<div id="migration-pgdump-pg-restore-considerations">
+  ## 고려 사항
+</div>
+
+* 소스 및 대상 데이터베이스의 PostgreSQL 버전이 서로 호환되는지 확인하세요.
+  소스 서버보다 오래된 버전의 pg&#95;dump를 사용하면 일부 기능이 누락되거나 복원 중 문제가 발생할 수 있습니다. 가능하면 소스 데이터베이스와 동일하거나 그보다 최신 메이저 버전의 pg&#95;dump를 사용하세요.
+* 대규모 데이터베이스는 덤프 및 복원에 상당한 시간이 걸릴 수 있습니다.
+  가동 중단 시간을 최소화할 수 있도록 미리 계획하고, 지원되는 경우 병렬 덤프/복원(--jobs) 사용을 고려하세요.
+* pg&#95;dump / pg&#95;restore는 데이터베이스 관련 객체나 런타임 상태를 모두 복제하지는 않는다는 점에 유의하세요.
+  여기에는 역할 및 역할 멤버십, replication slot, 서버 수준 구성(예: postgresql.conf, pg&#95;hba.conf), 테이블스페이스, 런타임 통계가 포함됩니다.
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## 다음 단계
+</div>
+
+축하합니다! `pg_dump`와 `pg_restore`를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 성공적으로 마이그레이션했습니다. 이제 Managed Postgres의 기능과 ClickHouse와의 통합을 살펴볼 준비가 되었습니다. 아래 10분짜리 퀵스타트로 바로 시작해 보세요:
+
+* [Managed Postgres 퀵스타트 가이드](/ko/products/managed-postgres/quickstart)
