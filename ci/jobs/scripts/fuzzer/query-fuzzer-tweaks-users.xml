@@ -208,6 +208,9 @@
                 <!--
                     MergeTree table-engine throttle settings.
                 -->
+                <merge_tree_sleep_before_commit_local_part_in_replicated_table_ms>
+                    <readonly/>
+                </merge_tree_sleep_before_commit_local_part_in_replicated_table_ms>
                 <merge_tree_max_delay_to_insert>
                     <readonly/>
                 </merge_tree_max_delay_to_insert>

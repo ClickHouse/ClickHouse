@@ -147,13 +147,16 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
 bool isEngineTimeDurationSetting(const String & name)
 {
     static const std::unordered_set<String> time_duration_settings = {
-        "connection_wait_timeout", "read_write_timeout",  /// MySQL (connect_timeout shares the core name)
+        /// MySQL (connect_timeout shares the core name)
+        "connect_timeout", "connection_wait_timeout", "read_write_timeout",
         "command_read_timeout", "command_write_timeout", "command_termination_timeout",  /// Executable
         "kafka_poll_timeout_ms", "kafka_consumer_acquire_timeout_ms", "kafka_flush_interval_ms",
+        "kafka_consumer_reschedule_ms",
         "nats_flush_interval_ms", "nats_reconnect_wait",
         "rabbitmq_empty_queue_backoff_start_ms", "rabbitmq_empty_queue_backoff_end_ms",
         "rabbitmq_empty_queue_backoff_step_ms",
         "poll_timeout_ms", "polling_min_timeout_ms", "polling_max_timeout_ms", "polling_backoff_ms",  /// ObjectStorageQueue
+        "poll_directory_watch_events_backoff_init", "poll_directory_watch_events_backoff_max",  /// FileLog
         "transaction_timeout_ms",
         /// Distributed engine settings
         "max_delay_to_insert", "background_insert_sleep_time_ms", "background_insert_max_sleep_time_ms",
