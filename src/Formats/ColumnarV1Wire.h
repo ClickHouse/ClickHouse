@@ -1271,7 +1271,17 @@ inline MutableColumnPtr readColumnFromDesc(
         // dict_desc is read from otherwise-untrusted guest/network bytes; confine it to
         // this COL_LOWCARD's own [data_offset, data_offset+data_size) region before
         // recursing, same reasoning as the COL_VARIANT sub-descriptor check above.
+        // Unlike COL_VARIANT's inner_desc (whose null_offset is repurposed to carry a row
+        // count, not a real offset), dict_desc.null_offset IS a real null-map byte offset
+        // whenever the dictionary itself is Nullable (LowCardinality(Nullable(T))), since
+        // it's written via the ordinary buildColDescriptor path — so it needs the same
+        // containment check as offsets_offset/data_offset, not an exemption.
         uint64_t region_end = desc.data_offset + desc.data_size;
+        if (dict_desc.null_offset != 0
+            && (dict_desc.null_offset < desc.data_offset || dict_desc.null_offset > region_end))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD dictionary null_offset {} outside data region [{}, {})",
+                dict_desc.null_offset, desc.data_offset, region_end);
         if (dict_desc.offsets_offset != 0
             && (dict_desc.offsets_offset < desc.data_offset || dict_desc.offsets_offset > region_end))
             throw Exception(ErrorCodes::INCORRECT_DATA,
