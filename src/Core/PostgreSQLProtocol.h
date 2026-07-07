@@ -1818,12 +1818,15 @@ public:
         /// Bind parameters arrive as untyped text from the wire. Turn each into a
         /// safe SQL literal before it is spliced into the statement body. The NULL
         /// sentinel becomes the SQL keyword NULL. For a value we use the declared
-        /// parameter type OID from the Parse message: a numeric type is emitted as
-        /// a bare numeric literal (so `SELECT $1 + 1` and `LIMIT $1` keep their
-        /// declared type), everything else as a quoted+escaped string literal.
-        /// Both forms are injection-safe: a string is escaped, a numeric value is
-        /// validated to be exactly one numeric literal and rejected otherwise, so a
-        /// parameter such as `x' UNION ALL SELECT ...` or `1--` can never break out.
+        /// parameter type OID from the Parse message: a numeric type is validated
+        /// against that type's grammar and re-serialized as a type-preserving SQL
+        /// fragment (see formatTypedNumericParameter) so the declared type and exact
+        /// value survive (`int4` rejects `3.14`, `numeric` keeps full precision as a
+        /// Decimal instead of being reparsed as Float64); everything else becomes a
+        /// quoted+escaped string literal. Both forms are injection-safe: a string is
+        /// escaped, a numeric value is validated to be exactly one literal of its
+        /// declared type and rejected otherwise, so a parameter such as
+        /// `x' UNION ALL SELECT ...`, `1--` or `1+2` can never break out.
         VectorWithMemoryTracking<String> arguments;
         arguments.reserve(bind_query->parameters.size());
         for (size_t i = 0; i < bind_query->parameters.size(); ++i)
@@ -1836,8 +1839,8 @@ public:
             }
             /// A parameter without a declared type (OID 0 or none) is treated as text.
             const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
-            if (isNumericTypeOID(oid))
-                arguments.push_back(formatNumericParameter(*parameter));
+            if (auto formatted = formatTypedNumericParameter(oid, *parameter))
+                arguments.push_back(std::move(*formatted));
             else
                 arguments.push_back(quoteString(*parameter));
         }
@@ -1868,24 +1871,31 @@ private:
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
 
-    /// PostgreSQL type OIDs for the numeric types we emit as bare literals. These
-    /// are stable, well-known values from the PostgreSQL catalog (pg_type). Any
-    /// other OID (including 0 = unspecified) is treated as text and quoted.
-    static bool isNumericTypeOID(Int32 oid)
+    /// Returns true if the whole string is exactly one integer literal
+    /// `[sign] digits` (no decimal point, no exponent, at least one digit, no
+    /// trailing characters). `allow_sign` is false for unsigned types (oid), so a
+    /// value like `-1` is rejected there just as PostgreSQL rejects it.
+    static bool isIntegerLiteral(const String & value, bool allow_sign)
     {
-        switch (oid)
+        const char * p = value.data();
+        const char * const end = p + value.size();
+        if (p == end)
+            return false;
+
+        if (*p == '+' || *p == '-')
         {
-            case 20:   /// int8
-            case 21:   /// int2
-            case 23:   /// int4
-            case 26:   /// oid
-            case 700:  /// float4
-            case 701:  /// float8
-            case 1700: /// numeric
-                return true;
-            default:
+            if (!allow_sign)
                 return false;
+            ++p;
         }
+
+        bool has_digit = false;
+        while (p != end && *p >= '0' && *p <= '9')
+        {
+            has_digit = true;
+            ++p;
+        }
+        return has_digit && p == end;
     }
 
     /// Returns true if the whole string is exactly one decimal numeric literal:
@@ -1942,18 +1952,165 @@ private:
         return p == end;
     }
 
-    /// Formats a numeric-typed Bind parameter as a bare SQL literal. The value is
-    /// validated to be exactly one decimal numeric literal (see
-    /// isSingleNumericLiteral). This is what makes emitting it unquoted safe: a
-    /// crafted payload such as `1 UNION ALL SELECT ...`, `1--` or `1+2` does not
-    /// parse as a single literal and is rejected instead of being spliced into the
-    /// body.
-    static String formatNumericParameter(const String & value)
+    /// Maximum number of significant digits a Decimal256 can hold (precision).
+    static constexpr UInt32 DECIMAL256_MAX_PRECISION = 76;
+
+    /// Normalizes a validated numeric literal (see isSingleNumericLiteral) into a
+    /// plain, exponent-free decimal string plus the number of fractional digits
+    /// (scale). This lets a PostgreSQL `numeric` value be re-serialized as an exact
+    /// Decimal rather than reparsed as Float64 (which loses precision). Handles the
+    /// optional exponent by shifting the decimal point. Returns nullopt if the value
+    /// needs more significant digits than Decimal256 can represent, in which case
+    /// the exact semantics cannot be preserved and the caller rejects the value.
+    static std::optional<std::pair<String, UInt32>> normalizeDecimal(const String & value)
     {
-        if (!isSingleNumericLiteral(value))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid value {} for a numeric prepared-statement parameter", quoteString(value));
-        return value;
+        const char * p = value.data();
+        const char * const end = p + value.size();
+
+        bool negative = false;
+        if (p != end && (*p == '+' || *p == '-'))
+        {
+            negative = (*p == '-');
+            ++p;
+        }
+
+        /// Collect mantissa digits and remember where the decimal point sits,
+        /// measured as the number of digits to its right (fractional digits).
+        String digits;
+        Int64 point_from_right = 0;
+        bool seen_point = false;
+        for (; p != end && ((*p >= '0' && *p <= '9') || *p == '.'); ++p)
+        {
+            if (*p == '.')
+            {
+                seen_point = true;
+                continue;
+            }
+            digits += *p;
+            if (seen_point)
+                ++point_from_right;
+        }
+
+        /// Apply the exponent: a positive exponent moves the point right (fewer
+        /// fractional digits), a negative one moves it left (more).
+        if (p != end && (*p == 'e' || *p == 'E'))
+        {
+            ++p;
+            bool exp_negative = false;
+            if (p != end && (*p == '+' || *p == '-'))
+            {
+                exp_negative = (*p == '-');
+                ++p;
+            }
+            Int64 exp = 0;
+            for (; p != end && *p >= '0' && *p <= '9'; ++p)
+                exp = exp * 10 + (*p - '0');
+            point_from_right += exp_negative ? exp : -exp;
+        }
+
+        /// Strip leading zeros from the integer part but keep at least one digit.
+        size_t first_significant = 0;
+        while (first_significant + 1 < digits.size()
+               && digits[first_significant] == '0'
+               && static_cast<Int64>(digits.size() - first_significant) > point_from_right)
+            ++first_significant;
+        digits.erase(0, first_significant);
+
+        /// A negative point_from_right means trailing implicit zeros (e.g. 1e2 =
+        /// "100"); pad them in and clamp the scale to zero.
+        while (point_from_right < 0)
+        {
+            digits += '0';
+            ++point_from_right;
+        }
+        UInt32 scale = static_cast<UInt32>(point_from_right);
+
+        /// If there are more fractional digits than integer+fractional digits
+        /// (value like .5 -> "5" with scale 1), pad the integer side with a zero so
+        /// the emitted string is a well-formed decimal.
+        if (scale >= digits.size())
+            digits.insert(0, String(scale - digits.size() + 1, '0'));
+
+        if (scale > DECIMAL256_MAX_PRECISION || digits.size() > DECIMAL256_MAX_PRECISION)
+            return std::nullopt;
+
+        String plain;
+        if (negative)
+            plain += '-';
+        const size_t int_len = digits.size() - scale;
+        plain += digits.substr(0, int_len);
+        if (scale > 0)
+        {
+            plain += '.';
+            plain += digits.substr(int_len);
+        }
+        return std::make_pair(std::move(plain), scale);
+    }
+
+    /// Formats a Bind parameter declared with a numeric PostgreSQL type OID as a
+    /// type-preserving SQL fragment, or returns nullopt when the OID is not one of
+    /// the numeric types we handle (the caller then quotes the value as a string).
+    ///
+    /// The value is validated against the declared type's grammar and re-serialized
+    /// so both the declared type and the exact value survive:
+    ///  - integer types (int2/int4/int8) require an integer literal and are emitted
+    ///    as a bare integer literal (already integer-typed in ClickHouse SQL). A
+    ///    fractional value like `3.14` for an int4 is rejected, not silently
+    ///    truncated;
+    ///  - `oid` is an unsigned integer, so a sign or exponent (`-1`, `1e2`) is
+    ///    rejected exactly as PostgreSQL rejects it;
+    ///  - float types (float4/float8) require a numeric literal and are emitted as a
+    ///    bare literal (ClickHouse parses it as Float64, matching PostgreSQL float
+    ///    semantics);
+    ///  - `numeric` has no literal form in ClickHouse SQL (a bare `2.11` would be
+    ///    reparsed as Float64, losing precision), so it is re-serialized as an exact
+    ///    Decimal via `CAST('<value>', 'Decimal256(scale)')`. A value needing more
+    ///    significant digits than Decimal256 can hold is rejected rather than
+    ///    silently rounded.
+    ///
+    /// Every branch is injection-safe: the value is either validated to be exactly
+    /// one literal of its declared type (emitted bare) or quoted+escaped inside a
+    /// CAST, so a payload such as `1--`, `1+2` or `1 UNION ALL SELECT ...` can never
+    /// break out of the intended value position.
+    static std::optional<String> formatTypedNumericParameter(Int32 oid, const String & value)
+    {
+        switch (oid)
+        {
+            case 20: /// int8
+            case 21: /// int2
+            case 23: /// int4
+                if (!isIntegerLiteral(value, /*allow_sign=*/ true))
+                    throwInvalidNumeric(value, "integer");
+                return value;
+            case 26: /// oid (unsigned)
+                if (!isIntegerLiteral(value, /*allow_sign=*/ false))
+                    throwInvalidNumeric(value, "oid");
+                return value;
+            case 700: /// float4
+            case 701: /// float8
+                if (!isSingleNumericLiteral(value))
+                    throwInvalidNumeric(value, "float");
+                return value;
+            case 1700: /// numeric
+            {
+                if (!isSingleNumericLiteral(value))
+                    throwInvalidNumeric(value, "numeric");
+                auto normalized = normalizeDecimal(value);
+                if (!normalized)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Value {} for a numeric prepared-statement parameter exceeds the maximum "
+                                    "representable Decimal precision", quoteString(value));
+                return fmt::format("CAST({}, 'Decimal256({})')", quoteString(normalized->first), normalized->second);
+            }
+            default:
+                return std::nullopt;
+        }
+    }
+
+    [[noreturn]] static void throwInvalidNumeric(const String & value, const char * type_name)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Invalid value {} for a {} prepared-statement parameter", quoteString(value), type_name);
     }
 
     /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given

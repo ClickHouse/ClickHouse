@@ -307,8 +307,10 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT 41 + 1");
     EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {23}, {{"10"}}), "SELECT * FROM t LIMIT 10");
 
-    /// int8, float8 and numeric OIDs behave the same.
+    /// int8 emits a bare integer literal.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {20}, {{"9223372036854775807"}}), "SELECT 9223372036854775807");
+    /// float4/float8 emit a bare numeric literal (ClickHouse parses it as Float64,
+    /// matching PostgreSQL float semantics).
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"3.14"}}), "SELECT 3.14");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {701}, {{"-2.5e-3"}}), "SELECT -2.5e-3");
 
@@ -326,6 +328,62 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterTypes)
 
     /// A NULL parameter is the SQL keyword NULL regardless of declared type.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {std::nullopt}), "SELECT NULL");
+}
+
+TEST(PostgreSQLProtocol, BindValidatesAndPreservesDeclaredNumericType)
+{
+    auto throwsBadArgument = [](Int32 oid, const String & value)
+    {
+        try
+        {
+            bindAndGetStatement("SELECT $1", {oid}, {{value}});
+            return false;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+            return e.code() == ErrorCodes::BAD_ARGUMENTS;
+        }
+    };
+
+    /// Integer types (int2/int4/int8) require an integer literal. A fractional or
+    /// exponent value is rejected instead of being silently truncated or reparsed,
+    /// so `Parse("SELECT $1 + 1", [int4])` + `Bind("3.14")` no longer assembles.
+    EXPECT_TRUE(throwsBadArgument(23, "3.14"));
+    EXPECT_TRUE(throwsBadArgument(23, "1e2"));
+    EXPECT_TRUE(throwsBadArgument(21, "1.0"));
+    EXPECT_TRUE(throwsBadArgument(20, "0.5"));
+    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {23}, {{"41"}}), "SELECT 41 + 1");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {23}, {{"-5"}}), "SELECT -5");
+
+    /// `oid` is unsigned: a sign or exponent (values PostgreSQL rejects) is rejected
+    /// here too, but a plain unsigned integer passes.
+    EXPECT_TRUE(throwsBadArgument(26, "-1"));
+    EXPECT_TRUE(throwsBadArgument(26, "1e2"));
+    EXPECT_TRUE(throwsBadArgument(26, "+1"));
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {26}, {{"42"}}), "SELECT 42");
+
+    /// `numeric` (OID 1700) has no Decimal literal form in ClickHouse SQL, so a bare
+    /// `2.11` would be reparsed as Float64 and lose precision. It is re-serialized as
+    /// an exact Decimal via CAST, preserving the value and type.
+    EXPECT_EQ(bindAndGetStatement("SELECT toTypeName($1)", {1700}, {{"2.11"}}),
+              "SELECT toTypeName(CAST('2.11', 'Decimal256(2)'))");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-5"}}), "SELECT CAST('-5', 'Decimal256(0)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"100"}}), "SELECT CAST('100', 'Decimal256(0)')");
+    /// Exponent forms are normalized to a plain decimal string with the correct scale.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"1e2"}}), "SELECT CAST('100', 'Decimal256(0)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"-2.5e-3"}}), "SELECT CAST('-0.0025', 'Decimal256(4)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{".5"}}), "SELECT CAST('0.5', 'Decimal256(1)')");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1700}, {{"5."}}), "SELECT CAST('5', 'Decimal256(0)')");
+    /// A value needing more significant digits than Decimal256 can hold is rejected,
+    /// not silently rounded.
+    EXPECT_TRUE(throwsBadArgument(1700, String(78, '9')));
+
+    /// The numeric-branch injection payloads are still rejected for every numeric OID.
+    EXPECT_TRUE(throwsBadArgument(1700, "1--"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1+2"));
+    EXPECT_TRUE(throwsBadArgument(700, "1--"));
+    EXPECT_TRUE(throwsBadArgument(26, "1--"));
 }
 
 TEST(PostgreSQLProtocol, BindRejectsInjectionInNumericParameter)

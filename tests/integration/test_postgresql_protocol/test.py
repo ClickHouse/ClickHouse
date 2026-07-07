@@ -498,13 +498,13 @@ def test_bind_preserves_numeric_parameter_types(started_cluster):
     assert res_limit.get_value(0, 0) == b"2"
 
     # A value declared numeric but carrying an injection payload is rejected: the
-    # value must parse as exactly one numeric literal, so type preservation does
-    # not reopen the injection hole.
+    # value must parse as exactly one literal of its declared type, so type
+    # preservation does not reopen the injection hole.
     res_inj = pg.exec_params(
         b"SELECT $1", [b"1 UNION ALL SELECT 42"], [23], [0], 0
     )
     assert res_inj.status == psycopg.pq.ExecStatus.FATAL_ERROR
-    assert b"numeric prepared-statement parameter" in res_inj.error_message
+    assert b"prepared-statement parameter" in res_inj.error_message
 
     # A per-character "numeric characters only" check would accept `1--`, `1+2`
     # and `1-2` (every char is in [0-9+-.eE]) yet none is a single literal. `1--`
@@ -521,9 +521,44 @@ def test_bind_preserves_numeric_parameter_types(started_cluster):
             0,
         )
         assert res_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
-        assert b"numeric prepared-statement parameter" in res_bad.error_message, (
-            payload
-        )
+        assert b"prepared-statement parameter" in res_bad.error_message, payload
+
+    # Type preservation validates the value against the DECLARED type, not just
+    # "some numeric". An int4 (OID 23) parameter must reject a fractional value:
+    # `SELECT $1 + 1` with `3.14` must not assemble `SELECT 3.14 + 1` (int4 has no
+    # fractional part in PostgreSQL). It is rejected, not silently coerced.
+    res_int_frac = pg.exec_params(b"SELECT $1 + 1", [b"3.14"], [23], [0], 0)
+    assert res_int_frac.status == psycopg.pq.ExecStatus.FATAL_ERROR
+    assert b"integer prepared-statement parameter" in res_int_frac.error_message
+
+    # `oid` (OID 26) is unsigned: a negative value PostgreSQL would reject is
+    # rejected here too, rather than emitted as a bare `-1`.
+    res_oid_neg = pg.exec_params(b"SELECT $1", [b"-1"], [26], [0], 0)
+    assert res_oid_neg.status == psycopg.pq.ExecStatus.FATAL_ERROR
+    assert b"oid prepared-statement parameter" in res_oid_neg.error_message
+
+    # `numeric` (OID 1700) has no Decimal literal in ClickHouse SQL. A bare `2.11`
+    # would be reparsed as Float64 and lose precision; instead it is re-serialized
+    # as an exact Decimal, so `toTypeName($1)` reports a Decimal and the exact
+    # value round-trips.
+    res_num_type = pg.exec_params(b"SELECT toTypeName($1)", [b"2.11"], [1700], [0], 0)
+    assert res_num_type.status == psycopg.pq.ExecStatus.TUPLES_OK, (
+        res_num_type.error_message
+    )
+    assert res_num_type.get_value(0, 0).startswith(b"Decimal"), (
+        res_num_type.get_value(0, 0)
+    )
+    res_num_val = pg.exec_params(b"SELECT $1", [b"2.11"], [1700], [0], 0)
+    assert res_num_val.status == psycopg.pq.ExecStatus.TUPLES_OK, (
+        res_num_val.error_message
+    )
+    assert res_num_val.get_value(0, 0) == b"2.11", res_num_val.get_value(0, 0)
+
+    # The injection payloads are rejected for a numeric OID too (not only int4).
+    for payload in (b"1--", b"1+2"):
+        res_num_bad = pg.exec_params(b"SELECT $1", [payload], [1700], [0], 0)
+        assert res_num_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
+        assert b"prepared-statement parameter" in res_num_bad.error_message, payload
 
     setup.execute("DROP TABLE bind_num_t;")
     ch.close()
