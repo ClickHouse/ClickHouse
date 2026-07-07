@@ -78,6 +78,15 @@ RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
 
 SELECT count() FROM t_ret_settings;
 
+-- Nested source SELECT settings must also be collected/restored.
+SELECT 'nested source custom setting does not leak into returning';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT * FROM (SELECT number FROM numbers(1) SETTINGS custom_insert_source = 'x')
+RETURNING (SELECT getSettingOrDefault('custom_insert_source', 'unset'));
+
+SELECT count() FROM t_ret_settings;
+
 -- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
 SELECT 'source default settings merged with trailing settings';
 TRUNCATE TABLE t_ret_settings;
@@ -96,6 +105,15 @@ TRUNCATE TABLE t_ret_settings;
 INSERT INTO t_ret_settings SELECT 1
 RETURNING (SELECT count() FROM t_ret_settings)
 SETTINGS max_execution_time = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
+-- Unsupported source settings must also be rejected when nested in source subqueries.
+SELECT 'nested source query global settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT * FROM (SELECT 1 SETTINGS max_execution_time = 1)
+RETURNING (SELECT count() FROM t_ret_settings); -- { serverError NOT_IMPLEMENTED }
 
 SELECT count() FROM t_ret_settings;
 

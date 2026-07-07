@@ -1,5 +1,6 @@
 #include <Common/SettingsChanges.h>
 #include <Parsers/InsertQuerySettingsPushDownVisitor.h>
+#include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -13,7 +14,11 @@ namespace DB
 
 bool InsertQuerySettingsPushDownMatcher::needChildVisit(ASTPtr & node, const ASTPtr & child)
 {
+    if (node->as<ASTSelectQuery>())
+        return true;
     if (node->as<ASTSelectWithUnionQuery>())
+        return true;
+    if (node->as<ASTSelectIntersectExceptQuery>())
         return true;
     if (node->as<ASTSubquery>())
         return true;
