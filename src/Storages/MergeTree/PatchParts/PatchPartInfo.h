@@ -94,8 +94,7 @@ struct PatchPartInfoBase
     Int64 source_data_version = 0;
     /// If true convert columns from patch to current data types in table metadata.
     bool perform_alter_conversions = true;
-    /// Effective sorting key for applying the patch without the trailing
-    /// `_block_number`, `_block_offset` columns. Populated for `MergeOnKey` (V2) patches only.
+    /// Effective sorting key for applying the patch without the trailing `_block_number`, `_block_offset` columns.
     std::shared_ptr<const KeyDescription> sorting_key;
 
     String describe() const;

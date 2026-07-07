@@ -20,15 +20,13 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 /// Returns at most one patch of type Merge and at most one patch of type Join.
 PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPartPtr & patch_part);
 
-/// Returns metadata snapshot of a legacy (v1) patch part. Sort key is `(_part, _part_offset)`.
+/// Returns metadata snapshot of a legacy (v1) patch part.
+/// Sort key is `(_part, _part_offset)`.
 StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
-/// Returns metadata snapshot of a v2 patch part. Sort key is
-/// `(<sorting_key>..., _block_number, _block_offset)`, built from the sorting key the patch
-/// was written with, so the snapshot always matches the on-disk layout of the patch
-/// regardless of later `ALTER MODIFY ORDER BY` on the target table. The overload taking
-/// a string parses the one-line key text persisted in the patch part.
+/// Returns metadata snapshot of a v2 patch part.
+/// Sort key is `(<sorting_key>..., _block_number, _block_offset)`.
 StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
 StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
@@ -37,13 +35,8 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
 ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sorting_key);
 
 /// Builds the effective sorting key for applying a v2 patch part: the longest common prefix
-/// of the patch part's sorting key (excluding the trailing identity columns) and the table's
-/// current sorting key, resolved against the main table's columns. Both the patch part and
-/// the main parts are sorted by this prefix, and it never gets shorter than the table's
-/// (immutable) primary key.
-std::shared_ptr<const KeyDescription> buildPatchSortingKeyDescription(
-    const KeyDescription & patch_sorting_key,
-    const StorageMetadataPtr & main_metadata_snapshot);
+/// of the patch part's sorting key and the table's current sorting key.
+std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata);
 
 /// Returns system columns which are common for all v1 patch parts.
 const NamesAndTypesList & getPatchPartKeyColumns();
@@ -60,7 +53,7 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
     UInt64 part_offset_begin, UInt64 part_offset_end);
 
 /// Returns virtual columns that should be read from the regular part to apply the patch.
-Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch);
+Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch);
 
 /// Partition id of patch part is 'patch-<hash of column names in patch part>-<original_partition_id>.
 /// Functions below help to check and extract original_partition_id from partition id of patch part.

@@ -10661,7 +10661,7 @@ std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(cons
     if (!sorting_key)
     {
         auto main_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
-        sorting_key = buildPatchSortingKeyDescription(patch_metadata.metadata->getSortingKey(), main_metadata);
+        sorting_key = getEffectivePatchSortingKey(patch_metadata.metadata->getSortingKey(), main_metadata);
     }
 
     return sorting_key;

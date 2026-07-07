@@ -32,13 +32,15 @@ PatchParts getPatchesForPart(const MergeTreePartInfo & source_part, const DataPa
     if (!patch_part->info.isPatch())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected patch part, got: {}", patch_part->name);
 
+    std::shared_ptr<const KeyDescription> sorting_key;
     const auto & source_parts_set = patch_part->getSourcePartsSet();
 
-    /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
-    /// with if the table's sorting key was changed by ALTER after the patch had been written.
-    std::shared_ptr<const KeyDescription> sorting_key;
     if (source_parts_set.getFormatVersion() == SourcePartsSetForPatch::V2_FORMAT_VERSION)
+    {
+        /// The effective key for `MergeOnKey` may be shorter than the key the patch was written
+        /// with if the table's sorting key was changed by ALTER after the patch had been written.
         sorting_key = patch_part->storage.getPatchPartSortingKey(*patch_part);
+    }
 
     return source_parts_set.getPatchParts(source_part, patch_part, std::move(sorting_key));
 }
@@ -151,9 +153,7 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
     auto partition_by_expression = makeASTFunction("__patchPartitionID", part_identifier, hash_literal);
     part_metadata.partition_key = KeyDescription::getKeyFromAST(partition_by_expression, patch_part_desc, {}, local_context);
 
-    /// Sorting key: (<sorting_key>, _block_number, _block_offset). The key the patch is written
-    /// with is cloned as is; the identity columns are appended as additional key columns, which
-    /// keeps `reverse_flags` in sync when the key contains DESC entries.
+    /// Sorting key: (<sorting_key>, _block_number, _block_offset).
     auto order_by_expression = makeASTFunction("tuple");
 
     if (sorting_key_expr_list)
@@ -162,10 +162,16 @@ StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, co
             order_by_expression->arguments->children.push_back(child->clone());
     }
 
+    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockNumberColumn::name));
+    order_by_expression->arguments->children.push_back(make_intrusive<ASTIdentifier>(BlockOffsetColumn::name));
+
     addCodecsForPatchSystemColumns(patch_part_desc);
 
     part_metadata.sorting_key = KeyDescription::getKeyFromAST(
-        order_by_expression, patch_part_desc, /*virtuals=*/ {}, local_context,
+        order_by_expression,
+        patch_part_desc,
+        /*virtuals=*/ {},
+        local_context,
         /*additional_columns=*/ {{BlockNumberColumn::name, BlockNumberColumn::type}, {BlockOffsetColumn::name, BlockOffsetColumn::type}});
 
     part_metadata.primary_key = part_metadata.sorting_key;
@@ -201,41 +207,39 @@ ASTPtr getTableSortingKeyExpressionFromPatch(const KeyDescription & patch_sortin
     return table_expr_list;
 }
 
-std::shared_ptr<const KeyDescription> buildPatchSortingKeyDescription(
-    const KeyDescription & patch_sorting_key,
-    const StorageMetadataPtr & main_metadata_snapshot)
+std::shared_ptr<const KeyDescription> getEffectivePatchSortingKey(const KeyDescription & patch_sorting_key, const StorageMetadataPtr & storage_metadata)
 {
     auto ast_equals = [](const ASTPtr & lhs, const ASTPtr & rhs)
     {
         return lhs->formatWithSecretsOneLine() == rhs->formatWithSecretsOneLine();
     };
 
-    const auto & main_sorting_key = main_metadata_snapshot->getSortingKey();
-    const auto main_expr_list = main_sorting_key.getOriginalExpressionList();
+    const auto & storage_sorting_key = storage_metadata->getSortingKey();
+    const auto storage_expr_list = storage_sorting_key.getOriginalExpressionList();
     const auto patch_expr_list = getTableSortingKeyExpressionFromPatch(patch_sorting_key);
 
     const size_t patch_key_size = patch_expr_list->children.size();
-    const size_t main_key_size = main_expr_list ? main_expr_list->children.size() : 0;
-    const size_t max_prefix_key_size = std::min(patch_key_size, main_key_size);
+    const size_t storage_key_size = storage_expr_list ? storage_expr_list->children.size() : 0;
+    const size_t max_prefix_key_size = std::min(patch_key_size, storage_key_size);
 
     size_t prefix_key_size = 0;
 
-    while (prefix_key_size < max_prefix_key_size && ast_equals(patch_expr_list->children[prefix_key_size], main_expr_list->children[prefix_key_size]))
+    while (prefix_key_size < max_prefix_key_size && ast_equals(patch_expr_list->children[prefix_key_size], storage_expr_list->children[prefix_key_size]))
         ++prefix_key_size;
 
-    if (prefix_key_size == main_key_size)
-        return std::make_shared<const KeyDescription>(main_sorting_key);
+    if (prefix_key_size == storage_key_size)
+        return std::make_shared<const KeyDescription>(storage_sorting_key);
 
     auto order_by_expression = makeASTFunction("tuple");
     order_by_expression->arguments = make_intrusive<ASTExpressionList>();
 
     for (size_t i = 0; i < prefix_key_size; ++i)
-        order_by_expression->arguments->children.push_back(main_expr_list->children[i]->clone());
+        order_by_expression->arguments->children.push_back(storage_expr_list->children[i]->clone());
 
     return std::make_shared<const KeyDescription>(KeyDescription::getKeyFromAST(
         order_by_expression,
-        main_metadata_snapshot->getColumns(),
-        main_metadata_snapshot->virtuals,
+        storage_metadata->getColumns(),
+        storage_metadata->virtuals,
         Context::getGlobalContextInstance()));
 }
 
@@ -332,7 +336,7 @@ std::pair<UInt64, UInt64> getPartNameOffsetRange(
     return {begin, end};
 }
 
-Names getVirtualsRequiredForPatch(const PatchPartInfoForReader & patch)
+Names getKeyColumnsRequiredForPatch(const PatchPartInfoForReader & patch)
 {
     Names columns;
     switch (patch.mode)
