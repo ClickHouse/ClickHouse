@@ -294,6 +294,31 @@ class Runner:
             print(f"WARNING: Submodule cache restore failed: {e}, will clone from GitHub")
             traceback.print_exc()
 
+    # Signature left when the host docker daemon dies mid-run: the daemon
+    # connection is canceled while the main test container is still running, so
+    # the container returns exit 125 and the job is truncated with all
+    # already-executed tests OK. This is a runner-host infra event, so the job
+    # should be re-run on a fresh runner rather than reddening the merge check.
+    #
+    # Require the cancellation-specific conjunction, NOT any single fragment: a
+    # deterministic docker-connectivity regression such as
+    # "Cannot connect to the Docker daemon at unix:///var/run/docker.sock" also
+    # exits 125 and leaves the result unfinished, but is a real regression that
+    # must surface rather than being retried forever. Both markers together only
+    # appear when a live container's daemon connection is torn down mid-run.
+    _DOCKER_DAEMON_DEATH_LOG_SIGNATURES = (
+        "Error waiting for container: Canceled",
+        "grpc: the client connection is closing",
+    )
+
+    @classmethod
+    def _is_docker_daemon_death(cls, exit_code, log_tail):
+        if exit_code != 125 or not log_tail:
+            return False
+        return all(
+            sig in log_tail for sig in cls._DOCKER_DAEMON_DEATH_LOG_SIGNATURES
+        )
+
     def _run(
         self,
         workflow,
@@ -522,9 +547,23 @@ class Runner:
                         print(f"ERROR: {info}")
                         result.add_error(info)
                     result.set_status(Result.Status.ERROR)
-                    result.set_info(
-                        process.get_latest_log(max_lines=20)
-                    )
+                    latest_log = process.get_latest_log(max_lines=20)
+                    result.set_info(latest_log)
+                    if not process.timeout_exceeded and self._is_docker_daemon_death(
+                        exit_code, latest_log
+                    ):
+                        print(
+                            "NOTE: job truncated by a docker daemon failure - "
+                            "labeling as infrastructure error for auto-retry"
+                        )
+                        # Append the bare label string, not the dict set_label()
+                        # would store: retry_infra_failures.yml matches with
+                        # `any(. == "infra")`, which only sees a plain string.
+                        # All other readers (_label_name, json.html
+                        # normalizeLabels, gh.py) already accept the string form.
+                        labels = result.ext.setdefault("labels", [])
+                        if Result.Label.INFRA not in labels:
+                            labels.append(Result.Label.INFRA)
             result.dump()
 
         print("INFO: disk status after running a job:")
