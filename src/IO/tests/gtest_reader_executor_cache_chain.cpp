@@ -1580,7 +1580,7 @@ TEST_F(ReaderExecutorCacheChain, EncryptionHeaderGoesThroughTheCacheChain)
 {
     constexpr size_t segment_size = 256;
     constexpr size_t block_size = 128;
-    const String key(16, 'k');
+    String key(16, 'k');
     FileEncryption::InitVector iv(UInt128{0xabcdef});
     const String plaintext = makePattern(1000);
     const String file_bytes = encryptedFileBytes(key, iv, plaintext);
