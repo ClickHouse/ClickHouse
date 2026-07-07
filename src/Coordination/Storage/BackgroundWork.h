@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Coordination/Storage/SortedFile.h>
 #include <Coordination/Storage/SortedRun.h>
 #include <Common/ThreadPool.h>
 
@@ -43,6 +44,9 @@ struct BackgroundWork
     /// buffer to publish to StorageState in file_seqno order.
     std::map<uint32_t, SortedRunPtr> flushed_files;
 
+    /// Files to delete from disk. Filled by ~SortedFile, drained by flush and merge threads.
+    FileDeleteQueuePtr file_delete_queue = std::make_shared<FileDeleteQueue>();
+
     /// Starts the threads.
     explicit BackgroundWork(StorageState * storage_);
 
@@ -54,6 +58,13 @@ struct BackgroundWork
 private:
     void flushThread();
     void mergeThread();
+
+    /// Perform pending file deletions. Called from flush and merge threads; there are no dedicated
+    /// deletion threads.
+    /// Returns false if a deletion failed (the file stays queued). The caller should then back
+    /// off and retry instead of proceeding: if we can't delete files, we shouldn't keep
+    /// producing them.
+    bool deleteQueuedFiles() const;
 
     bool pickRunsToMerge(std::vector<SortedRunPtr> & out_inputs, SortedRunPtr & out_partial_output, std::vector<uint32_t> & out_seqnos_to_lock) const;
 };
