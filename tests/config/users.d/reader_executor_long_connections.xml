@@ -1,7 +1,0 @@
-<clickhouse>
-    <profiles>
-        <default>
-            <reader_executor_use_long_connections>1</reader_executor_use_long_connections>
-        </default>
-    </profiles>
-</clickhouse>

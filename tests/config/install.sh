@@ -259,20 +259,19 @@ ln -sf $SRC_PATH/users.d/marks.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/insert_keeper_retries.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/prefetch_settings.xml $DEST_SERVER_PATH/users.d/
 if check_clickhouse_version 26.6; then
-    # `use_reader_executor` / `enable_reader_executor_log` and `<reader_executor_log>`
-    # are registered in the 26.6 settings-history block. Upgrade-check and stress
-    # tests run older binaries against the same test config, which would reject
-    # the users.xml with UNKNOWN_SETTING.
-    ln -sf $SRC_PATH/users.d/use_reader_executor.xml $DEST_SERVER_PATH/users.d/
+    # `<reader_executor_log>` is registered in 26.6. Upgrade-check and stress
+    # tests run older binaries against the same test config, which would
+    # reject an unknown config with an error.
     ln -sf $SRC_PATH/config.d/reader_executor_log.xml $DEST_SERVER_PATH/config.d/
 fi
 if check_clickhouse_version 26.7; then
-    # `reader_executor_use_long_connections` is registered in the 26.7
-    # settings-history block (off by default there); enable it in the test
-    # profile so CI exercises the long-connection reuse path together with
-    # the executor. Separate gate: a 26.6 binary knows `use_reader_executor`
-    # but would reject this setting with UNKNOWN_SETTING.
-    ln -sf $SRC_PATH/users.d/reader_executor_long_connections.xml $DEST_SERVER_PATH/users.d/
+    # Enable the experimental executor read path together with its
+    # long-connection reuse for the whole suite. One profile file, gated at
+    # the NEWEST setting it contains: `use_reader_executor` is registered in
+    # the 26.6 settings-history block but `reader_executor_use_long_connections`
+    # only in 26.7, and an older binary (upgrade/stress checks) would reject
+    # the users.xml with UNKNOWN_SETTING.
+    ln -sf $SRC_PATH/users.d/use_reader_executor.xml $DEST_SERVER_PATH/users.d/
 fi
 ln -sf $SRC_PATH/users.d/nonconst_timezone.xml $DEST_SERVER_PATH/users.d/
 ln -sf $SRC_PATH/users.d/allow_introspection_functions.yaml $DEST_SERVER_PATH/users.d/
