@@ -31,6 +31,10 @@
 ///                     Int128/UInt128, Decimal128/256) and FixedString(N);
 ///                     element width N recovered on read as data_size/num_rows
 ///                     (no offsets array needed since every row is N bytes)
+///   COL_LOWCARD (8) — LowCardinality(T), top-level only: a dictionary
+///                     sub-column (embedded ColDescriptor, same recursive
+///                     shape COL_VARIANT already uses for its sub-columns)
+///                     plus a shared index array, one entry per row
 ///
 /// Modifier bits (OR'd onto the base type):
 ///   COL_IS_NULLABLE (0x20) — null map at null_offset: u8[num_rows], 1=null 0=non-null
@@ -78,11 +82,12 @@
 /// wire encoding: it's Array(Tuple(K, V)) under the hood (DataTypeMap::
 /// getNestedType() / ColumnMap::getNestedColumn()), so it's unwrapped to that at
 /// every touch point and goes through the existing Array/Tuple path.
-/// LowCardinality(T) is supported by fully materializing to T's full column on
-/// write (ColumnLowCardinality::convertToFullColumn()) and rebuilding via
-/// insertRangeFromFullColumn on read — TODO: no dictionary/index encoding on the
-/// wire yet, see the TODO on validateColumnarV1SupportedType's LowCardinality
-/// branch. Any fixed-width type is supported at any width (COL_FIXED8/16/32/64
+/// Top-level LowCardinality(T) has a direct dictionary + index encoding
+/// (COL_LOWCARD). Nested LowCardinality (inside Array/Tuple) still fully
+/// materializes to T's full column instead (ColumnLowCardinality::
+/// convertToFullColumn() / insertRangeFromFullColumn) — TODO, see the comment on
+/// validateColumnarV1SupportedType's LowCardinality branch. Any fixed-width type
+/// is supported at any width (COL_FIXED8/16/32/64
 /// for 1/2/4/8 bytes, COL_FIXEDN for everything else — UUID, IPv6, Int128/
 /// UInt128, Decimal128/256), and so is FixedString(N) of any length (also
 /// COL_FIXEDN). Any type kind this format has no encoding for at all (Dynamic,
@@ -134,6 +139,8 @@ constexpr uint32_t COL_COMPLEX      = 5;  // Array(T) / Tuple(T...) — recursiv
 constexpr uint32_t COL_VARIANT      = 6;  // Variant(...) — discriminated union
 constexpr uint32_t COL_FIXEDN       = 7;  // fixed-width of any other size, or FixedString(N);
                                            // element width recovered as data_size/num_rows
+constexpr uint32_t COL_LOWCARD      = 8;  // LowCardinality(T), top-level only: dictionary
+                                           // sub-column (embedded ColDescriptor) + index array
 // Modifier flags (OR'd onto base type; base types 0–6, so bits 5-7 are free for flags).
 constexpr uint32_t COL_IS_NULLABLE  = 0x20u; // Nullable(T); null_offset carries u8[row_count] null map
 constexpr uint32_t COL_IS_CONST     = 0x80u;
@@ -205,16 +212,13 @@ inline void validateColumnarV1SupportedType(const DataTypePtr & type, bool is_ne
     }
     if (const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(type.get()))
     {
-        // TODO(LowCardinality wire format): currently supported by fully materializing
-        // to the dictionary's underlying full column on write (ColumnLowCardinality::
-        // convertToFullColumn(), see buildColDescriptor/writeColData/complexDataSize/
-        // writeComplexData) and rebuilding via insertRangeFromFullColumn on read — there
-        // is no dictionary/index encoding on the wire. A direct encoding (a sub-
-        // ColDescriptor for the dictionary column plus a variable-width index array,
-        // mirroring COL_VARIANT's inline sub-descriptor approach) would avoid re-
-        // deduplicating values the source column already deduplicated, and avoid paying
-        // the materialization cost three times per column (precomputeSerializedSize's
-        // size pass, the layout pass, and the write pass).
+        // Top-level LowCardinality(T) has a direct dictionary + index encoding
+        // (COL_LOWCARD; see buildColDescriptor/writeColData/readColumnFromDesc). TODO:
+        // nested LowCardinality (inside Array/Tuple) still fully materializes to T's full
+        // column instead (ColumnLowCardinality::convertToFullColumn(), see
+        // complexDataSize/writeComplexData/the decode lambda) — a nested dictionary
+        // encoding raises its own design question (would it share one dictionary across
+        // the whole flattened Array, or get one per element-run?) not answered here.
         validateColumnarV1SupportedType(lowcard_type->getDictionaryType(), is_nested);
         return;
     }
@@ -442,6 +446,44 @@ inline uint64_t buildColDescriptor(
         return write_cursor;
     }
 
+    // ── LowCardinality column → COL_LOWCARD (top-level only; nested inside
+    // Array/Tuple still materializes, see complexDataSize) ──────────────────
+    // Wire layout:
+    //   offsets_offset → index[num_rows]   index_elem_width bytes each
+    //   data_offset    → header:
+    //     uint32 dict_row_count
+    //     uint8  index_elem_width
+    //     uint8[3] pad
+    //     ColDescriptor dict_desc          (40 bytes, abs buffer offsets)
+    //     (dictionary sub-column data at positions given by dict_desc)
+    // null_offset is unused: nullability lives inside the dictionary type
+    // (e.g. LowCardinality(Nullable(String))'s dictionary sub-column is itself
+    // Nullable(String) and carries its own null map via the ordinary recursive
+    // buildColDescriptor call below).
+    if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
+    {
+        desc.type        = COL_LOWCARD | (is_const ? COL_IS_CONST : 0u);
+        desc.null_offset = 0;
+
+        const IColumn & dict_col = *lc_col->getDictionary().getNestedColumn();
+        const IColumn & idx_col  = lc_col->getIndexes();
+        uint32_t dict_rows    = static_cast<uint32_t>(dict_col.size());
+        uint32_t idx_elem_sz  = static_cast<uint32_t>(idx_col.sizeOfValueIfFixed());
+
+        desc.offsets_offset = write_cursor;
+        write_cursor += static_cast<uint64_t>(num_rows) * idx_elem_sz;
+
+        write_cursor = (write_cursor + 3ull) & ~3ull;
+        desc.data_offset = write_cursor;
+        write_cursor += 4u + 4u + COLUMNAR_DESC_BYTES; // dict_row_count + (index_elem_width+pad) + dict_desc
+
+        ColDescriptor dict_desc{};
+        write_cursor = buildColDescriptor(&dict_col, false, false, dict_rows, write_cursor, dict_desc);
+
+        desc.data_size = write_cursor - desc.data_offset;
+        return write_cursor;
+    }
+
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
@@ -639,6 +681,34 @@ inline void writeColData(
         return;
     }
 
+    // ── LowCardinality column → COL_LOWCARD ──────────────────────────────────
+    if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
+    {
+        const IColumn & dict_col = *lc_col->getDictionary().getNestedColumn();
+        const IColumn & idx_col  = lc_col->getIndexes();
+        uint32_t dict_rows   = static_cast<uint32_t>(dict_col.size());
+        uint32_t idx_elem_sz = static_cast<uint32_t>(idx_col.sizeOfValueIfFixed());
+
+        // Recompute the dictionary sub-column's descriptor (buildColDescriptor is
+        // deterministic given the same inputs) rather than threading it through some
+        // other channel — same pattern the Variant branch above uses for inner_desc.
+        ColDescriptor dict_desc{};
+        buildColDescriptor(&dict_col, false, false, dict_rows, desc.data_offset + 4u + 4u + COLUMNAR_DESC_BYTES, dict_desc);
+
+        uint8_t * header = buf.data() + desc.data_offset;
+        std::memcpy(header, &dict_rows, 4u);
+        uint8_t idx_elem_sz_byte = static_cast<uint8_t>(idx_elem_sz);
+        std::memcpy(header + 4u, &idx_elem_sz_byte, 1u);
+        std::memset(header + 5u, 0, 3u);
+        std::memcpy(header + 8u, &dict_desc, COLUMNAR_DESC_BYTES);
+
+        writeColData(&dict_col, false, dict_rows, dict_desc, buf);
+
+        std::memcpy(buf.data() + desc.offsets_offset, idx_col.getRawData().data(),
+                    static_cast<uint64_t>(num_rows) * idx_elem_sz);
+        return;
+    }
+
     // ── Array column → COL_COMPLEX ────────────────────────────────────────────
     if (const auto * arr_col = typeid_cast<const ColumnArray *>(col))
     {
@@ -710,17 +780,9 @@ inline MutableColumnPtr readColumnFromDesc(
     bool is_const         = (desc.type & COL_IS_CONST) != 0;
     uint32_t rows_to_dec  = is_const ? 1u : num_rows;
 
-    // LowCardinality is fully materialized to the dictionary's full column on write
-    // (see buildColDescriptor); unwrap the declared type the same way before applying
-    // the Nullable unwrap below, so e.g. LowCardinality(Nullable(String)) — materialized
-    // to a plain ColumnNullable(String) — is decoded as Nullable(String), matching what
-    // was actually written, not misread as top-level Nullable(LowCardinality(...)).
-    const auto * lowcard_type_ptr = typeid_cast<const DataTypeLowCardinality *>(result_type.get());
-    const DataTypePtr & unwrapped_type = lowcard_type_ptr ? lowcard_type_ptr->getDictionaryType() : result_type;
-
     const DataTypePtr & base_type = is_nullable_wire
-        ? dynamic_cast<const DataTypeNullable &>(*unwrapped_type).getNestedType()
-        : unwrapped_type;
+        ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
+        : result_type;
 
     // desc comes straight from guest/network memory and is otherwise untrusted:
     // validate data_offset/data_size against buf.size() before forming any
@@ -1183,16 +1245,80 @@ inline MutableColumnPtr readColumnFromDesc(
 
         col = ColumnVariant::create(std::move(discr_col), std::move(offs_col), std::move(variant_cols));
     }
+    else if (raw_type == COL_LOWCARD)
+    {
+        const auto * lowcard_type = typeid_cast<const DataTypeLowCardinality *>(base_type.get());
+        if (!lowcard_type)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD descriptor does not match declared type {}", base_type->getName());
+
+        // Header: uint32 dict_row_count, uint8 index_elem_width, uint8[3] pad, ColDescriptor dict_desc.
+        constexpr uint64_t header_bytes = 4u + 4u + COLUMNAR_DESC_BYTES;
+        if (desc.data_size < header_bytes)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD header truncated: data_size={}", desc.data_size);
+        const uint8_t * header = buf.data() + desc.data_offset;
+        uint32_t dict_row_count = unalignedLoad<uint32_t>(header);
+        uint8_t index_elem_width = header[4];
+        if (index_elem_width != 1 && index_elem_width != 2 && index_elem_width != 4 && index_elem_width != 8)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD index element width {} is not one of 1/2/4/8",
+                static_cast<uint32_t>(index_elem_width));
+
+        ColDescriptor dict_desc{};
+        std::memcpy(&dict_desc, header + 8u, COLUMNAR_DESC_BYTES);
+
+        // dict_desc is read from otherwise-untrusted guest/network bytes; confine it to
+        // this COL_LOWCARD's own [data_offset, data_offset+data_size) region before
+        // recursing, same reasoning as the COL_VARIANT sub-descriptor check above.
+        uint64_t region_end = desc.data_offset + desc.data_size;
+        if (dict_desc.offsets_offset != 0
+            && (dict_desc.offsets_offset < desc.data_offset || dict_desc.offsets_offset > region_end))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD dictionary offsets_offset {} outside data region [{}, {})",
+                dict_desc.offsets_offset, desc.data_offset, region_end);
+        if (dict_desc.data_offset < desc.data_offset
+            || dict_desc.data_offset > region_end
+            || dict_desc.data_size > region_end - dict_desc.data_offset)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD dictionary data range [{}, {}) outside data region [{}, {})",
+                dict_desc.data_offset, dict_desc.data_offset + dict_desc.data_size, desc.data_offset, region_end);
+
+        auto dict_col = readColumnFromDesc(buf, dict_desc, dict_row_count, lowcard_type->getDictionaryType());
+
+        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_LOWCARD index array out of bounds: offset={}, rows={}, width={}, buf={}",
+                desc.offsets_offset, rows_to_dec, static_cast<uint32_t>(index_elem_width), buf.size());
+        const uint8_t * idx_src = buf.data() + desc.offsets_offset;
+
+        MutableColumnPtr idx_col;
+        switch (index_elem_width)
+        {
+            case 1: idx_col = ColumnUInt8::create(); break;
+            case 2: idx_col = ColumnUInt16::create(); break;
+            case 4: idx_col = ColumnUInt32::create(); break;
+            default: idx_col = ColumnUInt64::create(); break;
+        }
+        idx_col->insertManyDefaults(rows_to_dec);
+        std::memcpy(const_cast<char *>(idx_col->getRawData().data()), idx_src,
+                    static_cast<uint64_t>(rows_to_dec) * index_elem_width);
+
+        // Every index value must reference a real dictionary row, or a malformed frame
+        // could make ColumnLowCardinality's later use of this index read out of bounds
+        // into the dictionary's underlying storage.
+        for (uint32_t i = 0; i < rows_to_dec; ++i)
+            if (idx_col->getUInt(i) >= dict_row_count)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_LOWCARD index {} at row {} exceeds dictionary size {}",
+                    idx_col->getUInt(i), i, dict_row_count);
+
+        auto unique_col = DataTypeLowCardinality::createColumnUnique(*lowcard_type->getDictionaryType(), std::move(dict_col));
+        col = ColumnLowCardinality::create(std::move(unique_col), std::move(idx_col), /* is_shared */ false);
+    }
     else
     {
         throw Exception(ErrorCodes::INCORRECT_DATA, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
-    }
-
-    if (lowcard_type_ptr)
-    {
-        auto lc_col = lowcard_type_ptr->createColumn();
-        typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*col, 0, col->size());
-        col = std::move(lc_col);
     }
 
     if (is_const && num_rows > 0)

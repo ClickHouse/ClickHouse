@@ -5,9 +5,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# LowCardinality(T) is currently supported by fully materializing to T's full column on
-# write and rebuilding the dictionary via insertRangeFromFullColumn on read (see the TODO
-# on validateColumnarV1SupportedType's LowCardinality branch for direct wire encoding).
+# Top-level LowCardinality(T) has a direct dictionary + index wire encoding (COL_LOWCARD);
+# nested LowCardinality (inside Array/Tuple) still materializes to T's full column (see the
+# TODO on validateColumnarV1SupportedType's LowCardinality branch).
 run_roundtrip() {
     local type="$1"
     local select_expr="$2"
@@ -43,3 +43,9 @@ run_roundtrip "Array(LowCardinality(String))" \
 
 run_roundtrip "Tuple(LowCardinality(String), UInt64)" \
     "tuple('x', 42)::Tuple(LowCardinality(String), UInt64)"
+
+# Direct-encoding proof: a low-cardinality column with many repeated values must produce a
+# frame far smaller than encoding the same data as plain String (index bytes plus one small
+# dictionary, not one full string value per row).
+${CLICKHOUSE_CLIENT} --query "SELECT toLowCardinality(toString(number % 5)) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c
+${CLICKHOUSE_CLIENT} --query "SELECT toString(number % 5) AS v FROM numbers(100000) FORMAT ColumnBinary" | wc -c

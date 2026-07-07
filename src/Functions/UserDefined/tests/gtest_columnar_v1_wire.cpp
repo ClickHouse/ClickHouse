@@ -24,12 +24,14 @@
 #include <vector>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -844,4 +846,52 @@ TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
 
     auto arr_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
+}
+
+// ── LowCardinality(String) encoder/decoder: verify COL_LOWCARD wire shape ────
+//
+// Input: 4 rows — "a", "b", "a", "c". ColumnUnique reserves position 0 for the
+// implicit default (empty string) for String dictionaries, so dict_row_count
+// ends up as 4: "" (default), "a", "b", "c".
+
+TEST(ColumnarV1Wire, LowCardinalityStringEncodeDecodeRoundTrip)
+{
+    auto lowcard_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    auto lc_col = lowcard_type->createColumn();
+
+    auto full = ColumnString::create();
+    full->insertData("a", 1);
+    full->insertData("b", 1);
+    full->insertData("a", 1);
+    full->insertData("c", 1);
+
+    typeid_cast<ColumnLowCardinality &>(*lc_col).insertRangeFromFullColumn(*full, 0, full->size());
+
+    uint32_t num_rows = 4;
+    auto buf = encodeCHColumn(lc_col.get(), num_rows);
+    ColDescriptor desc = readDesc(buf);
+    EXPECT_EQ(desc.type, COL_LOWCARD);
+    EXPECT_EQ(desc.null_offset, 0u);  // unused: nullability lives inside the dictionary type
+
+    const uint8_t * header = buf.data() + desc.data_offset;
+    uint32_t dict_row_count = 0;
+    std::memcpy(&dict_row_count, header, 4);
+    uint8_t index_elem_width = header[4];
+    EXPECT_EQ(dict_row_count, 4u);
+    EXPECT_EQ(index_elem_width, 1u);  // small dictionary fits in a UInt8 index
+
+    // Index array at offsets_offset: one byte per row, referencing dictionary positions.
+    const uint8_t * idx = buf.data() + desc.offsets_offset;
+    EXPECT_EQ(idx[0], idx[2]);  // rows 0 and 2 are both "a" -> same dictionary position
+    EXPECT_NE(idx[0], idx[1]);  // "a" != "b"
+    EXPECT_NE(idx[0], idx[3]);  // "a" != "c"
+
+    auto decoded = readColumnarOutput({buf.data(), buf.size()}, lowcard_type, num_rows);
+    const auto * decoded_lc = typeid_cast<const ColumnLowCardinality *>(decoded.get());
+    ASSERT_NE(decoded_lc, nullptr);
+    ASSERT_EQ(decoded_lc->size(), 4u);
+    EXPECT_EQ(decoded_lc->getDataAt(0), "a");
+    EXPECT_EQ(decoded_lc->getDataAt(1), "b");
+    EXPECT_EQ(decoded_lc->getDataAt(2), "a");
+    EXPECT_EQ(decoded_lc->getDataAt(3), "c");
 }
