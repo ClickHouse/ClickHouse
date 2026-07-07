@@ -6688,18 +6688,11 @@ void Context::updateStorageConfiguration(const Poco::Util::AbstractConfiguration
         {
             try
             {
-                auto new_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
+                shared->merge_tree_storage_policy_selector = shared->merge_tree_storage_policy_selector->updateFromConfig(
                     config, "storage_configuration.policies", shared->merge_tree_disk_selector, disks_to_reinit);
-                if (!disks_to_reinit.empty())
-                {
-                    /// Tables must prepare new disks before new policies are visible, otherwise they can own stale files.
-                    DatabaseCatalog::instance().prepareNewDisksOnConfigChange(new_storage_policy_selector, disks_to_reinit);
-                }
-                shared->merge_tree_storage_policy_selector = std::move(new_storage_policy_selector);
             }
             catch (Exception & e)
             {
-                disks_to_reinit.clear();
                 LOG_ERROR(
                     shared->log, "An error has occurred while reloading storage policies, storage policies were not applied: {}", e.message());
             }

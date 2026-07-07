@@ -5171,180 +5171,6 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
 }
 
-StoragePolicyPtr MergeTreeData::getStoragePolicyFromSelector(const StoragePolicySelectorPtr & storage_policy_selector) const
-{
-    const auto settings = getSettings();
-
-    if ((*settings)[MergeTreeSetting::disk].changed)
-    {
-        const String disk_name = (*settings)[MergeTreeSetting::disk];
-        const auto storage_policy_name = StoragePolicySelector::TMP_STORAGE_POLICY_PREFIX + disk_name;
-        return storage_policy_selector->tryGet(storage_policy_name);
-    }
-
-    const String storage_policy_name = (*settings)[MergeTreeSetting::storage_policy];
-    return storage_policy_selector->tryGet(storage_policy_name);
-}
-
-MergeTreeData::NewDiskPathSnapshot MergeTreeData::makeNewDiskPathSnapshot(const DiskPtr & disk) const
-{
-    /// This validation assumes no external process mutates the same table path while storage policy change is in progress.
-    /// ClickHouse-owned writers cannot target this disk for this table before the new policy is applied.
-    NewDiskPathSnapshot snapshot{};
-    snapshot.root_exists = disk->existsDirectory(relative_data_path);
-    if (!snapshot.root_exists)
-        return snapshot;
-
-    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
-    snapshot.format_version_full_path = fullPath(disk, format_version_path);
-
-    for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
-    {
-        const auto name = it->name();
-        const auto entry_path = fs::path(relative_data_path) / name;
-        const bool is_directory = disk->existsDirectory(entry_path);
-        snapshot.root_entries.push_back({name, fullPath(disk, entry_path), is_directory});
-
-        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
-        {
-            snapshot.format_version_exists = true;
-
-            if (auto buf = disk->readFileIfExists(entry_path, getReadSettings()))
-            {
-                snapshot.format_version_is_file = true;
-                try
-                {
-                    readIntText(snapshot.format_version, *buf);
-                    if (!buf->eof())
-                        snapshot.format_version_error = fmt::format("Bad version file: {}", snapshot.format_version_full_path);
-                }
-                catch (const Exception &)
-                {
-                    snapshot.format_version_error = fmt::format("Bad version file: {}", snapshot.format_version_full_path);
-                }
-            }
-        }
-        else if (name == DETACHED_DIR_NAME)
-        {
-            snapshot.detached_is_directory = is_directory;
-            if (!snapshot.detached_is_directory)
-                continue;
-
-            const auto detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
-            for (auto detached_it = disk->iterateDirectory(detached_path); detached_it->isValid(); detached_it->next())
-            {
-                if (DetachedPartInfo::parseDetachedPartName(disk, detached_it->name(), format_version).valid_name)
-                {
-                    snapshot.detached_has_parseable_parts = true;
-                    snapshot.detached_parseable_part_name = detached_it->name();
-                    break;
-                }
-            }
-        }
-    }
-
-    return snapshot;
-}
-
-std::optional<String> MergeTreeData::getFormatVersionErrorOnNewDisk(const NewDiskPathSnapshot & snapshot) const
-{
-    if (!snapshot.format_version_exists)
-        return {};
-
-    if (snapshot.format_version_error)
-        return snapshot.format_version_error;
-
-    if (!snapshot.format_version_is_file)
-        return fmt::format("Bad version file: {} is not a readable regular file", snapshot.format_version_full_path);
-
-    if (snapshot.format_version != format_version.toUnderType())
-        return fmt::format(
-            "Version file on {} contains version {} expected version is {}.",
-            snapshot.format_version_full_path,
-            snapshot.format_version,
-            format_version.toUnderType());
-
-    return {};
-}
-
-std::optional<String> MergeTreeData::getUnsafeNewDiskTablePathContentReason(const NewDiskPathSnapshot & snapshot) const
-{
-    if (!snapshot.root_exists)
-        return {};
-
-    /// A newly added disk may have only explicitly safe entries:
-    /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
-    /// Anything else would become owned by the table path after the policy change.
-    if (auto format_version_error = getFormatVersionErrorOnNewDisk(snapshot))
-        return format_version_error;
-
-    for (const auto & entry : snapshot.root_entries)
-    {
-        const auto & name = entry.name;
-
-        if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
-            continue;
-
-        bool is_temporary_directory = false;
-        bool has_temporary_directory_prefix = false;
-        for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
-        {
-            if (std::string_view(name).starts_with(prefix))
-            {
-                has_temporary_directory_prefix = true;
-                is_temporary_directory = entry.is_directory;
-                break;
-            }
-        }
-
-        if (is_temporary_directory)
-            continue;
-
-        if (has_temporary_directory_prefix)
-            return fmt::format("temporary path {} is not a directory", entry.full_path);
-
-        if (name == DETACHED_DIR_NAME)
-        {
-            if (!snapshot.detached_is_directory)
-                return fmt::format("detached path {} is not a directory", entry.full_path);
-
-            if (snapshot.detached_has_parseable_parts)
-                return fmt::format("detached directory contains parseable part {}", snapshot.detached_parseable_part_name);
-
-            continue;
-        }
-
-        return fmt::format("unexpected path {} exists", entry.full_path);
-    }
-
-    return {};
-}
-
-void MergeTreeData::assertNewDiskDoesNotContainTableData(const DiskPtr & disk) const
-{
-    const auto snapshot = makeNewDiskPathSnapshot(disk);
-    if (auto reason = getUnsafeNewDiskTablePathContentReason(snapshot))
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "New storage policy contains disks which already contain data for this table path: {}", *reason);
-}
-
-void MergeTreeData::initializeNewDiskOnConfigChange(const DiskPtr & disk) const
-{
-    assertNewDiskDoesNotContainTableData(disk);
-
-    disk->createDirectories(relative_data_path);
-    disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
-
-    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
-    auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
-    writeIntText(format_version.toUnderType(), *buf);
-    buf->finalize();
-    if (getContext()->getSettingsRef()[Setting::fsync_metadata])
-        buf->sync();
-
-    assertNewDiskDoesNotContainTableData(disk);
-}
-
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -5378,10 +5204,105 @@ void MergeTreeData::changeSettings(
                     for (const auto & disk : old_storage_policy->getDisks())
                         all_diff_disk_names.erase(disk->getName());
 
+                    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
+
+                    auto validate_format_version = [&](const DiskPtr & disk)
+                    {
+                        if (!disk->existsFileOrDirectory(format_version_path))
+                            return;
+
+                        if (!disk->existsFile(format_version_path))
+                            throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+                        if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
+                        {
+                            UInt32 current_format_version{0};
+                            readIntText(current_format_version, *buf);
+                            if (!buf->eof())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+
+                            if (current_format_version != format_version.toUnderType())
+                                throw Exception(ErrorCodes::CORRUPTED_DATA,
+                                                "Version file on {} contains version {} expected version is {}.",
+                                                fullPath(disk, format_version_path), current_format_version, format_version.toUnderType());
+
+                            return;
+                        }
+
+                        throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
+                    };
+
+                    auto has_parseable_detached_parts = [&](const DiskPtr & disk)
+                    {
+                        const auto detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
+                        if (disk->isDirectoryEmpty(detached_path))
+                            return false;
+
+                        for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
+                        {
+                            if (DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version).valid_name)
+                                return true;
+                        }
+
+                        return false;
+                    };
+
+                    auto contains_table_data_on_new_disk = [&](const DiskPtr & disk)
+                    {
+                        if (!disk->existsDirectory(relative_data_path))
+                            return false;
+
+                        /// A newly added disk may have only explicitly safe entries:
+                        /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
+                        /// Anything else would become owned by the table path after the policy change.
+                        validate_format_version(disk);
+
+                        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+                        {
+                            const auto name = it->name();
+
+                            if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
+                                continue;
+
+                            const auto entry_path = fs::path(relative_data_path) / name;
+                            bool is_temporary_directory = false;
+                            for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
+                            {
+                                if (std::string_view(name).starts_with(prefix) && disk->existsDirectory(entry_path))
+                                {
+                                    is_temporary_directory = true;
+                                    break;
+                                }
+                            }
+
+                            if (is_temporary_directory)
+                                continue;
+
+                            if (name == DETACHED_DIR_NAME)
+                            {
+                                if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+                                    return true;
+
+                                if (has_parseable_detached_parts(disk))
+                                    return true;
+
+                                continue;
+                            }
+
+                            return true;
+                        }
+
+                        return false;
+                    };
+
                     for (const String & disk_name : all_diff_disk_names)
                     {
                         auto disk = new_storage_policy->getDiskByName(disk_name);
-                        assertNewDiskDoesNotContainTableData(disk);
+
+                        if (contains_table_data_on_new_disk(disk))
+                            throw Exception(
+                                ErrorCodes::BAD_ARGUMENTS,
+                                "New storage policy contain disks which already contain data of a table with the same name");
                     }
 
                     for (const String & disk_name : all_diff_disk_names)
@@ -11402,30 +11323,24 @@ CurrentlySubmergingEmergingTagger::~CurrentlySubmergingEmergingTagger()
     storage.currently_emerging_big_parts.erase(emerging_part_name);
 }
 
-void MergeTreeData::prepareNewDisksOnConfigChange(
-    const StoragePolicySelectorPtr & new_storage_policy_selector, const std::set<String> & new_added_disks) const
-{
-    auto new_storage_policy = getStoragePolicyFromSelector(new_storage_policy_selector);
-    if (!new_storage_policy)
-        return;
-
-    for (const auto & name : new_added_disks)
-    {
-        auto disk = new_storage_policy->tryGetDiskByName(name);
-        if (disk && !disk->isBroken() && !disk->isReadOnly())
-            initializeNewDiskOnConfigChange(disk);
-    }
-}
-
 bool MergeTreeData::initializeDiskOnConfigChange(const std::set<String> & new_added_disks)
 {
     auto storage_policy = getStoragePolicy();
+    const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
     for (const auto & name : new_added_disks)
     {
         auto disk = storage_policy->tryGetDiskByName(name);
         /// It's unlikely that newly added disk is broken or readonly, but we check it anyway
         if (disk && !disk->isBroken() && !disk->isReadOnly())
-            initializeNewDiskOnConfigChange(disk);
+        {
+            disk->createDirectories(relative_data_path);
+            disk->createDirectories(fs::path(relative_data_path) / MergeTreeData::DETACHED_DIR_NAME);
+            auto buf = disk->writeFile(format_version_path, 16, WriteMode::Rewrite, getContext()->getWriteSettings());
+            writeIntText(format_version.toUnderType(), *buf);
+            buf->finalize();
+            if (getContext()->getSettingsRef()[Setting::fsync_metadata])
+                buf->sync();
+        }
     }
     return true;
 }

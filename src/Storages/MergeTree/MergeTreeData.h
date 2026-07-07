@@ -2,11 +2,9 @@
 
 #include <array>
 #include <mutex>
-#include <optional>
 #include <span>
 #include <string_view>
 #include <tuple>
-#include <vector>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
 #include <Common/SimpleIncrement.h>
@@ -1457,7 +1455,6 @@ public:
     UInt64 estimateNumberOfRowsToRead(
         ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const;
 
-    void prepareNewDisksOnConfigChange(const StoragePolicySelectorPtr & new_storage_policy_selector, const std::set<String> & new_added_disks) const override;
     bool initializeDiskOnConfigChange(const std::set<String> & /*new_added_disks*/) override;
 
     static VirtualColumnsDescription createVirtuals(const KeyDescription * partition_key);
@@ -1513,34 +1510,6 @@ protected:
     }
 
 private:
-    struct NewDiskPathEntry
-    {
-        String name;
-        String full_path;
-        bool is_directory = false;
-    };
-
-    struct NewDiskPathSnapshot
-    {
-        bool root_exists = false;
-        bool format_version_exists = false;
-        bool format_version_is_file = false;
-        UInt32 format_version = 0;
-        String format_version_full_path;
-        std::optional<String> format_version_error;
-        bool detached_is_directory = false;
-        bool detached_has_parseable_parts = false;
-        String detached_parseable_part_name;
-        std::vector<NewDiskPathEntry> root_entries;
-    };
-
-    StoragePolicyPtr getStoragePolicyFromSelector(const StoragePolicySelectorPtr & storage_policy_selector) const;
-    NewDiskPathSnapshot makeNewDiskPathSnapshot(const DiskPtr & disk) const;
-    std::optional<String> getFormatVersionErrorOnNewDisk(const NewDiskPathSnapshot & snapshot) const;
-    std::optional<String> getUnsafeNewDiskTablePathContentReason(const NewDiskPathSnapshot & snapshot) const;
-    void assertNewDiskDoesNotContainTableData(const DiskPtr & disk) const;
-    void initializeNewDiskOnConfigChange(const DiskPtr & disk) const;
-
     struct NamesAndTypesListHash
     {
         size_t operator()(const NamesAndTypesList & list) const noexcept;
