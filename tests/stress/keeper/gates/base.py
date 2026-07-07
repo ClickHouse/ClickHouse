@@ -245,6 +245,14 @@ def ops_ge(summary, min_ops=0.0):
         raise AssertionError(f"ops_ge: {ops:.0f} < {min_ops:.0f}")
 
 
+def watches_fired_ge(summary, min_fired=0.0):
+    """Assert total fired watch notifications is above threshold."""
+    summary = summary or {}
+    fired = float(summary.get("watches_fired", 0) or 0)
+    if fired < float(min_fired):
+        raise AssertionError(f"watches_fired_ge: {fired:.0f} < {min_fired:.0f}")
+
+
 def _zk_count_descendants(zk, path):
     try:
         if not zk.exists(path):
@@ -707,6 +715,11 @@ def _gate_rps_ge(g, nodes, leader, ctx, summary):
 @register_gate("ops_ge")
 def _gate_ops_ge(g, nodes, leader, ctx, summary):
     return ops_ge(summary, min_ops=_extract_param(g, "min_ops", 0, float))
+
+
+@register_gate("watches_fired_ge")
+def _gate_watches_fired_ge(g, nodes, leader, ctx, summary):
+    return watches_fired_ge(summary, min_fired=_extract_param(g, "min_fired", 0, float))
 
 
 @register_gate("count_paths")

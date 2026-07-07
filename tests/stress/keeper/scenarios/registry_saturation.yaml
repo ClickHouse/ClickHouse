@@ -207,6 +207,8 @@ scenarios:
   - type: p99_le
   - type: watch_peak_ge
     min_watches: 15  # mix-derived floor: mean armed ≈ 23 (list:create 70:3); watches are one-shot, so armed count never approaches the session count
+  - type: watches_fired_ge
+    min_fired: 100  # a fire needs an armed watch + a successful create + a delivered notification, and each create fires ALL armed children-watches (~2 dozen), so a healthy 300 s run fires thousands; this floor proves the churn cycle ran without flaking on timing
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -216,12 +218,15 @@ scenarios:
 # enough for sessions to start expiring, then load returns to normal.  A single
 # cpu_hog is one busy-loop (one core), which a 4-CPU container shrugs off — so
 # run four in parallel per node to contend the full pinned CPU budget.
-# Answers: when an overloaded keeper causes mass session expiry among watchers,
-# do sessions/watches recover, and how does the error window look?  No p99 gate
-# — tail latency is unbounded under CPU starvation by design.
+# Answers: how does the error window look when an overloaded keeper causes
+# mass session expiry among watchers?  Gates assert only survival and the
+# error-window bound; watch arming is proven for the healthy phase, and
+# post-storm session/watch recovery is observed via mntr_print/print_summary
+# output, not gated.  No p99 gate — tail latency is unbounded under CPU
+# starvation by design.
 - id: registry-expiry-storm
   name: 'Registry expiry storm [fault: cpu_hog all]'
-  description: Registry watch mix (1000 sessions, 30 s session timeout) with CPU saturation (4 parallel hogs per node) on all nodes driving session expiry. Observational; error gate relaxed, no p99 gate.
+  description: Registry watch mix (1000 sessions, 30 s session timeout) with CPU saturation (4 parallel hogs per node) on all nodes driving session expiry. Observational — gates assert only survival and the error window; post-storm recovery is read from mntr_print/print_summary output, not gated. Error gate relaxed, no p99 gate.
   workload:
     config: workloads/registry_watch.yaml
     clients: 1000
@@ -258,7 +263,7 @@ scenarios:
   - type: error_rate_le
     max_ratio: 0.5
   - type: watch_peak_ge
-    min_watches: 10  # mix-derived floor; the pre/post-storm steady state still arms watches
+    min_watches: 10  # mix-derived floor on the whole-run peak; the healthy pre-storm phase alone satisfies it
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print

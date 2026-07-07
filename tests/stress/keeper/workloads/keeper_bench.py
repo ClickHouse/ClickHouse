@@ -75,11 +75,13 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s, concurrency=No
         template.pop("host", None)
         template.pop("sessions", None)
     
-    # Create connection list with distributed sessions
+    # Create connection list with distributed sessions; zero-session hosts are omitted
+    # so totals below the host count stay exact (sessions_total >= 1 keeps the list non-empty)
     conn_list = []
     for i, h in enumerate(hosts):
         sessions = per_host_base + (1 if i < remainder else 0)
-        conn_list.append({**template, "host": h, "sessions": max(1, sessions)})
+        if sessions:
+            conn_list.append({**template, "host": h, "sessions": sessions})
     
     conn["connection"] = conn_list[0] if len(conn_list) == 1 else conn_list
     conn.pop("host", None)
@@ -194,6 +196,8 @@ class KeeperBench:
             summary["write_rps"] = summary.get("write_requests_per_second", 0)
             summary["write_bps"] = summary.get("write_bytes_per_second", 0)
             summary["errors"] = int(data.get("errors", 0))
+            # keeper-bench omits the key when no watch ever fired
+            summary["watches_fired"] = int(data.get("watches_fired", 0))
         except Exception as e:
             print(f"[keeper][bench] Failed to parse JSON output: {e}")
         return summary
@@ -597,7 +601,7 @@ class KeeperBench:
     def _merge_summaries(self, summaries):
         """Merge per-shard bench summaries: sum counters and rates, max percentiles."""
         merged = {"duration_s": self.duration_s, "bench_duration": self.duration_s}
-        sum_keys = {"ops", "reads", "writes", "errors", "read_rps", "read_bps", "write_rps", "write_bps"}
+        sum_keys = {"ops", "reads", "writes", "errors", "watches_fired", "read_rps", "read_bps", "write_rps", "write_bps"}
         sum_suffixes = ("_total_requests", "_requests_per_second", "_bytes_per_second")
         for s in summaries:
             for k, v in s.items():
