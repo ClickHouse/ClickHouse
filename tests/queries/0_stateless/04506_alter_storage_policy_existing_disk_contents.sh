@@ -136,14 +136,12 @@ setup_no_path()
 setup_safe_contents()
 {
     local disk2_path="$1"
-    local data_path="$2"
 
     mkdir -p \
         "${disk2_path}/detached/not_a_part" \
         "${disk2_path}/tmp_1_1_0" \
         "${disk2_path}/delete_tmp_all_0_0_0" \
         "${disk2_path}/tmp-fetch_1_1_0"
-    cp "${data_path}/format_version.txt" "${disk2_path}/format_version.txt"
 }
 
 setup_bad_version()
@@ -164,10 +162,8 @@ setup_version_directory()
 setup_detached_file()
 {
     local disk2_path="$1"
-    local data_path="$2"
 
     mkdir -p "$disk2_path"
-    cp "${data_path}/format_version.txt" "${disk2_path}/format_version.txt"
     touch "${disk2_path}/detached"
 }
 
