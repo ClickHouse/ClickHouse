@@ -38,12 +38,16 @@ CREATE TABLE t_compact_probe (k String, v UInt64) ENGINE = MergeTree ORDER BY tu
 -- ~4 kept rows per 64K source block (number % 16384 = 0), so nearly every block scatters its few kept
 -- rows over only some of the 4 slots: the other slots' blocks are dropped and the kept siblings must be
 -- compacted. The kept rows carry 1024-byte keys (longer than the block average, the under-counted case);
--- the rejected rows pad the block to ~50 MB total so the uncompacted right side cannot fit the byte cap.
+-- the rejected rows pad the blocks to ~150 MB total so the uncompacted right side cannot fit the byte cap.
+-- The build side is 3x larger than the probe side on purpose: the peak-memory assertion below needs the
+-- pinned-source-blocks term of the broken behavior to scale far above the bound while the fixed peak
+-- stays flat (see the comment before the assertion). The extra build keys (number >= 1000000) never
+-- match any probe row, so the join results do not depend on this scale.
 INSERT INTO t_compact_build
     SELECT if(number % 16384 = 0, concat('key_', toString(number), repeat('x', 1024)), concat('reject_', toString(number), repeat('y', 32))),
            number % 16384 = 0,
            number * 3
-    FROM numbers(1000000);
+    FROM numbers(3000000);
 -- Only the rows that can match carry the long key format; the rest stay short to keep the probe cheap.
 INSERT INTO t_compact_probe
     SELECT if(number % 16384 = 0, concat('key_', toString(number), repeat('x', 1024)), concat('probe_', toString(number))),
@@ -51,16 +55,17 @@ INSERT INTO t_compact_probe
     FROM numbers(1000000);
 
 -- The streaming `hash` control runs UNCAPPED: unlike 04414 (contiguous keep run, so whole blocks pop),
--- here every ~64K source block holds a few kept rows, so the streaming build keeps every block (~50 MB)
+-- here every ~64K source block holds a few kept rows, so the streaming build keeps every block (~150 MB)
 -- - it provides the reference result only.
 SELECT 'compact_drop', count(), sum(cityHash64(l.k, l.v, r.k, r.keep, r.v))
 FROM t_compact_probe l ANY LEFT JOIN t_compact_build r ON l.k = r.k AND r.keep = 1
 SETTINGS join_algorithm = 'hash';
 
--- max_bytes_in_join = 32 MB sits well above the empty per-slot maps' baseline plus the ~62 compacted
--- kept rows (~70 KiB). Before the fix this query ALSO passed the cap - that is the bug: the kept
--- per-slot blocks pinned every ~60 MB source block via the shared selector while their
--- row-proportional charge stayed under the cap, so the real peak was ~61 MiB against a 32 MB limit.
+-- max_bytes_in_join = 32 MB sits well above the empty per-slot maps' baseline plus the ~184 compacted
+-- kept rows (~200 KiB). Before the fix this query ALSO passed the cap - that is the bug: the kept
+-- per-slot blocks pinned all ~150 MB of source blocks via the shared selector while their
+-- row-proportional charge stayed under the cap (measured ~61 MiB real peak on the original ~50 MB
+-- build, i.e. ~180 MiB at this scale, against a 32 MB limit).
 -- The peak-memory assertion below pins the fix (counted == retained), and the result must AGREE with
 -- the streaming `hash` reference above.
 SELECT 'compact_drop', count(), sum(cityHash64(l.k, l.v, r.k, r.keep, r.v))
@@ -89,19 +94,24 @@ SETTINGS join_algorithm = 'parallel_hash';
 
 -- Positive controls for the byte-capped parallel_hash query:
 -- 1. It used the deferred exact-size build, and the reserve is sized by the inserted (keep = 1) keys
---    (~62), not by all 1M build rows - confirming the deferred path engaged and the dropped/compacted
+--    (~184), not by all 3M build rows - confirming the deferred path engaged and the dropped/compacted
 --    blocks stayed out of the sizing.
 -- 2. Its real peak memory respects the byte cap it ran under. Before the fix the row-proportional
 --    charge of the kept per-slot blocks under-counted the pinned source blocks, so the query passed
---    the 32 MB cap while actually peaking at ~61 MiB; with compaction it peaks at ~26 MiB (~30 MB
---    query-wide, a few MB more with the pinned remote read path or coverage instrumentation). The
---    52 MB bound keeps >= 12 MB of margin below the broken ~64 MB level while staying clear of the
---    fixed peak on every storage/build flavor.
+--    the 32 MB cap while its real peak scaled with the whole build side (~180 MB at this 3M-row scale).
+--    With compaction the peak is INDEPENDENT of the build size - only the bounded set of in-flight
+--    source blocks, the ~184 compacted rows and the read buffers stay charged (~26 MiB query-wide,
+--    flat from 1M to 3M build rows) - plus a storage-flavor read-path term the test cannot pin down
+--    (the pinned plain remote read keeps it small on public object-storage runs, but e.g. the
+--    `SharedMergeTree` + distributed-cache flavors still add ~20-30 MB of query-tracked buffers).
+--    The 100 MB bound is what makes the assertion flavor-independent: the flavor term would have to
+--    exceed ~70 MB to false-fail the fixed peak, while the broken peak sits >= 80 MB above the bound
+--    on every flavor because it grows with the build side.
 SYSTEM FLUSH LOGS query_log;
 SELECT 'deferred build engaged',
     countIf(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables'] > 0) = count(),
     max(ProfileEvents['HashJoinDeferredPreallocatedElementsInHashTables']) BETWEEN 1 AND 10000,
-    max(memory_usage) < 52000000
+    max(memory_usage) < 100000000
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_kind = 'Select'
     AND log_comment = '04498_compact_dropped_siblings';
