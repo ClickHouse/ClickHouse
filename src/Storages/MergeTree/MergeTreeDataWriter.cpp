@@ -355,7 +355,7 @@ void updateTTL(
     }
 
     if (update_part_min_max_ttls)
-        ttl_infos.updatePartMinMaxTTL(ttl_info.min, ttl_info.max);
+        ttl_infos.updatePartMinMaxTTL(ttl_info);
 }
 
 void addSubcolumnsFromSortingKeyAndSkipIndicesExpression(const ExpressionActionsPtr & expr, Block & block)
