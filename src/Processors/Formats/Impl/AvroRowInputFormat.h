@@ -97,6 +97,13 @@ private:
         std::vector<int> branch_column_idxs;
         /// For UnionName: per-branch value deserializers for those branch columns
         std::vector<DeserializeFn> branch_column_fns;
+        /// For UnionName: per-branch tuple-field index of a nested union field to expose as
+        /// `<branch>.<field>.$name` (-1 if this branch has no such field)
+        std::vector<int> inner_field_idxs;
+        /// For UnionName: per-branch output column index for `<branch>.<field>.$name`, -1 if not requested
+        std::vector<int> inner_name_col_idxs;
+        /// For UnionName: per-branch mapping from the inner Variant's global discriminator to its avro branch name
+        std::vector<std::vector<std::string>> inner_branch_names;
 
 
         Action() : type(Noop), target_column_idx(0) {}
@@ -128,7 +135,10 @@ private:
             std::vector<DeserializeFn> value_fns,
             std::vector<SkipFn> skip_fns,
             std::vector<int> branch_col_idxs,
-            std::vector<DeserializeFn> branch_col_fns)
+            std::vector<DeserializeFn> branch_col_fns,
+            std::vector<int> inner_field_idxs_ = {},
+            std::vector<int> inner_name_col_idxs_ = {},
+            std::vector<std::vector<std::string>> inner_branch_names_ = {})
         {
             Action a;
             a.type = UnionName;
@@ -139,6 +149,9 @@ private:
             a.branch_skip_fns = std::move(skip_fns);
             a.branch_column_idxs = std::move(branch_col_idxs);
             a.branch_column_fns = std::move(branch_col_fns);
+            a.inner_field_idxs = std::move(inner_field_idxs_);
+            a.inner_name_col_idxs = std::move(inner_name_col_idxs_);
+            a.inner_branch_names = std::move(inner_branch_names_);
             return a;
         }
 
