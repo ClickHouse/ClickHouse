@@ -10615,14 +10615,14 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     return std::make_shared<AlterConversions>(commands, patches_for_reader, query_context);
 }
 
-StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
+PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
     const auto & patch_partition_id = patch_part.info.getPartitionId();
-    auto & metadata_snapshot = patch_parts_metadata_cache[patch_partition_id].metadata;
+    auto & patch_metadata = patch_parts_metadata_cache[patch_partition_id].patch_metadata;
 
-    if (metadata_snapshot)
-        return metadata_snapshot;
+    if (patch_metadata.metadata)
+        return patch_metadata;
 
     const auto & source_parts_set = patch_part.getSourcePartsSet();
 
@@ -10630,19 +10630,21 @@ StorageMetadataPtr MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart 
     {
         case SourcePartsSetForPatch::V1_FORMAT_VERSION:
         {
-            metadata_snapshot = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
+            patch_metadata.version = MergeTreePatchPartsVersion::V1;
+            patch_metadata.metadata = DB::getPatchPartMetadataV1(patch_part.getColumnsDescription(), local_context);
             break;
         }
         case SourcePartsSetForPatch::V2_FORMAT_VERSION:
         {
-            metadata_snapshot = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyColumns(), local_context);
+            patch_metadata.version = MergeTreePatchPartsVersion::V2;
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyColumns(), local_context);
             break;
         }
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown patch part format version: {}", static_cast<UInt32>(source_parts_set.getFormatVersion()));
     }
 
-    return metadata_snapshot;
+    return patch_metadata;
 }
 
 std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
@@ -10657,30 +10659,6 @@ std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(cons
     }
 
     return sorting_key;
-}
-
-PatchPartMetadata MergeTreeData::getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const
-{
-    PatchPartMetadata result;
-    result.version = (*settings)[MergeTreeSetting::patch_parts_version];
-
-    switch (result.version)
-    {
-        case MergeTreePatchPartsVersion::V1:
-        {
-            result.metadata = DB::getPatchPartMetadataV1(std::move(sample_block), local_context);
-            break;
-        }
-        case MergeTreePatchPartsVersion::V2:
-        {
-            auto main_metadata = getInMemoryMetadataPtr(local_context, /*bypass_metadata_cache=*/ false);
-            auto sorting_key_columns = getSortingKeyColumnsForPatch(main_metadata->getSortingKey());
-            result.metadata = DB::getPatchPartMetadataV2(std::move(sample_block), sorting_key_columns, local_context);
-            break;
-        }
-    }
-
-    return result;
 }
 
 MergeTreeData::MergingParams MergeTreeData::getMergingParamsForPatchParts()
@@ -10724,7 +10702,7 @@ std::expected<void, PreformattedMessage> MergeTreeData::supportsLightweightUpdat
     return {};
 }
 
-QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
+MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context)
 {
     auto it = std::ranges::find_if(commands, [](const auto & cmd) { return cmd.type != MutationCommand::UPDATE; });
     if (it != commands.end())
@@ -10734,31 +10712,29 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
 
     MutationCommands commands_to_run;
     auto system_columns = getPatchPartSystemColumns();
-    const auto patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
+    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    const MergeTreePatchPartsVersion patch_parts_version = (*getSettings())[MergeTreeSetting::patch_parts_version];
 
-    /// For v2 patches, additionally read the source columns of the target table's sorting
-    /// key expression through the mutation pipeline, so they land in every patch row.
-    /// A source column may be a subcolumn (e.g. `ORDER BY tup.a`) — it is read as such
-    /// from the main table and stored in the patch part as a physical column.
+    /// For v2 patches, additionally read the source columns of the target table's sorting key expression.
     if (patch_parts_version == MergeTreePatchPartsVersion::V2)
     {
         system_columns.erase(std::ranges::find(system_columns, "_part_offset", &NameAndTypePair::name));
 
         NameSet already_read = system_columns.getNameSet();
-        auto main_metadata = getInMemoryMetadataPtr(query_context, false);
-        const auto & main_columns = main_metadata->getColumns();
+        const auto & main_columns = metadata_snapshot->getColumns();
 
-        Names source_columns;
-        if (main_metadata->hasSortingKey())
-            source_columns = main_metadata->getSortingKey().expression->getRequiredColumns();
-
-        for (const auto & name : source_columns)
+        if (metadata_snapshot->hasSortingKey())
         {
-            if (!already_read.insert(name).second)
-                continue;
+            auto sorting_key_source_columns = metadata_snapshot->getSortingKey().expression->getRequiredColumns();
 
-            auto column = main_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
-            system_columns.push_back(NameAndTypePair{name, column.type});
+            for (const auto & name : sorting_key_source_columns)
+            {
+                if (!already_read.insert(name).second)
+                    continue;
+
+                auto column = main_columns.getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name);
+                system_columns.push_back(NameAndTypePair{name, column.type});
+            }
         }
     }
 
@@ -10779,7 +10755,6 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
     mutation_settings.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     mutation_settings.recalculate_dependencies_of_updated_columns = false;
 
-    const auto metadata_snapshot = getInMemoryMetadataPtr(query_context, false);
     MutationsInterpreter interpreter(
         shared_from_this(), metadata_snapshot,
         commands_to_run, query_context, mutation_settings);
@@ -10800,7 +10775,27 @@ QueryPipeline MergeTreeData::updateLightweightImpl(const MutationCommands & comm
         return std::make_shared<AddDeduplicationInfoTransform>(header);
     });
 
-    return QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+    auto pipeline = QueryPipelineBuilder::getPipeline(std::move(pipeline_builder));
+
+    PatchPartMetadata patch_metadata;
+    patch_metadata.version = patch_parts_version;
+
+    switch (patch_parts_version)
+    {
+        case MergeTreePatchPartsVersion::V1:
+        {
+            patch_metadata.metadata = DB::getPatchPartMetadataV1(pipeline.getHeader(), query_context);
+            break;
+        }
+        case MergeTreePatchPartsVersion::V2:
+        {
+            auto sorting_key_columns = getSortingKeyColumnsForPatch(metadata_snapshot->getSortingKey());
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), sorting_key_columns, query_context);
+            break;
+        }
+    }
+
+    return {std::move(pipeline), std::move(patch_metadata)};
 }
 
 size_t MergeTreeData::getTotalMergesWithTTLInMergeList() const
@@ -11359,9 +11354,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         .withPartInfo(new_part_info)
         .build();
 
-    /// Keep the format version and sort-key columns of the patch partition (copied from a
-    /// covered or sibling part), so the partition stays uniform for merges and for the
-    /// per-partition metadata cache. An empty set is used when there is no part to copy from.
+    /// Keep the format version and sort-key columns of the patch partition.
     if (new_part_info.isPatch())
         new_data_part->setSourcePartsSet(source_parts_set ? std::move(*source_parts_set) : SourcePartsSetForPatch{});
 

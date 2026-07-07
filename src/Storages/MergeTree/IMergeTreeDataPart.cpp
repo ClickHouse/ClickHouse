@@ -760,7 +760,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(*this, storage.getContext());
+        return storage.getPatchPartMetadata(*this, storage.getContext()).metadata;
 
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)

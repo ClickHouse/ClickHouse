@@ -1427,15 +1427,10 @@ public:
 
     void triggerBackgroundOperations();
 
-    /// Returns the metadata snapshot used to read a patch part, rebuilt from the part's columns
+    /// Returns the metadata of an existing patch part, rebuilt from the part's columns
     /// and source-parts set: v1 via `getPatchPartMetadataV1`, v2 via `getPatchPartMetadataV2`
     /// with the persisted sort-key columns. Cached by partition id.
-    StorageMetadataPtr getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
-
-    /// Builds the patch-sink-side `PatchPartMetadata` bundle for a new patch: picks the format
-    /// from the `patch_parts_version` setting and produces the matching patch metadata. For v2
-    /// also captures the sort-key columns, later persisted into `source_parts.dat`.
-    PatchPartMetadata getPatchPartMetadata(Block sample_block, MergeTreeSettingsPtr settings, ContextPtr local_context) const;
+    PatchPartMetadata getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
     /// Returns the effective sorting key for applying a v2 patch part: the longest common
     /// prefix of the patch's persisted sort-key columns and the table's current sorting key.
@@ -1611,12 +1606,12 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// Cached per-partition state of patch parts: the metadata snapshot used to read a patch
-    /// part and (v2 only) the effective sorting key for applying it. Patch parts in one
+    /// Cached per-partition state of patch parts: the metadata used to read a patch part
+    /// and (v2 only) the effective sorting key for applying it. Patch parts in one
     /// partition always have the same structure. The fields are filled lazily and independently.
     struct PatchPartsMetadataCacheEntry
     {
-        StorageMetadataPtr metadata;
+        PatchPartMetadata patch_metadata;
         std::shared_ptr<const KeyDescription> sorting_key;
     };
 
@@ -1984,7 +1979,14 @@ protected:
 
     std::vector<LoadPartResult> loadDataPartsFromDisk(PartLoadingTreeNodes & parts_to_load);
 
-    QueryPipeline updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
+    struct LightweightUpdateResult
+    {
+        QueryPipeline pipeline;
+        PatchPartMetadata patch_metadata;
+    };
+
+    /// Builds a pipeline that reads the updated rows and the metadata of the new patch part.
+    LightweightUpdateResult updateLightweightImpl(const MutationCommands & commands, ContextPtr query_context);
 
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 

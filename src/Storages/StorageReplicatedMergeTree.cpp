@@ -8625,8 +8625,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
         waitForCommittingOpsToFinish(zookeeper, context_copy->getPartitionIdToMaxBlock(getStorageID().uuid), ops, backoff_ms, sync_timeout);
     }
 
-    auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = getPatchPartMetadata(pipeline.getHeader(), getSettings(), context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<ReplicatedMergeTreeSinkPatch>(
         *this,
@@ -8636,7 +8635,7 @@ QueryPipeline StorageReplicatedMergeTree::updateLightweight(const MutationComman
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
-    return pipeline;
+    return std::move(pipeline);
 }
 
 size_t StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
@@ -11299,8 +11298,7 @@ bool StorageReplicatedMergeTree::createEmptyPartInsteadOfLost(zkutil::ZooKeeperP
     auto table_metadata = getInMemoryMetadataPtr(getContext(), false);
 
     MergeTreePartition partition;
-    /// Use a sibling part's metadata and source parts set when possible
-    /// so patch parts get patch-part metadata.
+    /// Use a sibling part's metadata when possible so patch parts get patch-part metadata.
     StorageMetadataPtr metadata_snapshot = table_metadata;
     std::optional<SourcePartsSetForPatch> source_parts_set;
     {

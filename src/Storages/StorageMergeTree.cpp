@@ -1143,8 +1143,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
     /// Updates currently don't work with parallel replicas.
     context_copy->setSetting("max_parallel_replicas", Field(1));
 
-    auto pipeline = updateLightweightImpl(commands, context_copy);
-    auto patch_metadata = getPatchPartMetadata(pipeline.getHeader(), getSettings(), context_copy);
+    auto [pipeline, patch_metadata] = updateLightweightImpl(commands, context_copy);
 
     auto sink = std::make_shared<MergeTreeSinkPatch>(
         *this,
@@ -1154,7 +1153,7 @@ QueryPipeline StorageMergeTree::updateLightweight(const MutationCommands & comma
 
     chassert(!pipeline.completed());
     pipeline.complete(std::move(sink));
-    return pipeline;
+    return std::move(pipeline);
 }
 
 namespace
@@ -2489,8 +2488,7 @@ struct FutureNewEmptyPart
     MergeTreePartInfo part_info;
     MergeTreePartition partition;
     std::string part_name;
-    /// Metadata and (for patch parts) source parts set of the source part being covered;
-    /// see `MergeTreeData::createEmptyPart`.
+    /// Metadata of the source part being covered; see `MergeTreeData::createEmptyPart`.
     StorageMetadataPtr metadata_snapshot;
     std::optional<SourcePartsSetForPatch> source_parts_set;
 
@@ -2535,8 +2533,7 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
     std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_guard>> data_parts;
     for (auto & part: future_parts)
     {
-        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(
-            part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.source_parts_set));
+        auto [new_data_part, tmp_dir_holder] = data.createEmptyPart(part.part_info, part.partition, part.part_name, part.metadata_snapshot, txn, std::move(part.source_parts_set));
         data_parts.first.emplace_back(std::move(new_data_part));
         data_parts.second.emplace_back(std::move(tmp_dir_holder));
     }
