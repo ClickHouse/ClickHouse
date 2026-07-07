@@ -3,7 +3,7 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 -- Otherwise `arrayExists(x -> x = c, arr)` is rewritten to `has(arr, c)` before index
--- analysis and the equals sections below would not exercise the `arrayExists` path.
+-- analysis and the equals sections below would test `has` instead of `arrayExists`.
 SET optimize_rewrite_array_exists_to_has = 0;
 
 DROP TABLE IF EXISTS tab;
@@ -51,6 +51,40 @@ SELECT id FROM tab WHERE arrayExists(x -> 'xyz' = x, arr) ORDER BY id SETTINGS f
 SELECT 'arrayExists with hasToken uses the text index when the index matches hasToken semantics';
 SELECT id FROM tab WHERE arrayExists(x -> hasToken(x, 'foo'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
+SELECT 'arrayExists with hasAnyTokens, hasAllTokens and hasPhrase uses the text index';
+SELECT id FROM tab WHERE arrayExists(x -> hasAnyTokens(x, ['foo', 'xyz']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab WHERE arrayExists(x -> hasAllTokens(x, ['abc', 'def']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab WHERE arrayExists(x -> hasPhrase(x, 'def foo'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'arrayExists with startsWith and endsWith uses the text index';
+SELECT id FROM tab WHERE arrayExists(x -> startsWith(x, 'xy'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab WHERE arrayExists(x -> endsWith(x, 'az'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'arrayExists with ILIKE uses the text index';
+-- `ilike` is evaluated by a dictionary scan, which requires the needle to be at least
+-- `text_index_like_min_pattern_length` characters long (default 4, our needles are 3).
+SELECT id FROM tab WHERE arrayExists(x -> x ILIKE '%FOO%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx', text_index_like_min_pattern_length = 3;
+
+SELECT 'arrayExists with multiSearchAny, multiSearchAnyUTF8 and multiMatchAny uses the text index';
+-- The needles must contain at least one complete token (surrounded by separators),
+-- otherwise the text index bails out and keeps the original predicate.
+SELECT id FROM tab WHERE arrayExists(x -> multiSearchAny(x, [' def ', ' baz ']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab WHERE arrayExists(x -> multiSearchAnyUTF8(x, [' def ', ' baz ']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab WHERE arrayExists(x -> multiMatchAny(x, ['c def f']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'arrayExists with IN over a constant set uses the text index';
+SELECT id FROM tab WHERE arrayExists(x -> x IN ('xyz', 'baz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab WHERE arrayExists(x -> x IN ('xyz', 'baz'), arr)
+) WHERE explain LIKE '%Granules:%' LIMIT 1, 1;
+
+SELECT 'negative functions inside the lambda do not use the index';
+SELECT id FROM tab WHERE arrayExists(x -> x != 'foo', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE arrayExists(x -> x NOT LIKE '%foo%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE arrayExists(x -> x NOT ILIKE '%foo%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab WHERE arrayExists(x -> x NOT IN ('foo', 'xyz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
 SELECT 'negated arrayExists stays correct';
 SELECT id FROM tab WHERE NOT arrayExists(x -> x LIKE '%foo%', arr) ORDER BY id;
 
@@ -85,6 +119,9 @@ INSERT INTO tab_ngrams VALUES (1, ['abc def foo']), (2, ['xyz']);
 SELECT id FROM tab_ngrams WHERE arrayExists(x -> x LIKE '%foo%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_ngrams WHERE arrayExists(x -> match(x, 'foo|xyz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_ngrams WHERE arrayExists(x -> hasToken(x, 'foo'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_ngrams WHERE arrayExists(x -> hasAllTokens(x, ['foo']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+-- The dictionary scan for `ilike` is only supported for the `splitByNonAlpha` and `array` tokenizers.
+SELECT id FROM tab_ngrams WHERE arrayExists(x -> x ILIKE '%FOO%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx', text_index_like_min_pattern_length = 3; -- { serverError INDEX_NOT_USED }
 
 SELECT 'LIKE and match prune granules on the ngrams index';
 SELECT trimLeft(explain) AS explain FROM (
@@ -116,5 +153,6 @@ INSERT INTO tab_preprocessed VALUES (1, ['ABC DEF FOO']), (2, ['xyz']);
 
 SELECT id FROM tab_preprocessed WHERE arrayExists(x -> x LIKE '%FOO%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_preprocessed WHERE arrayExists(x -> hasToken(x, 'FOO'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_preprocessed WHERE arrayExists(x -> hasPhrase(x, 'ABC DEF'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE tab_preprocessed;

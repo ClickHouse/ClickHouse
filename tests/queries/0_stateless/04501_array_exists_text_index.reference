@@ -19,6 +19,32 @@ arrayExists with hasToken uses the text index when the index matches hasToken se
 1
 3
 5
+arrayExists with hasAnyTokens, hasAllTokens and hasPhrase uses the text index
+1
+3
+4
+5
+1
+2
+1
+arrayExists with startsWith and endsWith uses the text index
+4
+3
+arrayExists with ILIKE uses the text index
+1
+3
+5
+arrayExists with multiSearchAny, multiSearchAnyUTF8 and multiMatchAny uses the text index
+1
+2
+1
+2
+1
+arrayExists with IN over a constant set uses the text index
+3
+4
+Granules: 2/6
+negative functions inside the lambda do not use the index
 negated arrayExists stays correct
 2
 4

@@ -13,15 +13,20 @@ the original arrayExists predicate is still applied after the index check
 arrayExists with equals uses the index (both operand orders)
 4
 4
-arrayExists with hasToken, startsWith, multiSearchAny and match uses the index
+arrayExists with hasToken, startsWith, endsWith, multiSearchAny and match uses the index
 1
 3
 5
 4
 3
+3
 4
 3
 4
+arrayExists with IN over a constant set uses the index
+3
+4
+Granules: 2/6
 negated arrayExists stays correct (empty arrays match)
 1
 2
@@ -33,6 +38,7 @@ negative functions inside the lambda do not use the index (empty arrays would be
 3
 4
 5
+functions not supported by the bloom filter index do not use it
 non-constant lambda predicates do not use the index
 1
 2

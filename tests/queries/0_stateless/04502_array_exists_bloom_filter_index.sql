@@ -3,7 +3,7 @@
 SET explain_query_plan_default = 'legacy';
 SET enable_analyzer = 1;
 -- Otherwise `arrayExists(x -> x = c, arr)` is rewritten to `has(arr, c)` before index
--- analysis and the equals sections below would not exercise the `arrayExists` path.
+-- analysis and the equals sections below would test `has` instead of `arrayExists`.
 SET optimize_rewrite_array_exists_to_has = 0;
 
 DROP TABLE IF EXISTS tab_token;
@@ -47,11 +47,19 @@ SELECT 'arrayExists with equals uses the index (both operand orders)';
 SELECT id FROM tab_token WHERE arrayExists(x -> x = 'xyz', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_token WHERE arrayExists(x -> 'xyz' = x, arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 
-SELECT 'arrayExists with hasToken, startsWith, multiSearchAny and match uses the index';
+SELECT 'arrayExists with hasToken, startsWith, endsWith, multiSearchAny and match uses the index';
 SELECT id FROM tab_token WHERE arrayExists(x -> hasToken(x, 'foo'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_token WHERE arrayExists(x -> startsWith(x, 'xyz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT id FROM tab_token WHERE arrayExists(x -> endsWith(x, 'az'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_token WHERE arrayExists(x -> multiSearchAny(x, ['xyz', 'baz']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
 SELECT id FROM tab_token WHERE arrayExists(x -> match(x, 'xyz|baz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+
+SELECT 'arrayExists with IN over a constant set uses the index';
+SELECT id FROM tab_token WHERE arrayExists(x -> x IN ('xyz', 'baz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM tab_token WHERE arrayExists(x -> x IN ('xyz', 'baz'), arr)
+) WHERE explain LIKE '%Granules:%' LIMIT 1, 1;
 
 SELECT 'negated arrayExists stays correct (empty arrays match)';
 SELECT id FROM tab_token WHERE NOT arrayExists(x -> x = 'foo', arr) ORDER BY id;
@@ -59,6 +67,15 @@ SELECT id FROM tab_token WHERE NOT arrayExists(x -> x = 'foo', arr) ORDER BY id;
 SELECT 'negative functions inside the lambda do not use the index (empty arrays would be pruned wrongly)';
 SELECT id FROM tab_token WHERE arrayExists(x -> x != 'foo', arr) ORDER BY id;
 SELECT id FROM tab_token WHERE arrayExists(x -> x != 'foo', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> x NOT LIKE '%foo%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> x NOT IN ('foo', 'xyz'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+
+SELECT 'functions not supported by the bloom filter index do not use it';
+SELECT id FROM tab_token WHERE arrayExists(x -> x ILIKE '%FOO%', arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> multiMatchAny(x, ['xyz', 'baz']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> hasAnyTokens(x, ['foo']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> hasAllTokens(x, ['foo']), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM tab_token WHERE arrayExists(x -> hasPhrase(x, 'abc def'), arr) ORDER BY id SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 SELECT 'non-constant lambda predicates do not use the index';
 SELECT id FROM tab_token WHERE arrayExists(x -> x LIKE needle, arr) ORDER BY id;

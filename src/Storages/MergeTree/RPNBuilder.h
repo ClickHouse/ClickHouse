@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include <Core/Block.h>
@@ -80,11 +81,11 @@ struct DAGLambdaBody
     ActionsDAG actions;
 };
 
-/// Recognizes a lambda in both of its DAG representations:
-///  - a FUNCTION node wrapping `ExecutableFunctionCapture` (captured expressions are the node children);
-///  - a constant-folded COLUMN node holding `ColumnConst` of `ColumnFunction`.
-/// Aliases are unwrapped first. Returns std::nullopt if the node is not a lambda or its
-/// representation is inconsistent.
+/// Recognizes a lambda in both of its DAG representations: a FUNCTION node whose function is
+/// `ExecutableFunctionCapture` (captured expressions are the node children) and a
+/// constant-folded COLUMN node that holds a `ColumnConst` of `ColumnFunction`. Aliases are
+/// unwrapped first. Returns std::nullopt if the node is not a lambda or its representation
+/// is inconsistent.
 std::optional<DAGLambdaBody> tryExtractLambdaBodyDAG(const ActionsDAG::Node & node);
 
 /// Unwraps ALIAS nodes, returning the first non-ALIAS node underneath.
@@ -194,6 +195,34 @@ public:
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
+
+/** Result of matching the shape `arrayExists(elem -> f(elem, rhs), column)`, where `f` is a
+  * function of two arguments that takes `elem`, the only lambda argument, first. The reversed
+  * form `equals(rhs, elem)` is also recognized; every other function requires the element to
+  * be its first argument (the haystack).
+  *
+  * Lifetime: `body_function` and `search_argument` point into `lambda_body.actions` and
+  * reference `*lambda_tree_context`. Both survive moving the struct (`ActionsDAG` keeps its
+  * nodes in a `std::list`, and the context is heap-allocated), but the struct must outlive
+  * any use of them.
+  */
+struct ArrayExistsElementPredicate
+{
+    /// Owns the DAG the nodes below point into.
+    DAGLambdaBody lambda_body;
+    /// Owns the tree context the nodes below reference.
+    std::unique_ptr<RPNBuilderTreeContext> lambda_tree_context;
+    /// The lambda body `f(elem, rhs)` (or `equals(rhs, elem)`).
+    RPNBuilderFunctionTreeNode body_function;
+    /// The argument of `body_function` other than the element: a constant, a set, etc.
+    /// Not validated here.
+    RPNBuilderTreeNode search_argument;
+};
+
+/// Matches `array_exists_node` against the shape described above. Neither the function nor
+/// `search_argument` is validated: each index decides which functions are sound for it and
+/// what the search argument must look like (constant, set, ...).
+std::optional<ArrayExistsElementPredicate> tryExtractArrayExistsElementPredicate(const RPNBuilderFunctionTreeNode & array_exists_node);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *

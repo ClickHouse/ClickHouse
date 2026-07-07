@@ -612,6 +612,43 @@ RPNBuilderTreeNode RPNBuilderFunctionTreeNode::getArgumentAt(size_t index) const
     return RPNBuilderTreeNode(dag_node->children[index], tree_context);
 }
 
+std::optional<ArrayExistsElementPredicate> tryExtractArrayExistsElementPredicate(const RPNBuilderFunctionTreeNode & array_exists_node)
+{
+    if (array_exists_node.getArgumentsSize() != 2)
+        return std::nullopt;
+
+    const auto * lambda_dag_node = array_exists_node.getArgumentAt(0).getDAGNode();
+    if (!lambda_dag_node)
+        return std::nullopt;
+
+    auto lambda_body = tryExtractLambdaBodyDAG(*lambda_dag_node);
+    if (!lambda_body || lambda_body->argument_names.size() != 1 || lambda_body->actions.getOutputs().size() != 1)
+        return std::nullopt;
+
+    const auto & lambda_argument_name = lambda_body->argument_names.front();
+
+    auto lambda_tree_context = std::make_unique<RPNBuilderTreeContext>(array_exists_node.getTreeContext().getQueryContext());
+    RPNBuilderTreeNode body_node(lambda_body->actions.getOutputs().front(), *lambda_tree_context);
+    if (!body_node.isFunction())
+        return std::nullopt;
+
+    auto body_function = body_node.toFunctionNode();
+    if (body_function.getArgumentsSize() != 2)
+        return std::nullopt;
+
+    std::optional<size_t> search_argument_index;
+    if (isLambdaArgumentReference(body_function.getArgumentAt(0), lambda_argument_name))
+        search_argument_index = 1;
+    else if (body_function.getFunctionName() == "equals" && isLambdaArgumentReference(body_function.getArgumentAt(1), lambda_argument_name))
+        search_argument_index = 0;
+
+    if (!search_argument_index)
+        return std::nullopt;
+
+    auto search_argument = body_function.getArgumentAt(*search_argument_index);
+    return ArrayExistsElementPredicate{std::move(*lambda_body), std::move(lambda_tree_context), body_function, search_argument};
+}
+
 template <typename RPNElement>
 RPNBuilder<RPNElement>::RPNBuilder(
     const ActionsDAG::Node * filter_actions_dag_node,
