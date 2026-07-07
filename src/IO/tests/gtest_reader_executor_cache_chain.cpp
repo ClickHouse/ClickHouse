@@ -1459,3 +1459,82 @@ TEST_F(ReaderExecutorCacheChain, AheadClampIgnoresSameTierResidentPrefix)
     }
     EXPECT_EQ(got, content);
 }
+
+
+/// The other half of the pinning model the executor relies on: HIT views are PINNED FACTS.
+/// `planResidencyView`'s readers hold the resident segments for the plan's life, so eviction
+/// pressure between windows cannot take a classified hit out from under the plan - the hit
+/// keeps serving from the cache with ZERO re-fetches. The control at the end proves the
+/// pressure was real: once the plan dies, the same sweep removes the segment.
+TEST_F(ReaderExecutorCacheChain, PlanHeldHitSurvivesEvictionPressure)
+{
+    constexpr size_t segment_size = 64;
+    constexpr size_t file_size = 128;
+    constexpr size_t window = 16;
+
+    const String content = makePattern(file_size);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_size);
+
+    auto fc = makeFileCache("t_view_pin", segment_size, /*max_size=*/1ull << 20);
+    const auto & origin = FileCache::getCommonOrigin();
+
+    /// Warm segment [0,64): after this executor dies its segment is DOWNLOADED and,
+    /// with no holder, releasable.
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> warm_caches;
+        warm_caches.push_back(makeDiskProvider(fc));
+        ReaderExecutor::Options warm_opts;
+        warm_opts.window_size = segment_size;
+        warm_opts.min_bytes_for_seek = 0;
+        ReaderExecutor warmer(source, objects, warm_caches, warm_opts);
+        ASSERT_FALSE(warmer.readNextWindow().empty());
+    }
+
+    const size_t src_before = sourceRequestsSoFar();
+    {
+        VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+        caches.push_back(makeDiskProvider(fc));
+        ReaderExecutor::Options opts;
+        opts.window_size = window;
+        opts.min_bytes_for_seek = 0;
+        opts.plan_look_ahead_max_window = file_size;   /// one plan: hit [0,64) + miss [64,128)
+        opts.long_connection_limit = std::make_shared<LongConnectionLimit>(10);
+        ReaderExecutor executor(source, objects, caches, opts);
+
+        String got;
+        {
+            auto chain = executor.readNextWindow();   /// [0,16): the hit - the plan now holds the view
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+        ASSERT_EQ(got, content.substr(0, got.size()));
+
+        /// Eviction pressure mid-plan: the sweep takes every releasable segment. The hit
+        /// segment is HELD by the plan's view - it must survive.
+        fc->removeAllReleasable(origin.user_id);
+
+        while (true)
+        {
+            auto chain = executor.readNextWindow();
+            if (chain.empty())
+                break;
+            for (const auto & node : chain.getNodes())
+                got.append(node.data(), node.size);
+        }
+        EXPECT_EQ(got, content) << "the pinned hit must keep serving after the sweep";
+    }
+    /// The whole run re-fetched ONLY the cold tail [64,128): the swept-at hit range was
+    /// never re-read from the source.
+    EXPECT_EQ(sourceRequestsSoFar() - src_before, 1u)
+        << "the plan-held hit must not be re-fetched after eviction pressure";
+
+    /// Control - the pressure was real: with the plan gone the same sweep removes the
+    /// segment, and a fresh probe sees it EMPTY.
+    fc->removeAllReleasable(origin.user_id);
+    auto probe = fc->getOrSet(FileCacheKey::fromPath("obj"), 0, segment_size, file_size, {}, 0, origin);
+    EXPECT_EQ(probe->front().state(), FileSegment::State::EMPTY)
+        << "without the plan's hold the sweep must take the segment";
+}
