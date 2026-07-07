@@ -36,7 +36,6 @@
 #include <Parsers/ASTShowProcesslistQuery.h>
 #include <Parsers/ASTTransactionControl.h>
 #include <Parsers/ASTExplainQuery.h>
-#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/parseQuery.h>
