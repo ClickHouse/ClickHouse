@@ -1,0 +1,80 @@
+---
+title: 'Postgres ClickPipe의 동기화 제어'
+description: 'Postgres ClickPipe의 동기화를 제어하는 문서'
+slug: /integrations/clickpipes/postgres/sync_control
+sidebarTitle: '동기화 제어'
+keywords: ['동기화 제어', 'Postgres', 'ClickPipes', '배치 크기', '동기화 간격']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 문서에서는 ClickPipe가 **CDC (실행 중) 모드**에 있을 때 Postgres ClickPipe의 동기화를 제어하는 방법을 설명합니다.
+
+<div id="overview">
+  ## 개요
+</div>
+
+데이터베이스용 ClickPipes의 아키텍처는 두 개의 병렬 프로세스로 구성됩니다. 하나는 원본 데이터베이스에서 데이터를 가져오는 프로세스이고, 다른 하나는 대상 데이터베이스로 데이터를 전송하는 프로세스입니다. 가져오기 프로세스는 데이터를 얼마나 자주 가져올지와 한 번에 얼마나 많은 데이터를 가져올지를 정의하는 동기화 구성에 의해 제어됩니다. 여기서 &quot;한 번에&quot;란 하나의 배치를 의미합니다. ClickPipe는 데이터를 배치 단위로 가져오고 전송하기 때문입니다.
+
+Postgres ClickPipe의 동기화를 제어하는 주요 방법은 두 가지입니다. 아래 설정 중 하나가 적용되면 ClickPipe가 데이터 전송을 시작합니다.
+
+<div id="interval">
+  ### 동기화 간격
+</div>
+
+파이프의 동기화 간격은 ClickPipe가 원본 데이터베이스에서 레코드를 가져오는 시간(초 단위)을 의미합니다. 현재까지 가져온 내용을 ClickHouse로 푸시하는 데 걸리는 시간은 이 간격에 포함되지 않습니다.
+
+기본값은 **1분**입니다.
+동기화 간격은 임의의 양의 정수로 설정할 수 있지만, 10초를 초과하는 값으로 유지하는 것이 좋습니다.
+
+<div id="batch-size">
+  ### 가져오기 배치 크기
+</div>
+
+가져오기 배치 크기는 ClickPipe가 한 번의 배치에서 원본 데이터베이스로부터 가져오는 레코드 수를 의미합니다. 여기서 레코드는 파이프에 포함된 테이블에서 수행된 삽입, 업데이트, 삭제를 뜻합니다.
+
+기본값은 **100,000**개 레코드입니다.
+안전한 최대값은 1,000만 개입니다.
+
+<div id="transactions">
+  ### 예외: 원본 데이터베이스에서 장시간 실행되는 트랜잭션
+</div>
+
+원본 데이터베이스에서 트랜잭션이 실행되면 ClickPipe는 해당 트랜잭션의 COMMIT을 받을 때까지 기다렸다가 그다음으로 진행합니다. 이 동작은 **동기화 간격과 가져오기 배치 크기를 모두 무시합니다**.
+
+<div id="configuring">
+  ### 동기화 설정하기
+</div>
+
+ClickPipe를 생성하거나 기존 ClickPipe를 편집할 때 동기화 간격과 가져오기 배치 크기를 설정할 수 있습니다.
+ClickPipe를 생성할 때는 아래와 같이 생성 마법사의 두 번째 단계에 이 설정이 표시됩니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="동기화 설정 생성" size="md" />
+
+기존 ClickPipe를 편집할 때는 파이프의 **설정** 탭으로 이동하여 파이프를 일시 중지한 다음, 여기에서 **구성**을 클릭합니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="동기화 버튼 편집" size="md" />
+
+그러면 동기화 설정이 포함된 플라이아웃 패널이 열리며, 여기서 동기화 간격과 가져오기 배치 크기를 변경할 수 있습니다:
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="동기화 설정 편집" size="md" />
+
+<div id="tweaking">
+  ### replication slot 증가를 완화하기 위한 sync 설정 조정
+</div>
+
+이 설정을 사용해 CDC 파이프의 큰 replication slot 문제를 처리하는 방법을 살펴보겠습니다.
+원본 데이터베이스에서 데이터를 가져오는 시간에 비해 ClickHouse로 푸시하는 시간은 선형적으로 늘어나지 않습니다. 이 특성을 활용하면 큰 replication slot의 크기를 줄일 수 있습니다.
+동기화 간격과 가져오기 배치 크기를 모두 늘리면 ClickPipe가 원본 데이터베이스에서 많은 데이터를 한 번에 가져온 뒤 ClickHouse로 푸시합니다.
+
+<div id="monitoring">
+  ### 동기화 제어 동작 모니터링
+</div>
+
+ClickPipe의 **메트릭** 탭에 있는 **CDC Syncs** 테이블에서 각 배치에 소요되는 시간을 확인할 수 있습니다. 여기서의 소요 시간에는 푸시 시간도 포함되며, 유입되는 행이 없을 경우 ClickPipe가 대기하는 시간 역시 포함된다는 점에 유의하십시오.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs 테이블" size="md" />

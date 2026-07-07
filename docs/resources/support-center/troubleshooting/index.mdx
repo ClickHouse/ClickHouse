@@ -1,0 +1,138 @@
+---
+slug: /troubleshooting
+sidebarTitle: 'Troubleshooting'
+doc_type: 'guide'
+keywords: [
+  'clickhouse troubleshooting',
+  'clickhouse errors',
+  'database troubleshooting',
+  'clickhouse connection issues',
+  'memory limit exceeded',
+  'clickhouse performance problems',
+  'database error messages',
+  'clickhouse configuration issues',
+  'connection refused error',
+  'clickhouse debugging',
+  'database connection problems',
+  'troubleshooting guide'
+]
+title: 'Troubleshooting common issues'
+description: 'Find solutions to the most common ClickHouse problems including slow queries, memory errors, connection issues, and configuration problems.'
+---
+
+Having problems with ClickHouse? Find the solutions to common issues here.
+
+## Performance and errors {#performance-and-errors}
+
+Queries running slowly, timeouts, or getting specific error messages like "Memory limit exceeded" or "Connection refused."
+
+<Accordion title="Show performance and error solutions">
+### Query performance {#query-performance}
+- [Find which queries are using the most resources](/resources/support-center/knowledge-base/performance-optimization/find-expensive-queries)
+- [Complete query optimization guide](/guides/clickhouse/performance-and-monitoring/query-optimization)
+- [Optimize JOIN operations](/concepts/best-practices/minimize-optimize-joins)
+- [Run diagnostic queries to find bottlenecks](/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+<br/>
+### Data insertion performance {#data-insertion-performance}
+- [Speed up data insertion](/concepts/features/operations/insert/bulkinserts)
+- [Set up asynchronous inserts](/concepts/features/operations/insert/asyncinserts)
+<br/>
+### Advanced analysis tools {#advanced-analysis-tools}
+{/* - [Profile with LLVM XRay](/resources/support-center/knowledge-base/monitoring-debugging/profiling-clickhouse-with-llvm-xray) */}
+- [Check what processes are running](/resources/support-center/knowledge-base/monitoring-debugging/which-processes-are-currently-running)
+- [Monitor system performance](/reference/system-tables/processes)
+<br/>
+### Error messages {#error-messages}
+- **"Memory limit exceeded"** → [Debug memory limit errors](/concepts/features/performance/troubleshoot/debugging-memory-issues)
+- **"Connection refused"** → [Fix connection problems](#connections-and-authentication)
+- **"Login failures"** → [Set up users, roles, and permissions](/concepts/features/security/access-rights)
+- **"SSL certificate errors"** → [Fix certificate problems](/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+- **"Table/database errors"** → [Database creation guide](/reference/statements/create/database) | [Table UUID problems](/reference/engines/database-engines/atomic)
+- **"Network timeouts"** → [Network troubleshooting](/concepts/features/interfaces/http)
+- **Other issues** → [Track errors across your cluster](/reference/system-tables/errors)
+</Accordion>
+
+## Memory and resources {#memory-and-resources}
+
+High memory usage, out-of-memory crashes, or need help sizing your ClickHouse deployment.
+
+<Accordion title="Show memory solutions">
+### Memory debugging and monitoring: {#memory-debugging-and-monitoring}
+
+- [Identify what's using memory](/concepts/features/performance/troubleshoot/debugging-memory-issues)
+- [Check current memory usage](/reference/system-tables/processes)
+- [Memory allocation profiling](/concepts/features/performance/allocation-profiling)
+- [Analyze memory usage patterns](/reference/system-tables/query_log)
+<br/>
+### Memory configuration: {#memory-configuration}
+
+- [Configure memory limits](/concepts/features/configuration/settings/memory-overcommit)
+- [Server memory settings](/reference/settings/server-settings/settings)
+- [Session memory settings](/reference/settings/session-settings)
+<br/>
+### Scaling and sizing: {#scaling-and-sizing}
+
+- [Right-size your service](/guides/oss/best-practices/tips)
+- [Configure automatic scaling](/products/cloud/features/autoscaling/overview)
+</Accordion>
+
+## Connections and Authentication {#connections-and-authentication}
+
+Can't connect to ClickHouse, authentication failures, SSL certificate errors, or client setup issues.
+
+<Accordion title="Show connection solutions">
+### Basic Connection issues {#basic-connection-issues}
+- [Fix HTTP interface issues](/concepts/features/interfaces/http)
+- [Handle SSL certificate problems](/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error)
+- [User authentication setup](/concepts/features/security/access-rights)
+<br/>
+### Client interfaces {#client-interfaces}
+- [Native ClickHouse clients](/concepts/features/interfaces/native-clients-interfaces-index)
+- [MySQL interface problems](/concepts/features/interfaces/mysql)
+- [PostgreSQL interface issues](/concepts/features/interfaces/postgresql)
+- [gRPC interface configuration](/concepts/features/interfaces/grpc)
+- [SSH interface setup](/concepts/features/interfaces/ssh)
+<br/>
+### Network and data {#network-and-data}
+- [Network security settings](/reference/settings/server-settings/settings)
+- [Data format parsing issues](/reference/formats/index)
+</Accordion>
+
+## Setup and configuration {#setup-and-configuration}
+
+Initial installation, server configuration, database creation, data ingestion issues, or replication setup.
+
+<Accordion title="Show setup and configuration solutions">
+### Initial setup {#initial-setup}
+- [Configure server settings](/reference/settings/server-settings/settings)
+- [Set up security and access control](/concepts/features/security/access-rights)
+- [Configure hardware properly](/guides/oss/best-practices/tips)
+<br/>
+### Database management {#database-management}
+- [Create and manage databases](/reference/statements/create/database)
+- [Choose the right table engine](/reference/engines/table-engines/index)
+{/* - [Modify schemas safely](/reference/statements/alter/index) */}
+<br/>
+### Data operations {#data-operations}
+- [Optimize bulk data insertion](/concepts/features/operations/insert/bulkinserts)
+- [Handle data format problems](/reference/formats/index)
+- [Set up streaming data pipelines](/concepts/features/operations/insert/asyncinserts)
+- [Improve S3 integration performance](/integrations/connectors/data-ingestion/AWS/performance)
+<br/>
+### Advanced configuration {#advanced-configuration}
+- [Set up data replication](/reference/engines/table-engines/mergetree-family/replication)
+- [Configure distributed tables](/reference/engines/table-engines/special/distributed)
+{/* - [ClickHouse Keeper setup](/guides/oss/deployment-and-scaling/keeper/index) */}
+- [Set up backup and recovery](/concepts/features/backup-restore/overview)
+- [Configure monitoring](/reference/system-tables/overview)
+</Accordion>
+
+## Still need help? {#still-need-help}
+
+If you can't find a solution:
+
+1. **Ask AI** - <button type="button" onClick={() => { if (typeof window !== 'undefined' && window.Kapa && typeof window.Kapa.open === 'function') window.Kapa.open({ mode: 'ai' }); }} style={{ background: 'none', border: 'none', padding: 0, color: 'var(--primary)', cursor: 'pointer', font: 'inherit', textDecoration: 'underline' }}>Ask AI</button> for instant answers.
+1. **Check system tables** - [Overview](/reference/system-tables/overview)
+2. **Review server logs** - Look for error messages in your ClickHouse logs
+3. **Ask the community** - [Join Our Community Slack](https://clickhouse.com/slack), [GitHub Discussions](https://github.com/ClickHouse/ClickHouse/discussions)
+4. **Get professional support** - [ClickHouse Cloud support](https://clickhouse.com/support)

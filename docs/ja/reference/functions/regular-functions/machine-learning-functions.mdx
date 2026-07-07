@@ -1,0 +1,194 @@
+---
+description: '機械学習関数に関するドキュメント'
+sidebarTitle: '機械学習'
+slug: /sql-reference/functions/machine-learning-functions
+title: '機械学習関数'
+doc_type: 'reference'
+---
+
+<div id="evalmlmethod">
+  ## evalMLMethod
+</div>
+
+学習済みの回帰モデルを使用した予測には、`evalMLMethod` 関数を使用します。詳しくは `linearRegression` のリンクを参照してください。
+
+<div id="stochasticlinearregression">
+  ## stochasticLinearRegression
+</div>
+
+[stochasticLinearRegression](/ja/reference/functions/aggregate-functions/stochasticLinearRegression) 集約関数は、線形モデルと MSE 損失関数を用いた確率的勾配降下法を実装します。新しいデータに対する予測には `evalMLMethod` を使用します。
+
+<div id="stochasticlogisticregression">
+  ## stochasticLogisticRegression
+</div>
+
+[stochasticLogisticRegression](/ja/reference/functions/aggregate-functions/stochasticLogisticRegression) 集約関数は、二値分類問題に対する確率的勾配降下法を実装します。新しいデータに対する予測には `evalMLMethod` を使用します。
+
+<div id="naivebayesclassifier">
+  ## naiveBayesClassifier
+</div>
+
+N-gram とラプラス平滑化を用いた Naive Bayes モデルで入力テキストを分類します。使用する前に、ClickHouse でモデルを設定しておく必要があります。
+
+**構文**
+
+```sql
+naiveBayesClassifier(model_name, input_text);
+```
+
+**引数**
+
+* `model_name` — 事前設定済みモデルの名前。[String](/ja/reference/data-types/string)
+  モデルは ClickHouse の設定ファイルで定義されている必要があります (以下を参照) 。
+* `input_text` — 分類対象のテキスト。[String](/ja/reference/data-types/string)
+  入力は、指定されたとおりにそのまま処理されます (大文字・小文字や句読点は保持されます) 。
+
+**戻り値**
+
+* 予測されたクラス ID を符号なし整数で返します。[UInt32](/ja/reference/data-types/int-uint)
+  クラス ID は、モデル構築時に定義されたカテゴリに対応します。
+
+**例**
+
+言語検出モデルを使用してテキストを分類します：
+
+```sql
+SELECT naiveBayesClassifier('language', 'How are you?');
+```
+
+```response
+┌─naiveBayesClassifier('language', 'How are you?')─┐
+│ 0                                                │
+└──────────────────────────────────────────────────┘
+```
+
+*結果の `0` は英語、`1` はフランス語を表す場合があります。どのクラスが何を意味するかは、学習データによって異なります。*
+
+***
+
+<div id="implementation-details">
+  ### 実装の詳細
+</div>
+
+**アルゴリズム**
+[こちら](https://web.stanford.edu/~jurafsky/slp3/4.pdf)に基づく N-gram の確率を用い、未出現の N-gram に対応するため、[ラプラス平滑化](https://en.wikipedia.org/wiki/Additive_smoothing)を適用した Naive Bayes 分類アルゴリズムを使用します。
+
+**主な機能**
+
+* 任意のサイズの N-gram をサポート
+* 3 つのトークン化モード:
+  * `byte`: 生のバイト列を対象に処理します。各バイトが 1 つのトークンになります。
+  * `codepoint`: UTF‑8 からデコードされた Unicode スカラー値を対象に処理します。各コードポイントが 1 つのトークンになります。
+  * `token`: Unicode の空白文字の連続 (正規表現 `\s+`) で分割します。トークンは空白以外の連続した部分文字列で、句読点が隣接している場合はその句読点もトークンに含まれます (例: `"you?"` は 1 つのトークンです) 。
+
+***
+
+<div id="model-configuration">
+  ### モデル設定
+</div>
+
+言語検出用の Naive Bayes モデルを作成するためのサンプルソースコードは、[こちら](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models)で確認できます。
+
+さらに、サンプルモデルと関連する config ファイルは[こちら](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models)で公開されています。
+
+以下は、ClickHouse における Naive Bayes モデルの設定例です。
+
+```xml
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>sentiment</name>
+            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
+            <n>2</n>
+            <mode>token</mode>
+            <alpha>1.0</alpha>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.6</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.4</value>
+                </prior>
+            </priors>
+        </model>
+    </nb_models>
+</clickhouse>
+```
+
+**設定パラメータ**
+
+| パラメータ      | 説明                                                                                    | 例                                                        | デフォルト |
+| ---------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------- | ----- |
+| **name**   | 一意のモデル識別子                                                                             | `language_detection`                                     | *必須*  |
+| **path**   | モデルのバイナリファイルへの完全パス                                                                    | `/etc/clickhouse-server/config.d/language_detection.bin` | *必須*  |
+| **mode**   | トークン化方式:<br />- `byte`: バイト列<br />- `codepoint`: Unicode 文字<br />- `token`: 単語トークン    | `token`                                                  | *必須*  |
+| **n**      | N-gram のサイズ (`token` モード) :<br />- `1`=単語 1 語<br />- `2`=単語 2 語の組<br />- `3`=単語 3 語の組 | `2`                                                      | *必須*  |
+| **alpha**  | 分類時に、モデルに現れない N-gram に対応するために使用するラプラス平滑化係数                                            | `0.5`                                                    | `1.0` |
+| **priors** | クラス確率 (各クラスに属するドキュメントの割合)                                                             | クラス 0 が 60%、クラス 1 が 40%                                  | 均等分布  |
+
+**モデル学習ガイド**
+
+**ファイルフォーマット**
+可読形式では、`n=1` かつ `token` モードの場合、モデルは次のようになります。
+
+```text
+<class_id> <n-gram> <count>
+0 excellent 15
+1 refund 28
+```
+
+`n=3` かつ `codepoint` モードの場合、次のようになります。
+
+```text
+<class_id> <n-gram> <count>
+0 exc 15
+1 ref 28
+```
+
+人が読める形式は ClickHouse では直接使用されず、以下で説明するバイナリ形式に変換する必要があります。
+
+**バイナリ形式の詳細**
+各 N-gram は、次の形式で格納されます。
+
+1. 4 バイトの `class_id` (UInt、リトルエンディアン)
+2. 4 バイトの `n-gram` のバイト長 (UInt、リトルエンディアン)
+3. 生の `n-gram` バイト列
+4. 4 バイトの `count` (UInt、リトルエンディアン)
+
+**前処理の要件**
+ドキュメントコーパスからモデルを作成する前に、指定された `mode` と `n` に従って N-gram を抽出できるよう、ドキュメントを前処理する必要があります。以下に、その前処理の手順を示します。
+
+1. **トークン化モードに応じて、各ドキュメントの先頭と末尾に境界マーカーを追加します。**
+
+   * **Byte**: `0x01` (先頭) 、`0xFF` (末尾)
+   * **Codepoint**: `U+10FFFE` (先頭) 、`U+10FFFF` (末尾)
+   * **Token**: `<s>` (先頭) 、`</s>` (末尾)
+
+   *注:* `(n - 1)` 個のトークンが、ドキュメントの先頭と末尾の両方に追加されます。
+
+2. **`token` モードでの `n=3` の例:**
+
+   * **Document:** `"ClickHouse is fast"`
+   * **Processed as:** `<s> <s> ClickHouse is fast </s> </s>`
+   * **生成されるトライグラム:**
+     * `<s> <s> ClickHouse`
+     * `<s> ClickHouse is`
+     * `ClickHouse is fast`
+     * `is fast </s>`
+     * `fast </s> </s>`
+
+`byte` モードおよび `codepoint` モードでのモデル作成を簡単にするには、まず文書をトークン列に分割しておくと便利です (`byte` モードでは `byte` のリスト、`codepoint` モードでは `codepoint` のリスト) 。次に、文書の先頭に `n - 1` 個の開始トークンを、末尾に `n - 1` 個の終了トークンを追加します。最後に、N-gram を生成してシリアライズ済みファイルに書き込みます。
+
+***
+
+{/* 
+  以下のタグ内の内容は、ドキュメントフレームワークのビルド時に
+  system.functions から生成されたドキュメントに置き換えられます。タグは変更または削除しないでください。
+  参照: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+{/*AUTOGENERATED_END*/}

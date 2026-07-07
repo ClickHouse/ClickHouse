@@ -1,0 +1,431 @@
+---
+sidebarTitle: 'SQL Console'
+title: 'SQL Console'
+slug: /integrations/sql-clients/sql-console
+description: 'Conheça o SQL Console'
+doc_type: 'guide'
+keywords: ['sql console', 'interface de consulta', 'interface web', 'sql editor', 'cloud console']
+integration:
+   - support_level: 'community'
+   - category: 'sql_client'
+---
+
+import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O SQL Console é a maneira mais rápida e fácil de explorar e consultar seus bancos de dados no ClickHouse Cloud. Você pode usar o SQL Console para:
+
+* Conectar-se aos seus serviços do ClickHouse Cloud
+* Visualizar, filtrar e ordenar dados de tabelas
+* Executar consultas e visualizar os resultados com apenas alguns cliques
+* Compartilhar consultas com membros da equipe e colaborar com mais eficiência.
+
+<div id="exploring-tables">
+  ## Explorando tabelas
+</div>
+
+<div id="viewing-table-list-and-schema-info">
+  ### Visualizar a lista de tabelas e informações de esquema
+</div>
+
+Uma visão geral das tabelas contidas na sua instância do ClickHouse pode ser encontrada na barra lateral esquerda. Use o seletor de banco de dados na parte superior dessa barra para ver as tabelas de um banco de dados específico
+
+<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="lg" border alt="Lista de tabelas e visualização do esquema mostrando as tabelas do banco de dados na barra lateral esquerda" />
+
+As tabelas da lista também podem ser expandidas para ver colunas e tipos de dados
+
+<Image img="/images/cloud/sqlconsole/view-columns.webp" size="lg" border alt="Visualização de uma tabela expandida mostrando nomes de colunas e tipos de dados" />
+
+<div id="exploring-table-data">
+  ### Explorando os dados da tabela
+</div>
+
+Clique em uma tabela na lista para abri-la em uma nova aba. Na visualização da tabela, os dados podem ser facilmente visualizados, selecionados e copiados. Observe que a estrutura e a formatação são preservadas ao copiar e colar em aplicativos de planilha, como Microsoft Excel e Google Sheets. Você pode navegar entre as páginas dos dados da tabela (paginados em grupos de 30 linhas) usando a navegação no rodapé.
+
+<Image img="/images/cloud/sqlconsole/abc.webp" size="lg" border alt="Visualização da tabela mostrando dados que podem ser selecionados e copiados" />
+
+<div id="inspecting-cell-data">
+  ### Inspecionando os dados da célula
+</div>
+
+A ferramenta Cell Inspector pode ser usada para visualizar grandes quantidades de dados contidas em uma única célula. Para abri-la, clique com o botão direito em uma célula e selecione &#39;Inspecionar célula&#39;. O conteúdo do Cell Inspector pode ser copiado clicando no ícone de cópia no canto superior direito.
+
+<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="lg" border alt="Janela do Cell Inspector mostrando o conteúdo de uma célula selecionada" />
+
+<div id="filtering-and-sorting-tables">
+  ## Filtrar e ordenar tabelas
+</div>
+
+<div id="sorting-a-table">
+  ### Ordenando uma tabela
+</div>
+
+Para ordenar uma tabela no SQL Console, abra uma tabela e selecione o botão &#39;Ordenar&#39; na barra de ferramentas. Esse botão abrirá um menu no qual você poderá configurar a ordenação. Você pode escolher a coluna pela qual deseja ordenar e definir a ordem da classificação (crescente ou decrescente). Selecione &#39;Aplicar&#39; ou pressione Enter para ordenar a tabela
+
+<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="lg" border alt="Caixa de diálogo de ordenação mostrando a configuração de ordenação decrescente em uma coluna" />
+
+O SQL Console também permite adicionar várias ordenações a uma tabela. Clique no botão &#39;Ordenar&#39; novamente para adicionar outra ordenação. Observação: as ordenações são aplicadas na ordem em que aparecem no painel de ordenação (de cima para baixo). Para remover uma ordenação, basta clicar no botão &#39;x&#39; ao lado dela.
+
+<div id="filtering-a-table">
+  ### Filtrando uma tabela
+</div>
+
+Para filtrar uma tabela no SQL Console, abra uma tabela e selecione o botão &#39;Filtrar&#39;. Assim como na ordenação, esse botão abrirá um menu que permitirá configurar o filtro. Você pode escolher uma coluna para filtrar e selecionar os critérios necessários. O SQL Console exibe de forma inteligente opções de filtro que correspondem ao tipo de dado contido na coluna.
+
+<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="lg" border alt="Caixa de diálogo de filtro mostrando a configuração para filtrar a coluna de rádio igual a GSM" />
+
+Quando estiver satisfeito com o filtro, você pode selecionar &#39;Aplicar&#39; para filtrar os dados. Também é possível adicionar filtros extras, como mostrado abaixo.
+
+<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="lg" border alt="Caixa de diálogo mostrando como adicionar um filtro adicional para um intervalo maior que 2000" />
+
+Assim como na funcionalidade de ordenação, clique no botão &#39;x&#39; ao lado de um filtro para removê-lo.
+
+<div id="filtering-and-sorting-together">
+  ### Filtragem e ordenação juntas
+</div>
+
+O SQL Console permite filtrar e ordenar uma tabela ao mesmo tempo. Para fazer isso, adicione todos os filtros e ordenações desejados seguindo as etapas descritas acima e clique no botão &#39;Aplicar&#39;.
+
+<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="lg" border alt="Interface mostrando filtragem e ordenação aplicadas simultaneamente" />
+
+<div id="creating-a-query-from-filters-and-sorts">
+  ### Criando uma consulta a partir de filtros e ordenações
+</div>
+
+O SQL Console pode converter suas ordenações e filtros diretamente em consultas com um clique. Basta selecionar o botão &#39;Create Query&#39; na barra de ferramentas com os parâmetros de ordenação e filtro que desejar. Depois de clicar em &#39;Create Query&#39;, uma nova aba de consulta será aberta, já preenchida com o comando SQL correspondente aos dados exibidos na visualização da tabela.
+
+<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="lg" border alt="Interface mostrando o botão Create Query, que gera SQL a partir de filtros e ordenações" />
+
+<Note>
+  Filtros e ordenações não são obrigatórios ao usar o recurso &#39;Create Query&#39;.
+</Note>
+
+Você pode saber mais sobre como fazer consultas no SQL Console lendo a documentação de consultas (link).
+
+<div id="creating-and-running-a-query">
+  ## Criar e executar uma consulta
+</div>
+
+<div id="creating-a-query">
+  ### Criando uma consulta
+</div>
+
+Há duas maneiras de criar uma nova consulta no SQL Console.
+
+* Clique no botão &#39;+&#39; na barra de abas
+* Selecione o botão &#39;New Query&#39; na lista de consultas na barra lateral esquerda
+
+<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="lg" border alt="Interface mostrando como criar uma nova consulta usando o botão + ou o botão New Query" />
+
+<div id="running-a-query">
+  ### Executando uma consulta
+</div>
+
+Para executar uma consulta, digite seu comando SQL ou comandos no SQL Editor e clique no botão &#39;Run&#39; ou use o atalho `cmd / ctrl + enter`. Para escrever e executar vários comandos em sequência, adicione um ponto e vírgula ao final de cada comando.
+
+Opções de execução de consulta
+Por padrão, clicar no botão Run executará todos os comandos contidos no SQL Editor. O SQL Console oferece outras duas opções de execução de consulta:
+
+* Executar comandos selecionados
+* Executar o comando na posição do cursor
+
+Para executar comandos selecionados, destaque o comando desejado ou a sequência de comandos e clique no botão &#39;Run&#39; (ou use o atalho `cmd / ctrl + enter`). Você também pode selecionar &#39;Run selected&#39; no menu de contexto do SQL Editor (aberto ao clicar com o botão direito em qualquer lugar do editor) quando houver uma seleção.
+
+<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="lg" border alt="Interface mostrando como executar uma parte selecionada de uma consulta SQL" />
+
+A execução do comando na posição atual do cursor pode ser feita de duas maneiras:
+
+* Selecione &#39;At Cursor&#39; no menu expandido de opções de execução (ou use o atalho de teclado correspondente `cmd / ctrl + shift + enter`
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="lg" border alt="Opção Run at cursor no menu expandido de opções de execução" />
+
+* Selecione &#39;Run at cursor&#39; no menu de contexto do SQL Editor
+
+<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="lg" border alt="Opção Run at cursor no menu de contexto do SQL Editor" />
+
+<Note>
+  O comando na posição do cursor piscará em amarelo durante a execução.
+</Note>
+
+<div id="canceling-a-query">
+  ### Cancelando uma consulta
+</div>
+
+Enquanto uma consulta estiver em execução, o botão &#39;Run&#39; na barra de ferramentas do Editor de consultas será substituído pelo botão &#39;Cancel&#39;. Basta clicar nesse botão ou pressionar `Esc` para cancelar a consulta. Observação: todos os resultados que já tiverem sido retornados permanecerão após o cancelamento.
+
+<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="lg" border alt="Botão 'Cancel' exibido durante a execução da consulta" />
+
+<div id="saving-a-query">
+  ### Salvando uma consulta
+</div>
+
+Se ainda não tiver um nome, sua consulta deve aparecer como &#39;Untitled Query&#39;. Clique no nome da consulta para alterá-lo. Ao renomear uma consulta, ela será salva.
+
+<Image img="/images/cloud/sqlconsole/give-a-query-a-name.webp" size="lg" border alt="Interface mostrando como renomear uma consulta a partir de Untitled Query" />
+
+Você também pode usar o botão Salvar ou o atalho de teclado `cmd / ctrl + s` para salvar uma consulta.
+
+<Image img="/images/cloud/sqlconsole/save-the-query.webp" size="lg" border alt="Botão Salvar na barra de ferramentas do editor de consultas" />
+
+<div id="using-genai-to-manage-queries">
+  ## Usando GenAI para gerenciar consultas
+</div>
+
+Este recurso permite que você escreva consultas como perguntas em linguagem natural e que o console de consultas crie consultas SQL com base no contexto das tabelas disponíveis. O GenAI também pode ajudar você a depurar suas consultas.
+
+Para mais informações sobre o GenAI, confira o post do blog [Announcing GenAI powered query suggestions in ClickHouse Cloud](https://clickhouse.com/blog/announcing-genai-powered-query-suggestions-clickhouse-cloud).
+
+<div id="table-setup">
+  ### Configuração da tabela
+</div>
+
+Vamos importar o example dataset UK Price Paid e usá-lo para criar algumas consultas com GenAI.
+
+1. Abra um serviço do ClickHouse Cloud.
+
+2. Crie uma nova consulta clicando no ícone *+*.
+
+3. Cole e execute o código a seguir:
+
+   ```sql
+   CREATE TABLE uk_price_paid
+   (
+       price UInt32,
+       date Date,
+       postcode1 LowCardinality(String),
+       postcode2 LowCardinality(String),
+       type Enum8('terraced' = 1, 'semi-detached' = 2, 'detached' = 3, 'flat' = 4, 'other' = 0),
+       is_new UInt8,
+       duration Enum8('freehold' = 1, 'leasehold' = 2, 'unknown' = 0),
+       addr1 String,
+       addr2 String,
+       street LowCardinality(String),
+       locality LowCardinality(String),
+       town LowCardinality(String),
+       district LowCardinality(String),
+       county LowCardinality(String)
+   )
+   ENGINE = MergeTree
+   ORDER BY (postcode1, postcode2, addr1, addr2);
+   ```
+
+   Essa consulta deve levar cerca de 1 segundo para ser concluída. Quando terminar, você deverá ter uma tabela vazia chamada &#96;uk&#95;price&#95;paid.
+
+4. Crie uma nova consulta e cole a consulta a seguir:
+
+   ```sql
+   INSERT INTO uk_price_paid
+   WITH
+      splitByChar(' ', postcode) AS p
+   SELECT
+       toUInt32(price_string) AS price,
+       parseDateTimeBestEffortUS(time) AS date,
+       p[1] AS postcode1,
+       p[2] AS postcode2,
+       transform(a, ['T', 'S', 'D', 'F', 'O'], ['terraced', 'semi-detached', 'detached', 'flat', 'other']) AS type,
+       b = 'Y' AS is_new,
+       transform(c, ['F', 'L', 'U'], ['freehold', 'leasehold', 'unknown']) AS duration,
+       addr1,
+       addr2,
+       street,
+       locality,
+       town,
+       district,
+       county
+   FROM url(
+       'http://prod.publicdata.landregistry.gov.uk.s3-website-eu-west-1.amazonaws.com/pp-complete.csv',
+       'CSV',
+       'uuid_string String,
+       price_string String,
+       time String,
+       postcode String,
+       a String,
+       b String,
+       c String,
+       addr1 String,
+       addr2 String,
+       street String,
+       locality String,
+       town String,
+       district String,
+       county String,
+       d String,
+       e String'
+   ) SETTINGS max_http_get_redirects=10;
+   ```
+
+Essa consulta busca o conjunto de dados no site `gov.uk`. Esse arquivo tem cerca de 4 GB, então a consulta levará alguns minutos para ser concluída. Depois que o ClickHouse processar a consulta, você terá o conjunto de dados completo na tabela `uk_price_paid`.
+
+<div id="query-creation">
+  #### Criação de consulta
+</div>
+
+Vamos criar uma consulta usando linguagem natural.
+
+1. Selecione a tabela **uk&#95;price&#95;paid** e, em seguida, clique em **Create Query**.
+
+2. Clique em **Generate SQL**. Pode ser solicitado que você aceite que suas consultas sejam enviadas ao ChatGPT. Você deve selecionar **I agree** para continuar.
+
+3. Agora você pode usar este prompt para inserir uma consulta em linguagem natural e fazer com que o ChatGPT a converta em uma consulta SQL. Neste exemplo, vamos inserir:
+
+   > Mostre o preço total e o número total de todas as transações da uk&#95;price&#95;paid por ano.
+
+4. O Console vai gerar a consulta que estamos procurando e exibi-la em uma nova aba. No nosso exemplo, o GenAI criou a seguinte consulta:
+
+   ```sql
+   -- Mostre o preço total e o número total de todas as transações da uk_price_paid por ano.
+   SELECT year(date), sum(price) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+5. Depois de verificar que a consulta está correta, clique em **Run** para executá-la.
+
+<div id="debugging">
+  ### Depuração
+</div>
+
+Agora, vamos testar os recursos de depuração de consultas do GenAI.
+
+1. Crie uma nova consulta clicando no ícone *+* e cole o código abaixo:
+
+   ```sql
+   -- Mostre o preço total e o número total de todas as transações uk_price_paid por ano.
+   SELECT year(date), sum(pricee) as total_price, Count(*) as total_transactions
+   FROM uk_price_paid
+   GROUP BY year(date)
+   ```
+
+2. Clique em **Run**. A consulta falha, pois estamos tentando usar valores de `pricee` em vez de `price`.
+
+3. Clique em **Fix Query**.
+
+4. O GenAI vai tentar corrigir a consulta. Neste caso, ele alterou `pricee` para `price`. Ele também identificou que `toYear` é uma função mais adequada para este cenário.
+
+5. Selecione **Apply** para adicionar as alterações sugeridas à sua consulta e clique em **Run**.
+
+Lembre-se de que o GenAI é um recurso experimental. Tenha cautela ao executar consultas geradas pelo GenAI em qualquer conjunto de dados.
+
+<div id="advanced-querying-features">
+  ## Recursos avançados para consultas
+</div>
+
+<div id="searching-query-results">
+  ### Buscando nos resultados da consulta
+</div>
+
+Depois que uma consulta é executada, você pode pesquisar rapidamente no conjunto de resultados retornado usando o campo de busca no painel de resultados. Esse recurso ajuda a visualizar previamente os resultados de uma cláusula `WHERE` adicional ou simplesmente a verificar se determinados dados estão incluídos no conjunto de resultados. Depois de inserir um valor no campo de busca, o painel de resultados será atualizado e retornará registros que contenham um valor correspondente ao que foi inserido. Neste exemplo, vamos procurar todas as ocorrências de `breakfast` na tabela `hackernews` em comentários que contenham `ClickHouse` (sem diferenciar maiúsculas de minúsculas):
+
+<Image img="/images/cloud/sqlconsole/search-hn.webp" size="lg" border alt="Buscar dados do Hacker News" />
+
+Observação: qualquer campo que corresponda ao valor inserido será retornado. Por exemplo, o terceiro registro na captura de tela acima não corresponde a &#39;breakfast&#39; no campo `by`, mas corresponde no campo `text`:
+
+<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="lg" border alt="Correspondência no corpo" />
+
+<div id="adjusting-pagination-settings">
+  ### Ajustando as configurações de paginação
+</div>
+
+Por padrão, o painel de resultados da consulta exibe todos os registros de resultado em uma única página. Para conjuntos de resultados maiores, pode ser preferível paginar os resultados para facilitar a visualização. Isso pode ser feito usando o seletor de paginação no canto inferior direito do painel de resultados da consulta:
+
+<Image img="/images/cloud/sqlconsole/pagination.webp" size="lg" border alt="Opções de paginação" />
+
+Ao selecionar um tamanho de página, a paginação será aplicada imediatamente ao conjunto de resultados, e as opções de navegação aparecerão no centro do rodapé do painel de resultados da consulta
+
+<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="lg" border alt="Navegação da paginação" />
+
+<div id="exporting-query-result-data">
+  ### Exportando os dados do resultado da consulta
+</div>
+
+Os resultados da consulta podem ser exportados facilmente em formato CSV diretamente do console SQL. Para isso, abra o menu `•••` no lado direito da barra de ferramentas do painel de resultados e selecione &#39;Baixar como CSV&#39;.
+
+<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="lg" border alt="Baixar como CSV" />
+
+<div id="visualizing-query-data">
+  ## Visualizando dados de consulta
+</div>
+
+Alguns dados podem ser interpretados mais facilmente em forma de gráfico. Você pode criar visualizações rapidamente a partir dos dados resultantes da consulta diretamente no SQL Console com apenas alguns cliques. Como exemplo, vamos usar uma consulta que calcula estatísticas semanais de corridas de táxi em NYC:
+
+```sql
+SELECT
+   toStartOfWeek(pickup_datetime) AS week,
+   sum(total_amount) AS fare_total,
+   sum(trip_distance) AS distance_total,
+   count(*) AS trip_total
+FROM
+   nyc_taxi
+GROUP BY
+   1
+ORDER BY
+   1 ASC
+```
+
+<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="lg" border alt="Resultados tabulares da consulta" />
+
+Sem uma visualização, esses resultados são difíceis de interpretar. Vamos transformá-los em um gráfico.
+
+<div id="creating-charts">
+  ### Criando gráficos
+</div>
+
+Para começar a montar sua visualização, selecione a opção &#39;Chart&#39; na barra de ferramentas do painel de resultados da consulta. Um painel de configuração do gráfico será exibido:
+
+<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="lg" border alt="Alternar da consulta para o gráfico" />
+
+Vamos começar criando um gráfico de barras simples para acompanhar `trip_total` por `week`. Para isso, arrastaremos o campo `week` para o eixo x e o campo `trip_total` para o eixo y:
+
+<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="lg" border alt="Total de viagens por semana" />
+
+A maioria dos tipos de gráfico oferece suporte a vários campos nos eixos numéricos. Para demonstrar, arrastaremos o campo fare&#95;total para o eixo y:
+
+<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="lg" border alt="Gráfico de barras" />
+
+<div id="customizing-charts">
+  ### Personalizando gráficos
+</div>
+
+O SQL Console oferece suporte a dez tipos de gráfico que podem ser selecionados no seletor de tipos de gráfico, no painel de configuração do gráfico. Por exemplo, podemos alterar facilmente o tipo do gráfico anterior de Barra para Área:
+
+<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="lg" border alt="Alterar de gráfico de Barras para Área" />
+
+Os títulos dos gráficos correspondem ao nome da consulta que fornece os dados. Ao atualizar o nome da consulta, o título do gráfico também é atualizado:
+
+<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="lg" border alt="Atualizar nome da consulta" />
+
+Algumas características mais avançadas do gráfico também podem ser ajustadas na seção &#39;Advanced&#39; do painel de configuração do gráfico. Para começar, vamos ajustar as seguintes configurações:
+
+* Subtítulo
+* Títulos dos eixos
+* Orientação dos rótulos no eixo x
+
+Nosso gráfico será atualizado de acordo:
+
+<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="lg" border alt="Atualizar subtítulo etc." />
+
+Em alguns cenários, pode ser necessário ajustar de forma independente as escalas dos eixos de cada campo. Isso também pode ser feito na seção &#39;Advanced&#39; do painel de configuração do gráfico, especificando valores mínimo e máximo para uma faixa do eixo. Como exemplo, o gráfico acima está bom, mas, para demonstrar a correlação entre nossos campos `trip_total` e `fare_total`, as faixas dos eixos precisam de alguns ajustes:
+
+<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="lg" border alt="Ajustar escala do eixo" />
+
+<div id="sharing-queries">
+  ## Compartilhar consultas
+</div>
+
+O SQL Console permite compartilhar consultas com sua equipe. Quando uma consulta é compartilhada, todos os membros da equipe podem ver e editar a consulta. Consultas compartilhadas são uma ótima forma de colaborar com sua equipe.
+
+Para compartilhar uma consulta, clique no botão &#39;Share&#39; na barra de ferramentas da consulta.
+
+<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="lg" border alt="Botão Share na barra de ferramentas da consulta" />
+
+Uma caixa de diálogo será aberta, permitindo que você compartilhe a consulta com todos os membros de uma equipe. Se você tiver várias equipes, poderá selecionar com qual equipe compartilhar a consulta.
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="lg" border alt="Caixa de diálogo para editar o acesso a uma consulta compartilhada" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="lg" border alt="Interface para adicionar uma equipe a uma consulta compartilhada" />
+
+<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="lg" border alt="Interface para editar o acesso de um membro a uma consulta compartilhada" />
+
+Em alguns cenários, pode ser necessário ajustar as escalas dos eixos de cada campo de forma independente. Isso também pode ser feito na seção &#39;Advanced&#39; do painel de configuração do gráfico, especificando valores mínimo e máximo para um intervalo do eixo. Por exemplo, o gráfico acima parece bom, mas, para demonstrar a correlação entre nossos campos `trip_total` e `fare_total`, os intervalos dos eixos precisam de alguns ajustes:
+
+<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="lg" border alt="Seção Shared with me na lista de consultas" />

@@ -1,0 +1,238 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/streamlit-agent
+sidebarTitle: '集成 Streamlit'
+title: '如何使用 Streamlit 构建以 ClickHouse 为后端的 AI 智能体'
+description: '了解如何使用 Streamlit 和 ClickHouse MCP 服务器构建一个 Web 版 AI 智能体'
+keywords: ['ClickHouse', 'MCP', 'Streamlit', 'Agno', 'AI 智能体']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将学习如何使用 [Streamlit](https://streamlit.io/) 构建一个 Web 版 AI 智能体，并借助 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/)、[ClickHouse 的 MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 和 [Agno](https://github.com/agno-agi/agno) 与 ClickHouse 交互。
+
+<Info>
+  **示例应用**
+
+  此示例将创建一个完整的 Web 应用，提供用于查询 ClickHouse 数据的聊天界面。
+  你可以在 [examples 仓库](https://github.com/ClickHouse/examples/tree/main/ai/mcp/streamlit) 中找到此示例的源代码。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你需要在系统中安装 Python。
+  还需要安装 [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+* 你需要准备一个 Anthropic API key，或其他 LLM 提供商的 API key
+
+你可以按照以下步骤创建 Streamlit 应用程序。
+
+<Steps>
+  <Step>
+    ## 安装依赖库
+
+    运行以下命令安装所需的依赖库：
+
+    ```bash
+    pip install streamlit agno ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## 创建工具文件
+
+    创建一个 `utils.py` 文件，其中包含两个工具函数。第一个是一个异步生成器函数，用于处理来自
+    Agno agent 的 stream 响应。第二个函数用于为 Streamlit
+    应用程序应用样式：
+
+    ```python title="utils.py"
+    import streamlit as st
+    from agno.run.response import RunEvent, RunResponse
+
+    async def as_stream(response):
+        async for chunk in response:
+            if isinstance(chunk, RunResponse) and isinstance(chunk.content, str):
+                if chunk.event == RunEvent.run_response:
+                    yield chunk.content
+
+    def apply_styles():
+        st.markdown("""
+      <style>
+      hr.divider {
+      background-color: white;
+      margin: 0;
+      }
+      </style>
+      <hr class='divider' />""", unsafe_allow_html=True)
+    ```
+  </Step>
+
+  <Step>
+    ## 配置凭证
+
+    将 Anthropic API 密钥设置为环境变量：
+
+    ```bash
+    export ANTHROPIC_API_KEY="your_api_key_here"
+    ```
+
+    <Info>
+      **使用其他 LLM 提供商**
+
+      如果您没有 Anthropic API 密钥，但想使用其他 LLM 提供商，
+      可以在 [Agno“Integrations”文档](https://docs.agentops.ai/v2/integrations/ag2)中找到设置凭据的说明。
+    </Info>
+  </Step>
+
+  <Step>
+    ## 导入所需库
+
+    首先创建主 Streamlit 应用文件 (例如 `app.py`) ，然后添加以下导入：
+
+    ```python
+    from utils import apply_styles
+
+    import streamlit as st
+    from textwrap import dedent
+
+    from agno.models.anthropic import Claude
+    from agno.agent import Agent
+    from agno.tools.mcp import MCPTools
+    from agno.storage.json import JsonStorage
+    from agno.run.response import RunEvent, RunResponse
+    from mcp.client.stdio import stdio_client, StdioServerParameters
+
+    from mcp import ClientSession
+
+    import asyncio
+    import threading
+    from queue import Queue
+    ```
+  </Step>
+
+  <Step>
+    ## 定义 agent 流式处理函数
+
+    添加主 agent 函数，使其连接到 [ClickHouse 的 SQL playground](https://sql.clickhouse.com/)，并以流式方式返回响应：
+
+    ```python
+    async def stream_clickhouse_agent(message):
+        env = {
+                "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+                "CLICKHOUSE_PORT": "8443",
+                "CLICKHOUSE_USER": "demo",
+                "CLICKHOUSE_PASSWORD": "",
+                "CLICKHOUSE_SECURE": "true"
+            }
+        
+        server_params = StdioServerParameters(
+            command="uv",
+            args=[
+            'run',
+            '--with', 'mcp-clickhouse',
+            '--python', '3.13',
+            'mcp-clickhouse'
+            ],
+            env=env
+        )
+        
+        async with stdio_client(server_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                mcp_tools = MCPTools(timeout_seconds=60, session=session)
+                await mcp_tools.initialize()
+                agent = Agent(
+                    model=Claude(id="claude-3-5-sonnet-20240620"),
+                    tools=[mcp_tools],
+                    instructions=dedent("""\
+                        You are a ClickHouse assistant. Help users query and understand data using ClickHouse.
+                        - Run SQL queries using the ClickHouse MCP tool
+                        - Present results in markdown tables when relevant
+                        - Keep output concise, useful, and well-formatted
+                    """),
+                    markdown=True,
+                    show_tool_calls=True,
+                    storage=JsonStorage(dir_path="tmp/team_sessions_json"),
+                    add_datetime_to_instructions=True, 
+                    add_history_to_messages=True,
+                )
+                chunks = await agent.arun(message, stream=True)
+                async for chunk in chunks:
+                    if isinstance(chunk, RunResponse) and chunk.event == RunEvent.run_response:
+                        yield chunk.content
+    ```
+  </Step>
+
+  <Step>
+    ## 添加同步封装函数
+
+    添加辅助函数，以处理 Streamlit 中的异步流式传输：
+
+    ```python
+    def run_agent_query_sync(message):
+        queue = Queue()
+        def run():
+            asyncio.run(_agent_stream_to_queue(message, queue))
+            queue.put(None)  # 哨兵值，用于结束流
+        threading.Thread(target=run, daemon=True).start()
+        while True:
+            chunk = queue.get()
+            if chunk is None:
+                break
+            yield chunk
+
+    async def _agent_stream_to_queue(message, queue):
+        async for chunk in stream_clickhouse_agent(message):
+            queue.put(chunk)
+    ```
+  </Step>
+
+  <Step>
+    ## 创建 Streamlit 界面
+
+    添加 Streamlit UI 组件和聊天功能：
+
+    ```python
+    st.title("A ClickHouse-backed AI agent")
+
+    if st.button("💬 New Chat"):
+      st.session_state.messages = []
+      st.rerun()
+
+    apply_styles()
+
+    if "messages" not in st.session_state:
+      st.session_state.messages = []
+
+    for message in st.session_state.messages:
+      with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+    if prompt := st.chat_input("What is up?"):
+      st.session_state.messages.append({"role": "user", "content": prompt})
+      with st.chat_message("user"):
+        st.markdown(prompt)
+      with st.chat_message("assistant"):
+        response = st.write_stream(run_agent_query_sync(prompt))
+      st.session_state.messages.append({"role": "assistant", "content": response})
+    ```
+  </Step>
+
+  <Step>
+    ## 运行应用程序
+
+    要启动 ClickHouse AI 智能体 Web 应用程序，可在终端中运行以下命令：
+
+    ```bash
+    uv run \
+      --with streamlit \
+      --with agno \
+      --with anthropic \
+      --with mcp \
+      streamlit run app.py --server.headless true
+    ```
+
+    这会打开你的网络浏览器并跳转到 `http://localhost:8501`，你可以在这里
+    与 AI 智能体交互，并就 ClickHouse 的 SQL playground 中提供的示例数据集
+    向它提问。
+  </Step>
+</Steps>

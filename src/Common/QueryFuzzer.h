@@ -224,6 +224,12 @@ private:
     Field getRandomField(int type);
     Field fuzzField(Field field);
     ASTPtr getRandomColumnLike();
+    /// Builds a fuzzed asterisk/matcher (`*`, `* LIKE/ILIKE '<pattern>'`, `table.*`, `COLUMNS(...)`),
+    /// optionally with column transformers, exercising the parser path added in
+    /// https://github.com/ClickHouse/ClickHouse/pull/104569.
+    ASTPtr makeFuzzedAsteriskLikeMatcher();
+    /// Builds an `ASTColumnsTransformerList` with fuzzed `APPLY` / `EXCEPT` / `REPLACE` transformers.
+    ASTPtr makeFuzzedColumnTransformers();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();

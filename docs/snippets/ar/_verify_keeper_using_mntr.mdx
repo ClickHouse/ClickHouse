@@ -1,0 +1,70 @@
+---
+title: التحقق من Keeper باستخدام Mntr
+---
+
+يُستخدم الأمر `mntr` أيضًا على نطاق واسع للتحقق من أن ClickHouse Keeper
+قيد التشغيل، وللحصول على معلومات عن حالة العلاقة بين عقد Keeper الثلاث.
+في الإعداد المستخدم في هذا المثال، هناك ثلاث عقد تعمل معًا.
+ستنتخب هذه العقد قائدًا، وستكون العقد المتبقية عقدًا تابعة.
+
+يوفّر الأمر `mntr` معلومات متعلقة بالأداء، ويُبيّن أيضًا ما إذا كانت
+عقدة معيّنة تابعة أم قائدًا.
+
+<Tip>
+  قد تحتاج إلى تثبيت `netcat` حتى تتمكن من إرسال الأمر `mntr` إلى Keeper.
+  يُرجى مراجعة صفحة [nmap.org](https://nmap.org/ncat/) للحصول على معلومات التنزيل.
+</Tip>
+
+شغّل الأمر أدناه من سطر الأوامر على `clickhouse-keeper-01` و`clickhouse-keeper-02` و
+`clickhouse-keeper-03` للتحقق من حالة كل عقدة Keeper. الأمر
+الخاص بـ `clickhouse-keeper-01` موضح أدناه:
+
+```bash
+docker exec -it clickhouse-keeper-01  /bin/sh -c 'echo mntr | nc 127.0.0.1 9181'
+```
+
+تعرض الاستجابة أدناه مثالًا على استجابة من عقدة follower:
+
+```response title="Response" highlight={9}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state follower
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   46
+zk_max_file_descriptor_count    18446744073709551615
+```
+
+يوضح الرد أدناه مثالًا لرد صادر من العقدة القائدة:
+
+```response title="Response" highlight={9,18-19}
+zk_version      v23.3.1.2823-testing-46e85357ce2da2a99f56ee83a079e892d7ec3726
+zk_avg_latency  0
+zk_max_latency  0
+zk_min_latency  0
+zk_packets_received     0
+zk_packets_sent 0
+zk_num_alive_connections        0
+zk_outstanding_requests 0
+zk_server_state leader
+zk_znode_count  6
+zk_watch_count  0
+zk_ephemerals_count     0
+zk_approximate_data_size        1271
+zk_key_arena_size       4096
+zk_latest_snapshot_size 0
+zk_open_file_descriptor_count   48
+zk_max_file_descriptor_count    18446744073709551615
+zk_followers    2
+zk_synced_followers     2
+```

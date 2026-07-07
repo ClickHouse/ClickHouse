@@ -1,0 +1,35 @@
+---
+alias: []
+description: 'Documentation sur le format JSONEachRowWithProgress'
+input_format: false
+keywords: ['JSONEachRowWithProgress']
+output_format: true
+slug: /interfaces/formats/JSONEachRowWithProgress
+title: 'JSONEachRowWithProgress'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✗      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Se distingue de [`JSONEachRow`](/fr/reference/formats/JSON/JSONEachRow)/[`JSONStringsEachRow`](/fr/reference/formats/JSON/JSONStringsEachRow) en ce que ClickHouse renvoie également des informations de progression sous forme de valeurs JSON.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+```json
+{"row":{"num":42,"str":"hello","arr":[0,1]}}
+{"row":{"num":43,"str":"hello","arr":[0,1,2]}}
+{"row":{"num":44,"str":"hello","arr":[0,1,2,3]}}
+{"progress":{"read_rows":"3","read_bytes":"24","written_rows":"0","written_bytes":"0","total_rows_to_read":"3"}}
+```
+
+<div id="format-settings">
+  ## Paramètres du format
+</div>

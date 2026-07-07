@@ -1,0 +1,54 @@
+---
+slug: /cloud/managed-postgres/migrations/faq
+sidebarTitle: 'よくある質問'
+title: 'Managed Postgres の移行に関するよくある質問'
+description: 'ClickHouse Managed Postgres へのデータ移行に関するよくある質問。'
+keywords: ['postgres', '移行', 'よくある質問', 'managed postgres', '論理レプリケーション', 'enum', '一意制約']
+doc_type: 'reference'
+---
+
+import PrivatePreviewBadge from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
+<PrivatePreviewBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} slug="migrations-faq" />
+
+`TOAST` カラム、replication slots、publications、スキーマ変更、型マッピングなど、Postgres のレプリケーションの仕組みに関する多くの疑問は、[ClickPipes for Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)で扱っています。そこに記載されている情報は、Managed Postgres の移行にも当てはまります。
+
+<div id="invalid-enum-value">
+  ### レプリケーション中に「enum に対する無効な入力値」エラーが表示される
+</div>
+
+このエラーは、ソース側の Postgres に存在する enum 値が、ターゲットの Managed Postgres には存在しない場合に発生します。logical replication では `ALTER TYPE ... ADD VALUE` コマンドは自動的に伝播されないため、初回のスキーマ設定後にソース側で追加された新しい enum 値があると、ターゲット側で insert が失敗します。
+
+これを修正するには、ターゲットの Postgres で enum 型に不足している値を追加します。
+
+```sql
+ALTER TYPE your_enum_type ADD VALUE 'new_value';
+```
+
+`your_enum_type` はご使用の enum 型名に、`'new_value'` はエラーメッセージに表示されている不足値に置き換えてください。
+
+<div id="unique-constraint-violation">
+  ### レプリケーション中に一意制約違反エラーが発生する
+</div>
+
+一意制約違反は、logical replication において、レプリケーションの順序によってターゲット側の既存の一意制約と競合した場合に発生することがあります。これは、後続の更新で解消される前に一時的に一意性に違反する操作を再生する CDC (変更データキャプチャ) のワークロードで発生することがあります。
+
+レプリケーションを再開できるようにするには、ターゲットの Postgres で一意制約を削除します:
+
+```sql
+ALTER TABLE your_table DROP CONSTRAINT your_constraint_name;
+```
+
+以下を実行すると、制約名を確認できます:
+
+```sql
+SELECT conname, conrelid::regclass
+FROM pg_constraint
+WHERE contype = 'u';
+```
+
+レプリケーションが完了し、移行元がアクティブでなくなったら、切り替え時に制約を再度追加します。
+
+```sql
+ALTER TABLE your_table ADD CONSTRAINT your_constraint_name UNIQUE (column1, column2);
+```

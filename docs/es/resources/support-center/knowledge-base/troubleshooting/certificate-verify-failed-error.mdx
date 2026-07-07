@@ -1,0 +1,53 @@
+---
+title: Cómo resolver el error de verificación del certificado SSL en ClickHouse
+description: Aprenda a resolver el error SSL CERTIFICATE_VERIFY_FAILED.
+date: 2023-05-02
+tags: ['Seguridad y autenticación', 'Errores y excepciones']
+keywords: ['Error', 'Certificado SSL', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## Resolución del error 210 de verificación del certificado SSL en ClickHouse
+</div>
+
+El error suele mostrarse así:
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## Causa del error
+</div>
+
+Este error se produce al intentar conectarse a un servidor de ClickHouse mediante `clickhouse-client`. La causa del error es una de las siguientes:
+
+* en el archivo de configuración del cliente `config.xml` falta el certificado raíz del almacén de CA predeterminado del sistema, o
+* hay un certificado de CA autofirmado o de una CA interna que no está configurado
+
+<div id="solution">
+  ## Solución
+</div>
+
+Si utiliza una CA interna o autofirmada, configure el certificado raíz de la CA en `config.xml`, en el directorio del cliente (por ejemplo, `/etc/clickhouse-client`), y desactive la carga de los certificados raíz de CA predeterminados desde la ubicación predeterminada.
+
+A continuación se muestra una configuración de ejemplo:
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## Recursos adicionales
+</div>
+
+Consulta [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/es/concepts/features/interfaces/cli#configuration_files)
