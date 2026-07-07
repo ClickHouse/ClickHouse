@@ -1,0 +1,221 @@
+---
+noindex: true
+title: "Migrate to Shared Catalog"
+description: "Shared Catalog is the new approach to managing metadata in ClickHouse Private instances."
+---
+
+Shared Catalog is the new approach to managing metadata in ClickHouse Private instances. Instead of databases using the [Replicated](https://clickhouse.com/docs/engines/database-engines/replicated) engine, which uses a DDL queue in ClickHouse Keeper to ensure DDL statements are applied on all replicas, the [Shared](https://clickhouse.com/docs/engines/database-engines/shared) database engine stores all metadata in Keeper itself, removing the need to sync DDL statements across replicas.
+
+Shared Catalog provides several benefits:
+
+- Consistent state across all replicas
+- Statelessness of compute nodes (enables stateless Server nodes)
+- Atomic `CREATE TABLE ... AS SELECT`
+- Support for `UNDROP`
+- `RENAME`/move `TABLE` between databases
+- Fast, reliable replica bootstrapping (decreases wake, start and provisioning times)
+
+However, it does require a migration if your instance wasn't set up with Shared Catalog on the first deployment. We recommend you test the migration first on a test environment before migrating production instances.
+
+## Migration requirements
+
+Before the migration can begin, verify the following prerequisites:
+
+<Steps>
+
+<Step>
+
+### 1. At least 2 Server replicas
+
+The Operator performs a rolling upgrade to migrate databases to the new Shared database engine. Set the `server.replicas` helm value to 2 or greater.
+
+</Step>
+
+<Step>
+
+### 2. All databases use the Replicated engine
+
+All databases (except `system`) must use the Replicated database engine. Verify with:
+
+``` sql
+SELECT DISTINCT
+    name,
+    engine
+FROM clusterAllReplicas('default', system.databases)
+WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+  AND (engine != 'Replicated')
+```
+
+The query should return no rows.
+
+</Step>
+
+<Step>
+
+### 3. All tables use non-replicated table engines
+
+No tables (except in `system`) should use replicated or legacy table engines. Verify with:
+
+``` sql
+SELECT
+    name,
+    engine,
+    database
+FROM system.tables
+WHERE ((engine LIKE '%Replicated%') OR (engine IN ('Ordinary', 'Atomic')))
+  AND (database != 'system')
+```
+
+The query should return no rows.
+
+</Step>
+
+<Step>
+
+### 4. No detached tables exist
+
+``` sql
+SELECT * FROM system.detached_tables
+```
+
+The query should return no rows.
+
+Once all requirements are met the migration can be started. If any requirements are unmet, reach out to ClickHouse support for assistance.
+
+</Step>
+
+</Steps>
+
+## Performing the migration
+
+<Warning>
+
+For Hydra instances, migrate the parent instance first before migrating any children. Repeat the steps below for each child instance after the parent is migrated.
+
+</Warning>
+
+<Steps>
+
+<Step>
+
+### 1. Enable Shared Catalog configuration
+
+Set `featureFlags.enableSharedCatalog` to `true` in your Helm values. This enables the configuration, but doesn't trigger the migration of databases. Deploying a ClickHouse Cluster with this flag set to `true` but not migrating existing replicated databases will cause the ClickHouse Cluster to fail to start.
+
+</Step>
+
+<Step>
+
+### 2. Add the migration markers
+
+Set `featureFlags.migrateToSharedCatalog` to `true` in your Helm values. This:
+
+- Adds the `shared_database_catalog.migration_from_database_replicated` setting to ClickHouse, telling it to expect existing `Replicated` databases while running in Shared Catalog mode
+- Adds the `clickhouse.com/start-shared-catalog-migration: "true"` annotation to the ClickHouseCluster Kubernetes resource, notifying the Operator to migrate this cluster
+
+Once deployed, the Operator will trigger a rolling upgrade of the Server nodes. This will also change the types of all databases to `Shared`.
+
+</Step>
+
+<Step>
+
+### 3. Wait for the status to be Ready
+
+``` bash
+kubectl get ClickHouseCluster <instance-name>
+```
+
+</Step>
+
+<Step>
+
+### 4. Remove the migration markers
+
+Once the status is Ready, set `featureFlags.migrateToSharedCatalog` to `false` in your Helm values. As all databases have been migrated to type `Shared` instead of `Replicated`, the migration settings are no longer relevant.
+
+</Step>
+
+<Step>
+
+### 5. Verify all databases are migrated
+
+Confirm all non-system databases use the Shared engine:
+
+``` sql
+SELECT DISTINCT
+    name,
+    engine
+FROM clusterAllReplicas('default', system.databases)
+WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+  AND (engine != 'Shared')
+```
+
+The query should return no rows. At this point your instance is migrated to the Shared Catalog.
+
+</Step>
+
+</Steps>
+
+## Rollback
+
+If any issues are encountered with the Shared Catalog, you can roll back to the previous state:
+
+<Steps>
+
+<Step>
+
+### 1. Remove the migration markers
+
+Set `featureFlags.migrateToSharedCatalog` to `false` in your Helm values.
+
+</Step>
+
+<Step>
+
+### 2. Remove the Shared Catalog settings
+
+Set `featureFlags.enableSharedCatalog` to `false` in your Helm values. This will trigger the Operator to revert the changes.
+
+</Step>
+
+<Step>
+
+### 3. Remove the Catalog in Keeper
+
+Port-forward a connection to Keeper and start a keeper-client session (using `clickhouse keeper-client`).
+
+Once the session is started, execute the following commands:
+
+``` text
+ls '/clickhouse/catalog'
+# Output: migration_from_database_replicated_completed names references replicas uuids
+
+rmr '/clickhouse/catalog'
+# You are going to recursively delete path /clickhouse/catalog Continue?
+# [y/n] y
+```
+
+This will clean up all Shared Catalog state from Keeper.
+
+</Step>
+
+<Step>
+
+### 4. Verify rollback
+
+Confirm all non-system databases are using the Replicated engine again:
+
+``` sql
+SELECT DISTINCT
+    name,
+    engine
+FROM clusterAllReplicas('default', system.databases)
+WHERE (name NOT IN ('INFORMATION_SCHEMA', 'system', 'information_schema'))
+  AND (engine != 'Replicated')
+```
+
+The query should return no rows.
+
+</Step>
+
+</Steps>

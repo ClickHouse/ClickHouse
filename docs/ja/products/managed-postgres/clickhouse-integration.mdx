@@ -1,0 +1,88 @@
+---
+slug: /cloud/managed-postgres/clickhouse-integration
+sidebarTitle: 'ClickHouse 連携'
+title: 'ClickHouse 連携'
+description: '組み込みの CDC（変更データキャプチャ）機能を使って、Postgres のデータを ClickHouse にレプリケートします'
+keywords: ['Postgres', 'ClickHouse 連携', 'CDC', 'レプリケーション', 'ClickPipes', 'データ同期']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
+
+すべての Managed Postgres インスタンスには、任意の ClickHouse サービスに対する CDC 機能が標準で組み込まれています。これにより、Postgres インスタンス上のデータの一部または全部を ClickHouse に移行し、Postgres 側で発生したデータの変更を ClickHouse に継続的かつほぼリアルタイムで反映できます。この機能は内部的に [ClickPipes](/ja/integrations/clickpipes/home) によって提供されています。
+
+これを利用するには、Postgres インスタンスのサイドバーで **ClickHouse 連携** をクリックします。
+
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="サイドバーのインテグレーションオプションを示す ClickHouse 連携のランディングページ" size="md" border />
+
+<Note>
+  先に進む前に、Postgres サービスに ClickPipes サービスからアクセスできることを確認してください。通常はデフォルトでアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/home#list-of-static-ips) の一覧にある一部の送信元 IP からのアクセスを許可する必要がある場合があります。
+</Note>
+
+ClickPipe の設定を開始するには、**Replicate data in ClickHouse** をクリックします。
+
+<Steps>
+  <Step>
+    ## レプリケーションサービスを設定する
+
+    レプリケーション設定を入力します。
+
+    * **Integration name**: この ClickPipe の名前
+    * **ClickHouse service**: 既存の ClickHouse Cloud サービスを選択するか、新しく作成します
+    * **Postgres database**: レプリケーション元のソースデータベース
+    * **Replication method**: 次のいずれかを選択します。
+      * **Initial load + CDC**: 既存データを取り込み、新しい変更があればテーブルを継続的に更新します (推奨)
+      * **Initial load only**: 既存データを一回限りでスナップショット取得し、その後の更新は行いません
+      * **CDC only**: 初期スナップショットをスキップし、以降の新しい変更のみをキャプチャします
+
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービス設定" size="md" border />
+
+    続行するには **Next** をクリックします。
+  </Step>
+
+  <Step>
+    ## レプリケーション設定を構成する
+
+    データのレプリケーション方法を細かく調整します。
+
+    * **Sync interval (seconds)**: Postgres から変更を取得する間隔 (デフォルト: 60)
+    * **Parallel threads for initial load**: 初期スナップショット時に使用するスレッド数 (デフォルト: 4)
+    * **Pull batch size**: レプリケーション中にバッチごとに取得する行数 (デフォルト: 100000)
+    * **Snapshot number of rows per partition**: 初期スナップショット時のパーティションごとの行数 (デフォルト: 100000)
+    * **Snapshot number of tables in parallel**: 同時にスナップショットを取得するテーブル数 (デフォルト: 1)
+
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="同期間隔、並列スレッド、Pull バッチサイズ、スナップショット構成オプションを示すレプリケーション設定ステップ" size="md" border />
+
+    続行するには **Next** をクリックします。
+  </Step>
+
+  <Step>
+    ## レプリケートするテーブルを選択する
+
+    宛先データベースを選択し、レプリケートするテーブルを指定します。
+
+    * **Destination database**: 既存の ClickHouse データベースを選択するか、新しく作成します
+    * **Prefix default destination table names with schema name**: 名前の競合を避けるため、Postgres スキーマ名をプレフィックスとして追加します
+    * **Preserve NULL values from source**: デフォルト値に変換せず、NULL 値を保持します
+    * **Remove deleted rows during merges**: [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルで、バックグラウンドマージ中に削除済みの行を物理的に削除します
+
+    スキーマを展開して、レプリケートする個々のテーブルを選択します。宛先テーブル名やカラム設定をカスタマイズすることもできます。
+
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="データベース選択、レプリケーションオプション、スキーマごとにグループ化されたテーブルピッカーを示すテーブル選択ステップ" size="md" border />
+
+    レプリケーションを開始するには、**Replicate data to ClickHouse** をクリックします。
+  </Step>
+
+  <Step>
+    ## ClickPipe を監視する
+
+    ClickPipe が開始されると、同じメニューに一覧表示されます。すべてのデータの初期スナップショットには、テーブルのサイズによっては時間がかかる場合があります。
+
+    <Image img="/images/managed-postgres/integration-running.webp" alt="宛先サービスとステータスを含む Running 状態の ClickPipe を示す ClickHouse 連携の一覧" size="md" border />
+
+    インテグレーション名をクリックすると、詳細なステータスの確認、進行状況の監視、エラーの表示、ClickPipe の管理を行えます。ClickPipe が取りうるさまざまな状態については、[Lifecycle of a Postgres ClickPipe](/ja/integrations/clickpipes/postgres/lifecycle) を参照してください。
+  </Step>
+</Steps>

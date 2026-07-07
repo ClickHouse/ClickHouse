@@ -1,0 +1,52 @@
+---
+title: 'データベース ClickPipe の再同期'
+description: 'データベース ClickPipe の再同期に関するドキュメント'
+slug: /integrations/clickpipes/mongodb/resync
+sidebarTitle: 'ClickPipe の再同期'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="what-mongodb-resync-do">
+  ### 再同期では何が行われますか？
+</div>
+
+再同期では、次の操作が順番に実行されます。
+
+1. 既存の ClickPipe は削除され、新しい &quot;resync&quot; ClickPipe が開始されます。そのため、再同期を実行すると、ソーステーブルの構造変更も反映されます。
+2. resync ClickPipe は、元のテーブルと同じ名前で末尾に `_resync` 接尾辞を付けた、新しい宛先テーブル一式を作成します (または置き換えます) 。
+3. `_resync` テーブルに対して初期ロードが実行されます。
+4. その後、`_resync` テーブルが元のテーブルと入れ替えられます。入れ替え前に、ソフトデリートされた行は元のテーブルから `_resync` テーブルに移行されます。
+
+元の ClickPipe の設定はすべて、resync ClickPipe に引き継がれます。元の ClickPipe の統計情報は UI 上でクリアされます。
+
+<div id="use-cases-mongodb-resync">
+  ### ClickPipe を再同期するユースケース
+</div>
+
+以下のようなケースがあります。
+
+1. ソーステーブルに大きなスキーマ変更を加えると、既存の ClickPipe が使えなくなり、やり直しが必要になることがあります。変更後に 再同期 をクリックするだけで対応できます。
+2. 特に ClickHouse では、ターゲットテーブルの ORDER BY キーを変更する必要がある場合があります。再同期を実行すると、正しいソートキーを持つ新しいテーブルにデータを再投入できます。
+
+<div id="guide-mongodb-resync">
+  ### ClickPipe 再同期ガイド
+</div>
+
+1. **Data Sources** タブで、再同期する MongoDB ClickPipe をクリックします。
+2. **Settings** タブに移動します。
+3. **再同期** ボタンをクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. 確認ダイアログが表示されるので、再度 **再同期** をクリックします。
+5. **Metrics** タブに移動します。
+6. パイプのステータスが **Setup** または **Snapshot** になるまで待ちます。
+7. 再同期の初期ロードは、**Tables** タブの **Initial Load Stats** セクションで確認できます。
+8. 初期ロードが完了すると、パイプは `_resync` テーブルを元のテーブルとアトミックに入れ替えます。入れ替え中のステータスは **再同期** です。
+9. 入れ替えが完了すると、パイプは **Running** 状態になり、有効な場合は CDC を実行します。

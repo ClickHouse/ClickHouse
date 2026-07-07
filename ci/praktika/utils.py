@@ -939,9 +939,9 @@ openssl pkeyutl -encrypt -pubin -inkey {key_path} -in {aes_key_path} -out {aes_k
                 print("ERROR: zstd is not installed. Cannot decompress artifact.")
                 return False
 
-            # Perform decompression
+            # Perform decompression (--no-progress suppresses per-MB stderr noise)
             res = Shell.check(
-                f"zstd --decompress --force -o {quote(path_to)} {quote(path)}",
+                f"zstd --decompress --force --no-progress -o {quote(path_to)} {quote(path)}",
                 verbose=True,
                 strict=not no_strict,
             )

@@ -223,6 +223,8 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
+    size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -265,14 +267,17 @@ public:
 
     const String & getName() const { return name; }
 
-    static void onSegmentEvicted(const FileSegment & segment);
-
 private:
+    void onSegmentEvicted(const FileSegment & segment, const String & user_id) const;
+    IFileCachePriority::OnEvictCallback getOnBackgroundEvictCallback() const;
+    void onSegmentEvictedInTheBackground(const FileSegment & segment, const String & user_id) const;
+
     using KeyAndOffset = FileCacheKeyAndOffset;
 
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> reserve_granularity;
     std::atomic<size_t> background_download_max_file_segment_size;
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;
@@ -286,12 +291,19 @@ private:
     const double keep_current_size_to_max_ratio;
     const double keep_current_elements_to_max_ratio;
     const size_t keep_up_free_space_remove_batch;
+    const size_t keep_up_free_space_eviction_threads;
+
+    /// Removes (deletes from filesystem) eviction candidate batches without holding the cache lock.
+    /// Fed by `keep_up_free_space_ratio_task`, which collects candidates and frees their queue entries.
+    std::unique_ptr<ThreadPool> eviction_pool;
 
     // Use IFileCachePriority wrapper in order to separate data/system files into different segments.
     const bool use_split_cache;
     const double split_cache_ratio;
 
     const bool skip_cache_on_disk_failure;
+    std::atomic<bool> expose_eviction_metrics;
+    std::atomic<bool> expose_eviction_metrics_per_user;
 
     String name;
     LoggerPtr log;
@@ -421,6 +433,16 @@ private:
         IFileCachePriority::InvalidatedEntriesInfos & invalidated_entries,
         Priority * query_priority,
         std::string & failure_reason);
+
+    /// How much still needs to be evicted to reach the desired free-space ratio, given the live
+    /// cache size and `in_flight` (already collected, awaiting removal). Null if nothing is needed.
+    std::unique_ptr<EvictionInfo> collectFreeSpaceEvictionInfo(
+        const CacheStateGuard::Lock & lock, size_t in_flight_size, size_t in_flight_elements);
+
+    /// Run one background eviction pass: this (collector) thread re-evaluates the target against the
+    /// live cache size, feeds batches to the `eviction_pool` removers (lock-free deletion), then
+    /// finalizes them. Sets `reschedule_ms` when the cache is too busy to proceed.
+    void freeSpaceRatioImpl(size_t & reschedule_ms);
 };
 
 }
