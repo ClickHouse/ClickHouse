@@ -56,8 +56,8 @@ def _execute_spark(spark, cluster, storage_type, table, query):
 
 
 def _expected_events(threads):
-    """Mirror of `resolveParallelManifestDecodeThreads`: counter bumps by 0 in
-    serial mode, otherwise by `min(threads, data manifests)`."""
+    """Mirror of the thread-count clamp in `IcebergIterator`'s constructor:
+    counter bumps by 0 in serial mode, otherwise by `min(threads, data manifests)`."""
     if threads <= 1:
         return 0
     return min(threads, DATA_MANIFESTS)

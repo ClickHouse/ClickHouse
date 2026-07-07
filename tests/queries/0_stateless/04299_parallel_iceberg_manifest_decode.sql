@@ -11,8 +11,8 @@ FROM system.settings
 WHERE name = 'iceberg_parallel_manifest_decode_threads';
 
 -- It must accept a range of values without error. The 0 value is silently bumped
--- to 1 inside `resolveParallelManifestDecodeThreads`; large values are accepted
--- and effectively clamped to the snapshot's manifest count at construction.
+-- to 1 when the setting is resolved; large values are accepted and effectively
+-- clamped to the snapshot's data manifest count at construction.
 SELECT 1 SETTINGS iceberg_parallel_manifest_decode_threads = 0;
 SELECT 1 SETTINGS iceberg_parallel_manifest_decode_threads = 1;
 SELECT 1 SETTINGS iceberg_parallel_manifest_decode_threads = 8;

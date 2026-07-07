@@ -96,6 +96,7 @@ TEST(SharedManifestIndex, HighParallelism)
 {
     /// 64 producers racing on a 10k-index counter. The shared-counter contract
     /// must hold under any reasonable thread count (the implementation no longer
-    /// imposes an upper bound — see resolveParallelManifestDecodeThreads).
+    /// imposes an upper bound — see the thread-count clamp in `IcebergIterator`'s
+    /// constructor).
     runStressTest(/* total_indices */ 10'000, /* num_threads */ 64);
 }
