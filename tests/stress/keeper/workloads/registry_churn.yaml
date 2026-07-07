@@ -1,9 +1,13 @@
-name: registry_fanout
-# Watch fan-out stress: every session keeps a children-watch armed on the same
-# registry path (list with watch_probability 1.0), while a small write weight
-# mutates the registry's children. Each mutation fires close to sessions-count
-# children-watches at once, so this measures fan-out latency and watch-queue
-# behavior rather than raw request throughput.
+name: registry_churn
+# Watch arm/fire/re-arm churn on a single hot path: ~1000 sessions each arm a
+# one-shot children-watch on the same registry path (list with
+# watch_probability 1.0), while a small write weight mutates the registry's
+# children. Keeper watches are one-shot, so every mutation fires and clears
+# ALL armed children-watches at once and a session only re-arms on its next
+# list — the steady-state armed population is bounded by the list:create mix
+# ratio (70:3 → roughly two dozen), not the session count. This measures
+# sustained watch registration/fire/notify/re-arm cycling and notification
+# delivery under load rather than raw request throughput.
 #
 # Same tree as registry_watch.yaml; the difference is the mix: the dominant
 # list weight keeps re-arming the children-watch on the hot path, gets read

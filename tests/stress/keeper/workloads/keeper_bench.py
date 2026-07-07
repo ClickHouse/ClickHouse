@@ -495,12 +495,13 @@ class KeeperBench:
             wbase, wrem = divmod(int(concurrency), n_shards)
             shard_conc = [wbase + (1 if i < wrem else 0) for i in range(n_shards)]
             if wbase == 0:
-                # keeper-bench needs at least one worker per process; with fewer
+                # keeper-bench needs at least one worker per process, so with fewer
                 # workers than shards the configured total cannot be preserved.
-                shard_conc = [1] * n_shards
-                print(
-                    f"[keeper][bench] concurrency={concurrency} is below {n_shards} "
-                    f"shards; running one worker per shard (effective total {n_shards})"
+                raise AssertionError(
+                    f"workload.concurrency={concurrency} cannot be preserved across "
+                    f"{n_shards} bench processes (each needs >= 1 worker); raise "
+                    f"concurrency to at least {n_shards} or lower clients/"
+                    f"SESSIONS_PER_BENCH sharding pressure"
                 )
         print(
             f"[keeper][bench] Sharded run: {clients} sessions over {n_shards} bench "

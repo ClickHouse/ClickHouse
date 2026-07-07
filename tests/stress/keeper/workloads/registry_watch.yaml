@@ -9,13 +9,14 @@ name: registry_watch
 # read by `get` is the one resolved at startup. The steady, dominant list
 # weight stands in for the re-list-on-change behavior of a real registry
 # client: it keeps every session's children-watch re-armed and keeps the hot
-# path read at a constant rate, so watch registrations, fan-out deliveries,
-# and re-arm traffic still scale with the session count.
+# path read at a constant rate, so watch registration, notification, and
+# re-arm traffic still scale with the session count (the armed population
+# itself stays bounded by the list:churn mix ratio — watches are one-shot).
 #
 # Request mix per client loop:
 #   - list the registry with a children-watch armed (dominant; also the re-arm)
 #   - get member entries (no watch on reads of the entries themselves)
-#   - rare create/remove churn under the registry (fires fan-out to all watchers)
+#   - rare create/remove churn under the registry (fires and clears every armed children-watch)
 #
 # Value sizes: 100-300 bytes (registration payloads: endpoints, metadata).
 concurrency: 500

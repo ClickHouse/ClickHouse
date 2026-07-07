@@ -184,12 +184,12 @@ scenarios:
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
-# ─── Watch fan-out ────────────────────────────────────────────────────────────
-- id: registry-watch-fanout
-  name: Registry watch fan-out (1000 sessions)
-  description: All 1000 sessions keep a watch armed on the same registry path; a small write weight mutates it, so every write fires ~sessions-count watches. Measures fan-out latency and watch-queue behavior.
+# ─── Watch churn ──────────────────────────────────────────────────────────────
+- id: registry-watch-churn
+  name: Registry watch churn (1000 sessions)
+  description: ~1000 sessions each arm a one-shot children-watch on a shared registry path via list; a low-rate writer continuously fires and clears them, and sessions re-arm on their next list. The steady-state armed population is bounded by the list:create mix ratio (~2 dozen), not the session count. Measures sustained watch arm/fire/notify/re-arm cycling and notification delivery under load.
   workload:
-    config: workloads/registry_fanout.yaml
+    config: workloads/registry_churn.yaml
     clients: 1000
   opts:
     cpu_limit: 4

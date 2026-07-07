@@ -183,11 +183,15 @@ children-watch armed on a shared registry path (`/registry/servers`) and read
 member entries, while membership churn fires the children-watch on every
 watcher simultaneously. keeper-bench generates requests independently rather
 than reacting to watch events, so a steady dominant list weight stands in for
-the clients' re-list + watch re-arm reaction; watch registrations, fan-out
-deliveries, and re-arm traffic still scale with the session count.
-`workloads/registry_fanout.yaml` is the fan-out variant where all sessions
-keep a children-watch on the same path and a low-rate writer fires
-~sessions-count watch events per mutation.
+the clients' re-list + watch re-arm reaction; watch registration, notification,
+and re-arm traffic still scale with the session count, while the armed watch
+population stays bounded by the list:churn mix ratio (keeper watches are
+one-shot, so every churn op fires and clears all of them at once).
+`workloads/registry_churn.yaml` is the watch-churn variant: a heavier list
+weight keeps ~1000 sessions re-arming one-shot children-watches on the same
+path while a low-rate writer continuously fires and clears them, exercising
+sustained watch arm/fire/notify/re-arm cycling and notification delivery
+under load.
 
 Scenarios:
 
@@ -203,8 +207,10 @@ Scenarios:
   sessions: each session holds two threads on its 10000-thread global pool);
   shard 0 owns the setup tree, the rest join after it is created, and the
   merged summary sums counters/rates and takes the max of latency percentiles.
-- `registry-watch-fanout` — fan-out latency and watch-queue behavior at 1000
-  watching sessions.
+- `registry-watch-churn` — sustained watch arm/fire/notify/re-arm cycling and
+  notification delivery at 1000 watching sessions; the steady-state armed
+  population is bounded by the list:create mix ratio (~2 dozen), not the
+  session count.
 - `registry-expiry-storm` — runs only with faults enabled: `cpu_hog` on all
   nodes starves keeper past the workload's 30 s session timeout, driving mass
   session expiry among watchers, then load returns to normal.
