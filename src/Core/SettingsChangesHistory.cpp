@@ -39,9 +39,12 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
-        addSettingsChanges(settings_changes_history, "26.6",
+        addSettingsChanges(settings_changes_history, "26.7",
         {
             {"object_storage_fsync_after_insert", false, false, "New setting to fsync data files written by object storage table engines (S3, File, DeltaLake, Iceberg) before an insert completes, making committed data durable across a hard failure. Disabled by default."},
+        });
+        addSettingsChanges(settings_changes_history, "26.6",
+        {
             {"output_format_image_width", 1024, 1024, "New setting controlling the width of the output image for image output formats such as PNG."},
             {"output_format_image_height", 1024, 1024, "New setting controlling the height of the output image for image output formats such as PNG."},
             {"output_format_image_terminal_mode", "", "", "New setting controlling whether image output formats such as PNG are rendered directly to the terminal using an inline image protocol."},
