@@ -586,6 +586,44 @@ public:
     std::string name() const override { return "arrayDifferenceResult"; }
 };
 
+/// `rangeResult(A1, [A2], [A3])` — the result type of `range`. Mirrors `FunctionRange::getReturnTypeImpl`:
+/// if any argument is `onlyNull` the whole result collapses to a scalar `Nullable(Nothing)`; otherwise
+/// each argument is taken without its `Nullable` wrapper (an `IPv4` in either of the first two positions
+/// counts as `UInt32`), and the element type is their least common supertype, so the result is
+/// `Array(leastSupertype(...))`. The `Nullable` wrappers are stripped, not propagated, matching the
+/// manual null handling in `range` (`useDefaultImplementationForNulls` is disabled there).
+class TypeFunctionRangeResult : public ITypeFunction
+{
+public:
+    Value apply(const Values & args) const override
+    {
+        if (args.empty() || args.size() > 3)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong number of arguments for type function rangeResult");
+
+        for (const Value & arg : args)
+            if (arg.type()->onlyNull())
+                return Value(makeNullable(std::make_shared<DataTypeNothing>()));
+
+        DataTypes arg_types;
+        arg_types.reserve(args.size());
+        for (size_t i = 0; i < args.size(); ++i)
+        {
+            DataTypePtr type_no_nullable = removeNullable(args[i].type());
+            if (i < 2 && WhichDataType(type_no_nullable).isIPv4())
+                arg_types.emplace_back(std::make_shared<DataTypeUInt32>());
+            else if (isInteger(type_no_nullable))
+                arg_types.push_back(type_no_nullable);
+            else
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Type function rangeResult does not support type {}", args[i].type()->getName());
+        }
+
+        return Value(std::make_shared<DataTypeArray>(getLeastSupertype(arg_types)));
+    }
+
+    std::string name() const override { return "rangeResult"; }
+};
+
 /// `Decimal(precision, scale)` — builds a Decimal type from two const values, choosing
 /// `Decimal32`/`64`/`128`/`256` by precision (exactly like `DataTypeFactory` for `Decimal(P, S)`).
 /// Used by the `toDecimalNN` conversion signatures, where the precision is the fixed maximum for the
@@ -1447,6 +1485,7 @@ void registerTypeFunctions()
     factory.registerElement<TypeFunctionAdditionMultiplicationResult>();
     factory.registerElement<TypeFunctionArraySumResult>();
     factory.registerElement<TypeFunctionArrayDifferenceResult>();
+    factory.registerElement<TypeFunctionRangeResult>();
     factory.registerElement<TypeFunctionDecimal>();
     factory.registerElement<TypeFunctionDateTimeFromScale>();
     factory.registerElement<TypeFunctionTimeFromScale>();
