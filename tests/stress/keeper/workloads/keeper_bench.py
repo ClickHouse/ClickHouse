@@ -331,9 +331,11 @@ class KeeperBench:
         concurrency = self.concurrency if not self._is_zookeeper else None
         if concurrency is not None:
             print(f"[keeper][bench] Decoupled workers: sessions={clients} concurrency={concurrency}")
-        # Above the per-process session ceiling, split the run into several bench
-        # subprocesses and merge their summaries (fault-free saturation rungs only).
-        if not self._is_zookeeper and clients > SESSIONS_PER_BENCH:
+        # Above the per-process session ceiling, split a generator run into several
+        # bench subprocesses and merge their summaries (fault-free saturation rungs
+        # only).  Replay runs never shard: a replay executes the recorded request
+        # log in a single process (the replay rewrite below forces concurrency 1).
+        if not self._is_zookeeper and not self.replay_path and clients > SESSIONS_PER_BENCH:
             return self._run_sharded(cfg_text, clients, concurrency)
         bench_cfg = _patch_keeper_bench_config(cfg_text, self.servers, clients, self.duration_s, concurrency=concurrency)
 
@@ -485,15 +487,25 @@ class KeeperBench:
         n_shards = (clients + SESSIONS_PER_BENCH - 1) // SESSIONS_PER_BENCH
         base, rem = divmod(clients, n_shards)
         shard_sessions = [base + (1 if i < rem else 0) for i in range(n_shards)]
-        shard_conc = (
-            [max(1, int(concurrency) // n_shards)] * n_shards
-            if concurrency is not None
-            else [None] * n_shards
-        )
+        if concurrency is None:
+            shard_conc = [None] * n_shards
+        else:
+            # Split the worker total across shards the same way as sessions, so the
+            # cluster-wide total matches the configured concurrency exactly.
+            wbase, wrem = divmod(int(concurrency), n_shards)
+            shard_conc = [wbase + (1 if i < wrem else 0) for i in range(n_shards)]
+            if wbase == 0:
+                # keeper-bench needs at least one worker per process; with fewer
+                # workers than shards the configured total cannot be preserved.
+                shard_conc = [1] * n_shards
+                print(
+                    f"[keeper][bench] concurrency={concurrency} is below {n_shards} "
+                    f"shards; running one worker per shard (effective total {n_shards})"
+                )
         print(
             f"[keeper][bench] Sharded run: {clients} sessions over {n_shards} bench "
             f"processes {shard_sessions}, workers per shard "
-            f"{shard_conc[0] if concurrency is not None else 'one per session'}"
+            f"{shard_conc if concurrency is not None else 'one per session'}"
         )
 
         results = [None] * n_shards
