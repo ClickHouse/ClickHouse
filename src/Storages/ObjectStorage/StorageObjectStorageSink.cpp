@@ -13,6 +13,7 @@ namespace Setting
 {
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
+    extern const SettingsBool object_storage_fsync_after_insert;
 }
 
 namespace ErrorCodes
@@ -61,12 +62,16 @@ StorageObjectStorageSink::StorageObjectStorageSink(
     : SinkToStorage(sample_block_)
     , path(path_)
     , sample_block(sample_block_)
+    , fsync_after_insert(context->getSettingsRef()[Setting::object_storage_fsync_after_insert])
 {
     const auto & settings = context->getSettingsRef();
     const auto chosen_compression_method = chooseCompressionMethod(path, compression_method);
 
     auto buffer = object_storage->writeObject(
         StoredObject(path), WriteMode::Rewrite, std::nullopt, DBMS_DEFAULT_BUFFER_SIZE, context->getWriteSettings());
+
+    /// Keep a non-owning pointer to the file buffer to fdatasync it later (see finalizeBuffers).
+    file_buf = buffer.get();
 
     write_buf = wrapWriteBufferWithCompressionMethod(
         std::move(buffer),
@@ -113,6 +118,12 @@ void StorageObjectStorageSink::finalizeBuffers()
 
     write_buf->finalize();
     result_file_size = write_buf->count();
+
+    /// Make the data file durable before the caller commits it (e.g. DeltaLake `_delta_log`,
+    /// Iceberg snapshot). Without this, a hard failure between finalize() and the metadata
+    /// commit can leave a committed-but-truncated data file. Mirrors MergeTree fsync_after_insert.
+    if (fsync_after_insert && file_buf)
+        file_buf->sync();
 }
 
 void StorageObjectStorageSink::releaseBuffers()

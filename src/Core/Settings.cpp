@@ -7398,6 +7398,9 @@ Defines a rows limit for a single inserted data file in delta lake.
     DECLARE(NonZeroUInt64, delta_lake_insert_max_bytes_in_data_file, 1_GiB, R"(
 Defines a bytes limit for a single inserted data file in delta lake.
 )", 0) \
+    DECLARE(Bool, object_storage_fsync_after_insert, false, R"(
+If enabled, `fsync` (`fdatasync`) each data file written by object storage table engines (`S3`, `File`, `DeltaLake`, `Iceberg`, ...) before the insert completes, so committed data is durable across a hard failure (power loss, container/volume teardown). For data lakes this makes the data files durable before the metadata commit (`_delta_log` for Delta, snapshot for Iceberg) becomes visible. Disabled by default; mirrors the MergeTree `fsync_after_insert` setting.
+)", 0) \
     DECLARE(Bool, allow_experimental_delta_lake_writes, false, R"(
 Enables delta-kernel writes feature.
 )", EXPERIMENTAL) \

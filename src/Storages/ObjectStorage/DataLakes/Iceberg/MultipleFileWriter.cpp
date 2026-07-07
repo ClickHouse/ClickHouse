@@ -3,12 +3,18 @@
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool object_storage_fsync_after_insert;
+}
 
 #if USE_AVRO
 
@@ -84,6 +90,12 @@ void MultipleFileWriter::finalize()
     output_format->flush();
     output_format->finalize();
     buffer->finalize();
+
+    /// Make the data file durable before the Iceberg snapshot commit references it, so a hard
+    /// failure cannot leave a committed-but-truncated data file. Mirrors MergeTree fsync_after_insert.
+    if (context->getSettingsRef()[Setting::object_storage_fsync_after_insert])
+        buffer->sync();
+
     auto buffer_bytes = buffer->count();
     UInt64 file_bytes = 0;
     if (buffer_bytes > 0)

@@ -6,6 +6,8 @@
 
 namespace DB
 {
+class WriteBufferFromFileBase;
+
 class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
@@ -34,6 +36,12 @@ private:
     const String path;
     SharedHeader sample_block;
     std::unique_ptr<WriteBuffer> write_buf;
+    /// Non-owning pointer to the underlying file buffer returned by writeObject(),
+    /// captured before the compression wrap. Used to fdatasync the data file when
+    /// `object_storage_fsync_after_insert` is enabled: compression wrappers inherit
+    /// WriteBuffer::sync() which does not fdatasync, so we must sync the file buffer.
+    WriteBufferFromFileBase * file_buf = nullptr;
+    const bool fsync_after_insert;
     OutputFormatPtr writer;
     std::optional<size_t> result_file_size;
 
