@@ -411,6 +411,20 @@ def main(argv=None):
         migrate = import_migrate(docs_dir)
         lk, file_map = build_file_map(migrate, slug_map)
 
+    # The navigation fragment with the generators' enqueued mutations applied
+    # in memory. Shared between `flush_nav_inserts` and the listing
+    # generators, so every mode -- including --check -- renders the listings
+    # from the synthesized navigation state, not from whatever happens to be
+    # committed (a stale but self-consistent navigation/listing pair must
+    # still come back as drift).
+    frag_path = os.path.join(docs_dir, "reference", "navigation.json")
+    nav_state = {"fragment": None}
+
+    def current_fragment():
+        if nav_state["fragment"] is None:
+            nav_state["fragment"] = navigation.load_json(frag_path)
+        return nav_state["fragment"]
+
     def family_selected(family):
         # Building these generators has a cost (queries, C++ parsing), so skip
         # it when --only can't match them.
@@ -439,7 +453,7 @@ def main(argv=None):
     if family_selected("listing"):
         # Last: listing tables render from the navigation fragment and the
         # pages' frontmatter, after any page creation and nav insertion.
-        all_generators += catalog_domains.listing_generators(docs_dir)
+        all_generators += catalog_domains.listing_generators(docs_dir, current_fragment)
     generators = [g for g in all_generators if not args.only or args.only in g["name"]]
 
     drift = 0
@@ -452,10 +466,14 @@ def main(argv=None):
         # Newly created pages are added to the navigation fragment; docs.json
         # includes the fragment via $ref, so no further compilation is needed.
         # Runs before the listing generators so their tables see the new pages.
+        # The mutations are applied to the shared in-memory fragment in every
+        # mode; --write persists them, --check reports unpersisted ones as
+        # drift (the committed navigation.json is stale, and so may be the
+        # listings rendered from it).
+        nonlocal drift
         if not nav_inserts and not nav_groups:
             return
-        frag_path = os.path.join(docs_dir, "reference", "navigation.json")
-        fragment = navigation.load_json(frag_path)
+        fragment = current_fragment()
         changed = [
             page_id
             for group_path, page_id in nav_inserts
@@ -470,9 +488,17 @@ def main(argv=None):
             )
         ]
         if changed:
-            with open(frag_path, "w", encoding="utf-8") as f:
-                f.write(navigation.dump_fragment(fragment))
-            print(f"wrote: reference/navigation.json ({', '.join(changed)})")
+            if args.write:
+                with open(frag_path, "w", encoding="utf-8") as f:
+                    f.write(navigation.dump_fragment(fragment))
+                print(f"wrote: reference/navigation.json ({', '.join(changed)})")
+            elif args.check:
+                print("DRIFT: reference/navigation.json is stale"
+                      f" ({', '.join(changed)})")
+                drift += 1
+            else:
+                print("[dry-run] would write: reference/navigation.json"
+                      f" ({', '.join(changed)})")
         nav_inserts.clear()
         nav_groups.clear()
 
@@ -537,6 +563,13 @@ def main(argv=None):
                     })
             continue
 
+        # Enqueue the navigation mutations in every mode: --check must
+        # synthesize the same navigation state --write would persist.
+        if kind == "create" and gen.get("nav"):
+            nav_inserts.append(gen["nav"])
+        if gen.get("nav_group"):
+            nav_groups.append(gen["nav_group"])
+
         if args.check:
             if kind == "create":
                 print(f"MISSING: {rel} (newly documented, run --write to create)")
@@ -553,10 +586,6 @@ def main(argv=None):
             with open(dest, "w", encoding="utf-8") as f:
                 f.write(new)
             print(f"{'created' if kind == 'create' else 'wrote'}: {rel}")
-            if kind == "create" and gen.get("nav"):
-                nav_inserts.append(gen["nav"])
-            if gen.get("nav_group"):
-                nav_groups.append(gen["nav_group"])
         else:
             verb = "create" if kind == "create" else "update"
             print(f"[dry-run] would {verb}: {rel}")

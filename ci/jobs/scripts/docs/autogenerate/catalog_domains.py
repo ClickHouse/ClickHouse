@@ -360,14 +360,16 @@ LISTINGS = [
 ]
 
 
-def listing_generators(docs_dir):
+def listing_generators(docs_dir, get_fragment):
+    """`get_fragment` yields the navigation fragment to render from: the
+    caller's synthesized in-memory state (the committed fragment plus the
+    generators' enqueued mutations), so --check compares the listings against
+    the navigation --write would persist, not against the committed file."""
     def render(group_path):
         # Evaluated at generation time, after page creation and navigation
         # insertion, so a single --write run converges.
         def _render():
-            fragment = navigation.load_json(
-                os.path.join(docs_dir, "reference", "navigation.json")
-            )
+            fragment = get_fragment()
             pages = [
                 p for p in navigation._group_pages(fragment, group_path)
                 if isinstance(p, str) and not p.endswith("/index")
