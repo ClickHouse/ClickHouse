@@ -231,12 +231,8 @@ TEST(ReaderExecutor, DisplayServesHoleyBankPrefix)
     ASSERT_EQ(r1.range().size, 512u);
 
     /// Bank [512, 612) and [700, 800) with the true bytes, hole at [612, 700).
-    const size_t ri_a = inspect(executor).retrieveIndexAt(512);
-    const size_t ri_b = inspect(executor).retrieveIndexAt(700);
-    ASSERT_NE(ri_a, size_t(-1));
-    ASSERT_NE(ri_b, size_t(-1));
-    inspect(executor).bankBytes(ri_a, 512, std::string_view(content).substr(512, 100));
-    inspect(executor).bankBytes(ri_b, 700, std::string_view(content).substr(700, 100));
+    inspect(executor).bankBytes(512, std::string_view(content).substr(512, 100));
+    inspect(executor).bankBytes(700, std::string_view(content).substr(700, 100));
 
     /// The banked prefix serves; an empty chain here is the false-EOF regression.
     auto r2 = executor.readNextWindow();
@@ -244,7 +240,7 @@ TEST(ReaderExecutor, DisplayServesHoleyBankPrefix)
     ASSERT_EQ(r2.range().size, 100u);
 
     /// The chunk beyond the hole is still banked - the trim consumed only the delivered prefix.
-    const auto ivs = inspect(executor).bankIntervals(ri_b);
+    const auto ivs = inspect(executor).bankIntervals();
     ASSERT_EQ(ivs.size(), 1u);
     EXPECT_EQ(ivs.front().offset, 700u);
     EXPECT_EQ(ivs.front().size, 100u);
@@ -2051,6 +2047,70 @@ inline VectorWithMemoryTracking<MissEntry> EvictableSegmentMockCache::openWriteB
 }
 
 } // anonymous namespace
+
+/// T7's unified serve cycle: a HIT run whose plan-pinned view goes STALE (the mock's hit
+/// views hold no liveness token, so an eviction sweep can drop a resident segment the plan
+/// classified as a hit) must HEAL through the lane's bank - the shared `bankDirectRead` verb,
+/// now job-independent - instead of returning an empty window the caller reads as EOF
+/// mid-file. Warm segment 1, plan over both segments, evict between windows, read through.
+TEST(ReaderExecutor, HitRunHealsStaleView)
+{
+    TestThreadGroup tg;
+
+    const size_t seg = 4096;
+    const size_t file = 2 * seg;
+    String content(file, '\0');
+    for (size_t i = 0; i < file; ++i)
+        content[i] = static_cast<char>('a' + i % 26);
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"file", content}});
+    StoredObjects objects;
+    objects.emplace_back("file", "", file);
+
+    auto cache = std::make_shared<EvictableSegmentMockCache>(seg);
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(cache);
+
+    /// Warm segment 1 ([4096,8192)) so the main plan classifies it a HIT.
+    {
+        ReaderExecutor::Options warm_opts;
+        warm_opts.window_size = seg;
+        warm_opts.min_bytes_for_seek = 0;
+        ReaderExecutor warmer(source, objects, caches, warm_opts);
+        warmer.seek(seg);
+        ASSERT_FALSE(warmer.readNextWindow().empty());
+    }
+
+    ReaderExecutor::Options opts;
+    opts.window_size = seg;
+    opts.min_bytes_for_seek = 0;
+    opts.plan_look_ahead_max_window = file;   /// one plan: miss [0,4096) + hit [4096,8192)
+    ReaderExecutor executor(source, objects, caches, opts);
+
+    String got;
+    const auto consume = [&](ChainedBuffers chain)
+    {
+        for (const auto & node : chain.getNodes())
+            got.append(node.data(), node.size);
+    };
+
+    consume(executor.readNextWindow());   /// [0,4096): the miss; the plan (and hit view) built
+    ASSERT_EQ(got.size(), seg);
+
+    /// The sweep drops segment 1 - its plan-held VIEW carries no liveness token, so the
+    /// bytes vanish under the hit classification (segment 0 survives: its writer pins).
+    cache->evictUnpinned();
+
+    consume(executor.readNextWindow());   /// [4096,8192): the stale hit - must heal, not EOF
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        consume(std::move(chain));
+    }
+    EXPECT_EQ(got, content) << "the stale hit run must heal through the bank, not truncate";
+}
 
 TEST(ReaderExecutor, SequentialMidReadEvictionDoesNotResetConnection)
 {
@@ -4907,31 +4967,6 @@ TEST(PlanScheduleValidation, MixedGranularitiesWithBridge)
     validateScheduleMatchesReality(src, objects, {page, fs}, 512 * 1024, /*min_bytes_for_seek=*/64 * 1024);
 }
 
-/// Stage 1 sidecar: the per-job status vector is allocated 1:1 with the
-/// schedule's jobs on every plan build, so the processing loop can index it by
-/// retrieve. A resident island leaves gaps either side, so the schedule has
-/// several remote jobs to size against (not the trivial empty case).
-TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
-{
-    const size_t file = 256 * 1024;
-    auto [src, objects] = srcOf(file);
-    auto page = std::make_shared<WideGranularityMockCache>(64 * 1024, "page");
-    page->seedBlock(1, 'P');   // resident island [64K,128K), gaps either side
-    auto fs = std::make_shared<WideGranularityMockCache>(64 * 1024, "fs");
-
-    ReaderExecutor::Options opts;
-    opts.window_size = file;
-    opts.block_size = file;
-    opts.plan_look_ahead_max_window = file;
-    opts.min_bytes_for_seek = 0;
-    ReaderExecutor executor(src, objects, {page, fs}, opts);
-
-    executor.readNextWindow();  // builds the first plan
-    EXPECT_GT(inspect(executor).retrieveStatusSize(), 0u) << "the island leaves gaps to fetch";
-    EXPECT_TRUE(inspect(executor).retrieveStatusMatchesSchedule())
-        << "retrieve_status must be 1:1 with the schedule's jobs";
-}
-
 /// Stage 2 assert spine: the shadow cursor tracks the live walk. With one block per
 /// window and one plan over the whole file, the cursor must - after every window -
 /// index the step whose output contains the current position (the invariant the
@@ -4940,7 +4975,7 @@ TEST(ReaderExecutor, RetrieveStatusSizedToSchedule)
 /// The per-window chasserts inside readNextWindow are the broader burn-in; this is the
 /// focused external check. The shadow is only maintained under DEBUG_OR_SANITIZER_BUILD,
 /// so its assertions are guarded (the read still runs in release, exercising the path).
-TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
+TEST(ReaderExecutor, ScheduleShadowsLiveWalk)
 {
     const size_t block = 4096;
     const size_t file = block * 16;  // 64K
@@ -4974,7 +5009,7 @@ TEST(ReaderExecutor, RetrieveStatusShadowsLiveWalk)
         EXPECT_TRUE(run.offset <= pos && pos <= run.offset + run.size)
             << "the derived serve run [" << run.offset << "," << run.offset + run.size
             << ") must contain position " << pos;
-        for (size_t i = 0; i < inspect(executor).retrieveStatusSize(); ++i)
+        for (size_t i = 0; i < inspect(executor).retrieveCount(); ++i)
             if (inspect(executor).retrieveLaunchProgress(i) > 0)
                 saw_progress = true;
 #endif

@@ -410,14 +410,7 @@ private:
     /// Per-retrieve runtime status for the schedule-driven interpreter: only what CANNOT be
     /// derived from the display or the machine slot ("is a machine in flight for ri" =
     /// `machineFor(ri)`; the serve gates on display coverage, never on a phase). 1:1 with
-    /// `PlanSchedule::retrieves`; lives on `ReadPlan`, dies with the plan.
-    struct RetrieveStatus
-    {
-        /// The BANK - the job's only per-job state: bytes no cell could hold (a bypass gap's
-        /// fetch, an overflow of refused writes, sibling-waited chunks), drained as the serve
-        /// consumes. Launch progress is the lane's global `attempted_end` + the display.
-        ChainedBuffers ready_bytes;
-    };
+
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
     /// immutable geometry snapshot plus the held buffers. FOREGROUND-PRIVATE.
@@ -441,11 +434,6 @@ private:
         /// so slack is filled only into its owning lower tier and never
         /// promoted into a faster tier.
         PlanSchedule schedule;
-
-        /// Per-retrieve runtime status, 1:1 with `schedule.retrieves`, allocated at
-        /// plan build and reset on re-plan/seek. The schedule-driven interpreter maintains
-        /// it (phase transitions) and serves from it (`depsSatisfied`, serve dispatch).
-        VectorWithMemoryTracking<RetrieveStatus> retrieve_status;
 
         /// The launch interpreter's authority - the first `schedule.retrieves` index not
         /// yet launched/exhausted; advanced by `advanceAhead`. Reset on re-plan.
@@ -500,7 +488,7 @@ private:
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
         /// The schedule retrieve this machine fulfills (index into the launch-time plan's
-        /// `schedule.retrieves` / `retrieve_status`). Set at launch; read live by `machineFor`
+        /// `schedule.retrieves`). Set at launch; read live by `machineFor`
         /// (is a machine running for this retrieve) and `foldPutResult` (marks the retrieve
         /// Done). Meaningful only while this machine is the live in-flight handle of that
         /// plan; the re-plan barrier (`chassert(!machine)`) guarantees none straddles a rebuild.
@@ -805,9 +793,10 @@ private:
     /// append-only floor walked across the job's `fetch_runs`, grid-bounded to the window.
     /// Empty when no scheduled source byte lies past the cell frontier.
     ByteRange nextScheduledPiece(size_t ri, ByteRange window_phys) const;
-    /// One bounded cache-blind source read of `window`, banked into the job. The heal verb
-    /// for state no planned job can produce (hung sibling leader; staled committed truth).
-    bool bankDirectRead(size_t ri, ByteRange window);
+    /// One bounded cache-blind source read of `window`, banked into the lane. The heal verb
+    /// for state no planned job can produce (hung sibling leader; staled committed truth) -
+    /// job-independent, so it heals hit runs too.
+    bool bankDirectRead(ByteRange window);
     // ─── The display: the one state surface where execution results appear ─────────
 
     /// The DISPLAY: everything the plan can serve RIGHT NOW, with live progress - the union of
@@ -889,6 +878,13 @@ private:
         /// with the surviving plan.
         size_t attempted_end = 0;
         void advanceAttempted(size_t phys_end) { attempted_end = std::max(attempted_end, phys_end); }
+
+        /// The BANK - the pipe's overflow cell, in LOGICAL coords: bytes no cache cell could
+        /// hold (a bypass gap's fetch, an overflow of refused writes, sibling-waited chunks,
+        /// heal reads), consumed-and-trimmed as the display serves. ONE lane-level holder:
+        /// the display reads it by offset, so job identity carries nothing. Plan-epoch
+        /// scoped, reset with the ahead cursor.
+        ChainedBuffers bank;
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     private:

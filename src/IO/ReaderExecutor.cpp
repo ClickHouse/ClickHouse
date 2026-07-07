@@ -508,13 +508,15 @@ void ReaderExecutor::seek(size_t new_position)
 
     position = new_position;
     reached_eof = false;
-    /// A jumped position invalidates the schedule-driven serve state: jobs banked AHEAD of
-    /// the old cursor would, after the jump, leave `ready_bytes` disjoint from the new
-    /// cursor (a foreground read below the ahead-bank makes a gappy chain). Drop the plan so
-    /// the next launch re-plans + rebuilds `retrieve_status` from the new position. (The
-    /// fast path above keeps the plan for any target inside the in-flight window - a
-    /// backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
+    /// A jumped position invalidates the plan epoch: bytes banked AHEAD of the old cursor
+    /// would, after the jump, sit disjoint from the new one. Drop the plan AND the lane's
+    /// epoch state here - by ownership, not by trusting the next replan to reset it (the
+    /// executor can go idle at EOF holding a stale bank otherwise). (The fast path above
+    /// keeps the plan, the cursor, and the bank for any target inside the in-flight window -
+    /// a backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
     read_plan = {};
+    fill_lane.attempted_end = 0;
+    fill_lane.bank = {};
 
     advanceAhead();
 }
@@ -1992,7 +1994,7 @@ size_t ReaderExecutor::serveRunAt(size_t pos_phys) const
 // running ahead of the cursor). ONE machine in flight - sequential serve is ordered, so a
 // deeper read-ahead only trades memory for latency-hiding, and connection parallelism
 // comes from multiple executors. A populatable job's bytes live in its cells (the cache is
-// the buffer); only a bypass job banks its bytes in `retrieve_status[ri].ready_bytes`
+// the buffer); only a bypass job banks its bytes in the lane's bank
 // (LOGICAL coords, matching the I/O leaves' output, so banking needs no shift), sliced per
 // step. The long connection coalesces the GETs across pieces.
 
@@ -2196,7 +2198,6 @@ void ReaderExecutor::advanceAhead()
 void ReaderExecutor::collectInFlightInto(size_t ri)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
-    auto & st = read_plan.retrieve_status[ri];
     const size_t attempted_end = machine ? machine->physical_window.end() : 0;
     const bool was_inline = machine && machine->inline_serve;
     ChainedBuffers collected;
@@ -2207,7 +2208,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// buffer) - banking them too would just hold a redundant in-memory copy. Only a bypass
         /// gap keeps the bank (`collected` is logical, as `ready_bytes` is - no shift).
         if (r.into.empty() && !collected.empty())
-            st.ready_bytes.append(std::move(collected));
+            fill_lane.bank.append(std::move(collected));
         else if (was_inline && !collected.empty())
         {
             /// OVERFLOW: an inline piece's cells refused some bytes (cache full / download
@@ -2218,7 +2219,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
             /// (a pool lead's refusal is re-fetched window-wise by the serve loop instead).
             const ByteRange got = collected.range();
             if (!display.covers(ByteRange{got.offset + data_start_offset, got.size}))
-                st.ready_bytes.append(std::move(collected));
+                fill_lane.bank.append(std::move(collected));
         }
         /// The lane's ahead cursor: the window was ATTEMPTED end to end (committed, refused
         /// by the cache, or sibling-owned) - the launcher never re-launches it.
@@ -2246,14 +2247,13 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     const auto fill_prefix_end = [&](ByteRange range)
     {
         IntervalSet cov = committedCoverage(range);
-        for (const auto & st : read_plan.retrieve_status)
-            for (const auto & iv : st.ready_bytes.getIntervals())
-            {
-                const size_t lo = std::max(iv.offset + data_start_offset, range.offset);
-                const size_t hi = std::min(iv.end() + data_start_offset, range.end());
-                if (lo < hi)
-                    cov.add(ByteRange{lo, hi - lo});
-            }
+        for (const auto & iv : fill_lane.bank.getIntervals())
+        {
+            const size_t lo = std::max(iv.offset + data_start_offset, range.offset);
+            const size_t hi = std::min(iv.end() + data_start_offset, range.end());
+            if (lo < hi)
+                cov.add(ByteRange{lo, hi - lo});
+        }
         auto gaps = cov.subtract(range);
         return gaps.empty() ? range.end() : gaps.front().offset;
     };
@@ -2281,7 +2281,6 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
 bool ReaderExecutor::pump(size_t ri, ByteRange window)
 {
     const auto & r = read_plan.schedule.retrieves[ri];
-    auto & st = read_plan.retrieve_status[ri];
 
     /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
     /// its worker commits cells progressively, so the WAIT below (window-bounded, like the
@@ -2336,7 +2335,7 @@ bool ReaderExecutor::pump(size_t ri, ByteRange window)
                 stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());
                 if (data_start_offset)
                     sibling_bytes.shift(-static_cast<ssize_t>(data_start_offset));
-                st.ready_bytes.append(std::move(sibling_bytes));
+                fill_lane.bank.append(std::move(sibling_bytes));
             }
             /// Advance the ahead cursor only to the CONTIGUOUS display frontier: a waited
             /// middle that returned short leaves a real hole, and marking it attempted would
@@ -2408,10 +2407,10 @@ bool ReaderExecutor::pump(size_t ri, ByteRange window)
     ///    the wait returned short AND our election still loses (the segment keeps a foreign
     ///    downloader). Bounded to one window, only on this rare path (the old assembler's
     ///    loser-tail).
-    return bankDirectRead(ri, window);
+    return bankDirectRead(window);
 }
 
-bool ReaderExecutor::bankDirectRead(size_t ri, ByteRange window)
+bool ReaderExecutor::bankDirectRead(ByteRange window)
 {
     /// One bounded cache-blind source read of the window, banked - the display serves it and
     /// the consuming trim retires it. The heal verb for state no planned job can produce:
@@ -2424,7 +2423,7 @@ bool ReaderExecutor::bankDirectRead(size_t ri, ByteRange window)
         return false;
     if (data_start_offset)
         direct.shift(-static_cast<ssize_t>(data_start_offset));
-    read_plan.retrieve_status[ri].ready_bytes.append(std::move(direct));
+    fill_lane.bank.append(std::move(direct));
     return true;
 }
 
@@ -2515,14 +2514,13 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
     /// The bank (logical coords; the display is physical). Per-INTERVAL, not the bounding
     /// range: the bank can hold disjoint chunks (sibling-waited pieces), and coverage must
     /// never claim a hole.
-    for (const auto & st : ex.read_plan.retrieve_status)
-        for (const auto & iv : st.ready_bytes.getIntervals())
-        {
-            const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
-            const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
-            if (lo < hi)
-                cov.add(ByteRange{lo, hi - lo});
-        }
+    for (const auto & iv : ex.fill_lane.bank.getIntervals())
+    {
+        const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
+        const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
+        if (lo < hi)
+            cov.add(ByteRange{lo, hi - lo});
+    }
     return cov;
 }
 
@@ -2584,11 +2582,9 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     ///    the intersection of each uncovered gap with each interval keeps `frontier` and `read`
     ///    in agreement - a claimed prefix always serves, never a false empty window.
     ///    No cache counters - the bytes were counted at fetch.
-    for (auto & st : ex.read_plan.retrieve_status)
-    {
-        if (st.ready_bytes.empty())
-            continue;
-        for (const auto & iv : st.ready_bytes.getIntervals())
+    auto & bank = ex.fill_lane.bank;
+    if (!bank.empty())
+        for (const auto & iv : bank.getIntervals())
         {
             const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
             const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
@@ -2597,7 +2593,7 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
             for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
             {
                 const ByteRange g_logical{g.offset - ex.data_start_offset, g.size};
-                ChainedBuffers slice = st.ready_bytes.slice(g_logical);
+                ChainedBuffers slice = bank.slice(g_logical);
                 /// Within one interval the slice covers the gap by construction; the guard
                 /// stays so a byte is never marked covered that was not appended.
                 if (!slice.covers(g_logical))
@@ -2607,7 +2603,6 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
                 covered.add(g);
             }
         }
-    }
     /// Serving CONSUMES, but only what the caller DELIVERS: trim every bank below the window's
     /// contiguous covered prefix (`serveFromDisplay` slices exactly that prefix). Banked bytes
     /// beyond the first uncovered hole stay banked - they serve a later window once the hole is
@@ -2615,19 +2610,15 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     /// banked footprint still stays ~one window.
     const auto prefix_gaps = covered.subtract(window_phys);
     const size_t prefix_end_phys = prefix_gaps.empty() ? window_phys.end() : prefix_gaps.front().offset;
-    if (prefix_end_phys > window_phys.offset)
-        for (auto & st : ex.read_plan.retrieve_status)
-        {
-            if (st.ready_bytes.empty())
-                continue;
-            const ByteRange bank = st.ready_bytes.range();   /// logical
-            const size_t cut = prefix_end_phys - ex.data_start_offset;
-            if (cut <= bank.offset)
-                continue;
-            st.ready_bytes = cut < bank.end()
-                ? st.ready_bytes.slice(ByteRange{cut, bank.end() - cut})
+    if (prefix_end_phys > window_phys.offset && !bank.empty())
+    {
+        const ByteRange held = bank.range();   /// logical
+        const size_t cut = prefix_end_phys - ex.data_start_offset;
+        if (cut > held.offset)
+            bank = cut < held.end()
+                ? bank.slice(ByteRange{cut, held.end() - cut})
                 : ChainedBuffers{};
-        }
+    }
 }
 
 void ReaderExecutor::Display::wait(
@@ -2710,18 +2701,18 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
         return {};
     const ByteRange window{position_phys, want};
 
-    /// A hit run is the covers-immediately case: the plan's pinned views serve. There is no
-    /// job to pump or bank through, so a short read surfaces as a short window.
+    /// A hit run serves WITHOUT the frontier probe - the classification IS the coverage
+    /// claim, and a full coverage build per warm window is exactly the coordination CPU the
+    /// warm path must not pay. Only an empty serve (a stale view) falls into the loop, where
+    /// the heal runs.
     if (!run.require_retrieve.has_value())
     {
-        ChainedBuffers chain = serveFromDisplay(window);
-        LOG_TRACE(log, "serveWindow: streamed resident [{}, {}) from cache",
-            position_phys, position_phys + chain.range().size);
-        return chain;
+        ChainedBuffers out = serveFromDisplay(window);
+        if (!out.empty())
+            return out;
     }
-    const size_t ri = *run.require_retrieve;
 
-    /// THE ENGINE - one serve for populatable and bypass jobs alike: advance the job
+    /// THE ENGINE - one serve for hit, populatable, and bypass runs alike: advance the job
     /// (frontier-wait our leading machine / join a finished or foreign one / wait a sibling /
     /// run an inline piece) until the display can serve the cursor, then read the display.
     /// The cache is the buffer: a populatable job's bytes are read back OUT of the committed
@@ -2738,15 +2729,17 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
             ChainedBuffers out = serveFromDisplay(window);
             if (!out.empty())
                 return out;
-            /// Claimed but unreadable: a raced shrink/detach staled the committed truth at
-            /// the cursor (the read guards refused to serve it), and every planned job trusts
-            /// the same claim - only a cache-blind read heals it, through the bank. Nothing
+            /// Claimed but unreadable: a raced shrink/detach staled the truth at the cursor
+            /// (the read guards refused to serve it - a hit run's view can go stale the same
+            /// way) - only a cache-blind read heals it, through the lane's bank. Nothing
             /// back = a true EOF.
-            if (!bankDirectRead(ri, window))
+            if (!bankDirectRead(window))
                 break;
             continue;
         }
-        if (!pump(ri, window))
+        /// A hit run is the covers-immediately case: nothing to pump when it stops covering
+        /// (the heal above already ran).
+        if (!run.require_retrieve.has_value() || !pump(*run.require_retrieve, window))
             break;
     }
     return serveFromDisplay(window);
@@ -2792,6 +2785,13 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
 
     /// TRIM: the plan span, bounded to the file end and the read extent. An empty
     /// span (the start already at/past a bound) publishes an empty plan.
+    /// New plan epoch: the ahead cursor re-derives from the fresh display truth and the
+    /// bank drops with the plan it served - BEFORE the empty-plan early return below, so an
+    /// at-bound replan cannot leave the previous epoch's state alive (the seek fast path
+    /// keeps the surviving plan, the cursor, AND the bank).
+    fill_lane.attempted_end = 0;
+    fill_lane.bank = {};
+
     const ByteRange plan_range = boundedPlanSpan(physical_start);
     if (plan_range.size == 0)
     {
@@ -2948,10 +2948,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
 
     /// Allocate the per-job status sidecar (the bank) 1:1 with the schedule's jobs.
-    read_plan.retrieve_status.assign(read_plan.schedule.retrieves.size(), {});
-    /// New plan epoch: the ahead cursor re-derives from the fresh display truth (the seek
-    /// fast path keeps the surviving plan AND the ahead cursor).
-    fill_lane.attempted_end = 0;
 
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,

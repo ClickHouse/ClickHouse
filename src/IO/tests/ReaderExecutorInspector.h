@@ -32,12 +32,7 @@ public:
     /// test assert the plan is REUSED across read-extent advances (count flat).
     UInt64 observationCount() const { return ex.stats.get(ReaderExecutor::Stats::Observations); }
 
-    /// The per-job status sidecar, allocated 1:1 with the schedule's jobs.
-    bool retrieveStatusMatchesSchedule() const
-    {
-        return ex.read_plan.retrieve_status.size() == ex.read_plan.schedule.retrieves.size();
-    }
-    size_t retrieveStatusSize() const { return ex.read_plan.retrieve_status.size(); }
+    size_t retrieveCount() const { return ex.read_plan.schedule.retrieves.size(); }
 
     /// The serve map (runs / per-job progress).
     size_t serveRunCount() const { return ex.read_plan.schedule.serve_runs.size(); }
@@ -56,28 +51,17 @@ public:
     /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose
     /// production trigger (a sibling-led wait returning short between two served cells) needs
     /// a cross-executor race - so a test can pin the display's frontier/read agreement on it.
-    void bankBytes(size_t ri, size_t logical_offset, std::string_view bytes)
+    void bankBytes(size_t logical_offset, std::string_view bytes)
     {
         auto buf = std::make_shared<OwnedChainedBuffer>(bytes.size());
         std::memcpy(buf->data(), bytes.data(), bytes.size());
         ChainedBuffers chunk;
         chunk.append(ChainedBufferNode{buf, 0, bytes.size(), logical_offset});
-        ex.read_plan.retrieve_status[ri].ready_bytes.append(std::move(chunk));
+        ex.fill_lane.bank.append(std::move(chunk));
     }
-    const VectorWithMemoryTracking<ByteRange> & bankIntervals(size_t ri) const
+    const VectorWithMemoryTracking<ByteRange> & bankIntervals() const
     {
-        return ex.read_plan.retrieve_status[ri].ready_bytes.getIntervals();
-    }
-    /// The schedule job whose range holds `phys`, or `size_t(-1)`.
-    size_t retrieveIndexAt(size_t phys) const
-    {
-        for (size_t i = 0; i < ex.read_plan.schedule.retrieves.size(); ++i)
-        {
-            const auto & r = ex.read_plan.schedule.retrieves[i].range;
-            if (phys >= r.offset && phys < r.end())
-                return i;
-        }
-        return size_t(-1);
+        return ex.fill_lane.bank.getIntervals();
     }
     /// Latch size-unknown EOF as a collected machine's short read would (the merge at
     /// collect), without having to stage the pool machine + refused-put race.
