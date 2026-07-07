@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
@@ -27,14 +28,20 @@ class ASTIdentifier;
 class ReplaceAliasByExpressionMatcher
 {
 public:
+    using Visitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+
     struct Data
     {
         const ColumnsDescription & columns;
+        NameSet private_aliases;
     };
 
     static void visit(ASTPtr & ast, Data &);
+    static void visit(const ASTFunction &, ASTPtr & ast, Data &);
     static void visit(const ASTIdentifier &, ASTPtr & ast, Data &);
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr & child);
 };
+
+void replaceAliasColumnsWithExpressions(ASTPtr & ast, const ColumnsDescription & columns);
 
 }

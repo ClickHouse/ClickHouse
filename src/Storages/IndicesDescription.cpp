@@ -25,6 +25,26 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// Only the text index `preprocessor` argument is a column expression, so only its ALIAS references are expanded.
+void expandTextIndexPreprocessorAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    for (const auto & child : arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && key->name() == "preprocessor")
+            replaceAliasColumnsWithExpressions(func->arguments->children[1], columns);
+    }
+}
+
+}
+
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -132,22 +152,7 @@ IndexDescription IndexDescription::getIndexFromAST(
         result.arguments = index_type->arguments->clone();
 
         if (result.type == TEXT_INDEX_NAME)
-        {
-            /// Replace ALIAS column references in the text index preprocessor value
-            /// the same way we do for the index expression itself in initExpressionInfo.
-            using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-            ReplaceAliasToExprVisitor::Data alias_data{columns};
-            for (auto & child : result.arguments->children)
-            {
-                const auto * func = child->as<ASTFunction>();
-                if (func && func->name == "equals" && func->arguments && func->arguments->children.size() == 2)
-                {
-                    const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
-                    if (key && key->name() == "preprocessor")
-                        ReplaceAliasToExprVisitor{alias_data}.visit(func->arguments->children[1]);
-                }
-            }
-        }
+            expandTextIndexPreprocessorAliases(result.arguments, columns);
     }
 
     return result;
@@ -162,14 +167,11 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
 {
     chassert(index_expression != nullptr);
 
-    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
-
     ASTPtr expr_list = extractKeyExpressionList(index_expression);
     if (expr_list == nullptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression is not set");
 
-    ReplaceAliasToExprVisitor::Data data{columns};
-    ReplaceAliasToExprVisitor{data}.visit(expr_list);
+    replaceAliasColumnsWithExpressions(expr_list, columns);
 
     expression_list_ast = expr_list->clone();
 
