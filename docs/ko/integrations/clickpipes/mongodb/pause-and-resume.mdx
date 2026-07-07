@@ -1,0 +1,51 @@
+---
+title: 'MongoDB ClickPipe 일시 중지 및 재개'
+description: 'MongoDB ClickPipe 일시 중지 및 재개'
+sidebarTitle: '테이블 일시 중지'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+MongoDB ClickPipe를 일시 중지하면 유용한 경우가 있습니다. 예를 들어, 기존 데이터를 정적인 상태로 두고 분석을 수행해야 할 수 있습니다. 또는 MongoDB 업그레이드를 진행 중일 수도 있습니다. 다음은 MongoDB ClickPipe를 일시 중지하고 재개하는 방법입니다.
+
+<div id="pause-clickpipe-steps">
+  ## MongoDB ClickPipe를 일시 중지하는 방법
+</div>
+
+1. Data Sources 탭에서 일시 중지할 MongoDB ClickPipe를 클릭합니다.
+2. **설정** 탭으로 이동합니다.
+3. **Pause** 버튼을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. 확인 대화 상자가 나타나면 **Pause**를 다시 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. **메트릭** 탭으로 이동합니다.
+5. 파이프의 상태가 **일시 중지됨**으로 표시될 때까지 기다립니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## MongoDB ClickPipe를 재개하는 단계
+</div>
+
+1. **Data Sources** 탭에서 재개할 MongoDB ClickPipe를 클릭합니다. 처음에는 미러 상태가 **일시 중지됨**이어야 합니다.
+2. **설정** 탭으로 이동합니다.
+3. **재개** 버튼을 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. 확인 대화 상자가 표시되면 **재개**를 다시 클릭합니다.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. **메트릭** 탭으로 이동합니다.
+6. 파이프 상태가 **Running**이 될 때까지 기다립니다.

@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/deployment/docker-compose
+title: 'Docker Compose'
+description: 'Docker Compose を使用した ClickStack オープンソース版のデプロイ - ClickHouse オブザーバビリティスタック'
+doc_type: 'guide'
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'HyperDX Docker デプロイ', 'ClickStack デプロイガイド', 'OpenTelemetry Docker Compose']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import JSONSupport from '/snippets/ja/_json_support.mdx';
+
+ClickStack のオープンソースコンポーネントは、すべて個別の Dockerイメージとしてそれぞれ配布されています。
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector**
+* **MongoDB**
+
+これらのイメージは、Docker Compose を使ってローカル環境で組み合わせてデプロイできます。
+
+Docker Compose では、デフォルトの `otel-collector` セットアップに基づいて、オブザーバビリティとインジェスト用の追加ポートが公開されます。
+
+* `13133`: `health_check` 拡張機能用のヘルスチェックエンドポイント
+* `24225`: ログのインジェスト用 Fluentd receiver
+* `4317`: OTLP gRPC receiver (トレース、ログ、メトリクスの標準)
+* `4318`: OTLP HTTP receiver (gRPC の代替)
+* `8888`: collector 自体を監視するための Prometheus メトリクスエンドポイント
+
+これらのポートにより、さまざまなテレメトリーソースとのインテグレーションが可能になり、多様なインジェスト要件に対応できる本番運用向けの OpenTelemetry collector を利用できます。
+
+<div id="suitable-for">
+  ### 適した用途
+</div>
+
+* ローカルテスト
+* PoC (概念実証)
+* 耐障害性が不要で、単一のサーバーですべてのClickHouseデータをホストできる本番デプロイメント
+* ClickStackをデプロイし、ClickHouseは別途ホストする場合 (例: ClickHouse Cloud を使用する場合) 。
+
+<div id="deployment-steps">
+  ## デプロイ手順
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### リポジトリをクローンする
+
+    Docker Compose でデプロイするには、ClickStack リポジトリをクローンし、そのディレクトリに移動して `docker-compose up` を実行します。
+
+    ```shell
+    git clone https://github.com/ClickHouse/ClickStack.git
+    docker compose up
+    ```
+  </Step>
+
+  <Step>
+    ### HyperDX UI を開く
+
+    HyperDX UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
+
+    要件を満たすユーザー名とパスワードを入力して、ユーザーを作成します。
+
+    `Create` をクリックすると、Docker Compose でデプロイした ClickHouse インスタンス用のデータソースが作成されます。
+
+    <Info>
+      **デフォルト接続の上書き**
+
+      統合された ClickHouse インスタンスへのデフォルト接続は上書きできます。詳細は、[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud) を参照してください。
+    </Info>
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    別の ClickHouse インスタンスを使用する例については、[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud) を参照してください。
+  </Step>
+
+  <Step>
+    ### 接続情報を入力する
+
+    デプロイした ClickHouse インスタンスに接続するには、**Create** をクリックしてデフォルト設定をそのまま使用します。
+
+    独自の**外部 ClickHouse クラスター** (例: ClickHouse Cloud) に接続する場合は、接続認証情報を手動で入力できます。
+
+    ログソースの作成を求められた場合は、すべてのデフォルト値をそのまま使用し、`Table` フィールドに `otel_logs` を入力してください。その他の設定は自動検出されるため、`Save New Source` をクリックできます。
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="ログソースを作成" size="md" />
+  </Step>
+</Steps>
+
+<div id="modifying-settings">
+  ## compose の設定変更
+</div>
+
+使用するバージョンなど、スタックの設定は環境変数ファイルで変更できます。
+
+```shell
+user@example-host clickstack % cat .env
+
+# docker-compose.yml で使用
+IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
+ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-otel-collector
+CODE_VERSION=2.8.0
+IMAGE_VERSION_SUB_TAG=.8.0
+IMAGE_VERSION=2
+IMAGE_NIGHTLY_TAG=2-nightly
+IMAGE_LATEST_TAG=latest
+
+# ドメイン URL の設定
+HYPERDX_API_PORT=8000 #任意（他のサービスが使用していないポートを指定）
+HYPERDX_APP_PORT=8080
+HYPERDX_APP_URL=http://localhost
+HYPERDX_LOG_LEVEL=debug
+HYPERDX_OPAMP_PORT=4320
+
+# OTel/ClickHouse の設定
+HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
+```
+
+<div id="configuring-collector">
+  ### OpenTelemetry collector の設定
+</div>
+
+必要に応じて、OTel collector の設定を変更できます。詳しくは、[&quot;設定の変更&quot;](/ja/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)を参照してください。
+
+<div id="using-clickhouse-cloud">
+  ## Using ClickHouse Cloud
+</div>
+
+このディストリビューションは ClickHouse Cloud と組み合わせて使用できますが、[Managed ClickStack](/ja/clickstack/deployment/managed) とは異なります。この構成では、コンピュートとストレージには ClickHouse Cloud のみを使用し、ClickStack UI は自分で管理します。UI を個別に運用する明確な理由がない限り、認証が統合され、追加のエンタープライズ機能も利用でき、ClickStack UI を自分で管理する必要がなくなる Managed ClickStack の利用を推奨します。
+
+次の対応を行ってください。
+
+* `docker-compose.yml` ファイルから ClickHouse service を削除します。テスト目的であれば、これは任意です。デプロイされた ClickHouse インスタンスは単に無視されるだけだからです。ただし、ローカルリソースを無駄に消費します。service を削除する場合は、`depends_on` など、その service への参照も必ず削除してください。
+
+* compose ファイルで環境変数 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER`、`CLICKHOUSE_PASSWORD` を設定し、OTel collector が ClickHouse Cloud インスタンスを使用するように変更します。具体的には、OTel collector service に次の環境変数を追加します。
+
+  ```shell
+  otel-collector:
+      image: ${OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
+      environment:
+        CLICKHOUSE_ENDPOINT: '<CLICKHOUSE_ENDPOINT>' # ここに HTTPS endpoint
+        CLICKHOUSE_USER: '<CLICKHOUSE_USER>'
+        CLICKHOUSE_PASSWORD: '<CLICKHOUSE_PASSWORD>'
+        HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
+        HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+        OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+      ports:
+        - '13133:13133' # health_check 拡張機能
+        - '24225:24225' # fluentd receiver
+        - '4317:4317' # OTLP gRPC receiver
+        - '4318:4318' # OTLP http receiver
+        - '8888:8888' # metrics 拡張機能
+      restart: always
+      networks:
+        - internal
+  ```
+
+  `CLICKHOUSE_ENDPOINT` には、ポート `8443` を含む ClickHouse Cloud の HTTPS endpoint を指定する必要があります。例: `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+* HyperDX UI に接続して ClickHouse への connection を作成する際は、Cloud の credentials を使用します。
+
+<JSONSupport />

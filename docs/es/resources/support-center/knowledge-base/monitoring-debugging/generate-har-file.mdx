@@ -1,0 +1,63 @@
+---
+date: 2025-11-11
+title: Cómo generar un archivo HAR para soporte técnico
+tags: ['Herramientas y utilidades']
+keywords: ['archivo HAR', 'HTTP Archive']
+description: 'Un archivo HAR (HTTP Archive) registra la actividad de red en su navegador. Puede ayudar a nuestro equipo de soporte técnico a diagnosticar cargas de página lentas, solicitudes fallidas u otros problemas de red.'
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="from-google-chrome">
+  ## Desde Google Chrome
+</div>
+
+1. Abre las Herramientas para desarrolladores pulsando <kbd>F12</kbd> o <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Haz clic en la pestaña &quot;Red&quot;.
+3. Recarga la página y reproduce el problema.
+4. En las Herramientas para desarrolladores, haz clic en el botón de descarga.
+
+<div id="from-mozilla-firefox">
+  ## Desde Mozilla Firefox
+</div>
+
+1. Abre las Herramientas para desarrolladores pulsando <kbd>F12</kbd> o <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>E</kbd> (Mac).
+2. Haz clic en la pestaña &quot;Red&quot;.
+3. Recarga la página y reproduce el problema.
+4. En las Herramientas para desarrolladores, haz clic con el botón derecho en la lista de solicitudes y selecciona &quot;Guardar todo como HAR&quot;.
+
+<div id="from-microsoft-edge">
+  ## Desde Microsoft Edge
+</div>
+
+1. Abra las Herramientas para desarrolladores presionando <kbd>F12</kbd> o <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> (Windows/Linux) / <kbd>Cmd</kbd> + <kbd>Option</kbd> + <kbd>I</kbd> (Mac).
+2. Haga clic en la pestaña &quot;Red&quot;.
+3. Recargue la página y reproduzca el problema.
+4. En las Herramientas para desarrolladores, haga clic con el botón derecho en la lista de solicitudes de red y elija &quot;Guardar todo como HAR con contenido&quot;.
+
+<div id="from-safari">
+  ## Desde Safari
+</div>
+
+1. Active las herramientas para desarrolladores (si aún no están activadas):
+   * Vaya a Safari &gt; Settings &gt; Advanced.
+   * Marque &quot;Show Develop menu in menu bar&quot; en la parte inferior.
+2. Haga clic en Develop &gt; Show Web Inspector.
+3. Haga clic en la pestaña &quot;Red&quot;.
+4. Recargue la página y reproduzca el problema.
+5. En las herramientas para desarrolladores, haga clic en el botón &quot;Export&quot;.
+
+<div id="sending-har-file">
+  ## Envío del archivo .HAR
+</div>
+
+1. Cambie el nombre del archivo por uno corto y descriptivo (p. ej., login-issue.har).
+2. Comprima el archivo (opcional, pero recomendable).
+3. Adjúntelo a su caso de soporte o envíelo por correo electrónico a su contacto de soporte asignado.
+
+<Note>
+  Los archivos HAR pueden contener cookies de sesión u otros datos sensibles.
+  Compártalos únicamente con personal de soporte autorizado.
+</Note>

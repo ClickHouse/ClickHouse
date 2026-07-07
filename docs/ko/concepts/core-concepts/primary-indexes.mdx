@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: '프라이머리 인덱스'
+description: 'ClickHouse에서 희소 프라이머리 인덱스가 작동하는 방식'
+keywords: ['희소 프라이머리 인덱스', '프라이머리 인덱스', '인덱스']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Tip>
+  **고급 인덱싱에 관한 자세한 내용을 찾고 계신가요?**
+
+  이 페이지에서는 ClickHouse의 희소 프라이머리 인덱스가 무엇인지, 어떻게 구성되는지, 어떻게 작동하는지, 그리고 쿼리 속도를 높이는 데 어떻게 도움이 되는지 소개합니다.
+
+  고급 인덱싱 전략과 더 자세한 기술 설명은 [프라이머리 인덱스 심층 분석](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)을 참조하십시오.
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## ClickHouse에서 희소 프라이머리 인덱스는 어떻게 작동하나요?
+</div>
+
+<br />
+
+ClickHouse의 희소 프라이머리 인덱스는 테이블의 프라이머리 키(primary key) 컬럼에 대한 쿼리 조건과 일치하는 데이터를 포함할 수 있는 [그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing)—즉, 행 블록—을 효율적으로 식별하는 데 사용됩니다. 다음 섹션에서는 이 인덱스가 해당 컬럼의 값을 바탕으로 어떻게 구성되는지 설명합니다.
+
+<div id="sparse-primary-index-creation">
+  ### 희소 프라이머리 인덱스 생성
+</div>
+
+희소 프라이머리 인덱스가 어떻게 생성되는지 설명하기 위해 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블과 몇 가지 애니메이션을 사용하겠습니다.
+
+[앞서 살펴본 것처럼](/ko/concepts/core-concepts/parts), 프라이머리 키가 (town, street)인 ① 예시 테이블에서는 ② 삽입된 데이터가 ③ 프라이머리 키 컬럼 값을 기준으로 정렬된 상태로 디스크에 저장되며, 각 컬럼은 별도의 파일에 압축되어 저장됩니다:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+처리를 위해 각 컬럼의 데이터는 ④ 논리적으로 그래뉼로 나뉘며, 각 그래뉼은 8,192개의 행을 포함합니다. 그래뉼은 ClickHouse의 데이터 처리 메커니즘이 다루는 가장 작은 단위입니다.
+
+이 그래뉼 구조 때문에 프라이머리 인덱스는 **희소**해집니다. ClickHouse는 모든 행을 인덱싱하는 대신, 각 그래뉼에서 단 하나의 행, 즉 첫 번째 행의 ⑤ 프라이머리 키 값만 저장합니다. 그 결과 그래뉼마다 하나의 인덱스 엔트리가 생성됩니다:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+이처럼 희소하기 때문에 프라이머리 인덱스는 전체가 메모리에 들어갈 만큼 충분히 작으며, 프라이머리 키 컬럼에 대한 프레디케이트가 있는 쿼리를 빠르게 필터링할 수 있습니다. 다음 섹션에서는 이것이 이러한 쿼리의 속도를 어떻게 높이는지 살펴보겠습니다.
+
+<div id="primary-index-usage">
+  ### 프라이머리 인덱스 사용 방식
+</div>
+
+다음 애니메이션을 통해 희소 프라이머리 인덱스가 쿼리 가속에 어떻게 사용되는지 간단히 살펴보겠습니다:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① 예시 쿼리에는 두 프라이머리 키 컬럼 모두에 대한 프레디케이트가 포함되어 있습니다: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② 쿼리 속도를 높이기 위해 ClickHouse는 테이블의 프라이머리 인덱스를 메모리에 로드합니다.
+
+③ 그런 다음 인덱스 항목을 스캔하여 어떤 그래뉼에 프레디케이트와 일치하는 행이 포함될 수 있는지, 다시 말해 어떤 그래뉼을 건너뛸 수 없는지를 식별합니다.
+
+④ 이렇게 잠재적으로 관련 있는 그래뉼을 쿼리에 필요한 다른 컬럼의 해당 그래뉼과 함께 메모리로 로드한 다음 [처리합니다](/ko/concepts/core-concepts/query-parallelism).
+
+<div id="monitoring-primary-indexes">
+  ## 프라이머리 인덱스 모니터링
+</div>
+
+테이블의 각 [데이터 파트](/ko/concepts/core-concepts/parts)에는 고유한 프라이머리 인덱스가 있습니다. [mergeTreeIndex](/ko/reference/functions/table-functions/mergeTreeIndex) 테이블 함수를 사용해 이러한 인덱스의 내용을 확인할 수 있습니다.
+
+다음 쿼리는 예시 테이블의 각 데이터 파트에 있는 프라이머리 인덱스 엔트리 수를 보여줍니다:
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+이 쿼리는 현재 존재하는 데이터 파트 중 하나의 프라이머리 인덱스에서 처음 10개 항목을 보여줍니다. 이들 파트는 백그라운드에서 더 큰 파트로 지속적으로 [머지](/ko/concepts/core-concepts/merges)됩니다:
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+마지막으로, [EXPLAIN](/ko/reference/statements/explain) 절을 사용해 모든 데이터 파트의 프라이머리 인덱스(primary indexes)가 예시 쿼리의 프레디케이트와 일치하는 행을 포함할 가능성이 전혀 없는 그래뉼을 건너뛰는 데 어떻게 사용되는지 확인합니다. 이러한 그래뉼은 로딩 및 처리에서 제외됩니다:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+위 EXPLAIN 출력의 13행을 보면, 모든 데이터 파트에 걸쳐 있는 3,609개의 그래뉼 중 단 3개만 프라이머리 인덱스 분석을 통해 처리 대상으로 선택되었음을 알 수 있습니다. 나머지 그래뉼은 모두 완전히 건너뛰었습니다.
+
+다음 쿼리를 실행해 보면 대부분의 데이터가 건너뛰어졌다는 점도 확인할 수 있습니다:
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 2억 6,310만
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+위에서 볼 수 있듯이, 예시 테이블의 약 3천만 개 행 중 실제로 처리된 것은 약 25,000개 행뿐입니다:
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 2,956만
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## 핵심 요약
+</div>
+
+* **희소 프라이머리 인덱스(Sparse primary indexes)**는 프라이머리 키 컬럼에 대한 쿼리 조건과 일치하는 행이 들어 있을 수 있는 그래뉼을 식별해, ClickHouse가 불필요한 데이터를 건너뛸 수 있도록 합니다.
+
+* 각 인덱스는 **각 그래뉼의 첫 번째 행**에 있는 프라이머리 키 값만 저장합니다(그래뉼은 기본적으로 8,192개의 행으로 구성됨). 따라서 메모리에 올릴 수 있을 만큼 충분히 작습니다.
+
+* MergeTree 테이블의 **각 데이터 파트**에는 **자체 프라이머리 인덱스**가 있으며, 쿼리 실행 시 각각 독립적으로 사용됩니다.
+
+* 쿼리 실행 중 이 인덱스를 사용하면 ClickHouse가 **그래뉼을 건너뛸 수 있어**, I/O와 메모리 사용량을 줄이고 성능을 높일 수 있습니다.
+
+* `mergeTreeIndex` 테이블 함수를 사용해 **인덱스 내용을 확인**하고, `EXPLAIN` 절을 사용해 인덱스 사용 현황을 모니터링할 수 있습니다.
+
+<div id="where-to-find-more-information">
+  ## 추가 정보를 확인할 수 있는 곳
+</div>
+
+ClickHouse에서 희소 프라이머리 인덱스가 어떻게 동작하는지, 기존 데이터베이스 인덱스와 어떤 차이가 있는지, 그리고 이를 효과적으로 활용하기 위한 모범 사례까지 더 자세히 알아보려면 인덱싱 [심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 확인하세요.
+
+프라이머리 인덱스 스캔으로 선택된 데이터를 ClickHouse가 높은 쿼리 병렬성으로 처리하는 방식에 관심이 있다면 [여기](/ko/concepts/core-concepts/query-parallelism)의 쿼리 병렬성 가이드를 참조하세요.

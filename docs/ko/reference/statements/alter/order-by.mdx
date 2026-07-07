@@ -1,0 +1,19 @@
+---
+description: '키 표현식을 다루는 문서'
+sidebarTitle: 'ORDER BY'
+slug: /sql-reference/statements/alter/order-by
+title: '키 표현식 다루기'
+doc_type: 'reference'
+---
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ORDER BY new_expression
+```
+
+이 명령은 테이블의 [정렬 키](/ko/reference/engines/table-engines/mergetree-family/mergetree)를 `new_expression`(표현식 또는 표현식의 튜플)으로 변경합니다. 프라이머리 키는 그대로 유지됩니다.
+
+이 명령은 메타데이터만 변경하므로 비교적 가벼운 작업입니다. 데이터 파트의 행이 정렬 키 표현식 순서대로 정렬된 상태를 유지해야 하므로, 기존 컬럼을 포함하는 표현식은 정렬 키에 추가할 수 없습니다(동일한 `ALTER` 쿼리의 `ADD COLUMN` 명령으로 추가되었고 기본 컬럼 값이 없는 컬럼만 예외적으로 허용됨).
+
+<Note>
+  이 기능은 [`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/mergetree) 계열의 테이블([복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블 포함)에서만 작동합니다.
+</Note>

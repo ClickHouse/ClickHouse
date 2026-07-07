@@ -1,0 +1,231 @@
+---
+slug: /cloud/managed-postgres/migrations/clickpipes
+sidebarTitle: 'ClickPipes'
+title: 'ClickPipes のデータソースを使用した PostgreSQL データの移行'
+description: 'ClickPipes を使用して、PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を学びます。'
+keywords: ['postgres', 'postgresql', '論理レプリケーション', '移行', 'ClickPipes', 'ClickHouse Managed Postgres', 'データソース', 'インポート']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
+
+ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Postgres サービス に移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* レプリケーション権限を持つユーザーで、ソース PostgreSQL データベースにアクセスできること。ソースに応じて、以下のセットアップガイドに従ってください。
+  * [Amazon RDS Postgres](/ja/integrations/clickpipes/postgres/source/rds)
+  * [Amazon Aurora Postgres](/ja/integrations/clickpipes/postgres/source/aurora)
+  * [Supabase Postgres](/ja/integrations/clickpipes/postgres/source/supabase)
+  * [Google Cloud SQL Postgres](/ja/integrations/clickpipes/postgres/source/google-cloudsql)
+  * [Azure Flexible Server for Postgres](/ja/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+  * [Neon Postgres](/ja/integrations/clickpipes/postgres/source/neon-postgres)
+  * [Crunchy Bridge Postgres](/ja/integrations/clickpipes/postgres/source/crunchy-postgres)
+  * [TimescaleDB](/ja/integrations/clickpipes/postgres/source/timescale)
+  * その他のプロバイダーまたはセルフホストのインスタンスについては、[Generic Postgres Source](/ja/integrations/clickpipes/postgres/source/generic)
+* 移行先として ClickHouse Managed Postgres サービスが必要です。まだ用意していない場合は、[クイックスタート](/ja/products/managed-postgres/quickstart) を参照してください。
+* ローカルマシンに `pg_dump` と `psql` がインストールされていること。どちらも標準の PostgreSQL クライアントツールに含まれています。
+
+<div id="considerations">
+  ## 移行前の注意事項
+</div>
+
+* **DDL の伝播**: 継続的レプリケーション (CDC) は、DML 操作と `ADD COLUMN` を取り込みます。`DROP COLUMN` や `ALTER COLUMN` など、その他の DDL 変更は伝播されないため、ターゲット側で手動で適用する必要があります。
+
+<Note>
+  移行中に問題が発生した場合は、よくあるエラーとその解決策について [Managed Postgres 移行のよくある質問](/ja/products/managed-postgres/migrations/faq) を確認してください。
+</Note>
+
+<div id="step-1-connect">
+  ## Step 1: ソースデータベースに接続する
+</div>
+
+[ClickHouse Cloud console](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
+
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud のサービス一覧に表示される Managed Postgres のサービスカード" size="lg" border />
+
+左側のサイドバーで、**データソース** をクリックします。
+
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres サービスのサイドバーにある データソース エントリ" size="lg" border />
+
+**Start import** をクリックします。
+
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import ボタンが表示された データソース ページ" size="lg" border />
+
+ソース PostgreSQL データベースの接続情報 (ホスト、ポート、ユーザー名、パスワード、データベース名) を入力します。ソース側で必要な場合は、**TLS** を有効にします。
+
+ソースデータベースへのプライベート接続が必要な場合は、**SSH トンネリング** を選択し、必要な SSH 情報を入力できます。これにより、公開されていないデータベースにも移行処理から安全に接続できます。
+
+インジェスト方法を選択します。
+
+* **Initial load + CDC** — 既存データをコピーした後、継続的な変更を反映してターゲットを同期し続けます。
+* **Initial load only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
+* **CDC only** — 初期コピーをスキップし、この時点以降の新しい変更だけをレプリケートします。
+
+<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム" size="lg" border />
+
+**Next** をクリックします。
+
+<div id="step-2-export-schema">
+  ## ステップ2: データベースのスキーマをエクスポートする
+</div>
+
+ウィザードには、ソースの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行します。
+
+<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="ステップ2: スキーマのエクスポート用 `pg_dump` コマンド" size="lg" border />
+
+```shell
+pg_dump \
+  -h <source_host> \
+  -U <source_user> \
+  -d <source_database> \
+  --schema-only \
+  -f pg.sql
+```
+
+これにより、現在のディレクトリに `pg.sql` が作成されます。
+
+<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 実行後のターミナル出力" size="lg" border />
+
+**Next** をクリックします。
+
+<div id="step-3-import-schema">
+  ## ステップ3: スキーマを Managed Postgres サービスにインポートする
+</div>
+
+ドロップダウンから宛先データベースを選択するか、新しくプロビジョニングする場合は **新しいデータベースを作成** をクリックします。
+
+ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行してください。
+
+<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="ステップ3: スキーマインポート用の psql コマンド" size="lg" border />
+
+```shell
+psql \
+  -h <target_host> \
+  -p 5432 \
+  -U <target_user> \
+  -d <target_database> \
+  -f pg.sql
+```
+
+<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql でスキーマをインポートした後のターミナル出力" size="lg" border />
+
+**次へ** をクリックします。
+
+<div id="step-4-ingestion-settings">
+  ## Step 4: インジェスト設定を構成する
+</div>
+
+論理レプリケーションに使用するパブリケーションを指定します。空欄のままにすると、パブリケーションは自動的に作成されます。
+
+スループットを調整するには、**高度なレプリケーション設定**を展開します。
+
+| 設定                     | デフォルト   | 説明                          |
+| ---------------------- | ------- | --------------------------- |
+| 同期間隔 (秒)               | 10      | レプリケーションスロットをポーリングする間隔      |
+| 初期ロードの並列スレッド数          | 4       | bulk copy フェーズで使用するスレッド数    |
+| Pull バッチサイズ            | 100,000 | レプリケーションの各バッチで取得する行数        |
+| スナップショットのパーティションあたりの行数 | 100000  | 大規模なテーブルスナップショットのパーティションサイズ |
+| 並列でスナップショットを作成するテーブル数  | 1       | 同時実行でスナップショットを作成するテーブル数     |
+
+<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="ステップ 4: パブリケーションと高度なレプリケーションオプションを含むインジェスト設定フォーム" size="lg" border />
+
+**Next** をクリックします。
+
+<div id="step-5-select-tables">
+  ## ステップ5: テーブルを選択
+</div>
+
+レプリケートするテーブルを選択します。テーブルはスキーマごとにグループ化されています。個別にテーブルを選択するか、スキーマを展開してその中のすべてのテーブルを選択します。
+
+<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="ステップ5: スキーマごとにグループ化されたテーブル選択画面。［移行を作成］ボタン付き" size="lg" border />
+
+**移行を作成** をクリックします。
+
+<div id="monitor">
+  ## 移行を監視する
+</div>
+
+移行を作成すると、**データソース**にステータスが **実行中** として表示されます。
+
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="実行中の移行が表示されたデータソース一覧" size="lg" border />
+
+移行をクリックすると、詳細ビューが開きます。**テーブル** タブには、処理済み行数、パーティション数、パーティションあたりの平均時間など、各テーブルの初期ロードの進行状況が表示されます。**メトリクス** タブには、CDC が開始されるとレプリケーションラグとスループットが表示されます。
+
+<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="テーブルごとの初期ロード統計を表示する移行詳細ビュー" size="lg" border />
+
+<div id="post-migration">
+  ## 移行後のタスク
+</div>
+
+初期ロードが完了し、CDC を使用している場合はレプリケーションラグがほぼゼロになったら、次の作業を行います。
+
+**行数を確認します。** トラフィックを切り替える前に、移行元と移行先の両方で重要なテーブルを抜き取りで確認してください。
+
+```sql
+SELECT COUNT(*) FROM public.orders;
+```
+
+**移行元への書き込みを停止します。** アプリケーションからの書き込みを一時停止します。切り替え中に読み取り専用モードを強制するには:
+
+```sql
+ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+```
+
+**レプリケーションが追いついていることを確認します。** ソース側とターゲット側の最新行を比較します。
+
+```sql
+-- ソースとターゲットの両方で実行
+SELECT MAX(id), MAX(updated_at) FROM public.orders;
+```
+
+**シーケンスをリセットします。** 各テーブルの現在の最大値に合わせて、シーケンスを調整します:
+
+```sql
+DO $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT
+            n.nspname AS schema_name,
+            c.relname AS table_name,
+            a.attname AS column_name,
+            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        JOIN pg_attribute a ON a.attrelid = c.oid
+        WHERE c.relkind = 'r'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    LOOP
+        IF r.seq_name IS NOT NULL THEN
+            EXECUTE format(
+                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
+                r.seq_name, r.column_name, r.schema_name, r.table_name
+            );
+        END IF;
+    END LOOP;
+END $$;
+```
+
+**アプリケーショントラフィックを切り替えます。** 読み取り先と書き込み先を Managed Postgres サービスに切り替え、エラー、制約違反、レプリケーションの健全性を監視します。
+
+**クリーンアップ。**  切り替え後、新しいサービスが正常に稼働していることを確認したら、**データソース** から移行を削除します。CDC を使用した場合は、リソースを解放するために移行元からレプリケーションスロットを削除します:
+
+```sql
+SELECT pg_drop_replication_slot('<slot_name>');
+```
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* [Managed Postgres クイックスタート](/ja/products/managed-postgres/quickstart)
+* [Managed Postgres 接続情報](/ja/products/managed-postgres/connection)
+* [ClickPipes Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)

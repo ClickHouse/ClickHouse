@@ -1,0 +1,265 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud
+title: 'Implantações no Cloud com Helm'
+description: 'Configurações específicas do Cloud para implantar o ClickStack no GKE, EKS e AKS'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'implantação de Kubernetes no Cloud', 'implantação em produção']
+---
+
+<Warning>
+  **Versão 2.x do chart**
+
+  Esta página documenta o **chart do Helm v2.x** baseado em subcharts. Se você ainda estiver usando o chart v1.x com inline templates, consulte [Implantações no Cloud com Helm (v1.x)](/pt-BR/clickstack/deployment/helm-cloud-v1). Para ver as etapas de migração, consulte o [guia de atualização](/pt-BR/clickstack/deployment/helm-upgrade).
+</Warning>
+
+Este guia aborda configurações específicas do Cloud para implantar o ClickStack em serviços gerenciados de Kubernetes. Para a instalação básica, consulte o [guia principal de implantação com Helm](/pt-BR/clickstack/deployment/helm).
+
+<div id="google-kubernetes-engine-gke">
+  ## Google Kubernetes Engine (GKE)
+</div>
+
+Ao implantar no GKE, talvez seja necessário sobrescrever determinados valores devido ao comportamento de rede específico da nuvem.
+
+<div id="loadbalancer-dns-resolution-issue">
+  ### Problema de resolução de DNS do LoadBalancer
+</div>
+
+O serviço LoadBalancer do GKE pode causar problemas internos de resolução de DNS, em que a comunicação entre pods do Kubernetes passa a apontar para IPs externos em vez de permanecer dentro da rede do cluster. Isso afeta especificamente a conexão do OTel collector com o servidor OpAMP.
+
+**Sintomas:**
+
+* Logs do OTel collector mostrando erros de &quot;connection refused&quot; com endereços IP do cluster
+* Falhas de conexão com o OpAMP, como: `dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**Solução:**
+
+Use o nome de domínio totalmente qualificado (FQDN) na URL do servidor OpAMP:
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set hyperdx.config.OPAMP_SERVER_URL="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+<div id="gke-example-values">
+  ### valores de exemplo do GKE
+</div>
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # Use o IP externo do seu LoadBalancer
+
+  config:
+    OPAMP_SERVER_URL: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "pd-ssd"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "pd-ssd"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+<div id="amazon-eks">
+  ## Amazon EKS
+</div>
+
+No caso de implantações no EKS, considere estas configurações comuns:
+
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"
+
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "gp3"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "gp3"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+Para configurações de Entrada do AWS ALB, consulte o [guia de Manifestos adicionais](/pt-BR/clickstack/deployment/helm-additional-manifests#aws-alb-ingress) e os [valores de exemplo do ALB](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress).
+
+<div id="azure-aks">
+  ## Azure AKS
+</div>
+
+Para implantações no AKS:
+
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "managed-csi"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "managed-csi"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+<div id="production-cloud-deployment-checklist">
+  ## Lista de verificação para implantação em nuvem para produção
+</div>
+
+Antes de implantar o ClickStack em produção em qualquer provedor de nuvem:
+
+* [ ] Configure corretamente `hyperdx.frontendUrl` com seu domínio/IP externo
+* [ ] Configure a Entrada com TLS para acesso via HTTPS
+* [ ] Substitua a URL do servidor OpAMP por um FQDN caso esteja enfrentando problemas de conexão (especialmente no GKE)
+* [ ] Configure as classes de armazenamento para os volume claims do ClickHouse e do Keeper
+* [ ] Defina requests e limits de recursos adequados
+* [ ] Habilite monitoramento e alertas
+* [ ] Configure backup e recuperação de desastres
+* [ ] Implemente um gerenciamento adequado de secrets via `hyperdx.secrets` ou secrets externos
+
+<div id="production-best-practices">
+  ## Boas práticas para produção
+</div>
+
+<div id="resource-management">
+  ### Gerenciamento de recursos
+</div>
+
+```yaml
+hyperdx:
+  deployment:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+otel-collector:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+```
+
+<div id="high-availability">
+  ### Alta disponibilidade
+</div>
+
+```yaml
+hyperdx:
+  deployment:
+    replicas: 3
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: clickstack
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+```
+
+<div id="persistent-storage">
+  ### Armazenamento persistente
+</div>
+
+Garanta que os volumes persistentes estejam configurados para retenção de dados por meio das especificações dos CRs do operador:
+
+```yaml
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi
+
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              storageClassName: "fast-ssd"
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+**Classes de armazenamento específicas do Cloud:**
+
+* **GKE**: `pd-ssd` ou `pd-balanced`
+* **EKS**: `gp3` ou `io2`
+* **AKS**: `managed-premium` ou `managed-csi`
+
+<div id="browser-compatibility-notes">
+  ### Notas sobre compatibilidade com navegadores
+</div>
+
+Para implantações apenas com HTTP (desenvolvimento/testes), alguns navegadores podem exibir erros da API de criptografia devido aos requisitos de contexto seguro. Para implantações em produção, sempre use HTTPS com certificados TLS adequados por meio da configuração de Entrada.
+
+Consulte [Configuração de Entrada](/pt-BR/clickstack/deployment/helm-configuration#ingress-setup) para instruções de configuração de TLS.
+
+<div id="next-steps">
+  ## Próximas etapas
+</div>
+
+* [Guia de configuração](/pt-BR/clickstack/deployment/helm-configuration) - chaves de API, secrets e Entrada
+* [Opções de implantação](/pt-BR/clickstack/deployment/helm-deployment-options) - Configuração de sistemas externos
+* [guia de atualização](/pt-BR/clickstack/deployment/helm-upgrade) - Migração da v1.x para a v2.x
+* [Manifests adicionais](/pt-BR/clickstack/deployment/helm-additional-manifests) - Objetos personalizados do Kubernetes
+* [Guia principal do Helm](/pt-BR/clickstack/deployment/helm) - Instalação básica
+* [Implantações no Cloud (v1.x)](/pt-BR/clickstack/deployment/helm-cloud-v1) - configurações do Cloud v1.x
