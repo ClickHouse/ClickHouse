@@ -317,7 +317,7 @@ if it has fewer, the result is zero-padded to `n` bytes. The size `n` must be a 
     FunctionDocumentation::Syntax syntax_to_fixed_string = "arrayPackBitsToFixedString(f, n, arr)";
     FunctionDocumentation::Arguments arguments_to_fixed_string = {
         {"f", "Lambda function producing the bit for each element.", {"Lambda function"}},
-        {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int*"}},
+        {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int8/16/32/64"}},
         {"arr", "The array to pack.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_to_fixed_string = {"Returns the packed bits.", {"FixedString(n)"}};
@@ -335,7 +335,7 @@ that fit into 64 bits are kept. The group size `g` must be a constant between 1 
     FunctionDocumentation::Syntax syntax_groups_to_uint64 = "arrayPackBitGroupsToUInt64(f, g, arr)";
     FunctionDocumentation::Arguments arguments_groups_to_uint64 = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
-        {"g", "The number of bits per group.", {"(U)Int*"}},
+        {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
         {"arr", "The array to pack.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_uint64 = {"Returns the packed bits.", {"UInt64"}};
@@ -353,7 +353,7 @@ The group size `g` must be a constant between 1 and 64.
     FunctionDocumentation::Syntax syntax_groups_to_string = "arrayPackBitGroupsToString(f, g, arr)";
     FunctionDocumentation::Arguments arguments_groups_to_string = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
-        {"g", "The number of bits per group.", {"(U)Int*"}},
+        {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
         {"arr", "The array to pack.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_string = {"Returns the packed bits.", {"String"}};
@@ -372,8 +372,8 @@ constants, and `g` must not exceed 64.
     FunctionDocumentation::Syntax syntax_groups_to_fixed_string = "arrayPackBitGroupsToFixedString(f, n, g, arr)";
     FunctionDocumentation::Arguments arguments_groups_to_fixed_string = {
         {"f", "Lambda function producing the group value for each element.", {"Lambda function"}},
-        {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int*"}},
-        {"g", "The number of bits per group.", {"(U)Int*"}},
+        {"n", "The size of the resulting `FixedString` in bytes.", {"(U)Int8/16/32/64"}},
+        {"g", "The number of bits per group.", {"(U)Int8/16/32/64"}},
         {"arr", "The array to pack.", {"Array(T)"}},
     };
     FunctionDocumentation::ReturnedValue returned_value_groups_to_fixed_string = {"Returns the packed bits.", {"FixedString(n)"}};
