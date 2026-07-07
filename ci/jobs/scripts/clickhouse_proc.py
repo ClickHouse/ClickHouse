@@ -445,10 +445,60 @@ profiles:
             verbose=True,
         )
 
+    def _ensure_server_ports_free(self, ports, timeout_s=45):
+        """Best-effort: make sure no leftover clickhouse-server/keeper from a
+        previous run holds the ports we are about to bind.
+
+        The CI test config sets `listen_try=true`, so if a stale server still
+        holds e.g. 9000/8123/9181/9009 the fresh server does NOT fail to start:
+        it logs each `Listen ... Address already in use` only as a Warning,
+        stays alive, but never listens on the TCP port. wait_ready() then times
+        out with Code 210 (Connection refused) and the whole job fails at setup
+        before any test runs. `clickhouse stop` between stages should release
+        the ports, but does not always (e.g. an ungraceful exit / detached
+        keeper), so this is a safety net. Never raises - a failure here must not
+        mask the real start.
+        """
+
+        def busy_ports():
+            busy = []
+            for p in ports:
+                # `ss -Hlnt 'sport = :P'` prints one line per LISTEN socket on P
+                if Shell.get_output(f"ss -Hlnt 'sport = :{p}'").strip():
+                    busy.append(p)
+            return busy
+
+        busy = busy_ports()
+        if not busy:
+            return
+        print(f"Ports still held before start: {busy} - killing lingering clickhouse server/keeper")
+        # Only clickhouse server/keeper are expected to hold these ports in the
+        # job container; kill them and wait for the OS to release the sockets.
+        Shell.check("pkill -9 -x clickhouse-server", verbose=True)
+        Shell.check("pkill -9 -x clickhouse-keeper", verbose=True)
+        Shell.check("pkill -9 -f 'clickhouse server'", verbose=True)
+        Shell.check("pkill -9 -f 'clickhouse keeper'", verbose=True)
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            busy = busy_ports()
+            if not busy:
+                print("All server ports are free now")
+                return
+            time.sleep(2)
+        print(
+            f"WARNING: ports still held after {timeout_s}s: {busy_ports()} - "
+            "starting anyway (wait_ready will report if the server cannot listen)"
+        )
+
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
             Shell.check("dmesg --clear", verbose=True)
+            # Release ports held by a leftover server/keeper from a previous run
+            # before we launch our own (listen_try=true otherwise turns a port
+            # collision into a silent wait_ready timeout). Done once, before any
+            # of our replicas start, so it only ever targets stale processes.
+            self._ensure_server_ports_free([9000, 8123, 9181, 9009])
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
