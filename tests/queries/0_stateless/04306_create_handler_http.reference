@@ -18,6 +18,12 @@ matched
 10
 === INSERT handler reads data from the HTTP body ===
 6
+=== INSERT handler via the mutating method PUT writes data (not readonly) ===
+16
+=== INSERT handler via the mutating method DELETE writes data (not readonly) ===
+116
+=== a modifying handler with only read-only methods is rejected at creation ===
+BAD_ARGUMENTS
 === custom HTTP response headers via the SETTINGS of the query ===
 x-custom: yes
 === HTTP header used as usual: X-ClickHouse-Database sets the database ===

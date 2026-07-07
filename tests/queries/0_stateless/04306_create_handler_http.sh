@@ -16,6 +16,8 @@ HC="hc_${DB}"
 HP="hp_${DB}"
 HPOST="hpost_${DB}"
 HINS="hins_${DB}"
+HPUT="hput_${DB}"
+HDEL="hdel_${DB}"
 HPROTO="hproto_${DB}"
 HCONST="hconst_${DB}"
 HSECRET="hsecret_${DB}"
@@ -34,7 +36,7 @@ cleanup() {
     # and under heavy configurations (sanitizers, S3 storage, metadata in Keeper), so we minimize the
     # number of separate clickhouse-client invocations to keep the running time well under the limit.
     local drops=""
-    for h in "$HA" "$HB" "$HC" "$HP" "$HPOST" "$HINS" "$HPROTO" "$HCONST" "$HSECRET" "$HVIEW" "$HWHO" "$HDBNAME" "$HHDR" "$HBRANCH" "$HORDA" "$HORDZ" "hx_${DB}"; do
+    for h in "$HA" "$HB" "$HC" "$HP" "$HPOST" "$HINS" "$HPUT" "$HDEL" "$HPROTO" "$HCONST" "$HSECRET" "$HVIEW" "$HWHO" "$HDBNAME" "$HHDR" "$HBRANCH" "$HORDA" "$HORDZ" "hbad_${DB}" "hx_${DB}"; do
         drops+="DROP HANDLER IF EXISTS \`$h\`; "
     done
     $CLICKHOUSE_CLIENT -q "${drops}DROP USER IF EXISTS \`$USER\`, \`$RUSER\`"
@@ -79,6 +81,19 @@ echo "=== INSERT handler reads data from the HTTP body ==="
 $CLICKHOUSE_CLIENT -q "CREATE TABLE ${DB}.t (x UInt32) ENGINE = Memory; CREATE HANDLER \`$HINS\` URL '${P}/insert' METHODS (POST) AS INSERT INTO ${DB}.t FORMAT TSV"
 printf '1\n2\n3\n' | ${CLICKHOUSE_CURL} -sS "${BASE}${P}/insert" --data-binary @-
 $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM ${DB}.t"
+
+echo "=== INSERT handler via the mutating method PUT writes data (not readonly) ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HPUT\` URL '${P}/insert_put' METHODS (PUT) AS INSERT INTO ${DB}.t FORMAT TSV"
+printf '10\n' | ${CLICKHOUSE_CURL} -sS -X PUT "${BASE}${P}/insert_put" --data-binary @-
+$CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM ${DB}.t"
+
+echo "=== INSERT handler via the mutating method DELETE writes data (not readonly) ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDEL\` URL '${P}/insert_del' METHODS (DELETE) AS INSERT INTO ${DB}.t FORMAT TSV"
+printf '100\n' | ${CLICKHOUSE_CURL} -sS -X DELETE "${BASE}${P}/insert_del" --data-binary @-
+$CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM ${DB}.t"
+
+echo "=== a modifying handler with only read-only methods is rejected at creation ==="
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`hbad_${DB}\` URL '${P}/insert_bad' AS INSERT INTO ${DB}.t FORMAT TSV" 2>&1 | grep -o "BAD_ARGUMENTS" | head -1
 
 echo "=== custom HTTP response headers via the SETTINGS of the query ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HHDR\` URL '${P}/rheaders' AS SELECT 1 SETTINGS http_response_headers = {'X-Custom':'yes'}"

@@ -3,6 +3,10 @@
 #include <Parsers/ASTCreateHandlerQuery.h>
 #include <Parsers/QueryParameterVisitor.h>
 
+#include <algorithm>
+
+#include <fmt/ranges.h>
+
 
 namespace DB
 {
@@ -24,6 +28,63 @@ SQLDefinedHandler::URLMatchType convertURLMatchType(ASTCreateHandlerQuery::URLMa
         case ASTCreateHandlerQuery::URLMatchType::Prefix: return SQLDefinedHandler::URLMatchType::Prefix;
         case ASTCreateHandlerQuery::URLMatchType::Regexp: return SQLDefinedHandler::URLMatchType::Regexp;
     }
+}
+
+/// Whether executing a query of this kind can modify data or server state and therefore requires the handler to
+/// accept a mutating HTTP method. This mirrors the `readonly` enforcement in `ContextAccess`: the HTTP execution
+/// path enables `readonly` for every non-mutating (safe) method, so a mutating query served only over such methods
+/// would always be rejected at invocation time. The switch is exhaustive on purpose - adding a new `QueryKind`
+/// forces an explicit decision here.
+bool queryKindRequiresMutatingMethod(IAST::QueryKind kind)
+{
+    switch (kind)
+    {
+        /// Read-only: allowed to run under `readonly`, so it can be served over a safe method such as `GET`.
+        case IAST::QueryKind::None: /// Unclassified queries have no known write; treat them as read-only.
+        case IAST::QueryKind::Select:
+        case IAST::QueryKind::Show:
+        case IAST::QueryKind::Exists:
+        case IAST::QueryKind::Describe:
+        case IAST::QueryKind::Explain:
+        case IAST::QueryKind::Check:
+        case IAST::QueryKind::Use:
+        case IAST::QueryKind::Set:
+        case IAST::QueryKind::Begin:
+        case IAST::QueryKind::Commit:
+        case IAST::QueryKind::Rollback:
+        case IAST::QueryKind::SetTransactionSnapshot:
+        case IAST::QueryKind::Backup:
+            return false;
+
+        /// Mutating: rejected under `readonly`, so it needs a write-capable HTTP method.
+        case IAST::QueryKind::Insert:
+        case IAST::QueryKind::Delete:
+        case IAST::QueryKind::Update:
+        case IAST::QueryKind::Create:
+        case IAST::QueryKind::Drop:
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Optimize:
+        case IAST::QueryKind::Alter:
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::Move:
+        case IAST::QueryKind::System:
+        case IAST::QueryKind::KillQuery:
+        case IAST::QueryKind::ExternalDDL:
+        case IAST::QueryKind::Restore:
+        case IAST::QueryKind::AsyncInsertFlush:
+        case IAST::QueryKind::ParallelWithQuery:
+        case IAST::QueryKind::Copy:
+        case IAST::QueryKind::Snapshot:
+            return true;
+    }
+}
+
+/// The HTTP methods that are allowed to run modifying queries (see `setReadOnlyIfHTTPMethodIdempotent`).
+bool isMutatingHTTPMethod(const String & method)
+{
+    return method == "POST" || method == "PUT" || method == "DELETE";
 }
 
 }
@@ -64,6 +125,18 @@ SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
         handler->methods = *create.methods;
     else
         handler->methods = {"GET"};
+
+    /// A handler whose query modifies data must accept at least one mutating HTTP method. Otherwise, the HTTP
+    /// execution path enables `readonly` for every allowed (safe) method, and the handler could never run its
+    /// query - so reject it here with a clear error instead of silently creating a broken handler.
+    if (queryKindRequiresMutatingMethod(create.query->getQueryKind())
+        && std::none_of(handler->methods.begin(), handler->methods.end(), isMutatingHTTPMethod))
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Handler `{}` runs a query that modifies data, but its allowed HTTP methods ({}) are all read-only. "
+            "Add a mutating method (POST, PUT, or DELETE) to the METHODS clause.",
+            create.handler_name, fmt::join(handler->methods, ", "));
+    }
 
     handler->query = create.query->formatWithSecretsOneLine();
     /// Precompute the set of query parameters once, so the per-request handler path does not re-parse the query.

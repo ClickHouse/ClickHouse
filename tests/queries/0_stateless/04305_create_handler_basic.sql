@@ -76,6 +76,26 @@ CREATE HANDLER h04305_methods URL '/test_04305/m' METHODS (GET, POST, PUT, DELET
 SELECT methods FROM system.handlers WHERE name = 'h04305_methods';
 DROP HANDLER h04305_methods;
 
+-- A handler whose query modifies data must allow a mutating HTTP method (POST, PUT or DELETE).
+-- With the default methods (GET only) such a handler is rejected at creation time.
+CREATE HANDLER h04305_ins_get URL '/test_04305/ins_get' AS INSERT INTO no_such_db.no_such_table FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+-- The same, but with an explicit read-only method.
+CREATE HANDLER h04305_ins_get URL '/test_04305/ins_get' METHODS (GET) AS INSERT INTO no_such_db.no_such_table FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+-- A mutating query is accepted when a mutating method (here PUT) is allowed.
+CREATE HANDLER h04305_ins_put URL '/test_04305/ins_put' METHODS (PUT) AS INSERT INTO no_such_db.no_such_table FORMAT TSV;
+SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_put';
+DROP HANDLER h04305_ins_put;
+-- Mixing read-only and mutating methods is fine as long as at least one mutating method is present.
+CREATE HANDLER h04305_ins_mix URL '/test_04305/ins_mix' METHODS (GET, DELETE) AS INSERT INTO no_such_db.no_such_table FORMAT TSV;
+SELECT name, methods FROM system.handlers WHERE name = 'h04305_ins_mix';
+-- ALTER that would leave a mutating handler with only read-only methods is rejected.
+ALTER HANDLER h04305_ins_mix METHODS (GET); -- { serverError BAD_ARGUMENTS }
+DROP HANDLER h04305_ins_mix;
+-- ALTER that turns a read-only handler's query into a mutating one, without a mutating method, is rejected.
+CREATE HANDLER h04305_ro URL '/test_04305/ro' AS SELECT 1;
+ALTER HANDLER h04305_ro AS INSERT INTO no_such_db.no_such_table FORMAT TSV; -- { serverError BAD_ARGUMENTS }
+DROP HANDLER h04305_ro;
+
 -- URL REGEXP. The query is parsed but not analyzed: it may reference a non-existing table.
 CREATE HANDLER h04305_c URL REGEXP '/test_04305/c/(?P<id>[0-9]+)' AS SELECT * FROM no_such_db.no_such_table;
 SELECT name, url_match_type, url FROM system.handlers WHERE name = 'h04305_c';

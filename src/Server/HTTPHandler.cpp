@@ -259,7 +259,7 @@ void HTTPHandler::processQuery(
     if (!default_format.empty())
         context->setDefaultFormat(default_format);
 
-    /// Anything else beside HTTP POST should be readonly queries.
+    /// Mutating HTTP methods (POST, PUT, DELETE) may run modifying queries; other methods imply readonly.
     setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
