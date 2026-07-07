@@ -38,6 +38,7 @@ struct ASTWindowDefinition : public IAST
         f(nullptr, &order_by);
         f(nullptr, &frame_begin_offset);
         f(nullptr, &frame_end_offset);
+        f(nullptr, &session_window_threshold);
     }
 
 

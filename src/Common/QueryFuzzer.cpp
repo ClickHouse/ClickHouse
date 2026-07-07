@@ -1025,7 +1025,7 @@ void QueryFuzzer::fuzzWindowFrame(ASTWindowDefinition & def)
                 // Have to initialize the window threshold when switching to
                 // SESSION frame, so that we don't get an invalid AST where it
                 // is not initialized.
-                def.session_window_threshold = std::make_shared<ASTLiteral>(getRandomField(0));
+                def.setOrReplace(def.session_window_threshold, make_intrusive<ASTLiteral>(getRandomField(0)));
             }
             break;
         }

@@ -113,7 +113,7 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
         if (frame_type == WindowFrame::FrameType::SESSION)
         {
             ostr << frame_type << " ";
-            session_window_threshold->formatImpl(ostr, settings, state, format_frame);
+            session_window_threshold->format(ostr, settings, state, offset_frame);
             return;
         }
 

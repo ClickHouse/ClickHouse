@@ -420,8 +420,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
              * Note that the value can be NaN, and we don't have a visitor
              * for "greater", so we have to write the condition in double negation style.
              */
-            if (!applyVisitor(FieldVisitorAccurateLess{}, Field(0),
-                window_description.frame.session_window_threshold))
+            if (!accurateLess(Field(0), window_description.frame.session_window_threshold))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Window frame start offset must be positive, instead have {} as specified in the query, {} as converted to the ORDER BY type {}",
