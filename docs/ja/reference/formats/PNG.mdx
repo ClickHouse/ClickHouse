@@ -1,0 +1,123 @@
+---
+alias: []
+description: 'PNG画像の出力フォーマットに関するドキュメント'
+input_format: false
+keywords: ['PNG']
+output_format: true
+slug: /interfaces/formats/PNG
+title: 'PNG'
+doc_type: 'reference'
+---
+
+| 入力 | 出力 | エイリアス |
+| -- | -- | ----- |
+| ✗  | ✔  | ✗     |
+
+<div id="description">
+  ## 説明
+</div>
+
+クエリの結果を PNG イメージとしてレンダリングします。組み込みの可視化ツールとして利用できます。
+
+出力イメージのサイズは、設定
+[`output_format_image_width`](/ja/reference/settings/formats#output_format_image_width) と
+[`output_format_image_height`](/ja/reference/settings/formats#output_format_image_height)
+で固定されます
+(どちらもデフォルトは 1024) 。結果でカバーされないピクセルは黒で塗りつぶされ
+(`RGB` およびグレースケールモード) 、`RGBA` モードでは透明な黒で塗りつぶされます。
+
+カラーモードは、結果のカラム名と型に基づいて自動的に決まります。
+
+| カラム                | モード                                           |
+| ------------------ | --------------------------------------------- |
+| `r`, `g`, `b`      | 8 ビット RGB                                     |
+| `r`, `g`, `b`, `a` | 8 ビット RGBA                                    |
+| 整数型の `v`           | 8 ビットグレースケール                                  |
+| `Float*` 型の `v`    | 8 ビットグレースケール (値を `[0, 1]` から `[0, 255]` に変換)  |
+| `Bool` 型の `v`      | バイナリ (8 ビットグレースケールとしてレンダリング: `0` または `255`)   |
+
+カラム名の照合では大文字と小文字は区別されません。カラーモードを一意に
+決定できない場合 (たとえば、不明なカラム名、`v` と `r`/`g`/`b`/`a` の混在、または `r`/`g`/`b` のいずれかが欠けている場合) 、
+クエリは例外をスローします。
+
+ピクセルチャンネルでは、整数値は `[0, 255]` の範囲にクランプされ、浮動小数点値は
+`[0, 1]` の範囲にクランプされた後、`[0, 255]` にスケーリングされます。
+
+イメージ内での各レコードの位置は、次の 2 つのモードのいずれかで決まります。
+
+* **暗黙的** (デフォルト — `x` と `y` のどちらも存在しない場合) 。各レコードは
+  1 つのピクセルに対応します。ピクセルは走査線順、つまり左から右、上から下の順に埋められます。
+* **明示的** (整数型の `x` カラムと `y` カラムが存在する場合) 。
+  `x` カラムと `y` カラムでピクセル座標を指定します。イメージの外側の座標を持つレコードは
+  何も通知されずに無視されます。同じ座標を持つ複数のレコードがある場合は、
+  最後のレコードが採用されます (painter&#39;s algorithm) 。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="implicit-rgb">
+  ### 暗黙的な座標 (ピクセルごとに1行) 、RGB
+</div>
+
+```sql
+SELECT
+    toUInt8(x * 25) AS r,
+    toUInt8(y * 25) AS g,
+    toUInt8((x + y) * 12) AS b
+FROM
+(
+    SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100)
+)
+INTO OUTFILE 'gradient.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10;
+```
+
+<div id="explicit-grayscale">
+  ### 明示的な座標指定 (グレースケール)
+</div>
+
+```sql
+SELECT
+    toInt32(x) AS x,
+    toInt32(y) AS y,
+    toUInt8(intensity) AS v
+FROM points
+INTO OUTFILE 'points.png'
+FORMAT PNG
+SETTINGS output_format_image_width = 512, output_format_image_height = 512;
+```
+
+<div id="terminal-mode">
+  ## ターミナルで画像を表示する
+</div>
+
+デフォルトでは、`PNG` フォーマットは生の画像バイト列を書き出します。設定
+[`output_format_image_terminal_mode`](/ja/reference/settings/formats#output_format_image_terminal_mode)
+を使用すると、代わりにインライン画像プロトコルを使って、このフォーマットで画像をターミナルに直接レンダリングできます。
+
+| 値              | 動作                                                                                         |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| &#96;&#96; (空) | 生の画像バイト列を書き出します (デフォルト) 。                                                                  |
+| `iterm`        | iTerm2 のインライン画像プロトコルを使用します。                                                                |
+| `kitty`        | Kitty グラフィックスプロトコルを使用します。                                                                  |
+| `sixel`        | Sixel プロトコルを使用します。画像は固定の 6×6×6 パレットに縮小され、アルファチャネルがある場合は黒い背景に合成されます。                        |
+| `auto`         | 出力先がターミナルの場合は、その機能を検出して `iterm`、`kitty`、`sixel` のいずれかを使用し (この順序) 、それ以外の場合は生の画像バイト列を書き出します。 |
+
+```sql
+SELECT toUInt8(x * 25) AS r, toUInt8(y * 25) AS g, toUInt8((x + y) * 12) AS b
+FROM (SELECT number % 10 AS x, intDiv(number, 10) AS y FROM numbers(100))
+FORMAT PNG
+SETTINGS output_format_image_width = 10, output_format_image_height = 10, output_format_image_terminal_mode = 'auto';
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>
+
+| Setting                             | Description             | Default        |
+| ----------------------------------- | ----------------------- | -------------- |
+| `output_format_image_width`         | 出力画像の幅 (ピクセル単位) 。       | `1024`         |
+| `output_format_image_height`        | 出力画像の高さ (ピクセル単位) 。      | `1024`         |
+| `output_format_image_terminal_mode` | インライン端末画像プロトコル (上記参照) 。 | &#96;&#96; (空) |

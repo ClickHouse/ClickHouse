@@ -1,0 +1,89 @@
+{
+  "framework": "mintlify",
+  "options": {
+    "experimentalClearLocaleDirs": true,
+    "skipFileValidation": {
+      "mdx": true
+    },
+    "mintlify": {
+      "inferTitleFromFilename": true
+    },
+    "jsonSchema": {
+      "./docs.json": {
+        "preset": "mintlify-hide-default"
+      }
+    },
+    "docsUrlPattern": "/[locale]",
+    "docsImportPattern": "/snippets/[locale]",
+    "generateRedirects": "./docs.json",
+    "experimentalLocalizeStaticImports": true,
+    "experimentalLocalizeStaticUrls": true,
+    "experimentalLocalizeRelativeAssets": true,
+    "docsHideDefaultLocaleImport": true,
+    "experimentalHideDefaultLocale": true,
+    "experimentalAddHeaderAnchorIds": "mintlify"
+  },
+  "files": {
+    "json": {
+      "include": [
+        "./docs.json"
+      ]
+    },
+    "js": {
+      "include": [
+        "./snippets/**/*.jsx",
+        "./snippets/**/*.js"
+      ],
+      "exclude": [
+        "./snippets/[locales]/**/*.jsx",
+        "./snippets/[locales]/**/*.js"
+      ],
+      "transform": {
+        "match": "^(snippets/)?(.*)$",
+        "replace": "$1{locale}/$2"
+      }
+    },
+    "mdx": {
+      "include": [
+        "./**/*.mdx",
+        "./**/*.md"
+      ],
+      "transform": {
+        "match": "^(snippets/)?(.*)$",
+        "replace": "$1{locale}/$2"
+      },
+      "exclude": [
+        "./[locales]/**/*.mdx",
+        "./snippets/[locales]/**/*.mdx",
+        "./[locales]/**/*.md",
+        "./snippets/[locales]/**/*.md",
+        "./**/README.md",
+        "./**/LICENSE.md",
+        "./**/COPYING.md",
+        "./**/NOTICE.md",
+        "./**/CHANGELOG.md",
+        "./**/HISTORY.md",
+        "./**/CODE_OF_CONDUCT.md",
+        "./**/CONTRIBUTING.md",
+        "./**/SECURITY.md",
+        "./**/GOVERNANCE.md",
+        "./**/AGENTS.md",
+        "./**/OWNERS.md",
+        "./**/MAINTAINERS.md"
+      ]
+    }
+  },
+  "locales": [
+    "en",
+    "es",
+    "ja",
+    "ko",
+    "pt-BR",
+    "ru",
+    "zh",
+    "ar",
+    "fr"
+  ],
+  "defaultLocale": "en",
+  "$schema": "https://assets.gtx.dev/config-schema.json"
+}

@@ -34,6 +34,7 @@ namespace Setting
 {
     extern const SettingsString s3queue_default_zookeeper_path;
     extern const SettingsBool allow_experimental_object_storage_queue_hive_partitioning;
+    extern const SettingsBool s3_allow_server_credentials_in_user_queries;
 }
 
 namespace ObjectStorageQueueSetting
@@ -49,10 +50,12 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "External data source must have arguments");
 
     auto configuration = std::make_shared<Configuration>();
+    /// Parse with the create context so a `SETTINGS s3_allow_server_credentials_in_user_queries = 1` on the
+    /// `CREATE` is honored (see `StorageS3Configuration::fromAST`); the processing context stays global below.
     StorageObjectStorageConfiguration::initialize(
         *configuration,
         args.engine_args,
-        args.getContext(),
+        args.getLocalContext(),
         false,
         &args.table_id,
         args.mode,
@@ -128,6 +131,13 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    /// The S3 client is built once in the storage constructor and reused by background threads, so the
+    /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
+    /// query. The storage itself must keep the persistent global context (`args.getContext()`): it is held
+    /// weakly by `WithContext` and used by background tasks, so a transient settings copy would expire.
+    const bool allow_server_credentials_in_user_queries
+        = args.getLocalContext()->getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries];
+
     return std::make_shared<StorageObjectStorageQueue>(
         std::move(queue_settings),
         std::move(configuration),
@@ -136,6 +146,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         args.constraints,
         args.comment,
         args.getContext(),
+        allow_server_credentials_in_user_queries,
         format_settings,
         args.storage_def,
         args.mode,
