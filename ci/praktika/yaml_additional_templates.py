@@ -49,7 +49,7 @@ class AltinityWorkflowTemplates:
     secrets: inherit
     with:
       docker_image: altinityinfra/clickhouse-server
-      version: ${{ fromJson(needs.config_workflow.outputs.data).JOB_KV_DATA.version.string }}
+      version: ${{ fromJson(needs.config_workflow.outputs.data).workflow_config.custom_data.version.string }}
       tag-suffix: ${{ matrix.suffix }}
   GrypeScanKeeper:
       needs: [config_workflow, docker_keeper_image]
@@ -58,12 +58,12 @@ class AltinityWorkflowTemplates:
       secrets: inherit
       with:
         docker_image: altinityinfra/clickhouse-keeper
-        version: ${{ fromJson(needs.config_workflow.outputs.data).JOB_KV_DATA.version.string }}
+        version: ${{ fromJson(needs.config_workflow.outputs.data).workflow_config.custom_data.version.string }}
 """,
         "Regression": r"""
   RegressionTestsRelease:
     needs: [config_workflow, build_amd_binary, stateless_tests_amd_debug_parallel]
-    if: ${{  !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.config_workflow.outputs.data).JOB_KV_DATA.ci_exclude_tags, 'regression')}}
+    if: ${{  !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.custom_data.ci_exclude_tags, 'regression')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:
@@ -75,7 +75,7 @@ class AltinityWorkflowTemplates:
       workflow_config: ${{ needs.config_workflow.outputs.data }}
   RegressionTestsAarch64:
     needs: [config_workflow, build_arm_binary, stateless_tests_arm_binary_parallel]
-    if: ${{  !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.config_workflow.outputs.data).JOB_KV_DATA.ci_exclude_tags, 'regression') && !contains(fromJson(needs.config_workflow.outputs.data).JOB_KV_DATA.ci_exclude_tags, 'aarch64')}}
+    if: ${{  !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.custom_data.ci_exclude_tags, 'regression') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.custom_data.ci_exclude_tags, 'aarch64')}}
     uses: ./.github/workflows/regression.yml
     secrets: inherit
     with:

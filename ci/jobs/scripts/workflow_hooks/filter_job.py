@@ -8,6 +8,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
+from ci.praktika.runtime import RunConfig
 
 
 def only_docs(changed_files):
@@ -254,7 +255,12 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    ci_exclude_tags = _info_cache.get_kv_data("ci_exclude_tags") or []
+    # The CI tags live in workflow_config.custom_data (see parse_ci_tags.py),
+    # which runs as a pre-hook, so the value is present by the time this runs.
+    ci_exclude_tags = (
+        RunConfig.from_fs(_info_cache.workflow_name).custom_data.get("ci_exclude_tags")
+        or []
+    )
     for tag in ci_exclude_tags:
         if tag in job_name.lower():
             return True, f"Skipped, job name includes excluded tag '{tag}'"
