@@ -2857,8 +2857,7 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
-            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn, std::nullopt);
         ctx->new_data_part = std::move(mutable_empty_part);
     }
 };
@@ -3340,7 +3339,8 @@ bool MutateTask::prepare()
                 ctx->source_part->partition,
                 ctx->future_part->name,
                 ctx->source_part->getMetadataSnapshot(),
-                ctx->txn);
+                ctx->txn,
+                /*source_parts_set=*/ std::nullopt);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);
             promise.set_value(std::move(empty_part));

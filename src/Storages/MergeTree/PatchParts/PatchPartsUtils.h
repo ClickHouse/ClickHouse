@@ -25,30 +25,21 @@ StorageMetadataPtr getPatchPartMetadataV1(Block sample_block, ContextPtr local_c
 StorageMetadataPtr getPatchPartMetadataV1(ColumnsDescription patch_part_desc, ContextPtr local_context);
 
 /// Returns metadata snapshot of a v2 patch part. Sort key is
-/// `(<sorting_key_columns>..., _block_number, _block_offset)`, parsed from the texts persisted
-/// in the patch part itself, so the snapshot always matches the on-disk layout of the patch
-/// regardless of later `ALTER MODIFY ORDER BY` on the target table.
-StorageMetadataPtr getPatchPartMetadataV2(
-    Block sample_block,
-    const Names & sorting_key_columns,
-    ContextPtr local_context);
-
-StorageMetadataPtr getPatchPartMetadataV2(
-    ColumnsDescription patch_part_desc,
-    const Names & sorting_key_columns,
-    ContextPtr local_context);
-
-/// Returns one-line formatted texts of the sorting key expressions, with DESC modifiers
-/// preserved in the text (e.g. `b DESC`). This is the form persisted in v2 patch parts
-/// and compared to find the common prefix of two sorting keys.
-Names getSortingKeyColumnsForPatch(const KeyDescription & sorting_key);
+/// `(<sorting_key>..., _block_number, _block_offset)`, built from the sorting key the patch
+/// was written with, so the snapshot always matches the on-disk layout of the patch
+/// regardless of later `ALTER MODIFY ORDER BY` on the target table. The overload taking
+/// a string parses the one-line key text persisted in the patch part.
+StorageMetadataPtr getPatchPartMetadataV2(Block sample_block, const KeyDescription & sorting_key, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const KeyDescription & sorting_key, ContextPtr local_context);
+StorageMetadataPtr getPatchPartMetadataV2(ColumnsDescription patch_part_desc, const String & sorting_key_str, ContextPtr local_context);
 
 /// Builds the effective sorting key for applying a v2 patch part: the longest common prefix
-/// of the patch's persisted sort-key columns and the table's current sorting key, resolved
-/// against the main table's columns. Both the patch part and the main parts are sorted by
-/// this prefix, and it never gets shorter than the table's (immutable) primary key.
+/// of the patch part's sorting key (excluding the trailing identity columns) and the table's
+/// current sorting key, resolved against the main table's columns. Both the patch part and
+/// the main parts are sorted by this prefix, and it never gets shorter than the table's
+/// (immutable) primary key.
 std::shared_ptr<const KeyDescription> buildPatchSortingKeyDescription(
-    const Names & patch_sorting_key_columns,
+    const KeyDescription & patch_sorting_key,
     const StorageMetadataPtr & main_metadata_snapshot);
 
 /// Returns system columns which are common for all v1 patch parts.

@@ -1271,8 +1271,14 @@ void MergeTreeData::setProperties(
 
     setInMemoryMetadata(new_metadata);
 
-    std::lock_guard lock(patch_parts_metadata_mutex);
-    patch_parts_metadata_cache.clear();
+    {
+        std::lock_guard lock(patch_parts_metadata_mutex);
+        patch_parts_metadata_cache.clear();
+    }
+    {
+        std::lock_guard lock(patch_parts_sorting_keys_mutex);
+        patch_parts_sorting_keys_cache.clear();
+    }
 }
 
 namespace
@@ -10592,9 +10598,6 @@ AlterConversionsPtr MergeTreeData::getAlterConversionsForPart(
     auto patches = mutations->getPatchesForPart(part);
     PatchPartsForReader patches_for_reader;
 
-    /// `PatchPartInfo::sorting_key` was populated by `SourcePartsSetForPatch::getPatchParts`
-    /// straight from the patch part's rebuilt metadata. Here we just move it across into the
-    /// reader-shaped info; no extra metadata fetch and no prefix-length arithmetic needed.
     for (auto & patch : patches)
     {
         auto patch_commands = mutations->getOnFlyMutationCommandsForPart(patch.part);
@@ -10619,7 +10622,7 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 {
     std::lock_guard lock(patch_parts_metadata_mutex);
     const auto & patch_partition_id = patch_part.info.getPartitionId();
-    auto & patch_metadata = patch_parts_metadata_cache[patch_partition_id].patch_metadata;
+    auto & patch_metadata = patch_parts_metadata_cache[patch_partition_id];
 
     if (patch_metadata.metadata)
         return patch_metadata;
@@ -10637,7 +10640,7 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
         case SourcePartsSetForPatch::V2_FORMAT_VERSION:
         {
             patch_metadata.version = MergeTreePatchPartsVersion::V2;
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKeyColumns(), local_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(patch_part.getColumnsDescription(), source_parts_set.getSortingKey(), local_context);
             break;
         }
         default:
@@ -10649,13 +10652,16 @@ PatchPartMetadata MergeTreeData::getPatchPartMetadata(const IMergeTreeDataPart &
 
 std::shared_ptr<const KeyDescription> MergeTreeData::getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const
 {
-    std::lock_guard lock(patch_parts_metadata_mutex);
-    auto & sorting_key = patch_parts_metadata_cache[patch_part.info.getPartitionId()].sorting_key;
+    const auto cache_key = patch_part.getSourcePartsSet().getSortingKeyHash();
+    auto patch_metadata = getPatchPartMetadata(patch_part, getContext());
+
+    std::lock_guard lock(patch_parts_sorting_keys_mutex);
+    auto & sorting_key = patch_parts_sorting_keys_cache[cache_key];
 
     if (!sorting_key)
     {
         auto main_metadata = getInMemoryMetadataPtr(getContext(), /*bypass_metadata_cache=*/ false);
-        sorting_key = buildPatchSortingKeyDescription(patch_part.getSourcePartsSet().getSortingKeyColumns(), main_metadata);
+        sorting_key = buildPatchSortingKeyDescription(patch_metadata.metadata->getSortingKey(), main_metadata);
     }
 
     return sorting_key;
@@ -10789,8 +10795,7 @@ MergeTreeData::LightweightUpdateResult MergeTreeData::updateLightweightImpl(cons
         }
         case MergeTreePatchPartsVersion::V2:
         {
-            auto sorting_key_columns = getSortingKeyColumnsForPatch(metadata_snapshot->getSortingKey());
-            patch_metadata.metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), sorting_key_columns, query_context);
+            patch_metadata.metadata = DB::getPatchPartMetadataV2(pipeline.getHeader(), metadata_snapshot->getSortingKey(), query_context);
             break;
         }
     }

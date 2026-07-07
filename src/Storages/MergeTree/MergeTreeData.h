@@ -4,6 +4,7 @@
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/SharedMutex.h>
 #include <Common/MultiVersion.h>
@@ -1290,7 +1291,7 @@ public:
         MergeTreePartInfo & new_part_info, const MergeTreePartition & partition,
         const String & new_part_name, const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeTransactionPtr & txn,
-        std::optional<SourcePartsSetForPatch> source_parts_set = std::nullopt) const;
+        std::optional<SourcePartsSetForPatch> source_parts_set) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -1429,12 +1430,12 @@ public:
 
     /// Returns the metadata of an existing patch part, rebuilt from the part's columns
     /// and source-parts set: v1 via `getPatchPartMetadataV1`, v2 via `getPatchPartMetadataV2`
-    /// with the persisted sort-key columns. Cached by partition id.
+    /// with the persisted sorting key. Cached by partition id.
     PatchPartMetadata getPatchPartMetadata(const IMergeTreeDataPart & patch_part, ContextPtr local_context) const;
 
     /// Returns the effective sorting key for applying a v2 patch part: the longest common
-    /// prefix of the patch's persisted sort-key columns and the table's current sorting key.
-    /// Cached by partition id; invalidated together with `patch_parts_metadata_cache` on ALTER.
+    /// prefix of the patch's persisted sorting key and the table's current sorting key.
+    /// Cached by the hash of the persisted sorting key text; invalidated on ALTER.
     std::shared_ptr<const KeyDescription> getPatchPartSortingKey(const IMergeTreeDataPart & patch_part) const;
 
     static MergingParams getMergingParamsForPatchParts();
@@ -1606,19 +1607,17 @@ protected:
     /// protected by @data_parts_mutex.
     SerializationInfoByName serialization_hints{{}};
 
-    /// Cached per-partition state of patch parts: the metadata used to read a patch part
-    /// and (v2 only) the effective sorting key for applying it. Patch parts in one
-    /// partition always have the same structure. The fields are filled lazily and independently.
-    struct PatchPartsMetadataCacheEntry
-    {
-        PatchPartMetadata patch_metadata;
-        std::shared_ptr<const KeyDescription> sorting_key;
-    };
-
-    /// The key is a partition id of patch part. Invalidated on ALTER: the effective sorting
-    /// key depends on the table's current sorting key (see `getPatchPartSortingKey`).
+    /// Cached metadata used to read patch parts, by patch partition id. Patch parts in one
+    /// partition always have the same structure.
     mutable std::mutex patch_parts_metadata_mutex;
-    mutable std::unordered_map<String, PatchPartsMetadataCacheEntry> patch_parts_metadata_cache;
+    mutable std::unordered_map<String, PatchPartMetadata> patch_parts_metadata_cache;
+
+    /// Cached effective sorting keys for applying v2 patch parts, by the hash of the patch's
+    /// stored sorting key text (patch parts from different partitions written with the same
+    /// key share an entry). Invalidated on ALTER: the effective key depends on the table's
+    /// current sorting key (see `getPatchPartSortingKey`).
+    mutable std::mutex patch_parts_sorting_keys_mutex;
+    mutable std::unordered_map<UInt128, std::shared_ptr<const KeyDescription>, UInt128Hash> patch_parts_sorting_keys_cache;
 
     MergeTreePartsMover parts_mover;
 
