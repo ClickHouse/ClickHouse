@@ -1,4 +1,5 @@
 #include <Interpreters/Context.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/Compaction/CompactionStatistics.h>
 
@@ -165,8 +166,9 @@ UInt64 getMaxResultPartRowsCount(const MergeTreeData & data)
 {
     auto metadata_snapshot = data.getInMemoryMetadataPtr(data.getContext(), false);
     const auto & secondary_indices = metadata_snapshot->getSecondaryIndices();
-    /// Text index and vector similarity indexes don't support UInt64 indexes of rows.
-    bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity");
+    /// Text, vector similarity, and bloom_sliced indexes don't support UInt64 indexes of rows.
+    bool has_index_with_limit_on_rows = secondary_indices.hasType("text") || secondary_indices.hasType("vector_similarity")
+        || secondary_indices.hasType(BLOOM_SLICED_INDEX_NAME);
     return has_index_with_limit_on_rows ? std::numeric_limits<UInt32>::max() : std::numeric_limits<UInt64>::max();
 }
 

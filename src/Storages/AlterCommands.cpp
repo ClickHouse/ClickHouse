@@ -1396,6 +1396,16 @@ bool AlterCommands::hasTextIndex(const StorageInMemoryMetadata & metadata)
     return false;
 }
 
+bool AlterCommands::hasBloomSlicedIndex(const StorageInMemoryMetadata & metadata)
+{
+    for (const auto & index : metadata.secondary_indices)
+    {
+        if (index.type == BLOOM_SLICED_INDEX_NAME)
+            return true;
+    }
+    return false;
+}
+
 bool AlterCommands::hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata)
 {
     for (const auto & index : metadata.secondary_indices)

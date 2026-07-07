@@ -11,6 +11,8 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
+#include <Storages/MergeTree/MergeTreeIndexBloomSliced.h>
+#include <roaring/roaring.hh>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/GenericExclusionSearch.h>
@@ -2426,6 +2428,114 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                         res.back().end = mark + 1;
                 }
             }
+        }
+
+        read_hints.index_granules[index_helper->index.name] = std::move(granule);
+    }
+    else if (index_helper->isBloomSlicedIndex())
+    {
+        MergeTreeIndexGranulePtr granule;
+        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
+        auto & granule_bloom_sliced = assert_cast<MergeTreeIndexGranuleBloomSliced &>(*granule);
+
+        if (use_skip_indexes_for_disjunctions && key_condition_rpn_template)
+        {
+            size_t selected_marks = 0;
+            const size_t candidate_marks = ranges.getNumberOfMarks();
+
+            for (const auto & range : ranges)
+            {
+                for (size_t mark = range.begin; mark < range.end; ++mark)
+                {
+                    size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
+                    size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
+
+                    if (row_begin == row_end)
+                        continue;
+
+                    granule_bloom_sliced.setCurrentRange(BloomSlicedIndexRowRange{row_begin, row_end - 1});
+                    bool may_be_true = condition->mayBeTrueOnGranule(granule, create_update_partial_disjunction_result_fn(mark));
+
+                    if (may_be_true)
+                    {
+                        ++selected_marks;
+
+                        if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                            res.push_back(MarkRange(mark, mark + 1));
+                        else
+                            res.back().end = mark + 1;
+                    }
+                }
+            }
+
+            if (selected_marks == candidate_marks)
+                return {ranges, read_hints};
+        }
+        else
+        {
+            const auto & condition_bloom_sliced = assert_cast<const MergeTreeIndexConditionBloomSliced &>(*condition);
+            auto condition_bitmap = condition_bloom_sliced.bitmapForGranule(granule);
+
+            if (condition_bitmap.isEmpty())
+                return {res, read_hints};
+
+            UInt64 candidate_rows = 0;
+            UInt64 matching_candidate_rows = 0;
+            for (const auto & range : ranges)
+            {
+                const size_t row_begin = part->index_granularity->getMarkStartingRow(range.begin);
+                const size_t row_end = part->index_granularity->getMarkStartingRow(range.end);
+
+                candidate_rows += row_end - row_begin;
+                matching_candidate_rows += roaring::api::roaring_bitmap_range_cardinality(
+                    &condition_bitmap.roaring, row_begin, row_end);
+            }
+
+            if (matching_candidate_rows == 0)
+                return {res, read_hints};
+
+            if (matching_candidate_rows == candidate_rows)
+                return {ranges, read_hints};
+
+            /// Keep the granule as a read hint only when the bitmap is row-selective.
+            /// If it is all-true on the candidate ranges, direct-read virtual
+            /// predicates can fall back to the reader-side all-true default.
+            read_hints.index_granules[index_helper->index.name] = granule;
+
+            roaring::api::roaring_uint32_iterator_t bitmap_iterator;
+            roaring::api::roaring_iterator_init(&condition_bitmap.roaring, &bitmap_iterator);
+
+            size_t selected_marks = 0;
+            const size_t candidate_marks = ranges.getNumberOfMarks();
+
+            for (const auto & range : ranges)
+            {
+                for (size_t mark = range.begin; mark < range.end; ++mark)
+                {
+                    const size_t row_begin = part->index_granularity->getMarkStartingRow(mark);
+                    const size_t row_end = part->index_granularity->getMarkStartingRow(mark + 1);
+
+                    if (row_begin == row_end)
+                        continue;
+
+                    const bool may_be_true = roaring::api::roaring_uint32_iterator_move_equalorlarger(
+                        &bitmap_iterator, static_cast<UInt32>(row_begin))
+                        && bitmap_iterator.current_value < row_end;
+
+                    if (may_be_true)
+                    {
+                        ++selected_marks;
+
+                        if (res.empty() || mark - res.back().end > min_marks_for_seek)
+                            res.push_back(MarkRange(mark, mark + 1));
+                        else
+                            res.back().end = mark + 1;
+                    }
+                }
+            }
+
+            if (selected_marks == candidate_marks)
+                return {ranges, read_hints};
         }
 
         read_hints.index_granules[index_helper->index.name] = std::move(granule);

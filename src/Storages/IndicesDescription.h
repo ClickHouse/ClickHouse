@@ -12,6 +12,7 @@
 
 constexpr auto IMPLICITLY_ADDED_MINMAX_INDEX_PREFIX = "auto_minmax_index_";
 constexpr auto TEXT_INDEX_NAME = "text";
+constexpr auto BLOOM_SLICED_INDEX_NAME = "bloom_sliced";
 
 namespace DB
 {

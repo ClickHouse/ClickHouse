@@ -8264,8 +8264,14 @@ Allows defining columns with [statistics](../../engines/table-engines/mergetree-
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
 )", 0, allow_experimental_full_text_index) \
+    DECLARE(Bool, allow_experimental_bloom_sliced_index, false, R"(
+If set to true, allow using the experimental bloom_sliced skip index.
+)", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
+)", 0) \
+    DECLARE(Bool, query_plan_direct_read_from_bloom_sliced_index, true, R"(
+Allow adding staged PREWHERE hint filters that read virtual columns from bloom_sliced indexes.
 )", 0) \
     DECLARE(Bool, query_plan_text_index_add_hint, true, R"(
 Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
