@@ -127,6 +127,19 @@ public:
         scatter_partitions = partitions;
     }
 
+    /// Like `convertToScatteredFullSort`, but for a side that is already sorted (read in order, or any
+    /// input `applyOrder` turned into a `FinishSorting`): scatter by the hash of the sort key into
+    /// `partitions` order-preserving partitions (each stays sorted), then only *finish* the sort within
+    /// each partition instead of redoing it. This keeps the low-cost in-order read of a merge join while
+    /// still sharding it across threads for `parallel_full_sorting_merge`. The prefix already sorted by
+    /// the input is carried in `prefix_description`.
+    void convertToScatteredFinishSorting(size_t partitions)
+    {
+        partition_by_description = result_description;
+        type = Type::PartitionedFinishSorting;
+        scatter_partitions = partitions;
+    }
+
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,

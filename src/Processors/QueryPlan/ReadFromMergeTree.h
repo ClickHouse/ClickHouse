@@ -336,6 +336,12 @@ public:
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit = 0);
     bool setVirtualRowConversions(ActionsDAG virtual_row_conversion_);
+    /// Stop emitting read-in-order virtual rows. A virtual row marks the boundary of a whole
+    /// input stream for a single downstream merge; when a later step reshuffles the stream by the
+    /// hash of the join keys (parallel_full_sorting_merge sharding), each virtual row would be
+    /// routed to a single shard and, having lost its `MergeTreeReadInfo`, surface as a spurious
+    /// result row. Disabling emission keeps the in-order read but removes the boundary hints.
+    void disableVirtualRow() { virtual_row_conversion = nullptr; }
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }

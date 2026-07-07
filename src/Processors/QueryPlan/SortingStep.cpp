@@ -567,6 +567,23 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
 
     if (type == Type::PartitionedFinishSorting)
     {
+        /// `parallel_full_sorting_merge` shards an already-sorted side (see `convertToScatteredFinishSorting`):
+        /// scatter the rows by the hash of the join keys into a fixed number of shards, keeping each shard
+        /// sorted by the prefix the input already provides, so that only the sort suffix is finished per shard
+        /// rather than the whole sort being redone. When `scatter_partitions == 0` the input is already
+        /// partitioned upstream (the primary-key-range path), so no scatter is inserted.
+        if (scatter_partitions > 0 && !partition_by_description.empty())
+        {
+            auto stream_header = pipeline.getSharedHeader();
+            ColumnNumbers key_columns;
+            key_columns.reserve(partition_by_description.size());
+            for (const auto & col : partition_by_description)
+                key_columns.push_back(stream_header->getPositionByName(col.column_name));
+
+            scatterByPartitionPreservingOrder(
+                pipeline, scatter_partitions, key_columns, prefix_description, sort_settings.max_block_size);
+        }
+
         bool need_finish_sorting = (prefix_description.size() < result_description.size());
         if (need_finish_sorting)
             finishSorting(pipeline, prefix_description, result_description, limit);
