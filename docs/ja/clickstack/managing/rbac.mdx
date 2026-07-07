@@ -1,0 +1,203 @@
+---
+slug: /use-cases/observability/clickstack/rbac
+title: 'ロールベースアクセス制御（RBAC）'
+sidebarTitle: 'ロールベースアクセス制御'
+toc_max_heading_level: 2
+description: 'ClickStack でロールベースアクセス制御を設定し、ダッシュボード、保存済み検索、ログソース、アラートなどに対するチームの権限を管理します。'
+doc_type: 'guide'
+keywords: ['ClickStack', 'RBAC', 'ロール', '権限', 'アクセス制御', 'セキュリティ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack にはロールベースのアクセス制御 (RBAC) が用意されており、[ダッシュボード](/ja/clickstack/features/dashboards/overview)、[保存済み検索](/ja/clickstack/features/search)、ログソース、[アラート](/ja/clickstack/features/alerts)、webhook、ノートブックに対して、きめ細かな権限を持つカスタムロールを定義できます。権限は 2 つのレベルで適用されます。1 つはリソースレベルのアクセス (リソースタイプごとにアクセスなし、読み取り、管理) で、もう 1 つは名前、タグ、または ID によって個々のリソースへのアクセスを制限する、任意の詳細なルールです。ClickStack には 3 つの組み込みロールが用意されており、チームのニーズに合わせてカスタムロールを作成できます。
+
+<Info>
+  **Managed ClickStack のみ**
+
+  RBAC は Managed ClickStack デプロイメントでのみ利用できます。
+</Info>
+
+<div id="user-access-prerequisites">
+  ## ユーザーアクセスの前提条件
+</div>
+
+ClickStack は ClickHouse Cloud を通じて認証されます。ClickStack のロールを割り当てる前に、各ユーザーは次の条件を満たしている必要があります。
+
+1. **ClickHouse Cloud 組織に招待されていること。** 組織の Admin は Cloud Console からユーザーを招待します。詳しくは [クラウドユーザーの管理](/ja/products/cloud/guides/security/cloud-access-management/manage-cloud-users) を参照してください。
+2. **サービスで SQL Console へのアクセス権を持っていること。** サービスの **Settings** → **SQL Console Access** に移動し、適切な権限レベルを設定します。
+
+| Cloud SQL Console access              | ClickStack access                                                        |
+| ------------------------------------- | ------------------------------------------------------------------------ |
+| **SQL Console Admin** (Full Access)   | ClickStack へのフルアクセス。[alerts](/ja/clickstack/features/alerts) を有効にするために必要です。 |
+| **SQL Console Read Only** (Read Only) | オブザーバビリティデータを表示し、ダッシュボードを作成できます。                                         |
+| **No access**                         | ClickStack にアクセスできません。                                                   |
+
+ユーザーが Cloud へのアクセス権を持つと、ClickStack の **Team Settings** ページに表示され、そこで ClickStack のロールを割り当てられるようになります。
+
+<Tabs>
+  <Tab title="Cloud Users and roles">
+    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="ClickHouse Cloud Users and roles ページ" size="lg" />
+  </Tab>
+
+  <Tab title="ClickStack Team Settings">
+    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="チームメンバーとそのロールが表示された ClickStack Team Settings ページ" size="lg" />
+  </Tab>
+</Tabs>
+
+<div id="built-in-roles">
+  ## 組み込みロール
+</div>
+
+ClickStack には、3 つのシステムロールが用意されています。これらは編集や削除ができません。Admin ロールは、デフォルトでチーム作成者に割り当てられます。
+
+| 権限          | Admin | Member | ReadOnly |
+| ----------- | :---: | :----: | :------: |
+| すべてのリソースを閲覧 |   ✓   |    ✓   |     ✓    |
+| ダッシュボードを管理  |   ✓   |    ✓   |          |
+| 保存済み検索を管理   |   ✓   |    ✓   |          |
+| ログソースを管理    |   ✓   |    ✓   |          |
+| アラートを管理     |   ✓   |    ✓   |          |
+| ウェブフックを管理   |   ✓   |    ✓   |          |
+| ノートブックを管理   |   ✓   |    ✓   |          |
+| チーム設定を変更    |   ✓   |    ✓   |          |
+| チームを作成/削除   |   ✓   |        |          |
+| ユーザーと招待を管理  |   ✓   |        |          |
+
+<div id="assigning-roles">
+  ## チームメンバーへのロールの割り当て
+</div>
+
+**Team Settings** ページには、すべてのチームメンバーとそれぞれの現在のロールが一覧表示されます。ロールを変更するには、ユーザー名の横にある **Edit** をクリックし、新しいロールを選択します。各ユーザーに割り当てられるロールは1つだけです。
+
+<div id="default-new-user-role">
+  ### 新規ユーザーのデフォルトロール
+</div>
+
+[セキュリティポリシー](#security-policies)で、新規ユーザーのデフォルトロールを設定できます。チームに自動参加した新規ユーザーには、このロールが自動的に割り当てられます。
+
+<div id="creating-a-role">
+  ## カスタムロールの作成
+</div>
+
+<Steps>
+  <Step>
+    ### Team Settings に移動する
+
+    **Team Settings** を開き、**RBAC Roles** までスクロールします。
+
+    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+  </Step>
+
+  <Step>
+    ### 新しいロールを追加する
+
+    **+ Add Role** をクリックします。**Role Name** を入力し、必要に応じて **Description** を追加します。
+  </Step>
+
+  <Step>
+    ### 権限を設定して保存する
+
+    ロールの権限を設定して、**Create Role** をクリックします。
+
+    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="Add Role モーダル" size="md" />
+  </Step>
+</Steps>
+
+カスタムロールは、RBAC Roles セクションにシステムロールと並んで表示され、**Edit** と **Delete** のコントロールが利用できます。
+
+<div id="role-permissions">
+  ## ロールの権限
+</div>
+
+<div id="resource-permissions">
+  ### リソース権限
+</div>
+
+各ロールでは、リソースタイプごとにアクセスレベルを付与できます。アクセスレベルは次の 3 つです。
+
+| アクセスレベル    | 許可される内容                            |
+| ---------- | ---------------------------------- |
+| **アクセスなし** | そのリソースタイプは、そのロールでは完全に非表示になります。     |
+| **閲覧**     | リソースとその設定は表示できますが、作成、編集、削除はできません。  |
+| **管理**     | フルコントロール — その種類のリソースを作成、編集、削除できます。 |
+
+制御できるリソースタイプは次のとおりです。
+
+* **[ダッシュボード](/ja/clickstack/features/dashboards/overview)** — 保存されたダッシュボードレイアウトとチャート。
+* **[保存済み検索](/ja/clickstack/features/search)** — 保存されたログ、トレース、イベントのクエリ。
+* **ログソース** — インジェスト用のログソース設定。
+* **[アラート](/ja/clickstack/features/alerts)** — アラートルールとその通知設定。
+* **Webhook** — 送信先の通知先 (Slack、PagerDuty、汎用 HTTP エンドポイントなど) で、[alerts](/ja/clickstack/features/alerts) が通知を配信します。これは ClickStack API を指すものではありません。
+* **Notebooks** — 共同で調査を行うためのノートブック。
+
+<div id="administrative-permissions">
+  ### 管理権限
+</div>
+
+リソース権限に加えて、各ロールには 2 つの管理設定があります。
+
+* **Users** (アクセスなし · 制限付きアクセス) — ロールがチームメンバーとそのロールを表示できるかどうかを制御します。ユーザーの招待、削除、更新を行えるのは Admin のみです。
+* **チーム** (閲覧 · 管理) — セキュリティポリシーや RBAC 設定など、チームレベルの設定をロールが表示または変更できるかどうかを制御します。
+
+<div id="fine-grained-access-rules">
+  ### きめ細かなアクセスルール
+</div>
+
+ダッシュボード、保存済み検索、SOURCES、ノートブックでは、カテゴリ内の個々のリソースへのアクセスを制限できるきめ細かな制御をサポートしています。リソース種別全体に一括でアクセス権を付与するのではなく、ロールがアクセスできる対象を特定のリソースに限定したい場合に使用します。
+
+<div id="access-control-modes">
+  #### デフォルトアクセスと詳細な制御
+</div>
+
+各リソースタイプには、**アクセス制御モード**があります。
+
+* **デフォルトアクセス** — そのタイプのすべてのリソースに、単一のアクセスレベル (アクセスなし、読み取り、または管理) を適用します。
+* **詳細な制御** — 条件に一致する特定のリソースに対するアクセスルールを定義できます。どのルールにも一致しないリソースは、デフォルトでアクセスなしになります。
+
+モードを切り替えるには、ロールエディタでリソースタイプを展開するシェブロンをクリックし、**アクセス制御モード**を切り替えます。
+
+<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="ロールエディタでのデフォルトアクセスと詳細な制御のモード" size="md" />
+
+<div id="configuring-access-rules">
+  #### アクセスルールの設定
+</div>
+
+各アクセスルールは、**条件** と **アクセスレベル** で構成されます。条件は、リソースのプロパティに基づいて一致を判定します。
+
+<Image img="/images/clickstack/rbac/condition-tip.webp" alt="条件のツールチップ: Name または Tag（タイトルで確認）や ID（URL で確認）でリソースを照合" size="md" />
+
+| 条件フィールド  | 演算子              | 一致対象                                                                           | 例                                                                  |
+| -------- | ---------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| **Name** | `is`, `contains` | リソースの表示名。たとえばダッシュボードのタイトルです。                                                   | Name contains `production` — タイトルに「production」を含む任意のダッシュボードに一致します。 |
+| **Tag**  | `is`, `contains` | リソース画面右上のタグパネルでリソースに割り当てられたタグです。Dashboards、Saved Searches、Notebooks でのみ使用できます。 | Tag is `critical` — 「critical」タグが付いたリソースに一致します。                    |
+| **ID**   | `is`, `contains` | リソースを開いたときに URL バーに表示されるリソース識別子です。                                             | ID is `abc123` — 特定の 1 つのリソースに一致します。                               |
+
+次のスクリーンショットでは、URL バーでダッシュボード ID が強調表示され、タグパネル (右上) に「TESTING」タグが表示されています。
+
+<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="URL バーにリソース ID が表示され、右上にタグがあるダッシュボード" size="lg" />
+
+リソースタイプごとに複数のルールを追加できます。各ルールは OR ロジックで個別に評価されるため、**いずれか** のルールに一致すれば、そのリソースにアクセスできます。どのルールにも一致しないリソースにはアクセスできません。
+
+<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="OR ロジックを使用したアクセスルールのツールチップ" size="md" />
+
+**例**: ロールに testing ダッシュボードへの読み取り専用アクセスを付与するには、Dashboards を展開し、Fine-Grained Controls に切り替えて、2 つのルールを追加します。
+
+* **Name** `contains` `testing`、アクセスレベル **Read**
+* **Tag** `is` `testing`、アクセスレベル **Read**
+
+いずれかのルールに一致するダッシュボードにアクセスできます。
+
+<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="OR で結合された 2 つのきめ細かなアクセスルール: Name contains testing で Read アクセス、Tag is testing で Read アクセス" size="md" />
+
+<div id="security-policies">
+  ## セキュリティポリシー
+</div>
+
+**Team Settings** の **Security Policies** セクションでは、追加の制御設定を行えます。
+
+**Default New User Role** では、チームに参加した新規ユーザーに自動で割り当てるロールを設定します。
+
+**Generative AI** では、Anthropic または Amazon Bedrock を利用する LLM ベースの機能 (自然言語クエリ生成など) を有効または無効にできます。無効にすると、データは AI プロバイダーに送信されません。
+
+<Image img="/images/clickstack/rbac/security-policies.webp" alt="セキュリティポリシー" size="lg" />

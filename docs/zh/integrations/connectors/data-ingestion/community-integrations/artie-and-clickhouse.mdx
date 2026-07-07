@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Artie'
+keywords: ['clickhouse', 'Artie', '连接', '集成', 'CDC', 'ETL', '数据集成', '实时', '流式']
+slug: /integrations/artie
+description: '使用 Artie CDC 流式平台将数据导入 ClickHouse'
+title: '将 Artie 连接到 ClickHouse'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+<a href="https://www.artie.com/" target="_blank">Artie</a> 是一个全托管实时流式数据平台，可将生产数据复制到 ClickHouse，帮助在生产环境中实现面向客户的分析、运营工作流和 Agentic AI。
+
+<div id="overview">
+  ## 概述
+</div>
+
+Artie 是 AI 时代的现代数据基础设施层——一个完全托管的实时流式数据平台，可让生产数据持续与您的仓库保持同步。
+
+随着企业开始将仓库用于实时 AI 工作负载、运营分析和面向客户的数据产品，它们正逐步采用快速、可靠且专为大规模扩展而构建的基础设施标准。
+
+我们为企业提供 Netflix、DoorDash 和 Instacart 曾内部自建的那种流式管道和深度可观测性，而无需招聘 10 多名工程师，也不用花费 1 到 2 年进行平台建设。Artie 可自动化整个摄取生命周期——变更捕获、合并、回填和可观测性——几乎无需工程维护，并可在几分钟内部署完成。
+
+ClickUp、Substack 和 Alloy 等领先企业使用 Artie，不仅是为了解决当前的管道问题，更是为了在其 AI 战略加速推进时，提前为数据技术栈做好准备。
+
+<Steps>
+  <Step>
+    ## 创建 Artie 账户
+
+    访问 <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> 并填写表单以申请访问权限。
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Artie 注册页面" />
+  </Step>
+
+  <Step>
+    ## 查找您的 ClickHouse 凭据
+
+    在 ClickHouse Cloud 中创建服务后，找到以下必需设置：
+
+    <ConnectionDetails />
+  </Step>
+
+  <Step>
+    ## 在 Artie 中创建新管道
+
+    前往 Artie，使用您在前面步骤中收集的信息，按照以下 3 个步骤创建新管道。
+
+    1. **连接您的数据源** - 配置您的源数据库 (Postgres、MySQL、Events API 等) 
+    2. **选择要复制的表** - 选择要同步到 ClickHouse 的表
+    3. **连接您的目标端** - 输入您的 ClickHouse 凭据
+
+    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Artie 编辑管道界面" />
+  </Step>
+</Steps>
+
+<div id="contact-us">
+  ## 联系我们
+</div>
+
+如果您有任何疑问，请参阅我们的 <a href="https://www.artie.com/docs/destinations/clickhouse" target="_blank">ClickHouse 文档</a>，或发送邮件至 <a href="mailto:hi@artie.com">hi@artie.com</a> 联系团队。
+
+<div id="product-screenshots">
+  ## 产品截图
+</div>
+
+分析平台
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="分析平台" />
+
+管道和表级监控
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="内置监控" />
+
+每日 schema 变更通知
+
+<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="schema 变更通知" />

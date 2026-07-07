@@ -25,6 +25,7 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 #include <Processors/Formats/Impl/NullFormat.h>
 
+#include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -119,6 +120,8 @@ namespace ProfileEvents
     extern const Event InsertQueryTimeMicroseconds;
     extern const Event OtherQueryTimeMicroseconds;
     extern const Event ASTFuzzerQueries;
+    extern const Event ASTFuzzerSkippedBackupRestore;
+    extern const Event ASTFuzzerSkippedReplicatedDDLInternal;
     extern const Event QueryParseMicroseconds;
 }
 
@@ -877,7 +880,7 @@ void logExceptionBeforeStart(
 
     /// Exception before the query execution.
     if (auto quota = context->getQuota())
-        quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+        quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context->getSettingsRef();
 
@@ -1420,6 +1423,9 @@ static BlockIO executeQueryImpl(
         }
 
         normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+        /// Make the hash available to the parts of execution that account `NORMALIZED_QUERY_HASH`
+        /// quotas but do not otherwise have it (e.g. the insert path).
+        context->setNormalizedQueryHash(normalized_query_hash);
     }
     catch (...)
     {
@@ -1924,6 +1930,10 @@ static BlockIO executeQueryImpl(
 
         auto & pipeline = res.pipeline;
 
+        /// Propagate the normalized query hash so that `NORMALIZED_QUERY_HASH` quotas account the
+        /// result/read/execution-time counters against the per-hash intervals of this query pattern.
+        pipeline.setNormalizedQueryHash(normalized_query_hash);
+
         if (pipeline.pulling() || pipeline.completed())
         {
             /// Limits on the result, the quota on the result, and also callback for progress.
@@ -1984,7 +1994,7 @@ static BlockIO executeQueryImpl(
             };
 
             auto exception_callback =
-                [start_watch, elem, context, out_ast, internal, my_quota(quota), implicit_tcl_executor, query_span](bool log_error) mutable
+                [start_watch, elem, context, out_ast, internal, my_quota(quota), normalized_query_hash, implicit_tcl_executor, query_span](bool log_error) mutable
             {
                 if (implicit_tcl_executor->transactionRunning())
                 {
@@ -1999,7 +2009,7 @@ static BlockIO executeQueryImpl(
                 if (!internal)
                 {
                     if (my_quota)
-                        my_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                        my_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
                 }
 
                 logQueryException(elem, context, start_watch, out_ast, query_span, internal, log_error);
@@ -2061,6 +2071,22 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     if (!any_query && !isReadOnlyQuery(ast))
         return;
 
+    /// Do not fuzz while an internal replicated-DDL execution is in flight on `context`.
+    /// DatabaseReplicatedDDLWorker re-executes a committed DDL entry whose serialized settings still
+    /// carry ast_fuzzer_runs, so the fuzzer would fire again on the entry's live, single-shot
+    /// ZooKeeperMetadataTransaction. A fuzzed follow-up DDL then either adds ops to the already-executed
+    /// txn (ZooKeeperMetadataTransaction::addOp throws "Cannot add ZooKeeper operation because query is
+    /// executed") or, because is_replicated_database_internal makes shouldReplicateQuery() route it to a
+    /// local commit, reaches DatabaseReplicated::commit* with no txn while the DDL worker is active and
+    /// trips the `!ddl_worker->isCurrentlyActive() || txn` assertion. Both are LOGICAL_ERRORs that abort
+    /// debug/sanitizer builds. The initiating client query is fuzzed normally; only this redundant
+    /// re-fuzz during log replay is skipped.
+    if (context->getClientInfo().is_replicated_database_internal || context->getZooKeeperMetadataTransaction())
+    {
+        ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedReplicatedDDLInternal);
+        return;
+    }
+
     size_t num_runs = static_cast<size_t>(ast_fuzzer_runs_value);
     double fractional = ast_fuzzer_runs_value - static_cast<double>(num_runs);
     if (fractional > 0)
@@ -2110,6 +2136,19 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzzed_query_params = fuzzer->getLastQueryParameters();
         }
 
+        /// Skip fuzzed `BACKUP` / `RESTORE` queries. An async `RESTORE`/`BACKUP` returns from
+        /// `executeQuery` immediately while `BackupsWorker` keeps the query context alive and its
+        /// background workers read it via `Context::createCopy` under the shared `Context::mutex`.
+        /// The per-iteration cleanup below would then mutate that escaped context without holding
+        /// the mutex, reintroducing the very `merge_tree_transaction` data race this code avoids.
+        /// Checked first (before the depth/format/length guards below), and counted, so the skip
+        /// is attributable to the query type alone regardless of those other early-continue paths.
+        if (fuzzed_ast->as<ASTBackupQuery>())
+        {
+            ProfileEvents::increment(ProfileEvents::ASTFuzzerSkippedBackupRestore);
+            continue;
+        }
+
         /// Skip deeply nested ASTs to avoid stack overflow during formatting or execution.
         try
         {
@@ -2147,10 +2186,6 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerQueries);
         LOG_TRACE(logger, "Fuzzed query: {}", fuzzed_query);
 
-        /// Reset the transaction (if any), it is stored in session and local context (see InterpreterTransactionControlQuery::executeBegin())
-        context->getQueryContext()->getSessionContext()->setCurrentTransaction(NO_TRANSACTION_PTR);
-        context->setCurrentTransaction(NO_TRANSACTION_PTR);
-
         /// Declare contexts outside try block so we can reset transactions on all paths.
         /// MergeTreeTransactionHolder destructor calls rollbackTransaction (noexcept),
         /// which uses getCurrentExceptionCode with bare `throw;` - that only works
@@ -2170,6 +2205,16 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         {
             fuzz_session_context = Context::createCopy(context);
             fuzz_session_context->makeSessionContext();
+            /// Reset the transaction (if any) on the fuzz session context to isolate
+            /// fuzzed queries from the caller's transaction state. The transaction pointer
+            /// was copied as a shared_ptr in the copy constructor (see `InterpreterTransactionControlQuery::executeBegin`
+            /// which stores it in both session and query contexts).
+            /// We clear it on the copy, not on the parent `context`: mutating the caller's
+            /// `merge_tree_transaction` races with concurrent readers of the same `Context`
+            /// (e.g. `RESTORE ASYNC` background workers calling `Context::createCopy` under
+            /// the shared `Context::mutex`), and it also has the surprising side effect of
+            /// silently clearing the user's active transaction on the caller session.
+            fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
@@ -2633,10 +2678,6 @@ void executeQuery(
         /// 2. When handling HTTP requests, in `HTTPHandler::processQuery`, there is `query_finish_callback` which is invoked before `onFinish`.
         /// It releases the session and finalizes the output. The client might use the same session to query other queries. Hence, the transaction must be committed before `query_finish_callback`.
         /// Refer: https://github.com/ClickHouse/ClickHouse/issues/80428
-        ///
-        /// It must also be committed before the AST fuzzer runs: the fuzzer resets the transaction stored
-        /// in the session and query contexts (see executeASTFuzzerQueries), which would otherwise leave the
-        /// executor's running flag set while `context->getCurrentTransaction()` is already gone.
         if (implicit_tcl_executor->transactionRunning())
             implicit_tcl_executor->commit(context);
 
@@ -2675,42 +2716,54 @@ void executeQuery(
         throw;
     }
 
-    /// We release the query slot here to make sure the client can safely reuse the slot with his next query, otherwise it will be released too late by BlockIO.
-    /// Only the query slot is released here, not the memory reservation: pipeline threads still hold raw pointers to it,
-    /// so it is released later by `streams.onFinish()` after the pipeline has been finalized.
-    context->releaseQuerySlot();
-
-    /// The order is important here:
-    /// - first we save the finish_time that will be used for the entry in query_log/opentelemetry_span_log.finish_time_us
-    /// - then we flush the progress (to flush result_rows/result_bytes)
-    /// - then call the query_finish_callback() - right now the only purpose is to flush the data over HTTP
-    /// - then call onFinish() that will create entry in query_log/opentelemetry_span_log
-    ///
-    /// That way we have:
-    /// - correct finish time of the query (regardless of how long does the query_finish_callback() takes)
-    /// - correct progress for HTTP (X-ClickHouse-Summary requires result_rows/result_bytes)
-    /// - correct NetworkSendElapsedMicroseconds/NetworkSendBytes in query_log
-    const auto finish_time = std::chrono::system_clock::now();
-    std::exception_ptr exception_ptr;
+    QueryFinishCallback finish_callback;
     if (query_finish_callback)
     {
-        /// Dump result_rows/result_bytes, since query_finish_callback() will send final http header.
-        flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+        finish_callback = [&]()
+        {
+            /// Flush the progress (result_rows/result_bytes) before query_finish_callback sends the final HTTP header,
+            /// so the X-ClickHouse-Summary header is correct.
+            flushQueryProgress(pipeline, pulling_pipeline, context->getProgressCallback(), context->getProcessListElement());
+            query_finish_callback();
+        };
+    }
 
+    finishExecutedQuery(streams, finish_callback);
+}
+
+void finishExecutedQuery(BlockIO & io, const QueryFinishCallback & query_finish_callback)
+{
+    /// Release the query slot now so the client can safely reuse it for its next query, otherwise it would be
+    /// released too late by BlockIO. Only the query slot is released here, not the memory reservation: pipeline
+    /// threads still hold raw pointers to it until io.onFinish() finalizes the pipeline, so releasing it here
+    /// would be a data race.
+    io.releaseQuerySlot();
+
+    /// The order is important here:
+    /// - first we save finish_time, used for query_log/opentelemetry_span_log.finish_time_us;
+    /// - then we call query_finish_callback() - right now its only purpose is to flush the data over HTTP;
+    /// - then we call onFinish() that creates the entry in query_log/opentelemetry_span_log.
+    /// That way finish_time is the correct finish time of the query regardless of how long query_finish_callback()
+    /// takes. If the callback throws, we still run onFinish() and rethrow the callback's exception afterwards, so
+    /// onFinish()'s own exceptions propagate normally.
+    const auto finish_time = std::chrono::system_clock::now();
+    std::exception_ptr callback_exception;
+    if (query_finish_callback)
+    {
         try
         {
             query_finish_callback();
         }
         catch (...)
         {
-            exception_ptr = std::current_exception();
+            callback_exception = std::current_exception();
         }
     }
 
-    streams.onFinish(finish_time);
+    io.onFinish(finish_time);
 
-    if (exception_ptr)
-        std::rethrow_exception(exception_ptr);
+    if (callback_exception)
+        std::rethrow_exception(callback_exception);
 }
 
 void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_interactive_cancel)

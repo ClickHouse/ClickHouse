@@ -1,0 +1,102 @@
+---
+sidebarTitle: 'Querio'
+slug: /integrations/querio
+keywords: ['Querio', 'ربط', 'تكامل', 'التحليلات', 'الذكاء الاصطناعي']
+description: 'Querio هي مساحة عمل للتحليلات وذكاء الأعمال، ومدعومة أصلًا بالذكاء الاصطناعي. اربط ClickHouse بـ Querio لاستكشاف البيانات المباشرة وتصورها وتحليلها باستخدام SQL وPython والذكاء الاصطناعي.'
+title: 'اربط ClickHouse بـ Querio'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Querio هي مساحة عمل للتحليلات وذكاء الأعمال مدعومة بالذكاء الاصطناعي، وتتيح للفرق الاستعلام عن البيانات واستكشافها وتصورها واستخراج الرؤى منها باستخدام SQL وPython واللغة الطبيعية. عند توصيل Querio بقاعدة بيانات ClickHouse أو مستودع البيانات لديك، يمكنك إجراء تحليلات مباشرة على نطاق واسع وإنشاء لوحات ودفاتر ملاحظات وتقارير بمساعدة الذكاء الاصطناعي على بيانات ClickHouse لديك من دون نقلها.
+
+<div id="setup-clickhouse-for-querio">
+  ## إعداد ClickHouse لـ Querio
+</div>
+
+<Steps>
+  <Step>
+    ### إنشاء مستخدم مخصّص
+
+    اتباعًا لأفضل ممارسات الأمان، أنشئ حساب مستخدم مخصّصًا لـ Querio فقط بأقل الامتيازات المطلوبة:
+
+    ```sql
+    CREATE USER querio_user IDENTIFIED BY 'STRONG_PASSWORD';
+    ```
+
+    <Tip>
+      استخدم كلمة مرور طويلة وعشوائية (16 حرفًا على الأقل)، ويُفضَّل إنشاؤها باستخدام مدير كلمات مرور.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### منح حق الوصول للقراءة فقط إلى قاعدة البيانات
+
+    احصر أذونات Querio في قواعد البيانات والجداول التي يحتاج إلى الاستعلام عنها فقط:
+
+    ```sql
+    GRANT SELECT ON my_database.* TO querio_user;
+    ```
+
+    وبالنسبة إلى جداول محددة، استخدم:
+
+    ```sql
+    GRANT SELECT ON database.table_name TO querio_user;
+    ```
+
+    كرّر هذه العملية لكل قاعدة بيانات يحتاج Querio إلى الوصول إليها.
+  </Step>
+
+  <Step>
+    ### جمع تفاصيل الاتصال
+
+    لتوصيل Querio بـ ClickHouse، ستحتاج إلى معلومات الاتصال التالية:
+
+    | المعلَمة   | الوصف                                                                      |
+    | ---------- | -------------------------------------------------------------------------- |
+    | `HOST`     | عنوان خادم ClickHouse أو الـ تجمّع الخاص بك                              |
+    | `PORT`     | المنفذ 9440 (الافتراضي للبروتوكول الأصلي الآمن) أو المنفذ الذي قمت بتكوينه |
+    | `DATABASE` | قاعدة البيانات التي تريد أن يستعلم منها Querio                             |
+    | `USERNAME` | `querio_user` (أو اسم المستخدم الذي اخترته)                                |
+    | `PASSWORD` | كلمة مرور حساب المستخدم                                                    |
+
+    <Note>
+      * بالنسبة إلى ClickHouse Cloud، يمكنك العثور على تفاصيل الاتصال في Cloud Console
+      * بالنسبة إلى المثيلات ذاتية الإدارة، إذا كان ClickHouse يستخدم منفذًا مختلفًا، فتحقق من إعدادات الخادم
+      * المنفذ 9440 هو المنفذ الافتراضي لاتصالات البروتوكول الأصلي الآمن
+    </Note>
+  </Step>
+</Steps>
+
+<div id="create-account-and-connect">
+  ## أنشئ حساب Querio الخاص بك واربط ClickHouse
+</div>
+
+سجّل الدخول أو أنشئ مساحة عمل Querio الخاصة بك على [https://app.querio.ai/](https://app.querio.ai/)
+
+1. في Querio، انتقل إلى **الإعدادات ← مصادر البيانات** وانقر على **إضافة مصدر بيانات**.
+
+2. حدِّد **ClickHouse** من قائمة خيارات قواعد البيانات.
+
+3. أدخل تفاصيل الاتصال الواردة أعلاه واحفظ التهيئة.
+
+4. سيتحقق Querio من اتصالك. وبعد نجاح ذلك، سيكون ClickHouse متاحًا كمصدر بيانات في أنحاء مساحة العمل الخاصة بك.
+
+<div id="querying-clickhouse">
+  ## الاستعلام في ClickHouse
+</div>
+
+بعد ربط Querio بـ ClickHouse، يمكنك استكشاف بياناتك وتحليلها من أي مكان في المنصة. أنشئ مقطع SQL أو خلية Python في دفتر ملاحظات Querio، وحدد ClickHouse كمصدر بيانات، ثم نفّذ الاستعلامات مباشرةً على تجمّع ClickHouse لديك. استخدم أدوات التصور والذكاء الاصطناعي في Querio لاستخلاص الرؤى، وبناء اللوحات، ومشاركة النتائج.
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+* [وثائق Querio](https://docs.querio.ai/integrations/clickhouse)
+* [أدلة البدء والدروس التعليمية الخاصة بـ Querio](https://www.querio.ai)

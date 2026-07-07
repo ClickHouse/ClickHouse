@@ -1,0 +1,44 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/flat
+title: 'flat 딕셔너리 레이아웃'
+sidebarTitle: 'flat'
+description: '딕셔너리를 메모리에 플랫 배열 형태로 저장합니다.'
+doc_type: '참고'
+---
+
+`flat` 레이아웃에서는 딕셔너리가 플랫 배열 형태로 메모리에 완전히 저장됩니다.
+사용되는 메모리 양은 가장 큰 키의 크기(차지하는 공간 기준)에 비례합니다.
+
+<Tip>
+  이 레이아웃 유형은 사용 가능한 모든 딕셔너리 저장 방식 중에서 가장 뛰어난 성능을 제공합니다.
+</Tip>
+
+딕셔너리 키는 [UInt64](/ko/reference/data-types/int-uint) 타입이며, 그 값은 `max_array_size`로 제한됩니다(기본값 — 500,000).
+딕셔너리를 생성할 때 이보다 큰 키가 발견되면 ClickHouse는 예외를 발생시키고 딕셔너리를 생성하지 않습니다.
+딕셔너리 플랫 배열의 초기 크기는 `initial_array_size` 설정으로 제어됩니다(기본값 — 1024).
+
+모든 소스 유형이 지원됩니다.
+딕셔너리를 업데이트할 때 데이터(파일 또는 테이블의 데이터)는 전체를 읽어들입니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(FLAT(INITIAL_ARRAY_SIZE 50000 MAX_ARRAY_SIZE 5000000))
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <flat>
+        <initial_array_size>50000</initial_array_size>
+        <max_array_size>5000000</max_array_size>
+      </flat>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

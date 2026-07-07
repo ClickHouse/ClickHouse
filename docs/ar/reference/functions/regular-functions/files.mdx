@@ -1,0 +1,34 @@
+---
+description: 'توثيق الملفات'
+sidebarTitle: 'الملفات'
+slug: /sql-reference/functions/files
+title: 'الملفات'
+doc_type: 'reference'
+---
+
+<div id="file">
+  ## file
+</div>
+
+يقرأ ملفًا كسلسلة نصية ويحمّل البيانات في العمود المحدد. ولا يُفسَّر محتوى الملف.
+
+انظر أيضًا دالة الجدول [file](/ar/reference/functions/table-functions/file).
+
+**الصيغة**
+
+```sql
+file(path[, default])
+```
+
+**الوسيطات**
+
+* `path` — مسار الملف نسبةً إلى [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings#user_files_path). يدعم أحرف البدل `*`, `**`, `?`, `{abc,def}` و `{N..M}`، حيث إن `N` و `M` عددان، و`'abc'` و `'def'` سلسلتان نصيتان.
+* `default` — القيمة المُعادة إذا كان الملف غير موجود أو تعذّر الوصول إليه. أنواع البيانات المدعومة: [String](/ar/reference/data-types/string) و [NULL](/ar/reference/settings/formats#input_format_null_as_default).
+
+**مثال**
+
+إدراج بيانات من الملفين a.txt و b.txt في جدول كسلاسل نصية:
+
+```sql
+INSERT INTO table SELECT file('a.txt'), file('b.txt');
+```

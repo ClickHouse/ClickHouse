@@ -1,0 +1,54 @@
+---
+date: 2024-02-14
+title: "Como garantir a consistência de leitura de dados no ClickHouse?"
+description: "Saiba como garantir a consistência dos dados ao ler no ClickHouse, esteja você conectado ao mesmo nó ou a um nó aleatório."
+tags: ['Desempenho e otimizações']
+keywords: ['Consistência de leitura']
+---
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Estou gravando dados no ClickHouse Cloud e preciso garantir, ao lê-los, que estou obtendo as informações completas mais recentes.
+
+<div id="answer">
+  ## Resposta
+</div>
+
+<div id="talking-to-the-same-node">
+  ### Conectando-se ao mesmo nó
+</div>
+
+Se você estiver usando o protocolo nativo ou uma sessão para gravar/ler dados, deverá estar conectado à mesma réplica: nesse cenário, você está lendo diretamente do nó em que está gravando e, portanto, sua leitura sempre será consistente.
+
+<div id="talking-to-a-random-node">
+  ### Falando com um nó aleatório
+</div>
+
+Se você não puder garantir que está falando com o mesmo nó (por exemplo, acessando o nó por meio de chamadas HTTPS distribuídas por um balanceador de carga), você pode:
+
+A)
+
+1. escrever seus dados
+2. conectar-se a uma nova réplica
+3. executar `SYSTEM SYNC REPLICA db.table_name LIGHTWEIGHT`
+4. ler os dados mais recentes
+
+Consulte a [referência](/pt-BR/reference/statements/system#sync-replica) dos comandos `SYSTEM`
+
+OU
+
+B) ler a qualquer momento com consistência sequencial
+
+```sql
+SELECT 
+...
+SETTINGS select_sequential_consistency = 1
+```
+
+Observe que, ao usar o ClickHouse Cloud e seu [SharedMergeTree](/pt-BR/products/cloud/features/infrastructure/shared-merge-tree) como mecanismo de tabela padrão, não é necessário usar `insert_quorum_parallel` — todas as inserções no SharedMergeTree são inserções com quórum (por definição).
+
+O uso de [`SYSTEM SYNC REPLICAS`](/pt-BR/reference/statements/system#sync-replica) ou [`select_sequential_consistency`](/pt-BR/reference/settings/session-settings#select_sequential_consistency) aumentará a carga no ClickHouse Keeper e poderá causar uma piora no desempenho, dependendo da carga do serviço.
+
+A abordagem recomendada é fazer a escrita/leitura usando a mesma sessão ou o protocolo nativo (conexão persistente).

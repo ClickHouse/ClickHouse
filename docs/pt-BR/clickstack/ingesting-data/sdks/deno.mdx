@@ -1,0 +1,66 @@
+---
+slug: /use-cases/observability/clickstack/sdks/deno
+description: 'SDK do Deno para ClickStack - a stack de observabilidade do ClickHouse'
+title: 'Deno'
+doc_type: 'guide'
+keywords: ['SDK Deno ClickStack', 'Deno OpenTelemetry', 'integração do ClickStack com Deno', 'observabilidade em Deno', 'SDK de logging para Deno']
+---
+
+Este guia integra o seguinte:
+
+* **Logs**
+
+<Note>
+  No momento, há suporte apenas para OpenTelemetry Logging. Para suporte a tracing, [consulte o guia a seguir](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
+</Note>
+
+<div id="logging">
+  ## Logging
+</div>
+
+Há suporte a logging por meio da exportação de um logger personalizado para o módulo `std/log`.
+
+**Exemplo de uso:**
+
+```typescript
+import * as log from 'https://deno.land/std@0.203.0/log/mod.ts';
+import { OpenTelemetryHandler } from 'npm:@hyperdx/deno';
+
+log.setup({
+  handlers: {
+    otel: new OpenTelemetryHandler('DEBUG'),
+  },
+
+  loggers: {
+    'my-otel-logger': {
+      level: 'DEBUG',
+      handlers: ['otel'],
+    },
+  },
+});
+
+log.getLogger('my-otel-logger').info('Hello from Deno!');
+```
+
+<div id="run-the-application">
+  ### Execute o aplicativo
+</div>
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
+    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
+    ```
+  </Tab>
+</Tabs>

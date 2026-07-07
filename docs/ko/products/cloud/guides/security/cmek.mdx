@@ -1,0 +1,164 @@
+---
+sidebarTitle: '데이터 암호화'
+slug: /cloud/security/cmek
+title: '데이터 암호화'
+description: 'ClickHouse Cloud의 데이터 암호화에 대해 자세히 알아보세요'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', '암호화', 'CMEK', 'KMS key poller']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="storage-encryption">
+  ## 스토리지 수준 암호화
+</div>
+
+ClickHouse Cloud에는 기본적으로 클라우드 제공업체가 관리하는 AES-256 키를 사용하는 저장 시 암호화가 적용되어 있습니다. 자세한 내용은 다음 문서를 참조하십시오.
+
+* [S3용 AWS 서버 측 암호화](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingServerSideEncryption.html)
+* [GCP 기본 저장 시 암호화](https://cloud.google.com/docs/security/encryption/default-encryption)
+* [저장 데이터용 Azure 스토리지 암호화](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
+
+<div id="database-encryption">
+  ## 데이터베이스 수준 암호화
+</div>
+
+<EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
+
+저장 데이터는 기본적으로 클라우드 제공업체가 관리하는 AES 256 키로 암호화됩니다. 고객은 서비스 데이터에 추가적인 보호 계층을 제공하기 위해 TDE(Transparent Data Encryption)를 활성화하거나, 서비스에 고객 관리형 암호화 키(Customer Managed Encryption Keys, CMEK)를 적용하기 위해 자체 키를 제공할 수 있습니다.
+
+강화된 암호화는 현재 AWS 및 GCP 서비스에서 사용할 수 있습니다. Azure도 곧 지원될 예정입니다.
+
+<div id="transparent-data-encryption-tde">
+  ### 투명한 데이터 암호화(TDE)
+</div>
+
+TDE는 서비스 생성 시 활성화해야 합니다. 기존 서비스는 생성 후에 암호화할 수 없습니다. TDE를 한 번 활성화하면 비활성화할 수 없습니다. 서비스의 모든 데이터는 계속 암호화된 상태로 유지됩니다. 활성화한 후 TDE를 비활성화하려면 새 서비스를 생성한 다음 해당 서비스로 데이터를 마이그레이션해야 합니다.
+
+1. `Create new service`를 선택합니다
+2. 서비스 이름을 지정합니다
+3. 드롭다운에서 클라우드 제공업체로 AWS 또는 GCP를 선택하고 원하는 리전을 선택합니다
+4. Enterprise 기능 드롭다운을 클릭하고 Enable Transparent Data Encryption (TDE)을 켭니다
+5. Create service를 클릭합니다
+
+<div id="customer-managed-encryption-keys-cmek">
+  ### 고객 관리형 암호화 키(CMEK)
+</div>
+
+<Warning>
+  ClickHouse Cloud 서비스를 암호화하는 데 사용된 KMS 키를 삭제하면 ClickHouse 서비스가 중지되며, 기존 백업을 포함한 데이터는 복구할 수 없게 됩니다. 키를 교체할 때 실수로 데이터가 손실되는 것을 방지하려면 삭제하기 전에 일정 기간 기존 KMS 키를 유지하는 것이 좋습니다.
+</Warning>
+
+서비스가 TDE로 암호화된 후에는 키를 업데이트하여 CMEK를 활성화할 수 있습니다. TDE 설정을 업데이트하면 서비스가 자동으로 재시작됩니다. 이 과정에서 기존 KMS 키는 데이터 암호화 키(DEK)를 복호화하고, 새 KMS 키는 DEK를 다시 암호화합니다. 이렇게 하면 서비스가 재시작된 후부터는 새 KMS 키가 암호화 작업에 사용됩니다. 이 과정은 몇 분 정도 걸릴 수 있습니다.
+
+<Accordion title="AWS KMS로 CMEK 활성화">
+  1. ClickHouse Cloud에서 암호화된 서비스를 선택합니다
+
+  2. 왼쪽의 설정을 클릭합니다
+
+  3. 화면 하단에서 Network security information을 펼칩니다
+
+  4. Encryption role ID (AWS) 또는 Encryption Service Account (GCP)를 복사합니다. 이후 단계에서 필요합니다
+
+  5. [AWS용 KMS 키를 생성합니다](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+
+  6. 키를 클릭합니다
+
+  7. AWS 키 정책을 다음과 같이 업데이트합니다:
+
+     ```json
+     {
+         "Sid": "Allow ClickHouse Access",
+         "Effect": "Allow",
+         "Principal": {
+             "AWS": [ "Encryption role ID " ]
+         },
+         "Action": [
+             "kms:Encrypt",
+             "kms:Decrypt",
+             "kms:ReEncrypt*",
+             "kms:DescribeKey"
+         ],
+         "Resource": "*"
+     }
+     ```
+
+  8. 키 정책을 저장합니다
+
+  9. Key ARN을 복사합니다
+
+  10. ClickHouse Cloud로 돌아가 Service Settings의 Transparent Data Encryption 섹션에 Key ARN을 붙여넣습니다
+
+  11. 변경 사항을 저장합니다
+</Accordion>
+
+<Accordion title="GCP KMS로 CMEK 활성화">
+  1. ClickHouse Cloud에서 암호화된 서비스를 선택합니다
+  2. 왼쪽의 설정을 클릭합니다
+  3. 화면 하단에서 Network security information을 펼칩니다
+  4. Encryption Service Account (GCP)를 복사합니다. 이후 단계에서 필요합니다
+  5. [GCP용 KMS 키를 생성합니다](https://cloud.google.com/kms/docs/create-key)
+  6. 키를 클릭합니다
+  7. 위 4단계에서 복사한 GCP Encryption Service Account에 다음 권한을 부여합니다.
+     * Cloud KMS CryptoKey Encrypter/Decrypter
+     * Cloud KMS Viewer
+  8. 키 권한을 저장합니다
+  9. Key Resource Path를 복사합니다
+  10. ClickHouse Cloud로 돌아가 Service Settings의 Transparent Data Encryption 섹션에 Key Resource Path를 붙여넣습니다
+  11. 변경 사항을 저장합니다
+</Accordion>
+
+<Accordion title="Azure KMS로 CMEK 활성화">
+  1. ClickHouse Cloud에서 암호화된 서비스를 선택합니다
+  2. 왼쪽에서 `Settings`를 클릭합니다
+  3. 화면 하단에서 `Network security information`을 펼칩니다
+  4. `Cross Tenant App Client ID`를 복사합니다. 이 값은 다음 단계에서 필요합니다
+  5. Azure subscription에 로그인한 후 Azure CLI에서 다음 명령을 사용해 새 서비스 주체를 생성합니다. `{azure_cross_tenant_app_client_id}`는 이전 단계에서 복사한 값으로 바꾸십시오
+     `az ad sp create --id {azure_cross_tenant_app_client_id}`
+  6. 새로 생성된 서비스 주체의 `Name`을 복사합니다. 이 값은 이후 단계에서 필요합니다
+  7. [Azure Key Vault를 생성합니다](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+  8. [Azure에서 Key Vault 키를 생성합니다](https://learn.microsoft.com/en-us/azure/key-vault/keys/quick-create-portal)
+  9. Key Vault 키에서 왼쪽의 `Access control (IAM)`을 선택합니다
+  10. 상단 메뉴에서 `Role assignments`를 선택합니다
+  11. 상단 메뉴에서 `Add`를 클릭한 다음 `Add role assignment`를 클릭합니다
+  12. `Key Vault Crypto User` 역할을 선택한 다음 `Next`를 클릭합니다
+  13. `Add role assignment` 화면에서는 기본 선택을 그대로 두고 `+Select members`를 클릭합니다
+  14. 6단계에서 복사한 서비스 주체 이름(CH-TDE로 시작함)을 붙여넣고, 해당 서비스 주체를 선택한 다음 `Select`를 클릭합니다
+  15. `Next`를 클릭한 다음 `Review + assign`을 클릭합니다
+  16. Azure Key Vault로 돌아가 다음 값을 복사합니다:
+      * Overview 페이지에서 Vault URI를 복사합니다
+      * Overview 페이지에서 Directory ID를 복사합니다
+      * Keys 페이지에서 키 Name을 복사합니다
+  17. ClickHouse Cloud의 서비스 설정으로 돌아가 16단계의 값을 다음 필드에 붙여넣습니다:
+      * Key ID &gt; 키 Name을 붙여넣습니다
+      * Key Vault URI &gt; Vault URI를 붙여넣습니다
+      * Key Tenant ID &gt; Directory ID를 붙여넣습니다
+  18. `Rotate KMS`를 클릭하고, 롤링 재시작이 진행되므로 몇 분 정도 기다린 뒤 서비스가 실행 중인지 확인합니다
+</Accordion>
+
+<div id="key-rotation">
+  #### 키 순환
+</div>
+
+CMEK를 설정한 후에는 위 절차에 따라 새 KMS 키를 생성하고 권한을 부여해 키를 순환하십시오. 그런 다음 서비스 설정으로 돌아가 새 ARN(AWS), Key Resource Path(GCP) 또는 Key Name(Azure)을 붙여 넣고 설정을 저장하십시오. 새 키를 적용하기 위해 서비스가 다시 시작됩니다.
+
+<div id="kms-key-poller">
+  #### KMS 키 폴러
+</div>
+
+CMEK를 사용하는 경우 제공된 KMS 키의 유효성을 10분마다 확인합니다. KMS 키에 대한 액세스가 유효하지 않으면 ClickHouse 서비스가 중지됩니다. 서비스를 다시 재개하려면 이 가이드의 단계에 따라 KMS 키 액세스를 복원한 후 서비스를 다시 시작하십시오.
+
+<div id="backup-and-restore">
+  ### 백업 및 복원
+</div>
+
+백업은 해당 서비스와 동일한 키를 사용해 암호화됩니다. 암호화된 백업을 복원하면 원래 인스턴스와 동일한 KMS 키를 사용하는 암호화된 인스턴스가 생성됩니다. 필요한 경우 복원 후 KMS 키를 순환할 수 있습니다. 자세한 내용은 [키 순환](#key-rotation)을 참조하십시오.
+
+<div id="performance">
+  ## 성능
+</div>
+
+데이터베이스 암호화는 ClickHouse에 내장된 [데이터 암호화용 가상 파일 시스템 기능](/ko/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)을 활용해 데이터를 암호화하고 보호합니다. 이 기능에서 사용하는 알고리즘은 `AES_256_CTR`이며, 워크로드에 따라 5~15%의 성능 저하가 발생할 수 있습니다.
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="CMEK 성능 저하" />
