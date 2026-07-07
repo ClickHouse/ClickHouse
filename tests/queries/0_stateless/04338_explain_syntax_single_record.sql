@@ -15,3 +15,9 @@ SELECT count(), countSubstrings(explain, '\n') FROM (EXPLAIN SYNTAX oneline = 1 
 -- Top-level output: one JSON row whose value holds the whole query with line feeds escaped as \n.
 -- `dummy = 0` is kept by both analyzers, so the text is stable under randomized enable_analyzer.
 EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT JSONEachRow;
+
+-- Raw line formats (TSVRaw/Raw/LineAsString) do not escape the embedded line feeds, so the
+-- multi-line record prints as several physical lines. This is inherent to raw formats and is
+-- byte-for-byte identical to the pre-#80410 per-line output, so it is not a regression: any
+-- multi-line String is non-round-trippable through a line-delimited raw format.
+EXPLAIN SYNTAX SELECT 1 FROM system.one WHERE dummy = 0 FORMAT TSVRaw;
