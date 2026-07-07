@@ -199,14 +199,20 @@ void reserveSpaceInHashMaps(
             ProfileEvents::HashJoinPreallocatedElementsInHashTables);
 }
 
-/// Bytes the buffers of the two-level map buckets will occupy (summed across all slots; every bucket
-/// is owned by exactly one slot) once `num_entries` distinct keys are inserted, mirroring
+/// Additional bytes the buffers of the two-level map buckets will GROW BY (summed across all slots;
+/// every bucket is owned by exactly one slot) once `num_entries` distinct keys are inserted, mirroring
 /// `reserveBucketsBySize` and `HashTableGrower::set`: each bucket gets `num_entries / NUM_BUCKETS`
 /// cells and its buffer grows to `2^(floor(log2(n - 1)) + 2)` cells, i.e. into [2n, 4n). Deliberately
 /// not capped by the `budget_entries` cap of `reserveBucketsBySize`: rehashes during the replay grow
 /// the buffers to this size regardless of the initial reserve. Used to project the memory footprint of
 /// a deferred build before committing to the replay (see `getProjectedTotalByteCount`). The caller
 /// passes the distinct-key estimate, since the map holds one cell per key, not per source row.
+/// This is a delta on top of the buffers the buckets already own: those are part of `getTotalByteCount`,
+/// which `getProjectedTotalByteCount` starts from, so adding the full post-reserve size would count the
+/// current buffers twice. `HashTableGrower::set` never shrinks and keeps its `2^initial_size_degree`
+/// floor (256 cells: a reserve of up to 128 elements per bucket allocates nothing at all), so the
+/// double count would be the whole empty-map baseline - enough to spuriously hand a borderline cold
+/// build to `GraceHashJoin` even though the in-memory replay would fit.
 size_t projectedTwoLevelMapBytes(const HashJoin & hash_join, size_t num_entries)
 {
     size_t projected_bytes = 0;
@@ -222,11 +228,20 @@ size_t projectedTwoLevelMapBytes(const HashJoin & hash_join, size_t num_entries)
                 constexpr size_t cell_size = sizeof(typename BucketImpl::cell_type);
 
                 const size_t per_bucket_elems = num_entries / map.NUM_BUCKETS;
-                /// Buckets that stay at their initial size are already accounted by `getTotalByteCount`.
+                /// Buckets that stay at their current size are already accounted by `getTotalByteCount`.
                 if (per_bucket_elems <= 1)
                     return;
                 const size_t per_bucket_buf_cells = 4ull << (63 - std::countl_zero(per_bucket_elems - 1));
-                projected_bytes = map.NUM_BUCKETS * per_bucket_buf_cells * cell_size;
+                const size_t per_bucket_buf_bytes = per_bucket_buf_cells * cell_size;
+                /// The deferred build leaves the maps untouched until the replay (the projection is only
+                /// consulted during the build phase), so the buckets still own their initial buffers here;
+                /// read the actual sizes anyway so the delta stays right if that ever changes.
+                for (size_t j = 0; j < map.NUM_BUCKETS; ++j)
+                {
+                    const size_t current_bucket_buf_bytes = map.impls[j].getBufferSizeInBytes();
+                    if (per_bucket_buf_bytes > current_bucket_buf_bytes)
+                        projected_bytes += per_bucket_buf_bytes - current_bucket_buf_bytes;
+                }
             })
     };
     const auto & right_data = hash_join.getJoinedData();
