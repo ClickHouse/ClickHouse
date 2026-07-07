@@ -112,33 +112,76 @@ def full_transform(migrate, body, title, src_docu, dest, lk):
     )
 
 
+def _quote_closed(value, quote):
+    """Whether a quoted scalar is closed at the end of `value` (the text after
+    the opening quote). In single-quoted scalars `''` is an escaped quote, not
+    a close-and-reopen."""
+    value = value.rstrip()
+    if quote == "'":
+        return value.replace("''", "").endswith("'")
+    return value.endswith('"') and not value.endswith('\\"')
+
+
 def parse_frontmatter(page):
     """Parse the frontmatter subset the migrated pages use: `key: value` with
-    optional single/double quotes, values folded onto indented continuation
-    lines, and inline `[a, b]` arrays. Returns {} when there is none."""
+    optional single/double quotes (a quoted scalar may continue over the
+    following lines until the line that closes the quote), unquoted values
+    folded onto indented continuation lines, and inline `[a, b]` arrays.
+    Returns {} when there is none."""
     match = FRONTMATTER_RE.match(page)
     if not match:
         return {}
-    # Join folded continuation lines (indented) onto their logical line.
-    logical = []
-    for line in match.group(1).split("\n"):
-        if line[:1].isspace() and logical:
-            logical[-1] += " " + line.strip()
-        else:
-            logical.append(line)
+    lines = match.group(1).split("\n")
     fm = {}
-    for line in logical:
-        if ":" not in line or line.lstrip().startswith("#"):
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if line[:1].isspace() or ":" not in line or line.startswith("#"):
             continue
         key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if value[:1] in ("'", '"') and not _quote_closed(value[1:], value[0]):
+            # A quoted scalar continues until the line that closes the quote.
+            # YAML folds the line breaks: each becomes a space, except that a
+            # run of blank lines becomes that many newlines.
+            quote = value[0]
+            parts = [value[1:]]
+            while i < len(lines) and not _quote_closed("\n".join(parts), quote):
+                parts.append(lines[i].strip())
+                i += 1
+            folded = parts[0]
+            breaks = 0
+            for part in parts[1:]:
+                if part:
+                    folded += ("\n" * breaks if breaks else " ") + part
+                    breaks = 0
+                else:
+                    breaks += 1
+            if _quote_closed("\n".join(parts), quote):
+                folded = folded.rstrip()[:-1]
+            fm[key] = folded.replace("''", "'") if quote == "'" else folded
+            continue
+        if value.startswith("[") and not value.endswith("]"):
+            # An inline array may also continue over the following lines,
+            # until the line that closes the bracket.
+            while i < len(lines) and not value.endswith("]"):
+                value += " " + lines[i].strip()
+                value = value.rstrip()
+                i += 1
+        # Join folded continuation lines (indented) onto the value.
+        while i < len(lines) and lines[i][:1].isspace() and lines[i].strip():
+            value += " " + lines[i].strip()
+            i += 1
         value = value.strip()
         if value.startswith("[") and value.endswith("]"):
             items = [v.strip().strip("'\"") for v in value[1:-1].split(",")]
-            fm[key.strip()] = [v for v in items if v]
+            fm[key] = [v for v in items if v]
         elif value.startswith("'") and value.endswith("'") and len(value) >= 2:
-            fm[key.strip()] = value[1:-1].replace("''", "'")
+            fm[key] = value[1:-1].replace("''", "'")
         else:
-            fm[key.strip()] = value.strip('"')
+            fm[key] = value.strip('"')
     return fm
 
 

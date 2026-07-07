@@ -29,7 +29,7 @@ If you've spotted an error, please edit the YML frontmatter of the pages themsel
 | [system.asynchronous_loader](/reference/system-tables/asynchronous_loader) | System table containing information about and status of recent asynchronous jobs (e.g. for tables which are loading). The table contains a row for every job. |
 | [system.asynchronous_metric_log](/reference/system-tables/asynchronous_metric_log) | System table containing historical values for `system.asynchronous_metrics`, which are saved once per time interval (one second by default) |
 | [system.asynchronous_metrics](/reference/system-tables/asynchronous_metrics) | System table containing metrics that are calculated periodically in the background. For example, the amount of RAM in use. |
-| [system.azure_queue_log](/reference/system-tables/azure_queue_log) | 'Contains log entries with information about files processed by the AzureQueue engine. |
+| [system.azure_queue_log](/reference/system-tables/azure_queue_log) | Contains log entries with information about files processed by the AzureQueue engine. It is safe to truncate or drop this table at any time. |
 | [system.azure_queue_metadata_cache](/reference/system-tables/azure_queue_metadata_cache) | Contains in-memory state of AzureQueue metadata and currently processed rows per file. |
 | [system.azure_queue_settings](/reference/system-tables/azure_queue_settings) | System table containing information about settings of AzureQueue tables. Available from server version `24.10`. |
 | [system.backup_log](/reference/system-tables/backup_log) | System table containing logging entries with information about `BACKUP` and `RESTORE` operations. |
@@ -73,10 +73,10 @@ If you've spotted an error, please edit the YML frontmatter of the pages themsel
 | [system.events](/reference/system-tables/events) | System table containing information about the number of events that have occurred in the system. |
 | [system.fail_points](/reference/system-tables/fail_points) | Contains a list of all available failpoints with their type and current status. |
 | [system.formats](/reference/system-tables/formats) | Contains a list of all the formats along with flags whether a format is suitable for input/output or whether it supports parallelization. |
-| [system.filesystem_cache_log](/reference/system-tables/filesystem_cache_log) | 'Contains a history of all events occurred with filesystem cache for objects on a remote filesystem. |
+| [system.filesystem_cache_log](/reference/system-tables/filesystem_cache_log) | Contains a history of all events occurred with filesystem cache for objects on a remote filesystem. It is safe to truncate or drop this table at any time. |
 | [system.filesystem_cache_settings](/reference/system-tables/filesystem_cache_settings) | Contains information about all filesystem cache settings |
 | [system.filesystem_cache](/reference/system-tables/filesystem_cache) | Contains information about all entries inside filesystem cache for remote objects. |
-| [system.filesystem_read_prefetches_log](/reference/system-tables/filesystem_read_prefetches_log) | 'Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem. |
+| [system.filesystem_read_prefetches_log](/reference/system-tables/filesystem_read_prefetches_log) | Contains a history of all prefetches done during reading from MergeTree tables backed by a remote filesystem. It is safe to truncate or drop this table at any time. |
 | [system.functions](/reference/system-tables/functions) | System table containing information about normal and aggregate functions. |
 | [system.grants](/reference/system-tables/grants) | System table showing which privileges are granted to ClickHouse user accounts. |
 | [system.graphite_retentions](/reference/system-tables/graphite_retentions) | System table containing information about parameters `graphite_rollup` which are used in tables with `GraphiteMergeTree` type engines. |
@@ -143,7 +143,7 @@ If you've spotted an error, please edit the YML frontmatter of the pages themsel
 | [system.roles](/reference/system-tables/roles) | System table containing information about configured roles. |
 | [system.row_policies](/reference/system-tables/row_policies) | System table containing filters for one particular table, as well as a list of roles and/or users which should use this row policy. |
 | [system.s3_queue_settings](/reference/system-tables/s3_queue_settings) | System table containing information about the settings of S3Queue tables. Available from server version `24.10`. |
-| [system.s3queue_log](/reference/system-tables/s3queue_log) | 'Contains log entries with information about files processed by the S3Queue engine. |
+| [system.s3queue_log](/reference/system-tables/s3queue_log) | Contains log entries with information about files processed by the S3Queue engine. It is safe to truncate or drop this table at any time. |
 | [system.s3queue_metadata_cache](/reference/system-tables/s3queue_metadata_cache) | Contains in-memory state of S3Queue metadata and currently processed rows per file. |
 | [system.scheduler](/reference/system-tables/scheduler) | System table containing information about and status of scheduling nodes residing on the local server. |
 | [system.schema_inference_cache](/reference/system-tables/schema_inference_cache) | System table containing information about all cached file schemas. |
@@ -166,7 +166,7 @@ If you've spotted an error, please edit the YML frontmatter of the pages themsel
 | [system.tokenizers](/reference/system-tables/tokenizers) | System table which shows all available tokenizers. |
 | [system.trace_log](/reference/system-tables/trace_log) | System table containing stack traces collected by the sampling query profiler. |
 | [system.transactions](/reference/system-tables/transactions) | Contains a list of transactions and their state. |
-| [system.transactions_info_log](/reference/system-tables/transactions_info_log) | 'Contains information about all transactions executed on a current server. |
+| [system.transactions_info_log](/reference/system-tables/transactions_info_log) | Contains information about all transactions executed on a current server. It is safe to truncate or drop this table at any time. |
 | [system.unicode](/reference/system-tables/unicode) | System table containing a list of Unicode characters and their properties. |
 | [system.user_defined_functions](/reference/system-tables/user_defined_functions) | System table containing loading status and configuration metadata for User-Defined Functions (UDFs). |
 | [system.user_directories](/reference/system-tables/user_directories) | Contains the information about configured user directories - directories on the file system from which ClickHouse server is allowed to read user provided data. |
