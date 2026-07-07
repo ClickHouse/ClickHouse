@@ -163,12 +163,9 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
     auto timeout_milliseconds = static_cast<int>(
         std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
-    /// Retry EINTR with the remaining time: restarting with the full timeout would reset the
-    /// deadline on every signal, and under a periodic signal (e.g. the query profiler, whose
-    /// SA_RESTART does not apply to poll) firing more often than the timeout, the poll would
-    /// then never expire. The remainder is computed in microseconds from a single anchor:
-    /// per-retry millisecond accounting would truncate a sub-millisecond interval to zero and
-    /// make no progress.
+    /// Retry EINTR with the remaining time, otherwise a periodic signal (e.g. the query profiler's)
+    /// would reset the deadline on every retry and the poll could never expire. Same pattern as
+    /// Epoll::getManyReady, with microsecond accounting so a sub-millisecond signal period still makes progress.
     Stopwatch watch;
     int result = 0;
     for (;;)
