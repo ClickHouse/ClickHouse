@@ -1,0 +1,135 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', 'conectar', 'integrar', 'UI']
+description: 'Explo é uma ferramenta de interface do usuário (UI) de código aberto e fácil de usar para fazer perguntas sobre seus dados.'
+title: 'Conectando o Explo ao ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Análises voltadas ao cliente para qualquer plataforma. Criado para visualizações elegantes. Desenvolvido para ser simples.
+
+<div id="goal">
+  ## Objetivo
+</div>
+
+Neste guia, você vai conectar seus dados do ClickHouse ao Explo e visualizar os resultados. O gráfico ficará assim:
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<p />
+
+<Tip>
+  **Adicione alguns dados**
+
+  Se você não tiver um conjunto de dados para usar, poderá adicionar um dos conjuntos de dados de exemplo. Este guia usa o conjunto de dados [UK Price Paid](/pt-BR/get-started/sample-datasets/uk-price-paid), então você pode escolher esse. Há vários outros na mesma categoria da documentação.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. Reúna seus dados de conexão
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-explo-to-clickhouse">
+  ## 2.  Conecte o Explo ao ClickHouse
+</div>
+
+1. Crie uma conta no Explo.
+
+2. Clique na aba **Data** do Explo na barra lateral esquerda.
+
+<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="Aba Data" border />
+
+3. Clique em **Connect Data Source** no canto superior direito.
+
+<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="Connect Data Source" border />
+
+4. Preencha as informações na página **Getting Started**
+
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
+
+5. Selecione **ClickHouse**
+
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+
+6. Insira suas **credenciais do ClickHouse**.
+
+<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="Credenciais" border />
+
+7. Configure **Security**
+
+<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="Security" border />
+
+8. No ClickHouse, **adicione os IPs do Explo à lista de permissões**.
+   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+
+<div id="3-create-a-dashboard">
+  ## 3. Criar um dashboard
+</div>
+
+1. Vá para a aba **Dashboard** na barra de navegação à esquerda.
+
+<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="Dashboard" border />
+
+2. Clique em **Create Dashboard** no canto superior direito e dê um nome ao dashboard. Pronto, o dashboard foi criado!
+
+<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="Criar dashboard" border />
+
+3. Agora você verá uma tela semelhante a esta:
+
+<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Dashboard do Explo" border />
+
+<div id="4-run-a-sql-query">
+  ## 4. Execute uma consulta SQL
+</div>
+
+1. Encontre o nome da sua tabela na barra lateral direita, abaixo do título do schema. Em seguida, insira o seguinte comando no editor do seu conjunto de dados:
+   `SELECT * FROM YOUR_TABLE_NAME
+   LIMIT 100`
+
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+
+2. Agora clique em Run e vá para a aba Preview para ver seus dados.
+
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+
+<div id="5-build-a-chart">
+  ## 5. Criar um gráfico
+</div>
+
+1. No lado esquerdo, arraste o ícone de gráfico de barras para a tela.
+
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+
+2. Selecione o conjunto de dados. Agora você verá uma tela como a seguir:
+
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+
+3. Preencha **county** no eixo X e **Price** na seção do eixo Y, assim:
+
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+
+4. Agora, altere a agregação para **AVG**.
+
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+
+5. Agora temos o preço médio dos imóveis separado por preço!
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+
+<div id="learn-more">
+  ## Saiba mais
+</div>
+
+Encontre mais informações sobre o Explo e sobre como criar painéis na <a href="https://docs.explo.co/" target="_blank">documentação do Explo</a>.

@@ -1,0 +1,52 @@
+---
+slug: /use-cases/observability/clickstack/service-maps
+title: '服务地图'
+sidebarTitle: '服务地图'
+description: '使用 ClickStack 服务地图可视化服务依赖关系和请求流向。'
+doc_type: 'guide'
+keywords: ['clickstack', '服务地图', '拓扑', '链路追踪', '依赖关系', '分布式链路追踪', '可观测性', '请求图']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+import { Video } from "/snippets/zh/components/Video/Video.jsx";
+
+<BetaBadge />
+
+服务地图可直观展示各个服务之间的交互关系。ClickStack 通过在同一个 trace 中匹配客户端 span (出站请求) 和服务端 span (入站请求) 来构建该图，从而重建服务之间的请求路径。
+
+点击左侧导航面板中的 **Service Map** 以打开完整图谱。使用 OpenTelemetry [摄取链路追踪数据](/zh/clickstack/ingesting-data) 后，服务就会显示出来。
+
+<Image img="/images/clickstack/service-maps/service-map-overview.webp" alt="显示服务节点及其之间请求流的服务地图" size="lg" />
+
+<div id="exploring-the-service-map">
+  ## 探索服务地图
+</div>
+
+每个节点代表一个服务，由 `service.name` 资源属性标识。边 (虚线) 用于连接服务：当一个服务中的客户端 span 与另一个服务中的服务端 span 匹配时，就会显示一条连接。节点大小反映相对流量，红色节点表示在所选时间范围内出现错误的服务。
+
+地图上方的工具栏可用于过滤和调整视图。
+
+**数据源选择器** — 将地图过滤为特定的链路追踪数据源 (例如“ClickPy Traces”) 。
+
+<Image img="/images/clickstack/service-maps/source-selector.webp" alt="服务地图工具栏中高亮显示的数据源选择器" size="lg" />
+
+**采样滑块** — 调整采样率，以平衡性能和准确性。在高流量集群上，较低的采样率加载速度更快。
+
+<Image img="/images/clickstack/service-maps/sampling.webp" alt="服务地图工具栏中高亮显示的采样滑块" size="lg" />
+
+**日期范围选择器** — 设置用于构建地图的链路追踪数据时间窗口。
+
+<Image img="/images/clickstack/service-maps/date-selector.webp" alt="服务地图工具栏中高亮显示的日期范围选择器" size="lg" />
+
+使用地图左下角的 **+/-** 按钮，或滚动鼠标滚轮即可放大和缩小。
+
+<div id="trace-level-service-maps">
+  ## trace 级服务地图
+</div>
+
+查看单个 trace 时，聚焦式服务地图会显示该请求在各个服务之间的流转路径。这样，你无需离开 trace 瀑布图，就能查看单次请求的拓扑。
+
+<Frame>
+  <Video src="/images/clickstack/service-maps/service-map-demo.mp4" />
+</Frame>

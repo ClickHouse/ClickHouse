@@ -1,0 +1,22 @@
+---
+title: اجمع تفاصيل اتصال HTTP
+---
+
+للاتصال بـ ClickHouse باستخدام HTTP(S)، تحتاج إلى المعلومات التالية:
+
+| المعلمات                  | الوصف                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------- |
+| `HOST` and `PORT`         | عادةً ما يكون المنفذ 8443 عند استخدام TLS، أو 8123 عند عدم استخدام TLS.                       |
+| `DATABASE NAME`           | افتراضيًا، توجد قاعدة بيانات باسم `default`. استخدم اسم قاعدة البيانات التي تريد الاتصال بها. |
+| `USERNAME` and `PASSWORD` | افتراضيًا، يكون اسم المستخدم `default`. استخدم اسم المستخدم المناسب لحالة الاستخدام لديك.     |
+
+تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في ClickHouse Cloud console.
+حدِّد خدمة ثم انقر على **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر Connect لخدمة ClickHouse Cloud" border />
+
+اختر **HTTPS**. ستظهر تفاصيل الاتصال في مثال لأمر `curl`.
+
+<Image img="/images/_snippets/connection-details-https.webp" size="md" alt="تفاصيل اتصال HTTPS لخدمة ClickHouse Cloud" border />
+
+إذا كنت تستخدم ClickHouse مُدارًا ذاتيًا، فسيُحدِّد مسؤول ClickHouse لديك تفاصيل الاتصال.

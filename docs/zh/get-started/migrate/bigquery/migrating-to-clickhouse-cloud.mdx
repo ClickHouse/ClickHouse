@@ -1,0 +1,589 @@
+---
+title: '从 BigQuery 迁移到 ClickHouse Cloud'
+slug: /migrations/bigquery/migrating-to-clickhouse-cloud
+description: '如何将数据从 BigQuery 迁移到 ClickHouse Cloud'
+keywords: ['BigQuery']
+show_related_blogs: true
+sidebarTitle: '迁移指南'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="why-use-clickhouse-cloud-over-bigquery">
+  ## 为什么选择 ClickHouse Cloud 而非 BigQuery？
+</div>
+
+简而言之：在现代数据分析场景中，ClickHouse 比 BigQuery 更快、更便宜，功能也更强大：
+
+<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse 与 BigQuery" />
+
+<div id="loading-data-from-bigquery-to-clickhouse-cloud">
+  ## 将 BigQuery 数据加载到 ClickHouse Cloud
+</div>
+
+<div id="dataset">
+  ### 数据集
+</div>
+
+作为展示从 BigQuery 迁移到 ClickHouse Cloud 的典型示例数据集，我们使用了 [这里](/zh/get-started/sample-datasets/stackoverflow) 介绍的 Stack Overflow 数据集。该数据集包含 Stack Overflow 自 2008 年至 2024 年 4 月期间的所有 `post`、`vote`、`user`、`comment` 和 `badge` 数据。该数据的 BigQuery schema 如下所示：
+
+<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Schema" />
+
+对于希望将此数据集导入 BigQuery instance 以测试迁移步骤的用户，我们已在一个 GCS 存储桶中提供了这些表的 Parquet 格式数据，并在 [这里](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) 提供了用于在 BigQuery 中创建和加载这些表的 DDL 命令。
+
+<div id="migrating-data">
+  ### 迁移数据
+</div>
+
+BigQuery 与 ClickHouse Cloud 之间的数据迁移主要分为两类工作负载：
+
+* **初始批量加载并定期更新** - 需要先迁移初始数据集，再按固定时间间隔 (例如每天) 定期更新。这里的更新通过重新发送已发生变化的行来完成——这些变化可通过某个可用于比对的列 (例如日期列) 来识别。删除操作则通过定期完整重载整个数据集来处理。
+* **实时复制或 CDC (变更数据捕获)&#x20;**&#x20;- 需要先迁移初始数据集。之后，对该数据集的变更必须近实时地同步到 ClickHouse，且只允许数秒的延迟。实际上，这就是一个 [变更数据捕获 (CDC (变更数据捕获) ) 流程](https://en.wikipedia.org/wiki/Change_data_capture)：BigQuery 中的表必须与 ClickHouse 保持同步，也就是说，BigQuery 表中的插入、更新和删除都必须应用到 ClickHouse 中对应的表。
+
+<div id="bulk-loading-via-google-cloud-storage-gcs">
+  #### 通过 Google Cloud Storage (GCS) 进行批量加载
+</div>
+
+BigQuery 支持将数据导出到 Google 的对象存储 (GCS) 。以我们的示例数据集为例：
+
+1. 将这 7 个表导出到 GCS。相关命令可在[此处](https://pastila.nl/?014e1ae9/cb9b07d89e9bb2c56954102fd0c37abd#0Pzj52uPYeu1jG35nmMqRQ==)查看。
+
+2. 将数据导入 ClickHouse Cloud。为此，可以使用 [gcs 表函数](/zh/reference/functions/table-functions/gcs)。DDL 和导入查询可在[此处](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)查看。请注意，由于 ClickHouse Cloud 实例由多个计算节点组成，因此这里使用的是 [s3Cluster 表函数](/zh/reference/functions/table-functions/s3Cluster)，而不是 `gcs` 表函数。该函数同样适用于 gcs 存储桶，并且会[利用 ClickHouse Cloud 服务的所有节点](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)并行加载数据。
+
+<Image img="/images/migrations/bigquery-4.webp" size="md" alt="批量加载" />
+
+这种方法有多项优势：
+
+* BigQuery 的导出功能支持通过过滤器仅导出部分数据。
+* BigQuery 支持导出为 [Parquet、Avro、JSON 和 CSV](https://cloud.google.com/bigquery/docs/exporting-data) 格式，以及多种[压缩类型](https://cloud.google.com/bigquery/docs/exporting-data)；而这些都受到 ClickHouse 支持。
+* GCS 支持[对象生命周期管理](https://cloud.google.com/storage/docs/lifecycle)，允许在指定时间后删除那些已从 BigQuery 导出并导入到 ClickHouse 的数据。
+* [Google 允许每天最多免费向 GCS 导出 50TB 数据](https://cloud.google.com/bigquery/quotas#export_jobs)。用户只需为 GCS 存储付费。
+* 导出会自动生成多个文件，并将每个文件的表数据大小限制在最多 1GB。这对 ClickHouse 很有利，因为这样可以并行导入。
+
+在尝试下面的示例之前，建议先查看[导出所需的权限](https://cloud.google.com/bigquery/docs/exporting-data#required_permissions)和[位置建议](https://cloud.google.com/bigquery/docs/exporting-data#data-locations)，以尽可能提升导出和导入性能。
+
+<div id="real-time-replication-or-cdc-via-scheduled-queries">
+  ### 通过计划查询实现实时复制或 CDC
+</div>
+
+CDC (变更数据捕获) 是让两个数据库中的表保持同步的过程。如果要以近实时方式处理更新和删除，复杂度会显著增加。一种方法是直接利用 BigQuery 的[计划查询功能](https://cloud.google.com/bigquery/docs/scheduling-queries)定期导出数据。只要你能接受数据写入 ClickHouse 时存在一定延迟，这种方法就很容易实现和维护。示例见[这篇博文](https://clickhouse.com/blog/clickhouse-bigquery-migrating-data-for-realtime-queries#using-scheduled-queries)。
+
+<div id="designing-schemas">
+  ## 设计 schema
+</div>
+
+Stack Overflow 数据集包含多个相关的表。我们建议先重点迁移主表。它不一定是最大的表，而是你预计会承载最多分析查询的那张表。这样可以帮助你熟悉 ClickHouse 的核心概念。随着添加更多表，为了充分利用 ClickHouse 的功能并获得最佳性能，这张表可能还需要重新建模。我们在 [数据建模文档](/zh/guides/clickhouse/data-modelling/schema-design#next-data-modeling-techniques) 中进一步介绍了这一建模过程。
+
+遵循这一原则，我们将重点放在主要的 `posts` 表上。其 BigQuery schema 如下所示：
+
+```sql
+CREATE TABLE stackoverflow.posts (
+    id INTEGER,
+    posttypeid INTEGER,
+    acceptedanswerid STRING,
+    creationdate TIMESTAMP,
+    score INTEGER,
+    viewcount INTEGER,
+    body STRING,
+    owneruserid INTEGER,
+    ownerdisplayname STRING,
+    lasteditoruserid STRING,
+    lasteditordisplayname STRING,
+    lasteditdate TIMESTAMP,
+    lastactivitydate TIMESTAMP,
+    title STRING,
+    tags STRING,
+    answercount INTEGER,
+    commentcount INTEGER,
+    favoritecount INTEGER,
+    conentlicense STRING,
+    parentid STRING,
+    communityowneddate TIMESTAMP,
+    closeddate TIMESTAMP
+);
+```
+
+<div id="optimizing-types">
+  ### 优化类型
+</div>
+
+按照[此处所述](/zh/guides/clickhouse/data-modelling/schema-design)的流程操作后，会得到如下 schema：
+
+```sql
+CREATE TABLE stackoverflow.posts
+(
+   `Id` Int32,
+   `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+   `AcceptedAnswerId` UInt32,
+   `CreationDate` DateTime,
+   `Score` Int32,
+   `ViewCount` UInt32,
+   `Body` String,
+   `OwnerUserId` Int32,
+   `OwnerDisplayName` String,
+   `LastEditorUserId` Int32,
+   `LastEditorDisplayName` String,
+   `LastEditDate` DateTime,
+   `LastActivityDate` DateTime,
+   `Title` String,
+   `Tags` String,
+   `AnswerCount` UInt16,
+   `CommentCount` UInt8,
+   `FavoriteCount` UInt8,
+   `ContentLicense`LowCardinality(String),
+   `ParentId` String,
+   `CommunityOwnedDate` DateTime,
+   `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+COMMENT 'Optimized types'
+```
+
+我们可以通过一个简单的 [`INSERT INTO SELECT`](/zh/reference/statements/insert-into) 来填充这张表，使用 [`gcs` table function](/zh/reference/functions/table-functions/gcs) 从 gcs 读取导出的数据。请注意，在 ClickHouse Cloud 上，你也可以使用与 gcs 兼容的 [`s3Cluster` table function](/zh/reference/functions/table-functions/s3Cluster)，以便在多个节点间并行加载：
+
+```sql
+INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datasets/stackoverflow/parquet/posts/*.parquet', NOSIGN);
+```
+
+在新的 schema 中，我们不保留任何 null 值。上述插入操作会将这些值隐式转换为其各自类型的默认值——整数为 0，字符串为空字符串。ClickHouse 还会自动将所有数值转换为其目标精度。
+
+<div id="how-are-clickhouse-primary-keys-different">
+  ## ClickHouse 主键有何不同？
+</div>
+
+如[此处](/zh/get-started/migrate/bigquery/index)所述，与 BigQuery 一样，ClickHouse 不会强制表的主键列值保持唯一。
+
+与 BigQuery 中的聚簇类似，ClickHouse 表中的数据会按主键列排序后存储在磁盘上。查询优化器会利用这种排序顺序来避免额外排序、减少 JOIN 的内存占用，并对 limit 子句进行短路处理。
+不同于 BigQuery，ClickHouse 会根据主键列值自动创建[ (稀疏) 主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。该索引用于加速所有包含主键列过滤条件的查询。具体来说：
+
+* 对于 ClickHouse 常见的使用规模而言，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照规则在后台合并这些 parts。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 被合并时，合并后 part 的主索引也会一并合并。需要注意的是，这些索引并不是为每一行单独构建的。相反，一个 part 的主索引会为每组行保存一个索引条目——这种技术称为稀疏索引。
+* 稀疏索引之所以可行，是因为 ClickHouse 会按指定键对 part 中的行排序后存储到磁盘上。稀疏主索引不会像基于 B-Tree 的索引那样直接定位到单行，而是让 ClickHouse 能够快速地 (通过对索引条目进行 binary search) 识别出可能匹配查询的行组。随后，这些可能匹配的行组会被并行流式传输到 ClickHouse engine 中，以查找真正匹配的行。这种索引设计使主索引可以非常小 (可完全装入主内存) ，同时仍能显著提升查询执行速度，尤其适合数据分析场景中常见的范围查询。更多细节，建议阅读[这篇深入指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+
+<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouse 主键" />
+
+在 ClickHouse 中，所选主键不仅决定索引，还决定数据写入磁盘时的排列顺序。因此，它会显著影响压缩效果，而压缩效果又会进一步影响查询性能。如果某个排序键能让大多数列的值以连续顺序写入，那么所选的压缩算法 (以及编解码器) 就能更高效地压缩数据。
+
+> 表中的所有列都会根据指定排序键的值进行排序，无论这些列本身是否包含在该键中。比如，如果使用 `CreationDate` 作为键，那么其他所有列中的值顺序都会与 `CreationDate` 列中的值顺序保持一致。也可以指定多个排序键——其排序语义与 `SELECT` 查询中的 `ORDER BY` 子句相同。
+
+<div id="choosing-an-ordering-key">
+  ### 如何选择排序键
+</div>
+
+有关选择排序键时的考量因素和步骤，请参见[此处](/zh/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key)，其中以 posts 表为例。
+
+<div id="data-modeling-techniques">
+  ## 数据建模技术
+</div>
+
+我们建议从 BigQuery 迁移而来的用户阅读[ClickHouse 数据建模指南](/zh/guides/clickhouse/data-modelling/schema-design)。本指南使用相同的 Stack Overflow 数据集，并介绍了利用 ClickHouse 特性的多种方法。
+
+<div id="partitions">
+  ### 分区
+</div>
+
+如果你使用过 BigQuery，那么你一定熟悉表分区这一概念：通过将表拆分为称为分区的更小、更易管理的部分，可以提升大型数据库的性能和可管理性。这种分区既可以基于指定列上的范围 (例如日期) 来实现，也可以使用预定义列表，或通过对某个键进行哈希来实现。这样，管理员就可以根据日期范围或地理位置等特定条件来组织数据。
+
+分区有助于通过分区裁剪和更高效的索引来提升查询性能，从而加快数据访问速度。它还便于执行备份和数据清理等维护任务，因为这些操作可以针对单个分区进行，而不必处理整张表。此外，分区还可以通过将负载分散到多个分区上，显著提升 BigQuery 数据库的可扩展性。
+
+在 ClickHouse 中，分区是在表初始定义时通过 [`PARTITION BY`](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果将决定某一行会被发送到哪个分区。
+
+<Image img="/images/migrations/bigquery-6.webp" size="md" alt="分区" />
+
+磁盘上的数据分区片段在逻辑上都隶属于各自的分区，并且可以单独查询。在下面的示例中，我们使用表达式 [`toYear(CreationDate)`](/zh/reference/functions/regular-functions/date-time-functions#toYear) 按年份对 posts 表进行分区。随着行被插入 ClickHouse，系统会对每一行计算该表达式的结果——随后，这些行会以属于相应分区的新数据分区片段的形式被写入对应分区。
+
+```sql
+CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+<div id="applications">
+  #### 应用场景
+</div>
+
+ClickHouse 中的分区与 BigQuery 中的应用场景类似，但也有一些细微差别。更具体地说：
+
+* **数据管理** - 在 ClickHouse 中，应主要将分区视为一种数据管理功能，而不是查询优化技术。通过基于某个键对数据进行逻辑划分，每个分区都可以独立操作，例如删除。这使你能够按时间高效地在[存储层级](/zh/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers)之间移动分区及其子集，或[让数据过期/从集群中高效删除数据](/zh/reference/statements/alter/partition)。例如，在下面的示例中，我们会删除 2008 年的帖子数据：
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.103 sec.
+```
+
+* **查询优化** - 虽然分区可以帮助提升查询性能，但效果在很大程度上取决于访问模式。如果查询只涉及少量分区 (理想情况下仅一个) ，性能可能会有所提升。通常只有在分区键不在主键中，且查询会按该键进行过滤时，这才比较有意义。不过，如果查询需要覆盖很多分区，性能反而可能比不分区更差 (因为分区可能会导致产生更多 parts) 。如果分区键本身已经是主键中靠前的字段，那么只命中单个分区带来的收益会进一步降低，甚至几乎没有。若每个分区中的值都是唯一的，分区还可用于[优化 `GROUP BY` 查询](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)。不过，一般来说，你应优先确保主键设计已优化，只有在少数特殊场景下，才应将分区作为查询优化手段来考虑——即访问模式会稳定地访问某个可预测的特定时间子集，例如按天分区，而大多数查询都集中在最近一天。
+
+<div id="recommendations">
+  #### 建议
+</div>
+
+你应将分区视为一种数据管理技术。在处理时间序列数据时，如果需要让数据从集群中过期清除，它尤其适用。例如，最旧的分区可以[直接删除](/zh/reference/statements/alter/partition#drop-partitionpart)。
+
+重要提示：确保你的分区键表达式不会产生高基数集合，也就是说，应避免创建超过 100 个分区。例如，不要按客户端标识符或名称等高基数字段对数据进行分区。相反，应将客户端标识符或名称作为 `ORDER BY` 表达式中的第一列。
+
+> 在内部，ClickHouse 会为插入的数据[创建 parts](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)。随着插入数据不断增多，parts 的数量也会增加。为防止 parts 数量过多而降低查询性能 (因为需要读取更多文件) ，系统会在后台通过异步过程将 parts 合并。如果 parts 的数量超过了[预先配置的限制](/zh/reference/settings/merge-tree-settings#parts_to_throw_insert)，ClickHouse 就会在插入时抛出异常，并报出[“parts 过多”错误](/zh/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts)。正常运行时不应出现这种情况；它通常只会在 ClickHouse 配置不当或使用方式不正确时发生，例如存在大量小批量插入。由于 parts 是按分区彼此独立创建的，分区数量增加也会导致 parts 的数量增加，也就是说，parts 数量会随分区数成倍增长。因此，高基数分区键可能会导致此错误，应尽量避免。
+
+<div id="materialized-views-vs-projections">
+  ## materialized view 与投影
+</div>
+
+ClickHouse 中的投影概念允许你为同一张表指定多个 `ORDER BY` 子句。
+
+在 [ClickHouse 数据建模](/zh/guides/clickhouse/data-modelling/schema-design) 中，我们探讨了如何在 ClickHouse 中使用 materialized view 预先计算聚合、转换行，以及针对不同的访问模式优化查询。对于后者，我们[给出了一个示例](/zh/concepts/features/materialized-views/incremental-materialized-view#lookup-table)：materialized view 会将行发送到一个目标表，而该表使用的排序键与接收插入的原始表不同。
+
+例如，考虑以下查询：
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+   │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.040 sec. Processed 90.38 million rows, 361.59 MB (2.25 billion rows/s., 9.01 GB/s.)
+Peak memory usage: 201.93 MiB.
+```
+
+此查询需要扫描全部 9000 万行 (虽然速度很快) ，因为 `UserId`
+不是排序键。此前，我们通过一个充当 `PostId` 查找表的 materialized view
+来解决这个问题。这个问题同样也可以用投影来解决。
+下面的命令会添加一个使用 `ORDER BY user_id` 的投影。
+
+```sql
+ALTER TABLE comments ADD PROJECTION comments_user_id (
+SELECT * ORDER BY UserId
+)
+
+ALTER TABLE comments MATERIALIZE PROJECTION comments_user_id
+```
+
+请注意，我们必须先创建投影，然后再将其物化。
+后一个命令会使数据在磁盘上以两种不同的
+顺序各存储一份。投影也可以在创建数据时一并定义，如下所示，
+并且会在插入数据时自动维护。
+
+```sql highlight={10-14}
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String),
+    PROJECTION comments_user_id
+    (
+    SELECT *
+    ORDER BY UserId
+    )
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+如果该投影是通过 `ALTER` 命令创建的，那么在执行 `MATERIALIZE PROJECTION` 命令后，
+创建过程会异步进行。你可以使用以下查询来确认此操作的进度，
+并等待 `is_done=1`。
+
+```sql
+SELECT
+    parts_to_do,
+    is_done,
+    latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'comments') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+   ┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+1. │           1 │       0 │                    │
+   └─────────────┴─────────┴────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+如果再次执行上述查询，可以看到性能显著提升，
+但代价是需要额外的存储空间。
+
+```sql highlight={8}
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+
+   ┌──────────avg(Score)─┐
+1. │ 0.18181818181818182 │
+   └─────────────────────┘
+1 row in set. Elapsed: 0.008 sec. Processed 16.36 thousand rows, 98.17 KB (2.15 million rows/s., 12.92 MB/s.)
+Peak memory usage: 4.06 MiB.
+```
+
+通过 [`EXPLAIN` 命令](/zh/reference/statements/explain)，我们还可以确认此查询使用了该投影：
+
+```sql
+EXPLAIN indexes = 1
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+    ┌─explain─────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY))         │
+ 2. │   Aggregating                                       │
+ 3. │   Filter                                            │
+ 4. │           ReadFromMergeTree (comments_user_id)      │
+ 5. │           Indexes:                                  │
+ 6. │           PrimaryKey                                │
+ 7. │           Keys:                                     │
+ 8. │           UserId                                    │
+ 9. │           Condition: (UserId in [8592047, 8592047]) │
+10. │           Parts: 2/2                                │
+11. │           Granules: 2/11360                         │
+    └─────────────────────────────────────────────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="when-to-use-projections">
+  ### 何时使用投影
+</div>
+
+对于新用户来说，投影是一项很有吸引力的功能，因为它会在数据插入时自动维护。
+此外，查询只需发送到单个表，在可能的情况下就会利用投影来加快响应
+时间。
+
+<Image img="/images/migrations/bigquery-7.webp" size="md" alt="投影" />
+
+这与 materialized view 不同；对于后者，用户必须根据过滤器
+选择合适的优化目标表，或者重写查询。
+这会对用户应用程序提出更高要求，并增加客户端侧的
+复杂性。
+
+尽管有这些优势，投影也存在一些固有的局限性，
+您需要了解这些局限，因此应谨慎使用。更多
+详情请参见[&quot;materialized view 与投影&quot;](/zh/concepts/features/projections/materialized-views-versus-projections)
+
+我们建议在以下情况下使用投影：
+
+* 需要对数据进行完全重排序。虽然投影中的表达式理论上可以使用 `GROUP BY,`，但 materialized view 在维护聚合方面更高效。查询优化器也更可能利用采用简单重排序的投影，即 `SELECT * ORDER BY x`。您可以在该表达式中只选择部分列，以减少存储占用。
+* 用户能够接受随之而来的存储占用增加，以及数据被写入两次带来的开销。请测试其对插入速度的影响，并[评估存储开销](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
+
+<div id="rewriting-bigquery-queries-in-clickhouse">
+  ## 在 ClickHouse 中改写 BigQuery 查询
+</div>
+
+下面给出一些对比 BigQuery 与 ClickHouse 的示例查询。此列表旨在展示如何利用 ClickHouse 的特性大幅简化查询。这里的示例使用的是完整的 Stack Overflow 数据集 (截至 2024 年 4 月) 。
+
+**Users (提问数超过 10 个) 中浏览量最高的用户：**
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="改写 BigQuery 查询" border />
+
+*ClickHouse*
+
+```sql
+SELECT
+    OwnerDisplayName,
+    sum(ViewCount) AS total_views
+FROM stackoverflow.posts
+WHERE (PostTypeId = 'Question') AND (OwnerDisplayName != '')
+GROUP BY OwnerDisplayName
+HAVING count() > 10
+ORDER BY total_views DESC
+LIMIT 5
+```
+
+```response
+   ┌─OwnerDisplayName─┬─total_views─┐
+1. │ Joan Venge       │    25520387 │
+2. │ Ray Vega         │    21576470 │
+3. │ anon             │    19814224 │
+4. │ Tim              │    19028260 │
+5. │ John             │    17638812 │
+   └──────────────────┴─────────────┘
+
+5 rows in set. Elapsed: 0.076 sec. Processed 24.35 million rows, 140.21 MB (320.82 million rows/s., 1.85 GB/s.)
+Peak memory usage: 323.37 MiB.
+```
+
+**哪些标签的浏览量最高：**
+
+*BigQuery*
+
+<br />
+
+<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tags,
+    sum(ViewCount) AS views
+FROM stackoverflow.posts
+GROUP BY tags
+ORDER BY views DESC
+LIMIT 5
+```
+
+```response
+   ┌─tags───────┬──────views─┐
+1. │ javascript │ 8190916894 │
+2. │ python     │ 8175132834 │
+3. │ java       │ 7258379211 │
+4. │ c#         │ 5476932513 │
+5. │ android    │ 4258320338 │
+   └────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.318 sec. Processed 59.82 million rows, 1.45 GB (188.01 million rows/s., 4.54 GB/s.)
+Peak memory usage: 567.41 MiB.
+```
+
+<div id="aggregate-functions">
+  ## 聚合函数
+</div>
+
+在条件允许的情况下，应尽量利用 ClickHouse 的聚合函数。下面我们以 [`argMax` 函数](/zh/reference/functions/aggregate-functions/argMax) 为例，说明如何计算每年浏览量最高的问题。
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="聚合函数 1" />
+
+<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="聚合函数 2" />
+
+*ClickHouse*
+
+```sql
+-- ClickHouse
+SELECT
+    toYear(CreationDate) AS Year,
+    argMax(Title, ViewCount) AS MostViewedQuestionTitle,
+    max(ViewCount) AS MaxViewCount
+FROM stackoverflow.posts
+WHERE PostTypeId = 'Question'
+GROUP BY Year
+ORDER BY Year ASC
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Year:                    2008
+MostViewedQuestionTitle: How to find the index for a given item in a list?
+MaxViewCount:            6316987
+
+Row 2:
+──────
+Year:                    2009
+MostViewedQuestionTitle: How do I undo the most recent local commits in Git?
+MaxViewCount:            13962748
+
+...
+
+Row 16:
+───────
+Year:                    2023
+MostViewedQuestionTitle: How do I solve "error: externally-managed-environment" every time I use pip 3?
+MaxViewCount:            506822
+
+Row 17:
+───────
+Year:                    2024
+MostViewedQuestionTitle: Warning "Third-party cookie will be blocked. Learn more in the Issues tab"
+MaxViewCount:            66975
+
+17 rows in set. Elapsed: 0.225 sec. Processed 24.35 million rows, 1.86 GB (107.99 million rows/s., 8.26 GB/s.)
+峰值内存占用: 377.26 MiB.
+```
+
+<div id="conditionals-and-arrays">
+  ## 条件判断与数组
+</div>
+
+条件函数和数组函数能显著简化查询。以下查询计算出从 2022 年到 2023 年间增幅百分比最大的标签 (出现次数超过 10000 次) 。请注意，借助条件判断、数组函数，以及在 `HAVING` 和 `SELECT` 子句中复用别名的能力，下面的 ClickHouse 查询写得非常简洁。
+
+*BigQuery*
+
+<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="条件判断与数组" />
+
+*ClickHouse*
+
+```sql
+SELECT
+    arrayJoin(arrayFilter(t -> (t != ''), splitByChar('|', Tags))) AS tag,
+    countIf(toYear(CreationDate) = 2023) AS count_2023,
+    countIf(toYear(CreationDate) = 2022) AS count_2022,
+    ((count_2023 - count_2022) / count_2022) * 100 AS percent_change
+FROM stackoverflow.posts
+WHERE toYear(CreationDate) IN (2022, 2023)
+GROUP BY tag
+HAVING (count_2022 > 10000) AND (count_2023 > 10000)
+ORDER BY percent_change DESC
+LIMIT 5
+```
+
+```response
+┌─tag─────────┬─count_2023─┬─count_2022─┬──────percent_change─┐
+│ next.js     │      13788 │      10520 │   31.06463878326996 │
+│ spring-boot │      16573 │      17721 │  -6.478189718413183 │
+│ .net        │      11458 │      12968 │ -11.644046884639112 │
+│ azure       │      11996 │      14049 │ -14.613139725247349 │
+│ docker      │      13885 │      16877 │  -17.72826924216389 │
+└─────────────┴────────────┴────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.096 sec. Processed 5.08 million rows, 155.73 MB (53.10 million rows/s., 1.63 GB/s.)
+Peak memory usage: 410.37 MiB.
+```
+
+如果你正从 BigQuery 迁移到 ClickHouse，我们的基础指南到这里就告一段落了。建议继续阅读[在 ClickHouse 中进行数据建模](/zh/guides/clickhouse/data-modelling/schema-design)指南，进一步了解 ClickHouse 的高级功能。

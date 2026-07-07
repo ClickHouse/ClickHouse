@@ -1,0 +1,167 @@
+---
+slug: /cloud/managed-postgres/migrations/logical-replication
+sidebarTitle: '論理レプリケーション'
+title: 'ClickHouse Managed Postgres への論理レプリケーションを使用した移行'
+description: '論理レプリケーションを使用して PostgreSQL データを ClickHouse Managed Postgres に移行する方法を紹介します'
+keywords: ['postgres', 'postgresql', '論理レプリケーション', '移行', 'データ転送', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このガイドでは、Postgres のネイティブな論理レプリケーションを使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、手順を追って説明します。
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
+
+<div id="migration-logical-replication-prerequisites">
+  ## 前提条件
+</div>
+
+* ソース PostgreSQL データベースにアクセスできること。
+* `psql`,`pg_dump`、`pg_restore` がローカルマシンにインストールされていること。これらは、ターゲットデータベースに空のテーブルを作成するために使用します。通常は PostgreSQL のインストールに含まれています。含まれていない場合は、[PostgreSQL 公式サイト](https://www.postgresql.org/download/) からダウンロードできます。
+* ソースデータベースが ClickHouse Managed Postgres からアクセス可能である必要があります。この接続を許可するために必要なファイアウォールルールまたはセキュリティグループの設定を確認してください。Managed Postgres インスタンスの送信元 IP は、次のように確認できます。
+
+```shell
+dig +short <your-managed-postgres-hostname>
+```
+
+<div id="migration-logical-replication-setup">
+  ## セットアップ
+</div>
+
+論理レプリケーションを機能させるには、ソースデータベースが正しく設定されていることを確認する必要があります。主な要件は次のとおりです。
+
+* ソースデータベースでは、`wal_level` を `logical` に設定する必要があります。
+* ソースデータベースでは、`max_replication_slots` を少なくとも `1` に設定する必要があります。
+* RDS (このガイドでは例として使用) では、パラメータグループで `rds.logical_replication` が `1` に設定されていることを確認する必要があります。
+* ソースデータベースのユーザーには、`REPLICATION` 権限が必要です。RDS の場合は、次を実行します。
+  ```sql
+  GRANT rds_replication TO <your-username>;
+  ```
+* 移行先データベースに使用するロールには、移行先データベースのオブジェクトに対する書き込み権限が必要です。
+  ```sql
+  GRANT USAGE ON SCHEMA <schema_i> TO subscriber_user;
+  GRANT CREATE ON DATABASE destination_db TO subscriber_user;
+  GRANT pg_create_subscription TO subscriber_user;
+
+  -- テーブル権限を付与
+  GRANT INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA <schema_i> TO subscriber_user;
+  ```
+
+ソースデータベースが次のように設定されていることを確認してください。
+
+<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="ソース PostgreSQL レプリケーション設定" size="md" border />
+
+<div id="migration-logical-replication-schema-dump">
+  ## ソースデータベースのスキーマのみをダンプする
+</div>
+
+論理レプリケーションを設定する前に、移行先データベースの ClickHouse Managed Postgres データベースにスキーマを作成する必要があります。これには、`pg_dump` を使用してソースデータベースのスキーマのみのダンプを作成します。
+
+```shell
+pg_dump \
+    -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+    -s \
+    --format directory \
+    -f rds-dump
+```
+
+ここでの各項目は次のとおりです。
+
+* `<user>`、`<password>`、`<host>`、`<port>`、`<database>` は、ソースデータベースの認証情報に置き換えてください。
+* `-s` は、スキーマのみのダンプを取得することを指定します。
+* `--format directory` は、ダンプをディレクトリフォーマットで出力することを指定します。これは `pg_restore` に適しています。
+* `-f rds-dump` は、ダンプファイルの出力先ディレクトリを指定します。このディレクトリは自動的に作成されるため、事前に存在していない必要があります。
+
+この例では、`events` と `users` の 2 つのテーブルがあります。`events` には 100 万行、`users` には 1,000 行あります。
+
+<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="ソース PostgreSQL テーブルのセットアップ" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-create-pg">
+  ### Managed Postgres インスタンスを作成する
+</div>
+
+まず、Managed Postgres インスタンスが用意されていることを確認してください。可能であれば、ソースと同じリージョンに配置することをおすすめします。手順については、[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を作成します。
+
+<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres インスタンスを作成" size="md" border />
+
+<div id="migration-logical-replication-restore-schema">
+  ## スキーマを ClickHouse Managed Postgres に復元する
+</div>
+
+スキーマダンプの準備ができたので、`pg_restore` を使ってこれを ClickHouse Managed Postgres インスタンスに復元できます。
+
+```shell
+pg_restore \
+    -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+    --verbose \
+    rds-dump
+```
+
+ここでは:
+
+* `<user>`、`<password>`、`<host>`、`<port>`、`<database>` を、移行先の ClickHouse Managed Postgres データベースの認証情報に置き換えます。
+* `--verbose` は、restore 処理中の詳細な出力を表示します。
+  このコマンドは、データを含めずに、移行先データベース内にすべてのテーブル、索引、ビュー、その他のスキーマオブジェクトを作成します。
+
+この例では、このコマンドを実行すると 2 つのテーブルが作成され、どちらも空の状態になります:
+
+<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="移行先 ClickHouse Managed Postgres の初期セットアップ" size="xl" border />
+
+<div id="migration-logical-replication-setup-replication">
+  ## 論理レプリケーションを設定する
+</div>
+
+スキーマの準備が整ったら、ソースデータベースから移行先の ClickHouse Managed Postgres データベースへの論理レプリケーションを設定します。これには、ソースデータベースで publication を作成し、移行先データベースで subscription を作成します。
+
+<div id="migration-logical-replication-create-publication">
+  ### ソースデータベースで publication を作成する
+</div>
+
+ソースの PostgreSQL データベースに接続し、複製するテーブルを含む publication を作成します。
+
+```sql
+CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
+```
+
+<Info>
+  publication を FOR ALL TABLES で作成すると、テーブル数が多い場合にネットワーク負荷が生じることがあります。レプリケートするテーブルだけを指定することをお勧めします。
+</Info>
+
+<div id="migration-logical-replication-create-subscription">
+  ### 移行先データベースのClickHouse Managed Postgresデータベースにsubscriptionを作成する
+</div>
+
+次に、移行先データベースのClickHouse Managed Postgresデータベースに接続し、ソースデータベースのpublicationに接続するsubscriptionを作成します。
+
+```sql
+CREATE SUBSCRIPTION demo_rds_subscription
+CONNECTION 'postgresql://<user>:<password>@<host>:<port>/<database>'
+PUBLICATION <pub_name_you_entered_above>;
+```
+
+これにより、ソースデータベース上にレプリケーションスロットが自動的に自動作成され、指定したテーブルから移行先データベースへのデータのレプリケーションが開始されます。データ量によっては、この処理に時間がかかる場合があります。
+
+この例では、subscriptionの設定後、データが流入しました。
+
+<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="論理レプリケーション後の移行結果" size="xl" border />
+
+以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先データベースの ClickHouse Managed Postgres データベースにレプリケートされます。
+
+<div id="migration-logical-replication-caveats">
+  ## 注意事項と考慮点
+</div>
+
+* 論理レプリケーションで複製されるのは、データの変更 (INSERT、UPDATE、DELETE) のみです。スキーマの変更 (ALTER TABLE など) は別途対応する必要があります。
+* レプリケーションの中断を避けるため、ソースデータベースと移行先データベース間のネットワーク接続が安定していることを確認してください。
+* 移行先データベースがソースデータベースに追従できていることを確認するため、レプリケーションの遅延を監視してください。ソースデータベースで `max_slot_wal_keep_size` に適切な値を設定すると、増大するレプリケーションスロットを管理しやすくなり、ディスク容量の過剰な消費を防げます。
+* ユースケースによっては、レプリケーション処理に対する監視やアラートを設定するとよいでしょう。
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## 次のステップ
+</div>
+
+おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを試す準備は万全です。まずは 10 分で始められるクイックスタートをご覧ください。
+
+* [Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)

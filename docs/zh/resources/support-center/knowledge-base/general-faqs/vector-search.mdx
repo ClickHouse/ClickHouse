@@ -1,0 +1,80 @@
+---
+date: 2023-10-26
+title: ClickHouse 可以用于向量搜索吗？
+description: 了解如何使用 ClickHouse 进行向量搜索，包括存储嵌入向量，以及使用余弦相似度等距离函数进行搜索。
+tags: ['使用场景', '概念']
+keywords: ['向量搜索']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-for-vector-search">
+  ## 使用 ClickHouse 进行向量搜索！
+</div>
+
+是的，ClickHouse 可以执行向量搜索。
+
+与使用更专门的向量数据库相比，使用 ClickHouse 进行向量搜索的主要优势包括：
+
+* 在执行搜索前，利用 ClickHouse 的过滤和全文搜索功能先缩小数据集范围。
+* 对数据集进行分析。
+* 将数据与你现有的数据执行 `JOIN`。
+* 无需再维护另一套数据库，也不用让基础设施变得更复杂。
+
+下面是一个关于如何使用 ClickHouse 进行向量搜索的简要教程。
+
+<div id="1-create-embeddings">
+  ## 1. 创建嵌入向量
+</div>
+
+你的数据 (文档、图像或结构化数据) 必须转换为 *嵌入向量*。我们建议使用 [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) 创建嵌入向量，或使用开源 Python 库 [SentenceTransformers](https://www.sbert.net/)。
+
+你可以将嵌入向量理解为一个包含大量浮点数的数组，用来表示你的数据。[查看 OpenAI 的这份指南，进一步了解嵌入向量](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings)。
+
+<div id="2-store-the-embeddings">
+  ## 2. 存储嵌入向量
+</div>
+
+生成嵌入向量后，您需要将其存入 ClickHouse。每个嵌入向量都应存储在单独的一行中，并可包含用于过滤、聚合或分析的元数据。以下是一个可用于存储带说明文字图像的表示例：
+
+```sql
+CREATE TABLE images
+(
+	`_file` LowCardinality(String),
+	`caption` String,
+	`image_embedding` Array(Float32)
+)
+ENGINE = MergeTree;
+```
+
+<div id="3-search-for-related-embeddings">
+  ## 3. 搜索相关嵌入向量
+</div>
+
+假设你想在数据集中搜索狗的图片。你可以使用 `cosineDistance` 这样的距离函数，传入一张狗图片的嵌入向量来查找相关图片：
+
+```sql
+SELECT
+    _file,
+	caption,
+	cosineDistance(
+        -- 您"输入"的狗图片的 嵌入向量 向量
+        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+        image_embedding
+    ) AS score
+FROM images
+ORDER BY score ASC
+LIMIT 10
+```
+
+此查询会返回与您提供的狗图片最可能相关的前 10 张图片的 `_file` 名称和 `caption`。
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+如需进一步了解如何使用 ClickHouse 进行向量搜索，请参阅：
+
+* [精确向量搜索与近似向量搜索](/zh/reference/engines/table-engines/mergetree-family/annindexes)

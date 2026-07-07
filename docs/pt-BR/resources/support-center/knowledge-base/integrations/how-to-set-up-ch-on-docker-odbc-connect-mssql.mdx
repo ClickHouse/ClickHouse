@@ -1,0 +1,248 @@
+---
+title: Como configurar o ClickHouse no Docker com ODBC para se conectar a um banco de dados do Microsoft SQL Server (MSSQL)
+description: "Como configurar o ClickHouse no Docker com ODBC para se conectar a um banco de dados do Microsoft SQL Server (MSSQL)"
+date: 2024-05-29
+tags: ['Clientes e interfaces nativas']
+keywords: ['Docker', 'ODBC', 'Microsoft SQL Server', 'MSSQL']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## Pergunta
+</div>
+
+Como configurar o ClickHouse usando uma imagem Docker para se conectar ao Microsoft SQL Server?
+
+<div id="answer">
+  ## Resposta
+</div>
+
+***Observações sobre este exemplo***
+
+* Usa a imagem Ubuntu do Docker do ClickHouse
+* Usa o driver FreeTDS
+* Usa o servidor MSSQL 2012R2
+* O hostname do Windows neste exemplo é `MARSDB2.marsnet2.local`, no IP `192.168.1.133` (atualize com seu hostname e/ou IP)
+* O nome da instância do MSSQL é `MARSDB2`
+* O login do MSSQL e os usuários do banco de dados são `sql_user`
+
+<div id="example-setup-in-mssql-for-testing-">
+  ### Exemplo de configuração no MSSQL para teste
+</div>
+
+Banco de dados e tabela criados no MSSQL:
+
+<Image img="/images/knowledgebase/ikb273/c8a5492f-5910-4454-bfbc-5c6ceda15ccd.webp" size="md" alt="Estrutura do banco de dados e da tabela no MSSQL" border />
+
+Login do MSSQL, `sql_user`:
+
+<Image img="/images/knowledgebase/ikb273/568f1143-475e-422f-a26a-2c23ac324771.webp" size="md" alt="Configuração do login do MSSQL" border />
+
+Roles de associação ao banco de dados para `sql_user`:
+
+<Image img="/images/knowledgebase/ikb273/63992978-7078-4985-b661-a3c095099ea7.webp" size="md" alt="Roles de associação ao banco de dados no MSSQL" border />
+
+Usuário do banco de dados com login:
+
+<Image img="/images/knowledgebase/ikb273/15a407ca-53c1-45b1-9beb-ddd8eedde64a.webp" size="md" alt="Usuário do banco de dados no MSSQL com login" border />
+
+<div id="configuring-clickhouse-with-odbc">
+  ### Configurando o ClickHouse com ODBC
+</div>
+
+Crie um diretório de trabalho:
+
+```sh
+mkdir ch-odbc-mssql
+cd ch-odbc-mssql
+```
+
+Crie um arquivo `odbc.ini`:
+
+```sh
+vim odbc.ini
+```
+
+Adicione as seguintes entradas para atualizar o nome do DSN e o IP:
+
+```sh
+[marsdb2_mssql]
+Driver = FreeTDS
+Server = 192.168.1.133
+```
+
+Crie um arquivo `odbcinst.ini`:
+
+```sh
+vim odbcinst.ini
+```
+
+Adicione as seguintes entradas (`trace` é opcional, mas ajuda na depuração):
+
+```sh
+[ODBC]
+Trace = Yes
+TraceFile = /tmp/odbc.log
+
+[FreeTDS]
+Description = FreeTDS
+Driver = /usr/lib/aarch64-linux-gnu/odbc/libtdsodbc.so
+Setup = /usr/lib/x86_64-linux-gnu/odbc/libtdsS.so
+UsageCount = 1
+```
+
+<div id="configure-a-dockerfile-to-download-the-image-and-add-the-tds-and-required-odbc-libraries">
+  ### Configure um Dockerfile para baixar a imagem e adicionar o TDS e as bibliotecas ODBC necessárias
+</div>
+
+Crie o Dockerfile:
+
+```sh
+vim Dockerfile
+```
+
+Adicione o conteúdo ao Dockerfile:
+
+```sh
+FROM clickhouse/clickhouse-server:23.10
+
+# Instalar o driver ODBC
+
+RUN apt-get update && apt-get install -y --no-install-recommends unixodbc \
+    && apt-get install -y freetds-bin freetds-common freetds-dev libct4 libsybdb5 \
+	&& apt-get install tdsodbc
+```
+
+Crie a nova imagem Docker:
+
+```sh
+docker build . -t marsnet/clickhouse-odbc:23.10
+```
+
+Crie um arquivo `docker-compose.yml`:
+
+```sh
+vim docker-compose.yml
+```
+
+Adicione o conteúdo a seguir ao YAML:
+
+```sh
+version: '3.7'
+services:
+  clickhouse:
+    image: marsnet/clickhouse-odbc:23.10
+    container_name: clickhouse-odbc
+    hostname: clickhouse-host
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+      - "9009:9009"
+    volumes:
+      - ./odbc.ini:/etc/odbc.ini
+      - ./odbcinst.ini:/etc/odbcinst.ini
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 262144
+        hard: 262144
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+```
+
+Inicie o contêiner:
+
+```sh
+docker compose up --detach
+```
+
+Depois de iniciar o contêiner, você deverá ver algo assim:
+
+```sh
+ch-odbc-mssql % docker compose up --detach
+[+] Running 1/1
+ ✔ Container clickhouse-odbc  Started
+```
+
+Verifique se o contêiner está em execução:
+
+```sh
+ch-odbc-mssql % docker ps
+CONTAINER ID   IMAGE                           COMMAND            CREATED          STATUS              PORTS                                                                    NAMES
+87a400b803ce   marsnet/clickhouse-odbc:23.10   "/entrypoint.sh"   57 minutes ago   Up About a minute   0.0.0.0:8123->8123/tcp, 0.0.0.0:9000->9000/tcp, 0.0.0.0:9009->9009/tcp   clickhouse-odbc
+```
+
+<div id="test-odbc-connection">
+  ### Teste a conexão ODBC
+</div>
+
+Faça login com o ClickHouse client:
+
+```sh
+./clickhouse client
+```
+
+Teste o `SELECT` usando a função de tabela `odbc` na tabela do banco de dados MSSQL remoto:
+
+```
+clickhouse-host :) SELECT * from odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1');
+
+SELECT *
+FROM odbc('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'table1')
+
+Query id: 23494da2-6e12-4ade-95fa-372a0420cac1
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.188 sec. 
+```
+
+Você também pode criar uma tabela remota usando o engine de tabela `odbc`:
+
+```sql
+CREATE TABLE table1_odbc_mssql
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = ODBC('DSN=marsdb2_mssql;port=1433;Uid=sql_user;Pwd=ClickHouse123;Database=db1', 'dbo', 'table1')
+```
+
+Use uma consulta `SELECT` para testar a nova tabela remota:
+
+```
+clickhouse-host :) select * from table1_odbc_mssql;
+
+SELECT *
+FROM table1_odbc_mssql
+
+Query id: 94724368-485d-4364-ae58-a435a225c37d
+
+┌─id─┬─column1─┐
+│  1 │ abc     │
+│  2 │ def     │
+│  3 │ ghi     │
+└────┴─────────┘
+
+3 rows in set. Elapsed: 0.218 sec. 
+```
+
+Para obter mais informações, consulte:
+
+* [https://hub.docker.com/&#95;/clickhouse](https://hub.docker.com/_/clickhouse)
+* [https://clickhouse.com/docs/engines/table-engines/integrations/odbc](/pt-BR/reference/engines/table-engines/integrations/odbc)
+* [https://github.com/ClickHouse/clickhouse-odbc](https://github.com/ClickHouse/clickhouse-odbc)
