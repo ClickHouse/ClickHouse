@@ -5313,7 +5313,7 @@ void MergeTreeData::validateTableIdentityFile(const DiskPtr & disk) const
             actual_version,
             TABLE_IDENTITY_VERSION);
 
-    const auto expected_uuid = (*getSettings())[MergeTreeSetting::table_disk] ? UUIDHelpers::Nil : getStorageID().uuid;
+    const auto expected_uuid = getStorageID().uuid;
     const auto table_uuid = json->get("table_uuid");
     if (expected_uuid == UUIDHelpers::Nil)
     {
@@ -5369,11 +5369,10 @@ void MergeTreeData::writeTableIdentityFile(const DiskPtr & disk) const
         writeCString("{\"version\":", *buf);
         writeIntText(TABLE_IDENTITY_VERSION, *buf);
         writeCString(",\"table_uuid\":", *buf);
-        const auto table_uuid = (*getSettings())[MergeTreeSetting::table_disk] ? UUIDHelpers::Nil : getStorageID().uuid;
-        if (table_uuid == UUIDHelpers::Nil)
+        if (getStorageID().uuid == UUIDHelpers::Nil)
             writeCString("null", *buf);
         else
-            writeJSONString(toString(table_uuid), *buf, FormatSettings{});
+            writeJSONString(toString(getStorageID().uuid), *buf, FormatSettings{});
         writeCString(",\"relative_data_path\":", *buf);
         writeJSONString(relative_data_path, *buf, FormatSettings{});
         writeCString(",\"format_version\":", *buf);
