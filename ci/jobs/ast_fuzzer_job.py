@@ -48,6 +48,22 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
     return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
 
 
+def _is_benign_memory_limit(
+    server_died: bool, fuzzer_exit_code: int, fuzzer_log_has_mle: bool
+) -> bool:
+    """True when the fuzzer exited only because the server hit its memory cap.
+
+    A fuzzed query pushes the server over its memory limit; the memory tracker
+    rejects the allocation with Code 241 (MEMORY_LIMIT_EXCEEDED) and the server
+    stays up (server_died=0). clickhouse-client returns the server error code as
+    its exit status, so the fuzzer exits 241. This is the tracker working as
+    intended, not a crash or a finding -- run-fuzzer.sh's liveness loop already
+    treats a 241 as "alive, busy". A genuine unbounded-memory bug crashes the
+    server instead and is caught via server_died / OOM-in-dmesg.
+    """
+    return not server_died and fuzzer_exit_code == 241 and fuzzer_log_has_mle
+
+
 def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
     """Parse (server_died, server_exit_code, fuzzer_exit_code) from status.tsv.
 
@@ -334,6 +350,17 @@ def run_fuzz_job(check_name: str):
             info.append("Fuzzer killed")
         else:
             info.append("Fuzzer exited with timeout")
+        info.append("\n")
+    elif _is_benign_memory_limit(
+        server_died,
+        fuzzer_exit_code,
+        Shell.check(f"rg --text -q 'MEMORY_LIMIT_EXCEEDED' {fuzzer_log}"),
+    ):
+        # Server hit its memory cap on a fuzzed query but stayed alive; see
+        # _is_benign_memory_limit. Not a crash or a finding.
+        is_failed = False
+        status = Result.Status.OK
+        info.append("Server hit its memory limit (Code 241) but stayed alive")
         info.append("\n")
     elif fuzzer_exit_code in (227,):
         # BuzzHouse exception, it means a query oracle failed, or
