@@ -465,10 +465,12 @@ public:
 
     /// Resolve the emit table for the given saved-block column `positions` (the output columns of one
     /// probe), building any not-yet-built positions for the current generation (and dropping the whole
-    /// table first if the blocks changed). Fills `out_columns[k]`/`out_replicated[k]` with the per-block
-    /// base pointers for `positions[k]` (stable for as long as the generation does not change, which a
-    /// StorageJoin read lock or a normal join's build-then-probe guarantees for the caller's lifetime).
-    /// Holds `mutex` for the duration; called once per probe batch, never in the per-row loop.
+    /// table first if the blocks changed). `out_columns`/`out_replicated` are sized to `saved_columns_count`
+    /// and indexed by stored-block column position: `out_columns[pos]` holds the per-block base pointers for
+    /// each requested `pos`; positions not in `positions` stay null. Pointers are stable for as long as the
+    /// generation does not change, which a StorageJoin read lock or a normal join's build-then-probe guarantees
+    /// for the caller's lifetime. Holds `mutex` for the duration; called once per probe batch, never in the
+    /// per-row loop.
     void resolveEmitColumns(
         size_t saved_columns_count,
         const std::vector<size_t> & positions,

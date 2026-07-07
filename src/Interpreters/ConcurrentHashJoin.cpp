@@ -828,7 +828,7 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                 if (!sc)
                     return;
                 // matches the original right block rows referenced by this slot's StoredBlocks
-                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->rows(), static_cast<UInt8>(0));
+                ColumnUInt8::MutablePtr filtered = ColumnUInt8::create(sc->blockRows(), static_cast<UInt8>(0));
                 // apply a contiguous [start, end) range from the source mask into the destination mask
                 // fill with 1s if NULLs only
                 auto apply_range = [&](size_t start, size_t end)

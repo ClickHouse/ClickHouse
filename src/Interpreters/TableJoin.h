@@ -175,7 +175,7 @@ private:
     size_t max_memory_usage = 0;
 
     /// Decision by the planner whether to enable row store tranformation or not.
-    bool enable_row_store = true;
+    bool enable_row_store = false;
 
     ASTs key_asts_left;
     ASTs key_asts_right;

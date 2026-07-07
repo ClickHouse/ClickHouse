@@ -74,7 +74,7 @@ struct LazyOutput
     bool join_data_sorted = false;
     bool output_by_row_list = false;
     size_t output_by_row_list_threshold = 0;
-    // size_t join_data_avg_perkey_rows = 0;
+    size_t join_data_avg_perkey_rows = 0;
 
     ColumnAccessIndexes output_access_indexes;
     bool has_row_store = false;
@@ -208,6 +208,39 @@ public:
                 nullable_column_ptrs[j] = typeid_cast<ColumnNullable *>(columns[j].get());
         }
 
+        const auto & access_indexes = join.getJoinedData()->column_access_indexes;
+        /// Positions of the columnar (non-row-store) output columns in `StoredBlock::columns`.
+        std::vector<size_t> columnar_positions;
+        lazy_output.output_access_indexes.reserve(right_indexes.size());
+        columnar_positions.reserve(right_indexes.size());
+        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized)
+        {
+            for (size_t right_index : right_indexes)
+            {
+                const ColumnAccessIndex & access_index = access_indexes[right_index];
+                if (access_index.type == ColumnAccessIndex::Type::RowStore)
+                    lazy_output.has_row_store = true;
+                else
+                {
+                    lazy_output.has_columns = true;
+                    columnar_positions.push_back(access_index.index);
+                }
+                lazy_output.output_access_indexes.push_back(access_index);
+            }
+        }
+        else
+        {
+            for (size_t right_index : right_indexes)
+            {
+                lazy_output.output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, right_index});
+                columnar_positions.push_back(right_index);
+            }
+        }
+
+        /// Row store should not be used in eager mode.
+        if constexpr (!lazy)
+            chassert(!lazy_output.has_row_store);
+
         /// Resolve the StoredColumnsIndex emit table for the hot `fillFromRowRefs` path: cache, per output
         /// column, the per-block base pointers it hands to `fillFromRowRefs`. Only normal joins reach it
         /// (joinGet and ASOF use the cold per-block paths). `resolveEmitColumns` builds exactly the
@@ -217,31 +250,23 @@ public:
         if constexpr (lazy)
         {
             if (!is_join_get && !is_asof_join)
+            {
+                size_t columnar_columns_count = 0;
+                if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized)
+                {
+                    for (const auto & access_index : access_indexes)
+                        if (access_index.type == ColumnAccessIndex::Type::Columns)
+                            ++columnar_columns_count;
+                }
+                else
+                    columnar_columns_count = saved_block_sample.columns();
+                
                 join.getJoinedData()->stored_columns_index->resolveEmitColumns(
-                    saved_block_sample.columns(),
-                    right_indexes,
+                    columnar_columns_count,
+                    columnar_positions,
                     lazy_output.emit_block_columns,
                     lazy_output.emit_block_replicated);
-        }
-
-        const auto & access_indexes = join.getJoinedData()->column_access_indexes;
-        lazy_output.output_access_indexes.reserve(right_indexes.size());
-        if (join.getJoinedData()->row_store_state == HashJoin::RowStoreState::Initialized)
-        {
-            for (size_t right_index : right_indexes)
-            {
-                const ColumnAccessIndex & access_index = access_indexes[right_index];
-                if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                    lazy_output.has_row_store = true;
-                else
-                    lazy_output.has_columns = true;
-                lazy_output.output_access_indexes.push_back(access_index);
             }
-        }
-        else
-        {
-            for (size_t right_index : right_indexes)
-                lazy_output.output_access_indexes.push_back({ColumnAccessIndex::Type::Columns, right_index});
         }
     }
 

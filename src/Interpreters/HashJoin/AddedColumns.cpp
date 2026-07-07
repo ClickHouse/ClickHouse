@@ -91,7 +91,7 @@ void LazyOutput::buildOutputFromRowRefLists(size_t size_to_reserve, MutableColum
         if (access_index.type == ColumnAccessIndex::Type::RowStore)
             col->fillFromRowRefsWithRowStore(type_name[dst_idx].type, access_index.field_offset, access_index.field_size, row_refs_begin, row_refs_end, block_row_stores);
         else
-            col->fillFromRowRefs(type_name[dst_idx].type, row_refs_begin, row_refs_end, join_data_sorted, emit_block_columns[dst_idx], emit_block_replicated[dst_idx]);
+            col->fillFromRowRefs(type_name[dst_idx].type, row_refs_begin, row_refs_end, join_data_sorted, emit_block_columns[access_index.index], emit_block_replicated[access_index.index]);
     }
 }
 
@@ -341,31 +341,19 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
 #ifndef NDEBUG
     checkColumns(*block);
 #endif
-    const char * row_data = lazy_output.has_row_store ? block->row_store->getRowAt(row_num) : nullptr;
-
-    auto insert_from_row_store = [&](size_t dst_idx, const ColumnAccessIndex & access_index)
-    {
-        if (access_index.is_nullable)
-            assert_cast<ColumnNullable &>(*columns[dst_idx]).insertDataNullable(row_data + access_index.field_offset, access_index.field_size);
-        else
-            columns[dst_idx]->insertData(row_data + access_index.field_offset, access_index.field_size);
-    };
 
     if (is_join_get)
     {
         for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
         {
             const auto & access_index = lazy_output.output_access_indexes[dst_idx];
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                insert_from_row_store(dst_idx, access_index);
+            chassert(access_index.type == ColumnAccessIndex::Type::Columns);
+
+            const auto [column_from_block, src_row_num] = getBlockColumnAndRow(block, row_num, access_index.index);
+            if (auto * nullable_col = nullable_column_ptrs[dst_idx])
+                nullable_col->insertFromNotNullable(*column_from_block, src_row_num);
             else
-            {
-                const auto [column_from_block, src_row_num] = getBlockColumnAndRow(block, row_num, access_index.index);
-                if (auto * nullable_col = nullable_column_ptrs[dst_idx])
-                    nullable_col->insertFromNotNullable(*column_from_block, src_row_num);
-                else
-                    columns[dst_idx]->insertFrom(*column_from_block, src_row_num);
-            }
+                columns[dst_idx]->insertFrom(*column_from_block, src_row_num);
         }
     }
     else
@@ -373,13 +361,10 @@ void AddedColumns<false>::appendFromBlock(UInt64 ref_word, const bool has_defaul
         for (size_t dst_idx = 0; dst_idx < lazy_output.output_access_indexes.size(); ++dst_idx)
         {
             const auto & access_index = lazy_output.output_access_indexes[dst_idx];
-            if (access_index.type == ColumnAccessIndex::Type::RowStore)
-                insert_from_row_store(dst_idx, access_index);
-            else
-            {
-                const auto [column_from_block, src_row_num] = getBlockColumnAndRow(block, row_num, access_index.index);
-                columns[dst_idx]->insertFrom(*column_from_block, src_row_num);
-            }
+            chassert(access_index.type == ColumnAccessIndex::Type::Columns);
+
+            const auto [column_from_block, src_row_num] = getBlockColumnAndRow(block, row_num, access_index.index);
+            columns[dst_idx]->insertFrom(*column_from_block, src_row_num);
         }
     }
 }

@@ -722,6 +722,10 @@ Block HashJoin::materializeColumnsFromRightBlock(Block block) const
 
 void HashJoin::initRowStore(const Block & block)
 {
+    /// Skip initializing if it's already initialized or disabled.
+    if (data->row_store_state != RowStoreState::Enabled)
+        return;
+
     /// Skip using row store when the right table rerange optimization could get triggered.
     /// TODO: allow row store when right table could get reranged and build the reranged table
     /// based on the row store instead.
@@ -822,8 +826,7 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", selector.size());
 
     /// Initialize the row store layout based on the first block.
-    if (data->row_store_state == RowStoreState::Enabled)
-        initRowStore(block);
+    initRowStore(block);
 
     /** We do not allocate memory for stored blocks inside HashJoin, only for hash table.
       * In case when we have all the blocks allocated before the first `addBlockToJoin` call, will already be quite high.

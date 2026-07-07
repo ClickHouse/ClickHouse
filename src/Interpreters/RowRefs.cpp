@@ -330,10 +330,8 @@ void StoredColumnsIndex::resolveEmitColumns(
     }
 
     const size_t num_blocks = blocks.size();
-    out_columns.clear();
-    out_replicated.clear();
-    out_columns.reserve(positions.size());
-    out_replicated.reserve(positions.size());
+    out_columns.assign(saved_columns_count, nullptr);
+    out_replicated.assign(saved_columns_count, nullptr);
     for (size_t pos : positions)
     {
         chassert(pos < saved_columns_count);
@@ -352,8 +350,8 @@ void StoredColumnsIndex::resolveEmitColumns(
             emit_columns[pos] = std::move(emit_column);
         }
         const EmitColumn & emit_column = *emit_columns[pos];
-        out_columns.push_back(emit_column.by_block.data());
-        out_replicated.push_back(emit_column.repl_by_block.data());
+        out_columns[pos] = emit_column.by_block.data();
+        out_replicated[pos] = emit_column.repl_by_block.data();
     }
 }
 
