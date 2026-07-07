@@ -41,7 +41,12 @@ version: 1
 # is bounded by the list:churn mix ratio (roughly ten lists between fire
 # events), independent of sessions (c500 sampled a peak of 65).  Floors are
 # therefore mix-derived and deliberately loose: they prove the workload really
-# arms watches without flaking on churn timing.
+# arms watches without flaking on churn timing.  Every rung also asserts
+# watches_fired_ge (min_fired: 100): create is only 5% of the mix and the bench
+# continues on error, so a run whose mutations all fail could otherwise pass on
+# reads alone.  Each successful create fires the whole armed population
+# (~a dozen), so 100 fires ≈ ten successful creates — proof the registry
+# mutation path is alive, not a sustained-churn bar.
 #
 # These scenarios are on-demand (not part of the nightly scenario files); run
 # them with KEEPER_SCENARIO_FILES=registry_saturation.yaml or -k '<id>'.
@@ -73,6 +78,8 @@ scenarios:
   - type: p99_le
   - type: watch_peak_ge
     min_watches: 10  # mix-derived floor: mean armed ≈ 12 (list:churn 60:5); c500 sampled a peak of 65
+  - type: watches_fired_ge
+    min_fired: 100  # write-side floor; derivation in the watch-gating note above
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -98,6 +105,8 @@ scenarios:
   - type: p99_le
   - type: watch_peak_ge
     min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
+  - type: watches_fired_ge
+    min_fired: 100  # write-side floor; derivation in the watch-gating note above
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -125,6 +134,8 @@ scenarios:
     max_ms: 20000
   - type: watch_peak_ge
     min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
+  - type: watches_fired_ge
+    min_fired: 100  # write-side floor; derivation in the watch-gating note above
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -152,6 +163,8 @@ scenarios:
     max_ms: 30000
   - type: watch_peak_ge
     min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
+  - type: watches_fired_ge
+    min_fired: 100  # write-side floor; derivation in the watch-gating note above
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -181,6 +194,8 @@ scenarios:
     max_ratio: 0.5
   - type: watch_peak_ge
     min_watches: 10  # mix-derived floor; armed count tracks the mix ratio, not sessions
+  - type: watches_fired_ge
+    min_fired: 100  # write-side floor; derivation in the watch-gating note above
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print
@@ -208,7 +223,9 @@ scenarios:
   - type: watch_peak_ge
     min_watches: 15  # mix-derived floor: mean armed ≈ 23 (list:create 70:3); watches are one-shot, so armed count never approaches the session count
   - type: watches_fired_ge
-    min_fired: 100  # a fire needs an armed watch + a successful create + a delivered notification, and each create fires ALL armed children-watches (~2 dozen), so a healthy 300 s run fires thousands; this floor proves the churn cycle ran without flaking on timing
+    # Mix-derived: creates are 3% of the mix (1000 workers, 300 s) and each success fires the whole armed
+    # population (~2 dozen), so healthy runs fire 100k+; 10000 needs ~400+ successful creates spread well past warmup.
+    min_fired: 10000
   - type: log_sanity_ok
   - type: print_summary
   - type: mntr_print

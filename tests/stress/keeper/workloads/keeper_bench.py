@@ -95,6 +95,8 @@ def _patch_keeper_bench_config(src, servers, clients, duration_s, concurrency=No
     # watch-armed while the request rate is bounded by the worker count.  Required for
     # very high session counts (thousands), where one worker per session is infeasible.
     out["concurrency"] = int(concurrency) if concurrency is not None else clients
+    # Zero workers would silently benchmark nothing (no guard in keeper-bench itself).
+    assert out["concurrency"] > 0, f"bench concurrency must be > 0, got {out['concurrency']}"
     # Ensure bench prints periodic progress to stderr so the "Requests executed: N"
     # fallback works when Session expired prevents JSON output.
     # Use `is None` check (not truthiness) because workloads explicitly set report_delay: 0.0

@@ -49,16 +49,13 @@ def validate_scenario(s):
         else:
             if "duration" in wl:
                 errs.append("workload_duration_not_supported")
-            if "clients" in wl:
-                try:
-                    int(wl.get("clients"))
-                except Exception:
-                    errs.append("workload_clients_not_int")
-            if "concurrency" in wl:
-                try:
-                    int(wl.get("concurrency"))
-                except Exception:
-                    errs.append("workload_concurrency_not_int")
+            for k in ("clients", "concurrency"):
+                if k in wl:
+                    try:
+                        if int(wl.get(k)) <= 0:
+                            errs.append(f"workload_{k}_not_positive")
+                    except Exception:
+                        errs.append(f"workload_{k}_not_int")
 
     return errs
 
