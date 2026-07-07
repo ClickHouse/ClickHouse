@@ -16,6 +16,13 @@ query()
 with_trailing_slash()
 {
     local path="$1"
+
+    if [[ -z "$path" || "$path" == "/" ]]
+    then
+        echo "Unsafe or missing disk path: ${path:-<empty>}" >&2
+        exit 1
+    fi
+
     if [[ "$path" == */ ]]
     then
         echo "$path"
@@ -26,6 +33,18 @@ with_trailing_slash()
 
 disk1_root=$(with_trailing_slash "$(query "SELECT path FROM system.disks WHERE name = 'disk1_04506'")")
 disk2_root=$(with_trailing_slash "$(query "SELECT path FROM system.disks WHERE name = 'disk2_04506'")")
+
+remove_test_root()
+{
+    local path="$1"
+    if [[ "$path" != *"/04506_alter_storage_policy_existing_disk_contents/"* ]]
+    then
+        echo "Refusing to remove unexpected path: $path" >&2
+        exit 1
+    fi
+
+    rm -rf "$path"
+}
 
 cleanup()
 {
@@ -38,7 +57,8 @@ cleanup()
     query "DROP TABLE IF EXISTS t_04506_temporary_file SYNC"
     query "DROP TABLE IF EXISTS t_04506_root_part SYNC"
     query "DROP TABLE IF EXISTS t_04506_detached_part SYNC"
-    rm -rf "${disk1_root:?}" "${disk2_root:?}"
+    remove_test_root "$disk1_root"
+    remove_test_root "$disk2_root"
 }
 
 trap cleanup EXIT
