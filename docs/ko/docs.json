@@ -16,7 +16,6 @@
               "group": "시작하기",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
-                "ko/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -38,7 +37,8 @@
                   ],
                   "root": "ko/get-started/use-cases/overview"
                 },
-                "ko/get-started/about/deployment-modes"
+                "ko/get-started/about/deployment-modes",
+                "ko/get-started/quickstarts/home"
               ],
               "root": "ko/get-started/index"
             },

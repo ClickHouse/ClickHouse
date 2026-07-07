@@ -16,7 +16,6 @@
               "group": "Premier pas",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
-                "fr/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -38,7 +37,8 @@
                   ],
                   "root": "fr/get-started/use-cases/overview"
                 },
-                "fr/get-started/about/deployment-modes"
+                "fr/get-started/about/deployment-modes",
+                "fr/get-started/quickstarts/home"
               ],
               "root": "fr/get-started/index"
             },
