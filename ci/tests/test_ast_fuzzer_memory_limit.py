@@ -11,7 +11,6 @@ treats a 241 as "server alive, busy". These assert the classifier now treats a
 server-survived 241 as OK while a genuine crash / non-241 client failure is not.
 """
 
-import importlib.util
 import os
 
 _JOB = os.path.join(
