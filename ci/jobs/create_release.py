@@ -870,7 +870,11 @@ def checkout_new(ref: str) -> Iterator[None]:
     ) or Shell.get_output_or_raise(f"{GIT_PREFIX} rev-parse HEAD")
     rollback_cmd = f"{GIT_PREFIX} checkout {orig_ref}"
     assert orig_ref
-    Shell.check(f"{GIT_PREFIX} checkout -b {ref}", strict=True, verbose=True)
+    # `-B` (create-or-reset) rather than `-b` so a rerun on a preserved
+    # self-hosted workspace does not die with "branch already exists" on the
+    # leftover branch from a previous attempt; it is reset to the current commit
+    # and the caller's force-push / PR-reuse logic proceeds.
+    Shell.check(f"{GIT_PREFIX} checkout -B {ref}", strict=True, verbose=True)
     try:
         yield
     except (Exception, KeyboardInterrupt) as e:
