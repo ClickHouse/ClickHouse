@@ -84,8 +84,10 @@ The settings for rollup are defined by the [graphite_rollup](../../../operations
 
 Rollup configuration structure:
 
-      required-columns
-      patterns
+```text
+required-columns
+patterns
+```
 
 ### Required columns {#required-columns}
 
