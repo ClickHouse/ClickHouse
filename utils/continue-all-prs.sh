@@ -4,7 +4,7 @@ set -euo pipefail
 # Continuously advance every open pull request that involves you - the ones you
 # authored, the ones assigned to you, and the ones you've contributed to
 # (commented on or reviewed) - by fanning out a pool of workers, each running
-# the `/continue-pr` skill in its own git worktree. By default all three
+# the `/continue-pr-auto` skill in its own git worktree. By default all three
 # categories are selected; restrict with --mine / --assigned / --related (which
 # may be combined). PRs carrying the `hold` label are always skipped.
 #
@@ -27,7 +27,7 @@ set -euo pipefail
 #
 # The per-PR lines are colored with a 24-bit (truecolor) color derived from a
 # hash of the PR number, using the same YCbCr scheme ClickHouse uses to color
-# its log messages (see base/base/terminalColors.cpp). The full `/continue-pr`
+# its log messages (see base/base/terminalColors.cpp). The full `/continue-pr-auto`
 # transcript of each PR is written to a per-PR log file under
 # tmp/continue-all-prs/ instead of the terminal.
 #
@@ -56,9 +56,9 @@ set -euo pipefail
 #   --once                Process every open PR once and exit, instead of
 #                         looping forever in rounds.
 #   --skip-submodules     Create worker worktrees without hardlinking submodules
-#                         (faster; only safe if `/continue-pr` won't build).
+#                         (faster; only safe if `/continue-pr-auto` won't build).
 #   --color WHEN          auto (default) | always | never.
-#   --dry-run             Don't touch worktrees or run `/continue-pr`; just list
+#   --dry-run             Don't touch worktrees or run `/continue-pr-auto`; just list
 #                         the PRs and simulate processing to preview the
 #                         distribution and coloring.
 #   --help                Show this help.
@@ -209,7 +209,7 @@ banner() { echo "${S}$*${R}"; }
 # In plain `--print` mode `claude` writes only its final message to the log, so
 # the opening of that message is a natural summary. We take the first one or two
 # sentences, but when those are conversational filler ("I've completed ...") we
-# fall back to the first markdown header instead, since `/continue-pr` usually
+# fall back to the first markdown header instead, since `/continue-pr-auto` usually
 # titles its conclusion there (e.g. "## PR #N is obsolete ...").
 summarize_log()
 {
@@ -397,7 +397,7 @@ STEER_PROMPT="You are running in a non-interactive, single-shot batch session. D
 # Sent on each resume to nudge the worker to finish.
 NUDGE_PROMPT="Continue where you left off and finish the task. Reminder: do not use background tasks - run everything synchronously and push your commits before finishing. A green CI does NOT mean you are done - also address unresolved review comments and reviewer feedback (including automated/bot reviews and COMMENTED, non-blocking threads). Any build started in a previous turn was killed when that turn ended; re-run it in the foreground if you still need to verify. When the PR is fully handled, end your final message with a line containing exactly: ${DONE_MARKER}"
 
-# Run /continue-pr in a worktree, resuming the same session until the worker
+# Run /continue-pr-auto in a worktree, resuming the same session until the worker
 # signals completion (DONE_MARKER), the per-PR time budget (TIMEOUT, shared
 # across all turns) is exhausted, or the continuation cap (MAX_CONTINUE) is hit.
 # Writes the full transcript to $log and the final turn to $log.last. Returns
@@ -427,7 +427,7 @@ run_continue_pr()
         if (( iter == 1 )); then
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
                 --session-id "$sid" --append-system-prompt "$STEER_PROMPT" \
-                "/continue-pr $url" </dev/null ) > "$log.last" 2>&1 || ec=$?
+                "/continue-pr-auto $url" </dev/null ) > "$log.last" 2>&1 || ec=$?
         else
             ( cd "$wt" && timeout "$remaining" claude --dangerously-skip-permissions --print \
                 --resume "$sid" --append-system-prompt "$STEER_PROMPT" \
@@ -463,7 +463,7 @@ process_pr()
     else
         # PR head before the work, so we can tell whether the worker actually
         # pushed anything (a clean `claude` exit does NOT imply progress: the
-        # /continue-pr skill exits 0 when it finds nothing to do, or when it
+        # /continue-pr-auto skill exits 0 when it finds nothing to do, or when it
         # punts an outward-facing decision such as closing an obsolete PR).
         before_sha=$(gh pr view "$number" --repo "$REPO" --json headRefOid \
             --jq '.headRefOid' 2>/dev/null || echo "")
@@ -638,7 +638,7 @@ banner "Worktree base:   ${WORKTREE_BASE}-{0..$((WORKERS - 1))}"
 [[ -n "$GH_USER" ]] && banner "GitHub user:     $GH_USER"
 banner "Selecting:       $MODES_DESC"
 banner "Per-PR timeout:  ${TIMEOUT}s"
-(( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr"
+(( DRY_RUN )) && banner "DRY RUN: not creating worktrees or running /continue-pr-auto"
 echo ""
 
 mkdir -p "$LOGDIR"

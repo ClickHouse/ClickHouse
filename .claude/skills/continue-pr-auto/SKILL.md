@@ -1,14 +1,16 @@
 ---
-name: continue-pr
-description: Continue work on an existing PR - resolve conflicts, fix CI failures, address reviewer feedback, and push updates. Use when the user wants to pick up and advance a pull request.
+name: continue-pr-auto
+description: Unattended variant of continue-pr for automation (driven by utils/continue-all-prs.sh). Resolves conflicts, fixes CI, addresses feedback, and pushes without ever asking the user. For interactive use, prefer continue-pr.
 argument-hint: <pr-number>
-disable-model-invocation: false
-allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch, AskUserQuestion
+disable-model-invocation: true
+allowed-tools: Agent, Task, Bash, Read, Write, Edit, Glob, Grep, WebFetch, WebSearch
 ---
 
-# Continue Work on a Pull Request
+# Continue Work on a Pull Request (Unattended)
 
 Pick up an existing pull request, resolve conflicts, fix CI failures, address reviewer feedback, and push updates.
+
+This is the **unattended** variant used by automation (`utils/continue-all-prs.sh`). It must never wait for user input: resolve conflicts and address feedback with your best judgment and push. The only hard stop is a genuinely missing PR number. For interactive use where asking is acceptable, use `continue-pr` instead.
 
 ## Arguments
 
@@ -18,7 +20,7 @@ Pick up an existing pull request, resolve conflicts, fix CI failures, address re
 
 ### 1. Parse arguments and fetch PR metadata
 
-Extract the PR number from `$0`. If not provided, use `AskUserQuestion` to ask for it.
+Extract the PR number from `$0`. This skill runs unattended and must never stop to ask the user anything: if the PR number is not provided, stop with a clear error message instead of prompting.
 
 Validate that the PR number contains only digits. Reject any non-numeric input immediately — do not pass unvalidated input to shell commands or GraphQL queries.
 
@@ -70,21 +72,22 @@ git fetch origin "$BASE_BRANCH"
 git merge-base --is-ancestor "origin/$BASE_BRANCH" HEAD || echo "needs merge"
 ```
 
-If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts, merge:
+If the branch is behind the base branch and is red (some checks didn't pass), or if it is behind the base branch for more than a week (regardless of checks success), or has conflicts (including when GitHub reports the PR as `CONFLICTING` or its mergeability as unknown), merge:
 
 ```bash
 git merge "origin/$BASE_BRANCH"
 ```
 
-If there are merge conflicts:
+If there are merge conflicts, resolve them autonomously — this skill runs unattended, so never stop to ask:
 1. List conflicted files: `git diff --name-only --diff-filter=U`
 2. For each conflicted file, use a Task agent with `subagent_type=general-purpose` to resolve:
    - Read the conflicted file
    - Analyze conflict markers
    - Resolve intelligently: the PR's changes should generally take precedence for the code the PR modifies, while master's changes take precedence for unrelated areas
    - Stage the resolved file: `git add <file>`
-   - If conflicts are ambiguous, show them to the user using `AskUserQuestion`
+   - For a genuinely ambiguous conflict, pick the resolution most consistent with the PR's intent and record that choice in the merge commit message. Do NOT use `AskUserQuestion` or otherwise wait for input.
 3. Complete the merge: `git commit --no-edit`
+4. Resolving conflicts is not finished until the merge is committed and pushed — push it (step 7).
 
 ### 4. Analyze CI status and fix failures
 
@@ -207,7 +210,7 @@ For each unresolved review thread:
 2. Read the relevant code context
 3. Make the requested change if it is reasonable and correct
 4. Commit the change with a message referencing the feedback (e.g., "Address review: <summary of change>")
-5. If a reviewer's suggestion seems incorrect or unclear, note it in your output for the user to decide
+5. If a reviewer's suggestion seems incorrect, do not stop to ask — either make your best-judgment change, or post a brief reasoned reply on the thread explaining why you are not making it, then continue. Never block on a question.
 
 ### 6. Review and evaluate the changes
 
@@ -240,6 +243,8 @@ git push origin "$HEAD_BRANCH"
 git push "$REMOTE_NAME" "$HEAD_BRANCH"
 ```
 
+Always push once you have committed conflict resolutions or fixes — pushing is mandatory and must never be deferred or gated on a question. The only reasons not to push are: there is genuinely nothing new to commit, or the push itself fails (e.g. no permission on a fork), in which case report the error.
+
 Report the result and provide the PR URL.
 
 ## Error Handling
@@ -251,6 +256,7 @@ Report the result and provide the PR URL.
 
 ## Notes
 
+- This skill runs unattended. Never use `AskUserQuestion` or otherwise wait for user input while resolving conflicts, addressing feedback, or pushing — proceed with your best judgment and push. The only hard stop is a genuinely missing PR number (step 1).
 - Do not use rebase or amend - always add new commits (per project conventions)
 - Do not push to the master branch
 - Each fix should be a separate, well-described commit
