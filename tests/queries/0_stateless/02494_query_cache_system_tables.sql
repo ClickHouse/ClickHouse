@@ -53,6 +53,8 @@ DROP TABLE tab;
 -- System tables can be "hidden" inside e.g. table functions
 SELECT * FROM clusterAllReplicas('test_shard_localhost', system.one) SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 SELECT * FROM clusterAllReplicas('test_shard_localhost', 'system.one') SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT * FROM cluster('test_shard_localhost', system, one) SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
+SELECT * FROM remote('127.0.0.1', system, one) SETTINGS use_query_cache = 1; -- {serverError QUERY_CACHE_USED_WITH_SYSTEM_TABLE }
 -- Note how in the previous query ^^ 'system.one' is also a literal. ClusterAllReplicas gets special handling.
 
 -- Criminal edge case that a user creates a table named "system". The query cache must not reject queries against it.
